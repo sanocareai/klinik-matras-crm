@@ -1,0 +1,144 @@
+// Skema database untuk Klinik Matras Omnichannel + CRM
+// Dirancang supaya tidak perlu migrasi besar saat Phase 2 (Instagram) & Phase 3 (CRM lanjutan)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SALES
+}
+
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+}
+
+// Sumber marketing pelanggan (beda dengan Channel -- itu medium chat-nya)
+enum LeadSource {
+  ADS
+  INSTAGRAM
+  WEBSITE
+  WHATSAPP_DIRECT
+  REFERRAL
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING      // baru order, belum diproses
+  PROCESSING   // sedang dikerjakan/produksi
+  READY        // siap kirim
+  DELIVERED    // sudah terkirim/selesai
+  CANCELLED
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+enum PipelineStage {
+  LEAD
+  QUALIFIED
+  QUOTED
+  WON
+  LOST
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(SALES)
+  createdAt     DateTime       @default(now())
+
+  assignedCustomers     Customer[]     @relation("AssignedSales")
+  assignedConversations Conversation[] @relation("AssignedAgent")
+  notes                 Note[]
+}
+
+model Customer {
+  id              String        @id @default(cuid())
+  name            String?
+  phone           String?       @unique // format: 628xxxx (tanpa @c.us)
+  instagramHandle String?       @unique
+  email           String?
+  city            String?
+  tags            String[]      @default([])
+  pipelineStage   PipelineStage @default(LEAD)
+  leadSource      LeadSource?
+  assignedSalesId String?
+  assignedSales   User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  conversations Conversation[]
+  notes         Note[]
+  orders        Order[]
+}
+
+model Conversation {
+  id            String              @id @default(cuid())
+  customerId    String
+  customer      Customer            @relation(fields: [customerId], references: [id])
+  channel       Channel
+  status        ConversationStatus  @default(OPEN)
+  assignedToId  String?
+  assignedTo    User?               @relation("AssignedAgent", fields: [assignedToId], references: [id])
+  lastMessageAt DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+
+  messages Message[]
+
+  @@index([channel, status])
+}
+
+model Message {
+  id              String           @id @default(cuid())
+  conversationId  String
+  conversation    Conversation     @relation(fields: [conversationId], references: [id])
+  direction       MessageDirection
+  content         String
+  mediaUrl        String?
+  externalId      String?          @unique // id pesan dari WAHA/Instagram, untuk cegah duplikat
+  createdAt       DateTime         @default(now())
+
+  @@index([conversationId])
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  content    String
+  createdAt  DateTime @default(now())
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  status     OrderStatus @default(PENDING)
+  value      Int         // nilai order dalam Rupiah
+  quantity   Int         @default(1)
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([customerId])
+}

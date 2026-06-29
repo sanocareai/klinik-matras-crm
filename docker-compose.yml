@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: klinik
+      POSTGRES_PASSWORD: KlinikMatras2026Aman
+      POSTGRES_DB: klinik_matras
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # WAHA - WhatsApp HTTP API. Engine WEBJS dipilih dulu karena paling stabil untuk first deployment.
+  waha:
+    image: devlikeapro/waha
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
+      WHATSAPP_HOOK_EVENTS: message
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: klinikmatras123
+      WHATSAPP_SWAGGER_USERNAME: admin
+      WHATSAPP_SWAGGER_PASSWORD: klinikmatras123
+      WAHA_API_KEY: klinikmatras-rahasia-2026
+    ports:
+      - "3000:3000"
+    volumes:
+      - waha_sessions:/app/.sessions
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./frontend/dist:/frontend/dist
+    depends_on:
+      - postgres
+      - waha
+
+volumes:
+  pgdata:
+  waha_sessions:
