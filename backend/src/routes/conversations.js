@@ -123,6 +123,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
   const caption   = req.body.caption?.trim() || "";
+  const sendAs    = req.body.sendAs || "media"; // "media" (inline) | "document" (attachment)
   const mediaType = mimeToMediaType(file.mimetype);
   const mediaUrl  = `/uploads/${file.filename}`;
 
@@ -132,12 +133,13 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     try {
       const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
       const fileUrl = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
-      console.log(`[media] Kirim ke WAHA → ${fileUrl}`);
+      console.log(`[media] Kirim ke WAHA → ${fileUrl} (sendAs=${sendAs})`);
 
       const waResult = await sendMedia(
         conversation.customer.phone,
         { mimetype: file.mimetype, filename: file.originalname, url: fileUrl },
-        caption
+        caption,
+        sendAs
       );
       console.log("[media] WAHA berhasil:", JSON.stringify(waResult).slice(0, 200));
     } catch (waErr) {

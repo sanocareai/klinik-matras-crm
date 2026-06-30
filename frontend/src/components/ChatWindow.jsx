@@ -196,9 +196,10 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
   const [showTemplates, setShowTemplates] = useState(false);
 
   // Media attachment state
-  const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType }
+  const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
-  const fileInputRef                      = useRef(null);
+  const mediaInputRef                     = useRef(null); // foto & video
+  const docInputRef                       = useRef(null); // dokumen
 
   // Voice recording state
   const [recording, setRecording]         = useState(false);
@@ -244,16 +245,17 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
   }
 
   // ── Pilih file ──
-  function handleFileSelect(e) {
+  // sendAs: "media" (foto/video tampil inline di WA) | "document" (tampil sebagai attachment)
+  function handleFileSelect(e, sendAs = "media") {
     const file = e.target.files?.[0];
     if (!file) return;
     const mime = file.type;
     let mediaType = "document";
     let preview   = null;
-    if (mime.startsWith("image/"))  { mediaType = "image";    preview = URL.createObjectURL(file); }
-    if (mime.startsWith("video/"))  { mediaType = "video";    preview = URL.createObjectURL(file); }
-    if (mime.startsWith("audio/"))  { mediaType = "audio";    preview = URL.createObjectURL(file); }
-    setPendingFile({ file, preview, mediaType });
+    if (mime.startsWith("image/"))  { mediaType = "image"; preview = URL.createObjectURL(file); }
+    if (mime.startsWith("video/"))  { mediaType = "video"; preview = URL.createObjectURL(file); }
+    if (mime.startsWith("audio/"))  { mediaType = "audio"; preview = URL.createObjectURL(file); }
+    setPendingFile({ file, preview, mediaType, sendAs });
     e.target.value = "";
   }
 
@@ -262,6 +264,7 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     if (!pendingFile) return;
     const fd = new FormData();
     fd.append("file", pendingFile.file);
+    fd.append("sendAs", pendingFile.sendAs || "media");
     if (caption.trim()) fd.append("caption", caption.trim());
     setSending(true);
     try {
@@ -436,18 +439,24 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
               <MessageSquare size={15} />
             </button>
 
-            {/* Lampiran file */}
-            <button type="button" onClick={() => fileInputRef.current?.click()}
-              className="chat-action-btn" title="Lampirkan foto/video/dokumen">
+            {/* Foto & Video (tampil inline di WA) */}
+            <button type="button" onClick={() => mediaInputRef.current?.click()}
+              className="chat-action-btn" title="Kirim foto atau video (tampil inline)">
+              <ImageIcon size={15} />
+            </button>
+            <input ref={mediaInputRef} type="file" accept="image/*,video/*"
+              style={{ display: "none" }}
+              onChange={(e) => handleFileSelect(e, "media")} />
+
+            {/* Dokumen (tampil sebagai attachment) */}
+            <button type="button" onClick={() => docInputRef.current?.click()}
+              className="chat-action-btn" title="Kirim dokumen / file">
               <Paperclip size={15} />
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+            <input ref={docInputRef} type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv"
               style={{ display: "none" }}
-              onChange={handleFileSelect}
-            />
+              onChange={(e) => handleFileSelect(e, "document")} />
 
             <input
               value={draft}

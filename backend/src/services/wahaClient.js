@@ -29,17 +29,22 @@ export async function sendText(to, text) {
 }
 
 // Kirim media (gambar / video / dokumen / suara)
-// file = { mimetype, filename, url } — pakai URL supaya WAHA fetch langsung
-export async function sendMedia(to, file, caption) {
+// file   = { mimetype, filename, url }
+// sendAs = "media"    → sendImage/sendVideo/sendVoice (tampil inline di WA)
+//        = "document" → sendFile (tampil sebagai attachment)
+export async function sendMedia(to, file, caption, sendAs = "media") {
   const chatId = to.includes("@") ? to : `${to}@c.us`;
   const mime   = file.mimetype || "";
 
-  // NOWEB: sendVideo sering tidak support, gunakan sendFile untuk video & dokumen
-  // sendImage untuk foto (tampil inline di WA), sendVoice untuk audio
-  let endpoint = "/api/sendFile";
-  if (mime.startsWith("image/"))  endpoint = "/api/sendImage";
-  else if (mime.startsWith("audio/")) endpoint = "/api/sendVoice";
-  // video → tetap /api/sendFile agar kompatibel NOWEB
+  let endpoint = "/api/sendFile"; // default: dokumen
+
+  if (sendAs === "media") {
+    if (mime.startsWith("image/"))       endpoint = "/api/sendImage";
+    else if (mime.startsWith("video/"))  endpoint = "/api/sendVideo";
+    else if (mime.startsWith("audio/"))  endpoint = "/api/sendVoice";
+    // mime lain di mode media → sendFile
+  }
+  // sendAs === "document" → tetap /api/sendFile
 
   const filePayload = file.url
     ? { url: file.url, mimetype: mime, filename: file.filename || "file" }
