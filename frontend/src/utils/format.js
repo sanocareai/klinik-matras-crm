@@ -2,6 +2,20 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// Format nomor HP untuk tampilan: "6281234567890" → "+62 812-3456-7890"
+export function formatPhoneDisplay(phone) {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("62") && digits.length >= 10) {
+    const local = digits.slice(2);
+    const a = local.slice(0, 3);
+    const b = local.slice(3, 7);
+    const c = local.slice(7);
+    return "+62 " + [a, b, c].filter(Boolean).join("-");
+  }
+  return "+" + digits;
+}
+
 export function formatTanggalIndo(date = new Date()) {
   return date.toLocaleDateString("id-ID", {
     weekday: "long",

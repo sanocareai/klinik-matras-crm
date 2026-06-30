@@ -6,9 +6,11 @@ import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
 import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
+import { formatPhoneDisplay } from "../utils/format.js";
 
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
+  const [nameDraft, setNameDraft] = useState("");
   const [cityDraft, setCityDraft] = useState("");
   const [feedback, setFeedback] = useState(null);
 
@@ -21,6 +23,7 @@ export default function CustomerPanel({ customerId }) {
     if (!customerId) { setCustomer(null); return; }
     api.getCustomer(customerId).then((c) => {
       setCustomer(c);
+      setNameDraft(c.name || "");
       setCityDraft(c.city || "");
     });
   }, [customerId]);
@@ -28,6 +31,23 @@ export default function CustomerPanel({ customerId }) {
   async function updateStage(pipelineStage) {
     const updated = await api.updateCustomer(customerId, { pipelineStage });
     setCustomer((c) => ({ ...c, ...updated }));
+  }
+
+  async function saveName() {
+    if (!nameDraft.trim()) return;
+    try {
+      const updated = await api.updateCustomer(customerId, { name: nameDraft.trim() });
+      setCustomer((c) => ({ ...c, ...updated }));
+      if (updated.whatsappSyncStatus === "success") {
+        showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp");
+      } else if (updated.whatsappSyncStatus === "failed") {
+        showFeedback("warning", "Nama tersimpan, gagal sync ke WhatsApp");
+      } else {
+        showFeedback("success", "Nama tersimpan");
+      }
+    } catch (err) {
+      showFeedback("error", err.message);
+    }
   }
 
   async function saveCity() {
@@ -59,6 +79,7 @@ export default function CustomerPanel({ customerId }) {
   }
 
   const displayName = customer.name || customer.phone || customer.instagramHandle || "Pelanggan";
+  const phoneFormatted = formatPhoneDisplay(customer.phone || "");
 
   return (
     <div className="customer-panel">
@@ -67,7 +88,7 @@ export default function CustomerPanel({ customerId }) {
         <Avatar name={displayName} size="md" />
         <div className="panel-header-info">
           <p className="panel-name">{displayName}</p>
-          <p className="panel-contact">{customer.phone || customer.instagramHandle}</p>
+          <p className="panel-contact" title={customer.phone}>{phoneFormatted || customer.instagramHandle}</p>
         </div>
       </div>
 
@@ -90,6 +111,25 @@ export default function CustomerPanel({ customerId }) {
           </div>
         )}
 
+        {/* Nama Kontak */}
+        <div className="panel-section">
+          <span className="panel-section-label">Nama Kontak</span>
+          <div className="inline-field">
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveName()}
+              placeholder="Nama pelanggan..."
+            />
+            <button className="btn btn-secondary btn-sm" onClick={saveName}>Simpan</button>
+          </div>
+          {customer.phone && (
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+              {phoneFormatted}
+            </p>
+          )}
+        </div>
+
         {/* Pipeline stage */}
         <div className="panel-section">
           <span className="panel-section-label">Tahap Pipeline</span>
@@ -103,6 +143,7 @@ export default function CustomerPanel({ customerId }) {
             <input
               value={cityDraft}
               onChange={(e) => setCityDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveCity()}
               placeholder="Kota pelanggan"
             />
             <button className="btn btn-secondary btn-sm" onClick={saveCity}>Simpan</button>

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Send, MessageSquare, CheckCircle, ChevronDown, X } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
-import { formatWaktu } from "../utils/format.js";
+import { formatWaktu, formatPhoneDisplay } from "../utils/format.js";
 
 const STATUS_OPTIONS = [
   { value: "OPEN",     label: "Terbuka" },
@@ -214,7 +214,8 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     );
   }
 
-  const name = conversation.customer?.name || conversation.customer?.phone || "Pelanggan";
+  const rawPhone = conversation.customer?.phone;
+  const name = conversation.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || conversation.customer?.instagramHandle || "Pelanggan";
   const channelClass = conversation.channel?.toLowerCase();
   const channelLabel = conversation.channel === "WHATSAPP" ? "WhatsApp" : "Instagram";
 

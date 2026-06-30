@@ -1,7 +1,7 @@
 import React from "react";
 import { Search } from "lucide-react";
 import Avatar from "./Avatar.jsx";
-import { formatTanggalWaktu } from "../utils/format.js";
+import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
@@ -69,7 +69,8 @@ export default function ConversationList({
         )}
 
         {conversations.map((c) => {
-          const name = c.customer?.name || c.customer?.phone || "Pelanggan";
+          const rawPhone = c.customer?.phone;
+          const name = c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan";
           const lastMsg = c.messages?.[0];
           const channelClass = c.channel?.toLowerCase();
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
