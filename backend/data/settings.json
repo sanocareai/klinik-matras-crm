@@ -1,0 +1,13 @@
+{
+  "companyName": "Klinik Matras",
+  "companyTagline": "Spesialis Kasur Berkualitas",
+  "companyEmail": "",
+  "companyPhone": "",
+  "companyAddress": "",
+  "companyCity": "",
+  "wahaBaseUrl": "http://localhost:3000",
+  "wahaSession": "default",
+  "targetBulanan": 500000000,
+  "currencyLocale": "id-ID",
+  "timezone": "Asia/Jakarta"
+}

@@ -10,6 +10,12 @@ import NotesSection from "./customer/NotesSection.jsx";
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
   const [cityDraft, setCityDraft] = useState("");
+  const [feedback, setFeedback] = useState(null);
+
+  function showFeedback(type, message) {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback(null), 4000);
+  }
 
   useEffect(() => {
     if (!customerId) { setCustomer(null); return; }
@@ -25,8 +31,13 @@ export default function CustomerPanel({ customerId }) {
   }
 
   async function saveCity() {
-    const updated = await api.updateCustomer(customerId, { city: cityDraft });
-    setCustomer((c) => ({ ...c, ...updated }));
+    try {
+      const updated = await api.updateCustomer(customerId, { city: cityDraft });
+      setCustomer((c) => ({ ...c, ...updated }));
+      showFeedback("success", "Kota tersimpan");
+    } catch (err) {
+      showFeedback("error", err.message);
+    }
   }
 
   if (!customerId) {
@@ -73,6 +84,11 @@ export default function CustomerPanel({ customerId }) {
 
       {/* Body */}
       <div className="panel-body">
+        {feedback && (
+          <div className={`inline-feedback inline-feedback-${feedback.type}`} style={{ margin: "0 0 8px" }}>
+            {feedback.message}
+          </div>
+        )}
         {/* Pipeline stage */}
         <div className="panel-section">
           <span className="panel-section-label">Tahap Pipeline</span>

@@ -17,6 +17,12 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
 
   // form fields untuk Profil
   const [form, setForm] = useState({ name: "", city: "", email: "", tags: "" });
+  const [feedback, setFeedback] = useState(null); // { type, message }
+
+  function showFeedback(type, message) {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback(null), 4000);
+  }
 
   useEffect(() => {
     if (!customerId) return;
@@ -59,8 +65,17 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
       });
       setCustomer((c) => ({ ...c, ...updated }));
       if (onUpdated) onUpdated({ ...customer, ...updated });
+
+      // Tampilkan feedback berdasarkan status sync WA
+      if (updated.whatsappSyncStatus === "success") {
+        showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp ✓");
+      } else if (updated.whatsappSyncStatus === "failed") {
+        showFeedback("warning", "Nama tersimpan di CRM, tapi gagal sync ke WhatsApp (coba lagi nanti)");
+      } else {
+        showFeedback("success", "Perubahan tersimpan");
+      }
     } catch (err) {
-      alert(err.message);
+      showFeedback("error", err.message);
     }
   }
 
@@ -117,6 +132,11 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
           {/* ── TAB PROFIL ── */}
           {tab === "Profil" && (
             <form onSubmit={handleSaveProfile}>
+              {feedback && (
+                <div className={`inline-feedback inline-feedback-${feedback.type}`} style={{ marginBottom: 12 }}>
+                  {feedback.message}
+                </div>
+              )}
               <p className="drawer-section-title">Informasi Pelanggan</p>
 
               <div className="drawer-field">

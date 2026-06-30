@@ -101,8 +101,25 @@ export const api = {
 
   // Users
   getUsers: () => request("/users"),
+  getMe: () => request("/users/me"),
   updateMe: (data) =>
     request("/users/me", { method: "PATCH", body: JSON.stringify(data) }),
+  changePassword: (data) =>
+    request("/users/me/change-password", { method: "POST", body: JSON.stringify(data) }),
+  createUser: (data) =>
+    request("/users", { method: "POST", body: JSON.stringify(data) }),
+  updateUser: (id, data) =>
+    request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  resetUserPassword: (id, newPassword) =>
+    request(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
+  deleteUser: (id) =>
+    request(`/users/${id}`, { method: "DELETE" }),
+
+  // Settings
+  getSettings: () => request("/settings"),
+  updateSettings: (data) =>
+    request("/settings", { method: "PATCH", body: JSON.stringify(data) }),
+  getWhatsappStatus: () => request("/settings/whatsapp-status"),
 
   // Pipeline
   getPipelineBoard: () => request("/pipeline/board"),

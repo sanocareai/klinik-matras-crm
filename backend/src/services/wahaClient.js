@@ -48,3 +48,27 @@ export function cleanPhoneNumber(rawId) {
   if (!rawId) return null;
   return rawId.split("@")[0];
 }
+
+// Sync nama pelanggan ke kontak WhatsApp — fire & forget friendly (return bool, jangan throw)
+export async function updateContactName(phone, name) {
+  const chatId = phone.includes("@") ? phone : `${phone}@c.us`;
+  try {
+    const res = await fetch(`${WAHA_BASE_URL}/api/contacts`, {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({
+        session: WAHA_SESSION,
+        contactId: chatId,
+        firstName: name,
+      }),
+    });
+    if (!res.ok) {
+      console.error("Gagal update nama kontak WhatsApp:", await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Error sync nama kontak WA:", err.message);
+    return false;
+  }
+}

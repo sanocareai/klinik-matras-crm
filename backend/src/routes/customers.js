@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { updateContactName } from "../services/wahaClient.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -100,7 +101,20 @@ customerRouter.patch("/:id", async (req, res) => {
       ...(leadSource !== undefined && { leadSource }),
     },
   });
-  res.json(customer);
+
+  // Sync nama ke kontak WhatsApp (coba max 3 detik, kembalikan status ke frontend)
+  let whatsappSyncStatus = "skipped";
+  if (name !== undefined && name?.trim() && customer.phone) {
+    try {
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 3000));
+      const result = await Promise.race([updateContactName(customer.phone, name.trim()), timeoutPromise]);
+      whatsappSyncStatus = result === true ? "success" : "failed";
+    } catch {
+      whatsappSyncStatus = "failed";
+    }
+  }
+
+  res.json({ ...customer, whatsappSyncStatus });
 });
 
 customerRouter.post("/:id/notes", async (req, res) => {

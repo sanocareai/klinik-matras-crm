@@ -17,6 +17,7 @@ import { broadcastRouter }  from "./routes/broadcast.js";
 import { automationRouter } from "./routes/automation.js";
 import { aiRouter }         from "./routes/ai.js";
 import { knowledgeRouter }  from "./routes/knowledge.js";
+import { settingsRouter }  from "./routes/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,6 +38,7 @@ app.use("/api/broadcast",    broadcastRouter);
 app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
 app.use("/api/knowledge",    knowledgeRouter);
+app.use("/api/settings",    settingsRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

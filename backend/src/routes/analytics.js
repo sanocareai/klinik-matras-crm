@@ -37,6 +37,10 @@ analyticsRouter.get("/overview", async (req, res) => {
       thisMonthAgg,
       leadSourceGroups,
       monthlyTrafficRaw,
+      monthlyRevenueRaw,
+      monthlyCustomersRaw,
+      channelBreakdownRaw,
+      customersWithOrdersCount,
     ] = await Promise.all([
       prisma.customer.count({ where: custWhere }),
       prevRange ? prisma.customer.count({ where: { createdAt: prevRange } }) : Promise.resolve(null),
@@ -80,6 +84,42 @@ analyticsRouter.get("/overview", async (req, res) => {
         GROUP BY 1
         ORDER BY 1
       `,
+
+      // Pendapatan bulanan 6 bulan terakhir
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               COALESCE(SUM(value), 0)::bigint as value
+        FROM "Order"
+        WHERE status != 'CANCELLED'
+          AND "createdAt" >= NOW() - INTERVAL '6 months'
+        GROUP BY 1
+        ORDER BY 1
+      `,
+
+      // Pelanggan baru per bulan 6 bulan terakhir
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               COUNT(*)::int as count
+        FROM "Customer"
+        WHERE "createdAt" >= NOW() - INTERVAL '6 months'
+        GROUP BY 1
+        ORDER BY 1
+      `,
+
+      // Channel breakdown percakapan
+      prisma.conversation.groupBy({
+        by: ["channel"],
+        _count: { _all: true },
+        where: convWhere,
+      }),
+
+      // Jumlah pelanggan yang punya minimal 1 order
+      prisma.customer.count({
+        where: {
+          ...custWhere,
+          orders: { some: { status: { not: "CANCELLED" } } },
+        },
+      }),
     ]);
 
     function growth(curr, prev) {
@@ -89,17 +129,32 @@ analyticsRouter.get("/overview", async (req, res) => {
     }
 
     res.json({
+      // Pelanggan
+      newCustomers: totalCustomers,
       totalCustomers,
       growthCustomers: growth(totalCustomers, totalCustomersPrev),
+      customersWithOrders: customersWithOrdersCount,
+
+      // Order
       totalOrders: orderAgg._count._all,
       growthOrders: growth(orderAgg._count._all, orderAggPrev?._count._all ?? null),
       totalOrderValue: orderAgg._sum.value || 0,
       growthOrderValue: growth(orderAgg._sum.value || 0, orderAggPrev?._sum.value || null),
       thisMonthValue: thisMonthAgg._sum.value || 0,
+
+      // Breakdown
       leadSourceBreakdown: leadSourceGroups.map((g) => ({
         leadSource: g.leadSource || "OTHER",
         count: g._count._all,
       })),
+      channelBreakdown: channelBreakdownRaw.map((g) => ({
+        channel: g.channel,
+        count: g._count._all,
+      })),
+
+      // Tren bulanan
+      monthlyRevenue: monthlyRevenueRaw.map((r) => ({ month: r.month, value: Number(r.value) })),
+      monthlyCustomers: monthlyCustomersRaw.map((r) => ({ month: r.month, count: Number(r.count) })),
       monthlyTraffic: monthlyTrafficRaw,
     });
   } catch (err) {
