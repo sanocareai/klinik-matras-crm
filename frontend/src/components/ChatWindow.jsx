@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Send, MessageSquare, CheckCircle, ChevronDown, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
-  ArrowLeft, UserCheck, Users,
+  ArrowLeft, UserCheck, Users, Info,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
 import { formatWaktu, formatPhoneDisplay } from "../utils/format.js";
 import { ProductPicker } from "./ProductPicker.jsx";
+import CustomerPanel from "./CustomerPanel.jsx";
 
 const STATUS_OPTIONS = [
   { value: "OPEN",     label: "Terbuka" },
@@ -198,6 +199,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [showTemplates, setShowTemplates]         = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [takingOver, setTakingOver]               = useState(false);
+  const [showCustomerDetail, setShowCustomerDetail] = useState(false);
 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
@@ -410,6 +412,11 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             ) : null}
           </div>
         </div>
+        {/* Tombol ⓘ info pelanggan — hanya tampil di mobile via CSS */}
+        <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
+          <Info size={18} />
+        </button>
+
         {/* Tombol Ambil Alih */}
         {canTakeover && (
           <button
@@ -538,6 +545,16 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           </form>
         )}
       </div>
+
+      {/* ── CustomerPanel Bottom Sheet (mobile only, via CSS) ── */}
+      {showCustomerDetail && (
+        <div className="mobile-bottom-sheet-overlay" onClick={() => setShowCustomerDetail(false)}>
+          <div className="mobile-bottom-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="bottom-sheet-handle" />
+            <CustomerPanel customerId={conversation?.customer?.id} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

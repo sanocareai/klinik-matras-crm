@@ -201,6 +201,7 @@ export default function Dashboard({ user }) {
       {csPerf.length > 0 && (
         <div className="chart-card" style={{ marginBottom: 24 }}>
           <h3>Performa CS / Sales</h3>
+          <div className="cs-table-wrap">
           <table className="cs-table">
             <thead>
               <tr>
@@ -227,6 +228,7 @@ export default function Dashboard({ user }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

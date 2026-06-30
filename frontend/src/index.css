@@ -1570,6 +1570,24 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--border); background: white; margin-right: 8px;
 }
 
+/* ─── BASE STYLES UNTUK ELEMEN MOBILE-ONLY ──────────────── */
+
+/* Tombol ⓘ info pelanggan di chat header — hidden di desktop */
+.chat-info-btn {
+  display: none;
+  width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: transparent; color: var(--text-muted);
+  align-items: center; justify-content: center; cursor: pointer;
+  flex-shrink: 0; transition: background 0.15s;
+}
+.chat-info-btn:hover { background: #f1f5f9; }
+
+/* Bottom sheet overlay — hidden di desktop, tampil di mobile */
+.mobile-bottom-sheet-overlay { display: none; }
+
+/* Card list pelanggan — hidden di desktop, tampil di mobile */
+.customer-card-list { display: none; }
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */
@@ -1636,5 +1654,161 @@ input:focus, select:focus, textarea:focus {
 
   /* Product picker full screen di mobile */
   .product-picker-panel { width: 100vw; }
+
+  /* ── Chat bubble lebih lebar di mobile ── */
+  .bubble { max-width: 80%; }
+
+  /* ── Bottom sheet — CustomerPanel di Inbox ── */
+  .mobile-bottom-sheet-overlay {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45); z-index: 450;
+  }
+  .mobile-bottom-sheet {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 85vh;
+    background: var(--bg-card);
+    border-radius: 16px 16px 0 0;
+    overflow-y: auto;
+  }
+  .bottom-sheet-handle {
+    width: 40px; height: 4px;
+    background: var(--border); border-radius: 99px;
+    margin: 10px auto 0;
+  }
+  /* Tombol ⓘ tampil di mobile */
+  .chat-info-btn { display: flex; }
+
+  /* ── Dashboard ── */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi-mini-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi-card { padding: 14px 16px; }
+  .kpi-value { font-size: 22px; }
+  .chart-grid { grid-template-columns: 1fr; gap: 12px; }
+  .chart-card { padding: 14px; margin-bottom: 12px; }
+  .chart-card h3 { font-size: 14px; }
+  .funnel-section { padding: 14px; }
+  .funnel-wrap { flex-direction: column; gap: 6px; }
+  .funnel-step { flex-direction: row; align-items: center; gap: 10px; min-width: auto; }
+  .funnel-step-bar { display: none; }
+  .funnel-arrow { transform: rotate(90deg); align-self: center; }
+  .cs-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cs-table { min-width: 480px; font-size: 12px; }
+  .cs-table th, .cs-table td { padding: 8px 10px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* ── Customers — card list ── */
+  .table-wrap { display: none; }
+  .customer-card-list {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px;
+  }
+  .customer-card-item {
+    background: var(--bg-card); border-radius: 12px;
+    padding: 12px 14px; border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .customer-card-item:active { background: #f8fafc; }
+  .customer-card-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+  }
+  .customer-card-name { font-weight: 700; font-size: 14px; }
+  .customer-card-sub  { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .customer-card-body {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;
+    font-size: 12px; color: var(--text-muted); margin-top: 2px;
+  }
+  .customer-card-tags {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+  }
+  .customers-toolbar { flex-direction: column; gap: 8px; }
+  .filter-group { flex-wrap: wrap; gap: 6px; }
+  .filter-select { flex: 1; min-width: 120px; }
+  .customers-toolbar .search-input-wrap { width: 100%; }
+  .customer-type-tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
+  .customer-type-tab { flex-shrink: 0; }
+  .quick-chips { overflow-x: auto; flex-wrap: nowrap; }
+  .quick-chip { flex-shrink: 0; }
+  .customers-page .page-header { flex-wrap: wrap; }
+
+  /* ── CustomerDrawer — full width ── */
+  .drawer-panel {
+    width: 100vw !important;
+    right: 0; left: 0;
+    border-radius: 0;
+    max-height: 100vh;
+  }
+  .drawer-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .drawer-tab { flex-shrink: 0; }
+
+  /* ── Pipeline — horizontal scroll snap ── */
+  .kanban-page { padding: 0; }
+  .kanban-toolbar { padding: 10px 12px; overflow-x: auto; }
+  .kanban-board {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+    gap: 12px;
+    scrollbar-width: none;
+  }
+  .kanban-board::-webkit-scrollbar { display: none; }
+  .kanban-col {
+    min-width: 82vw;
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+
+  /* ── Broadcast — wizard stacked ── */
+  .wizard-layout { flex-direction: column; height: auto; overflow: auto; }
+  .wizard-sidebar {
+    width: 100%; max-height: 200px;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .wizard-main { flex: 1; overflow: auto; }
+  .wizard-steps-bar { overflow-x: auto; flex-wrap: nowrap; gap: 4px; padding: 12px; }
+  .wizard-step-label { font-size: 11px; white-space: nowrap; }
+  .wizard-body { padding: 16px; }
+  .wizard-footer { padding: 12px 16px; }
+
+  /* ── Automation — dual panel stacked ── */
+  .automation-layout,
+  .ai-layout,
+  .kb-layout { flex-direction: column; height: auto; overflow: visible; }
+  .automation-sidebar,
+  .ai-sidebar,
+  .kb-sidebar {
+    width: 100% !important; max-height: 240px;
+    border-right: none; border-bottom: 1px solid var(--border);
+    overflow-y: auto; flex-shrink: 0;
+  }
+  .automation-main,
+  .ai-chat-area,
+  .kb-main { flex: 1; overflow: auto; }
+  .workflow-flow { flex-direction: column; align-items: center; gap: 8px; }
+  .workflow-arrow { transform: rotate(90deg); }
+
+  /* ── Modals — bottom sheet style ── */
+  .modal-overlay { align-items: flex-end; }
+  .modal-box {
+    width: 100%; max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh; overflow-y: auto;
+    margin: 0;
+  }
+  .modal-header { padding: 16px 16px 12px; }
+  .modal-footer { padding: 12px 16px 20px; }
+
+  /* ── Touch targets minimal 44px ── */
+  .btn { min-height: 44px; }
+  .sidebar-link { min-height: 44px; }
+  .conv-tab { min-height: 44px; padding: 10px 14px; }
+  /* 16px agar tidak auto-zoom keyboard di iOS */
+  input, select, textarea { font-size: 16px; }
+
+  /* ── Halaman admin lain (Tracking Links, Laporan, dll) ── */
+  .tracking-links-table-wrap { overflow-x: auto; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
 

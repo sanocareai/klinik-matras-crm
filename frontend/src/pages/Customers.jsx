@@ -342,6 +342,45 @@ export default function Customers() {
         </table>
       </div>
 
+      {/* Card list — tampil hanya di mobile via CSS (.customer-card-list { display: none } di desktop) */}
+      <div className="customer-card-list">
+        {paginated.length === 0 ? (
+          <p style={{ padding: "24px 0", textAlign: "center", color: "var(--text-muted)" }}>
+            {hasFilters || typeTab !== "all" ? "Tidak ada pelanggan yang cocok." : "Belum ada pelanggan."}
+          </p>
+        ) : paginated.map((c) => {
+          const displayName = c.name || formatPhoneDisplay(c.phone) || c.instagramHandle || "?";
+          return (
+            <div key={c.id} className="customer-card-item" onClick={() => setDrawerCustomerId(c.id)}>
+              <div className="customer-card-header">
+                <Avatar name={displayName} size="sm" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="customer-card-name">{displayName}</div>
+                  <div className="customer-card-sub">
+                    {formatPhoneDisplay(c.phone) || (c.instagramHandle ? "@" + c.instagramHandle : "—")}
+                  </div>
+                </div>
+                <span className={`stage-badge stage-${(c.pipelineStage || "lead").toLowerCase()}`}>
+                  {STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "—"}
+                </span>
+              </div>
+              <div className="customer-card-body">
+                <span>{c.city || "Kota belum diisi"}</span>
+                <span>{c.orderCount || 0} order · {formatRupiah(c.orderValue || 0)}</span>
+              </div>
+              {c.tags?.length > 0 && (
+                <div className="customer-card-tags">
+                  {c.tags.slice(0, 3).map((tag) => (
+                    <span key={tag} className={`tag-chip ${tagClass(tag)}`}>{tag}</span>
+                  ))}
+                  {c.tags.length > 3 && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>+{c.tags.length - 3}</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       <Pagination page={page} pageSize={pageSize} total={filtered.length}
         onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }} />
 
