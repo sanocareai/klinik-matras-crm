@@ -13,11 +13,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # WAHA - WhatsApp HTTP API. Engine WEBJS dipilih dulu karena paling stabil untuk first deployment.
+  # WAHA - WhatsApp HTTP API.
+  # WEBJS dipilih karena support PUT /api/contacts (sync nama kontak).
+  # NOWEB lebih ringan tapi tidak support endpoint contacts.
   waha:
     image: devlikeapro/waha
     environment:
-      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
       WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
       WHATSAPP_HOOK_EVENTS: message
       WAHA_DASHBOARD_USERNAME: admin

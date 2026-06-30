@@ -43,7 +43,7 @@ export default function CustomerPanel({ customerId }) {
       if (field === "name" && updated.waSyncOk === true) {
         showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp ✓");
       } else if (field === "name" && updated.waSyncOk === false) {
-        showFeedback("info", "Nama tersimpan di CRM (sync WA tidak tersedia — nomor mungkin tidak aktif)");
+        showFeedback("info", "Nama tersimpan di CRM (belum sync ke WA — cek koneksi WAHA)");
       } else {
         showFeedback("success", `${label} tersimpan`);
       }

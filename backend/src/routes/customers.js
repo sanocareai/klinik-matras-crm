@@ -113,7 +113,7 @@ customerRouter.patch("/:id", async (req, res) => {
     },
   });
 
-  // Sync nama kontak ke WhatsApp jika ada perubahan nama & nomor HP tersedia
+  // Sync nama ke kontak WA (WEBJS engine support ini; NOWEB tidak)
   let waSyncOk = null;
   if (name !== undefined && customer.phone) {
     waSyncOk = await updateContactName(customer.phone, customer.name || name);
