@@ -48,7 +48,14 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     if (!conversation.customer.phone) {
       return res.status(400).json({ error: "Nomor WhatsApp pelanggan tidak tersedia" });
     }
-    await sendText(conversation.customer.phone, content);
+    try {
+      await sendText(conversation.customer.phone, content);
+    } catch (waErr) {
+      console.error("[sendText gagal]", waErr.message);
+      return res.status(502).json({
+        error: `Gagal kirim ke WhatsApp: ${waErr.message}. Pastikan WAHA berjalan dan sesi aktif.`,
+      });
+    }
   } else {
     return res.status(400).json({ error: "Channel ini belum didukung (Phase 2)" });
   }
