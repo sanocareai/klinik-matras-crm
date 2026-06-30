@@ -5,7 +5,7 @@ import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
 import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
-import { formatWaktu, formatTanggalWaktu, SOURCE_LABELS, tagClass } from "../utils/format.js";
+import { formatWaktu, formatTanggalWaktu, SOURCE_LABELS, tagClass, getTagPrefix, setTagPrefix, publicTags, UKURAN_KASUR, MERK_KASUR } from "../utils/format.js";
 
 const TABS = ["Profil", "Order", "Catatan", "Riwayat Chat"];
 
@@ -16,7 +16,7 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
   const [loadingConvos, setLoadingConvos] = useState(false);
 
   // form fields untuk Profil
-  const [form, setForm] = useState({ name: "", city: "", email: "", tags: "" });
+  const [form, setForm] = useState({ name: "", city: "", email: "", tags: "", ukuran: "", merk: "" });
   const [feedback, setFeedback] = useState(null); // { type, message }
 
   function showFeedback(type, message) {
@@ -33,7 +33,9 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
         name: c.name || "",
         city: c.city || "",
         email: c.email || "",
-        tags: (c.tags || []).join(", "),
+        tags: publicTags(c.tags).join(", "),
+        ukuran: getTagPrefix(c.tags, "ukuran"),
+        merk: getTagPrefix(c.tags, "merk"),
       });
     });
   }, [customerId]);
@@ -55,7 +57,10 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
 
   async function handleSaveProfile(e) {
     e.preventDefault();
-    const tags = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    // Gabungkan tag biasa + tag ukuran/merk dengan prefix
+    let tags = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    tags = setTagPrefix(tags, "ukuran", form.ukuran);
+    tags = setTagPrefix(tags, "merk", form.merk);
     try {
       const updated = await api.updateCustomer(customer.id, {
         name: form.name || null,
@@ -172,8 +177,27 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
                 <input
                   value={form.tags}
                   onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-                  placeholder="premium, kasur-spring, repeat-order"
+                  placeholder="premium, repeat-order, Korporat"
                 />
+              </div>
+
+              <hr style={{ margin: "12px 0", borderColor: "var(--border)" }} />
+              <p className="drawer-section-title" style={{ marginBottom: 8 }}>Info Kasur</p>
+
+              <div className="drawer-field">
+                <label>Ukuran Kasur</label>
+                <select value={form.ukuran} onChange={(e) => setForm((f) => ({ ...f, ukuran: e.target.value }))}>
+                  <option value="">— Belum diketahui —</option>
+                  {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+
+              <div className="drawer-field">
+                <label>Merk Kasur</label>
+                <select value={form.merk} onChange={(e) => setForm((f) => ({ ...f, merk: e.target.value }))}>
+                  <option value="">— Belum diketahui —</option>
+                  {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
               </div>
 
               <div className="drawer-field">

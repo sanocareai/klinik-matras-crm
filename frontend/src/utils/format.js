@@ -134,6 +134,37 @@ export function formatDuration(minutes) {
   return rem > 0 ? `${h} jam ${rem} mnt` : `${h} jam`;
 }
 
+// Helper untuk baca/tulis nilai dari tag dengan prefix (misal: "ukuran:160x200", "merk:Comforta")
+export function getTagPrefix(tags, prefix) {
+  const tag = (tags || []).find((t) => t.toLowerCase().startsWith(prefix.toLowerCase() + ":"));
+  return tag ? tag.slice(prefix.length + 1) : "";
+}
+export function setTagPrefix(tags, prefix, value) {
+  const filtered = (tags || []).filter((t) => !t.toLowerCase().startsWith(prefix.toLowerCase() + ":"));
+  if (value?.trim()) filtered.push(`${prefix}:${value.trim()}`);
+  return filtered;
+}
+// Filter tag biasa (buang yang pakai prefix khusus)
+export function publicTags(tags) {
+  const PREFIXES = ["ukuran", "merk"];
+  return (tags || []).filter((t) => !PREFIXES.some((p) => t.toLowerCase().startsWith(p + ":")));
+}
+
+export const UKURAN_KASUR = [
+  "90x200 cm (Single)",
+  "120x200 cm (Single Besar)",
+  "160x200 cm (Queen)",
+  "180x200 cm (King)",
+  "200x200 cm (King Besar)",
+  "Ukuran Custom",
+];
+
+export const MERK_KASUR = [
+  "Comforta", "Spring Air", "Dunlopillo", "Therapedic",
+  "King Koil", "Sealy", "Serta", "Lady Americana",
+  "Elite", "Florence", "Guhdo", "Lainnya",
+];
+
 // Preset date ranges untuk DateRangePicker
 export function getDatePreset(preset) {
   const now = new Date();
