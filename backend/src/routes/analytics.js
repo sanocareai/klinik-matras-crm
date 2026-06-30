@@ -273,6 +273,48 @@ analyticsRouter.get("/cs-performance", async (req, res) => {
   }
 });
 
+// Performance per sumber lead — untuk menghitung ROI per channel
+analyticsRouter.get("/source-performance", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const custDateWhere = buildDateWhere(from, to);
+
+    const sources = await prisma.customer.groupBy({
+      by: ["leadSource"],
+      where: custDateWhere,
+      _count: { id: true },
+    });
+
+    const result = await Promise.all(sources.map(async (s) => {
+      const [won, orderAgg] = await Promise.all([
+        prisma.customer.count({
+          where: { leadSource: s.leadSource, pipelineStage: "WON", ...custDateWhere },
+        }),
+        prisma.order.aggregate({
+          where: {
+            customer: { leadSource: s.leadSource, ...custDateWhere },
+            status: { not: "CANCELLED" },
+          },
+          _sum: { value: true },
+        }),
+      ]);
+      return {
+        source:     s.leadSource,
+        leads:      s._count.id,
+        won,
+        convRate:   s._count.id > 0 ? Math.round((won / s._count.id) * 100) : 0,
+        totalValue: orderAgg._sum.value || 0,
+      };
+    }));
+
+    // Urutkan dari leads terbanyak
+    result.sort((a, b) => b.leads - a.leads);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   try {
     const stageGroups = await prisma.customer.groupBy({

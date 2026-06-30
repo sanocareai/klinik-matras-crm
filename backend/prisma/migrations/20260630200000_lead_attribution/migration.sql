@@ -1,0 +1,46 @@
+-- Tambah nilai baru ke enum LeadSource (PostgreSQL 16 support ADD VALUE di dalam transaction)
+ALTER TYPE "LeadSource" ADD VALUE IF NOT EXISTS 'META_ADS';
+ALTER TYPE "LeadSource" ADD VALUE IF NOT EXISTS 'GOOGLE_ADS';
+ALTER TYPE "LeadSource" ADD VALUE IF NOT EXISTS 'WEBSITE_ORGANIC';
+
+-- Migrasikan data lama ke nilai baru (sebelum CREATE TABLE supaya enum tersedia)
+UPDATE "Customer" SET "leadSource" = 'META_ADS'        WHERE "leadSource" = 'ADS';
+UPDATE "Customer" SET "leadSource" = 'WEBSITE_ORGANIC' WHERE "leadSource" = 'WEBSITE';
+
+-- Buat enum LinkCategory
+CREATE TYPE "LinkCategory" AS ENUM ('META_ADS', 'GOOGLE_ADS', 'WEBSITE_ORGANIC', 'OTHER');
+
+-- Tambah kolom baru ke Customer
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "leadSourceDetail"    TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "leadSourceConfirmed" BOOLEAN NOT NULL DEFAULT false;
+
+-- Buat tabel TrackedLink
+CREATE TABLE "TrackedLink" (
+    "id"               TEXT NOT NULL,
+    "slug"             TEXT NOT NULL,
+    "name"             TEXT NOT NULL,
+    "category"         "LinkCategory" NOT NULL,
+    "prefilledMessage" TEXT NOT NULL DEFAULT 'Halo Sano, saya mau konsultasi',
+    "targetPhone"      TEXT,
+    "active"           BOOLEAN NOT NULL DEFAULT true,
+    "createdAt"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TrackedLink_pkey" PRIMARY KEY ("id")
+);
+
+-- Buat tabel ClickEvent
+CREATE TABLE "ClickEvent" (
+    "id"                TEXT NOT NULL,
+    "trackedLinkId"     TEXT NOT NULL,
+    "matchedCustomerId" TEXT,
+    "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ClickEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- Index dan constraint
+CREATE UNIQUE INDEX "TrackedLink_slug_key" ON "TrackedLink"("slug");
+CREATE INDEX "ClickEvent_createdAt_idx" ON "ClickEvent"("createdAt");
+
+ALTER TABLE "ClickEvent" ADD CONSTRAINT "ClickEvent_trackedLinkId_fkey"
+    FOREIGN KEY ("trackedLinkId") REFERENCES "TrackedLink"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -30,6 +30,7 @@ export default function Dashboard({ user }) {
   const [perf, setPerf]           = useState(null);
   const [csPerf, setCsPerf]       = useState([]);
   const [funnel, setFunnel]       = useState([]);
+  const [sourcePerf, setSourcePerf] = useState([]);
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(true);
 
@@ -38,16 +39,18 @@ export default function Dashboard({ user }) {
     setError("");
     try {
       const params = { from: dateRange.from, to: dateRange.to };
-      const [ov, pf, cs, fn] = await Promise.all([
+      const [ov, pf, cs, fn, sp] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getAnalyticsPerformance(params).catch(() => null),
         api.getAnalyticsCsPerformance(params).catch(() => []),
         api.getAnalyticsPipelineFunnel().catch(() => []),
+        api.getAnalyticsSourcePerformance(params).catch(() => []),
       ]);
       setOverview(ov);
       setPerf(pf);
       setCsPerf(cs || []);
       setFunnel(fn || []);
+      setSourcePerf(sp || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -220,6 +223,44 @@ export default function Dashboard({ user }) {
                   </td>
                   <td>{formatDuration(row.avgResponseMinutes)}</td>
                   <td>{formatRupiah(row.totalOrderValue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Performance per Sumber Lead */}
+      {sourcePerf.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 24 }}>
+          <h3>Performance per Sumber Lead</h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>
+            Gunakan data ini untuk menghitung ROI per channel iklan.
+          </p>
+          <table className="cs-table">
+            <thead>
+              <tr>
+                <th>Sumber</th>
+                <th>Lead</th>
+                <th>Closing</th>
+                <th>Conv. Rate</th>
+                <th>Total Nilai Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sourcePerf.map((row) => (
+                <tr key={row.source}>
+                  <td style={{ fontWeight: 600 }}>
+                    {SOURCE_LABELS[row.source] || row.source || "-"}
+                  </td>
+                  <td>{row.leads}</td>
+                  <td>{row.won}</td>
+                  <td>
+                    <span className={row.convRate >= 30 ? "growth-up" : "growth-down"}>
+                      {row.convRate}%
+                    </span>
+                  </td>
+                  <td>{formatRupiah(row.totalValue)}</td>
                 </tr>
               ))}
             </tbody>

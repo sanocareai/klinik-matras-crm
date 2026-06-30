@@ -72,12 +72,69 @@ webhookRouter.post("/waha", async (req, res) => {
     const hasMedia = !!payload.hasMedia;
     const mediaInfo = payload.media || null; // { url, mimetype, filename }
 
+    // ── Deteksi sumber lead (3 lapis) — hanya untuk customer BARU ────────────
+    // Cek apakah customer sudah ada
+    const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
+    let detectedSource = "WHATSAPP_DIRECT";
+    let detectedDetail = null;
+    let pendingClickId = null;
+
+    if (!existingCustomer) {
+      // Lapis 1: cek referral data Meta Ads di payload mentah
+      // NOWEB kemungkinan tidak expose referral data — catat di log untuk diagnostik
+      const rawData = payload._data || {};
+      const ctwa = rawData.ctwaContext || rawData.contextInfo?.referral || rawData.conversionSource;
+      if (ctwa) {
+        detectedSource = "META_ADS";
+        detectedDetail = ctwa.sourceUrl || ctwa.headline || JSON.stringify(ctwa).slice(0, 200);
+        console.log("[attribution] Lapis 1 META_ADS:", detectedDetail);
+      } else {
+        console.log("[attribution] Lapis 1 tidak kena — NOWEB mungkin tidak expose ctwaContext/referral");
+      }
+
+      // Lapis 2: cari ClickEvent terbaru (15 menit) yang belum ter-match
+      if (!detectedSource || detectedSource === "WHATSAPP_DIRECT") {
+        const since = new Date(Date.now() - 15 * 60 * 1000);
+        const recentClick = await prisma.clickEvent.findFirst({
+          where: { matchedCustomerId: null, createdAt: { gte: since } },
+          orderBy: { createdAt: "desc" },
+          include: { trackedLink: true },
+        });
+        if (recentClick) {
+          const MAP = {
+            META_ADS: "META_ADS", GOOGLE_ADS: "GOOGLE_ADS",
+            WEBSITE_ORGANIC: "WEBSITE_ORGANIC", OTHER: "OTHER",
+          };
+          detectedSource = MAP[recentClick.trackedLink.category] || "OTHER";
+          detectedDetail = recentClick.trackedLink.name;
+          pendingClickId = recentClick.id;
+          console.log("[attribution] Lapis 2 hit:", recentClick.trackedLink.name);
+        }
+      }
+
+      // Lapis 3: default sudah diset di atas (WHATSAPP_DIRECT)
+    }
+
     // Upsert customer
     const customer = await prisma.customer.upsert({
       where:  { phone },
       update: {},
-      create: { phone, leadSource: "WHATSAPP_DIRECT", name: pushName || null },
+      create: {
+        phone,
+        name:               pushName || null,
+        leadSource:         detectedSource,
+        leadSourceDetail:   detectedDetail,
+        leadSourceConfirmed: false,
+      },
     });
+
+    // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan
+    if (pendingClickId) {
+      await prisma.clickEvent.update({
+        where: { id: pendingClickId },
+        data:  { matchedCustomerId: customer.id },
+      }).catch(() => {});
+    }
 
     // Cari/buat conversation aktif
     let conversation = await prisma.conversation.findFirst({

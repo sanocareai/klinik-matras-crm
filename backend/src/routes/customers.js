@@ -87,7 +87,10 @@ customerRouter.get("/:id", async (req, res) => {
 
 // Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll
 customerRouter.patch("/:id", async (req, res) => {
-  const { name, phone, tags, pipelineStage, assignedSalesId, email, city, leadSource } = req.body;
+  const {
+    name, phone, tags, pipelineStage, assignedSalesId, email, city,
+    leadSource, leadSourceDetail, leadSourceConfirmed,
+  } = req.body;
 
   // Cek duplikat nomor kalau diubah
   if (phone !== undefined && phone !== null) {
@@ -98,21 +101,33 @@ customerRouter.patch("/:id", async (req, res) => {
     }
   }
 
-  const customer = await prisma.customer.update({
-    where: { id: req.params.id },
-    data: {
-      ...(name !== undefined && { name }),
-      ...(phone !== undefined && { phone: phone ? phone.replace(/\D/g, "").replace(/^0/, "62") || null : null }),
-      ...(tags !== undefined && { tags }),
-      ...(pipelineStage !== undefined && { pipelineStage }),
-      ...(assignedSalesId !== undefined && { assignedSalesId }),
-      ...(email !== undefined && { email }),
-      ...(city !== undefined && { city }),
-      ...(leadSource !== undefined && { leadSource }),
-    },
-  });
+  const data = {
+    ...(name !== undefined && { name }),
+    ...(phone !== undefined && { phone: phone ? phone.replace(/\D/g, "").replace(/^0/, "62") || null : null }),
+    ...(tags !== undefined && { tags }),
+    ...(pipelineStage !== undefined && { pipelineStage }),
+    ...(assignedSalesId !== undefined && { assignedSalesId }),
+    ...(email !== undefined && { email }),
+    ...(city !== undefined && { city }),
+    ...(leadSourceDetail !== undefined && { leadSourceDetail: leadSourceDetail || null }),
+    ...(leadSourceConfirmed !== undefined && { leadSourceConfirmed }),
+  };
 
-  res.json(customer);
+  // Kalau leadSource diubah manual → otomatis set confirmed = true
+  if (leadSource !== undefined) {
+    data.leadSource = leadSource;
+    data.leadSourceConfirmed = true;
+  }
+
+  try {
+    const customer = await prisma.customer.update({
+      where: { id: req.params.id },
+      data,
+    });
+    res.json(customer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 customerRouter.post("/:id/notes", async (req, res) => {

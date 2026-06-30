@@ -8,11 +8,34 @@ import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
 import { formatPhoneDisplay } from "../utils/format.js";
 
+const LEAD_SOURCE_LABELS = {
+  META_ADS:        "Iklan Meta",
+  GOOGLE_ADS:      "Google Ads",
+  WEBSITE_ORGANIC: "Website Organik",
+  INSTAGRAM:       "Instagram",
+  WHATSAPP_DIRECT: "WA Langsung",
+  REFERRAL:        "Referral",
+  OTHER:           "Lainnya",
+  ADS:             "Iklan (lama)",
+  WEBSITE:         "Website (lama)",
+};
+
+const LEAD_SOURCE_COLORS = {
+  META_ADS:        { bg: "#dbeafe", color: "#1e40af" },
+  GOOGLE_ADS:      { bg: "#fef9c3", color: "#854d0e" },
+  WEBSITE_ORGANIC: { bg: "#dcfce7", color: "#166534" },
+  INSTAGRAM:       { bg: "#fce7f3", color: "#9d174d" },
+  WHATSAPP_DIRECT: { bg: "#d1fae5", color: "#065f46" },
+  REFERRAL:        { bg: "#ede9fe", color: "#5b21b6" },
+  OTHER:           { bg: "#f3f4f6", color: "#374151" },
+};
+
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
   const [nameDraft, setNameDraft] = useState("");
   const [phoneDraft, setPhoneDraft] = useState("");
   const [cityDraft, setCityDraft] = useState("");
+  const [leadSourceDraft, setLeadSourceDraft] = useState("OTHER");
   const [feedback, setFeedback] = useState(null);
 
   function showFeedback(type, message) {
@@ -27,6 +50,7 @@ export default function CustomerPanel({ customerId }) {
       setNameDraft(c.name || "");
       setPhoneDraft(c.phone || "");
       setCityDraft(c.city || "");
+      setLeadSourceDraft(c.leadSource || "OTHER");
     });
   }, [customerId]);
 
@@ -39,8 +63,17 @@ export default function CustomerPanel({ customerId }) {
     try {
       const updated = await api.updateCustomer(customerId, { [field]: value || null });
       setCustomer((c) => ({ ...c, ...updated }));
-
       showFeedback("success", `${label} tersimpan`);
+    } catch (err) {
+      showFeedback("error", err.message);
+    }
+  }
+
+  async function handleSaveLeadSource() {
+    try {
+      const updated = await api.updateCustomer(customerId, { leadSource: leadSourceDraft });
+      setCustomer((c) => ({ ...c, ...updated }));
+      showFeedback("success", "Sumber lead tersimpan");
     } catch (err) {
       showFeedback("error", err.message);
     }
@@ -131,6 +164,46 @@ export default function CustomerPanel({ customerId }) {
         <div className="panel-section">
           <span className="panel-section-label">Tahap Pipeline</span>
           <StageSelect value={customer.pipelineStage} onChange={updateStage} />
+        </div>
+
+        {/* Sumber Lead */}
+        <div className="panel-section">
+          <span className="panel-section-label">Sumber Lead</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            {customer.leadSource && (
+              <span style={{
+                ...(LEAD_SOURCE_COLORS[customer.leadSource] || LEAD_SOURCE_COLORS.OTHER),
+                fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+              }}>
+                {LEAD_SOURCE_LABELS[customer.leadSource] || customer.leadSource}
+              </span>
+            )}
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+              background: customer.leadSourceConfirmed ? "#dcfce7" : "#f3f4f6",
+              color:      customer.leadSourceConfirmed ? "#166534" : "#6b7280",
+            }}>
+              {customer.leadSourceConfirmed ? "Dikonfirmasi" : "Otomatis"}
+            </span>
+          </div>
+          {customer.leadSourceDetail && (
+            <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-muted)" }}>
+              {customer.leadSourceDetail}
+            </p>
+          )}
+          <div className="inline-field">
+            <select value={leadSourceDraft} onChange={(e) => setLeadSourceDraft(e.target.value)}
+              style={{ flex: 1 }}>
+              <option value="META_ADS">Iklan Meta</option>
+              <option value="GOOGLE_ADS">Google Ads</option>
+              <option value="WEBSITE_ORGANIC">Website Organik</option>
+              <option value="INSTAGRAM">Instagram</option>
+              <option value="WHATSAPP_DIRECT">WA Langsung</option>
+              <option value="REFERRAL">Referral</option>
+              <option value="OTHER">Lainnya</option>
+            </select>
+            <button className="btn btn-secondary btn-sm" onClick={handleSaveLeadSource}>Simpan</button>
+          </div>
         </div>
 
         {/* Kota */}

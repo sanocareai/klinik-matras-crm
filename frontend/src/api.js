@@ -100,6 +100,17 @@ export const api = {
   getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
   getAnalyticsCsPerformance: (params) => request("/analytics/cs-performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: () => request("/analytics/pipeline-funnel"),
+  getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
+
+  // Tracking Links
+  getTrackingLinks: () => request("/tracking/links"),
+  createTrackingLink: (data) =>
+    request("/tracking/links", { method: "POST", body: JSON.stringify(data) }),
+  updateTrackingLink: (id, data) =>
+    request(`/tracking/links/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteTrackingLink: (id) =>
+    request(`/tracking/links/${id}`, { method: "DELETE" }),
+  getTrackingLinkStats: (id) => request(`/tracking/links/${id}/stats`),
 
   // Dashboard
   getRecentConversations: () => request("/dashboard/recent-conversations"),

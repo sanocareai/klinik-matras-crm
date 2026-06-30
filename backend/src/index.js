@@ -20,6 +20,7 @@ import { aiRouter }         from "./routes/ai.js";
 import { knowledgeRouter }  from "./routes/knowledge.js";
 import { settingsRouter }  from "./routes/settings.js";
 import { templateRouter }  from "./routes/templates.js";
+import { trackingRouter, trackingRedirectRouter } from "./routes/tracking.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,8 +55,12 @@ app.use("/api/knowledge",    knowledgeRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);
+app.use("/api/tracking",   trackingRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+// Redirect publik tracking link — HARUS di atas static files agar tidak ditangkap React SPA
+app.use("/r", trackingRedirectRouter);
 
 // Di production, sajikan build React dari sini juga (1 server untuk API + frontend)
 import fs from "fs";

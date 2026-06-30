@@ -12,6 +12,7 @@ import Laporan from "./pages/Laporan.jsx";
 import Pengaturan from "./pages/Pengaturan.jsx";
 import Pengguna from "./pages/Pengguna.jsx";
 import Products from "./pages/Products.jsx";
+import TrackingLinks from "./pages/TrackingLinks.jsx";
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
           <Route path="/pengguna"    element={<Pengguna user={user} />} />
           <Route path="/products"    element={<Products />} />
+          <Route path="/tracking"    element={<TrackingLinks />} />
           <Route path="*"            element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Layout>

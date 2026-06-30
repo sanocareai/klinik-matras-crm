@@ -22,11 +22,23 @@ enum Channel {
 
 // Sumber marketing pelanggan (beda dengan Channel -- itu medium chat-nya)
 enum LeadSource {
-  ADS
-  INSTAGRAM
-  WEBSITE
-  WHATSAPP_DIRECT
+  META_ADS        // iklan Instagram/Facebook — menggantikan ADS
+  GOOGLE_ADS      // iklan Google
+  WEBSITE_ORGANIC // klik organik dari website — menggantikan WEBSITE
+  INSTAGRAM       // DM organik Instagram (bukan iklan)
+  WHATSAPP_DIRECT // chat organik langsung ke WA
   REFERRAL
+  OTHER
+  // Deprecated — jangan digunakan di kode baru, dijaga untuk kompatibilitas data lama
+  ADS
+  WEBSITE
+}
+
+// Kategori tracked link untuk atribusi
+enum LinkCategory {
+  META_ADS
+  GOOGLE_ADS
+  WEBSITE_ORGANIC
   OTHER
 }
 
@@ -81,10 +93,12 @@ model Customer {
   tags            String[]      @default([])
   pipelineStage   PipelineStage @default(LEAD)
   leadSource      LeadSource?
-  assignedSalesId String?
-  assignedSales   User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  assignedSalesId     String?
+  assignedSales       User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
+  leadSourceDetail    String?       // detail tambahan: nama link/campaign/ad headline
+  leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   conversations Conversation[]
   notes         Note[]
@@ -153,6 +167,28 @@ model ProductImage {
   url       String  // "/media/products/xxx.jpg"
   label     String? // "Before" | "After" | "Detail" | null
   sortOrder Int     @default(0)
+}
+
+model TrackedLink {
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  name             String
+  category         LinkCategory
+  prefilledMessage String       @default("Halo Sano, saya mau konsultasi")
+  targetPhone      String?      // null = pakai WAHA_BUSINESS_NUMBER dari .env
+  active           Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  clicks           ClickEvent[]
+}
+
+model ClickEvent {
+  id                String      @id @default(cuid())
+  trackedLinkId     String
+  trackedLink       TrackedLink @relation(fields: [trackedLinkId], references: [id])
+  matchedCustomerId String?     // diisi setelah berhasil dicocokkan ke customer
+  createdAt         DateTime    @default(now())
+
+  @@index([createdAt])
 }
 
 model Order {

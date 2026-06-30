@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, BedDouble, Package, ChevronLeft, ChevronRight, X,
+  LogOut, BedDouble, Package, ChevronLeft, ChevronRight, X, Link2,
 } from "lucide-react";
 import { api } from "../api.js";
 import Topbar from "./Topbar.jsx";
@@ -30,6 +30,7 @@ const NAV_SECTIONS = [
     adminOnly: true,
     items: [
       { to: "/broadcast", label: "Broadcast & Campaign", Icon: Megaphone },
+      { to: "/tracking",  label: "Link Pelacakan",       Icon: Link2 },
     ],
   },
   {
