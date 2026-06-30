@@ -57,7 +57,34 @@ export async function sendMedia(to, file, caption) {
   return res.json();
 }
 
-// Download media dari pesan masuk (NOWEB: GET /api/{session}/messages/{id}/download)
+// Download media dari URL langsung (dipakai saat webhook punya payload.media.url)
+export async function downloadMediaFromUrl(url) {
+  try {
+    const h = {};
+    if (WAHA_API_KEY) h["X-Api-Key"] = WAHA_API_KEY;
+    const res = await fetch(url, { headers: h });
+    if (!res.ok) {
+      console.warn("[downloadMediaFromUrl] Gagal:", res.status, url);
+      return null;
+    }
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await res.json();
+      return json?.data ? json : null;
+    }
+    const buffer = await res.arrayBuffer();
+    return {
+      data: Buffer.from(buffer).toString("base64"),
+      mimetype: contentType.split(";")[0].trim() || "application/octet-stream",
+      filename: "media",
+    };
+  } catch (e) {
+    console.warn("[downloadMediaFromUrl] Error:", e.message);
+    return null;
+  }
+}
+
+// Download media via message ID endpoint
 // Return: { data: base64, mimetype, filename } atau null kalau gagal
 export async function downloadMediaMessage(messageId) {
   try {
@@ -65,20 +92,23 @@ export async function downloadMediaMessage(messageId) {
       `${WAHA_BASE_URL}/api/${WAHA_SESSION}/messages/${encodeURIComponent(messageId)}/download`,
       { headers: headers() }
     );
-    if (!res.ok) return null;
-
+    if (!res.ok) {
+      console.warn("[downloadMediaMessage] Gagal:", res.status, "untuk id:", messageId);
+      return null;
+    }
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
-      return await res.json(); // { data, mimetype, filename }
+      const json = await res.json();
+      return json?.data ? json : null;
     }
-    // Kalau binary, convert manual
     const buffer = await res.arrayBuffer();
     return {
       data: Buffer.from(buffer).toString("base64"),
-      mimetype: contentType.split(";")[0].trim(),
+      mimetype: contentType.split(";")[0].trim() || "application/octet-stream",
       filename: "media",
     };
-  } catch {
+  } catch (e) {
+    console.warn("[downloadMediaMessage] Error:", e.message);
     return null;
   }
 }

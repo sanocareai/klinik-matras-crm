@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { cleanPhoneNumber, downloadMediaMessage } from "../services/wahaClient.js";
+import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl } from "../services/wahaClient.js";
 
 export const webhookRouter = express.Router();
 
@@ -95,19 +95,32 @@ webhookRouter.post("/waha", async (req, res) => {
     let mediaUrl  = null;
 
     if (hasMedia) {
-      const mime = mediaInfo?.mimetype || "";
+      const mime = mediaInfo?.mimetype || payload._data?.mimetype || "";
       mediaType = mimeToMediaType(mime);
 
-      // Coba download dari WAHA
-      const downloaded = await downloadMediaMessage(externalId);
+      console.log("[webhook] Ada media, mime:", mime, "mediaInfo:", JSON.stringify(mediaInfo));
+
+      let downloaded = null;
+
+      // Prioritas 1: URL dari payload.media (WAHA simpan sendiri di server)
+      if (mediaInfo?.url) {
+        downloaded = await downloadMediaFromUrl(mediaInfo.url);
+      }
+
+      // Prioritas 2: endpoint download via message ID
+      if (!downloaded) {
+        downloaded = await downloadMediaMessage(externalId);
+      }
+
       if (downloaded?.data) {
-        const ext      = extFromMime(downloaded.mimetype || mime);
+        const finalMime = downloaded.mimetype || mime;
+        const ext      = extFromMime(finalMime);
         const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
         fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
         mediaUrl = `/uploads/${filename}`;
-      } else if (mediaInfo?.url) {
-        // Fallback: simpan URL WAHA langsung (mungkin tidak bisa diakses browser)
-        mediaUrl = mediaInfo.url;
+        console.log("[webhook] Media disimpan:", mediaUrl);
+      } else {
+        console.warn("[webhook] Tidak bisa download media untuk id:", externalId);
       }
     }
 

@@ -95,10 +95,17 @@ function TemplatePicker({ customer, onSelect, onClose }) {
   );
 }
 
+// Cek apakah string adalah JSON error (dari bug lama download media)
+function isJsonError(str) {
+  if (!str) return false;
+  try { const p = JSON.parse(str); return !!p.message || !!p.error; } catch { return false; }
+}
+
 // ── Media Bubble ──────────────────────────────────────────────────────────────
 function MediaBubble({ m }) {
   const hasMedia = !!m.mediaType;
-  const hasText  = !!m.content;
+  // Jangan tampilkan teks kalau itu JSON error dari bug lama, atau kalau sudah ada media
+  const text = (!isJsonError(m.content) && m.content) ? m.content : "";
 
   return (
     <div className={`bubble ${m.direction === "OUTBOUND" ? "out" : "in"}`}>
@@ -108,6 +115,7 @@ function MediaBubble({ m }) {
           alt="Foto"
           className="bubble-img"
           onClick={() => window.open(m.mediaUrl, "_blank")}
+          onError={(e) => { e.target.style.display = "none"; }}
         />
       )}
       {m.mediaType === "video" && m.mediaUrl && (
@@ -122,16 +130,16 @@ function MediaBubble({ m }) {
           <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
         </a>
       )}
-      {/* Kalau hasMedia true tapi mediaUrl belum ada (pending download) */}
+      {/* Media ada tapi URL belum tersedia (gagal download saat pesan masuk) */}
       {hasMedia && !m.mediaUrl && (
         <div className="bubble-media-placeholder">
-          {m.mediaType === "image" && <><ImageIcon size={16} /> Foto</>}
-          {m.mediaType === "video" && <><Video size={16} /> Video</>}
-          {m.mediaType === "audio" && <><Mic size={16} /> Pesan Suara</>}
-          {m.mediaType === "document" && <><FileText size={16} /> Dokumen</>}
+          {m.mediaType === "image"    && <><ImageIcon size={16} /> Foto (tidak bisa diunduh)</>}
+          {m.mediaType === "video"    && <><Video size={16} /> Video (tidak bisa diunduh)</>}
+          {m.mediaType === "audio"    && <><Mic size={16} /> Pesan Suara (tidak bisa diunduh)</>}
+          {m.mediaType === "document" && <><FileText size={16} /> Dokumen (tidak bisa diunduh)</>}
         </div>
       )}
-      {hasText && <span className="bubble-text">{m.content}</span>}
+      {text && <span className="bubble-text">{text}</span>}
       <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
     </div>
   );
