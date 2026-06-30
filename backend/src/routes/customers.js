@@ -157,12 +157,15 @@ customerRouter.post("/:id/orders", async (req, res) => {
   res.status(201).json(order);
 });
 
-// Update status order (PATCH /api/customers/:id/orders/:orderId)
+// Update status / jenis layanan order
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
-  const { status } = req.body;
+  const { status, notes } = req.body;
   const order = await prisma.order.update({
     where: { id: req.params.orderId },
-    data: { ...(status !== undefined && { status }) },
+    data: {
+      ...(status !== undefined && { status }),
+      ...(notes !== undefined && { notes }),
+    },
   });
   res.json(order);
 });
