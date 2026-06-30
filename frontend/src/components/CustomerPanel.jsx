@@ -40,13 +40,7 @@ export default function CustomerPanel({ customerId }) {
       const updated = await api.updateCustomer(customerId, { [field]: value || null });
       setCustomer((c) => ({ ...c, ...updated }));
 
-      if (field === "name" && updated.waSyncOk === true) {
-        showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp ✓");
-      } else if (field === "name" && updated.waSyncOk === false) {
-        showFeedback("info", "Nama tersimpan di CRM (belum sync ke WA — cek koneksi WAHA)");
-      } else {
-        showFeedback("success", `${label} tersimpan`);
-      }
+      showFeedback("success", `${label} tersimpan`);
     } catch (err) {
       showFeedback("error", err.message);
     }

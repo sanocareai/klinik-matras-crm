@@ -1,7 +1,6 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { updateContactName } from "../services/wahaClient.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -113,13 +112,7 @@ customerRouter.patch("/:id", async (req, res) => {
     },
   });
 
-  // Sync nama ke kontak WA (WEBJS engine support ini; NOWEB tidak)
-  let waSyncOk = null;
-  if (name !== undefined && customer.phone) {
-    waSyncOk = await updateContactName(customer.phone, customer.name || name);
-  }
-
-  res.json({ ...customer, waSyncOk });
+  res.json(customer);
 });
 
 customerRouter.post("/:id/notes", async (req, res) => {
