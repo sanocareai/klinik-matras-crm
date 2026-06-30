@@ -72,6 +72,8 @@ export const api = {
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   sendMedia: (conversationId, formData) =>
     requestFormData(`/conversations/${conversationId}/media`, formData),
+  takeoverConversation: (id) =>
+    request(`/conversations/${id}/takeover`, { method: "POST" }),
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),

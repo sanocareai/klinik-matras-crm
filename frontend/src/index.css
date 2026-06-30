@@ -1457,3 +1457,184 @@ input:focus, select:focus, textarea:focus {
 .picker-caption-label { font-size: 10.5px; font-weight: 700; color: #1e40af; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
 .picker-caption-text { font-size: 12.5px; color: var(--text-main); white-space: pre-wrap; line-height: 1.4; }
 
+/* ─── TOPBAR KIRI (breadcrumb + hamburger) ───────────────── */
+.topbar-left {
+  display: flex; align-items: center; gap: 12px;
+}
+.topbar-hamburger {
+  display: none; /* hanya di mobile */
+  width: 36px; height: 36px; border-radius: 8px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.topbar-hamburger:hover { background: #f1f5f9; color: var(--text-main); }
+
+/* ─── SIDEBAR COLLAPSE BUTTON (desktop) ─────────────────── */
+.sidebar-collapse-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); border: none; cursor: pointer;
+  color: var(--sidebar-text); display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s; flex-shrink: 0; margin-left: auto;
+}
+.sidebar-collapse-btn:hover { background: rgba(255,255,255,0.14); color: white; }
+
+/* Tombol X di mobile sidebar */
+.sidebar-close-mobile {
+  display: none;
+  width: 28px; height: 28px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); border: none; cursor: pointer;
+  color: var(--sidebar-text); align-items: center; justify-content: center;
+}
+
+/* ─── SIDEBAR COLLAPSED (desktop) ───────────────────────── */
+.sidebar-collapsed .sidebar {
+  width: 64px;
+}
+.sidebar-collapsed .sidebar-brand {
+  padding: 18px 12px; justify-content: center; gap: 0;
+}
+.sidebar-collapsed .sidebar-collapse-btn {
+  margin-left: 0;
+}
+.sidebar-collapsed .sidebar-nav {
+  padding: 8px 8px;
+}
+.sidebar-collapsed .sidebar-link {
+  justify-content: center; padding: 10px;
+}
+.sidebar-collapsed .nav-badge { display: none; }
+.sidebar-collapsed .sidebar-section-label { display: none; }
+.sidebar-collapsed .nav-section { margin-bottom: 4px; }
+.sidebar-collapsed .sidebar-footer {
+  justify-content: center; padding: 14px 8px;
+}
+
+/* ─── SIDEBAR BACKDROP (mobile overlay) ─────────────────── */
+.sidebar-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45); z-index: 399;
+}
+
+/* ─── CONVERSATION TABS (Semua/Terbuka/dll + Milik Saya) ── */
+.conv-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; overflow-x: auto;
+  scrollbar-width: none;
+}
+.conv-tabs::-webkit-scrollbar { display: none; }
+.conv-tab {
+  flex-shrink: 0; padding: 10px 12px;
+  font-size: 12px; font-weight: 500;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; transition: all 0.12s;
+}
+.conv-tab:hover { color: var(--color-primary); }
+.conv-tab.active {
+  color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 700;
+}
+
+/* ─── ASSIGNMENT BADGES ──────────────────────────────────── */
+.badge-mine {
+  background: #dcfce7; color: #166534; font-size: 10px;
+  font-weight: 700; padding: 2px 7px; border-radius: 20px;
+}
+.badge-assigned {
+  background: #ede9fe; color: #5b21b6; font-size: 10px;
+  font-weight: 700; padding: 2px 7px; border-radius: 20px;
+  max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ─── CHAT HEADER — LEAD BADGE ───────────────────────────── */
+.lead-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+}
+.lead-badge.mine  { background: #dcfce7; color: #166534; }
+.lead-badge.other { background: #ede9fe; color: #5b21b6; }
+
+/* ─── CHAT BACK BUTTON (hanya mobile) ───────────────────── */
+.chat-back-btn {
+  display: none; /* hidden on desktop */
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: transparent; color: var(--text-muted);
+  align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.chat-back-btn:hover { background: #f1f5f9; }
+
+/* Status select in chat header */
+.status-select {
+  font-size: 12px; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: white; margin-right: 8px;
+}
+
+/* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Topbar hamburger tampil di mobile */
+  .topbar-hamburger { display: flex; }
+  .topbar { padding: 0 16px; }
+  .topbar-date { display: none; }
+
+  /* Sidebar: hidden by default, slide in as overlay */
+  .sidebar {
+    position: fixed !important;
+    left: 0; top: 0; bottom: 0;
+    width: 240px !important;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 400;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+  }
+  /* Sembunyikan collapse button di mobile (tidak relevan) */
+  .sidebar-collapse-btn { display: none; }
+  .sidebar-close-mobile { display: flex; margin-left: auto; }
+  /* app-shell tidak perlu collapsed class di mobile */
+  .sidebar-collapsed .sidebar { width: 240px !important; }
+
+  /* Main content full width */
+  .app-content { width: 100%; }
+
+  /* Inbox: 3-panel → 1-panel */
+  .inbox-body {
+    grid-template-columns: 1fr !important;
+    position: relative;
+  }
+  /* Default: tampilkan list, sembunyikan chat + customer panel */
+  .inbox-body .chat-window    { display: none; }
+  .inbox-body .customer-panel { display: none; }
+  /* Saat chat aktif: tampilkan chat, sembunyikan list */
+  .inbox-body.mobile-chat-active .conversation-list { display: none; }
+  .inbox-body.mobile-chat-active .chat-window       { display: flex; }
+
+  /* Back button tampil di mobile */
+  .chat-back-btn { display: flex; }
+
+  /* Sembunyikan label "Selesaikan" di mobile, hanya ikon */
+  .resolve-label { display: none; }
+
+  /* Chat header lebih kompak */
+  .chat-header { padding: 10px 12px; gap: 8px; }
+  .chat-header-name { font-size: 14px; }
+
+  /* Input area lebih nyaman di mobile */
+  .chat-input { padding: 10px 12px; }
+  .chat-action-btn { width: 38px; height: 38px; }
+  .chat-send-btn  { width: 42px; height: 42px; }
+
+  /* Page padding lebih kecil */
+  .page { padding: 16px; }
+  .page-body { padding: 0; }
+
+  /* Products: sidebar full width di mobile */
+  .products-layout { flex-direction: column; }
+  .products-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); height: auto; max-height: 50vh; }
+
+  /* Product picker full screen di mobile */
+  .product-picker-panel { width: 100vw; }
+}
+

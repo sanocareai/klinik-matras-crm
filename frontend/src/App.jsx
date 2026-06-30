@@ -38,7 +38,7 @@ export default function App() {
         <Routes>
           <Route path="/"            element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"   element={<Dashboard user={user} />} />
-          <Route path="/inbox"       element={<Inbox />} />
+          <Route path="/inbox"       element={<Inbox user={user} />} />
           <Route path="/customers"   element={<Customers />} />
           <Route path="/pipeline"    element={<Pipeline />} />
           <Route path="/broadcast"   element={<Broadcast />} />

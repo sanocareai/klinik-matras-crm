@@ -4,15 +4,18 @@ import ConversationList from "../components/ConversationList.jsx";
 import ChatWindow from "../components/ChatWindow.jsx";
 import CustomerPanel from "../components/CustomerPanel.jsx";
 
-export default function Inbox() {
+export default function Inbox({ user }) {
   const [conversations, setConversations] = useState([]);
   const [active, setActive]               = useState(null);
   const [filterStatus, setFilterStatus]   = useState("");
+  const [filterMine, setFilterMine]       = useState(false);
   const [search, setSearch]               = useState("");
+  // Mobile: 'list' | 'chat'
+  const [mobileView, setMobileView]       = useState("list");
 
   async function handleSelect(conv) {
     setActive(conv);
-    // Tandai sebagai sudah dibaca (badge sidebar berkurang)
+    setMobileView("chat");
     if (conv.unread) {
       api.updateConversation(conv.id, { unread: false }).catch(() => {});
       setConversations((prev) =>
@@ -31,8 +34,8 @@ export default function Inbox() {
     return () => clearInterval(interval);
   }, [filterStatus]);
 
-  // Filter client-side by search
   const filtered = conversations.filter((c) => {
+    if (filterMine && c.assignedToId !== user?.id) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -50,19 +53,24 @@ export default function Inbox() {
   }
 
   return (
-    <div className="inbox-body">
+    <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}`}>
       <ConversationList
         conversations={filtered}
         activeId={active?.id}
         onSelect={handleSelect}
         filterStatus={filterStatus}
-        onFilterStatus={setFilterStatus}
+        onFilterStatus={(s) => { setFilterStatus(s); setFilterMine(false); }}
+        filterMine={filterMine}
+        onFilterMine={() => { setFilterMine((v) => !v); setFilterStatus(""); }}
         search={search}
         onSearch={setSearch}
+        user={user}
       />
       <ChatWindow
         conversation={active}
+        user={user}
         onConversationUpdated={handleConversationUpdated}
+        onBack={() => setMobileView("list")}
       />
       <CustomerPanel customerId={active?.customer?.id} />
     </div>

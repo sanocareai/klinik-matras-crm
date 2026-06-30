@@ -44,7 +44,6 @@ conversationRouter.get("/", async (req, res) => {
   const { status, search } = req.query;
   const where = status ? { status } : {};
 
-  // Tambah filter search (nama/nomor pelanggan)
   if (search) {
     where.customer = {
       OR: [
@@ -60,6 +59,7 @@ conversationRouter.get("/", async (req, res) => {
     include: {
       customer: true,
       messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      assignedTo: { select: { id: true, name: true } },
     },
     take: 100,
   });
@@ -106,6 +106,21 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     where: { id: conversation.id },
     data:  { lastMessageAt: new Date() },
   });
+
+  // Auto-assign lead ke sales yang pertama kali balas
+  if (req.user.role === "SALES" && !conversation.assignedToId) {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data:  { assignedToId: req.user.id },
+    });
+    if (!conversation.customer.assignedSalesId) {
+      await prisma.customer.update({
+        where: { id: conversation.customerId },
+        data:  { assignedSalesId: req.user.id },
+      });
+    }
+  }
+
   res.status(201).json(message);
 });
 
@@ -241,6 +256,63 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   });
 
   res.json({ sent: savedMessages.length, messages: savedMessages });
+});
+
+// Ambil alih (handover) percakapan ke user yang request
+conversationRouter.post("/:id/takeover", async (req, res) => {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: true,
+      messages: { where: { direction: "OUTBOUND" } },
+    },
+  });
+  if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (conv.assignedToId === req.user.id)
+    return res.status(400).json({ error: "Percakapan ini sudah jadi lead kamu" });
+
+  const isAdmin       = req.user.role === "ADMIN";
+  const outboundCount = conv.messages.length;
+  const idleHours     = (Date.now() - new Date(conv.lastMessageAt).getTime()) / 3600000;
+
+  // SALES hanya bisa takeover jika: sales belum/hampir tidak membalas, ATAU sudah idle >1 jam
+  if (!isAdmin && conv.assignedToId && outboundCount > 1 && idleHours < 1) {
+    return res.status(403).json({
+      error: "Tidak bisa ambil alih: percakapan sedang aktif dilayani sales lain (baru balas & belum idle 1 jam)",
+    });
+  }
+
+  const oldAssignedId = conv.assignedToId;
+
+  // Reassign conversation + customer
+  const updated = await prisma.conversation.update({
+    where: { id: conv.id },
+    data:  { assignedToId: req.user.id },
+    include: {
+      customer: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
+  await prisma.customer.update({
+    where: { id: conv.customerId },
+    data:  { assignedSalesId: req.user.id },
+  });
+
+  // Catat di notes siapa yang ambil alih
+  let noteContent;
+  if (oldAssignedId && oldAssignedId !== req.user.id) {
+    const oldUser = await prisma.user.findUnique({
+      where: { id: oldAssignedId }, select: { name: true },
+    });
+    noteContent = `🔄 Lead diambil alih dari ${oldUser?.name || "sales sebelumnya"} oleh ${req.user.name}`;
+  } else {
+    noteContent = `✅ ${req.user.name} mengambil lead ini`;
+  }
+  await prisma.note.create({
+    data: { customerId: conv.customerId, authorId: req.user.id, content: noteContent },
+  });
+
+  res.json(updated);
 });
 
 // Update status / unread percakapan

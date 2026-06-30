@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Send, MessageSquare, CheckCircle, ChevronDown, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
+  ArrowLeft, UserCheck, Users,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -188,14 +189,15 @@ function FilePreview({ pending, caption, onCaption, onSend, onCancel, sending })
 }
 
 // ── Main ChatWindow ───────────────────────────────────────────────────────────
-export default function ChatWindow({ conversation, onConversationUpdated }) {
+export default function ChatWindow({ conversation, user, onConversationUpdated, onBack }) {
   const [messages, setMessages]           = useState([]);
   const [draft, setDraft]                 = useState("");
   const [sending, setSending]             = useState(false);
   const [convStatus, setConvStatus]       = useState(conversation?.status || "OPEN");
   const [resolving, setResolving]         = useState(false);
-  const [showTemplates, setShowTemplates]       = useState(false);
+  const [showTemplates, setShowTemplates]         = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [takingOver, setTakingOver]               = useState(false);
 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
@@ -347,6 +349,16 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     finally { setResolving(false); }
   }
 
+  async function handleTakeover() {
+    if (!confirm("Ambil alih percakapan ini sebagai lead kamu?")) return;
+    setTakingOver(true);
+    try {
+      const updated = await api.takeoverConversation(conversation.id);
+      onConversationUpdated?.(updated);
+    } catch (err) { alert(err.message); }
+    finally { setTakingOver(false); }
+  }
+
   if (!conversation) {
     return (
       <div className="chat-window empty-state">
@@ -356,11 +368,19 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     );
   }
 
-  const rawPhone    = conversation.customer?.phone;
-  const name        = conversation.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null)
+  const rawPhone     = conversation.customer?.phone;
+  const name         = conversation.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null)
     || conversation.customer?.instagramHandle || "Pelanggan";
-  const channelClass = conversation.channel?.toLowerCase();
-  const channelLabel = conversation.channel === "WHATSAPP" ? "WhatsApp" : "Instagram";
+  const channelClass  = conversation.channel?.toLowerCase();
+  const channelLabel  = conversation.channel === "WHATSAPP" ? "WhatsApp" : "Instagram";
+  const assignedTo    = conversation.assignedTo;
+  const isMine        = assignedTo?.id === user?.id;
+  const isAdmin       = user?.role === "ADMIN";
+
+  // Cek eligibilitas takeover
+  const outboundCount = messages.filter((m) => m.direction === "OUTBOUND").length;
+  const idleHours     = (Date.now() - new Date(conversation.lastMessageAt).getTime()) / 3600000;
+  const canTakeover   = !isMine && (isAdmin || !assignedTo || outboundCount <= 1 || idleHours >= 1);
 
   const formatRec = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
@@ -368,8 +388,12 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     <div className="chat-window">
       {/* ── Header ── */}
       <div className="chat-header">
+        {/* Back button (hanya tampil di mobile) */}
+        <button className="chat-back-btn" onClick={onBack} title="Kembali ke daftar">
+          <ArrowLeft size={18} />
+        </button>
         <Avatar name={name} size="sm" />
-        <div className="chat-header-info" style={{ flex: 1 }}>
+        <div className="chat-header-info" style={{ flex: 1, minWidth: 0 }}>
           <p className="chat-header-name">{name}</p>
           <div className="chat-header-meta">
             <span className={`channel-badge ${channelClass}`}>{channelLabel}</span>
@@ -378,17 +402,36 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
                 <Phone size={12} /> {formatPhoneDisplay(rawPhone)}
               </a>
             )}
+            {/* Siapa yang handle */}
+            {isMine ? (
+              <span className="lead-badge mine"><UserCheck size={11} /> Lead Kamu</span>
+            ) : assignedTo ? (
+              <span className="lead-badge other"><Users size={11} /> {assignedTo.name}</span>
+            ) : null}
           </div>
         </div>
+        {/* Tombol Ambil Alih */}
+        {canTakeover && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleTakeover}
+            disabled={takingOver}
+            title="Ambil alih percakapan ini sebagai lead kamu"
+            style={{ flexShrink: 0 }}
+          >
+            <UserCheck size={13} />
+            {takingOver ? "..." : "Ambil Alih"}
+          </button>
+        )}
         <select value={convStatus} onChange={(e) => handleStatusChange(e.target.value)}
-          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", marginRight: 8 }}>
+          className="status-select" style={{ flexShrink: 0 }}>
           {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         {convStatus !== "RESOLVED" && (
           <button className="btn btn-primary btn-sm" onClick={handleResolve} disabled={resolving}
-            style={{ gap: 4, display: "flex", alignItems: "center" }}>
+            style={{ gap: 4, display: "flex", alignItems: "center", flexShrink: 0 }}>
             <CheckCircle size={13} />
-            {resolving ? "..." : "Selesaikan"}
+            <span className="resolve-label">{resolving ? "..." : "Selesaikan"}</span>
           </button>
         )}
       </div>

@@ -1,12 +1,12 @@
 import React from "react";
-import { Search } from "lucide-react";
+import { Search, UserCheck } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
 
-const TABS = [
+const STATUS_TABS = [
   { key: "",         label: "Semua" },
   { key: "OPEN",     label: "Terbuka" },
   { key: "PENDING",  label: "Pending" },
@@ -19,33 +19,34 @@ export default function ConversationList({
   onSelect,
   filterStatus,
   onFilterStatus,
+  filterMine,
+  onFilterMine,
   search,
   onSearch,
+  user,
 }) {
   return (
     <div className="conversation-list">
-      {/* Tab filter */}
-      <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        {TABS.map((t) => (
+      {/* Tab filter status */}
+      <div className="conv-tabs">
+        {STATUS_TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => onFilterStatus(t.key)}
-            style={{
-              flex: 1,
-              padding: "10px 4px",
-              fontSize: 12,
-              fontWeight: filterStatus === t.key ? 700 : 500,
-              background: "none",
-              border: "none",
-              borderBottom: filterStatus === t.key ? "2px solid var(--color-primary)" : "2px solid transparent",
-              color: filterStatus === t.key ? "var(--color-primary)" : "var(--text-muted)",
-              cursor: "pointer",
-              transition: "all 0.12s",
-            }}
+            className={`conv-tab${filterStatus === t.key && !filterMine ? " active" : ""}`}
           >
             {t.label}
           </button>
         ))}
+        {/* Tab "Milik Saya" */}
+        <button
+          onClick={onFilterMine}
+          className={`conv-tab${filterMine ? " active" : ""}`}
+          title="Tampilkan hanya percakapan yang jadi lead kamu"
+        >
+          <UserCheck size={12} style={{ marginRight: 3 }} />
+          Milik Saya
+        </button>
       </div>
 
       {/* Search */}
@@ -69,12 +70,14 @@ export default function ConversationList({
         )}
 
         {conversations.map((c) => {
-          const rawPhone = c.customer?.phone;
-          const name = c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan";
-          const lastMsg = c.messages?.[0];
+          const rawPhone     = c.customer?.phone;
+          const name         = c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan";
+          const lastMsg      = c.messages?.[0];
           const channelClass = c.channel?.toLowerCase();
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
-          const isUnread = !!c.unread;
+          const isUnread     = !!c.unread;
+          const isMine       = c.assignedToId === user?.id;
+          const assignedName = c.assignedTo?.name;
 
           return (
             <button
@@ -91,18 +94,26 @@ export default function ConversationList({
                   <span className="customer-name" style={isUnread ? { fontWeight: 800, color: "var(--text-main)" } : {}}>
                     {name}
                   </span>
-                  <div className="conv-meta">
-                    <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
-                      {formatTanggalWaktu(c.lastMessageAt)}
-                    </span>
-                  </div>
+                  <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
+                    {formatTanggalWaktu(c.lastMessageAt)}
+                  </span>
                 </div>
+
                 <div className="conv-badges">
                   <span className={`channel-badge ${channelClass}`}>{channelLabel}</span>
                   <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
+                  {/* Badge siapa yang handle */}
+                  {isMine ? (
+                    <span className="badge badge-mine">Milik Saya</span>
+                  ) : assignedName ? (
+                    <span className="badge badge-assigned" title={`Lead: ${assignedName}`}>
+                      {assignedName}
+                    </span>
+                  ) : null}
                 </div>
+
                 <p className="last-message" style={isUnread ? { fontWeight: 600, color: "var(--text-main)" } : {}}>
                   {lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
                 </p>
