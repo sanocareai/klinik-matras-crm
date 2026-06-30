@@ -22,9 +22,17 @@ import { templateRouter }  from "./routes/templates.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Pastikan direktori uploads ada
+import { mkdirSync } from "fs";
+const uploadsDir = path.join(__dirname, "../uploads");
+mkdirSync(uploadsDir, { recursive: true });
+
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+
+// Sajikan file media yang diupload
+app.use("/uploads", express.static(uploadsDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);

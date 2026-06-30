@@ -69,6 +69,8 @@ export const api = {
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendMedia: (conversationId, formData) =>
+    requestFormData(`/conversations/${conversationId}/media`, formData),
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),

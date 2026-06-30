@@ -112,9 +112,10 @@ model Message {
   conversationId  String
   conversation    Conversation     @relation(fields: [conversationId], references: [id])
   direction       MessageDirection
-  content         String
-  mediaUrl        String?
-  externalId      String?          @unique // id pesan dari WAHA/Instagram, untuk cegah duplikat
+  content         String           @default("")  // teks / caption (bisa kosong untuk media)
+  mediaType       String?          // "image" | "video" | "audio" | "document"
+  mediaUrl        String?          // path lokal: /uploads/xxx atau URL WAHA
+  externalId      String?          @unique
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])

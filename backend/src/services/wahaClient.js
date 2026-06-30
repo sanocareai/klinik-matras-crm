@@ -1,11 +1,10 @@
 // Wrapper sederhana untuk panggil REST API WAHA.
-// Dokumentasi resmi: https://waha.devlike.pro -> Swagger UI di WAHA_BASE_URL saat WAHA jalan.
-// PENTING: field response/webhook WAHA bisa sedikit berbeda antar engine (WEBJS/NOWEB/GOWS).
-// Saat testing pertama kali, cek payload asli via log di webhooks.js sebelum asumsikan formatnya.
+// Dokumentasi: swagger di WAHA_BASE_URL/docs saat WAHA jalan.
+// Field response/webhook bisa beda antar engine (WEBJS/NOWEB).
 
 const WAHA_BASE_URL = process.env.WAHA_BASE_URL || "http://localhost:3000";
-const WAHA_API_KEY = process.env.WAHA_API_KEY || "";
-const WAHA_SESSION = process.env.WAHA_SESSION || "default";
+const WAHA_API_KEY  = process.env.WAHA_API_KEY  || "";
+const WAHA_SESSION  = process.env.WAHA_SESSION  || "default";
 
 function headers() {
   const h = { "Content-Type": "application/json" };
@@ -13,34 +12,71 @@ function headers() {
   return h;
 }
 
-// Kirim pesan teks. `to` harus format internasional tanpa "+" dan tanpa simbol, contoh: 6281234567890
+// Kirim pesan teks
 export async function sendText(to, text) {
   const rawDigits = to.split("@")[0];
-  // LID biasanya > 13 digit dan tidak diawali kode negara wajar — warning jika terjadi
   if (rawDigits.length > 13 && !rawDigits.startsWith("62")) {
-    console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to,
-      "— pastikan customer.phone sudah dikoreksi via panel Inbox");
+    console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to);
   }
   const chatId = to.includes("@") ? to : `${to}@c.us`;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({
-      session: WAHA_SESSION,
-      chatId,
-      text,
-    }),
+    body: JSON.stringify({ session: WAHA_SESSION, chatId, text }),
   });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`WAHA sendText gagal (${res.status}): ${errBody}`);
-  }
-
+  if (!res.ok) throw new Error(`WAHA sendText gagal (${res.status}): ${await res.text()}`);
   return res.json();
 }
 
-// Cek status sesi WhatsApp (WORKING, SCAN_QR_CODE, STOPPED, dll)
+// Kirim media (gambar / video / dokumen / suara)
+// file = { mimetype: string, filename: string, data: string (base64) }
+export async function sendMedia(to, file, caption) {
+  const chatId = to.includes("@") ? to : `${to}@c.us`;
+
+  let endpoint = "/api/sendFile";
+  if (file.mimetype.startsWith("image/"))                endpoint = "/api/sendImage";
+  else if (file.mimetype.startsWith("video/"))           endpoint = "/api/sendVideo";
+  else if (file.mimetype.startsWith("audio/"))           endpoint = "/api/sendVoice";
+
+  const body = { session: WAHA_SESSION, chatId, file };
+  if (caption) body.caption = caption;
+
+  const res = await fetch(`${WAHA_BASE_URL}${endpoint}`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`WAHA sendMedia gagal (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
+// Download media dari pesan masuk (NOWEB: GET /api/{session}/messages/{id}/download)
+// Return: { data: base64, mimetype, filename } atau null kalau gagal
+export async function downloadMediaMessage(messageId) {
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/messages/${encodeURIComponent(messageId)}/download`,
+      { headers: headers() }
+    );
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      return await res.json(); // { data, mimetype, filename }
+    }
+    // Kalau binary, convert manual
+    const buffer = await res.arrayBuffer();
+    return {
+      data: Buffer.from(buffer).toString("base64"),
+      mimetype: contentType.split(";")[0].trim(),
+      filename: "media",
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Cek status sesi WhatsApp
 export async function getSessionStatus() {
   const res = await fetch(`${WAHA_BASE_URL}/api/sessions/${WAHA_SESSION}`, {
     headers: headers(),
@@ -49,38 +85,8 @@ export async function getSessionStatus() {
   return res.json();
 }
 
-// Helper: bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net jadi nomor polos
+// Bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net / @lid
 export function cleanPhoneNumber(rawId) {
   if (!rawId) return null;
   return rawId.split("@")[0];
-}
-
-// Sync nama pelanggan ke kontak WhatsApp (WAHA Core 2026.6+).
-// Return: true kalau berhasil, false kalau gagal (jangan throw — ini best-effort).
-export async function updateContactName(phone, name) {
-  const contactId = phone.includes("@") ? phone : `${phone}@c.us`;
-  try {
-    // Coba endpoint WAHA Core yang baru (per-session path)
-    const res = await fetch(`${WAHA_BASE_URL}/api/${WAHA_SESSION}/contacts`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify({ contactId, firstName: name }),
-    });
-    if (res.ok) return true;
-
-    // Fallback ke endpoint lama
-    const res2 = await fetch(`${WAHA_BASE_URL}/api/contacts`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify({ session: WAHA_SESSION, contactId, firstName: name }),
-    });
-    if (res2.ok) return true;
-
-    const errText = await res2.text();
-    console.warn("Sync nama kontak WA tidak didukung engine ini:", errText.slice(0, 100));
-    return false;
-  } catch (err) {
-    console.warn("Sync nama kontak WA error:", err.message);
-    return false;
-  }
 }

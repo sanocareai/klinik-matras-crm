@@ -1115,3 +1115,147 @@ input:focus, select:focus, textarea:focus {
 .user-stat  { font-size: 12px; color: var(--text-muted); }
 .user-stat strong { color: var(--text-main); font-weight: 700; }
 
+/* ─── CHAT WINDOW — INPUT AREA WRAPPER ──────────────────── */
+.chat-input-area {
+  position: relative; flex-shrink: 0;
+  background: white; border-top: 1px solid var(--border);
+}
+
+/* Tombol aksi di input bar (template, lampiran, mic) */
+.chat-action-btn {
+  width: 34px; height: 34px; border-radius: 50%; border: none;
+  background: transparent; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; transition: background 0.12s, color 0.12s;
+}
+.chat-action-btn:hover  { background: #f1f5f9; color: var(--color-primary); }
+.chat-action-btn.active { background: #eff6ff; color: var(--color-primary); }
+
+/* ─── LINK TELEPON ───────────────────────────────────────── */
+.phone-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text-muted); text-decoration: none;
+  transition: color 0.12s;
+}
+.phone-link:hover { color: var(--color-primary); }
+
+/* ─── TEMPLATE PICKER POPUP ──────────────────────────────── */
+.template-picker-popup {
+  position: absolute; bottom: calc(100% + 4px); left: 0; right: 0;
+  background: white; border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow-md);
+  display: flex; flex-direction: column; max-height: 320px;
+  z-index: 200;
+}
+.template-picker-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.template-search {
+  width: 100%; padding: 7px 10px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 8px;
+  outline: none;
+}
+.template-search:focus { border-color: var(--color-primary); }
+.template-cat-label {
+  padding: 6px 14px 4px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-small);
+  background: #f8fafc;
+}
+.template-item {
+  width: 100%; text-align: left; padding: 10px 14px;
+  border: none; background: none; cursor: pointer;
+  border-bottom: 1px solid #f3f4f6; transition: background 0.1s;
+}
+.template-item:hover { background: #f0f9ff; }
+.template-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 20px; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.template-preview {
+  font-size: 12.5px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin: 0;
+}
+
+/* ─── MEDIA BUBBLE ───────────────────────────────────────── */
+.bubble-img {
+  max-width: 220px; max-height: 220px; border-radius: 8px;
+  display: block; cursor: zoom-in; object-fit: cover;
+  margin-bottom: 4px;
+}
+.bubble-video {
+  max-width: 240px; border-radius: 8px; display: block;
+  margin-bottom: 4px;
+}
+.bubble-audio {
+  display: block; margin-bottom: 4px;
+  width: 220px; height: 36px;
+}
+.bubble-doc {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: rgba(0,0,0,0.06); border-radius: 8px;
+  text-decoration: none; color: inherit; margin-bottom: 4px;
+  max-width: 220px;
+}
+.bubble-doc-name {
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.bubble-text {
+  display: block; margin-top: 4px; font-size: 13.5px; line-height: 1.45;
+}
+.bubble-media-placeholder {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--text-muted); padding: 4px 0;
+  margin-bottom: 4px;
+}
+
+/* ─── FILE PREVIEW AREA ──────────────────────────────────── */
+.file-preview-area {
+  padding: 12px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.file-preview-inner {
+  position: relative; display: inline-block; max-width: 280px;
+}
+.preview-img   { max-width: 240px; max-height: 200px; border-radius: 10px; object-fit: cover; display: block; }
+.preview-video { max-width: 240px; max-height: 180px; border-radius: 10px; display: block; }
+.preview-audio { display: block; width: 240px; height: 36px; margin-top: 4px; }
+.preview-doc {
+  display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13px; font-weight: 600; color: var(--text-main); min-width: 200px;
+  flex-direction: column; align-items: flex-start;
+}
+.preview-close {
+  position: absolute; top: -8px; right: -8px; width: 22px; height: 22px;
+  border-radius: 50%; background: #374151; color: white; border: none;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+.file-preview-footer { display: flex; align-items: center; gap: 8px; }
+.caption-input {
+  flex: 1; padding: 8px 12px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 22px; outline: none;
+}
+.caption-input:focus { border-color: var(--color-primary); }
+
+/* ─── VOICE RECORDING BAR ────────────────────────────────── */
+.recording-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+}
+.rec-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--color-danger);
+  animation: rec-pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.rec-time {
+  font-size: 14px; font-weight: 700; color: var(--color-danger);
+  letter-spacing: 0.5px; min-width: 44px;
+}
+
