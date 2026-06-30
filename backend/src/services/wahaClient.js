@@ -15,6 +15,12 @@ function headers() {
 
 // Kirim pesan teks. `to` harus format internasional tanpa "+" dan tanpa simbol, contoh: 6281234567890
 export async function sendText(to, text) {
+  const rawDigits = to.split("@")[0];
+  // LID biasanya > 13 digit dan tidak diawali kode negara wajar — warning jika terjadi
+  if (rawDigits.length > 13 && !rawDigits.startsWith("62")) {
+    console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to,
+      "— pastikan customer.phone sudah dikoreksi via panel Inbox");
+  }
   const chatId = to.includes("@") ? to : `${to}@c.us`;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
@@ -50,8 +56,6 @@ export function cleanPhoneNumber(rawId) {
 }
 
 // Sync nama pelanggan ke kontak WhatsApp (WAHA Core 2026.6+).
-// Endpoint: PUT /api/{session}/contacts/profile-photo tidak ada, tapi PUT contacts ada.
-// Payload disesuaikan dengan spec WAHA terbaru.
 // Return: true kalau berhasil, false kalau gagal (jangan throw — ini best-effort).
 export async function updateContactName(phone, name) {
   const contactId = phone.includes("@") ? phone : `${phone}@c.us`;
@@ -64,7 +68,7 @@ export async function updateContactName(phone, name) {
     });
     if (res.ok) return true;
 
-    // Fallback ke endpoint lama (WAHA sebelum 2026)
+    // Fallback ke endpoint lama
     const res2 = await fetch(`${WAHA_BASE_URL}/api/contacts`, {
       method: "PUT",
       headers: headers(),
