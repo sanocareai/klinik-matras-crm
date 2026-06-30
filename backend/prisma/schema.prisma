@@ -132,6 +132,29 @@ model Note {
   createdAt  DateTime @default(now())
 }
 
+model Product {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  category    String?        // "Upgrade" | "Garansi" | "Servis" | "Info"
+  price       Int?
+  priceUnit   String?        // "per unit" | "mulai dari" | null
+  images      ProductImage[]
+  active      Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String  // "/media/products/xxx.jpg"
+  label     String? // "Before" | "After" | "Detail" | null
+  sortOrder Int     @default(0)
+}
+
 model Order {
   id         String      @id @default(cuid())
   customerId String

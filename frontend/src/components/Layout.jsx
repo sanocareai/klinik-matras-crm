@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, BedDouble,
+  LogOut, BedDouble, Package,
 } from "lucide-react";
 import { api } from "../api.js";
 import Topbar from "./Topbar.jsx";
@@ -20,8 +20,9 @@ const NAV_SECTIONS = [
   {
     section: "DATA",
     items: [
-      { to: "/customers", label: "Pelanggan",   Icon: Users },
-      { to: "/pipeline",  label: "Pipeline",    Icon: GitBranch },
+      { to: "/customers", label: "Pelanggan",     Icon: Users },
+      { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
+      { to: "/products",  label: "Galeri Produk", Icon: Package, adminOnly: true },
     ],
   },
   {

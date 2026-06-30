@@ -165,6 +165,24 @@ export const api = {
   aiChat: (modelId, messages) =>
     request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages }) }),
 
+  // Produk (Galeri)
+  getProducts: () => request("/products"),
+  getAllProducts: () => request("/products/all"),
+  createProduct: (data) =>
+    request("/products", { method: "POST", body: JSON.stringify(data) }),
+  updateProduct: (id, data) =>
+    request(`/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteProduct: (id) =>
+    request(`/products/${id}`, { method: "DELETE" }),
+  uploadProductImages: (productId, formData) =>
+    requestFormData(`/products/${productId}/images`, formData),
+  updateProductImage: (imageId, data) =>
+    request(`/products/images/${imageId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteProductImage: (imageId) =>
+    request(`/products/images/${imageId}`, { method: "DELETE" }),
+  sendProduct: (conversationId, data) =>
+    request(`/conversations/${conversationId}/send-product`, { method: "POST", body: JSON.stringify(data) }),
+
   // Template Pesan
   getTemplates: () => request("/templates"),
   createTemplate: (data) =>

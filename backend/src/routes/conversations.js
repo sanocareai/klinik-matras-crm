@@ -163,6 +163,86 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   res.status(201).json(message);
 });
 
+// Kirim produk dari galeri ke customer (gambar berurutan dengan delay)
+conversationRouter.post("/:id/send-product", async (req, res) => {
+  const { productId, imageIds, includePrice } = req.body;
+  if (!productId) return res.status(400).json({ error: "productId wajib diisi" });
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (!conversation.customer.phone)
+    return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { images: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!product) return res.status(404).json({ error: "Produk tidak ditemukan" });
+
+  // Filter gambar yang dipilih (jika imageIds ada), jaga urutan
+  const selectedImages = (imageIds?.length > 0)
+    ? product.images.filter((img) => imageIds.includes(img.id))
+    : product.images;
+  if (!selectedImages.length) return res.status(400).json({ error: "Tidak ada gambar dipilih" });
+
+  // Format caption untuk gambar terakhir
+  function formatCaption() {
+    let text = `*${product.name}*`;
+    if (product.description) text += `\n${product.description}`;
+    if (includePrice && product.price) {
+      const harga = `Rp${product.price.toLocaleString("id-ID")}`;
+      text += `\n\n💰 ${product.priceUnit ? `${product.priceUnit} ` : ""}${harga}`;
+    }
+    return text;
+  }
+
+  const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+  const savedMessages = [];
+
+  for (let i = 0; i < selectedImages.length; i++) {
+    const img      = selectedImages[i];
+    const isLast   = i === selectedImages.length - 1;
+    const caption  = isLast ? formatCaption() : "";
+    const fileUrl  = `${BACKEND_INTERNAL_URL}${img.url}`;
+
+    try {
+      await sendMedia(
+        conversation.customer.phone,
+        { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
+        caption,
+        "media"
+      );
+      const msg = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          content: caption,
+          mediaType: "image",
+          mediaUrl: img.url,
+        },
+      });
+      savedMessages.push(msg);
+    } catch (err) {
+      console.error(`[send-product] Gagal kirim gambar ${img.id}:`, err.message);
+    }
+
+    // Delay antar gambar (kecuali setelah yang terakhir)
+    if (i < selectedImages.length - 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data:  { lastMessageAt: new Date() },
+  });
+
+  res.json({ sent: savedMessages.length, messages: savedMessages });
+});
+
 // Update status / unread percakapan
 conversationRouter.patch("/:id", async (req, res) => {
   const { status, assignedToId, unread } = req.body;

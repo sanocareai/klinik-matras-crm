@@ -1,5 +1,11 @@
 import jwt from "jsonwebtoken";
 
+export function requireAdmin(req, res, next) {
+  if (req.user?.role !== "ADMIN")
+    return res.status(403).json({ error: "Hanya Admin yang bisa melakukan aksi ini" });
+  next();
+}
+
 export function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;

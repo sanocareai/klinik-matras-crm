@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Send, MessageSquare, CheckCircle, ChevronDown, X,
-  Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video,
+  Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
 import { formatWaktu, formatPhoneDisplay } from "../utils/format.js";
+import { ProductPicker } from "./ProductPicker.jsx";
 
 const STATUS_OPTIONS = [
   { value: "OPEN",     label: "Terbuka" },
@@ -193,7 +194,8 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
   const [sending, setSending]             = useState(false);
   const [convStatus, setConvStatus]       = useState(conversation?.status || "OPEN");
   const [resolving, setResolving]         = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [showTemplates, setShowTemplates]       = useState(false);
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
@@ -214,6 +216,7 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
     if (!conversation) return;
     setConvStatus(conversation.status || "OPEN");
     setShowTemplates(false);
+    setShowProductPicker(false);
     setPendingFile(null);
     setDraft("");
 
@@ -419,6 +422,15 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
           />
         )}
 
+        {/* Product picker modal */}
+        {showProductPicker && (
+          <ProductPicker
+            conversation={conversation}
+            onClose={() => setShowProductPicker(false)}
+            onSent={(msgs) => { setMessages((p) => [...p, ...msgs]); setShowProductPicker(false); }}
+          />
+        )}
+
         {/* Voice recording bar */}
         {recording ? (
           <div className="recording-bar">
@@ -437,6 +449,12 @@ export default function ChatWindow({ conversation, onConversationUpdated }) {
             <button type="button" onClick={() => setShowTemplates((v) => !v)}
               className={`chat-action-btn ${showTemplates ? "active" : ""}`} title="Pilih template">
               <MessageSquare size={15} />
+            </button>
+
+            {/* Galeri Produk */}
+            <button type="button" onClick={() => { setShowProductPicker((v) => !v); setShowTemplates(false); }}
+              className={`chat-action-btn ${showProductPicker ? "active" : ""}`} title="Kirim produk dari galeri">
+              <Package size={15} />
             </button>
 
             {/* Foto & Video (tampil inline di WA) */}

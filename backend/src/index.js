@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { webhookRouter }    from "./routes/webhooks.js";
+import { productRouter }    from "./routes/products.js";
 import { authRouter }       from "./routes/auth.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { customerRouter }   from "./routes/customers.js";
@@ -24,15 +25,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Pastikan direktori uploads ada
 import { mkdirSync } from "fs";
-const uploadsDir = path.join(__dirname, "../uploads");
-mkdirSync(uploadsDir, { recursive: true });
+const uploadsDir  = path.join(__dirname, "../uploads");
+const productsDir = path.join(__dirname, "../data/products");
+mkdirSync(uploadsDir,  { recursive: true });
+mkdirSync(productsDir, { recursive: true });
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
 // Sajikan file media yang diupload
-app.use("/uploads", express.static(uploadsDir));
+app.use("/uploads",        express.static(uploadsDir));
+app.use("/media/products", express.static(productsDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);
@@ -49,6 +53,7 @@ app.use("/api/ai",           aiRouter);
 app.use("/api/knowledge",    knowledgeRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
+app.use("/api/products",    productRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

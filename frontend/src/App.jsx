@@ -11,6 +11,7 @@ import Automation from "./pages/Automation.jsx";
 import Laporan from "./pages/Laporan.jsx";
 import Pengaturan from "./pages/Pengaturan.jsx";
 import Pengguna from "./pages/Pengguna.jsx";
+import Products from "./pages/Products.jsx";
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/laporan"     element={<Laporan />} />
           <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
           <Route path="/pengguna"    element={<Pengguna user={user} />} />
+          <Route path="/products"    element={<Products />} />
           <Route path="*"            element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Layout>
