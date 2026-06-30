@@ -123,9 +123,10 @@ webhookRouter.post("/waha", async (req, res) => {
       },
     });
 
+    // Tandai unread = true supaya badge di sidebar bertambah
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data:  { lastMessageAt: new Date(), status: "OPEN" },
+      data:  { lastMessageAt: new Date(), status: "OPEN", unread: true },
     });
 
   } catch (err) {

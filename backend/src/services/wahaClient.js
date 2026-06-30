@@ -29,16 +29,23 @@ export async function sendText(to, text) {
 }
 
 // Kirim media (gambar / video / dokumen / suara)
-// file = { mimetype: string, filename: string, data: string (base64) }
+// file = { mimetype, filename, url } — pakai URL supaya WAHA fetch langsung (lebih andal untuk file besar)
+// atau { mimetype, filename, data } — base64 (fallback, hanya untuk file kecil)
 export async function sendMedia(to, file, caption) {
   const chatId = to.includes("@") ? to : `${to}@c.us`;
 
   let endpoint = "/api/sendFile";
-  if (file.mimetype.startsWith("image/"))                endpoint = "/api/sendImage";
-  else if (file.mimetype.startsWith("video/"))           endpoint = "/api/sendVideo";
-  else if (file.mimetype.startsWith("audio/"))           endpoint = "/api/sendVoice";
+  const mime = file.mimetype || "";
+  if (mime.startsWith("image/"))                         endpoint = "/api/sendImage";
+  else if (mime.startsWith("video/") || mime === "video/quicktime") endpoint = "/api/sendVideo";
+  else if (mime.startsWith("audio/"))                   endpoint = "/api/sendVoice";
 
-  const body = { session: WAHA_SESSION, chatId, file };
+  // Bangun objek file: prioritaskan URL (WAHA fetch sendiri) agar tidak ada limit base64 besar
+  const filePayload = file.url
+    ? { url: file.url, mimetype: mime, filename: file.filename || "file" }
+    : { data: file.data, mimetype: mime, filename: file.filename || "file" };
+
+  const body = { session: WAHA_SESSION, chatId, file: filePayload };
   if (caption) body.caption = caption;
 
   const res = await fetch(`${WAHA_BASE_URL}${endpoint}`, {

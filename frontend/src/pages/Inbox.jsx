@@ -10,6 +10,17 @@ export default function Inbox() {
   const [filterStatus, setFilterStatus]   = useState("");
   const [search, setSearch]               = useState("");
 
+  async function handleSelect(conv) {
+    setActive(conv);
+    // Tandai sebagai sudah dibaca (badge sidebar berkurang)
+    if (conv.unread) {
+      api.updateConversation(conv.id, { unread: false }).catch(() => {});
+      setConversations((prev) =>
+        prev.map((c) => c.id === conv.id ? { ...c, unread: false } : c)
+      );
+    }
+  }
+
   useEffect(() => {
     async function load() {
       const data = await api.getConversations(filterStatus || undefined);
@@ -43,7 +54,7 @@ export default function Inbox() {
       <ConversationList
         conversations={filtered}
         activeId={active?.id}
-        onSelect={setActive}
+        onSelect={handleSelect}
         filterStatus={filterStatus}
         onFilterStatus={setFilterStatus}
         search={search}

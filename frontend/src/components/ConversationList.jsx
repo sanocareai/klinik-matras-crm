@@ -74,19 +74,27 @@ export default function ConversationList({
           const lastMsg = c.messages?.[0];
           const channelClass = c.channel?.toLowerCase();
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
+          const isUnread = !!c.unread;
 
           return (
             <button
               key={c.id}
-              className={`conversation-item${c.id === activeId ? " active" : ""}`}
+              className={`conversation-item${c.id === activeId ? " active" : ""}${isUnread ? " unread" : ""}`}
               onClick={() => onSelect(c)}
             >
-              <Avatar name={name} size="sm" />
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <Avatar name={name} size="sm" />
+                {isUnread && <span className="unread-dot" />}
+              </div>
               <div className="conversation-item-body">
                 <div className="conversation-top">
-                  <span className="customer-name">{name}</span>
+                  <span className="customer-name" style={isUnread ? { fontWeight: 800, color: "var(--text-main)" } : {}}>
+                    {name}
+                  </span>
                   <div className="conv-meta">
-                    <span className="conv-time">{formatTanggalWaktu(c.lastMessageAt)}</span>
+                    <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
+                      {formatTanggalWaktu(c.lastMessageAt)}
+                    </span>
                   </div>
                 </div>
                 <div className="conv-badges">
@@ -95,7 +103,9 @@ export default function ConversationList({
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
                 </div>
-                <p className="last-message">{lastMsg?.content || "Belum ada pesan"}</p>
+                <p className="last-message" style={isUnread ? { fontWeight: 600, color: "var(--text-main)" } : {}}>
+                  {lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
+                </p>
               </div>
             </button>
           );

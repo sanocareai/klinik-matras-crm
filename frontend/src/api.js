@@ -60,6 +60,7 @@ export const api = {
   // Conversations
   getConversations: (status) =>
     request("/conversations" + (status ? `?status=${status}` : "")),
+  getUnreadCount: () => request("/conversations/unread-count"),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
   sendMessage: (conversationId, content) =>

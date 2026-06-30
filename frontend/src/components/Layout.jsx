@@ -57,14 +57,14 @@ export default function Layout({ user, onLogout, children }) {
   const isAdmin = user?.role === "ADMIN";
 
   useEffect(() => {
-    async function fetchOpen() {
+    async function fetchUnread() {
       try {
-        const list = await api.getConversations("OPEN");
-        setOpenCount(list.length);
+        const { count } = await api.getUnreadCount();
+        setOpenCount(count);
       } catch {}
     }
-    fetchOpen();
-    const interval = setInterval(fetchOpen, 15000);
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 10000);
     return () => clearInterval(interval);
   }, []);
 

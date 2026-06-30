@@ -1,5 +1,4 @@
 import express from "express";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
@@ -31,6 +30,13 @@ function mimeToMediaType(mime) {
   if (mime.startsWith("audio/")) return "audio";
   return "document";
 }
+
+// Jumlah percakapan belum dibaca (untuk badge sidebar)
+// Harus di atas /:id agar Express tidak salah routing
+conversationRouter.get("/unread-count", async (req, res) => {
+  const count = await prisma.conversation.count({ where: { unread: true } });
+  res.json({ count });
+});
 
 // Daftar percakapan
 conversationRouter.get("/", async (req, res) => {
@@ -121,10 +127,12 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      const fileData = fs.readFileSync(file.path);
+      // Kirim URL ke WAHA (WAHA fetch file sendiri — jauh lebih andal untuk video/dokumen besar)
+      const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+      const fileUrl = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
       await sendMedia(
         conversation.customer.phone,
-        { mimetype: file.mimetype, filename: file.originalname, data: fileData.toString("base64") },
+        { mimetype: file.mimetype, filename: file.originalname, url: fileUrl },
         caption
       );
     } catch (waErr) {
@@ -145,12 +153,16 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   res.status(201).json(message);
 });
 
-// Update status percakapan
+// Update status / unread percakapan
 conversationRouter.patch("/:id", async (req, res) => {
-  const { status, assignedToId } = req.body;
+  const { status, assignedToId, unread } = req.body;
+  const data = {};
+  if (status)                  data.status       = status;
+  if (assignedToId !== undefined) data.assignedToId = assignedToId;
+  if (unread !== undefined)    data.unread       = unread;
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
-    data:  { ...(status && { status }), ...(assignedToId !== undefined && { assignedToId }) },
+    data,
   });
   res.json(conversation);
 });
