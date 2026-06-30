@@ -42,7 +42,8 @@ services:
       - "4000:4000"
     volumes:
       - ./frontend/dist:/frontend/dist
-      - ./backend/uploads:/app/uploads    # media uploads persisten
+      - ./backend/uploads:/app/uploads          # media chat persisten
+      - ./backend/data/products:/app/data/products  # foto produk persisten
     depends_on:
       - postgres
       - waha
