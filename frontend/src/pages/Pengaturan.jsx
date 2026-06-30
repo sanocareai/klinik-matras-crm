@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
-  Building2, Lock, Wifi, WifiOff, Download, Save, Eye, EyeOff, CheckCircle, XCircle,
+  Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle, XCircle,
+  MessageSquare, Plus, Pencil, Trash2, X, Copy,
 } from "lucide-react";
 import { api } from "../api.js";
 import { exportToExcel } from "../utils/export.js";
@@ -9,9 +10,255 @@ import { formatRupiah } from "../utils/format.js";
 const NAV_ITEMS = [
   { key: "profil",    label: "Profil Perusahaan", icon: Building2 },
   { key: "whatsapp", label: "Status WhatsApp",    icon: Wifi },
+  { key: "template", label: "Template Pesan",     icon: MessageSquare },
   { key: "keamanan", label: "Keamanan Akun",      icon: Lock },
   { key: "data",     label: "Data & Backup",      icon: Download },
 ];
+
+const KATEGORI_LABELS = {
+  pembukaan: "Pembukaan",
+  follow_up: "Follow Up",
+  penawaran: "Penawaran",
+  konfirmasi: "Konfirmasi",
+  penutupan: "Penutupan",
+  lainnya: "Lainnya",
+};
+
+const KATEGORI_COLORS = {
+  pembukaan: { bg: "#dbeafe", color: "#1e40af" },
+  follow_up: { bg: "#ede9fe", color: "#5b21b6" },
+  penawaran: { bg: "#dcfce7", color: "#166534" },
+  konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
+  penutupan: { bg: "#fee2e2", color: "#991b1b" },
+  lainnya:   { bg: "#f3f4f6", color: "#374151" },
+};
+
+const EMPTY_TPL_FORM = { nama: "", kategori: "pembukaan", isi: "" };
+
+function TemplateSection() {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_TPL_FORM);
+  const [editId, setEditId] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [copied, setCopied] = useState(null);
+
+  useEffect(() => {
+    api.getTemplates()
+      .then(setTemplates)
+      .catch(() => setMsg({ type: "error", text: "Gagal memuat template" }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function showMsg(type, text) {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  function openAdd() {
+    setEditId(null);
+    setForm(EMPTY_TPL_FORM);
+    setShowForm(true);
+  }
+
+  function openEdit(tpl) {
+    setEditId(tpl.id);
+    setForm({ nama: tpl.nama, kategori: tpl.kategori, isi: tpl.isi });
+    setShowForm(true);
+  }
+
+  function cancelForm() {
+    setShowForm(false);
+    setEditId(null);
+    setForm(EMPTY_TPL_FORM);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    try {
+      if (editId) {
+        const updated = await api.updateTemplate(editId, form);
+        setTemplates((prev) => prev.map((t) => (t.id === editId ? updated : t)));
+        showMsg("success", "Template berhasil diperbarui");
+      } else {
+        const created = await api.createTemplate(form);
+        setTemplates((prev) => [...prev, created]);
+        showMsg("success", "Template berhasil ditambahkan");
+      }
+      cancelForm();
+    } catch (err) {
+      showMsg("error", err.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Hapus template ini?")) return;
+    try {
+      await api.deleteTemplate(id);
+      setTemplates((prev) => prev.filter((t) => t.id !== id));
+      showMsg("success", "Template dihapus");
+    } catch (err) {
+      showMsg("error", err.message);
+    }
+  }
+
+  function handleCopy(tpl) {
+    navigator.clipboard.writeText(tpl.isi).then(() => {
+      setCopied(tpl.id);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  }
+
+  const grouped = Object.keys(KATEGORI_LABELS).reduce((acc, k) => {
+    acc[k] = templates.filter((t) => t.kategori === k);
+    return acc;
+  }, {});
+
+  return (
+    <div className="settings-card">
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Template Pesan</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
+            Template siap pakai untuk mempercepat balasan di Inbox. Gunakan <code>{"{nama_customer}"}</code> untuk nama otomatis.
+          </p>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={openAdd} style={{ gap: 5, display: "flex", alignItems: "center" }}>
+          <Plus size={14} /> Tambah Template
+        </button>
+      </div>
+
+      {msg && (
+        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Form tambah/edit */}
+      {showForm && (
+        <div style={{ marginBottom: 24, padding: 16, background: "var(--bg-secondary)", borderRadius: 10, border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+              {editId ? "Edit Template" : "Template Baru"}
+            </h3>
+            <button onClick={cancelForm} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+              <X size={16} />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Nama Template *</label>
+                <input
+                  value={form.nama}
+                  onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
+                  placeholder="Contoh: Salam Pembuka"
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Kategori</label>
+                <select value={form.kategori} onChange={(e) => setForm((f) => ({ ...f, kategori: e.target.value }))}>
+                  {Object.entries(KATEGORI_LABELS).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Isi Pesan *</label>
+              <textarea
+                value={form.isi}
+                onChange={(e) => setForm((f) => ({ ...f, isi: e.target.value }))}
+                placeholder={"Halo kak {nama_customer}, terima kasih sudah menghubungi Klinik Matras..."}
+                rows={4}
+                required
+                style={{ resize: "vertical" }}
+              />
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+                Gunakan <code>{"{nama_customer}"}</code> — akan diganti otomatis dengan nama customer saat dipakai di Inbox.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="submit" className="btn btn-primary btn-sm">
+                <Save size={13} /> {editId ? "Simpan Perubahan" : "Buat Template"}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={cancelForm}>
+                Batal
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Daftar template per kategori */}
+      {loading ? (
+        <p className="text-muted">Memuat...</p>
+      ) : templates.length === 0 ? (
+        <p className="text-muted" style={{ textAlign: "center", padding: "40px 0" }}>
+          Belum ada template. Klik "+ Tambah Template" untuk mulai.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {Object.entries(KATEGORI_LABELS).map(([key, label]) => {
+            const items = grouped[key] || [];
+            if (items.length === 0) return null;
+            const colors = KATEGORI_COLORS[key];
+            return (
+              <div key={key}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: colors.bg, color: colors.color }}>
+                    {label}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{items.length} template</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {items.map((tpl) => (
+                    <div
+                      key={tpl.id}
+                      style={{ padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-primary)", display: "flex", gap: 12, alignItems: "flex-start" }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 13 }}>{tpl.nama}</p>
+                        <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                          {tpl.isi}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button
+                          title="Salin isi template"
+                          onClick={() => handleCopy(tpl)}
+                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: copied === tpl.id ? "#166534" : "var(--text-muted)" }}
+                        >
+                          {copied === tpl.id ? <CheckCircle size={13} /> : <Copy size={13} />}
+                        </button>
+                        <button
+                          title="Edit"
+                          onClick={() => openEdit(tpl)}
+                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)" }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          title="Hapus"
+                          onClick={() => handleDelete(tpl.id)}
+                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", color: "#991b1b" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Pengaturan({ user }) {
   const [section, setSection] = useState("profil");
@@ -270,6 +517,9 @@ export default function Pengaturan({ user }) {
               </div>
             </div>
           )}
+
+          {/* ── TEMPLATE PESAN ── */}
+          {section === "template" && <TemplateSection />}
 
           {/* ── KEAMANAN ── */}
           {section === "keamanan" && (

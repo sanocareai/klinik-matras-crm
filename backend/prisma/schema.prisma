@@ -32,6 +32,7 @@ enum LeadSource {
 
 enum OrderStatus {
   PENDING      // baru order, belum diproses
+  PICKUP       // sedang diambil dari lokasi customer
   PROCESSING   // sedang dikerjakan/produksi
   READY        // siap kirim
   DELIVERED    // sudah terkirim/selesai

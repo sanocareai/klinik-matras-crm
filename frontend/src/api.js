@@ -162,6 +162,15 @@ export const api = {
   aiChat: (modelId, messages) =>
     request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages }) }),
 
+  // Template Pesan
+  getTemplates: () => request("/templates"),
+  createTemplate: (data) =>
+    request("/templates", { method: "POST", body: JSON.stringify(data) }),
+  updateTemplate: (id, data) =>
+    request(`/templates/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteTemplate: (id) =>
+    request(`/templates/${id}`, { method: "DELETE" }),
+
   // Knowledge Base
   getKbDocuments: () => request("/knowledge/documents"),
   uploadKbDocument: (formData) => requestFormData("/knowledge/documents", formData),

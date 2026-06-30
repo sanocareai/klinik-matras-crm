@@ -84,6 +84,7 @@ export const STAGE_LABELS = {
 
 export const ORDER_STATUS_LABELS = {
   PENDING: "Menunggu",
+  PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
   DELIVERED: "Terkirim",
@@ -103,7 +104,7 @@ export const LEAD_SOURCES = Object.entries(SOURCE_LABELS).map(([v, l]) => ({ val
 
 export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
-export const ORDER_STATUSES = ["PENDING", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
 
 // Format range tanggal untuk label di UI (e.g. "1 Jun – 30 Jun 2026")
 export function formatDateRange(from, to) {

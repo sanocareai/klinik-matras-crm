@@ -18,6 +18,7 @@ import { automationRouter } from "./routes/automation.js";
 import { aiRouter }         from "./routes/ai.js";
 import { knowledgeRouter }  from "./routes/knowledge.js";
 import { settingsRouter }  from "./routes/settings.js";
+import { templateRouter }  from "./routes/templates.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,7 @@ app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
 app.use("/api/knowledge",    knowledgeRouter);
 app.use("/api/settings",    settingsRouter);
+app.use("/api/templates",   templateRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
