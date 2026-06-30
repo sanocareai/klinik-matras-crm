@@ -1,69 +1,368 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { Search, Plus, X, Download, ArrowUp, ArrowDown } from "lucide-react";
 import { api } from "../api.js";
+import Avatar from "../components/Avatar.jsx";
+import CustomerDrawer from "../components/CustomerDrawer.jsx";
+import Pagination from "../components/Pagination.jsx";
+import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES, PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat } from "../utils/format.js";
+import { exportToExcel } from "../utils/export.js";
 
-function formatRupiah(n) {
-  return "Rp" + (n || 0).toLocaleString("id-ID");
-}
+const SORT_KEYS = { name: "Nama", orderValue: "Nilai Order", updatedAt: "Terakhir Update" };
 
 export default function Customers() {
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [customers, setCustomers]   = useState([]);
+  const [users, setUsers]           = useState([]);
+  const [loading, setLoading]       = useState(true);
+
+  // Filter state
+  const [search, setSearch]         = useState("");
+  const [filterStage, setFilterStage]   = useState("");
+  const [filterSource, setFilterSource] = useState("");
+  const [filterSales, setFilterSales]   = useState("");
+  const [quickChip, setQuickChip]   = useState("");  // "vip" | "no-order" | "inactive" | ""
+
+  // Sort
+  const [sortKey, setSortKey]   = useState("updatedAt");
+  const [sortDir, setSortDir]   = useState("desc");
+
+  // Pagination
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Drawer + modal
+  const [drawerCustomerId, setDrawerCustomerId] = useState(null);
+  const [showModal, setShowModal]   = useState(false);
+  const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER" });
+  const [creating, setCreating]     = useState(false);
+  const [createError, setCreateError] = useState("");
 
   useEffect(() => {
-    api.getCustomers().then((data) => {
-      setCustomers(data);
+    Promise.all([api.getCustomers(), api.getUsers()]).then(([c, u]) => {
+      setCustomers(c);
+      setUsers(u);
       setLoading(false);
     });
   }, []);
+
+  // Client-side filter + quick chip + sort
+  const filtered = useMemo(() => {
+    let list = customers.filter((c) => {
+      const q = search.toLowerCase();
+      const matchSearch = !q ||
+        c.name?.toLowerCase().includes(q) ||
+        c.phone?.includes(q) ||
+        c.instagramHandle?.toLowerCase().includes(q);
+      const matchStage  = !filterStage  || c.pipelineStage === filterStage;
+      const matchSource = !filterSource || c.leadSource    === filterSource;
+      const matchSales  = !filterSales  || c.assignedSalesId === filterSales;
+
+      let matchChip = true;
+      if (quickChip === "vip")      matchChip = isVIP(c);
+      if (quickChip === "no-order") matchChip = (c.orderCount || 0) === 0;
+      if (quickChip === "inactive") matchChip = daysSinceLastChat(c.lastMessageAt) > 30;
+
+      return matchSearch && matchStage && matchSource && matchSales && matchChip;
+    });
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey];
+      if (typeof av === "string") av = av?.toLowerCase() || "";
+      if (typeof bv === "string") bv = bv?.toLowerCase() || "";
+      if (av === undefined || av === null) av = "";
+      if (bv === undefined || bv === null) bv = "";
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [customers, search, filterStage, filterSource, filterSales, quickChip, sortKey, sortDir]);
+
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir((d) => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+    setPage(1);
+  }
+
+  function SortIcon({ col }) {
+    if (sortKey !== col) return null;
+    return sortDir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+  }
+
+  function handleDrawerUpdated(updated) {
+    setCustomers((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setCreateError("");
+    setCreating(true);
+    try {
+      const c = await api.createCustomer(newForm);
+      setCustomers((prev) => [{ ...c, orderCount: 0, orderValue: 0 }, ...prev]);
+      setShowModal(false);
+      setNewForm({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER" });
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function handleExport() {
+    const data = filtered.map((c) => ({
+      Nama: c.name || "",
+      Telepon: c.phone || "",
+      Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
+      Kota: c.city || "",
+      Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
+      "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
+      "Jumlah Order": c.orderCount || 0,
+      "Nilai Order": c.orderValue || 0,
+      Sales: c.assignedSales?.name || "",
+    }));
+    exportToExcel(data, "pelanggan-" + new Date().toISOString().slice(0, 10));
+  }
 
   if (loading) return <div className="page-loading">Memuat data pelanggan...</div>;
 
   return (
     <div className="customers-page">
-      <h1>Pelanggan</h1>
+      {/* Header */}
+      <div className="page-header">
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Pelanggan</h1>
+          <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
+            {filtered.length} dari {customers.length} pelanggan
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={handleExport}>
+            <Download size={15} /> Export Excel
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={16} /> Pelanggan Baru
+          </button>
+        </div>
+      </div>
 
+      {/* Quick chips */}
+      <div className="quick-chips" style={{ padding: "0 0 4px" }}>
+        <button
+          className={`quick-chip chip-vip ${quickChip === "vip" ? "active" : ""}`}
+          onClick={() => { setQuickChip(quickChip === "vip" ? "" : "vip"); setPage(1); }}
+        >
+          VIP (≥ Rp5jt)
+        </button>
+        <button
+          className={`quick-chip chip-noorder ${quickChip === "no-order" ? "active" : ""}`}
+          onClick={() => { setQuickChip(quickChip === "no-order" ? "" : "no-order"); setPage(1); }}
+        >
+          Belum Order
+        </button>
+        <button
+          className={`quick-chip chip-inactive ${quickChip === "inactive" ? "active" : ""}`}
+          onClick={() => { setQuickChip(quickChip === "inactive" ? "" : "inactive"); setPage(1); }}
+        >
+          Tidak Aktif (&gt;30 hari)
+        </button>
+      </div>
+
+      {/* Toolbar: search + filters */}
+      <div className="customers-toolbar">
+        <div className="search-input-wrap">
+          <Search size={15} className="search-icon" />
+          <input
+            className="search-input"
+            placeholder="Cari nama, nomor, atau Instagram..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
+
+        <div className="filter-group">
+          <select className="filter-select" value={filterStage} onChange={(e) => { setFilterStage(e.target.value); setPage(1); }}>
+            <option value="">Semua Stage</option>
+            {PIPELINE_STAGES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+
+          <select className="filter-select" value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }}>
+            <option value="">Semua Sumber</option>
+            {LEAD_SOURCES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+
+          <select className="filter-select" value={filterSales} onChange={(e) => { setFilterSales(e.target.value); setPage(1); }}>
+            <option value="">Semua Sales</option>
+            {users.filter((u) => u.role === "SALES").map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+
+          {(search || filterStage || filterSource || filterSales || quickChip) && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setSearch(""); setFilterStage(""); setFilterSource(""); setFilterSales(""); setQuickChip(""); setPage(1); }}
+            >
+              <X size={14} /> Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
       <div className="table-wrap">
         <table className="customer-table">
           <thead>
             <tr>
-              <th>Nama / Kontak</th>
+              <th style={{ cursor: "pointer" }} onClick={() => toggleSort("name")}>
+                Nama <SortIcon col="name" />
+              </th>
+              <th>Kontak</th>
               <th>Kota</th>
               <th>Tags</th>
-              <th>Jumlah order</th>
-              <th>Nilai order</th>
-              <th>Status</th>
+              <th>Pipeline</th>
+              <th>Order</th>
+              <th style={{ cursor: "pointer" }} onClick={() => toggleSort("orderValue")}>
+                Nilai Order <SortIcon col="orderValue" />
+              </th>
               <th>Sales</th>
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
-            {customers.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <div className="cell-strong">{c.name || "Belum ada nama"}</div>
-                  <div className="muted">{c.phone || c.instagramHandle}</div>
+            {paginated.map((c) => {
+              const displayName = c.name || c.phone || c.instagramHandle || "—";
+              return (
+                <tr key={c.id} onClick={() => setDrawerCustomerId(c.id)} style={{ cursor: "pointer" }}>
+                  <td>
+                    <div className="cell-name-wrap">
+                      <Avatar name={displayName} size="sm" />
+                      <div>
+                        <div className="cell-name">{displayName}</div>
+                        {isVIP(c) && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 10 }}>VIP</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    {c.phone && <div style={{ fontSize: 13 }}>{c.phone}</div>}
+                    {c.instagramHandle && <div className="cell-sub">@{c.instagramHandle}</div>}
+                    {!c.phone && !c.instagramHandle && <span className="muted">—</span>}
+                  </td>
+                  <td>{c.city || <span className="muted">—</span>}</td>
+                  <td>
+                    {c.tags?.length > 0
+                      ? c.tags.map((t) => (
+                          <span key={t} className={`tag-chip ${tagClass(t)}`}>{t}</span>
+                        ))
+                      : <span className="muted">—</span>
+                    }
+                  </td>
+                  <td>
+                    <span className={`stage-badge stage-${c.pipelineStage?.toLowerCase()}`}>
+                      {STAGE_LABELS[c.pipelineStage] || c.pipelineStage}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "center" }}>{c.orderCount}</td>
+                  <td>{formatRupiah(c.orderValue)}</td>
+                  <td>{c.assignedSales?.name || <span className="muted">—</span>}</td>
+                  <td onClick={(e) => { e.stopPropagation(); setDrawerCustomerId(c.id); }}>
+                    <button className="btn btn-ghost btn-sm">Lihat</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
+                  {search || filterStage || filterSource || filterSales || quickChip
+                    ? "Tidak ada pelanggan yang cocok dengan filter."
+                    : "Belum ada pelanggan."}
                 </td>
-                <td>{c.city || "—"}</td>
-                <td>
-                  {c.tags.length === 0
-                    ? "—"
-                    : c.tags.map((t) => <span key={t} className="tag-chip">{t}</span>)}
-                </td>
-                <td>{c.orderCount}</td>
-                <td>{formatRupiah(c.orderValue)}</td>
-                <td>
-                  <span className={`stage-badge stage-${c.pipelineStage.toLowerCase()}`}>
-                    {c.pipelineStage}
-                  </span>
-                </td>
-                <td>{c.assignedSales?.name || "—"}</td>
               </tr>
-            ))}
-            {customers.length === 0 && (
-              <tr><td colSpan={7} className="muted">Belum ada pelanggan.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      <Pagination
+        page={page}
+        pageSize={pageSize}
+        total={filtered.length}
+        onPage={setPage}
+        onPageSize={(s) => { setPageSize(s); setPage(1); }}
+      />
+
+      {/* Drawer */}
+      {drawerCustomerId && (
+        <CustomerDrawer
+          customerId={drawerCustomerId}
+          onClose={() => setDrawerCustomerId(null)}
+          onUpdated={handleDrawerUpdated}
+        />
+      )}
+
+      {/* Modal Pelanggan Baru */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Tambah Pelanggan Baru</h3>
+              <button className="modal-close" onClick={() => setShowModal(false)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleCreate}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Nama</label>
+                  <input type="text" placeholder="Nama pelanggan (opsional)" value={newForm.name}
+                    onChange={(e) => setNewForm((f) => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Nomor WhatsApp</label>
+                  <input type="text" placeholder="628xxxx (wajib, atau isi Instagram)" value={newForm.phone}
+                    onChange={(e) => setNewForm((f) => ({ ...f, phone: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Username Instagram</label>
+                  <input type="text" placeholder="tanpa @" value={newForm.instagramHandle}
+                    onChange={(e) => setNewForm((f) => ({ ...f, instagramHandle: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Kota</label>
+                  <input type="text" placeholder="Kota" value={newForm.city}
+                    onChange={(e) => setNewForm((f) => ({ ...f, city: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Sumber Lead</label>
+                  <select value={newForm.leadSource} onChange={(e) => setNewForm((f) => ({ ...f, leadSource: e.target.value }))}>
+                    {LEAD_SOURCES.map(({ value, label }) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                {createError && (
+                  <p style={{ color: "var(--color-danger)", fontSize: 13, margin: "0 0 8px" }}>{createError}</p>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Batal</button>
+                <button type="submit" className="btn btn-primary" disabled={creating}>
+                  {creating ? "Menyimpan..." : "Tambah Pelanggan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

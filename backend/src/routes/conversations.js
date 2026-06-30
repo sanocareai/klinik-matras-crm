@@ -7,8 +7,13 @@ export const conversationRouter = express.Router();
 conversationRouter.use(requireAuth);
 
 // Daftar percakapan, terbaru duluan, lengkap dengan info pelanggan + pesan terakhir
+// Optional query: ?status=OPEN|PENDING|RESOLVED
 conversationRouter.get("/", async (req, res) => {
+  const { status } = req.query;
+  const where = status ? { status } : {};
+
   const conversations = await prisma.conversation.findMany({
+    where,
     orderBy: { lastMessageAt: "desc" },
     include: {
       customer: true,

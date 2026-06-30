@@ -5,21 +5,73 @@ import { requireAuth } from "../middleware/auth.js";
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
 
-analyticsRouter.get("/overview", async (req, res) => {
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
+// Bangun where clause dari query params ?from=YYYY-MM-DD&to=YYYY-MM-DD
+function buildDateWhere(from, to, field = "createdAt") {
+  if (!from || !to) return {};
+  return { [field]: { gte: new Date(from + "T00:00:00.000Z"), lte: new Date(to + "T23:59:59.999Z") } };
+}
 
-  const [totalCustomers, orderAgg, thisMonthAgg, leadSourceGroups, monthlyTrafficRaw] =
-    await Promise.all([
-      prisma.customer.count(),
-      prisma.order.aggregate({ _count: { _all: true }, _sum: { value: true } }),
+function buildPrevRange(from, to) {
+  if (!from || !to) return null;
+  const f = new Date(from + "T00:00:00.000Z");
+  const t = new Date(to + "T23:59:59.999Z");
+  const diffMs = t - f;
+  return {
+    gte: new Date(f.getTime() - diffMs - 1),
+    lte: new Date(f.getTime() - 1),
+  };
+}
+
+analyticsRouter.get("/overview", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const orderWhere = buildDateWhere(from, to);
+    const convWhere  = buildDateWhere(from, to);
+    const custWhere  = buildDateWhere(from, to);
+    const prevRange  = buildPrevRange(from, to);
+
+    // Kalau ada date filter, hitung juga periode sebelumnya untuk persentase pertumbuhan
+    const [
+      totalCustomers, totalCustomersPrev,
+      orderAgg, orderAggPrev,
+      thisMonthAgg,
+      leadSourceGroups,
+      monthlyTrafficRaw,
+    ] = await Promise.all([
+      prisma.customer.count({ where: custWhere }),
+      prevRange ? prisma.customer.count({ where: { createdAt: prevRange } }) : Promise.resolve(null),
+
       prisma.order.aggregate({
-        where: { createdAt: { gte: startOfMonth }, status: { not: "CANCELLED" } },
+        where: { ...orderWhere, status: { not: "CANCELLED" } },
+        _count: { _all: true },
         _sum: { value: true },
       }),
-      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true } }),
-      // Traffic bulanan: jumlah percakapan baru per bulan, 6 bulan terakhir
+      prevRange
+        ? prisma.order.aggregate({
+            where: { createdAt: prevRange, status: { not: "CANCELLED" } },
+            _count: { _all: true },
+            _sum: { value: true },
+          })
+        : Promise.resolve(null),
+
+      // thisMonth = range saat ini (atau bulan ini kalau tidak ada filter)
+      (from && to)
+        ? prisma.order.aggregate({
+            where: { ...orderWhere, status: { not: "CANCELLED" } },
+            _sum: { value: true },
+          })
+        : (async () => {
+            const startOfMonth = new Date();
+            startOfMonth.setDate(1);
+            startOfMonth.setHours(0, 0, 0, 0);
+            return prisma.order.aggregate({
+              where: { createdAt: { gte: startOfMonth }, status: { not: "CANCELLED" } },
+              _sum: { value: true },
+            });
+          })(),
+
+      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhere }),
+
       prisma.$queryRaw`
         SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
                COUNT(*)::int as count
@@ -30,15 +82,172 @@ analyticsRouter.get("/overview", async (req, res) => {
       `,
     ]);
 
-  res.json({
-    totalCustomers,
-    totalOrders: orderAgg._count._all,
-    totalOrderValue: orderAgg._sum.value || 0,
-    thisMonthValue: thisMonthAgg._sum.value || 0,
-    leadSourceBreakdown: leadSourceGroups.map((g) => ({
-      leadSource: g.leadSource || "OTHER",
-      count: g._count._all,
-    })),
-    monthlyTraffic: monthlyTrafficRaw,
-  });
+    function growth(curr, prev) {
+      if (prev === null || prev === undefined) return null;
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    }
+
+    res.json({
+      totalCustomers,
+      growthCustomers: growth(totalCustomers, totalCustomersPrev),
+      totalOrders: orderAgg._count._all,
+      growthOrders: growth(orderAgg._count._all, orderAggPrev?._count._all ?? null),
+      totalOrderValue: orderAgg._sum.value || 0,
+      growthOrderValue: growth(orderAgg._sum.value || 0, orderAggPrev?._sum.value || null),
+      thisMonthValue: thisMonthAgg._sum.value || 0,
+      leadSourceBreakdown: leadSourceGroups.map((g) => ({
+        leadSource: g.leadSource || "OTHER",
+        count: g._count._all,
+      })),
+      monthlyTraffic: monthlyTrafficRaw,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+analyticsRouter.get("/performance", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const convWhere = buildDateWhere(from, to);
+
+    const [totalConversations, openCount, resolvedCount] = await Promise.all([
+      prisma.conversation.count({ where: convWhere }),
+      prisma.conversation.count({ where: { ...convWhere, status: "OPEN" } }),
+      prisma.conversation.count({ where: { ...convWhere, status: "RESOLVED" } }),
+    ]);
+
+    const closingRate = totalConversations > 0
+      ? Math.round((resolvedCount / totalConversations) * 100)
+      : 0;
+
+    // Rata-rata response time: selisih pesan INBOUND pertama vs OUTBOUND pertama per conv
+    let avgResponseMinutes = null;
+    try {
+      const result = await prisma.$queryRaw`
+        SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
+        FROM (
+          SELECT "conversationId", MIN("createdAt") as "createdAt"
+          FROM "Message" WHERE direction = 'INBOUND'
+          GROUP BY "conversationId"
+        ) i
+        JOIN (
+          SELECT "conversationId", MIN("createdAt") as "createdAt"
+          FROM "Message" WHERE direction = 'OUTBOUND'
+          GROUP BY "conversationId"
+        ) o ON i."conversationId" = o."conversationId"
+        WHERE o."createdAt" > i."createdAt"
+      `;
+      avgResponseMinutes = result[0]?.avg_minutes
+        ? Math.round(Number(result[0].avg_minutes))
+        : null;
+    } catch (_) {}
+
+    res.json({ totalConversations, openCount, resolvedCount, closingRate, avgResponseMinutes });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+analyticsRouter.get("/cs-performance", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const convWhere = buildDateWhere(from, to);
+
+    const users = await prisma.user.findMany({ where: { role: { not: "ADMIN" } } });
+
+    const rows = await Promise.all(
+      users.map(async (u) => {
+        const where = { ...convWhere, assignedToId: u.id };
+        const [total, resolved, orderAgg] = await Promise.all([
+          prisma.conversation.count({ where }),
+          prisma.conversation.count({ where: { ...where, status: "RESOLVED" } }),
+          prisma.order.aggregate({
+            where: {
+              ...(from && to ? { createdAt: { gte: new Date(from), lte: new Date(to) } } : {}),
+              customer: { assignedSalesId: u.id },
+              status: { not: "CANCELLED" },
+            },
+            _sum: { value: true },
+          }),
+        ]);
+
+        let avgResponseMinutes = null;
+        try {
+          const result = await prisma.$queryRaw`
+            SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
+            FROM (
+              SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
+              FROM "Message" m
+              JOIN "Conversation" c ON c.id = m."conversationId"
+              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id}
+              GROUP BY m."conversationId"
+            ) i
+            JOIN (
+              SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
+              FROM "Message" m
+              JOIN "Conversation" c ON c.id = m."conversationId"
+              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id}
+              GROUP BY m."conversationId"
+            ) o ON i."conversationId" = o."conversationId"
+            WHERE o."createdAt" > i."createdAt"
+          `;
+          avgResponseMinutes = result[0]?.avg_minutes
+            ? Math.round(Number(result[0].avg_minutes))
+            : null;
+        } catch (_) {}
+
+        return {
+          userId: u.id,
+          name: u.name,
+          totalConversations: total,
+          closingRate: total > 0 ? Math.round((resolved / total) * 100) : 0,
+          avgResponseMinutes,
+          totalOrderValue: orderAgg._sum.value || 0,
+        };
+      })
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+analyticsRouter.get("/pipeline-funnel", async (req, res) => {
+  try {
+    const stageGroups = await prisma.customer.groupBy({
+      by: ["pipelineStage"],
+      _count: { _all: true },
+    });
+
+    const stageValues = await Promise.all(
+      stageGroups.map(async (g) => {
+        const agg = await prisma.order.aggregate({
+          where: {
+            customer: { pipelineStage: g.pipelineStage },
+            status: { not: "CANCELLED" },
+          },
+          _sum: { value: true },
+        });
+        return {
+          stage: g.pipelineStage,
+          count: g._count._all,
+          value: agg._sum.value || 0,
+        };
+      })
+    );
+
+    const ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+    const sorted = ORDER.map((s) => stageValues.find((r) => r.stage === s) || { stage: s, count: 0, value: 0 });
+
+    res.json(sorted);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });

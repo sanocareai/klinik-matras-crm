@@ -27,25 +27,138 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+// Khusus untuk upload file (multipart/form-data — tanpa Content-Type header agar boundary otomatis)
+async function requestFormData(path, formData) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  if (res.status === 401) { localStorage.removeItem("token"); window.location.reload(); }
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = "Terjadi kesalahan";
+    try { msg = JSON.parse(text).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+function buildQuery(params) {
+  const q = Object.entries(params || {})
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+  return q ? "?" + q : "";
+}
+
 export const api = {
+  // Auth
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  getConversations: () => request("/conversations"),
-  getMessages: (conversationId) => request(`/conversations/${conversationId}/messages`),
+
+  // Conversations
+  getConversations: (status) =>
+    request("/conversations" + (status ? `?status=${status}` : "")),
+  getMessages: (conversationId) =>
+    request(`/conversations/${conversationId}/messages`),
   sendMessage: (conversationId, content) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
+  updateConversation: (id, data) =>
+    request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Customers
+  getCustomers: (params) => request("/customers" + buildQuery(params)),
   getCustomer: (id) => request(`/customers/${id}`),
-  getCustomers: () => request("/customers"),
+  createCustomer: (data) =>
+    request("/customers", { method: "POST", body: JSON.stringify(data) }),
   updateCustomer: (id, data) =>
     request(`/customers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getCustomerConversations: (id) =>
+    request(`/customers/${id}/conversations`),
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
+  updateCustomerOrder: (customerId, orderId, data) =>
+    request(`/customers/${customerId}/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Orders
   updateOrder: (orderId, data) =>
     request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
-  getAnalyticsOverview: () => request("/analytics/overview"),
+
+  // Analytics
+  getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
+  getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
+  getAnalyticsCsPerformance: (params) => request("/analytics/cs-performance" + buildQuery(params)),
+  getAnalyticsPipelineFunnel: () => request("/analytics/pipeline-funnel"),
+
+  // Dashboard
+  getRecentConversations: () => request("/dashboard/recent-conversations"),
+
+  // Users
+  getUsers: () => request("/users"),
+  updateMe: (data) =>
+    request("/users/me", { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Pipeline
+  getPipelineBoard: () => request("/pipeline/board"),
+
+  // Broadcast
+  getBroadcastCampaigns: () => request("/broadcast/campaigns"),
+  createBroadcastCampaign: (data) =>
+    request("/broadcast/campaigns", { method: "POST", body: JSON.stringify(data) }),
+  updateBroadcastCampaign: (id, data) =>
+    request(`/broadcast/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}`, { method: "DELETE" }),
+  getBroadcastEstimate: (params) => request("/broadcast/estimate" + buildQuery(params)),
+  getBroadcastHealthCheck: () => request("/broadcast/health-check"),
+  sendBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}/send`, { method: "POST" }),
+  testBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}/test`, { method: "POST" }),
+
+  // Automation — Workflows
+  getWorkflows: () => request("/automation/workflows"),
+  getWorkflow: (id) => request(`/automation/workflows/${id}`),
+  createWorkflow: (data) =>
+    request("/automation/workflows", { method: "POST", body: JSON.stringify(data) }),
+  updateWorkflow: (id, data) =>
+    request(`/automation/workflows/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteWorkflow: (id) =>
+    request(`/automation/workflows/${id}`, { method: "DELETE" }),
+
+  // AI Models
+  getAiModels: () => request("/ai/models"),
+  createAiModel: (data) =>
+    request("/ai/models", { method: "POST", body: JSON.stringify(data) }),
+  updateAiModel: (id, data) =>
+    request(`/ai/models/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteAiModel: (id) =>
+    request(`/ai/models/${id}`, { method: "DELETE" }),
+  testAiConnection: (data) =>
+    request("/ai/test-connection", { method: "POST", body: JSON.stringify(data) }),
+  aiChat: (modelId, messages) =>
+    request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages }) }),
+
+  // Knowledge Base
+  getKbDocuments: () => request("/knowledge/documents"),
+  uploadKbDocument: (formData) => requestFormData("/knowledge/documents", formData),
+  updateKbDocument: (id, data) =>
+    request(`/knowledge/documents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteKbDocument: (id) =>
+    request(`/knowledge/documents/${id}`, { method: "DELETE" }),
+  getKbDocumentContent: (id) => request(`/knowledge/documents/${id}/content`),
+  searchKnowledge: (q) => request("/knowledge/search?q=" + encodeURIComponent(q)),
+  getFaq: () => request("/knowledge/faq"),
+  createFaq: (data) =>
+    request("/knowledge/faq", { method: "POST", body: JSON.stringify(data) }),
+  updateFaq: (id, data) =>
+    request(`/knowledge/faq/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteFaq: (id) =>
+    request(`/knowledge/faq/${id}`, { method: "DELETE" }),
 };

@@ -1,85 +1,234 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
-  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { Users, ShoppingCart, Wallet, TrendingUp, MessageSquare, CheckCircle, Clock, Percent } from "lucide-react";
+
 import { api } from "../api.js";
 import KpiCard from "../components/KpiCard.jsx";
+import ProgressBar from "../components/ProgressBar.jsx";
+import RecentConversations from "../components/RecentConversations.jsx";
+import DateRangePicker from "../components/DateRangePicker.jsx";
+import { formatRupiah, formatTanggalIndo, labelBulan, SOURCE_LABELS, formatDuration, getDatePreset } from "../utils/format.js";
 
-const SOURCE_LABELS = {
-  ADS: "Iklan",
-  INSTAGRAM: "Instagram",
-  WEBSITE: "Website",
-  WHATSAPP_DIRECT: "WhatsApp langsung",
-  REFERRAL: "Referral",
-  OTHER: "Belum diisi",
-};
+const TARGET_BULANAN = 500_000_000;
 
-const PIE_COLORS = ["#2563eb", "#d6336c", "#f59e0b", "#16a34a", "#7c3aed", "#6b7280"];
+const INTENT_DATA = [
+  { label: "Tanya Harga",   pct: 38, color: "#2563eb" },
+  { label: "Tanya Produk",  pct: 27, color: "#7c3aed" },
+  { label: "After Sales",   pct: 16, color: "#16a34a" },
+  { label: "Komplain",      pct: 11, color: "#dc2626" },
+  { label: "Lainnya",       pct: 8,  color: "#6b7280" },
+];
 
-function formatRupiah(n) {
-  return "Rp" + (n || 0).toLocaleString("id-ID");
-}
+const STAGE_LABEL = { LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Penawaran", WON: "Berhasil", LOST: "Gagal" };
+const STAGE_COLOR = { LEAD: "#f59e0b", QUALIFIED: "#2563eb", QUOTED: "#7c3aed", WON: "#16a34a", LOST: "#dc2626" };
 
-export default function Dashboard() {
-  const [data, setData] = useState(null);
+export default function Dashboard({ user }) {
+  const [dateRange, setDateRange] = useState(getDatePreset("30d"));
+  const [overview, setOverview]   = useState(null);
+  const [perf, setPerf]           = useState(null);
+  const [csPerf, setCsPerf]       = useState([]);
+  const [funnel, setFunnel]       = useState([]);
+  const [error, setError]         = useState("");
+  const [loading, setLoading]     = useState(true);
 
-  useEffect(() => {
-    api.getAnalyticsOverview().then(setData);
-  }, []);
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = { from: dateRange.from, to: dateRange.to };
+      const [ov, pf, cs, fn] = await Promise.all([
+        api.getAnalyticsOverview(params),
+        api.getAnalyticsPerformance(params).catch(() => null),
+        api.getAnalyticsCsPerformance(params).catch(() => []),
+        api.getAnalyticsPipelineFunnel().catch(() => []),
+      ]);
+      setOverview(ov);
+      setPerf(pf);
+      setCsPerf(cs || []);
+      setFunnel(fn || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [dateRange.from, dateRange.to]);
 
-  if (!data) return <div className="page-loading">Memuat dashboard...</div>;
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const sourceData = data.leadSourceBreakdown.map((s) => ({
-    name: SOURCE_LABELS[s.leadSource] || s.leadSource,
-    value: s.count,
+  if (error) return (
+    <div className="page-loading">
+      <p style={{ color: "var(--color-danger)", fontWeight: 600 }}>Gagal memuat dashboard</p>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 8 }}>{error}</p>
+      <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+        Pastikan backend (port 4000) dan database (PostgreSQL via Docker) sudah jalan.
+      </p>
+    </div>
+  );
+
+  const userName = user?.name?.split(" ")[0] || "Anda";
+
+  const trafficData = (overview?.monthlyTraffic || []).map((d) => ({
+    bulan: labelBulan(d.month),
+    Percakapan: d.count,
   }));
 
   return (
-    <div className="dashboard-page">
-      <h1>Dashboard</h1>
-
-      <div className="kpi-grid">
-        <KpiCard label="Total pelanggan" value={data.totalCustomers} color="purple" />
-        <KpiCard label="Total order" value={data.totalOrders} color="blue" />
-        <KpiCard label="Total nilai order" value={formatRupiah(data.totalOrderValue)} color="pink" />
-        <KpiCard label="Terjual bulan ini" value={formatRupiah(data.thisMonthValue)} color="green" />
+    <div className="page">
+      {/* Header + Date Range */}
+      <div className="page-header" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div className="page-header-left">
+          <h1 className="page-greeting">Halo, {userName}! 👋</h1>
+          <p className="page-date">{formatTanggalIndo()}</p>
+        </div>
+        <DateRangePicker value={dateRange} onChange={setDateRange} />
       </div>
 
-      <div className="chart-grid">
-        <div className="chart-card">
-          <h3>Traffic bulanan (percakapan baru)</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={data.monthlyTraffic}>
-              <XAxis dataKey="month" fontSize={12} />
-              <YAxis fontSize={12} allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          {data.monthlyTraffic.length === 0 && (
-            <p className="muted">Belum ada data percakapan untuk ditampilkan.</p>
-          )}
+      {/* KPI Row 1 — volume */}
+      {loading ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 24 }}>
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton skeleton-card" />)}
         </div>
+      ) : (
+        <div className="kpi-grid">
+          <KpiCard label="Total Pelanggan"    value={overview?.totalCustomers || 0}                  color="purple" Icon={Users}        growth={overview?.growthCustomers} />
+          <KpiCard label="Total Order"        value={overview?.totalOrders || 0}                      color="blue"   Icon={ShoppingCart} growth={overview?.growthOrders} />
+          <KpiCard label="Total Nilai Order"  value={formatRupiah(overview?.totalOrderValue || 0)}    color="pink"   Icon={Wallet}       growth={overview?.growthOrderValue} />
+          <KpiCard label="Penjualan Periode"  value={formatRupiah(overview?.thisMonthValue || 0)}    color="green"  Icon={TrendingUp} />
+        </div>
+      )}
 
+      {/* Progress bar target */}
+      {!loading && <ProgressBar current={overview?.thisMonthValue || 0} target={TARGET_BULANAN} />}
+
+      {/* KPI Row 2 — performa CS */}
+      {perf && (
+        <div className="kpi-mini-grid">
+          <div className="kpi-mini">
+            <div className="kpi-mini-label">Total Percakapan</div>
+            <div className="kpi-mini-value">{perf.totalConversations || 0}</div>
+            <div className="kpi-mini-sub">{perf.openCount || 0} masih terbuka</div>
+          </div>
+          <div className="kpi-mini">
+            <div className="kpi-mini-label">Closing Rate</div>
+            <div className="kpi-mini-value">{perf.closingRate || 0}%</div>
+            <div className="kpi-mini-sub">{perf.resolvedCount || 0} diselesaikan</div>
+          </div>
+          <div className="kpi-mini">
+            <div className="kpi-mini-label">Avg. Response Time</div>
+            <div className="kpi-mini-value">{formatDuration(perf.avgResponseMinutes)}</div>
+            <div className="kpi-mini-sub">waktu respons pertama</div>
+          </div>
+          <div className="kpi-mini">
+            <div className="kpi-mini-label">Status Terbuka</div>
+            <div className="kpi-mini-value" style={{ color: perf.openCount > 10 ? "var(--color-danger)" : "var(--color-success)" }}>
+              {perf.openCount || 0}
+            </div>
+            <div className="kpi-mini-sub">perlu ditangani</div>
+          </div>
+        </div>
+      )}
+
+      {/* Funnel Horizontal */}
+      {funnel.length > 0 && (
+        <div className="chart-card funnel-section">
+          <h3>Pipeline Funnel</h3>
+          <div className="funnel-wrap">
+            {funnel.map((step, i) => (
+              <React.Fragment key={step.stage}>
+                <div className="funnel-step">
+                  <div className="funnel-step-name">{STAGE_LABEL[step.stage] || step.stage}</div>
+                  <div className="funnel-step-count">{step.count}</div>
+                  <div className="funnel-step-value">{formatRupiah(step.value)}</div>
+                  <div className="funnel-step-bar" style={{ background: STAGE_COLOR[step.stage] || "#94a3b8" }} />
+                </div>
+                {i < funnel.length - 1 && (
+                  <div className="funnel-arrow">▶</div>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Charts row */}
+      <div className="chart-grid">
+        {/* Traffic Bulanan */}
         <div className="chart-card">
-          <h3>Sumber traffic</h3>
-          {sourceData.length === 0 ? (
-            <p className="muted">Belum ada data sumber pelanggan.</p>
+          <h3>Traffic Bulanan (Percakapan Baru)</h3>
+          {trafficData.length === 0 ? (
+            <p className="muted">Belum ada data percakapan.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={sourceData} dataKey="value" nameKey="name" outerRadius={90} label>
-                  {sourceData.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={trafficData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+                <XAxis dataKey="bulan" fontSize={12} tick={{ fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis fontSize={12} tick={{ fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+                  cursor={{ fill: "rgba(37,99,235,0.06)" }}
+                />
+                <Bar dataKey="Percakapan" fill="#2563eb" radius={[5, 5, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           )}
         </div>
+
+        {/* Intent Distribution (dummy) */}
+        <div className="chart-card">
+          <h3>Distribusi Intent <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>(estimasi)</span></h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>
+            Pelabelan AI belum aktif — data berdasarkan estimasi manual.
+          </p>
+          <div className="intent-grid">
+            {INTENT_DATA.map((item) => (
+              <div key={item.label} className="intent-item">
+                <span className="intent-label">{item.label}</span>
+                <div className="intent-bar-wrap">
+                  <div className="intent-bar" style={{ width: item.pct + "%", background: item.color }} />
+                </div>
+                <span className="intent-pct">{item.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* CS Performance Table */}
+      {csPerf.length > 0 && (
+        <div className="chart-card" style={{ marginBottom: 24 }}>
+          <h3>Performa CS / Sales</h3>
+          <table className="cs-table">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Total Percakapan</th>
+                <th>Closing Rate</th>
+                <th>Avg Response</th>
+                <th>Nilai Order</th>
+              </tr>
+            </thead>
+            <tbody>
+              {csPerf.map((row) => (
+                <tr key={row.userId}>
+                  <td style={{ fontWeight: 600 }}>{row.name}</td>
+                  <td>{row.totalConversations}</td>
+                  <td>
+                    <span className={row.closingRate >= 50 ? "growth-up" : "growth-down"}>
+                      {row.closingRate}%
+                    </span>
+                  </td>
+                  <td>{formatDuration(row.avgResponseMinutes)}</td>
+                  <td>{formatRupiah(row.totalOrderValue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Recent conversations */}
+      <RecentConversations />
     </div>
   );
 }

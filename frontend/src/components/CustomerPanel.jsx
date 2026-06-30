@@ -1,21 +1,18 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ExternalLink } from "lucide-react";
 import { api } from "../api.js";
-
-const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
-const ORDER_STATUSES = ["PENDING", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
-
-function formatRupiah(n) {
-  return "Rp" + (n || 0).toLocaleString("id-ID");
-}
+import Avatar from "./Avatar.jsx";
+import StageSelect from "./customer/StageSelect.jsx";
+import OrderSection from "./customer/OrderSection.jsx";
+import NotesSection from "./customer/NotesSection.jsx";
 
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [orderDraft, setOrderDraft] = useState({ value: "", quantity: 1 });
   const [cityDraft, setCityDraft] = useState("");
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!customerId) { setCustomer(null); return; }
     api.getCustomer(customerId).then((c) => {
       setCustomer(c);
       setCityDraft(c.city || "");
@@ -32,98 +29,82 @@ export default function CustomerPanel({ customerId }) {
     setCustomer((c) => ({ ...c, ...updated }));
   }
 
-  async function handleAddNote(e) {
-    e.preventDefault();
-    if (!noteDraft.trim()) return;
-    const note = await api.addNote(customerId, noteDraft);
-    setCustomer((c) => ({ ...c, notes: [note, ...c.notes] }));
-    setNoteDraft("");
+  if (!customerId) {
+    return (
+      <div className="customer-panel customer-panel-empty" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p className="text-muted" style={{ fontSize: 13 }}>Pilih percakapan</p>
+      </div>
+    );
   }
 
-  async function handleAddOrder(e) {
-    e.preventDefault();
-    if (!orderDraft.value) return;
-    const order = await api.addOrder(customerId, orderDraft);
-    setCustomer((c) => ({ ...c, orders: [order, ...c.orders] }));
-    setOrderDraft({ value: "", quantity: 1 });
+  if (!customer) {
+    return (
+      <div className="customer-panel" style={{ padding: 20 }}>
+        <div className="skeleton" style={{ height: 60, borderRadius: 10, marginBottom: 12 }} />
+        <div className="skeleton skeleton-text" style={{ width: "80%" }} />
+        <div className="skeleton skeleton-text" style={{ width: "60%" }} />
+      </div>
+    );
   }
 
-  async function updateOrderStatus(orderId, status) {
-    const updated = await api.updateOrder(orderId, { status });
-    setCustomer((c) => ({
-      ...c,
-      orders: c.orders.map((o) => (o.id === orderId ? updated : o)),
-    }));
-  }
-
-  if (!customer) return <div className="customer-panel empty-state">—</div>;
-
-  const totalOrderValue = customer.orders.reduce((sum, o) => sum + o.value, 0);
+  const displayName = customer.name || customer.phone || customer.instagramHandle || "Pelanggan";
 
   return (
     <div className="customer-panel">
-      <h3>{customer.name || "Pelanggan baru"}</h3>
-      <p className="muted">{customer.phone || customer.instagramHandle}</p>
-
-      <label>Kota</label>
-      <div className="inline-field">
-        <input value={cityDraft} onChange={(e) => setCityDraft(e.target.value)} placeholder="Kota" />
-        <button onClick={saveCity}>Simpan</button>
+      {/* Header */}
+      <div className="panel-header">
+        <Avatar name={displayName} size="md" />
+        <div className="panel-header-info">
+          <p className="panel-name">{displayName}</p>
+          <p className="panel-contact">{customer.phone || customer.instagramHandle}</p>
+        </div>
       </div>
 
-      <label>Tahap pipeline</label>
-      <select value={customer.pipelineStage} onChange={(e) => updateStage(e.target.value)}>
-        {STAGES.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
-
-      <label>Order ({customer.orders.length}) · Total {formatRupiah(totalOrderValue)}</label>
-      <form onSubmit={handleAddOrder} className="order-form">
-        <input
-          type="number"
-          placeholder="Nilai order (Rp)"
-          value={orderDraft.value}
-          onChange={(e) => setOrderDraft((d) => ({ ...d, value: e.target.value }))}
-        />
-        <input
-          type="number"
-          placeholder="Qty"
-          value={orderDraft.quantity}
-          onChange={(e) => setOrderDraft((d) => ({ ...d, quantity: e.target.value }))}
-        />
-        <button type="submit">+ Order</button>
-      </form>
-      <div className="order-list">
-        {customer.orders.map((o) => (
-          <div key={o.id} className="order-item">
-            <span>{formatRupiah(o.value)} · {o.quantity}x</span>
-            <select value={o.status} onChange={(e) => updateOrderStatus(o.id, e.target.value)}>
-              {ORDER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-        ))}
+      {/* Lihat Profil Lengkap */}
+      <div style={{ padding: "0 16px 12px" }}>
+        <Link
+          to="/customers"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, color: "var(--color-primary)", fontWeight: 600 }}
+        >
+          <ExternalLink size={12} />
+          Lihat Profil Lengkap
+        </Link>
       </div>
 
-      <label>Catatan</label>
-      <form onSubmit={handleAddNote} className="note-form">
-        <textarea
-          value={noteDraft}
-          onChange={(e) => setNoteDraft(e.target.value)}
-          placeholder="Tambah catatan tentang pelanggan ini..."
-        />
-        <button type="submit">Simpan catatan</button>
-      </form>
+      {/* Body */}
+      <div className="panel-body">
+        {/* Pipeline stage */}
+        <div className="panel-section">
+          <span className="panel-section-label">Tahap Pipeline</span>
+          <StageSelect value={customer.pipelineStage} onChange={updateStage} />
+        </div>
 
-      <div className="note-list">
-        {customer.notes?.map((n) => (
-          <div key={n.id} className="note-item">
-            <p>{n.content}</p>
-            <span className="muted">{n.author?.name}</span>
+        {/* Kota */}
+        <div className="panel-section">
+          <span className="panel-section-label">Kota</span>
+          <div className="inline-field">
+            <input
+              value={cityDraft}
+              onChange={(e) => setCityDraft(e.target.value)}
+              placeholder="Kota pelanggan"
+            />
+            <button className="btn btn-secondary btn-sm" onClick={saveCity}>Simpan</button>
           </div>
-        ))}
+        </div>
+
+        {/* Orders */}
+        <div className="panel-section">
+          <span className="panel-section-label">Order</span>
+          <OrderSection customer={customer} onUpdate={setCustomer} />
+        </div>
+
+        <hr className="divider" />
+
+        {/* Notes */}
+        <div className="panel-section">
+          <span className="panel-section-label">Catatan</span>
+          <NotesSection customer={customer} onUpdate={setCustomer} />
+        </div>
       </div>
     </div>
   );
