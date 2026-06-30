@@ -33,40 +33,52 @@ const upload = multer({
 
 // ── GET /api/products — list produk aktif (semua user) ──────────────────────
 productRouter.get("/", async (req, res) => {
-  const products = await prisma.product.findMany({
-    where: { active: true },
-    include: { images: { orderBy: { sortOrder: "asc" } } },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
-  res.json(products);
+  try {
+    const products = await prisma.product.findMany({
+      where: { active: true },
+      include: { images: { orderBy: { sortOrder: "asc" } } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── GET /api/products/all — termasuk non-aktif (admin) ──────────────────────
 productRouter.get("/all", requireAdmin, async (req, res) => {
-  const products = await prisma.product.findMany({
-    include: { images: { orderBy: { sortOrder: "asc" } } },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
-  res.json(products);
+  try {
+    const products = await prisma.product.findMany({
+      include: { images: { orderBy: { sortOrder: "asc" } } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── POST /api/products — buat produk baru (admin) ───────────────────────────
 productRouter.post("/", requireAdmin, async (req, res) => {
   const { name, description, category, price, priceUnit } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Nama produk wajib diisi" });
-  const count = await prisma.product.count();
-  const product = await prisma.product.create({
-    data: {
-      name: name.trim(),
-      description: description?.trim() || null,
-      category: category?.trim() || null,
-      price: price ? parseInt(price) : null,
-      priceUnit: priceUnit?.trim() || null,
-      sortOrder: count,
-    },
-    include: { images: true },
-  });
-  res.status(201).json(product);
+  try {
+    const count = await prisma.product.count();
+    const product = await prisma.product.create({
+      data: {
+        name: name.trim(),
+        description: description?.trim() || null,
+        category: category?.trim() || null,
+        price: price ? parseInt(price) : null,
+        priceUnit: priceUnit?.trim() || null,
+        sortOrder: count,
+      },
+      include: { images: true },
+    });
+    res.status(201).json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── PATCH /api/products/:id — update produk (admin) ─────────────────────────
@@ -81,49 +93,60 @@ productRouter.patch("/:id", requireAdmin, async (req, res) => {
   if (active !== undefined)      data.active      = !!active;
   if (sortOrder !== undefined)   data.sortOrder   = parseInt(sortOrder);
 
-  const product = await prisma.product.update({
-    where: { id: req.params.id },
-    data,
-    include: { images: { orderBy: { sortOrder: "asc" } } },
-  });
-  res.json(product);
+  try {
+    const product = await prisma.product.update({
+      where: { id: req.params.id },
+      data,
+      include: { images: { orderBy: { sortOrder: "asc" } } },
+    });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── DELETE /api/products/:id — hapus produk (admin) ─────────────────────────
 productRouter.delete("/:id", requireAdmin, async (req, res) => {
-  // Hapus file gambar fisik dulu
-  const images = await prisma.productImage.findMany({ where: { productId: req.params.id } });
-  for (const img of images) {
-    const filename = img.url.split("/").pop();
-    const filePath = path.join(productsDir, filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  try {
+    const images = await prisma.productImage.findMany({ where: { productId: req.params.id } });
+    for (const img of images) {
+      const filename = img.url.split("/").pop();
+      const filePath = path.join(productsDir, filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    await prisma.product.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  await prisma.product.delete({ where: { id: req.params.id } });
-  res.json({ ok: true });
 });
 
 // ── POST /api/products/:id/images — upload gambar (admin) ───────────────────
 productRouter.post("/:id/images", requireAdmin, upload.array("images", 10), async (req, res) => {
-  const product = await prisma.product.findUnique({ where: { id: req.params.id } });
-  if (!product) return res.status(404).json({ error: "Produk tidak ditemukan" });
+  try {
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) return res.status(404).json({ error: "Produk tidak ditemukan" });
 
-  const files = req.files;
-  if (!files?.length) return res.status(400).json({ error: "Tidak ada gambar yang diupload" });
+    const files = req.files;
+    if (!files?.length) return res.status(400).json({ error: "Tidak ada gambar yang diupload" });
 
-  const existing = await prisma.productImage.count({ where: { productId: req.params.id } });
-  const labels   = Array.isArray(req.body.labels) ? req.body.labels : [req.body.labels];
+    const existing = await prisma.productImage.count({ where: { productId: req.params.id } });
+    const labels   = Array.isArray(req.body.labels) ? req.body.labels : [req.body.labels];
 
-  const created = await Promise.all(files.map((file, i) =>
-    prisma.productImage.create({
-      data: {
-        productId: req.params.id,
-        url: `/media/products/${file.filename}`,
-        label: labels[i]?.trim() || null,
-        sortOrder: existing + i,
-      },
-    })
-  ));
-  res.status(201).json(created);
+    const created = await Promise.all(files.map((file, i) =>
+      prisma.productImage.create({
+        data: {
+          productId: req.params.id,
+          url: `/media/products/${file.filename}`,
+          label: labels[i]?.trim() || null,
+          sortOrder: existing + i,
+        },
+      })
+    ));
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── PATCH /api/products/images/:imageId — update label/urutan (admin) ───────
@@ -132,22 +155,30 @@ productRouter.patch("/images/:imageId", requireAdmin, async (req, res) => {
   const data = {};
   if (label !== undefined)     data.label     = label?.trim() || null;
   if (sortOrder !== undefined) data.sortOrder = parseInt(sortOrder);
-  const image = await prisma.productImage.update({
-    where: { id: req.params.imageId },
-    data,
-  });
-  res.json(image);
+  try {
+    const image = await prisma.productImage.update({
+      where: { id: req.params.imageId },
+      data,
+    });
+    res.json(image);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── DELETE /api/products/images/:imageId — hapus gambar (admin) ─────────────
 productRouter.delete("/images/:imageId", requireAdmin, async (req, res) => {
-  const image = await prisma.productImage.findUnique({ where: { id: req.params.imageId } });
-  if (!image) return res.status(404).json({ error: "Gambar tidak ditemukan" });
+  try {
+    const image = await prisma.productImage.findUnique({ where: { id: req.params.imageId } });
+    if (!image) return res.status(404).json({ error: "Gambar tidak ditemukan" });
 
-  const filename = image.url.split("/").pop();
-  const filePath = path.join(productsDir, filename);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const filename = image.url.split("/").pop();
+    const filePath = path.join(productsDir, filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-  await prisma.productImage.delete({ where: { id: req.params.imageId } });
-  res.json({ ok: true });
+    await prisma.productImage.delete({ where: { id: req.params.imageId } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });

@@ -84,8 +84,9 @@ function ProductEditor({ product, onSaved, onDeleted }) {
         fd.append("images", compressed);
       }
       const created = await api.uploadProductImages(product.id, fd);
-      setImages((prev) => [...prev, ...created]);
-      onSaved({ ...product, images: [...images, ...created] });
+      const allImages = [...images, ...created];
+      setImages(allImages);
+      onSaved({ ...product, images: allImages });
     } catch (err) { alert(err.message); }
     finally { setUploading(false); }
   }
@@ -242,8 +243,8 @@ function ProductEditor({ product, onSaved, onDeleted }) {
                 <img src={img.url} alt={img.label || "Foto"} />
                 <div className="product-image-controls">
                   <input
-                    value={img.label || ""}
-                    onChange={(e) => handleUpdateLabel(img.id, e.target.value)}
+                    key={img.id}
+                    defaultValue={img.label || ""}
                     placeholder="Label (Before/After/...)"
                     className="product-image-label-input"
                     onBlur={(e) => handleUpdateLabel(img.id, e.target.value)}
