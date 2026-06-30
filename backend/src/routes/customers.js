@@ -86,13 +86,24 @@ customerRouter.get("/:id", async (req, res) => {
   res.json(customer);
 });
 
-// Update data CRM: nama, tags, pipeline stage, sales yang ditugaskan, dll
+// Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll
 customerRouter.patch("/:id", async (req, res) => {
-  const { name, tags, pipelineStage, assignedSalesId, email, city, leadSource } = req.body;
+  const { name, phone, tags, pipelineStage, assignedSalesId, email, city, leadSource } = req.body;
+
+  // Cek duplikat nomor kalau diubah
+  if (phone !== undefined && phone !== null) {
+    const cleanPhone = phone.replace(/\D/g, "").replace(/^0/, "62") || null;
+    if (cleanPhone) {
+      const dup = await prisma.customer.findFirst({ where: { phone: cleanPhone, NOT: { id: req.params.id } } });
+      if (dup) return res.status(409).json({ error: "Nomor WhatsApp sudah dipakai pelanggan lain" });
+    }
+  }
+
   const customer = await prisma.customer.update({
     where: { id: req.params.id },
     data: {
       ...(name !== undefined && { name }),
+      ...(phone !== undefined && { phone: phone ? phone.replace(/\D/g, "").replace(/^0/, "62") || null : null }),
       ...(tags !== undefined && { tags }),
       ...(pipelineStage !== undefined && { pipelineStage }),
       ...(assignedSalesId !== undefined && { assignedSalesId }),
@@ -102,19 +113,13 @@ customerRouter.patch("/:id", async (req, res) => {
     },
   });
 
-  // Sync nama ke kontak WhatsApp (coba max 3 detik, kembalikan status ke frontend)
-  let whatsappSyncStatus = "skipped";
-  if (name !== undefined && name?.trim() && customer.phone) {
-    try {
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 3000));
-      const result = await Promise.race([updateContactName(customer.phone, name.trim()), timeoutPromise]);
-      whatsappSyncStatus = result === true ? "success" : "failed";
-    } catch {
-      whatsappSyncStatus = "failed";
-    }
+  // Sync nama kontak ke WhatsApp jika ada perubahan nama & nomor HP tersedia
+  let waSyncOk = null;
+  if (name !== undefined && customer.phone) {
+    waSyncOk = await updateContactName(customer.phone, customer.name || name);
   }
 
-  res.json({ ...customer, whatsappSyncStatus });
+  res.json({ ...customer, waSyncOk });
 });
 
 customerRouter.post("/:id/notes", async (req, res) => {

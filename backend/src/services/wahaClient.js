@@ -49,26 +49,34 @@ export function cleanPhoneNumber(rawId) {
   return rawId.split("@")[0];
 }
 
-// Sync nama pelanggan ke kontak WhatsApp — fire & forget friendly (return bool, jangan throw)
+// Sync nama pelanggan ke kontak WhatsApp (WAHA Core 2026.6+).
+// Endpoint: PUT /api/{session}/contacts/profile-photo tidak ada, tapi PUT contacts ada.
+// Payload disesuaikan dengan spec WAHA terbaru.
+// Return: true kalau berhasil, false kalau gagal (jangan throw — ini best-effort).
 export async function updateContactName(phone, name) {
-  const chatId = phone.includes("@") ? phone : `${phone}@c.us`;
+  const contactId = phone.includes("@") ? phone : `${phone}@c.us`;
   try {
-    const res = await fetch(`${WAHA_BASE_URL}/api/contacts`, {
+    // Coba endpoint WAHA Core yang baru (per-session path)
+    const res = await fetch(`${WAHA_BASE_URL}/api/${WAHA_SESSION}/contacts`, {
       method: "PUT",
       headers: headers(),
-      body: JSON.stringify({
-        session: WAHA_SESSION,
-        contactId: chatId,
-        firstName: name,
-      }),
+      body: JSON.stringify({ contactId, firstName: name }),
     });
-    if (!res.ok) {
-      console.error("Gagal update nama kontak WhatsApp:", await res.text());
-      return false;
-    }
-    return true;
+    if (res.ok) return true;
+
+    // Fallback ke endpoint lama (WAHA sebelum 2026)
+    const res2 = await fetch(`${WAHA_BASE_URL}/api/contacts`, {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({ session: WAHA_SESSION, contactId, firstName: name }),
+    });
+    if (res2.ok) return true;
+
+    const errText = await res2.text();
+    console.warn("Sync nama kontak WA tidak didukung engine ini:", errText.slice(0, 100));
+    return false;
   } catch (err) {
-    console.error("Error sync nama kontak WA:", err.message);
+    console.warn("Sync nama kontak WA error:", err.message);
     return false;
   }
 }

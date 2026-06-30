@@ -11,6 +11,7 @@ import { formatPhoneDisplay } from "../utils/format.js";
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
   const [nameDraft, setNameDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [cityDraft, setCityDraft] = useState("");
   const [feedback, setFeedback] = useState(null);
 
@@ -24,6 +25,7 @@ export default function CustomerPanel({ customerId }) {
     api.getCustomer(customerId).then((c) => {
       setCustomer(c);
       setNameDraft(c.name || "");
+      setPhoneDraft(c.phone || "");
       setCityDraft(c.city || "");
     });
   }, [customerId]);
@@ -33,28 +35,18 @@ export default function CustomerPanel({ customerId }) {
     setCustomer((c) => ({ ...c, ...updated }));
   }
 
-  async function saveName() {
-    if (!nameDraft.trim()) return;
+  async function saveField(field, value, label) {
     try {
-      const updated = await api.updateCustomer(customerId, { name: nameDraft.trim() });
+      const updated = await api.updateCustomer(customerId, { [field]: value || null });
       setCustomer((c) => ({ ...c, ...updated }));
-      if (updated.whatsappSyncStatus === "success") {
-        showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp");
-      } else if (updated.whatsappSyncStatus === "failed") {
-        showFeedback("warning", "Nama tersimpan, gagal sync ke WhatsApp");
-      } else {
-        showFeedback("success", "Nama tersimpan");
-      }
-    } catch (err) {
-      showFeedback("error", err.message);
-    }
-  }
 
-  async function saveCity() {
-    try {
-      const updated = await api.updateCustomer(customerId, { city: cityDraft });
-      setCustomer((c) => ({ ...c, ...updated }));
-      showFeedback("success", "Kota tersimpan");
+      if (field === "name" && updated.waSyncOk === true) {
+        showFeedback("success", "Nama tersimpan & tersinkron ke WhatsApp ✓");
+      } else if (field === "name" && updated.waSyncOk === false) {
+        showFeedback("info", "Nama tersimpan di CRM (sync WA tidak tersedia — nomor mungkin tidak aktif)");
+      } else {
+        showFeedback("success", `${label} tersimpan`);
+      }
     } catch (err) {
       showFeedback("error", err.message);
     }
@@ -78,8 +70,7 @@ export default function CustomerPanel({ customerId }) {
     );
   }
 
-  const displayName = customer.name || customer.phone || customer.instagramHandle || "Pelanggan";
-  const phoneFormatted = formatPhoneDisplay(customer.phone || "");
+  const displayName = customer.name || (customer.phone ? formatPhoneDisplay(customer.phone) : null) || customer.instagramHandle || "Pelanggan";
 
   return (
     <div className="customer-panel">
@@ -88,7 +79,7 @@ export default function CustomerPanel({ customerId }) {
         <Avatar name={displayName} size="md" />
         <div className="panel-header-info">
           <p className="panel-name">{displayName}</p>
-          <p className="panel-contact" title={customer.phone}>{phoneFormatted || customer.instagramHandle}</p>
+          <p className="panel-contact">{formatPhoneDisplay(customer.phone) || customer.instagramHandle}</p>
         </div>
       </div>
 
@@ -118,16 +109,28 @@ export default function CustomerPanel({ customerId }) {
             <input
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && saveName()}
+              onKeyDown={(e) => e.key === "Enter" && saveField("name", nameDraft, "Nama")}
               placeholder="Nama pelanggan..."
             />
-            <button className="btn btn-secondary btn-sm" onClick={saveName}>Simpan</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => saveField("name", nameDraft, "Nama")}>Simpan</button>
           </div>
-          {customer.phone && (
-            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
-              {phoneFormatted}
-            </p>
-          )}
+        </div>
+
+        {/* Nomor WhatsApp */}
+        <div className="panel-section">
+          <span className="panel-section-label">Nomor WhatsApp</span>
+          <div className="inline-field">
+            <input
+              value={phoneDraft}
+              onChange={(e) => setPhoneDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveField("phone", phoneDraft, "Nomor")}
+              placeholder="628xxx (format internasional)"
+            />
+            <button className="btn btn-secondary btn-sm" onClick={() => saveField("phone", phoneDraft, "Nomor")}>Simpan</button>
+          </div>
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Format: 628xxx (tanpa +, tanpa 0 di depan)
+          </p>
         </div>
 
         {/* Pipeline stage */}
@@ -143,10 +146,10 @@ export default function CustomerPanel({ customerId }) {
             <input
               value={cityDraft}
               onChange={(e) => setCityDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && saveCity()}
+              onKeyDown={(e) => e.key === "Enter" && saveField("city", cityDraft, "Kota")}
               placeholder="Kota pelanggan"
             />
-            <button className="btn btn-secondary btn-sm" onClick={saveCity}>Simpan</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => saveField("city", cityDraft, "Kota")}>Simpan</button>
           </div>
         </div>
 
