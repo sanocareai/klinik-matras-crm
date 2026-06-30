@@ -6,13 +6,10 @@ import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
 import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
-import { getTagPrefix, setTagPrefix, publicTags, UKURAN_KASUR, MERK_KASUR } from "../utils/format.js";
 
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
   const [cityDraft, setCityDraft] = useState("");
-  const [ukuranDraft, setUkuranDraft] = useState("");
-  const [merkDraft, setMerkDraft] = useState("");
   const [feedback, setFeedback] = useState(null);
 
   function showFeedback(type, message) {
@@ -25,8 +22,6 @@ export default function CustomerPanel({ customerId }) {
     api.getCustomer(customerId).then((c) => {
       setCustomer(c);
       setCityDraft(c.city || "");
-      setUkuranDraft(getTagPrefix(c.tags, "ukuran"));
-      setMerkDraft(getTagPrefix(c.tags, "merk"));
     });
   }, [customerId]);
 
@@ -40,19 +35,6 @@ export default function CustomerPanel({ customerId }) {
       const updated = await api.updateCustomer(customerId, { city: cityDraft });
       setCustomer((c) => ({ ...c, ...updated }));
       showFeedback("success", "Kota tersimpan");
-    } catch (err) {
-      showFeedback("error", err.message);
-    }
-  }
-
-  async function saveInfoKasur() {
-    try {
-      let tags = publicTags(customer.tags);
-      tags = setTagPrefix(tags, "ukuran", ukuranDraft);
-      tags = setTagPrefix(tags, "merk", merkDraft);
-      const updated = await api.updateCustomer(customerId, { tags });
-      setCustomer((c) => ({ ...c, ...updated }));
-      showFeedback("success", "Info kasur tersimpan");
     } catch (err) {
       showFeedback("error", err.message);
     }
@@ -124,32 +106,6 @@ export default function CustomerPanel({ customerId }) {
               placeholder="Kota pelanggan"
             />
             <button className="btn btn-secondary btn-sm" onClick={saveCity}>Simpan</button>
-          </div>
-        </div>
-
-        {/* Info Kasur */}
-        <div className="panel-section">
-          <span className="panel-section-label">Info Kasur</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <select
-              value={ukuranDraft}
-              onChange={(e) => setUkuranDraft(e.target.value)}
-              style={{ fontSize: 12, padding: "5px 7px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-primary)", color: "var(--text-primary)" }}
-            >
-              <option value="">— Ukuran kasur —</option>
-              {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-            <div className="inline-field">
-              <select
-                value={merkDraft}
-                onChange={(e) => setMerkDraft(e.target.value)}
-                style={{ flex: 1, fontSize: 12, padding: "5px 7px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-primary)", color: "var(--text-primary)" }}
-              >
-                <option value="">— Merk kasur —</option>
-                {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <button className="btn btn-secondary btn-sm" onClick={saveInfoKasur}>Simpan</button>
-            </div>
           </div>
         </div>
 
