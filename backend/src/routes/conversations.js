@@ -114,6 +114,8 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   const file = req.file;
   if (!file) return res.status(400).json({ error: "File tidak ada" });
 
+  console.log(`[media] Request masuk: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`);
+
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
     include: { customer: true },
@@ -128,17 +130,21 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      // Kirim URL ke WAHA (WAHA fetch file sendiri — jauh lebih andal untuk video/dokumen besar)
       const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
       const fileUrl = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
-      await sendMedia(
+      console.log(`[media] Kirim ke WAHA → ${fileUrl}`);
+
+      const waResult = await sendMedia(
         conversation.customer.phone,
         { mimetype: file.mimetype, filename: file.originalname, url: fileUrl },
         caption
       );
+      console.log("[media] WAHA berhasil:", JSON.stringify(waResult).slice(0, 200));
     } catch (waErr) {
-      console.error("[sendMedia gagal]", waErr.message);
-      return res.status(502).json({ error: `Gagal kirim media: ${waErr.message}` });
+      console.error("[media] WAHA gagal:", waErr.message);
+      // Hapus file yang sudah tersimpan karena gagal kirim
+      fs.unlink(file.path, () => {});
+      return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
     }
   } else {
     return res.status(400).json({ error: "Channel ini belum didukung (Phase 2)" });
@@ -151,6 +157,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     where: { id: conversation.id },
     data:  { lastMessageAt: new Date() },
   });
+  console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
   res.status(201).json(message);
 });
 

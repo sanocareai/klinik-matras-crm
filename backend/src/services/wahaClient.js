@@ -29,18 +29,18 @@ export async function sendText(to, text) {
 }
 
 // Kirim media (gambar / video / dokumen / suara)
-// file = { mimetype, filename, url } — pakai URL supaya WAHA fetch langsung (lebih andal untuk file besar)
-// atau { mimetype, filename, data } — base64 (fallback, hanya untuk file kecil)
+// file = { mimetype, filename, url } — pakai URL supaya WAHA fetch langsung
 export async function sendMedia(to, file, caption) {
   const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const mime   = file.mimetype || "";
 
+  // NOWEB: sendVideo sering tidak support, gunakan sendFile untuk video & dokumen
+  // sendImage untuk foto (tampil inline di WA), sendVoice untuk audio
   let endpoint = "/api/sendFile";
-  const mime = file.mimetype || "";
-  if (mime.startsWith("image/"))                         endpoint = "/api/sendImage";
-  else if (mime.startsWith("video/") || mime === "video/quicktime") endpoint = "/api/sendVideo";
-  else if (mime.startsWith("audio/"))                   endpoint = "/api/sendVoice";
+  if (mime.startsWith("image/"))  endpoint = "/api/sendImage";
+  else if (mime.startsWith("audio/")) endpoint = "/api/sendVoice";
+  // video → tetap /api/sendFile agar kompatibel NOWEB
 
-  // Bangun objek file: prioritaskan URL (WAHA fetch sendiri) agar tidak ada limit base64 besar
   const filePayload = file.url
     ? { url: file.url, mimetype: mime, filename: file.filename || "file" }
     : { data: file.data, mimetype: mime, filename: file.filename || "file" };
@@ -48,13 +48,16 @@ export async function sendMedia(to, file, caption) {
   const body = { session: WAHA_SESSION, chatId, file: filePayload };
   if (caption) body.caption = caption;
 
+  console.log(`[wahaClient] ${endpoint} → chatId=${chatId} mime=${mime} filePayload.url=${filePayload.url || "(base64)"}`);
+
   const res = await fetch(`${WAHA_BASE_URL}${endpoint}`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`WAHA sendMedia gagal (${res.status}): ${await res.text()}`);
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(`WAHA ${endpoint} gagal (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
 // Download media dari URL langsung (dipakai saat webhook punya payload.media.url)
