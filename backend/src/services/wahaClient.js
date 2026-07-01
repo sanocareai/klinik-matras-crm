@@ -52,6 +52,8 @@ export async function sendMedia(to, file, caption, sendAs = "media") {
 
   const body = { session: WAHA_SESSION, chatId, file: filePayload };
   if (caption) body.caption = caption;
+  // ptt = push-to-talk: wajib true agar WhatsApp kenali sebagai voice note (bukan file attachment biasa)
+  if (endpoint === "/api/sendVoice") body.ptt = true;
 
   console.log(`[wahaClient] ${endpoint} → chatId=${chatId} mime=${mime} filePayload.url=${filePayload.url || "(base64)"}`);
 

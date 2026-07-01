@@ -207,9 +207,6 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
   const [dragOver, setDragOver]           = useState(false); // drag-drop indicator
-  const imageInputRef                     = useRef(null); // foto dari galeri (accept="image/*")
-  const videoInputRef                     = useRef(null); // video dari galeri (accept="video/*")
-  const fileInputRef                      = useRef(null); // semua jenis file (file manager)
   const textareaRef                       = useRef(null); // input teks
 
   // Voice recording state
@@ -603,16 +600,6 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
               <Plus size={16} />
             </button>
 
-            {/* Hidden file inputs — dipanggil dari attach sheet */}
-            <input ref={imageInputRef} type="file" accept="image/*"
-              style={{ display: "none" }}
-              onChange={(e) => handleFileSelect(e, "media")} />
-            <input ref={videoInputRef} type="file" accept="video/*"
-              style={{ display: "none" }}
-              onChange={(e) => handleFileSelect(e, "media")} />
-            <input ref={fileInputRef} type="file"
-              style={{ display: "none" }}
-              onChange={(e) => handleFileSelect(e, "document")} />
 
             {/* Textarea auto-grow — onPaste untuk handle paste gambar dari clipboard */}
             <textarea
@@ -640,22 +627,30 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
       </div>
 
       {/* ── Attach Sheet (bottom sheet untuk lampiran) ── */}
+      {/* Pakai <label> bukan <button> untuk input file — lebih reliable di iOS/Android
+          karena tap pada label = user gesture langsung ke input, tidak perlu .click() programatik */}
       {showAttachSheet && (
         <div className="attach-sheet-overlay" onClick={() => setShowAttachSheet(false)}>
           <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="attach-sheet-handle" />
-            <button className="attach-sheet-item" onClick={() => { imageInputRef.current?.click(); setShowAttachSheet(false); }}>
+            <label className="attach-sheet-item">
+              <input type="file" accept="image/*" style={{ display: "none" }}
+                onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
               <div className="attach-sheet-icon"><ImageIcon size={22} /></div>
               <span>Foto (Galeri)</span>
-            </button>
-            <button className="attach-sheet-item" onClick={() => { videoInputRef.current?.click(); setShowAttachSheet(false); }}>
+            </label>
+            <label className="attach-sheet-item">
+              <input type="file" accept="video/*" style={{ display: "none" }}
+                onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
               <div className="attach-sheet-icon"><Video size={22} /></div>
               <span>Video (Galeri)</span>
-            </button>
-            <button className="attach-sheet-item" onClick={() => { fileInputRef.current?.click(); setShowAttachSheet(false); }}>
+            </label>
+            <label className="attach-sheet-item">
+              <input type="file" style={{ display: "none" }}
+                onChange={(e) => { handleFileSelect(e, "document"); setShowAttachSheet(false); }} />
               <div className="attach-sheet-icon"><Paperclip size={22} /></div>
               <span>File (File Manager)</span>
-            </button>
+            </label>
             <button className="attach-sheet-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><Package size={22} /></div>
               <span>Kirim Produk Klinik Matras</span>
