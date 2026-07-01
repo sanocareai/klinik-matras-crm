@@ -418,14 +418,17 @@ input:focus, select:focus, textarea:focus {
 .bubble.out .bubble-time { text-align: right; }
 
 .chat-input {
-  display: flex; gap: 8px; padding: 12px 16px;
+  display: flex; gap: 8px; padding: 12px 16px; align-items: flex-end;
   background: white; border-top: 1px solid var(--border); flex-shrink: 0;
 }
-.chat-input input {
+.chat-textarea {
   flex: 1; padding: 10px 14px; font-size: 13.5px;
   border: 1px solid var(--border); border-radius: 22px;
+  resize: none; overflow-y: hidden; line-height: 1.45;
+  min-height: 40px; max-height: 120px; overflow-y: auto;
+  font-family: inherit; background: white;
 }
-.chat-input input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.chat-textarea:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); outline: none; }
 .chat-send-btn {
   width: 40px; height: 40px; border-radius: 50%; border: none;
   background: var(--color-primary); color: white;
@@ -1162,6 +1165,65 @@ input:focus, select:focus, textarea:focus {
   background: white; border-top: 1px solid var(--border);
 }
 
+/* ─── CHAT HEADER — DESKTOP/MOBILE SPLIT ─────────────────── */
+.chat-header-desktop-actions {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.chat-meta-desktop { display: contents; } /* semua child tampil di desktop */
+
+/* Dots menu (3 titik) — hidden di desktop, tampil di mobile */
+.chat-dots-container { position: relative; display: none; }
+.chat-dots-btn { flex-shrink: 0; }
+.chat-dots-backdrop { position: fixed; inset: 0; z-index: 498; }
+.chat-dots-dropdown {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  background: white; border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-md);
+  min-width: 190px; z-index: 499; overflow: hidden;
+}
+.chat-dots-dropdown button {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 11px 16px; font-size: 13.5px; background: none; border: none;
+  cursor: pointer; text-align: left; color: var(--text-main);
+  transition: background 0.1s;
+}
+.chat-dots-dropdown button:hover { background: #f8fafc; }
+
+/* ─── ATTACH BOTTOM SHEET ────────────────────────────────── */
+.attach-sheet-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+.attach-sheet {
+  width: 100%; background: white;
+  border-radius: 20px 20px 0 0;
+  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+  animation: slideUp 0.25s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.attach-sheet-handle {
+  width: 40px; height: 4px; border-radius: 2px;
+  background: #d1d5db; margin: 0 auto 16px;
+}
+.attach-sheet-item {
+  display: flex; align-items: center; gap: 16px;
+  width: 100%; padding: 12px 24px; min-height: 56px;
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; font-weight: 500; color: var(--text-main);
+  text-align: left; transition: background 0.1s;
+}
+.attach-sheet-item:hover { background: #f8fafc; }
+.attach-sheet-icon {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: #f1f5f9; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: var(--color-primary);
+}
+
 /* Tombol aksi di input bar (template, lampiran, mic) */
 .chat-action-btn {
   width: 34px; height: 34px; border-radius: 50%; border: none;
@@ -1717,14 +1779,38 @@ input:focus, select:focus, textarea:focus {
   /* Sembunyikan label "Selesaikan" di mobile, hanya ikon */
   .resolve-label { display: none; }
 
+  /* ── Chat window: full-screen overlay saat aktif di mobile ── */
+  .inbox-body.mobile-chat-active .chat-window {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    height: 100vh;
+    height: 100dvh; /* keyboard-aware di Android Chrome */
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Safe area padding untuk notch/home indicator */
+  .chat-input-area {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+
   /* Chat header lebih kompak */
   .chat-header { padding: 10px 12px; gap: 8px; }
   .chat-header-name { font-size: 14px; }
+
+  /* Desktop actions disembunyikan di mobile */
+  .chat-header-desktop-actions { display: none; }
+  /* Meta info (phone, lead badge) disembunyikan di mobile */
+  .chat-meta-desktop { display: none; }
+  /* Dots menu tampil di mobile */
+  .chat-dots-container { display: block; }
 
   /* Input area lebih nyaman di mobile */
   .chat-input { padding: 10px 12px; }
   .chat-action-btn { width: 38px; height: 38px; }
   .chat-send-btn  { width: 42px; height: 42px; }
+  .chat-textarea { font-size: 16px; } /* 16px hindari auto-zoom iOS */
 
   /* Page padding lebih kecil */
   .page { padding: 16px; }

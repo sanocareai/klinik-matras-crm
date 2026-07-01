@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Send, MessageSquare, CheckCircle, ChevronDown, X,
+  Send, MessageSquare, CheckCircle, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
-  ArrowLeft, UserCheck, Users, Info,
+  ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -200,12 +200,15 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [takingOver, setTakingOver]               = useState(false);
   const [showCustomerDetail, setShowCustomerDetail] = useState(false);
+  const [showAttachSheet, setShowAttachSheet]     = useState(false);
+  const [showDotMenu, setShowDotMenu]             = useState(false);
 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
   const mediaInputRef                     = useRef(null); // foto & video
   const docInputRef                       = useRef(null); // dokumen
+  const textareaRef                       = useRef(null); // input teks
 
   // Voice recording state
   const [recording, setRecording]         = useState(false);
@@ -237,6 +240,30 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Reset tinggi textarea saat draft dikosongkan (misal setelah kirim)
+  useEffect(() => {
+    if (!draft && textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, [draft]);
+
+  function autoGrowTextarea(el) {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }
+
+  function handleTextareaKeyDown(e) {
+    const isMobile = window.innerWidth < 768;
+    if (e.key === "Enter") {
+      if (isMobile) return; // di mobile: Enter = baris baru (default browser)
+      if (!e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+      // Shift+Enter → baris baru (default browser)
+    }
+  }
 
   // ── Kirim teks ──
   async function handleSend(e) {
@@ -399,48 +426,77 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           <p className="chat-header-name">{name}</p>
           <div className="chat-header-meta">
             <span className={`channel-badge ${channelClass}`}>{channelLabel}</span>
-            {rawPhone && (
-              <a href={`tel:+${rawPhone}`} className="phone-link" title="Telepon via dialer">
-                <Phone size={12} /> {formatPhoneDisplay(rawPhone)}
-              </a>
-            )}
-            {/* Siapa yang handle */}
-            {isMine ? (
-              <span className="lead-badge mine"><UserCheck size={11} /> Lead Kamu</span>
-            ) : assignedTo ? (
-              <span className="lead-badge other"><Users size={11} /> {assignedTo.name}</span>
-            ) : null}
+            {/* Info tambahan — disembunyikan di mobile supaya tidak overflow */}
+            <span className="chat-meta-desktop">
+              {rawPhone && (
+                <a href={`tel:+${rawPhone}`} className="phone-link" title="Telepon via dialer">
+                  <Phone size={12} /> {formatPhoneDisplay(rawPhone)}
+                </a>
+              )}
+              {isMine ? (
+                <span className="lead-badge mine"><UserCheck size={11} /> Lead Kamu</span>
+              ) : assignedTo ? (
+                <span className="lead-badge other"><Users size={11} /> {assignedTo.name}</span>
+              ) : null}
+            </span>
           </div>
         </div>
-        {/* Tombol ⓘ info pelanggan — hanya tampil di mobile via CSS */}
-        <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
-          <Info size={18} />
-        </button>
 
-        {/* Tombol Ambil Alih */}
-        {canTakeover && (
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleTakeover}
-            disabled={takingOver}
-            title="Ambil alih percakapan ini sebagai lead kamu"
-            style={{ flexShrink: 0 }}
-          >
-            <UserCheck size={13} />
-            {takingOver ? "..." : "Ambil Alih"}
+        {/* Desktop-only: tombol ⓘ, Ambil Alih, status, Selesaikan */}
+        <div className="chat-header-desktop-actions">
+          <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
+            <Info size={18} />
           </button>
-        )}
-        <select value={convStatus} onChange={(e) => handleStatusChange(e.target.value)}
-          className="status-select" style={{ flexShrink: 0 }}>
-          {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        {convStatus !== "RESOLVED" && (
-          <button className="btn btn-primary btn-sm" onClick={handleResolve} disabled={resolving}
-            style={{ gap: 4, display: "flex", alignItems: "center", flexShrink: 0 }}>
-            <CheckCircle size={13} />
-            <span className="resolve-label">{resolving ? "..." : "Selesaikan"}</span>
+          {canTakeover && (
+            <button className="btn btn-secondary btn-sm" onClick={handleTakeover}
+              disabled={takingOver} title="Ambil alih percakapan" style={{ flexShrink: 0 }}>
+              <UserCheck size={13} />
+              {takingOver ? "..." : "Ambil Alih"}
+            </button>
+          )}
+          <select value={convStatus} onChange={(e) => handleStatusChange(e.target.value)}
+            className="status-select" style={{ flexShrink: 0 }}>
+            {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {convStatus !== "RESOLVED" && (
+            <button className="btn btn-primary btn-sm" onClick={handleResolve} disabled={resolving}
+              style={{ gap: 4, display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <CheckCircle size={13} />
+              <span className="resolve-label">{resolving ? "..." : "Selesaikan"}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Mobile-only: tombol ⋯ dengan dropdown aksi */}
+        <div className="chat-dots-container">
+          <button className="chat-action-btn chat-dots-btn"
+            onClick={() => setShowDotMenu((v) => !v)} title="Menu">
+            <MoreVertical size={18} />
           </button>
-        )}
+          {showDotMenu && (
+            <>
+              <div className="chat-dots-backdrop" onClick={() => setShowDotMenu(false)} />
+              <div className="chat-dots-dropdown">
+                <button onClick={() => { setShowCustomerDetail(true); setShowDotMenu(false); }}>
+                  <Info size={14} /> Info Pelanggan
+                </button>
+                {convStatus !== "RESOLVED" && (
+                  <button onClick={() => { handleResolve(); setShowDotMenu(false); }}>
+                    <CheckCircle size={14} /> Tandai Selesai
+                  </button>
+                )}
+                <button onClick={() => { handleStatusChange("PENDING"); setShowDotMenu(false); }}>
+                  <MessageSquare size={14} /> Tandai Pending
+                </button>
+                {canTakeover && (
+                  <button onClick={() => { handleTakeover(); setShowDotMenu(false); }}>
+                    <UserCheck size={14} /> Ambil Alih
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Pesan ── */}
@@ -501,36 +557,30 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
               <MessageSquare size={15} />
             </button>
 
-            {/* Galeri Produk */}
-            <button type="button" onClick={() => { setShowProductPicker((v) => !v); setShowTemplates(false); }}
-              className={`chat-action-btn ${showProductPicker ? "active" : ""}`} title="Kirim produk dari galeri">
-              <Package size={15} />
+            {/* Tombol + lampiran (foto, dokumen, produk) — buka bottom sheet */}
+            <button type="button" onClick={() => setShowAttachSheet((v) => !v)}
+              className={`chat-action-btn ${showAttachSheet ? "active" : ""}`} title="Lampiran">
+              <Plus size={16} />
             </button>
 
-            {/* Foto & Video (tampil inline di WA) */}
-            <button type="button" onClick={() => mediaInputRef.current?.click()}
-              className="chat-action-btn" title="Kirim foto atau video (tampil inline)">
-              <ImageIcon size={15} />
-            </button>
+            {/* Hidden file inputs — dipanggil dari attach sheet */}
             <input ref={mediaInputRef} type="file" accept="image/*,video/*"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "media")} />
-
-            {/* Dokumen (tampil sebagai attachment) */}
-            <button type="button" onClick={() => docInputRef.current?.click()}
-              className="chat-action-btn" title="Kirim dokumen / file">
-              <Paperclip size={15} />
-            </button>
             <input ref={docInputRef} type="file"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "document")} />
 
-            <input
+            {/* Textarea auto-grow menggantikan input satu baris */}
+            <textarea
+              ref={textareaRef}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              rows={1}
+              className="chat-textarea"
               placeholder="Tulis balasan..."
-              style={{ flex: 1 }}
+              onChange={(e) => { setDraft(e.target.value); autoGrowTextarea(e.target); }}
+              onKeyDown={handleTextareaKeyDown}
             />
 
             {/* Rekam suara */}
@@ -545,6 +595,27 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           </form>
         )}
       </div>
+
+      {/* ── Attach Sheet (bottom sheet untuk lampiran) ── */}
+      {showAttachSheet && (
+        <div className="attach-sheet-overlay" onClick={() => setShowAttachSheet(false)}>
+          <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="attach-sheet-handle" />
+            <button className="attach-sheet-item" onClick={() => { mediaInputRef.current?.click(); setShowAttachSheet(false); }}>
+              <div className="attach-sheet-icon"><ImageIcon size={22} /></div>
+              <span>Foto &amp; Video</span>
+            </button>
+            <button className="attach-sheet-item" onClick={() => { docInputRef.current?.click(); setShowAttachSheet(false); }}>
+              <div className="attach-sheet-icon"><Paperclip size={22} /></div>
+              <span>Dokumen</span>
+            </button>
+            <button className="attach-sheet-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
+              <div className="attach-sheet-icon"><Package size={22} /></div>
+              <span>Kirim Produk Klinik Matras</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── CustomerPanel Bottom Sheet (mobile only, via CSS) ── */}
       {showCustomerDetail && (

@@ -32,6 +32,7 @@ const LEAD_SOURCE_COLORS = {
 
 export default function CustomerPanel({ customerId }) {
   const [customer, setCustomer] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [nameDraft, setNameDraft] = useState("");
   const [phoneDraft, setPhoneDraft] = useState("");
   const [cityDraft, setCityDraft] = useState("");
@@ -44,14 +45,23 @@ export default function CustomerPanel({ customerId }) {
   }
 
   useEffect(() => {
-    if (!customerId) { setCustomer(null); return; }
-    api.getCustomer(customerId).then((c) => {
-      setCustomer(c);
-      setNameDraft(c.name || "");
-      setPhoneDraft(c.phone || "");
-      setCityDraft(c.city || "");
-      setLeadSourceDraft(c.leadSource || "OTHER");
-    });
+    if (!customerId) { setCustomer(null); setLoadError(null); return; }
+    console.log("[CustomerPanel] fetch customerId:", customerId);
+    setLoadError(null);
+    setCustomer(null);
+    api.getCustomer(customerId)
+      .then((c) => {
+        console.log("[CustomerPanel] data diterima:", c?.id, c?.name);
+        setCustomer(c);
+        setNameDraft(c.name || "");
+        setPhoneDraft(c.phone || "");
+        setCityDraft(c.city || "");
+        setLeadSourceDraft(c.leadSource || "OTHER");
+      })
+      .catch((err) => {
+        console.error("[CustomerPanel] gagal fetch:", err);
+        setLoadError(err.message || "Gagal memuat data pelanggan");
+      });
   }, [customerId]);
 
   async function updateStage(pipelineStage) {
@@ -83,6 +93,20 @@ export default function CustomerPanel({ customerId }) {
     return (
       <div className="customer-panel customer-panel-empty" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
         <p className="text-muted" style={{ fontSize: 13 }}>Pilih percakapan</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="customer-panel" style={{ padding: 20, textAlign: "center" }}>
+        <p style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>
+          {loadError}
+        </p>
+        <button className="btn btn-ghost btn-sm"
+          onClick={() => { setLoadError(null); setCustomer(null); }}>
+          Coba Lagi
+        </button>
       </div>
     );
   }
