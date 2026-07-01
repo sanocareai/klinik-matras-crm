@@ -1,5 +1,5 @@
 import React from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronRight, Menu } from "lucide-react";
 import { formatTanggalIndo } from "../utils/format.js";
 
@@ -16,8 +16,9 @@ const ROUTE_LABELS = {
   "/pengguna":    ["Pengaturan", "Pengguna & Peran"],
 };
 
-export default function Topbar({ onToggleMobileMenu }) {
+export default function Topbar({ onToggleMobileMenu, unreadCount = 0 }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const crumbs = ROUTE_LABELS[pathname] || [pathname.replace("/", "")];
 
   return (
@@ -42,8 +43,17 @@ export default function Topbar({ onToggleMobileMenu }) {
       </div>
       <div className="topbar-right">
         <span className="topbar-date">{formatTanggalIndo()}</span>
-        <button className="topbar-notif" title="Notifikasi">
+        <button
+          className="topbar-notif"
+          title={unreadCount > 0 ? `${unreadCount} pesan belum dibaca` : "Notifikasi"}
+          onClick={() => navigate("/inbox")}
+        >
           <Bell size={16} />
+          {unreadCount > 0 && (
+            <span className="topbar-notif-badge">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </button>
       </div>
     </div>

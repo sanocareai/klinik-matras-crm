@@ -5,7 +5,7 @@ import Avatar from "../components/Avatar.jsx";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
 import Pagination from "../components/Pagination.jsx";
 import {
-  formatRupiah, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES,
+  formatRupiah, formatPhoneDisplay, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES,
   PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat,
 } from "../utils/format.js";
 import { exportToExcel } from "../utils/export.js";

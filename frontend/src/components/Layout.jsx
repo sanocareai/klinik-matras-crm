@@ -216,7 +216,7 @@ export default function Layout({ user, onLogout, children }) {
       </aside>
 
       <main className="app-content">
-        <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} />
+        <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} unreadCount={unreadCount} />
         <div className="page-body">
           {children}
         </div>

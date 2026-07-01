@@ -11,16 +11,24 @@ const __dirname   = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir  = path.join(__dirname, "../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// NOWEB kadang mengirim from = "@lid" (Local ID) bukan nomor telepon asli.
-// Jika mode "lid" aktif, nomor asli ada di _data.key.remoteJidAlt (@s.whatsapp.net).
+// WEBJS/NOWEB kadang mengirim from = "xxx@lid" (Local ID, bukan nomor telepon asli).
+// Indikator: suffix "@lid" pada field from. Nomor asli ada di remoteJidAlt.
 function extractPhone(payload) {
-  if (
-    payload._data?.key?.addressingMode === "lid" &&
-    payload._data?.key?.remoteJidAlt
-  ) {
-    return cleanPhoneNumber(payload._data.key.remoteJidAlt);
+  const from = payload.from || "";
+  if (from.includes("@lid")) {
+    // Coba beberapa path — WAHA versi berbeda bisa beda struktur payload
+    const realJid =
+      payload._data?.key?.remoteJidAlt ||
+      payload._data?.remoteJidAlt       ||
+      payload.remoteJidAlt;
+    if (realJid) {
+      console.log("[webhook] @lid terdeteksi → pakai remoteJidAlt:", realJid);
+      return cleanPhoneNumber(realJid);
+    }
+    console.warn("[webhook] @lid tanpa remoteJidAlt, pesan dibuang. from:", from);
+    return null;
   }
-  return cleanPhoneNumber(payload.from);
+  return cleanPhoneNumber(from);
 }
 
 // Tentukan mediaType dari MIME type

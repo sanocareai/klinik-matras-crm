@@ -191,9 +191,9 @@ export default function Pengguna({ user: currentUser }) {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table — desktop */}
       {!loading && (
-        <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="settings-card user-table-wrap" style={{ padding: 0, overflow: "hidden" }}>
           <table className="user-table">
             <thead>
               <tr>
@@ -271,6 +271,53 @@ export default function Pengguna({ user: currentUser }) {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Card list — mobile */}
+      {!loading && (
+        <div className="user-card-list">
+          {users.map((u) => {
+            const isMe = u.id === currentUser?.id;
+            return (
+              <div key={u.id} className="user-card">
+                <div className="user-card-header">
+                  <Avatar name={u.name || u.email} size="sm" />
+                  <div className="user-card-info">
+                    <div className="user-card-name">
+                      {u.name}
+                      {isMe && <span className="user-card-you">Anda</span>}
+                    </div>
+                    <div className="user-card-email">{u.email}</div>
+                  </div>
+                  <RoleBadge role={u.role} />
+                </div>
+                <div className="user-card-stats">
+                  <span><Users size={12} /> {u._count?.assignedCustomers || 0} pelanggan</span>
+                  <span><MessageSquare size={12} /> {u._count?.assignedConversations || 0} percakapan</span>
+                </div>
+                <div className="user-card-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowRoleEdit(u); setNewRole(u.role); }}>
+                    <Shield size={13} /> Peran
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
+                    <Key size={13} /> Reset PW
+                  </button>
+                  {!isMe && (
+                    <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }}
+                      onClick={() => setShowDelete(u)}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {users.length === 0 && (
+            <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "32px 0" }}>
+              Belum ada pengguna terdaftar.
+            </p>
+          )}
         </div>
       )}
 
