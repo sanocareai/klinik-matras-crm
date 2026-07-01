@@ -1835,15 +1835,29 @@ input:focus, select:focus, textarea:focus {
   .mobile-bottom-sheet {
     position: absolute; bottom: 0; left: 0; right: 0;
     height: 85vh;
-    background: var(--bg-card);
+    background: #ffffff;
     border-radius: 16px 16px 0 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
   }
   .bottom-sheet-handle {
     width: 40px; height: 4px;
     background: var(--border); border-radius: 99px;
-    margin: 10px auto 0;
+    margin: 10px auto 8px;
+    flex-shrink: 0;
   }
+  /* Override: .inbox-body .customer-panel { display:none } tidak berlaku di dalam bottom sheet */
+  .mobile-bottom-sheet .customer-panel {
+    display: flex !important;
+    overflow-y: visible;
+    border-left: none;
+    background: transparent;
+    flex: 1;
+    min-height: 0;
+    color: #111827;
+  }
+  .mobile-bottom-sheet .panel-body { overflow-y: auto; flex: 1; }
   /* Tombol ⓘ tampil di mobile */
   .chat-info-btn { display: flex; }
 
