@@ -1,99 +1,90 @@
-// Script sekali pakai: generate icon PWA 192px dan 512px
-// Jalankan dengan: node create-icons.js (dari folder frontend/)
-// Tidak butuh package tambahan — pakai zlib bawaan Node.js
+// Script generate icon PWA dari file logo
+// Jalankan: node create-icons.cjs (dari folder frontend/)
+// Butuh file: frontend/public/logo.png (taruh logo asli kamu di sini)
 
-const zlib = require("zlib");
+const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 
-// CRC32 standar untuk chunk PNG
-function crc32(buf) {
-  let crc = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) {
-    crc ^= buf[i];
-    for (let j = 0; j < 8; j++) {
-      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function makeChunk(type, data) {
-  const typeBuf = Buffer.from(type, "ascii");
-  const lenBuf = Buffer.allocUnsafe(4);
-  lenBuf.writeUInt32BE(data.length);
-  const crcInput = Buffer.concat([typeBuf, data]);
-  const crcBuf = Buffer.allocUnsafe(4);
-  crcBuf.writeUInt32BE(crc32(crcInput));
-  return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
-}
-
-function createPNG(size) {
-  // Warna brand: #1e2139 = rgb(30, 33, 57) — background gelap
-  const BG = [30, 33, 57];
-  // Putih untuk elemen foreground
-  const WHITE = [255, 255, 255];
-  // Biru aksen: #60a5fa
-  const ACCENT = [96, 165, 250];
-
-  const cx = size / 2;
-  const cy = size / 2;
-
-  // Pixel data (RGB, 3 bytes per pixel + 1 filter byte per baris)
-  const rows = [];
-  for (let y = 0; y < size; y++) {
-    const row = [0]; // filter = None
-    for (let x = 0; x < size; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      // Lingkaran putih besar (radius 38% dari size)
-      const outerR = size * 0.38;
-      // Lingkaran dalam (warna accent, radius 28%)
-      const innerR = size * 0.22;
-
-      let color = BG;
-
-      if (dist < innerR) {
-        color = ACCENT;
-      } else if (dist < outerR) {
-        color = WHITE;
-      }
-
-      row.push(...color);
-    }
-    rows.push(row);
-  }
-
-  const rawData = Buffer.from(rows.flat());
-  const compressed = zlib.deflateSync(rawData, { level: 9 });
-
-  // IHDR: width(4) height(4) bitDepth(1) colorType(1=RGB=2) compress(1) filter(1) interlace(1)
-  const ihdr = Buffer.allocUnsafe(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // RGB
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  return Buffer.concat([
-    sig,
-    makeChunk("IHDR", ihdr),
-    makeChunk("IDAT", compressed),
-    makeChunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 const publicDir = path.join(__dirname, "public");
-if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
+const logoPath = path.join(publicDir, "logo.png");
 
-fs.writeFileSync(path.join(publicDir, "pwa-192x192.png"), createPNG(192));
-fs.writeFileSync(path.join(publicDir, "pwa-512x512.png"), createPNG(512));
+if (!fs.existsSync(logoPath)) {
+  console.error("❌ File logo.png tidak ditemukan di folder public/");
+  console.error("   Taruh file logo kamu di: frontend/public/logo.png");
+  console.error("   Lalu jalankan lagi: node create-icons.cjs");
+  process.exit(1);
+}
 
-console.log("✓ pwa-192x192.png dibuat");
-console.log("✓ pwa-512x512.png dibuat");
-console.log("Icon berhasil di-generate di folder public/");
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
+async function generateIcons() {
+  console.log("Membaca logo dari public/logo.png ...");
+
+  // Favicon 32x32 — dipakai di tab browser
+  await sharp(logoPath)
+    .resize(32, 32, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toFile(path.join(publicDir, "favicon.png"));
+  console.log("✓ favicon.png (32x32) — tab browser");
+
+  // Favicon 48x48 — fallback resolusi lebih tinggi
+  await sharp(logoPath)
+    .resize(48, 48, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toFile(path.join(publicDir, "favicon-48.png"));
+  console.log("✓ favicon-48.png (48x48)");
+
+  // PWA icon 192x192 — icon app di homescreen Android (kecil)
+  // Logo di-center dengan padding, background putih bersih
+  await sharp(logoPath)
+    .resize(130, 130, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .extend({
+      top: 31, bottom: 31, left: 31, right: 31,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toFile(path.join(publicDir, "pwa-192x192.png"));
+  console.log("✓ pwa-192x192.png — homescreen Android (kecil)");
+
+  // PWA icon 512x512 — splash screen & homescreen besar
+  await sharp(logoPath)
+    .resize(340, 340, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .extend({
+      top: 86, bottom: 86, left: 86, right: 86,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toFile(path.join(publicDir, "pwa-512x512.png"));
+  console.log("✓ pwa-512x512.png — splash screen & homescreen besar");
+
+  // Logo kecil untuk sidebar app (64x64, background transparan)
+  await sharp(logoPath)
+    .resize(64, 64, {
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255, alpha: 0 },
+    })
+    .png()
+    .toFile(path.join(publicDir, "logo-small.png"));
+  console.log("✓ logo-small.png (64x64) — sidebar app");
+
+  console.log("\nSemua icon berhasil dibuat di folder public/");
+  console.log("Langkah selanjutnya: npm run build  (lalu deploy ke VPS)");
+}
+
+generateIcons().catch((err) => {
+  console.error("❌ Error:", err.message);
+  process.exit(1);
+});

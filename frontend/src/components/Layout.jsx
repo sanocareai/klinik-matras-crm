@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, BedDouble, Package, ChevronLeft, ChevronRight, X, Link2,
+  LogOut, Package, ChevronLeft, ChevronRight, X, Link2,
 } from "lucide-react";
 import { api } from "../api.js";
 import Topbar from "./Topbar.jsx";
@@ -137,7 +137,7 @@ export default function Layout({ user, onLogout, children }) {
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
-            <BedDouble size={18} />
+            <img src="/logo-small.png" alt="Logo" style={{ width: 22, height: 22, objectFit: "contain" }} />
           </div>
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0 }}>
