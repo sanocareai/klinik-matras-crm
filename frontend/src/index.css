@@ -1875,6 +1875,7 @@ input:focus, select:focus, textarea:focus {
   }
   .laporan-tab { flex-shrink: 0; padding: 12px 10px; font-size: 12.5px; }
   .laporan-body { padding: 14px 12px; }
+  .laporan-grid { grid-template-columns: 1fr !important; }
 
   /* ── Pengaturan — sidebar jadi tab horizontal ── */
   .settings-layout { flex-direction: column; }

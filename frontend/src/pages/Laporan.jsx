@@ -154,7 +154,7 @@ export default function Laporan() {
                   <KpiBox label="Closing Rate" value={perf?.closingRate != null ? `${perf.closingRate}%` : "—"} sub="percakapan selesai / total" color="#f59e0b" />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
+                <div className="laporan-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
                   <div className="settings-card">
                     <h3 style={{ marginTop: 0, fontSize: 15, fontWeight: 700 }}>Pendapatan Bulanan</h3>
                     {monthlyRevenue.length === 0 ? <p style={{ color: "var(--text-muted)" }}>Belum ada data.</p> : (
@@ -214,7 +214,7 @@ export default function Laporan() {
                   <KpiBox label="Avg Response Time" value={formatDuration(perf?.avgResponseMinutes)} sub="waktu respons rata-rata" color="#3b82f6" />
                   <KpiBox label="Resolved" value={(perf?.resolvedCount || 0).toLocaleString("id-ID")} sub="percakapan selesai" color="#22c55e" />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                <div className="laporan-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="settings-card">
                     <h3 style={{ marginTop: 0, fontSize: 15, fontWeight: 700 }}>Breakdown Channel</h3>
                     {channelBreakdown.length === 0 ? <p style={{ color: "var(--text-muted)" }}>Belum ada data.</p>
