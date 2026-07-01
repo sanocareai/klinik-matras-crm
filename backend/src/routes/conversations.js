@@ -177,30 +177,40 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
   const caption   = req.body.caption?.trim() || "";
-  const sendAs    = req.body.sendAs || "media"; // "media" (inline) | "document" (attachment)
+  let   sendAs    = req.body.sendAs || "media"; // "media" (inline) | "document" (attachment)
   const mediaType = mimeToMediaType(file.mimetype);
   let   mediaUrl  = `/uploads/${file.filename}`;
 
   const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
   let wahaFileMime = file.mimetype;
   let wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
+  let wahaFileName = file.originalname;
+
+  // Audio selain webm/ogg (MP3, AAC, dll) tidak bisa jadi voice note di WA — kirim sebagai file
+  if (file.mimetype.startsWith("audio/") &&
+      !file.mimetype.startsWith("audio/webm") &&
+      !file.mimetype.startsWith("audio/ogg")) {
+    sendAs = "document";
+    console.log("[media] Audio format non-OGG/webm, kirim sebagai dokumen:", file.mimetype);
+  }
 
   // WhatsApp hanya bisa memutar voice note dalam format audio/ogg (codec Opus).
   // Browser merekam dalam audio/webm;codecs=opus → perlu konversi container ke OGG via FFmpeg.
-  if (file.mimetype.startsWith("audio/webm") || file.mimetype.startsWith("audio/webm")) {
-    const baseName   = file.filename.replace(/\.[^.]+$/, "");
+  if (file.mimetype.startsWith("audio/webm")) {
+    const baseName    = file.filename.replace(/\.[^.]+$/, "");
     const oggFilename = `${baseName}.ogg`;
-    const oggPath    = path.join(uploadsDir, oggFilename);
+    const oggPath     = path.join(uploadsDir, oggFilename);
     try {
-      await execAsync(`ffmpeg -y -i "${file.path}" -c:a libopus -f ogg "${oggPath}"`);
+      await execAsync(`ffmpeg -y -i "${file.path}" -vn -c:a libopus -f ogg "${oggPath}"`);
       wahaFileMime = "audio/ogg";
       wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${oggFilename}`;
+      wahaFileName = oggFilename; // pakai nama file OGG, bukan .webm asli
       mediaUrl     = `/uploads/${oggFilename}`;
       fs.unlink(file.path, () => {}); // hapus webm lama
       console.log("[media] Audio dikonversi webm→ogg:", oggFilename);
     } catch (convErr) {
-      console.warn("[media] Konversi webm→ogg gagal (ffmpeg mungkin belum tersedia):", convErr.message);
-      // Fallback: kirim webm saja, mungkin WAHA bisa handle
+      console.warn("[media] Konversi webm→ogg gagal:", convErr.message);
+      // Fallback: kirim webm, WhatsApp mungkin tidak bisa memutar sebagai voice note
     }
   }
 
@@ -208,10 +218,10 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs})`);
+      console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);
       const waResult = await sendMedia(
         conversation.customer.phone,
-        { mimetype: wahaFileMime, filename: file.originalname, url: wahaFileUrl },
+        { mimetype: wahaFileMime, filename: wahaFileName, url: wahaFileUrl },
         caption,
         sendAs
       );

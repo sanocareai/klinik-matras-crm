@@ -626,35 +626,66 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
         )}
       </div>
 
-      {/* ── Attach Sheet (bottom sheet untuk lampiran) ── */}
-      {/* Pakai <label> bukan <button> untuk input file — lebih reliable di iOS/Android
-          karena tap pada label = user gesture langsung ke input, tidak perlu .click() programatik */}
+      {/* ── Attach Sheet (bottom sheet gaya WhatsApp — grid 2×3) ── */}
       {showAttachSheet && (
         <div className="attach-sheet-overlay" onClick={() => setShowAttachSheet(false)}>
           <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="attach-sheet-handle" />
-            <label className="attach-sheet-item">
-              <input type="file" accept="image/*" style={{ display: "none" }}
-                onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-              <div className="attach-sheet-icon"><ImageIcon size={22} /></div>
-              <span>Foto (Galeri)</span>
-            </label>
-            <label className="attach-sheet-item">
-              <input type="file" accept="video/*" style={{ display: "none" }}
-                onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-              <div className="attach-sheet-icon"><Video size={22} /></div>
-              <span>Video (Galeri)</span>
-            </label>
-            <label className="attach-sheet-item">
-              <input type="file" style={{ display: "none" }}
-                onChange={(e) => { handleFileSelect(e, "document"); setShowAttachSheet(false); }} />
-              <div className="attach-sheet-icon"><Paperclip size={22} /></div>
-              <span>File (File Manager)</span>
-            </label>
-            <button className="attach-sheet-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
-              <div className="attach-sheet-icon"><Package size={22} /></div>
-              <span>Kirim Produk Klinik Matras</span>
-            </button>
+            <div className="attach-grid-title">Lampirkan</div>
+            <div className="attach-grid">
+
+              {/* Galeri — foto & video dari galeri */}
+              <label className="attach-item">
+                <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#dbeafe" }}>
+                  <ImageIcon size={24} style={{ color: "#2563eb" }} />
+                </div>
+                <span className="attach-item-label">Galeri</span>
+              </label>
+
+              {/* Kamera — langsung buka kamera */}
+              <label className="attach-item">
+                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#dcfce7" }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                </div>
+                <span className="attach-item-label">Kamera</span>
+              </label>
+
+              {/* Dokumen — semua jenis file */}
+              <label className="attach-item">
+                <input type="file" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "document"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#fef9c3" }}>
+                  <FileText size={24} style={{ color: "#ca8a04" }} />
+                </div>
+                <span className="attach-item-label">Dokumen</span>
+              </label>
+
+              {/* Audio — file audio; OGG → voice note, lainnya → file */}
+              <label className="attach-item">
+                <input type="file" accept="audio/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#fce7f3" }}>
+                  <Mic size={24} style={{ color: "#db2777" }} />
+                </div>
+                <span className="attach-item-label">Audio</span>
+              </label>
+
+              {/* Produk — buka galeri produk CRM */}
+              <button className="attach-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
+                <div className="attach-item-icon" style={{ background: "#ede9fe" }}>
+                  <Package size={24} style={{ color: "#7c3aed" }} />
+                </div>
+                <span className="attach-item-label">Produk</span>
+              </button>
+
+            </div>
           </div>
         </div>
       )}

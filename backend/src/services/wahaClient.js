@@ -12,6 +12,23 @@ function headers() {
   return h;
 }
 
+// WAHA NOWEB kadang mengirim media URL dengan hostname 'localhost' di dalam webhook payload.
+// Dari backend container, 'localhost' berarti backend itu sendiri — bukan WAHA.
+// Fungsi ini replace hostname/port dengan yang ada di WAHA_BASE_URL (contoh: http://waha:3000).
+function normalizeWahaUrl(url) {
+  if (!url) return url;
+  try {
+    const base   = new URL(WAHA_BASE_URL);
+    const parsed = new URL(url);
+    parsed.hostname = base.hostname;
+    parsed.port     = base.port || "";
+    parsed.protocol = base.protocol;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Kirim pesan teks
 export async function sendText(to, text) {
   const rawDigits = to.split("@")[0];
@@ -72,7 +89,9 @@ export async function downloadMediaFromUrl(url) {
   try {
     const h = {};
     if (WAHA_API_KEY) h["X-Api-Key"] = WAHA_API_KEY;
-    const res = await fetch(url, { headers: h });
+    const normalizedUrl = normalizeWahaUrl(url);
+    console.log("[downloadMediaFromUrl] url:", url?.slice(0, 80), "→ normalized:", normalizedUrl?.slice(0, 80));
+    const res = await fetch(normalizedUrl, { headers: h });
     if (!res.ok) {
       console.warn("[downloadMediaFromUrl] Gagal:", res.status, url);
       return null;

@@ -1220,7 +1220,7 @@ input:focus, select:focus, textarea:focus {
 }
 .chat-dots-dropdown button:hover { background: #f8fafc; }
 
-/* ─── ATTACH BOTTOM SHEET ────────────────────────────────── */
+/* ─── ATTACH BOTTOM SHEET (gaya WhatsApp grid) ──────────── */
 .attach-sheet-overlay {
   position: fixed; inset: 0; z-index: 500;
   background: rgba(0,0,0,0.45);
@@ -1228,9 +1228,9 @@ input:focus, select:focus, textarea:focus {
   animation: fadeIn 0.2s ease;
 }
 .attach-sheet {
-  width: 100%; background: white;
+  width: 100%; background: #ffffff;
   border-radius: 20px 20px 0 0;
-  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+  padding: 10px 20px max(24px, env(safe-area-inset-bottom));
   animation: slideUp 0.25s ease;
 }
 @keyframes slideUp {
@@ -1239,20 +1239,30 @@ input:focus, select:focus, textarea:focus {
 }
 .attach-sheet-handle {
   width: 40px; height: 4px; border-radius: 2px;
-  background: #d1d5db; margin: 0 auto 16px;
+  background: #d1d5db; margin: 0 auto 12px;
 }
-.attach-sheet-item {
-  display: flex; align-items: center; gap: 16px;
-  width: 100%; padding: 12px 24px; min-height: 56px;
-  background: none; border: none; cursor: pointer;
-  font-size: 15px; font-weight: 500; color: var(--text-main);
-  text-align: left; transition: background 0.1s;
+.attach-grid-title {
+  font-size: 12px; color: #9ca3af; text-align: center; margin-bottom: 16px;
+  text-transform: uppercase; letter-spacing: 0.04em;
 }
-.attach-sheet-item:hover { background: #f8fafc; }
-.attach-sheet-icon {
-  width: 44px; height: 44px; border-radius: 50%;
-  background: #f1f5f9; display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; color: var(--color-primary);
+.attach-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px 8px;
+  padding-bottom: 4px;
+}
+.attach-item {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  cursor: pointer; border: none; background: none; padding: 4px 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.attach-item:active .attach-item-icon { opacity: 0.7; transform: scale(0.95); }
+.attach-item-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: #f3f4f6;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.1s, transform 0.1s;
+}
+.attach-item-label {
+  font-size: 12px; color: #374151; font-weight: 500;
 }
 
 /* Tombol aksi di input bar (template, lampiran, mic) */

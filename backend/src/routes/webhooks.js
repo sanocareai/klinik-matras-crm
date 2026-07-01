@@ -31,12 +31,18 @@ function extractPhone(payload) {
   return cleanPhoneNumber(from);
 }
 
+// Bersihkan MIME type dari codec info (contoh: "audio/ogg; codecs=opus" → "audio/ogg")
+function cleanMime(mime) {
+  return (mime || "").split(";")[0].trim().toLowerCase();
+}
+
 // Tentukan mediaType dari MIME type
 function mimeToMediaType(mime) {
-  if (!mime) return "document";
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  if (mime.startsWith("audio/")) return "audio";
+  const m = cleanMime(mime);
+  if (!m) return "document";
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
   return "document";
 }
 
@@ -59,15 +65,16 @@ async function downloadWithRetry(mediaInfo, messageId) {
   return null;
 }
 
-// Ekstensi file dari MIME type
+// Ekstensi file dari MIME type — pakai cleanMime() dulu agar "audio/ogg; codecs=opus" → ".ogg"
 function extFromMime(mime) {
   const map = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
     "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm",
-    "audio/ogg": ".ogg", "audio/webm": ".webm", "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg", "audio/opus": ".ogg", "audio/webm": ".webm",
+    "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac",
     "application/pdf": ".pdf",
   };
-  return map[mime] || ".bin";
+  return map[cleanMime(mime)] || ".bin";
 }
 
 webhookRouter.post("/waha", async (req, res) => {
@@ -182,7 +189,7 @@ webhookRouter.post("/waha", async (req, res) => {
       const mime = mediaInfo?.mimetype || payload._data?.mimetype || "";
       mediaType = mimeToMediaType(mime);
 
-      console.log("[webhook] Ada media, mime:", mime, "mediaInfo:", JSON.stringify(mediaInfo));
+      console.log("[webhook] Ada media, mime:", mime, "cleanMime:", cleanMime(mime), "ext:", extFromMime(mime), "url:", mediaInfo?.url?.slice(0, 80));
 
       const downloaded = await downloadWithRetry(mediaInfo, externalId);
 
