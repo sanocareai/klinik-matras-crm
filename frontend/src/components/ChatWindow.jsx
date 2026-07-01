@@ -634,18 +634,24 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <div className="attach-grid-title">Lampirkan</div>
             <div className="attach-grid">
 
-              {/* Galeri — foto & video dari galeri HP (plain input tanpa capture/multiple = reliable di Android) */}
+              {/* Foto — accept image/* saja: Samsung langsung buka Gallery tanpa source chooser */}
               <label className="attach-item">
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  style={{ display: "none" }}
-                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }}
-                />
+                <input type="file" accept="image/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
                 <div className="attach-item-icon" style={{ background: "#dbeafe" }}>
                   <ImageIcon size={24} style={{ color: "#2563eb" }} />
                 </div>
-                <span className="attach-item-label">Galeri</span>
+                <span className="attach-item-label">Foto</span>
+              </label>
+
+              {/* Video — accept video/* saja: Samsung langsung buka galeri video */}
+              <label className="attach-item">
+                <input type="file" accept="video/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#e0f2fe" }}>
+                  <Video size={24} style={{ color: "#0284c7" }} />
+                </div>
+                <span className="attach-item-label">Video</span>
               </label>
 
               {/* Kamera — langsung buka kamera */}
