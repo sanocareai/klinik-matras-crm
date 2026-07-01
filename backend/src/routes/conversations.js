@@ -2,10 +2,14 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { exec } from "child_process";
+import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendText, sendMedia } from "../services/wahaClient.js";
+
+const execAsync = promisify(exec);
 
 export const conversationRouter = express.Router();
 conversationRouter.use(requireAuth);
@@ -140,19 +144,39 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   const caption   = req.body.caption?.trim() || "";
   const sendAs    = req.body.sendAs || "media"; // "media" (inline) | "document" (attachment)
   const mediaType = mimeToMediaType(file.mimetype);
-  const mediaUrl  = `/uploads/${file.filename}`;
+  let   mediaUrl  = `/uploads/${file.filename}`;
+
+  const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+  let wahaFileMime = file.mimetype;
+  let wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
+
+  // WhatsApp hanya bisa memutar voice note dalam format audio/ogg (codec Opus).
+  // Browser merekam dalam audio/webm;codecs=opus → perlu konversi container ke OGG via FFmpeg.
+  if (file.mimetype.startsWith("audio/webm") || file.mimetype.startsWith("audio/webm")) {
+    const baseName   = file.filename.replace(/\.[^.]+$/, "");
+    const oggFilename = `${baseName}.ogg`;
+    const oggPath    = path.join(uploadsDir, oggFilename);
+    try {
+      await execAsync(`ffmpeg -y -i "${file.path}" -c:a libopus -f ogg "${oggPath}"`);
+      wahaFileMime = "audio/ogg";
+      wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${oggFilename}`;
+      mediaUrl     = `/uploads/${oggFilename}`;
+      fs.unlink(file.path, () => {}); // hapus webm lama
+      console.log("[media] Audio dikonversi webm→ogg:", oggFilename);
+    } catch (convErr) {
+      console.warn("[media] Konversi webm→ogg gagal (ffmpeg mungkin belum tersedia):", convErr.message);
+      // Fallback: kirim webm saja, mungkin WAHA bisa handle
+    }
+  }
 
   if (conversation.channel === "WHATSAPP") {
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
-      const fileUrl = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
-      console.log(`[media] Kirim ke WAHA → ${fileUrl} (sendAs=${sendAs})`);
-
+      console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs})`);
       const waResult = await sendMedia(
         conversation.customer.phone,
-        { mimetype: file.mimetype, filename: file.originalname, url: fileUrl },
+        { mimetype: wahaFileMime, filename: file.originalname, url: wahaFileUrl },
         caption,
         sendAs
       );

@@ -206,8 +206,8 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
-  const mediaInputRef                     = useRef(null); // foto & video
-  const docInputRef                       = useRef(null); // dokumen
+  const mediaInputRef                     = useRef(null); // foto & video dari galeri
+  const fileInputRef                      = useRef(null); // semua jenis file (file manager)
   const textareaRef                       = useRef(null); // input teks
 
   // Voice recording state
@@ -567,8 +567,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <input ref={mediaInputRef} type="file" accept="image/*,video/*"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "media")} />
-            <input ref={docInputRef} type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv"
+            <input ref={fileInputRef} type="file"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "document")} />
 
@@ -603,11 +602,11 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <div className="attach-sheet-handle" />
             <button className="attach-sheet-item" onClick={() => { mediaInputRef.current?.click(); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><ImageIcon size={22} /></div>
-              <span>Foto &amp; Video</span>
+              <span>Foto &amp; Video (Galeri)</span>
             </button>
-            <button className="attach-sheet-item" onClick={() => { docInputRef.current?.click(); setShowAttachSheet(false); }}>
+            <button className="attach-sheet-item" onClick={() => { fileInputRef.current?.click(); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><Paperclip size={22} /></div>
-              <span>Dokumen</span>
+              <span>File (File Manager)</span>
             </button>
             <button className="attach-sheet-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><Package size={22} /></div>
