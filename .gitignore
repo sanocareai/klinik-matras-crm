@@ -1,6 +1,6 @@
 node_modules/
 .env
-frontend/dist/
+# frontend/dist/ — TIDAK di-ignore, agar VPS bisa git pull langsung tanpa perlu npm run build di VPS
 *.log
 backend/uploads/*
 !backend/uploads/.gitkeep
