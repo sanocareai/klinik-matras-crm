@@ -216,7 +216,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const chunksRef                         = useRef([]);
   const timerRef                          = useRef(null);
 
-  const bottomRef = useRef(null);
+  const bottomRef    = useRef(null);
+  const fotoInputRef  = useRef(null);
+  const videoInputRef = useRef(null);
 
   useEffect(() => {
     if (!conversation) return;
@@ -287,6 +289,33 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     if (mime.startsWith("audio/")) { mediaType = "audio"; preview = URL.createObjectURL(file); }
     const finalSendAs = sendAs || (mediaType === "document" ? "document" : "media");
     setPendingFile({ file, preview, mediaType, sendAs: finalSendAs });
+  }
+
+  // ── Buka galeri foto/video via showOpenFilePicker (bypass Android Camera chooser) ──
+  async function openGalleryPicker(type) {
+    setShowAttachSheet(false);
+    const isPhoto = type === "foto";
+    if (typeof window.showOpenFilePicker === "function") {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          startIn: isPhoto ? "pictures" : "videos",
+          types: [{
+            description: isPhoto ? "Gambar" : "Video",
+            accept: isPhoto
+              ? { "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif"] }
+              : { "video/*": [".mp4", ".3gp", ".mov", ".webm", ".avi"] },
+          }],
+        });
+        const file = await handle.getFile();
+        openFilePreview(file, "media");
+        return;
+      } catch (e) {
+        if (e.name === "AbortError") return; // user cancel
+        // showOpenFilePicker gagal — fallback ke input biasa
+      }
+    }
+    if (isPhoto) fotoInputRef.current?.click();
+    else videoInputRef.current?.click();
   }
 
   // ── Pilih file dari input ──
@@ -634,25 +663,25 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <div className="attach-grid-title">Lampirkan</div>
             <div className="attach-grid">
 
-              {/* Foto — langsung ke galeri foto (image/* saja, hindari Camera intent) */}
-              <label className="attach-item">
-                <input type="file" accept="image/*" multiple style={{ display: "none" }}
-                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+              {/* Foto — showOpenFilePicker (bypass Android Camera chooser) */}
+              <button className="attach-item" onClick={() => openGalleryPicker("foto")}>
+                <input ref={fotoInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); }} />
                 <div className="attach-item-icon" style={{ background: "#dbeafe" }}>
                   <ImageIcon size={24} style={{ color: "#2563eb" }} />
                 </div>
                 <span className="attach-item-label">Foto</span>
-              </label>
+              </button>
 
-              {/* Video — langsung ke galeri video (video/* saja, hindari Camera+image intent) */}
-              <label className="attach-item">
-                <input type="file" accept="video/*" multiple style={{ display: "none" }}
-                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+              {/* Video — showOpenFilePicker (bypass Android Camera chooser) */}
+              <button className="attach-item" onClick={() => openGalleryPicker("video")}>
+                <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); }} />
                 <div className="attach-item-icon" style={{ background: "#e0f2fe" }}>
                   <Video size={24} style={{ color: "#0284c7" }} />
                 </div>
                 <span className="attach-item-label">Video</span>
-              </label>
+              </button>
 
               {/* Kamera — langsung buka kamera */}
               <label className="attach-item">
