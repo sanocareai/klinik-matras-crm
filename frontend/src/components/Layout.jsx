@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import Topbar from "./Topbar.jsx";
+import ToastNotif from "./ToastNotif.jsx";
 
 // Seksi sidebar — adminOnly di level section = sembunyikan seluruh seksi untuk SALES
 const NAV_SECTIONS = [
@@ -57,13 +58,34 @@ const NAV_SECTIONS = [
   },
 ];
 
+// Buat bunyi notifikasi pakai Web Audio API — tidak perlu file eksternal
+function playNotifSound() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+    ctx.close();
+  } catch {}
+}
+
 export default function Layout({ user, onLogout, children }) {
   const [unreadCount, setUnreadCount] = useState(0);
+  const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
   const [collapsed, setCollapsed]     = useState(
     () => localStorage.getItem("sidebar-collapsed") === "true"
   );
   const [mobileOpen, setMobileOpen]   = useState(false);
   const prevUnread = useRef(null); // null = belum ada data awal
+  const lastSeenAt = useRef(new Date().toISOString()); // timestamp polling terakhir
 
   const isAdmin = user?.role === "ADMIN";
 
@@ -94,17 +116,25 @@ export default function Layout({ user, onLogout, children }) {
   useEffect(() => {
     async function fetchUnread() {
       try {
-        const { count } = await api.getUnreadCount();
+        const { count, latest } = await api.getLatestUnread(lastSeenAt.current);
+        const now = new Date().toISOString();
+
         // Pertama kali load: simpan sebagai baseline, tidak notif
         if (prevUnread.current === null) {
           prevUnread.current = count;
-        } else if (count > prevUnread.current) {
+          lastSeenAt.current = now;
+          setUnreadCount(count);
+          return;
+        }
+
+        if (count > prevUnread.current) {
           // Ada pesan baru masuk sejak polling terakhir
           kirimNotifikasi(count - prevUnread.current);
-          prevUnread.current = count;
-        } else {
-          prevUnread.current = count;
+          playNotifSound();
+          if (latest) setToast(latest);
         }
+        prevUnread.current = count;
+        lastSeenAt.current = now;
         setUnreadCount(count);
       } catch {}
     }
@@ -128,6 +158,9 @@ export default function Layout({ user, onLogout, children }) {
 
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
+      {/* Toast notifikasi pesan masuk */}
+      <ToastNotif toast={toast} onClose={() => setToast(null)} />
+
       {/* Backdrop untuk mobile sidebar */}
       {mobileOpen && (
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />

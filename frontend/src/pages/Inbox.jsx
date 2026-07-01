@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import ConversationList from "../components/ConversationList.jsx";
 import ChatWindow from "../components/ChatWindow.jsx";
@@ -12,6 +13,8 @@ export default function Inbox({ user }) {
   const [search, setSearch]               = useState("");
   // Mobile: 'list' | 'chat'
   const [mobileView, setMobileView]       = useState("list");
+  const [searchParams, setSearchParams]   = useSearchParams();
+  const autoOpenDone = useRef(false);
 
   async function handleSelect(conv) {
     setActive(conv);
@@ -28,6 +31,17 @@ export default function Inbox({ user }) {
     async function load() {
       const data = await api.getConversations(filterStatus || undefined);
       setConversations(data);
+
+      // Buka konversasi secara otomatis jika ada ?conv=ID di URL (dari klik toast)
+      const convId = searchParams.get("conv");
+      if (convId && !autoOpenDone.current) {
+        const target = data.find((c) => c.id === convId);
+        if (target) {
+          autoOpenDone.current = true;
+          handleSelect(target);
+          setSearchParams({}, { replace: true }); // hapus query param dari URL
+        }
+      }
     }
     load();
     const interval = setInterval(load, 5000);

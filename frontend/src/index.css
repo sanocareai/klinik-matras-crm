@@ -858,6 +858,37 @@ input:focus, select:focus, textarea:focus {
 .dot-won       { background: #16a34a; }
 .dot-lost      { background: #dc2626; }
 
+/* ── Kanban card — tombol "Pindah ke..." (mobile & desktop) ── */
+.kanban-card-menu-btn {
+  width: 26px; height: 26px; border-radius: 6px; border: none;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.kanban-card-menu-btn:hover { background: #f1f5f9; color: var(--text-main); }
+.kanban-menu-backdrop {
+  position: fixed; inset: 0; z-index: 600;
+}
+.kanban-stage-picker {
+  position: absolute; top: 28px; right: 0;
+  background: white; border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  min-width: 160px; z-index: 601;
+  padding: 6px 0;
+}
+.kanban-stage-picker-title {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  padding: 4px 12px 6px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.kanban-stage-option {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border: none; background: transparent;
+  font-size: 13px; color: var(--text-main); cursor: pointer; text-align: left;
+  transition: background 0.1s;
+}
+.kanban-stage-option:hover { background: #f8fafc; }
+
 /* ─── FUNNEL CHART ───────────────────────────────────────── */
 .funnel-section { margin-bottom: 24px; }
 .funnel-wrap { display: flex; align-items: stretch; gap: 0; }
@@ -1732,6 +1763,54 @@ input:focus, select:focus, textarea:focus {
 }
 .install-prompt-close:hover { background: rgba(255,255,255,0.16); color: white; }
 
+/* ─── TOAST NOTIFIKASI IN-APP ────────────────────────────── */
+.toast-notif {
+  position: fixed; bottom: 80px; right: 16px;
+  background: white; border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06);
+  z-index: 9500; max-width: 320px; min-width: 240px;
+  display: flex; align-items: stretch;
+  animation: toastSlideIn 0.25s ease;
+  overflow: hidden;
+}
+@keyframes toastSlideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.toast-notif-inner {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 12px 10px 12px 14px; cursor: pointer;
+  border: none; background: transparent; text-align: left;
+}
+.toast-notif-inner:hover { background: #f8fafc; }
+.toast-notif-icon { flex-shrink: 0; }
+.toast-notif-body { flex: 1; min-width: 0; }
+.toast-notif-name {
+  font-size: 13px; font-weight: 700; color: var(--text-main);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast-notif-preview {
+  font-size: 12px; color: var(--text-muted); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast-notif-close {
+  padding: 8px 10px; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; align-self: flex-start;
+  margin-top: 6px; border-radius: 6px; line-height: 1;
+}
+.toast-notif-close:hover { background: #f1f5f9; }
+
+/* ─── DRAG-DROP ZONE di INBOX ────────────────────────────── */
+.chat-input-area.drag-active { border-top: 2px dashed var(--color-primary); }
+.chat-drop-zone {
+  position: absolute; inset: 0; z-index: 10;
+  background: rgba(37,99,235,0.08);
+  border: 2px dashed var(--color-primary); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; color: var(--color-primary);
+  pointer-events: none;
+}
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */
@@ -2041,6 +2120,11 @@ input:focus, select:focus, textarea:focus {
 
   /* ── Pipeline — card overflow ── */
   .kanban-card-value { font-size: 11px; }
+  /* Toast di mobile: atas layar, lebar penuh */
+  .toast-notif {
+    bottom: auto; top: 70px; right: 12px; left: 12px;
+    max-width: none;
+  }
 
   /* ── Pengguna — sembunyikan tabel, tampilkan card ── */
   .user-table-wrap { display: none; }

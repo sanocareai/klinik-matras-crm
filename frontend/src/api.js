@@ -61,6 +61,7 @@ export const api = {
   getConversations: (status) =>
     request("/conversations" + (status ? `?status=${status}` : "")),
   getUnreadCount: () => request("/conversations/unread-count"),
+  getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
   sendMessage: (conversationId, content) =>

@@ -40,6 +40,25 @@ function mimeToMediaType(mime) {
   return "document";
 }
 
+// Download media dengan retry — WAHA terkadang belum selesai proses media saat webhook tiba
+async function downloadWithRetry(mediaInfo, messageId) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) {
+      await new Promise(r => setTimeout(r, 1500 * attempt));
+      console.log(`[webhook] Retry download attempt ${attempt} untuk id: ${messageId}`);
+    }
+    if (mediaInfo?.url) {
+      const result = await downloadMediaFromUrl(mediaInfo.url);
+      if (result?.data) return result;
+    }
+    if (messageId) {
+      const result = await downloadMediaMessage(messageId);
+      if (result?.data) return result;
+    }
+  }
+  return null;
+}
+
 // Ekstensi file dari MIME type
 function extFromMime(mime) {
   const map = {
@@ -165,17 +184,7 @@ webhookRouter.post("/waha", async (req, res) => {
 
       console.log("[webhook] Ada media, mime:", mime, "mediaInfo:", JSON.stringify(mediaInfo));
 
-      let downloaded = null;
-
-      // Prioritas 1: URL dari payload.media (WAHA simpan sendiri di server)
-      if (mediaInfo?.url) {
-        downloaded = await downloadMediaFromUrl(mediaInfo.url);
-      }
-
-      // Prioritas 2: endpoint download via message ID
-      if (!downloaded) {
-        downloaded = await downloadMediaMessage(externalId);
-      }
+      const downloaded = await downloadWithRetry(mediaInfo, externalId);
 
       if (downloaded?.data) {
         const finalMime = downloaded.mimetype || mime;

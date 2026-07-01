@@ -43,6 +43,41 @@ conversationRouter.get("/unread-count", async (req, res) => {
   res.json({ count });
 });
 
+// Polling lengkap: unread count + pesan terbaru (untuk toast in-app)
+// since = ISO timestamp — hanya kembalikan pesan setelah waktu ini
+conversationRouter.get("/latest-unread", async (req, res) => {
+  const count = await prisma.conversation.count({ where: { unread: true } });
+
+  const sinceParam = req.query.since;
+  const since = sinceParam ? new Date(sinceParam) : new Date(Date.now() - 15000);
+
+  const latestMsg = await prisma.message.findFirst({
+    where: {
+      direction:  "INBOUND",
+      createdAt:  { gt: since },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      conversation: { include: { customer: true } },
+    },
+  });
+
+  let latest = null;
+  if (latestMsg) {
+    const cust = latestMsg.conversation?.customer;
+    latest = {
+      conversationId: latestMsg.conversationId,
+      customerName:   cust?.name || cust?.phone || "Pelanggan",
+      preview:        latestMsg.content
+        ? latestMsg.content.slice(0, 60)
+        : latestMsg.mediaType ? `[${latestMsg.mediaType}]` : "",
+      createdAt: latestMsg.createdAt,
+    };
+  }
+
+  res.json({ count, latest });
+});
+
 // Daftar percakapan
 conversationRouter.get("/", async (req, res) => {
   const { status, search } = req.query;

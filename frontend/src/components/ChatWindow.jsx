@@ -206,7 +206,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
-  const mediaInputRef                     = useRef(null); // foto & video dari galeri
+  const [dragOver, setDragOver]           = useState(false); // drag-drop indicator
+  const imageInputRef                     = useRef(null); // foto dari galeri (accept="image/*")
+  const videoInputRef                     = useRef(null); // video dari galeri (accept="video/*")
   const fileInputRef                      = useRef(null); // semua jenis file (file manager)
   const textareaRef                       = useRef(null); // input teks
 
@@ -278,19 +280,47 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     finally { setSending(false); }
   }
 
-  // ── Pilih file ──
-  // sendAs: "media" (foto/video tampil inline di WA) | "document" (tampil sebagai attachment)
+  // ── Buka preview file (dari input, paste, atau drag-drop) ──
+  function openFilePreview(file, sendAs) {
+    const mime = file.type || "";
+    let mediaType = "document";
+    let preview   = null;
+    if (mime.startsWith("image/")) { mediaType = "image"; preview = URL.createObjectURL(file); }
+    if (mime.startsWith("video/")) { mediaType = "video"; preview = URL.createObjectURL(file); }
+    if (mime.startsWith("audio/")) { mediaType = "audio"; preview = URL.createObjectURL(file); }
+    const finalSendAs = sendAs || (mediaType === "document" ? "document" : "media");
+    setPendingFile({ file, preview, mediaType, sendAs: finalSendAs });
+  }
+
+  // ── Pilih file dari input ──
   function handleFileSelect(e, sendAs = "media") {
     const file = e.target.files?.[0];
     if (!file) return;
-    const mime = file.type;
-    let mediaType = "document";
-    let preview   = null;
-    if (mime.startsWith("image/"))  { mediaType = "image"; preview = URL.createObjectURL(file); }
-    if (mime.startsWith("video/"))  { mediaType = "video"; preview = URL.createObjectURL(file); }
-    if (mime.startsWith("audio/"))  { mediaType = "audio"; preview = URL.createObjectURL(file); }
-    setPendingFile({ file, preview, mediaType, sendAs });
+    openFilePreview(file, sendAs);
     e.target.value = "";
+  }
+
+  // ── Paste gambar dari clipboard (Ctrl+V / long-press paste) ──
+  function handlePaste(e) {
+    const items = Array.from(e.clipboardData?.items || []);
+    const fileItem = items.find(item => item.kind === "file");
+    if (!fileItem) return; // teks biasa, biarkan default
+    e.preventDefault();
+    const file = fileItem.getAsFile();
+    if (file) openFilePreview(file);
+  }
+
+  // ── Drag-drop file ke area input ──
+  function handleDragOver(e) {
+    e.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) openFilePreview(file);
   }
 
   // ── Kirim media / attachment ──
@@ -506,7 +536,17 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
       </div>
 
       {/* ── Input area ── */}
-      <div className="chat-input-area">
+      <div
+        className={`chat-input-area${dragOver ? " drag-active" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        {dragOver && (
+          <div className="chat-drop-zone">
+            <span>Drop file di sini untuk melampirkan</span>
+          </div>
+        )}
         {/* File preview */}
         {pendingFile && (
           <FilePreview
@@ -564,14 +604,17 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             </button>
 
             {/* Hidden file inputs — dipanggil dari attach sheet */}
-            <input ref={mediaInputRef} type="file" accept="image/*,video/*"
+            <input ref={imageInputRef} type="file" accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => handleFileSelect(e, "media")} />
+            <input ref={videoInputRef} type="file" accept="video/*"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "media")} />
             <input ref={fileInputRef} type="file"
               style={{ display: "none" }}
               onChange={(e) => handleFileSelect(e, "document")} />
 
-            {/* Textarea auto-grow menggantikan input satu baris */}
+            {/* Textarea auto-grow — onPaste untuk handle paste gambar dari clipboard */}
             <textarea
               ref={textareaRef}
               value={draft}
@@ -580,6 +623,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
               placeholder="Tulis balasan..."
               onChange={(e) => { setDraft(e.target.value); autoGrowTextarea(e.target); }}
               onKeyDown={handleTextareaKeyDown}
+              onPaste={handlePaste}
             />
 
             {/* Rekam suara */}
@@ -600,9 +644,13 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
         <div className="attach-sheet-overlay" onClick={() => setShowAttachSheet(false)}>
           <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="attach-sheet-handle" />
-            <button className="attach-sheet-item" onClick={() => { mediaInputRef.current?.click(); setShowAttachSheet(false); }}>
+            <button className="attach-sheet-item" onClick={() => { imageInputRef.current?.click(); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><ImageIcon size={22} /></div>
-              <span>Foto &amp; Video (Galeri)</span>
+              <span>Foto (Galeri)</span>
+            </button>
+            <button className="attach-sheet-item" onClick={() => { videoInputRef.current?.click(); setShowAttachSheet(false); }}>
+              <div className="attach-sheet-icon"><Video size={22} /></div>
+              <span>Video (Galeri)</span>
             </button>
             <button className="attach-sheet-item" onClick={() => { fileInputRef.current?.click(); setShowAttachSheet(false); }}>
               <div className="attach-sheet-icon"><Paperclip size={22} /></div>

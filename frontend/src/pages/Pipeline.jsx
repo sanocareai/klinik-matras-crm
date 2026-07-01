@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, RefreshCw, MoreVertical } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import { formatRupiah, STAGE_LABELS } from "../utils/format.js";
@@ -13,6 +13,7 @@ export default function Pipeline() {
   const [users, setUsers]     = useState([]);
   const [filterSales, setFilterSales] = useState("");
   const [loading, setLoading] = useState(true);
+  const [moveMenu, setMoveMenu] = useState(null); // ID card yang menu-nya terbuka
   const dragState = useRef(null);
   const [dragOver, setDragOver] = useState(null);
 
@@ -41,7 +42,24 @@ export default function Pipeline() {
     return getCards(stage).reduce((s, c) => s + (c.totalValue || 0), 0);
   }
 
-  // Drag & drop handlers
+  // Pindah card ke stage baru — dipakai oleh drag-and-drop maupun tombol mobile
+  async function moveCardToStage(card, fromStage, toStage) {
+    if (fromStage === toStage) return;
+    setBoard((prev) => {
+      const next = { ...prev };
+      next[fromStage] = (prev[fromStage] || []).filter((c) => c.id !== card.id);
+      next[toStage]   = [{ ...card }, ...(prev[toStage] || [])];
+      return next;
+    });
+    try {
+      await api.updateCustomer(card.id, { pipelineStage: toStage });
+    } catch (err) {
+      alert("Gagal memindah pelanggan: " + err.message);
+      loadBoard();
+    }
+  }
+
+  // Drag & drop handlers (desktop)
   function onDragStart(e, card, fromStage) {
     dragState.current = { card, fromStage };
     e.dataTransfer.effectAllowed = "move";
@@ -59,22 +77,7 @@ export default function Pipeline() {
     if (!dragState.current) return;
     const { card, fromStage } = dragState.current;
     dragState.current = null;
-    if (fromStage === toStage) return;
-
-    // Optimistic update
-    setBoard((prev) => {
-      const next = { ...prev };
-      next[fromStage] = (prev[fromStage] || []).filter((c) => c.id !== card.id);
-      next[toStage]   = [{ ...card }, ...(prev[toStage] || [])];
-      return next;
-    });
-
-    try {
-      await api.updateCustomer(card.id, { pipelineStage: toStage });
-    } catch (err) {
-      alert("Gagal memindah pelanggan: " + err.message);
-      loadBoard(); // revert
-    }
+    await moveCardToStage(card, fromStage, toStage);
   }
 
   function handleExport() {
@@ -149,11 +152,36 @@ export default function Pipeline() {
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <Avatar name={card.name || card.phone || "?"} size="sm" />
-                      <div style={{ minWidth: 0 }}>
-                        <div className="kanban-card-name" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="kanban-card-name">
                           {card.name || card.phone || "—"}
                         </div>
                         {card.phone && <div className="kanban-card-phone">{card.phone}</div>}
+                      </div>
+                      {/* Tombol pindah stage — sangat berguna di mobile karena drag-and-drop tidak bekerja di touch */}
+                      <div style={{ position: "relative", flexShrink: 0 }}>
+                        <button
+                          className="kanban-card-menu-btn"
+                          title="Pindah stage"
+                          onClick={(e) => { e.stopPropagation(); setMoveMenu(moveMenu === card.id ? null : card.id); }}
+                        >
+                          <MoreVertical size={14} />
+                        </button>
+                        {moveMenu === card.id && (
+                          <>
+                            <div className="kanban-menu-backdrop" onClick={() => setMoveMenu(null)} />
+                            <div className="kanban-stage-picker">
+                              <div className="kanban-stage-picker-title">Pindah ke:</div>
+                              {STAGES.filter(s => s !== stage).map(s => (
+                                <button key={s} className="kanban-stage-option"
+                                  onClick={() => { setMoveMenu(null); moveCardToStage(card, stage, s); }}>
+                                  <div className={`kanban-col-dot ${DOT_CLASS[s]}`} />
+                                  {STAGE_LABELS[s] || s}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="kanban-card-meta">
