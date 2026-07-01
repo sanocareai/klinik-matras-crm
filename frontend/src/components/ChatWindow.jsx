@@ -636,7 +636,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
 
               {/* Galeri — foto & video dari galeri */}
               <label className="attach-item">
-                <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+                <input type="file" accept="image/*,video/*" multiple style={{ display: "none" }}
                   onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
                 <div className="attach-item-icon" style={{ background: "#dbeafe" }}>
                   <ImageIcon size={24} style={{ color: "#2563eb" }} />

@@ -194,7 +194,10 @@ webhookRouter.post("/waha", async (req, res) => {
       const downloaded = await downloadWithRetry(mediaInfo, externalId);
 
       if (downloaded?.data) {
-        const finalMime = downloaded.mimetype || mime;
+        // Kalau WAHA mengembalikan generic "application/octet-stream", pakai MIME dari webhook payload
+        const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
+          ? downloaded.mimetype
+          : mime;
         const ext      = extFromMime(finalMime);
         const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
         fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
