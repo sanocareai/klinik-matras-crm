@@ -634,14 +634,24 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <div className="attach-grid-title">Lampirkan</div>
             <div className="attach-grid">
 
-              {/* Galeri — foto & video dari galeri */}
+              {/* Foto — langsung ke galeri foto (image/* saja, hindari Camera intent) */}
               <label className="attach-item">
-                <input type="file" accept="image/*,video/*" multiple style={{ display: "none" }}
+                <input type="file" accept="image/*" multiple style={{ display: "none" }}
                   onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
                 <div className="attach-item-icon" style={{ background: "#dbeafe" }}>
                   <ImageIcon size={24} style={{ color: "#2563eb" }} />
                 </div>
-                <span className="attach-item-label">Galeri</span>
+                <span className="attach-item-label">Foto</span>
+              </label>
+
+              {/* Video — langsung ke galeri video (video/* saja, hindari Camera+image intent) */}
+              <label className="attach-item">
+                <input type="file" accept="video/*" multiple style={{ display: "none" }}
+                  onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#e0f2fe" }}>
+                  <Video size={24} style={{ color: "#0284c7" }} />
+                </div>
+                <span className="attach-item-label">Video</span>
               </label>
 
               {/* Kamera — langsung buka kamera */}
