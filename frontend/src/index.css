@@ -1588,6 +1588,57 @@ input:focus, select:focus, textarea:focus {
 /* Card list pelanggan — hidden di desktop, tampil di mobile */
 .customer-card-list { display: none; }
 
+/* ─── INSTALL PROMPT BANNER (PWA) ───────────────────────── */
+.install-prompt {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9998;
+  background: #1e2139;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.25);
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.install-prompt-icon {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  color: #60a5fa;
+}
+.install-prompt-text {
+  flex: 1; margin: 0;
+  font-size: 13px; font-weight: 500;
+  color: rgba(255,255,255,0.9);
+  line-height: 1.4;
+}
+.install-prompt-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 8px; border: none;
+  background: #60a5fa; color: #0f172a;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  min-height: 44px;
+  transition: background 0.15s;
+}
+.install-prompt-btn:hover { background: #93c5fd; }
+.install-prompt-close {
+  flex-shrink: 0;
+  width: 36px; height: 36px; min-height: 36px;
+  border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.6);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s;
+}
+.install-prompt-close:hover { background: rgba(255,255,255,0.16); color: white; }
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */
@@ -1810,5 +1861,50 @@ input:focus, select:focus, textarea:focus {
   /* ── Halaman admin lain (Tracking Links, Laporan, dll) ── */
   .tracking-links-table-wrap { overflow-x: auto; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* ── Laporan — stat-row pakai inline style, perlu !important ── */
+  .stat-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+  .stat-card { padding: 14px 16px; }
+  .laporan-tabs {
+    padding: 0 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .laporan-tab { flex-shrink: 0; padding: 12px 10px; font-size: 12.5px; }
+  .laporan-body { padding: 14px 12px; }
+
+  /* ── Pengaturan — sidebar jadi tab horizontal ── */
+  .settings-layout { flex-direction: column; }
+  .settings-sidebar {
+    width: 100% !important;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0;
+    flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .settings-sidebar::-webkit-scrollbar { display: none; }
+  .settings-nav-item {
+    flex-shrink: 0;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    border-left: none !important;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+    gap: 6px;
+  }
+  .settings-nav-item.active {
+    border-left-color: transparent !important;
+    border-bottom-color: var(--color-primary);
+  }
+  .settings-main { padding: 16px; }
+  .settings-section { max-width: 100%; }
+  .settings-section-title { font-size: 15px; }
 }
 

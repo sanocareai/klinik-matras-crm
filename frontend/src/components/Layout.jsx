@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
@@ -63,13 +63,48 @@ export default function Layout({ user, onLogout, children }) {
     () => localStorage.getItem("sidebar-collapsed") === "true"
   );
   const [mobileOpen, setMobileOpen]   = useState(false);
+  const prevUnread = useRef(null); // null = belum ada data awal
 
   const isAdmin = user?.role === "ADMIN";
+
+  // Minta izin notifikasi sekali saat pertama login
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      // Tunda sedikit supaya tidak muncul langsung saat buka app (kurang ramah)
+      const timer = setTimeout(() => Notification.requestPermission(), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  function kirimNotifikasi(jumlahBaru) {
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    // tag: "pesan-baru" supaya notifikasi lama di-replace, tidak menumpuk
+    new Notification("Klinik Matras CRM", {
+      body: jumlahBaru === 1
+        ? "Ada 1 pesan baru masuk"
+        : `Ada ${jumlahBaru} pesan baru masuk`,
+      icon: "/pwa-192x192.png",
+      badge: "/pwa-192x192.png",
+      tag: "pesan-baru",
+      renotify: true,
+    });
+  }
 
   useEffect(() => {
     async function fetchUnread() {
       try {
         const { count } = await api.getUnreadCount();
+        // Pertama kali load: simpan sebagai baseline, tidak notif
+        if (prevUnread.current === null) {
+          prevUnread.current = count;
+        } else if (count > prevUnread.current) {
+          // Ada pesan baru masuk sejak polling terakhir
+          kirimNotifikasi(count - prevUnread.current);
+          prevUnread.current = count;
+        } else {
+          prevUnread.current = count;
+        }
         setUnreadCount(count);
       } catch {}
     }

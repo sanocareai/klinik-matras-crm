@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
+import InstallPrompt from "./components/InstallPrompt.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Inbox from "./pages/Inbox.jsx";
 import Customers from "./pages/Customers.jsx";
@@ -35,6 +36,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <InstallPrompt />
       <Layout user={user} onLogout={handleLogout}>
         <Routes>
           <Route path="/"            element={<Navigate to="/dashboard" replace />} />
