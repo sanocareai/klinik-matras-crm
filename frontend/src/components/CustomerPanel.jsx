@@ -6,7 +6,7 @@ import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
 import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
-import { formatPhoneDisplay } from "../utils/format.js";
+import { formatPhoneDisplay, KOTA_LIST } from "../utils/format.js";
 
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
@@ -38,6 +38,8 @@ export default function CustomerPanel({ customerId }) {
   const [cityDraft, setCityDraft] = useState("");
   const [leadSourceDraft, setLeadSourceDraft] = useState("OTHER");
   const [feedback, setFeedback] = useState(null);
+  const [savingHealth, setSavingHealth] = useState(false);
+  const [savingType, setSavingType] = useState(false);
 
   function showFeedback(type, message) {
     setFeedback({ type, message });
@@ -57,6 +59,8 @@ export default function CustomerPanel({ customerId }) {
         setPhoneDraft(c.phone || "");
         setCityDraft(c.city || "");
         setLeadSourceDraft(c.leadSource || "OTHER");
+        setSavingHealth(false);
+        setSavingType(false);
       })
       .catch((err) => {
         console.error("[CustomerPanel] gagal fetch:", err);
@@ -86,6 +90,34 @@ export default function CustomerPanel({ customerId }) {
       showFeedback("success", "Sumber lead tersimpan");
     } catch (err) {
       showFeedback("error", err.message);
+    }
+  }
+
+  async function toggleHealthStatus(value) {
+    // Klik nilai yang sama → unset (null); klik berbeda → set
+    const newVal = customer.healthStatus === value ? null : value;
+    setSavingHealth(true);
+    try {
+      const updated = await api.updateCustomer(customerId, { healthStatus: newVal });
+      setCustomer((c) => ({ ...c, healthStatus: updated.healthStatus }));
+    } catch (err) {
+      showFeedback("error", err.message);
+    } finally {
+      setSavingHealth(false);
+    }
+  }
+
+  async function toggleCustomerType(value) {
+    // customerType wajib ada nilainya — tidak bisa di-unset
+    if (customer.customerType === value) return;
+    setSavingType(true);
+    try {
+      const updated = await api.updateCustomer(customerId, { customerType: value });
+      setCustomer((c) => ({ ...c, customerType: updated.customerType }));
+    } catch (err) {
+      showFeedback("error", err.message);
+    } finally {
+      setSavingType(false);
     }
   }
 
@@ -230,17 +262,92 @@ export default function CustomerPanel({ customerId }) {
           </div>
         </div>
 
+        {/* Status Kesehatan Kasur */}
+        <div className="panel-section">
+          <span className="panel-section-label">Kondisi Kasur</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[
+              { value: "SAKIT", label: "Sakit", activeColor: "#fee2e2", activeText: "#991b1b" },
+              { value: "TIDAK_SAKIT", label: "Tidak Sakit", activeColor: "#dcfce7", activeText: "#166534" },
+            ].map(({ value, label, activeColor, activeText }) => {
+              const active = customer.healthStatus === value;
+              return (
+                <button
+                  key={value}
+                  disabled={savingHealth}
+                  onClick={() => toggleHealthStatus(value)}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99,
+                    border: `1.5px solid ${active ? activeText : "var(--border)"}`,
+                    background: active ? activeColor : "transparent",
+                    color: active ? activeText : "var(--text-secondary)",
+                    cursor: "pointer", transition: "all 0.15s",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {customer.healthStatus && (
+              <button
+                disabled={savingHealth}
+                onClick={() => toggleHealthStatus(customer.healthStatus)}
+                style={{
+                  fontSize: 11, padding: "4px 8px", borderRadius: 99,
+                  border: "1px solid var(--border)", background: "transparent",
+                  color: "var(--text-muted)", cursor: "pointer",
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          {!customer.healthStatus && (
+            <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>Belum ditanyakan ke customer</p>
+          )}
+        </div>
+
+        {/* Tipe Customer */}
+        <div className="panel-section">
+          <span className="panel-section-label">Tipe Customer</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              { value: "END_USER", label: "End User" },
+              { value: "CORPORATE", label: "Corporate" },
+            ].map(({ value, label }) => {
+              const active = (customer.customerType || "END_USER") === value;
+              return (
+                <button
+                  key={value}
+                  disabled={savingType}
+                  onClick={() => toggleCustomerType(value)}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99,
+                    border: `1.5px solid ${active ? "var(--primary)" : "var(--border)"}`,
+                    background: active ? "#dbeafe" : "transparent",
+                    color: active ? "#1e40af" : "var(--text-secondary)",
+                    cursor: active ? "default" : "pointer", transition: "all 0.15s",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Kota */}
         <div className="panel-section">
           <span className="panel-section-label">Kota</span>
           <div className="inline-field">
-            <input
+            <select
               value={cityDraft}
-              onChange={(e) => setCityDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && saveField("city", cityDraft, "Kota")}
-              placeholder="Kota pelanggan"
-            />
-            <button className="btn btn-secondary btn-sm" onClick={() => saveField("city", cityDraft, "Kota")}>Simpan</button>
+              onChange={(e) => { setCityDraft(e.target.value); saveField("city", e.target.value, "Kota"); }}
+              style={{ flex: 1, fontSize: 13, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--text-primary)" }}
+            >
+              <option value="">— Pilih Kota —</option>
+              {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
           </div>
         </div>
 

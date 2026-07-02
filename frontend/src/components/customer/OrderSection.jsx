@@ -1,7 +1,11 @@
 import React, { useState } from "react";
 import { api } from "../../api.js";
-import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, UKURAN_KASUR, MERK_KASUR } from "../../utils/format.js";
+import {
+  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
+  UKURAN_KASUR, MERK_KASUR,
+} from "../../utils/format.js";
 
+// Nama layanan yang tersedia sebagai suggestion
 const JENIS_LAYANAN = [
   "Upgrade Lapisan Matras Sehat",
   "Upgrade Fondasi Matras Sehat",
@@ -12,291 +16,486 @@ const JENIS_LAYANAN = [
   "Lainnya",
 ];
 
-// Parse notes dari JSON; backward-compat: jika bukan JSON, anggap itu jenis layanan lama (plain text)
+// Parse notes JSON; backward-compat kalau string plain text
 function parseNotes(notes) {
-  if (!notes) return { jenisLayanan: "", merkKasur: "", ukuranKasur: "", keluhanCustomer: "", beratBadan: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", beratBadan: "" };
   try {
     const p = JSON.parse(notes);
     return {
-      jenisLayanan: p.jenisLayanan || "",
       merkKasur: p.merkKasur || "",
       ukuranKasur: p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
       beratBadan: p.beratBadan || "",
+      jenisLayanan: p.jenisLayanan || "",
     };
   } catch {
-    return { jenisLayanan: notes, merkKasur: "", ukuranKasur: "", keluhanCustomer: "", beratBadan: "" };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, beratBadan: "", jenisLayanan: "" };
   }
 }
 
 function buildNotes(info) {
-  return JSON.stringify(info);
+  return JSON.stringify({
+    merkKasur:       info.merkKasur || "",
+    ukuranKasur:     info.ukuranKasur || "",
+    keluhanCustomer: info.keluhanCustomer || "",
+    beratBadan:      info.beratBadan || "",
+  });
 }
 
-const EMPTY_DRAFT = {
-  value: "", merkKasur: "", ukuranKasur: "",
-  keluhanCustomer: "", beratBadan: "", jenisLayanan: "",
-};
+function newItem() {
+  return { key: Date.now() + Math.random(), layananName: "", harga: "" };
+}
 
-// Kartu order individual — punya state sendiri untuk text fields (blur-to-save)
-function OrderCard({ order, customerId, onUpdate }) {
+// ─── Card order yang sudah tersimpan ─────────────────────────────────────────
+function OrderCard({ order, customerId, onUpdate, onRefresh }) {
   const info = parseNotes(order.notes);
-  const [keluhan, setKeluhan] = useState(info.keluhanCustomer);
-  const [berat, setBerat] = useState(info.beratBadan);
+  const [editing, setEditing]       = useState(false);
+  const [status, setStatus]         = useState(order.status);
+  const [merkKasur, setMerkKasur]   = useState(info.merkKasur);
+  const [ukuran, setUkuran]         = useState(info.ukuranKasur);
+  const [keluhan, setKeluhan]       = useState(info.keluhanCustomer);
+  const [items, setItems]           = useState(
+    (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
+  );
+  const [saving, setSaving]         = useState(false);
 
-  async function handleSelectChange(field, value) {
+  const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
+
+  function addItem() {
+    setItems((prev) => [...prev, newItem()]);
+  }
+
+  function removeItem(key) {
+    setItems((prev) => prev.filter((it) => it.key !== key));
+  }
+
+  function setItemField(key, field, val) {
+    setItems((prev) => prev.map((it) => it.key === key ? { ...it, [field]: val } : it));
+  }
+
+  async function handleSave() {
+    setSaving(true);
     try {
-      const latest = parseNotes(order.notes);
-      latest[field] = value;
-      const updated = await api.updateCustomerOrder(customerId, order.id, { notes: buildNotes(latest) });
-      onUpdate(updated);
+      // 1. Update order dasar (status, notes)
+      await api.updateOrder(order.id, {
+        status,
+        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      });
+
+      // 2. Kelola items: hapus yang hilang, update yang ada, tambah yang baru
+      const existingIds = (order.items || []).map((it) => it.id);
+      const currentIds  = items.filter((it) => it.id).map((it) => it.id);
+
+      // Hapus yang dihapus user
+      for (const id of existingIds) {
+        if (!currentIds.includes(id)) {
+          await api.deleteOrderItem(id);
+        }
+      }
+      // Update yang sudah ada
+      for (const it of items.filter((it) => it.id)) {
+        if (!it.layananName?.trim()) continue;
+        await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+      }
+      // Tambah yang baru (belum punya id)
+      for (const it of items.filter((it) => !it.id)) {
+        if (!it.layananName?.trim()) continue;
+        await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+      }
+
+      setEditing(false);
+      onRefresh();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function handleStatusChange(status) {
-    try {
-      const updated = await api.updateCustomerOrder(customerId, order.id, { status });
-      onUpdate(updated);
-    } catch (err) {
-      alert(err.message);
-    }
+  function handleCancel() {
+    // Reset state ke nilai asal
+    const inf = parseNotes(order.notes);
+    setStatus(order.status);
+    setMerkKasur(inf.merkKasur);
+    setUkuran(inf.ukuranKasur);
+    setKeluhan(inf.keluhanCustomer);
+    setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
+    setEditing(false);
   }
 
-  async function saveTextField() {
-    try {
-      const latest = parseNotes(order.notes);
-      latest.keluhanCustomer = keluhan;
-      latest.beratBadan = berat;
-      const updated = await api.updateCustomerOrder(customerId, order.id, { notes: buildNotes(latest) });
-      onUpdate(updated);
-    } catch (err) {
-      alert(err.message);
-    }
-  }
+  // ── Status badge + select ganti status ───
+  const statusRow = (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
+      <span
+        className={`order-badge order-${(editing ? status : order.status).toLowerCase()}`}
+        style={{ flexShrink: 0, whiteSpace: "nowrap" }}
+      >
+        {ORDER_STATUS_LABELS[editing ? status : order.status] || order.status}
+      </span>
+      {editing && (
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          style={selStyle}
+        >
+          {ORDER_STATUSES.map((s) => (
+            <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+          ))}
+        </select>
+      )}
+      {!editing && (
+        <select
+          value={order.status}
+          onChange={async (e) => {
+            try { await api.updateOrder(order.id, { status: e.target.value }); onRefresh(); }
+            catch (err) { alert(err.message); }
+          }}
+          style={selStyle}
+        >
+          {ORDER_STATUSES.map((s) => (
+            <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
 
   return (
     <div className="order-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-      {/* Nilai + badge status + dropdown ganti status */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span className="order-item-value">{formatRupiah(order.value)}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span className={`order-badge order-${order.status.toLowerCase()}`}>
-            {ORDER_STATUS_LABELS[order.status] || order.status}
-          </span>
-          <select
-            value={order.status}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            style={{ fontSize: 11, padding: "2px 4px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+      {/* Header: total + status + tombol edit */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="order-item-value">{formatRupiah(order.value)}</div>
+          <div style={{ marginTop: 4 }}>{statusRow}</div>
+        </div>
+        {!editing ? (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setEditing(true)}
+            style={{ flexShrink: 0 }}
           >
-            {ORDER_STATUSES.map((s) => (
-              <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-            ))}
-          </select>
-        </div>
+            Edit
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+              {saving ? "..." : "Simpan"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleCancel} disabled={saving}>
+              Batal
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Merk + Ukuran berdampingan */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      {/* Merk + Ukuran */}
+      {editing ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <div>
+            <span style={metaLabel}>Merk Kasur</span>
+            <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
+              <option value="">—</option>
+              {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={metaLabel}>Ukuran</span>
+            <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={selStyleFull}>
+              <option value="">—</option>
+              {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        </div>
+      ) : (info.merkKasur || info.ukuranKasur) ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {info.merkKasur && <span style={chipStyle}>{info.merkKasur}</span>}
+          {info.ukuranKasur && <span style={chipStyle}>{info.ukuranKasur}</span>}
+        </div>
+      ) : null}
+
+      {/* Items breakdown */}
+      {editing ? (
         <div>
-          <span style={metaLabel}>Merk Kasur</span>
-          <select value={info.merkKasur} onChange={(e) => handleSelectChange("merkKasur", e.target.value)} style={inlineSelect}>
-            <option value="">—</option>
-            {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <span style={metaLabel}>Layanan (add-ons)</span>
+          {items.map((it) => (
+            <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+              <input
+                list="layanan-suggestions"
+                value={it.layananName}
+                onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
+                placeholder="Nama layanan..."
+                style={{ flex: 2, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
+              />
+              <input
+                type="number"
+                value={it.harga}
+                onChange={(e) => setItemField(it.key, "harga", e.target.value)}
+                placeholder="Harga"
+                min="0"
+                style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 80 }}
+              />
+              {items.length > 1 && (
+                <button
+                  onClick={() => removeItem(it.key)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 16, padding: "0 2px", lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          <datalist id="layanan-suggestions">
+            {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
+          </datalist>
+          <button
+            onClick={addItem}
+            style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}
+          >
+            + Tambah layanan lain
+          </button>
+          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            Total: {formatRupiah(totalItems)}
+          </div>
         </div>
+      ) : (order.items && order.items.length > 0) ? (
         <div>
-          <span style={metaLabel}>Ukuran</span>
-          <select value={info.ukuranKasur} onChange={(e) => handleSelectChange("ukuranKasur", e.target.value)} style={inlineSelect}>
-            <option value="">—</option>
-            {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+          {order.items.map((it) => (
+            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0", color: "var(--text-secondary)" }}>
+              <span>{it.layananName}</span>
+              <span style={{ fontWeight: 600 }}>{formatRupiah(it.harga)}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)", color: "var(--text-primary)" }}>
+            <span>Total</span>
+            <span>{formatRupiah(order.value)}</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      {/* Jenis Layanan */}
-      <div>
-        <span style={metaLabel}>Jenis Layanan</span>
-        <select value={info.jenisLayanan} onChange={(e) => handleSelectChange("jenisLayanan", e.target.value)} style={inlineSelect}>
-          <option value="">—</option>
-          {JENIS_LAYANAN.map((j) => <option key={j} value={j}>{j}</option>)}
-        </select>
-      </div>
-
-      {/* Keluhan Customer */}
-      <div>
-        <span style={metaLabel}>Keluhan Customer</span>
-        <textarea
-          value={keluhan}
-          onChange={(e) => setKeluhan(e.target.value)}
-          onBlur={saveTextField}
-          placeholder="Keluhan kasur customer..."
-          rows={2}
-          style={{ ...inlineSelect, resize: "vertical" }}
-        />
-      </div>
-
-      {/* Berat Badan */}
-      <div>
-        <span style={metaLabel}>Berat Badan</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="number"
-            value={berat}
-            onChange={(e) => setBerat(e.target.value)}
-            onBlur={saveTextField}
-            placeholder="—"
-            min="1"
-            style={{ ...inlineSelect, width: 72 }}
+      {/* Keluhan */}
+      {editing ? (
+        <div>
+          <span style={metaLabel}>Keluhan Customer</span>
+          <textarea
+            value={keluhan}
+            onChange={(e) => setKeluhan(e.target.value)}
+            placeholder="Keluhan kasur customer..."
+            rows={2}
+            style={{ ...selStyleFull, resize: "vertical" }}
           />
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>kg</span>
         </div>
-      </div>
+      ) : info.keluhanCustomer ? (
+        <div>
+          <span style={metaLabel}>Keluhan</span>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>{info.keluhanCustomer}</p>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export default function OrderSection({ customer, onUpdate }) {
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
-  const [showForm, setShowForm] = useState(false);
+// ─── Form tambah order baru (2 step) ─────────────────────────────────────────
+function AddOrderForm({ customerId, onDone, onCancel }) {
+  const [step, setStep]       = useState(1);
+  const [merkKasur, setMerk]  = useState("");
+  const [ukuran, setUkuran]   = useState("");
+  const [keluhan, setKeluhan] = useState("");
+  const [items, setItems]     = useState([newItem()]);
+  const [saving, setSaving]   = useState(false);
 
-  const totalValue = customer.orders.reduce((sum, o) => sum + o.value, 0);
+  const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
-  function setD(field, val) {
-    setDraft((d) => ({ ...d, [field]: val }));
+  function addItem() { setItems((p) => [...p, newItem()]); }
+  function removeItem(key) { setItems((p) => p.filter((it) => it.key !== key)); }
+  function setItemField(key, field, val) {
+    setItems((p) => p.map((it) => it.key === key ? { ...it, [field]: val } : it));
   }
 
-  async function handleAdd(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!draft.value) return;
+    const validItems = items.filter((it) => it.layananName?.trim());
+    if (validItems.length === 0) return alert("Tambahkan minimal satu layanan");
+    setSaving(true);
     try {
-      const order = await api.addOrder(customer.id, {
-        value: draft.value,
-        quantity: 1,
-        notes: buildNotes({
-          merkKasur: draft.merkKasur,
-          ukuranKasur: draft.ukuranKasur,
-          keluhanCustomer: draft.keluhanCustomer,
-          beratBadan: draft.beratBadan,
-          jenisLayanan: draft.jenisLayanan,
-        }),
+      // Buat order dulu (value=0, backend sync setelah items)
+      const order = await api.addOrder(customerId, {
+        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
-      onUpdate({ ...customer, orders: [order, ...customer.orders] });
-      setDraft(EMPTY_DRAFT);
-      setShowForm(false);
+      // Tambah semua items
+      for (const it of validItems) {
+        await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+      }
+      onDone();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  function handleOrderUpdate(updatedOrder) {
-    onUpdate({
-      ...customer,
-      orders: customer.orders.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)),
-    });
+  if (step === 1) {
+    return (
+      <div style={formBox}>
+        <p style={{ margin: "0 0 12px", fontWeight: 700, fontSize: 13 }}>Order Baru — Langkah 1: Info Kasur</p>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={formLabel}>Merk Kasur</label>
+          <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
+            <option value="">— Pilih Merk —</option>
+            {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={formLabel}>Ukuran Kasur</label>
+          <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
+            <option value="">— Pilih Ukuran —</option>
+            {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={formLabel}>Keluhan Customer</label>
+          <textarea
+            value={keluhan}
+            onChange={(e) => setKeluhan(e.target.value)}
+            placeholder="Jelaskan keluhan kasur yang dirasakan customer..."
+            rows={3}
+            style={{ ...formSelect, resize: "vertical" }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(2)}>
+            Lanjut ke Layanan →
+          </button>
+          <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
+        </div>
+      </div>
+    );
   }
 
   return (
+    <form onSubmit={handleSubmit} style={formBox}>
+      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>Langkah 2: Daftar Layanan</p>
+      {(merkKasur || ukuran) && (
+        <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-muted)" }}>
+          {[merkKasur, ukuran].filter(Boolean).join(" · ")}
+          <button
+            type="button"
+            onClick={() => setStep(1)}
+            style={{ marginLeft: 8, fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >
+            Ubah
+          </button>
+        </p>
+      )}
+
+      <label style={formLabel}>Layanan (add-ons)</label>
+      {items.map((it, idx) => (
+        <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <input
+            list="new-layanan-suggestions"
+            value={it.layananName}
+            onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
+            placeholder="Nama layanan..."
+            style={{ flex: 2, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)" }}
+          />
+          <input
+            type="number"
+            value={it.harga}
+            onChange={(e) => setItemField(it.key, "harga", e.target.value)}
+            placeholder="Harga (Rp)"
+            min="0"
+            style={{ flex: 1, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)", minWidth: 90 }}
+          />
+          {items.length > 1 && (
+            <button
+              type="button"
+              onClick={() => removeItem(it.key)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      <datalist id="new-layanan-suggestions">
+        {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
+      </datalist>
+
+      <button
+        type="button"
+        onClick={addItem}
+        style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}
+      >
+        + Tambah layanan lain
+      </button>
+
+      {/* Total */}
+      <div style={{ padding: "8px 0", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Total</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>{formatRupiah(total)}</span>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={saving}>
+          {saving ? "Menyimpan..." : "Simpan Order"}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>← Kembali</button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Container utama ──────────────────────────────────────────────────────────
+export default function OrderSection({ customer, onUpdate }) {
+  const [showForm, setShowForm] = useState(false);
+
+  // Refresh: reload customer dari server supaya dapat value + items yang sudah sync
+  async function refresh() {
+    try {
+      const fresh = await api.getCustomer(customer.id);
+      onUpdate(fresh);
+    } catch {}
+  }
+
+  const totalValue = customer.orders.reduce((s, o) => s + o.value, 0);
+
+  return (
     <div>
-      {/* Header: total + tombol + Order */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <p className="text-muted" style={{ margin: 0, fontSize: 12 }}>
           {customer.orders.length} order · Total {formatRupiah(totalValue)}
         </p>
-        <button
-          className={`btn btn-sm ${showForm ? "btn-secondary" : "btn-primary"}`}
-          onClick={() => setShowForm((v) => !v)}
-        >
-          {showForm ? "Batal" : "+ Order"}
-        </button>
+        {!showForm && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
+            + Order
+          </button>
+        )}
       </div>
 
-      {/* Form tambah order baru */}
       {showForm && (
-        <form
-          onSubmit={handleAdd}
-          style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16, padding: 14, background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border)" }}
-        >
-          <p style={{ margin: 0, fontWeight: 600, fontSize: 13 }}>Order Baru</p>
-
-          <div>
-            <label style={formLabel}>Merk Kasur</label>
-            <select value={draft.merkKasur} onChange={(e) => setD("merkKasur", e.target.value)} style={formSelect}>
-              <option value="">— Pilih Merk —</option>
-              {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label style={formLabel}>Ukuran Kasur</label>
-            <select value={draft.ukuranKasur} onChange={(e) => setD("ukuranKasur", e.target.value)} style={formSelect}>
-              <option value="">— Pilih Ukuran —</option>
-              {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label style={formLabel}>Keluhan Customer</label>
-            <textarea
-              value={draft.keluhanCustomer}
-              onChange={(e) => setD("keluhanCustomer", e.target.value)}
-              placeholder="Jelaskan keluhan kasur yang dirasakan customer..."
-              rows={3}
-              style={{ ...formSelect, resize: "vertical" }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <label style={formLabel}>Berat Badan (kg)</label>
-              <input
-                type="number"
-                placeholder="kg"
-                value={draft.beratBadan}
-                onChange={(e) => setD("beratBadan", e.target.value)}
-                min="1"
-                style={formSelect}
-              />
-            </div>
-            <div style={{ flex: 2 }}>
-              <label style={formLabel}>Nilai Order (Rp) *</label>
-              <input
-                type="number"
-                placeholder="Nilai (Rp)"
-                value={draft.value}
-                onChange={(e) => setD("value", e.target.value)}
-                required
-                style={formSelect}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label style={formLabel}>Jenis Layanan</label>
-            <select value={draft.jenisLayanan} onChange={(e) => setD("jenisLayanan", e.target.value)} style={formSelect}>
-              <option value="">— Pilih Jenis Layanan —</option>
-              {JENIS_LAYANAN.map((j) => <option key={j} value={j}>{j}</option>)}
-            </select>
-          </div>
-
-          <button type="submit" className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
-            Simpan Order
-          </button>
-        </form>
+        <AddOrderForm
+          customerId={customer.id}
+          onDone={() => { setShowForm(false); refresh(); }}
+          onCancel={() => setShowForm(false)}
+        />
       )}
 
-      {/* Daftar order yang sudah ada */}
       <div className="order-list">
         {customer.orders.map((o) => (
           <OrderCard
             key={o.id}
             order={o}
             customerId={customer.id}
-            onUpdate={handleOrderUpdate}
+            onUpdate={(updated) => {
+              onUpdate({ ...customer, orders: customer.orders.map((x) => x.id === updated.id ? updated : x) });
+            }}
+            onRefresh={refresh}
           />
         ))}
-        {customer.orders.length === 0 && (
+        {customer.orders.length === 0 && !showForm && (
           <p className="text-small">Belum ada order. Klik "+ Order" untuk menambah.</p>
         )}
       </div>
@@ -304,42 +503,41 @@ export default function OrderSection({ customer, onUpdate }) {
   );
 }
 
+// ─── Style helpers ────────────────────────────────────────────────────────────
 const formLabel = {
-  display: "block",
-  fontSize: 11,
-  fontWeight: 600,
-  color: "var(--text-muted)",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  marginBottom: 4,
+  display: "block", fontSize: 11, fontWeight: 600,
+  color: "var(--text-muted)", textTransform: "uppercase",
+  letterSpacing: "0.04em", marginBottom: 4,
 };
 
 const formSelect = {
-  fontSize: 13,
-  padding: "7px 9px",
-  borderRadius: 6,
-  border: "1px solid var(--border)",
-  background: "var(--bg-primary)",
-  color: "var(--text-primary)",
-  width: "100%",
+  fontSize: 13, padding: "7px 9px", borderRadius: 6,
+  border: "1px solid var(--border)", background: "var(--bg-primary)",
+  color: "var(--text-primary)", width: "100%",
 };
 
-const inlineSelect = {
-  fontSize: 11,
-  padding: "4px 6px",
-  borderRadius: 5,
-  border: "1px solid var(--border)",
-  background: "var(--bg-secondary)",
-  color: "var(--text-primary)",
-  width: "100%",
+const formBox = {
+  marginBottom: 16, padding: 14, background: "var(--bg-secondary)",
+  borderRadius: 8, border: "1px solid var(--border)",
+};
+
+const selStyle = {
+  fontSize: 11, padding: "3px 6px", borderRadius: 4,
+  border: "1px solid var(--border)", background: "var(--bg-secondary)",
+  color: "var(--text-primary)", flexShrink: 0,
+};
+
+const selStyleFull = {
+  ...selStyle, width: "100%", fontSize: 12, padding: "5px 7px",
 };
 
 const metaLabel = {
-  display: "block",
-  fontSize: 10,
-  fontWeight: 600,
-  color: "var(--text-muted)",
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  marginBottom: 3,
+  display: "block", fontSize: 10, fontWeight: 600,
+  color: "var(--text-muted)", textTransform: "uppercase",
+  letterSpacing: "0.05em", marginBottom: 3,
+};
+
+const chipStyle = {
+  fontSize: 11, padding: "2px 8px", borderRadius: 99,
+  background: "#f3f4f6", color: "#374151", fontWeight: 500,
 };

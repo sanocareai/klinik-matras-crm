@@ -165,6 +165,11 @@ export function publicTags(tags) {
   return (tags || []).filter((t) => !PREFIXES.some((p) => t.toLowerCase().startsWith(p + ":")));
 }
 
+export const KOTA_LIST = [
+  "Jakarta Selatan", "Jakarta Barat", "Jakarta Utara", "Jakarta Pusat", "Jakarta Timur",
+  "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
+];
+
 export const UKURAN_KASUR = [
   "90x200 cm (Single)",
   "120x200 cm (Single Besar)",

@@ -298,7 +298,10 @@ input:focus, select:focus, textarea:focus {
 .stage-badge.stage-lost      { background: #fee2e2; color: #991b1b; }
 
 /* Order status */
-.order-badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 600; }
+.order-badge {
+  font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 600;
+  white-space: nowrap; display: inline-block; flex-shrink: 0;
+}
 .order-badge.order-pending    { background: #fef9c3; color: #854d0e; }
 .order-badge.order-pickup     { background: #ffedd5; color: #9a3412; }
 .order-badge.order-processing { background: #dbeafe; color: #1e40af; }

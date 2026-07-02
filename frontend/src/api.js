@@ -87,14 +87,24 @@ export const api = {
     request(`/customers/${id}/conversations`),
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
+  updateNote: (noteId, content) =>
+    request(`/customers/notes/${noteId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
+  deleteNote: (noteId) =>
+    request(`/customers/notes/${noteId}`, { method: "DELETE" }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   updateCustomerOrder: (customerId, orderId, data) =>
     request(`/customers/${customerId}/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
 
-  // Orders
+  // Orders + OrderItem
   updateOrder: (orderId, data) =>
     request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  addOrderItem: (orderId, data) =>
+    request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
+  updateOrderItem: (itemId, data) =>
+    request(`/orders/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteOrderItem: (itemId) =>
+    request(`/orders/items/${itemId}`, { method: "DELETE" }),
 
   // Analytics
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
