@@ -70,6 +70,16 @@ enum MessageDirection {
   OUTBOUND
 }
 
+enum CustomerType {
+  END_USER
+  CORPORATE
+}
+
+enum HealthStatus {
+  SAKIT
+  TIDAK_SAKIT
+}
+
 model User {
   id            String         @id @default(cuid())
   name          String
@@ -81,6 +91,7 @@ model User {
   assignedCustomers     Customer[]     @relation("AssignedSales")
   assignedConversations Conversation[] @relation("AssignedAgent")
   notes                 Note[]
+  salesTargets          SalesTarget[]
 }
 
 model Customer {
@@ -97,6 +108,8 @@ model Customer {
   assignedSales       User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
   leadSourceDetail    String?       // detail tambahan: nama link/campaign/ad headline
   leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
+  customerType        CustomerType  @default(END_USER)
+  healthStatus        HealthStatus?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -196,11 +209,38 @@ model Order {
   customerId String
   customer   Customer    @relation(fields: [customerId], references: [id])
   status     OrderStatus @default(PENDING)
-  value      Int         // nilai order dalam Rupiah
+  value      Int         // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
   quantity   Int         @default(1)
   notes      String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
+  items OrderItem[]
+
   @@index([customerId])
+}
+
+// Item layanan dalam satu order (kasur, upgrade, servis, dsb.)
+// Satu Order bisa punya banyak OrderItem
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  layananName String
+  harga       Int
+  sortOrder   Int    @default(0)
+}
+
+// Target penjualan bulanan per sales person
+model SalesTarget {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  year        Int
+  month       Int      // 1-12
+  targetValue Int      // Rupiah
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, year, month])
 }
