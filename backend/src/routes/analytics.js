@@ -315,6 +315,49 @@ analyticsRouter.get("/source-performance", async (req, res) => {
   }
 });
 
+// GET /api/analytics/sales-performance?year=&month=
+// Per-sales: totalOrderValue bulan itu, target dari SalesTarget, persentase pencapaian
+analyticsRouter.get("/sales-performance", async (req, res) => {
+  try {
+    const year  = Number(req.query.year  || new Date().getFullYear());
+    const month = Number(req.query.month || new Date().getMonth() + 1);
+
+    // Rentang tanggal bulan yang diminta (timezone lokal server)
+    const startOfMonth = new Date(year, month - 1, 1);
+    const endOfMonth   = new Date(year, month, 1);    // exclusive
+
+    const salesUsers = await prisma.user.findMany({
+      where: { role: "SALES" },
+      orderBy: { name: "asc" },
+    });
+
+    const targets = await prisma.salesTarget.findMany({ where: { year, month } });
+    const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
+
+    const result = await Promise.all(salesUsers.map(async (u) => {
+      const orderAgg = await prisma.order.aggregate({
+        where: {
+          customer: { assignedSalesId: u.id },
+          status:   { not: "CANCELLED" },
+          createdAt: { gte: startOfMonth, lt: endOfMonth },
+        },
+        _sum: { value: true },
+      });
+
+      const totalOrderValue  = orderAgg._sum.value || 0;
+      const target           = targetMap[u.id] ?? 0;
+      const percentToTarget  = target > 0 ? Math.round((totalOrderValue / target) * 100) : null;
+
+      return { userId: u.id, name: u.name, totalOrderValue, target, percentToTarget };
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   try {
     const stageGroups = await prisma.customer.groupBy({

@@ -77,7 +77,10 @@ customerRouter.get("/:id", async (req, res) => {
     where: { id: req.params.id },
     include: {
       notes: { include: { author: true }, orderBy: { createdAt: "desc" } },
-      orders: { orderBy: { createdAt: "desc" } },
+      orders: {
+        orderBy: { createdAt: "desc" },
+        include: { items: { orderBy: { sortOrder: "asc" } } },
+      },
       assignedSales: true,
     },
   });
@@ -90,6 +93,7 @@ customerRouter.patch("/:id", async (req, res) => {
   const {
     name, phone, tags, pipelineStage, assignedSalesId, email, city,
     leadSource, leadSourceDetail, leadSourceConfirmed,
+    customerType, healthStatus,
   } = req.body;
 
   // Cek duplikat nomor kalau diubah
@@ -111,6 +115,8 @@ customerRouter.patch("/:id", async (req, res) => {
     ...(city !== undefined && { city }),
     ...(leadSourceDetail !== undefined && { leadSourceDetail: leadSourceDetail || null }),
     ...(leadSourceConfirmed !== undefined && { leadSourceConfirmed }),
+    ...(customerType !== undefined && { customerType }),
+    ...(healthStatus !== undefined && { healthStatus: healthStatus || null }),
   };
 
   // Kalau leadSource diubah manual → otomatis set confirmed = true
@@ -153,32 +159,75 @@ customerRouter.get("/:id/conversations", async (req, res) => {
   res.json(conversations);
 });
 
-// Catat order baru -- input manual dulu (belum ada integrasi e-commerce/POS)
+// Catat order baru — value mulai 0, akan dihitung otomatis dari items
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { value, quantity, status, notes } = req.body;
-  if (!value) return res.status(400).json({ error: "Nilai order wajib diisi" });
+  const { quantity, status, notes } = req.body;
 
   const order = await prisma.order.create({
     data: {
       customerId: req.params.id,
-      value: Number(value),
+      value: 0,
       quantity: quantity ? Number(quantity) : 1,
       status: status || "PENDING",
       notes,
     },
+    include: { items: true },
   });
   res.status(201).json(order);
 });
 
-// Update status / jenis layanan order
+// Update status / notes order
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
-  const { status, notes } = req.body;
+  const { status, notes, quantity } = req.body;
   const order = await prisma.order.update({
     where: { id: req.params.orderId },
     data: {
-      ...(status !== undefined && { status }),
-      ...(notes !== undefined && { notes }),
+      ...(status   !== undefined && { status }),
+      ...(notes    !== undefined && { notes }),
+      ...(quantity !== undefined && { quantity: Number(quantity) }),
     },
+    include: { items: { orderBy: { sortOrder: "asc" } } },
   });
   res.json(order);
+});
+
+// PATCH /api/notes/:id — edit catatan (hanya penulis asli atau ADMIN)
+customerRouter.patch("/notes/:id", async (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: "Catatan tidak boleh kosong" });
+
+  try {
+    const note = await prisma.note.findUnique({ where: { id: req.params.id } });
+    if (!note) return res.status(404).json({ error: "Catatan tidak ditemukan" });
+
+    const isOwner = note.authorId === req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Tidak punya akses edit catatan ini" });
+
+    const updated = await prisma.note.update({
+      where: { id: req.params.id },
+      data: { content: content.trim() },
+      include: { author: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/notes/:id — hapus catatan (hanya penulis asli atau ADMIN)
+customerRouter.delete("/notes/:id", async (req, res) => {
+  try {
+    const note = await prisma.note.findUnique({ where: { id: req.params.id } });
+    if (!note) return res.status(404).json({ error: "Catatan tidak ditemukan" });
+
+    const isOwner = note.authorId === req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: "Tidak punya akses hapus catatan ini" });
+
+    await prisma.note.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
