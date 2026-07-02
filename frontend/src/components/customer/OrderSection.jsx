@@ -51,6 +51,7 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
   const info = parseNotes(order.notes);
   const [editing, setEditing]       = useState(false);
   const [status, setStatus]         = useState(order.status);
+  const [orderNumber, setOrderNumber] = useState(order.orderNumber || "");
   const [merkKasur, setMerkKasur]   = useState(info.merkKasur);
   const [ukuran, setUkuran]         = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]       = useState(info.keluhanCustomer);
@@ -76,10 +77,11 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
   async function handleSave() {
     setSaving(true);
     try {
-      // 1. Update order dasar (status, notes)
+      // 1. Update order dasar (status, notes, orderNumber)
       await api.updateOrder(order.id, {
         status,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        orderNumber: orderNumber.trim() || null,
       });
 
       // 2. Kelola items: hapus yang hilang, update yang ada, tambah yang baru
@@ -116,6 +118,7 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
     // Reset state ke nilai asal
     const inf = parseNotes(order.notes);
     setStatus(order.status);
+    setOrderNumber(order.orderNumber || "");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
     setKeluhan(inf.keluhanCustomer);
@@ -187,6 +190,23 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
           </div>
         )}
       </div>
+
+      {/* ID Order */}
+      {editing ? (
+        <div>
+          <span style={metaLabel}>ID Order (opsional)</span>
+          <input
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="cth: ORD-001"
+            style={{ ...selStyleFull, fontSize: 12 }}
+          />
+        </div>
+      ) : order.orderNumber ? (
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <span style={{ fontWeight: 600 }}>ID Order:</span> {order.orderNumber}
+        </div>
+      ) : null}
 
       {/* Merk + Ukuran */}
       {editing ? (
@@ -296,12 +316,13 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
 
 // ─── Form tambah order baru (2 step) ─────────────────────────────────────────
 function AddOrderForm({ customerId, onDone, onCancel }) {
-  const [step, setStep]       = useState(1);
-  const [merkKasur, setMerk]  = useState("");
-  const [ukuran, setUkuran]   = useState("");
-  const [keluhan, setKeluhan] = useState("");
-  const [items, setItems]     = useState([newItem()]);
-  const [saving, setSaving]   = useState(false);
+  const [step, setStep]             = useState(1);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [merkKasur, setMerk]        = useState("");
+  const [ukuran, setUkuran]         = useState("");
+  const [keluhan, setKeluhan]       = useState("");
+  const [items, setItems]           = useState([newItem()]);
+  const [saving, setSaving]         = useState(false);
 
   const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
@@ -320,6 +341,7 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
       // Buat order dulu (value=0, backend sync setelah items)
       const order = await api.addOrder(customerId, {
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        orderNumber: orderNumber.trim() || null,
       });
       // Tambah semua items
       for (const it of validItems) {
@@ -337,6 +359,16 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     return (
       <div style={formBox}>
         <p style={{ margin: "0 0 12px", fontWeight: 700, fontSize: 13 }}>Order Baru — Langkah 1: Info Kasur</p>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={formLabel}>ID Order (opsional)</label>
+          <input
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="cth: ORD-001"
+            style={formSelect}
+          />
+        </div>
 
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Merk Kasur</label>

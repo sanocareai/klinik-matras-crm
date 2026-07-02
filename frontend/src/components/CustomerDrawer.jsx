@@ -302,6 +302,25 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
               <button type="submit" className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
                 Simpan Perubahan
               </button>
+
+              {/* Riwayat Keluhan dari semua order */}
+              <div style={{ marginTop: 24 }}>
+                <p className="drawer-section-title" style={{ marginBottom: 8 }}>Riwayat Keluhan</p>
+                {(!customer.allKeluhan || customer.allKeluhan.length === 0) ? (
+                  <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Belum ada riwayat keluhan.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {customer.allKeluhan.map((item, idx) => (
+                      <div key={idx} style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px" }}>
+                        <div style={{ fontSize: 13, color: "#92400e" }}>{item.keluhan}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                          {formatTanggalWaktu(item.tanggal)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </form>
           )}
 

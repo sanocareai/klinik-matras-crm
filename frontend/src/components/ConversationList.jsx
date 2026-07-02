@@ -104,6 +104,14 @@ export default function ConversationList({
                   <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
+                  {/* Badge pesan belum dibalas ≥ 1 jam */}
+                  {c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>
+                      {c.unansweredMinutes >= 120
+                        ? `${Math.floor(c.unansweredMinutes / 60)}j+ belum dibalas`
+                        : "1j+ belum dibalas"}
+                    </span>
+                  )}
                   {/* Badge siapa yang handle */}
                   {isMine ? (
                     <span className="badge badge-mine">Milik Saya</span>

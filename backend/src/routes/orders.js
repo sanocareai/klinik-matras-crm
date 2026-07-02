@@ -16,17 +16,18 @@ async function syncOrderValue(orderId) {
   return total;
 }
 
-// PATCH /api/orders/:id — edit order (status, notes, qty)
+// PATCH /api/orders/:id — edit order (status, notes, qty, orderNumber)
 // value TIDAK bisa diubah langsung dari sini — dikontrol oleh items
 orderRouter.patch("/:id", async (req, res) => {
-  const { status, quantity, notes } = req.body;
+  const { status, quantity, notes, orderNumber } = req.body;
   try {
     const order = await prisma.order.update({
       where: { id: req.params.id },
       data: {
-        ...(status   !== undefined && { status }),
-        ...(quantity !== undefined && { quantity: Number(quantity) }),
-        ...(notes    !== undefined && { notes }),
+        ...(status      !== undefined && { status }),
+        ...(quantity    !== undefined && { quantity: Number(quantity) }),
+        ...(notes       !== undefined && { notes }),
+        ...(orderNumber !== undefined && { orderNumber: orderNumber?.trim() || null }),
       },
       include: { items: { orderBy: { sortOrder: "asc" } } },
     });

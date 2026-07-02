@@ -102,7 +102,19 @@ conversationRouter.get("/", async (req, res) => {
     },
     take: 100,
   });
-  res.json(conversations);
+
+  const now = Date.now();
+  const result = conversations.map(({ messages, ...conv }) => {
+    const lastMsg          = messages[0] || null;
+    const isUnanswered     = lastMsg?.direction === "INBOUND";
+    const unansweredMinutes = isUnanswered
+      ? Math.floor((now - new Date(lastMsg.createdAt).getTime()) / 60000)
+      : null;
+    const canTakeOver = !conv.assignedToId || (isUnanswered && (unansweredMinutes ?? 0) >= 60);
+    return { ...conv, messages, isUnanswered, unansweredMinutes, canTakeOver };
+  });
+
+  res.json(result);
 });
 
 // Riwayat pesan dalam satu percakapan
@@ -334,21 +346,24 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
       where: { id: req.params.id },
       include: {
         customer: true,
-        messages: { where: { direction: "OUTBOUND" } },
+        messages: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
     if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
     if (conv.assignedToId === req.user.id)
       return res.status(400).json({ error: "Percakapan ini sudah jadi lead kamu" });
 
-    const isAdmin       = req.user.role === "ADMIN";
-    const outboundCount = conv.messages.length;
-    const idleHours     = (Date.now() - new Date(conv.lastMessageAt).getTime()) / 3600000;
+    const isAdmin          = req.user.role === "ADMIN";
+    const lastMsg          = conv.messages[0] || null;
+    const isUnanswered     = lastMsg?.direction === "INBOUND";
+    const unansweredMinutes = isUnanswered
+      ? Math.floor((Date.now() - new Date(lastMsg.createdAt).getTime()) / 60000)
+      : null;
+    const canTakeOver = !conv.assignedToId || (isUnanswered && (unansweredMinutes ?? 0) >= 60);
 
-    // SALES hanya bisa takeover jika: sales belum/hampir tidak membalas, ATAU sudah idle >1 jam
-    if (!isAdmin && conv.assignedToId && outboundCount > 1 && idleHours < 1) {
+    if (!isAdmin && !canTakeOver) {
       return res.status(403).json({
-        error: "Tidak bisa ambil alih: percakapan sedang aktif dilayani sales lain (baru balas & belum idle 1 jam)",
+        error: "Percakapan ini masih ditangani sales lain, belum lewat 1 jam",
       });
     }
 

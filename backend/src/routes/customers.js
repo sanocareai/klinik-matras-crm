@@ -63,13 +63,24 @@ customerRouter.get("/", async (req, res) => {
   });
 
   const result = customers.map(({ orders, conversations, ...c }) => {
-    const sorted = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Sort by updatedAt — order yang paling baru diperbarui statusnya
+    const sorted = [...orders].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    const latest = sorted[0] || null;
+
+    // Parse keluhan dari notes JSON order terbaru
+    let latestKeluhan = null;
+    if (latest?.notes) {
+      try { latestKeluhan = JSON.parse(latest.notes).keluhanCustomer || null; } catch {}
+    }
+
     return {
       ...c,
       orderCount: orders.length,
       orderValue: orders.reduce((sum, o) => sum + o.value, 0),
       lastMessageAt: conversations[0]?.lastMessageAt || null,
-      latestOrderStatus: sorted[0]?.status || null,
+      latestOrderStatus: latest?.status || null,
+      latestOrderNumber: latest?.orderNumber || null,
+      latestKeluhan,
     };
   });
 
@@ -82,14 +93,24 @@ customerRouter.get("/:id", async (req, res) => {
     include: {
       notes: { include: { author: true }, orderBy: { createdAt: "desc" } },
       orders: {
-        orderBy: { createdAt: "desc" },
+        orderBy: { updatedAt: "desc" },
         include: { items: { orderBy: { sortOrder: "asc" } } },
       },
       assignedSales: true,
     },
   });
   if (!customer) return res.status(404).json({ error: "Pelanggan tidak ditemukan" });
-  res.json(customer);
+
+  // Kumpulkan semua keluhan dari semua order (non-kosong, urut terbaru)
+  const allKeluhan = customer.orders
+    .map((o) => {
+      let keluhan = null;
+      if (o.notes) { try { keluhan = JSON.parse(o.notes).keluhanCustomer || null; } catch {} }
+      return keluhan ? { keluhan, tanggal: o.updatedAt || o.createdAt } : null;
+    })
+    .filter(Boolean);
+
+  res.json({ ...customer, allKeluhan });
 });
 
 // Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll
@@ -165,7 +186,7 @@ customerRouter.get("/:id/conversations", async (req, res) => {
 
 // Catat order baru — value mulai 0, akan dihitung otomatis dari items
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes } = req.body;
+  const { quantity, status, notes, orderNumber } = req.body;
 
   const order = await prisma.order.create({
     data: {
@@ -174,21 +195,23 @@ customerRouter.post("/:id/orders", async (req, res) => {
       quantity: quantity ? Number(quantity) : 1,
       status: status || "PENDING",
       notes,
+      ...(orderNumber !== undefined && { orderNumber: orderNumber?.trim() || null }),
     },
     include: { items: true },
   });
   res.status(201).json(order);
 });
 
-// Update status / notes order
+// Update status / notes / orderNumber order
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
-  const { status, notes, quantity } = req.body;
+  const { status, notes, quantity, orderNumber } = req.body;
   const order = await prisma.order.update({
     where: { id: req.params.orderId },
     data: {
-      ...(status   !== undefined && { status }),
-      ...(notes    !== undefined && { notes }),
-      ...(quantity !== undefined && { quantity: Number(quantity) }),
+      ...(status      !== undefined && { status }),
+      ...(notes       !== undefined && { notes }),
+      ...(quantity    !== undefined && { quantity: Number(quantity) }),
+      ...(orderNumber !== undefined && { orderNumber: orderNumber?.trim() || null }),
     },
     include: { items: { orderBy: { sortOrder: "asc" } } },
   });

@@ -7,16 +7,13 @@ import Pagination from "../components/Pagination.jsx";
 import {
   formatRupiah, formatPhoneDisplay, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES,
   PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat, KOTA_LIST,
+  ORDER_STATUS_LABELS,
 } from "../utils/format.js";
 import { exportToExcel } from "../utils/export.js";
 
 // Pelanggan "Korporat" = berdasarkan field customerType (bukan tag)
 const isKorporat = (c) => c.customerType === "CORPORATE";
 
-const ORDER_STATUS_LABELS = {
-  PENDING: "Menunggu", PICKUP: "Pengambilan", PROCESSING: "Pengerjaan",
-  READY: "Siap Kirim", DELIVERED: "Selesai", CANCELLED: "Dibatalkan",
-};
 const ORDER_STATUS_STYLE = {
   PENDING:    { background: "#fef3c7", color: "#92400e" },
   PICKUP:     { background: "#dbeafe", color: "#1e40af" },
@@ -166,6 +163,8 @@ export default function Customers() {
       "Status Kasur": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
       Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
       "Status Order Terbaru": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
+      "ID Order": c.latestOrderNumber || "",
+      "Keluhan Terbaru": c.latestKeluhan || "",
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,
       "Total Nilai Order": formatRupiah(c.orderValue || 0),
@@ -283,6 +282,8 @@ export default function Customers() {
               <th>Pipeline</th>
               <th>Kesehatan</th>
               <th>Status Order</th>
+              <th>ID Order</th>
+              <th>Keluhan</th>
               <th>Order</th>
               <th style={{ cursor: "pointer" }} onClick={() => toggleSort("orderValue")}>
                 Nilai Order <SortIcon col="orderValue" />
@@ -356,6 +357,18 @@ export default function Customers() {
                       <span className="muted">—</span>
                     )}
                   </td>
+                  <td style={{ fontSize: 13 }}>
+                    {c.latestOrderNumber || <span className="muted">—</span>}
+                  </td>
+                  <td style={{ fontSize: 13, maxWidth: 180 }}>
+                    {c.latestKeluhan ? (
+                      <span title={c.latestKeluhan} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }}>
+                        {c.latestKeluhan}
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td style={{ textAlign: "center" }}>{c.orderCount}</td>
                   <td>{formatRupiah(c.orderValue)}</td>
                   <td>{c.assignedSales?.name || <span className="muted">—</span>}</td>
@@ -367,7 +380,7 @@ export default function Customers() {
             })}
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={12} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
+                <td colSpan={14} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
                   {hasFilters || typeTab !== "all"
                     ? "Tidak ada pelanggan yang cocok dengan filter."
                     : "Belum ada pelanggan."}

@@ -433,10 +433,8 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const isMine        = assignedTo?.id === user?.id;
   const isAdmin       = user?.role === "ADMIN";
 
-  // Cek eligibilitas takeover
-  const outboundCount = messages.filter((m) => m.direction === "OUTBOUND").length;
-  const idleHours     = (Date.now() - new Date(conversation.lastMessageAt).getTime()) / 3600000;
-  const canTakeover   = !isMine && (isAdmin || !assignedTo || outboundCount <= 1 || idleHours >= 1);
+  // Eligibilitas takeover — pakai nilai yang sudah dihitung di backend
+  const canTakeover = conversation.canTakeOver ?? false;
 
   const formatRec = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
@@ -474,12 +472,28 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
             <Info size={18} />
           </button>
-          {canTakeover && (
-            <button className="btn btn-secondary btn-sm" onClick={handleTakeover}
-              disabled={takingOver} title="Ambil alih percakapan" style={{ flexShrink: 0 }}>
-              <UserCheck size={13} />
-              {takingOver ? "..." : "Ambil Alih"}
-            </button>
+          {/* Tombol Ambil Alih/Percakapan — tersembunyi kalau sudah milik kita */}
+          {!isMine && (
+            !assignedTo ? (
+              <button className="btn btn-secondary btn-sm" onClick={handleTakeover}
+                disabled={takingOver} title="Ambil percakapan ini sebagai lead kamu" style={{ flexShrink: 0 }}>
+                <UserCheck size={13} />
+                {takingOver ? "..." : "Ambil Percakapan"}
+              </button>
+            ) : canTakeover ? (
+              <button className="btn btn-secondary btn-sm" onClick={handleTakeover}
+                disabled={takingOver} title="Percakapan belum dibalas ≥1 jam — bisa diambil alih" style={{ flexShrink: 0 }}>
+                <UserCheck size={13} />
+                {takingOver ? "..." : "Ambil Alih (belum dibalas 1j+)"}
+              </button>
+            ) : (
+              <button className="btn btn-ghost btn-sm" disabled
+                title={`Masih ditangani ${assignedTo.name} — belum bisa diambil alih`}
+                style={{ flexShrink: 0, opacity: 0.5, cursor: "not-allowed" }}>
+                <UserCheck size={13} />
+                {assignedTo.name}
+              </button>
+            )
           )}
           <select value={convStatus} onChange={(e) => handleStatusChange(e.target.value)}
             className="status-select" style={{ flexShrink: 0 }}>
@@ -515,9 +529,14 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
                 <button onClick={() => { handleStatusChange("PENDING"); setShowDotMenu(false); }}>
                   <MessageSquare size={14} /> Tandai Pending
                 </button>
-                {canTakeover && (
+                {!isMine && !assignedTo && (
                   <button onClick={() => { handleTakeover(); setShowDotMenu(false); }}>
-                    <UserCheck size={14} /> Ambil Alih
+                    <UserCheck size={14} /> Ambil Percakapan
+                  </button>
+                )}
+                {!isMine && assignedTo && canTakeover && (
+                  <button onClick={() => { handleTakeover(); setShowDotMenu(false); }}>
+                    <UserCheck size={14} /> Ambil Alih (belum dibalas 1j+)
                   </button>
                 )}
               </div>
