@@ -6,12 +6,12 @@ import CustomerDrawer from "../components/CustomerDrawer.jsx";
 import Pagination from "../components/Pagination.jsx";
 import {
   formatRupiah, formatPhoneDisplay, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES,
-  PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat,
+  PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat, KOTA_LIST,
 } from "../utils/format.js";
 import { exportToExcel } from "../utils/export.js";
 
-// Pelanggan "Korporat" = punya tag "Korporat" (case-insensitive)
-const isKorporat = (c) => c.tags?.some((t) => t.toLowerCase() === "korporat");
+// Pelanggan "Korporat" = berdasarkan field customerType (bukan tag)
+const isKorporat = (c) => c.customerType === "CORPORATE";
 
 export default function Customers() {
   const [customers, setCustomers]   = useState([]);
@@ -40,7 +40,7 @@ export default function Customers() {
   // Drawer + modal
   const [drawerCustomerId, setDrawerCustomerId] = useState(null);
   const [showModal, setShowModal]   = useState(false);
-  const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER" });
+  const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -133,7 +133,7 @@ export default function Customers() {
       const c = await api.createCustomer(newForm);
       setCustomers((prev) => [{ ...c, orderCount: 0, orderValue: 0 }, ...prev]);
       setShowModal(false);
-      setNewForm({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER" });
+      setNewForm({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -143,7 +143,7 @@ export default function Customers() {
 
   function handleExport() {
     const data = filtered.map((c) => ({
-      Tipe: isKorporat(c) ? "Korporat" : "End User",
+      Tipe: c.customerType === "CORPORATE" ? "Korporat" : "End User",
       Nama: c.name || "",
       Telepon: c.phone || "",
       Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
@@ -240,7 +240,7 @@ export default function Customers() {
           </select>
 
           <select className="filter-select" value={filterSales} onChange={(e) => { setFilterSales(e.target.value); setPage(1); }}>
-            <option value="">Semua Sales</option>
+            <option value="">Semua Sales Person</option>
             {users.filter((u) => u.role === "SALES").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
 
@@ -269,7 +269,7 @@ export default function Customers() {
               <th style={{ cursor: "pointer" }} onClick={() => toggleSort("orderValue")}>
                 Nilai Order <SortIcon col="orderValue" />
               </th>
-              <th>Sales</th>
+              <th>Sales Person</th>
               <th>Aksi</th>
             </tr>
           </thead>
@@ -400,9 +400,9 @@ export default function Customers() {
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">Tipe Pelanggan</label>
-                  <select value={newForm.tipe || "end-user"} onChange={(e) => setNewForm((f) => ({ ...f, tipe: e.target.value }))}>
-                    <option value="end-user">End User (B2C)</option>
-                    <option value="korporat">Korporat (B2B)</option>
+                  <select value={newForm.customerType} onChange={(e) => setNewForm((f) => ({ ...f, customerType: e.target.value }))}>
+                    <option value="END_USER">End User (B2C)</option>
+                    <option value="CORPORATE">Korporat (B2B)</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -427,8 +427,10 @@ export default function Customers() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Kota</label>
-                  <input type="text" placeholder="Kota" value={newForm.city}
-                    onChange={(e) => setNewForm((f) => ({ ...f, city: e.target.value }))} />
+                  <select value={newForm.city} onChange={(e) => setNewForm((f) => ({ ...f, city: e.target.value }))}>
+                    <option value="">— Pilih Kota —</option>
+                    {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Sumber Lead</label>

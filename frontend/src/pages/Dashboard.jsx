@@ -21,16 +21,19 @@ const INTENT_DATA = [
   { label: "Lainnya",       pct: 8,  color: "#6b7280" },
 ];
 
-const STAGE_LABEL = { LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Penawaran", WON: "Berhasil", LOST: "Gagal" };
+const STAGE_LABEL = { LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Offers/Negosiasi", WON: "Berhasil", LOST: "Gagal" };
 const STAGE_COLOR = { LEAD: "#f59e0b", QUALIFIED: "#2563eb", QUOTED: "#7c3aed", WON: "#16a34a", LOST: "#dc2626" };
 
 export default function Dashboard({ user }) {
+  const now = new Date();
+
   const [dateRange, setDateRange] = useState(getDatePreset("30d"));
   const [overview, setOverview]   = useState(null);
   const [perf, setPerf]           = useState(null);
   const [csPerf, setCsPerf]       = useState([]);
   const [funnel, setFunnel]       = useState([]);
   const [sourcePerf, setSourcePerf] = useState([]);
+  const [salesPerf, setSalesPerf] = useState([]);
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(true);
 
@@ -39,18 +42,22 @@ export default function Dashboard({ user }) {
     setError("");
     try {
       const params = { from: dateRange.from, to: dateRange.to };
-      const [ov, pf, cs, fn, sp] = await Promise.all([
+      const thisYear  = now.getFullYear();
+      const thisMonth = now.getMonth() + 1;
+      const [ov, pf, cs, fn, sp, spf] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getAnalyticsPerformance(params).catch(() => null),
         api.getAnalyticsCsPerformance(params).catch(() => []),
         api.getAnalyticsPipelineFunnel().catch(() => []),
         api.getAnalyticsSourcePerformance(params).catch(() => []),
+        api.getSalesPerformance({ year: thisYear, month: thisMonth }).catch(() => []),
       ]);
       setOverview(ov);
       setPerf(pf);
       setCsPerf(cs || []);
       setFunnel(fn || []);
       setSourcePerf(sp || []);
+      setSalesPerf(spf || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -197,37 +204,44 @@ export default function Dashboard({ user }) {
         </div>
       </div>
 
-      {/* CS Performance Table */}
-      {csPerf.length > 0 && (
+      {/* Sales Performance — Target Bulanan */}
+      {salesPerf.length > 0 && (
         <div className="chart-card" style={{ marginBottom: 24 }}>
-          <h3>Performa CS / Sales</h3>
-          <div className="cs-table-wrap">
-          <table className="cs-table">
-            <thead>
-              <tr>
-                <th>Nama</th>
-                <th>Total Percakapan</th>
-                <th>Closing Rate</th>
-                <th>Avg Response</th>
-                <th>Nilai Order</th>
-              </tr>
-            </thead>
-            <tbody>
-              {csPerf.map((row) => (
-                <tr key={row.userId}>
-                  <td style={{ fontWeight: 600 }}>{row.name}</td>
-                  <td>{row.totalConversations}</td>
-                  <td>
-                    <span className={row.closingRate >= 50 ? "growth-up" : "growth-down"}>
-                      {row.closingRate}%
+          <h3>
+            Target Sales Bulan {now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
+          </h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 16px" }}>
+            Progress nilai order per Sales Person terhadap target bulanan masing-masing.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {salesPerf.map((row) => {
+              const pct = row.percentToTarget ?? 0;
+              const hasTarget = row.target > 0;
+              const barColor = pct >= 100 ? "#16a34a" : pct >= 50 ? "#2563eb" : "#f59e0b";
+              const barWidth  = Math.min(pct, 100);
+              return (
+                <div key={row.userId} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</span>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {formatRupiah(row.totalOrderValue)}
+                      {hasTarget && <> / {formatRupiah(row.target)}</>}
                     </span>
-                  </td>
-                  <td>{formatDuration(row.avgResponseMinutes)}</td>
-                  <td>{formatRupiah(row.totalOrderValue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                  <div style={{ height: 10, background: "#f3f4f6", borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 99,
+                      background: hasTarget ? barColor : "#d1d5db",
+                      width: hasTarget ? barWidth + "%" : "0%",
+                      transition: "width 0.4s ease",
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: hasTarget ? barColor : "var(--text-muted)", fontWeight: 600 }}>
+                    {hasTarget ? `${pct.toFixed(0)}%` : "Target belum diset"}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

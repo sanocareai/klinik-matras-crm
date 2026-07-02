@@ -91,7 +91,7 @@ export function tagClass(tag) {
 export const STAGE_LABELS = {
   LEAD: "Lead",
   QUALIFIED: "Prospek",
-  QUOTED: "Penawaran",
+  QUOTED: "Offers/Negosiasi",
   WON: "Berhasil",
   LOST: "Gagal",
 };

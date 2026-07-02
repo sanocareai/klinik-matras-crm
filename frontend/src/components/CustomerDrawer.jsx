@@ -5,7 +5,7 @@ import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
 import OrderSection from "./customer/OrderSection.jsx";
 import NotesSection from "./customer/NotesSection.jsx";
-import { formatWaktu, formatTanggalWaktu, SOURCE_LABELS, tagClass } from "../utils/format.js";
+import { formatWaktu, formatTanggalWaktu, SOURCE_LABELS, tagClass, KOTA_LIST } from "../utils/format.js";
 
 const TABS = ["Profil", "Order", "Catatan", "Riwayat Chat"];
 
@@ -18,6 +18,8 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
   // form fields untuk Profil
   const [form, setForm] = useState({ name: "", city: "", email: "", tags: "" });
   const [feedback, setFeedback] = useState(null); // { type, message }
+  const [savingHealth, setSavingHealth] = useState(false);
+  const [savingType, setSavingType]     = useState(false);
 
   function showFeedback(type, message) {
     setFeedback({ type, message });
@@ -85,6 +87,34 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
     if (onUpdated) onUpdated({ ...customer, ...updated });
   }
 
+  async function toggleHealthStatus(value) {
+    const newVal = customer.healthStatus === value ? null : value;
+    setSavingHealth(true);
+    try {
+      const updated = await api.updateCustomer(customer.id, { healthStatus: newVal });
+      setCustomer((c) => ({ ...c, healthStatus: updated.healthStatus }));
+      if (onUpdated) onUpdated({ ...customer, healthStatus: updated.healthStatus });
+    } catch (err) {
+      showFeedback("error", err.message);
+    } finally {
+      setSavingHealth(false);
+    }
+  }
+
+  async function toggleCustomerType(value) {
+    if (customer.customerType === value) return;
+    setSavingType(true);
+    try {
+      const updated = await api.updateCustomer(customer.id, { customerType: value });
+      setCustomer((c) => ({ ...c, customerType: updated.customerType }));
+      if (onUpdated) onUpdated({ ...customer, customerType: updated.customerType });
+    } catch (err) {
+      showFeedback("error", err.message);
+    } finally {
+      setSavingType(false);
+    }
+  }
+
   if (!customer) {
     return (
       <div className="drawer-overlay" onClick={onClose}>
@@ -150,11 +180,13 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
 
               <div className="drawer-field">
                 <label>Kota</label>
-                <input
+                <select
                   value={form.city}
                   onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                  placeholder="Kota"
-                />
+                >
+                  <option value="">— Pilih Kota —</option>
+                  {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+                </select>
               </div>
 
               <div className="drawer-field">
@@ -189,7 +221,79 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
               </div>
 
               <div className="drawer-field">
-                <label>Sales yang menangani</label>
+                <label>Kondisi Kasur</label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { value: "SAKIT",       label: "Sakit",       activeColor: "#fee2e2", activeText: "#991b1b" },
+                    { value: "TIDAK_SAKIT", label: "Tidak Sakit", activeColor: "#dcfce7", activeText: "#166534" },
+                  ].map(({ value, label, activeColor, activeText }) => {
+                    const active = customer.healthStatus === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={savingHealth}
+                        onClick={() => toggleHealthStatus(value)}
+                        style={{
+                          fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99,
+                          border: `1.5px solid ${active ? activeText : "var(--border)"}`,
+                          background: active ? activeColor : "transparent",
+                          color: active ? activeText : "var(--text-secondary)",
+                          cursor: "pointer", transition: "all 0.15s",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                  {customer.healthStatus && (
+                    <button
+                      type="button"
+                      disabled={savingHealth}
+                      onClick={() => toggleHealthStatus(customer.healthStatus)}
+                      style={{
+                        fontSize: 11, padding: "4px 8px", borderRadius: 99,
+                        border: "1px solid var(--border)", background: "transparent",
+                        color: "var(--text-muted)", cursor: "pointer",
+                      }}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="drawer-field">
+                <label>Tipe Customer</label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[
+                    { value: "END_USER",   label: "End User" },
+                    { value: "CORPORATE",  label: "Corporate" },
+                  ].map(({ value, label }) => {
+                    const active = (customer.customerType || "END_USER") === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={savingType}
+                        onClick={() => toggleCustomerType(value)}
+                        style={{
+                          fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99,
+                          border: `1.5px solid ${active ? "var(--primary)" : "var(--border)"}`,
+                          background: active ? "#dbeafe" : "transparent",
+                          color: active ? "#1e40af" : "var(--text-secondary)",
+                          cursor: active ? "default" : "pointer", transition: "all 0.15s",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="drawer-field">
+                <label>Sales Person yang menangani</label>
                 <div style={{ fontSize: 13, color: "#6b7280" }}>
                   {customer.assignedSales?.name || "—"}
                 </div>

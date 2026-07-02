@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from "react";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle, XCircle,
-  MessageSquare, Plus, Pencil, Trash2, X, Copy,
+  MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp,
 } from "lucide-react";
 import { api } from "../api.js";
 import { exportToExcel } from "../utils/export.js";
 import { formatRupiah } from "../utils/format.js";
 
 const NAV_ITEMS = [
-  { key: "profil",    label: "Profil Perusahaan", icon: Building2 },
-  { key: "whatsapp", label: "Status WhatsApp",    icon: Wifi },
-  { key: "template", label: "Template Pesan",     icon: MessageSquare },
-  { key: "keamanan", label: "Keamanan Akun",      icon: Lock },
-  { key: "data",     label: "Data & Backup",      icon: Download },
+  { key: "profil",        label: "Profil Perusahaan", icon: Building2 },
+  { key: "whatsapp",     label: "Status WhatsApp",    icon: Wifi },
+  { key: "template",     label: "Template Pesan",     icon: MessageSquare },
+  { key: "target-sales", label: "Target Sales",       icon: TrendingUp },
+  { key: "keamanan",     label: "Keamanan Akun",      icon: Lock },
+  { key: "data",         label: "Data & Backup",      icon: Download },
 ];
 
 const KATEGORI_LABELS = {
@@ -255,6 +256,122 @@ function TemplateSection() {
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+const BULAN_LABELS = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+function SalesTargetSection() {
+  const nowDate = new Date();
+  const [year, setYear]   = useState(nowDate.getFullYear());
+  const [month, setMonth] = useState(nowDate.getMonth() + 1);
+  const [rows, setRows]   = useState([]); // [{ userId, name, targetValue }]
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function showMsg(type, text) {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await api.getSalesTargets({ year, month });
+      setRows(data.map((r) => ({ userId: r.userId, name: r.name, targetValue: r.targetValue || 0 })));
+    } catch (err) {
+      showMsg("error", "Gagal memuat data: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [year, month]);
+
+  async function handleSaveAll() {
+    setSaving(true);
+    try {
+      await Promise.all(rows.map((r) =>
+        api.updateSalesTarget({ userId: r.userId, year, month, targetValue: r.targetValue })
+      ));
+      showMsg("success", "Semua target berhasil disimpan");
+    } catch (err) {
+      showMsg("error", err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const years = [nowDate.getFullYear() - 1, nowDate.getFullYear(), nowDate.getFullYear() + 1];
+
+  return (
+    <div className="settings-card">
+      <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Target Sales Bulanan</h2>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
+        Set target nilai order (Rupiah) per Sales Person per bulan. Digunakan untuk progress bar di Dashboard.
+      </p>
+
+      {msg && (
+        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Pilih bulan & tahun */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Bulan</label>
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} style={{ minWidth: 140 }}>
+            {BULAN_LABELS.slice(1).map((label, i) => (
+              <option key={i + 1} value={i + 1}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Tahun</label>
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ minWidth: 100 }}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-muted">Memuat...</p>
+      ) : rows.length === 0 ? (
+        <p className="text-muted">Belum ada Sales Person terdaftar.</p>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+            {rows.map((row, idx) => (
+              <div key={row.userId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card-bg)" }}>
+                <span style={{ fontWeight: 600, minWidth: 120, fontSize: 14 }}>{row.name}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Rp</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000000"
+                    value={row.targetValue}
+                    onChange={(e) => setRows((prev) => prev.map((r, i) => i === idx ? { ...r, targetValue: Number(e.target.value) } : r))}
+                    style={{ flex: 1, maxWidth: 200, padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13 }}
+                  />
+                  {row.targetValue > 0 && (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      = {formatRupiah(row.targetValue)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-primary" onClick={handleSaveAll} disabled={saving}>
+            <Save size={14} /> {saving ? "Menyimpan..." : "Simpan Semua Target"}
+          </button>
+        </>
       )}
     </div>
   );
@@ -520,6 +637,9 @@ export default function Pengaturan({ user }) {
 
           {/* ── TEMPLATE PESAN ── */}
           {section === "template" && <TemplateSection />}
+
+          {/* ── TARGET SALES ── */}
+          {section === "target-sales" && <SalesTargetSection />}
 
           {/* ── KEAMANAN ── */}
           {section === "keamanan" && (

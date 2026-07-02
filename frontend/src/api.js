@@ -112,6 +112,7 @@ export const api = {
   getAnalyticsCsPerformance: (params) => request("/analytics/cs-performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: () => request("/analytics/pipeline-funnel"),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
+  getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
 
   // Tracking Links
   getTrackingLinks: () => request("/tracking/links"),
@@ -147,6 +148,9 @@ export const api = {
   updateSettings: (data) =>
     request("/settings", { method: "PATCH", body: JSON.stringify(data) }),
   getWhatsappStatus: () => request("/settings/whatsapp-status"),
+  getSalesTargets: (params) => request("/settings/sales-targets" + buildQuery(params)),
+  updateSalesTarget: (data) =>
+    request("/settings/sales-targets", { method: "PUT", body: JSON.stringify(data) }),
 
   // Pipeline
   getPipelineBoard: () => request("/pipeline/board"),
