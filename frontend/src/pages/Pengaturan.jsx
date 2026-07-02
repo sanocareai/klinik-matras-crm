@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { exportToExcel } from "../utils/export.js";
-import { formatRupiah } from "../utils/format.js";
+import { formatRupiah, STAGE_LABELS, SOURCE_LABELS } from "../utils/format.js";
 
 const NAV_ITEMS = [
   { key: "profil",        label: "Profil Perusahaan", icon: Building2 },
@@ -460,21 +460,25 @@ export default function Pengaturan({ user }) {
   }
 
   async function handleExportCustomers() {
+    const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     setExporting(true);
     try {
       const customers = await api.getCustomers();
       exportToExcel(
         customers.map((c) => ({
-          Nama: c.name || "",
-          Telepon: c.phone || "",
-          Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
-          Email: c.email || "",
-          Kota: c.city || "",
-          Tags: (c.tags || []).join(", "),
-          Pipeline: c.pipelineStage || "",
-          "Sumber Lead": c.leadSource || "",
-          "Jumlah Order": c.orderCount || 0,
-          "Nilai Order": c.orderValue || 0,
+          "Tipe Pelanggan":   c.customerType === "CORPORATE" ? "Korporat" : "End User",
+          Nama:               c.name || "",
+          Telepon:            c.phone || "",
+          Instagram:          c.instagramHandle ? "@" + c.instagramHandle : "",
+          Email:              c.email || "",
+          Kota:               c.city || "",
+          "Status Kasur":     HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
+          Tags:               (c.tags || []).join(", "),
+          Pipeline:           STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
+          "Sumber Lead":      SOURCE_LABELS[c.leadSource] || c.leadSource || "",
+          "Jumlah Order":     c.orderCount || 0,
+          "Total Nilai Order": formatRupiah(c.orderValue || 0),
+          "Sales Person":     c.assignedSales?.name || "",
         })),
         `export-pelanggan-${new Date().toISOString().slice(0, 10)}`
       );

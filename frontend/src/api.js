@@ -195,6 +195,8 @@ export const api = {
     request("/ai/settings", { method: "PUT", body: JSON.stringify(data) }),
   aiChat: (modelId, messages, { systemPrompt, useKb } = {}) =>
     request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages, systemPrompt, useKb }) }),
+  coPilotChat: (message, conversationHistory = []) =>
+    request("/ai/copilot-chat", { method: "POST", body: JSON.stringify({ message, conversationHistory }) }),
 
   // Produk (Galeri)
   getProducts: () => request("/products"),

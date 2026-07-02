@@ -88,9 +88,9 @@ export default function Pipeline() {
           Nama: c.name || c.phone || "",
           Telepon: c.phone || "",
           Stage: STAGE_LABELS[stage] || stage,
-          "Nilai Total": c.totalValue || 0,
+          "Total Nilai Order": formatRupiah(c.totalValue || 0),
           "Hari di Stage": c.daysSince || 0,
-          Sales: c.assignedSales?.name || "",
+          "Sales Person": c.assignedSales?.name || "",
         });
       });
     });

@@ -142,18 +142,20 @@ export default function Customers() {
   }
 
   function handleExport() {
+    const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     const data = filtered.map((c) => ({
-      Tipe: c.customerType === "CORPORATE" ? "Korporat" : "End User",
+      "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
       Nama: c.name || "",
       Telepon: c.phone || "",
       Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
       Email: c.email || "",
       Kota: c.city || "",
+      "Status Kasur": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
       Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,
-      "Nilai Order": c.orderValue || 0,
-      Sales: c.assignedSales?.name || "",
+      "Total Nilai Order": formatRupiah(c.orderValue || 0),
+      "Sales Person": c.assignedSales?.name || "",
     }));
     exportToExcel(data, `pelanggan-${typeTab}-${new Date().toISOString().slice(0, 10)}`);
   }

@@ -79,23 +79,23 @@ export default function Laporan() {
 
   function handleExportRingkasan() {
     exportToExcel([
-      { Metrik: "Pelanggan Baru", Nilai: overview?.newCustomers || 0 },
-      { Metrik: "Total Order", Nilai: overview?.totalOrders || 0 },
-      { Metrik: "Nilai Penjualan (Rp)", Nilai: overview?.totalOrderValue || 0 },
-      { Metrik: "Total Percakapan", Nilai: perf?.totalConversations || 0 },
-      { Metrik: "Avg Response (mnt)", Nilai: Math.round(perf?.avgResponseMinutes || 0) },
-      { Metrik: "Closing Rate (%)", Nilai: perf?.closingRate ? (perf.closingRate * 100).toFixed(1) : 0 },
+      { Metrik: "Pelanggan Baru",    Nilai: overview?.newCustomers || 0 },
+      { Metrik: "Total Order",       Nilai: overview?.totalOrders || 0 },
+      { Metrik: "Nilai Penjualan",   Nilai: formatRupiah(overview?.totalOrderValue || 0) },
+      { Metrik: "Total Percakapan",  Nilai: perf?.totalConversations || 0 },
+      { Metrik: "Avg Response",      Nilai: Math.round(perf?.avgResponseMinutes || 0) + " mnt" },
+      { Metrik: "Closing Rate",      Nilai: perf?.closingRate ? (perf.closingRate * 100).toFixed(1) + "%" : "0%" },
     ], `laporan-ringkasan-${range.from}-${range.to}`);
   }
 
   function handleExportCS() {
     exportToExcel(
       csPerf.map((r) => ({
-        Nama: r.name,
-        "Total Percakapan": r.totalConversations,
-        "Avg Response (mnt)": Math.round(r.avgResponseMinutes || 0),
-        "Closing Rate (%)": r.closingRate ? (r.closingRate * 100).toFixed(1) : 0,
-        "Nilai Order (Rp)": r.totalOrderValue || 0,
+        "Sales Person":        r.name,
+        "Total Percakapan":    r.totalConversations,
+        "Avg Response (mnt)":  Math.round(r.avgResponseMinutes || 0),
+        "Closing Rate (%)":    r.closingRate ? (r.closingRate * 100).toFixed(1) : 0,
+        "Total Nilai Order":   formatRupiah(r.totalOrderValue || 0),
       })),
       `laporan-cs-${range.from}-${range.to}`
     );
