@@ -189,10 +189,19 @@ function AiPlaygroundTab() {
   const [addForm, setAddForm]       = useState({ name: "", provider: "anthropic", apiKey: "", model: "" });
   const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState(null);
+  // System prompt (persona) + KB toggle
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [useKb, setUseKb]           = useState(true);
+  const [showPersonaPanel, setShowPersonaPanel] = useState(false);
+  const [savingPersona, setSavingPersona] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     api.getAiModels().then(setModels).catch(() => {});
+    api.getAiSettings().then((s) => {
+      setSystemPrompt(s.personaPrompt || "");
+      setUseKb(s.useKb !== false);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -233,12 +242,24 @@ function AiPlaygroundTab() {
     setInput("");
     setChatting(true);
     try {
-      const res = await api.aiChat(activeModel.id, [...messages, userMsg]);
+      const res = await api.aiChat(activeModel.id, [...messages, userMsg], { systemPrompt: systemPrompt || undefined, useKb });
       setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
     } finally {
       setChatting(false);
+    }
+  }
+
+  async function handleSavePersona() {
+    setSavingPersona(true);
+    try {
+      await api.updateAiSettings({ personaPrompt: systemPrompt, useKb });
+      alert("Persona berhasil disimpan!");
+    } catch (err) {
+      alert("Gagal simpan persona: " + err.message);
+    } finally {
+      setSavingPersona(false);
     }
   }
 
@@ -296,10 +317,53 @@ function AiPlaygroundTab() {
             <div className="ai-chat-header">
               <strong>{activeModel.name}</strong>
               <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>{activeModel.model}</span>
-              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setMessages([])}>
+              <button
+                className={`btn btn-ghost btn-sm ${showPersonaPanel ? "active" : ""}`}
+                style={{ marginLeft: "auto" }}
+                onClick={() => setShowPersonaPanel((v) => !v)}
+                title="Persona & Pengaturan AI"
+              >
+                Persona
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setMessages([])}>
                 Bersihkan
               </button>
             </div>
+            {/* Panel Persona — tampil saat tombol "Persona" diklik */}
+            {showPersonaPanel && (
+              <div style={{ borderBottom: "1px solid var(--border)", background: "#f8fafc", padding: "14px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 13 }}>System Prompt / Persona</strong>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-secondary)", marginLeft: "auto", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={useKb}
+                      onChange={(e) => setUseKb(e.target.checked)}
+                    />
+                    Sisipkan Knowledge Base
+                  </label>
+                </div>
+                <textarea
+                  rows={8}
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder={"Contoh:\nKamu adalah Sano, konsultan tidur di Klinik Matras...\n\n[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]"}
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", resize: "vertical", border: "1px solid var(--border)", borderRadius: 6, padding: 8 }}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
+                    Sisipkan placeholder <code>[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]</code> untuk injeksi KB
+                  </span>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSavePersona}
+                    disabled={savingPersona}
+                  >
+                    {savingPersona ? "Menyimpan..." : "Simpan Persona"}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="ai-chat-messages">
               {messages.length === 0 && (
                 <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: 40, fontSize: 13 }}>

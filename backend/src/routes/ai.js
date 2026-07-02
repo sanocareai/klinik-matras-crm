@@ -5,8 +5,15 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = path.join(__dirname, "../../data/ai-models.json");
+const __dirname      = path.dirname(fileURLToPath(import.meta.url));
+const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
+const SETTINGS_FILE  = path.join(__dirname, "../../data/ai-settings.json");
+const FAQ_FILE       = path.join(__dirname, "../../data/faq.json");
+const KB_META_FILE   = path.join(__dirname, "../../data/knowledge-meta.json");
+const KB_DIR         = path.join(__dirname, "../../data/knowledge");
+
+// Placeholder di system prompt — akan diganti KB context saat chat
+const KB_PLACEHOLDER = "[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]";
 
 export const aiRouter = express.Router();
 aiRouter.use(requireAuth);
@@ -42,6 +49,65 @@ function readModels() {
 function writeModels(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")); }
+  catch { return { personaPrompt: "", useKb: true }; }
+}
+function writeSettings(data) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+}
+
+// Ambil snippet relevan dari Knowledge Base berdasarkan query user
+async function searchKb(query) {
+  const results = [];
+  const q = query.toLowerCase().slice(0, 200);
+  if (!q) return results;
+
+  // Cari di dokumen
+  try {
+    const meta = JSON.parse(fs.readFileSync(KB_META_FILE, "utf-8")).filter((d) => d.active);
+    for (const doc of meta) {
+      try {
+        const text = fs.readFileSync(doc.filePath, "utf-8");
+        const lines = text.split("\n");
+        for (const line of lines) {
+          if (line.toLowerCase().includes(q) && line.trim().length > 10) {
+            results.push(`[${doc.name}] ${line.trim()}`);
+            if (results.length >= 5) break;
+          }
+        }
+      } catch {}
+      if (results.length >= 5) break;
+    }
+  } catch {}
+
+  // Cari di FAQ
+  try {
+    const faqs = JSON.parse(fs.readFileSync(FAQ_FILE, "utf-8")).filter((f) => f.active !== false);
+    for (const faq of faqs) {
+      if (faq.question?.toLowerCase().includes(q) || faq.answer?.toLowerCase().includes(q)) {
+        results.push(`[FAQ] ${faq.question}: ${faq.answer}`);
+        if (results.length >= 8) break;
+      }
+    }
+  } catch {}
+
+  return results;
+}
+
+// GET /api/ai/settings — persona prompt + toggle KB
+aiRouter.get("/settings", (req, res) => {
+  res.json(readSettings());
+});
+
+// PUT /api/ai/settings
+aiRouter.put("/settings", (req, res) => {
+  const current = readSettings();
+  const updated = { ...current, ...req.body };
+  writeSettings(updated);
+  res.json(updated);
+});
 
 // GET /api/ai/models — return list dengan key ter-mask
 aiRouter.get("/models", (req, res) => {
@@ -98,9 +164,12 @@ aiRouter.delete("/models/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/ai/chat — proxy ke AI provider
+// POST /api/ai/chat — proxy ke AI provider dengan system prompt + KB injection
+// Body: { modelId, messages, systemPrompt?, useKb? }
+//   systemPrompt: override persona (opsional, kalau kosong pakai persona di settings)
+//   useKb: inject knowledge base context ke system prompt (default: ikut settings)
 aiRouter.post("/chat", async (req, res) => {
-  const { modelId, messages } = req.body;
+  const { modelId, messages, systemPrompt: promptOverride, useKb: useKbOverride } = req.body;
   if (!modelId || !messages?.length) return res.status(400).json({ error: "modelId dan messages wajib" });
 
   const models = readModels();
@@ -113,8 +182,31 @@ aiRouter.post("/chat", async (req, res) => {
     return res.status(500).json({ error: "Gagal mendekripsi API key" });
   }
 
+  // Tentukan system prompt — pakai override jika ada, kalau tidak pakai persona tersimpan
+  const settings  = readSettings();
+  let systemPrompt = promptOverride ?? settings.personaPrompt ?? "";
+  const useKb      = useKbOverride  ?? settings.useKb ?? true;
+
+  // Inject KB context menggantikan placeholder di system prompt
+  if (useKb && systemPrompt.includes(KB_PLACEHOLDER)) {
+    const lastUserMsg = [...messages].reverse().find((msg) => msg.role === "user");
+    const query = lastUserMsg?.content || "";
+    const kbResults = await searchKb(query);
+    const kbSection = kbResults.length > 0
+      ? "INFORMASI DARI KNOWLEDGE BASE:\n" + kbResults.map((r, i) => `${i + 1}. ${r}`).join("\n")
+      : "INFORMASI DARI KNOWLEDGE BASE:\n(Belum ada konten — tambahkan dokumen dan FAQ di halaman Knowledge Base)";
+    systemPrompt = systemPrompt.replace(KB_PLACEHOLDER, kbSection);
+  }
+
   try {
     if (m.provider === "anthropic") {
+      const reqBody = {
+        model: m.model || "claude-sonnet-4-6",
+        max_tokens: 1024,
+        messages,
+      };
+      if (systemPrompt.trim()) reqBody.system = systemPrompt;
+
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -122,17 +214,12 @@ aiRouter.post("/chat", async (req, res) => {
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
-        body: JSON.stringify({
-          model: m.model || "claude-sonnet-4-6",
-          max_tokens: 1024,
-          messages,
-        }),
+        body: JSON.stringify(reqBody),
       });
       const data = await response.json();
       if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
       res.json({ content: data.content[0]?.text || "" });
     } else {
-      // Provider lain belum didukung
       res.status(400).json({ error: `Provider "${m.provider}" belum didukung di versi ini` });
     }
   } catch (err) {

@@ -176,8 +176,11 @@ export const api = {
     request(`/ai/models/${id}`, { method: "DELETE" }),
   testAiConnection: (data) =>
     request("/ai/test-connection", { method: "POST", body: JSON.stringify(data) }),
-  aiChat: (modelId, messages) =>
-    request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages }) }),
+  getAiSettings: () => request("/ai/settings"),
+  updateAiSettings: (data) =>
+    request("/ai/settings", { method: "PUT", body: JSON.stringify(data) }),
+  aiChat: (modelId, messages, { systemPrompt, useKb } = {}) =>
+    request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages, systemPrompt, useKb }) }),
 
   // Produk (Galeri)
   getProducts: () => request("/products"),
