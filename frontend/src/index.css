@@ -2147,5 +2147,37 @@ input:focus, select:focus, textarea:focus {
   @media (max-width: 380px) {
     .chat-header .channel-badge { display: none; }
   }
+
+  /* ── Laporan: tabel performa CS scroll horizontal ── */
+  .laporan-performa-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .laporan-performa-table-wrap table { min-width: 520px; }
+
+  /* ── Settings card: tabel di dalamnya scroll horizontal ── */
+  .settings-card { overflow-x: auto; }
+  .settings-card table { min-width: 400px; }
+}
+
+/* ── Tablet breakpoint (iPad, layar 769-1024px) ── */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .kpi-grid       { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .kpi-mini-grid  { grid-template-columns: repeat(2, 1fr); }
+  .stat-row       { grid-template-columns: repeat(2, 1fr) !important; gap: 12px; }
+  .chart-grid     { grid-template-columns: 1fr; }
+  .laporan-grid   { grid-template-columns: 1fr !important; }
+  .customer-table { font-size: 12px; }
+  .customer-table th, .customer-table td { padding: 8px 10px; }
+  /* Kolom tabel banyak: beri scroll horizontal */
+  .table-wrap { overflow-x: auto; }
+  /* Pipeline: kolom lebih ramping */
+  .kanban-col { min-width: 220px; }
+  /* Drawer lebih lebar di tablet */
+  .drawer-panel { width: 460px; }
+  /* Chat: kecilkan header actions biar tidak overflow */
+  .chat-header-desktop-actions { gap: 4px; }
+  .chat-header-desktop-actions .btn { padding: 4px 8px; font-size: 12px; }
+  /* Page padding tablet */
+  .page { padding: 16px 20px; }
+  /* Pengaturan: sidebar sedikit lebih kecil */
+  .settings-sidebar { width: 180px !important; }
 }
 

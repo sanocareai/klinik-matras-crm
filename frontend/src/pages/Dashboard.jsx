@@ -57,7 +57,9 @@ export default function Dashboard({ user }) {
       setCsPerf(cs || []);
       setFunnel(fn || []);
       setSourcePerf(sp || []);
-      setSalesPerf(spf || []);
+      // Urutkan dari yang paling perform (totalOrderValue tertinggi)
+      const sorted = (spf || []).slice().sort((a, b) => b.totalOrderValue - a.totalOrderValue);
+      setSalesPerf(sorted);
     } catch (err) {
       setError(err.message);
     } finally {

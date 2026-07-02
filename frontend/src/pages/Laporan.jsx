@@ -48,15 +48,14 @@ export default function Laporan() {
     if (!range.from || !range.to) return;
     setLoading(true);
     try {
-      const rangeDate  = new Date(range.from + "T00:00:00");
-      const rangeYear  = rangeDate.getFullYear();
-      const rangeMonth = rangeDate.getMonth() + 1;
+      // Target selalu pakai bulan saat ini (sama seperti Dashboard)
+      const now = new Date();
       const [ov, pf, cs, fn, sp] = await Promise.all([
         api.getAnalyticsOverview(range),
         api.getAnalyticsPerformance(range),
         api.getAnalyticsCsPerformance(range),
         api.getAnalyticsPipelineFunnel(),
-        api.getSalesPerformance({ year: rangeYear, month: rangeMonth }).catch(() => []),
+        api.getSalesPerformance({ year: now.getFullYear(), month: now.getMonth() + 1 }).catch(() => []),
       ]);
       setOverview(ov);
       setPerf(pf);
@@ -356,7 +355,7 @@ export default function Laporan() {
                   </div>
                 )}
 
-                <div className="settings-card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
+                <div className="settings-card laporan-performa-table-wrap" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
                   <table className="user-table" style={{ width: "100%" }}>
                     <thead>
                       <tr>

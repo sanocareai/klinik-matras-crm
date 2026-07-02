@@ -37,6 +37,18 @@ orderRouter.patch("/:id", async (req, res) => {
   }
 });
 
+// DELETE /api/orders/:id — hapus order beserta semua item-nya
+orderRouter.delete("/:id", async (req, res) => {
+  try {
+    // Hapus items dulu (cascade tidak di-set di schema)
+    await prisma.orderItem.deleteMany({ where: { orderId: req.params.id } });
+    await prisma.order.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/orders/:orderId/items — tambah item layanan
 orderRouter.post("/:orderId/items", async (req, res) => {
   const { layananName, harga, sortOrder } = req.body;

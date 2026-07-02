@@ -105,6 +105,8 @@ export const api = {
     request(`/orders/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteOrderItem: (itemId) =>
     request(`/orders/items/${itemId}`, { method: "DELETE" }),
+  deleteOrder: (orderId) =>
+    request(`/orders/${orderId}`, { method: "DELETE" }),
 
   // Analytics
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),

@@ -1,11 +1,11 @@
 import React, { useState } from "react";
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   UKURAN_KASUR, MERK_KASUR,
 } from "../../utils/format.js";
 
-// Nama layanan yang tersedia sebagai suggestion
 const JENIS_LAYANAN = [
   "Upgrade Lapisan Matras Sehat",
   "Upgrade Fondasi Matras Sehat",
@@ -16,7 +16,6 @@ const JENIS_LAYANAN = [
   "Lainnya",
 ];
 
-// Parse notes JSON; backward-compat kalau string plain text
 function parseNotes(notes) {
   if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", beratBadan: "" };
   try {
@@ -26,10 +25,9 @@ function parseNotes(notes) {
       ukuranKasur: p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
       beratBadan: p.beratBadan || "",
-      jenisLayanan: p.jenisLayanan || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, beratBadan: "", jenisLayanan: "" };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, beratBadan: "" };
   }
 }
 
@@ -46,65 +44,59 @@ function newItem() {
   return { key: Date.now() + Math.random(), layananName: "", harga: "" };
 }
 
-// ─── Card order yang sudah tersimpan ─────────────────────────────────────────
-function OrderCard({ order, customerId, onUpdate, onRefresh }) {
+const ORDER_STATUS_BADGE = {
+  PENDING:    { bg: "#fef3c7", color: "#92400e" },
+  PICKUP:     { bg: "#dbeafe", color: "#1e40af" },
+  PROCESSING: { bg: "#ede9fe", color: "#5b21b6" },
+  READY:      { bg: "#ccfbf1", color: "#065f46" },
+  DELIVERED:  { bg: "#dcfce7", color: "#166534" },
+  CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
+};
+
+// ─── Detail order yang bisa di-expand ────────────────────────────────────────
+function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const info = parseNotes(order.notes);
-  const [editing, setEditing]       = useState(false);
-  const [status, setStatus]         = useState(order.status);
+  const [editing, setEditing]         = useState(false);
+  const [status, setStatus]           = useState(order.status);
   const [orderNumber, setOrderNumber] = useState(order.orderNumber || "");
-  const [merkKasur, setMerkKasur]   = useState(info.merkKasur);
-  const [ukuran, setUkuran]         = useState(info.ukuranKasur);
-  const [keluhan, setKeluhan]       = useState(info.keluhanCustomer);
-  const [items, setItems]           = useState(
+  const [merkKasur, setMerkKasur]     = useState(info.merkKasur);
+  const [ukuran, setUkuran]           = useState(info.ukuranKasur);
+  const [keluhan, setKeluhan]         = useState(info.keluhanCustomer);
+  const [items, setItems]             = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
-  const [saving, setSaving]         = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [deleting, setDeleting]       = useState(false);
 
   const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
-  function addItem() {
-    setItems((prev) => [...prev, newItem()]);
-  }
-
-  function removeItem(key) {
-    setItems((prev) => prev.filter((it) => it.key !== key));
-  }
-
+  function addItem() { setItems((p) => [...p, newItem()]); }
+  function removeItem(key) { setItems((p) => p.filter((it) => it.key !== key)); }
   function setItemField(key, field, val) {
-    setItems((prev) => prev.map((it) => it.key === key ? { ...it, [field]: val } : it));
+    setItems((p) => p.map((it) => it.key === key ? { ...it, [field]: val } : it));
   }
 
   async function handleSave() {
     setSaving(true);
     try {
-      // 1. Update order dasar (status, notes, orderNumber)
       await api.updateOrder(order.id, {
         status,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         orderNumber: orderNumber.trim() || null,
       });
-
-      // 2. Kelola items: hapus yang hilang, update yang ada, tambah yang baru
       const existingIds = (order.items || []).map((it) => it.id);
       const currentIds  = items.filter((it) => it.id).map((it) => it.id);
-
-      // Hapus yang dihapus user
       for (const id of existingIds) {
-        if (!currentIds.includes(id)) {
-          await api.deleteOrderItem(id);
-        }
+        if (!currentIds.includes(id)) await api.deleteOrderItem(id);
       }
-      // Update yang sudah ada
       for (const it of items.filter((it) => it.id)) {
-        if (!it.layananName?.trim()) continue;
-        await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+        if (it.layananName?.trim())
+          await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
       }
-      // Tambah yang baru (belum punya id)
       for (const it of items.filter((it) => !it.id)) {
-        if (!it.layananName?.trim()) continue;
-        await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+        if (it.layananName?.trim())
+          await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
       }
-
       setEditing(false);
       onRefresh();
     } catch (err) {
@@ -115,7 +107,6 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
   }
 
   function handleCancel() {
-    // Reset state ke nilai asal
     const inf = parseNotes(order.notes);
     setStatus(order.status);
     setOrderNumber(order.orderNumber || "");
@@ -126,91 +117,88 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
     setEditing(false);
   }
 
-  // ── Status badge + select ganti status ───
-  const statusRow = (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
-      <span
-        className={`order-badge order-${(editing ? status : order.status).toLowerCase()}`}
-        style={{ flexShrink: 0, whiteSpace: "nowrap" }}
-      >
-        {ORDER_STATUS_LABELS[editing ? status : order.status] || order.status}
-      </span>
-      {editing && (
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          style={selStyle}
-        >
-          {ORDER_STATUSES.map((s) => (
-            <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-          ))}
-        </select>
-      )}
-      {!editing && (
-        <select
-          value={order.status}
-          onChange={async (e) => {
-            try { await api.updateOrder(order.id, { status: e.target.value }); onRefresh(); }
-            catch (err) { alert(err.message); }
-          }}
-          style={selStyle}
-        >
-          {ORDER_STATUSES.map((s) => (
-            <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
+  async function handleDelete() {
+    if (!confirm("Hapus order ini? Semua item layanan juga akan dihapus.")) return;
+    setDeleting(true);
+    try {
+      await api.deleteOrder(order.id);
+      onDelete(order.id);
+    } catch (err) {
+      alert(err.message);
+      setDeleting(false);
+    }
+  }
 
   return (
-    <div className="order-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-      {/* Header: total + status + tombol edit */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div className="order-item-value">{formatRupiah(order.value)}</div>
-          <div style={{ marginTop: 4 }}>{statusRow}</div>
-        </div>
+    <div style={{ padding: "12px 14px", background: "#fafafa", borderTop: "1px solid var(--border)" }}>
+      {/* Tombol aksi */}
+      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginBottom: 10 }}>
         {!editing ? (
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => setEditing(true)}
-            style={{ flexShrink: 0 }}
-          >
-            Edit
-          </button>
+          <>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Edit</button>
+            <button
+              className="btn btn-sm"
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{ background: "#fee2e2", color: "#991b1b", border: "none", cursor: "pointer", borderRadius: 6, padding: "4px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Trash2 size={12} /> {deleting ? "..." : "Hapus"}
+            </button>
+          </>
         ) : (
-          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <>
             <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
               {saving ? "..." : "Simpan"}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={handleCancel} disabled={saving}>
-              Batal
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleCancel} disabled={saving}>Batal</button>
+          </>
+        )}
+      </div>
+
+      {/* Status */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>Status</span>
+        {editing ? (
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={selStyleFull}>
+            {ORDER_STATUSES.map((s) => (
+              <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+            ))}
+          </select>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
+              {ORDER_STATUS_LABELS[order.status] || order.status}
+            </span>
+            <select
+              value={order.status}
+              onChange={async (e) => {
+                try { await api.updateOrder(order.id, { status: e.target.value }); onRefresh(); }
+                catch (err) { alert(err.message); }
+              }}
+              style={{ ...selStyle, fontSize: 11 }}
+            >
+              {ORDER_STATUSES.map((s) => (
+                <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+              ))}
+            </select>
           </div>
         )}
       </div>
 
       {/* ID Order */}
-      {editing ? (
-        <div>
-          <span style={metaLabel}>ID Order (opsional)</span>
-          <input
-            value={orderNumber}
-            onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="cth: ORD-001"
-            style={{ ...selStyleFull, fontSize: 12 }}
-          />
-        </div>
-      ) : order.orderNumber ? (
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          <span style={{ fontWeight: 600 }}>ID Order:</span> {order.orderNumber}
-        </div>
-      ) : null}
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>ID Order</span>
+        {editing ? (
+          <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="cth: ORD-001" style={selStyleFull} />
+        ) : (
+          <span style={{ fontSize: 13 }}>{order.orderNumber || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+        )}
+      </div>
 
       {/* Merk + Ukuran */}
       {editing ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
           <div>
             <span style={metaLabel}>Merk Kasur</span>
             <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
@@ -227,15 +215,15 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
           </div>
         </div>
       ) : (info.merkKasur || info.ukuranKasur) ? (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {info.merkKasur && <span style={chipStyle}>{info.merkKasur}</span>}
           {info.ukuranKasur && <span style={chipStyle}>{info.ukuranKasur}</span>}
         </div>
       ) : null}
 
-      {/* Items breakdown */}
+      {/* Items layanan */}
       {editing ? (
-        <div>
+        <div style={{ marginBottom: 8 }}>
           <span style={metaLabel}>Layanan (add-ons)</span>
           {items.map((it) => (
             <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
@@ -247,45 +235,36 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
                 style={{ flex: 2, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
               />
               <input
-                type="number"
-                value={it.harga}
+                type="number" value={it.harga}
                 onChange={(e) => setItemField(it.key, "harga", e.target.value)}
-                placeholder="Harga"
-                min="0"
+                placeholder="Harga" min="0"
                 style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 80 }}
               />
               {items.length > 1 && (
-                <button
-                  onClick={() => removeItem(it.key)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 16, padding: "0 2px", lineHeight: 1 }}
-                >
-                  ×
-                </button>
+                <button onClick={() => removeItem(it.key)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, padding: "0 2px" }}>×</button>
               )}
             </div>
           ))}
           <datalist id="layanan-suggestions">
             {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
           </datalist>
-          <button
-            onClick={addItem}
-            style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}
-          >
+          <button onClick={addItem}
+            style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
             + Tambah layanan lain
           </button>
-          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-            Total: {formatRupiah(totalItems)}
-          </div>
+          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600 }}>Total: {formatRupiah(totalItems)}</div>
         </div>
       ) : (order.items && order.items.length > 0) ? (
-        <div>
+        <div style={{ marginBottom: 8 }}>
+          <span style={metaLabel}>Layanan</span>
           {order.items.map((it) => (
             <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0", color: "var(--text-secondary)" }}>
               <span>{it.layananName}</span>
               <span style={{ fontWeight: 600 }}>{formatRupiah(it.harga)}</span>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)", color: "var(--text-primary)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
             <span>Total</span>
             <span>{formatRupiah(order.value)}</span>
           </div>
@@ -296,13 +275,9 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
       {editing ? (
         <div>
           <span style={metaLabel}>Keluhan Customer</span>
-          <textarea
-            value={keluhan}
-            onChange={(e) => setKeluhan(e.target.value)}
-            placeholder="Keluhan kasur customer..."
-            rows={2}
-            style={{ ...selStyleFull, resize: "vertical" }}
-          />
+          <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
+            placeholder="Keluhan kasur customer..." rows={2}
+            style={{ ...selStyleFull, resize: "vertical" }} />
         </div>
       ) : info.keluhanCustomer ? (
         <div>
@@ -316,13 +291,13 @@ function OrderCard({ order, customerId, onUpdate, onRefresh }) {
 
 // ─── Form tambah order baru (2 step) ─────────────────────────────────────────
 function AddOrderForm({ customerId, onDone, onCancel }) {
-  const [step, setStep]             = useState(1);
+  const [step, setStep]               = useState(1);
   const [orderNumber, setOrderNumber] = useState("");
-  const [merkKasur, setMerk]        = useState("");
-  const [ukuran, setUkuran]         = useState("");
-  const [keluhan, setKeluhan]       = useState("");
-  const [items, setItems]           = useState([newItem()]);
-  const [saving, setSaving]         = useState(false);
+  const [merkKasur, setMerk]          = useState("");
+  const [ukuran, setUkuran]           = useState("");
+  const [keluhan, setKeluhan]         = useState("");
+  const [items, setItems]             = useState([newItem()]);
+  const [saving, setSaving]           = useState(false);
 
   const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
@@ -338,12 +313,10 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     if (validItems.length === 0) return alert("Tambahkan minimal satu layanan");
     setSaving(true);
     try {
-      // Buat order dulu (value=0, backend sync setelah items)
       const order = await api.addOrder(customerId, {
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         orderNumber: orderNumber.trim() || null,
       });
-      // Tambah semua items
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
       }
@@ -359,17 +332,11 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     return (
       <div style={formBox}>
         <p style={{ margin: "0 0 12px", fontWeight: 700, fontSize: 13 }}>Order Baru — Langkah 1: Info Kasur</p>
-
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>ID Order (opsional)</label>
-          <input
-            value={orderNumber}
-            onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="cth: ORD-001"
-            style={formSelect}
-          />
+          <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder="cth: ORD-001" style={formSelect} />
         </div>
-
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Merk Kasur</label>
           <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
@@ -377,7 +344,6 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
             {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
-
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Ukuran Kasur</label>
           <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
@@ -385,18 +351,12 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
             {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
-
         <div style={{ marginBottom: 14 }}>
           <label style={formLabel}>Keluhan Customer</label>
-          <textarea
-            value={keluhan}
-            onChange={(e) => setKeluhan(e.target.value)}
-            placeholder="Jelaskan keluhan kasur yang dirasakan customer..."
-            rows={3}
-            style={{ ...formSelect, resize: "vertical" }}
-          />
+          <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
+            placeholder="Jelaskan keluhan kasur yang dirasakan customer..." rows={3}
+            style={{ ...formSelect, resize: "vertical" }} />
         </div>
-
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(2)}>
             Lanjut ke Layanan →
@@ -413,63 +373,44 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
       {(merkKasur || ukuran) && (
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-muted)" }}>
           {[merkKasur, ukuran].filter(Boolean).join(" · ")}
-          <button
-            type="button"
-            onClick={() => setStep(1)}
-            style={{ marginLeft: 8, fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-          >
+          <button type="button" onClick={() => setStep(1)}
+            style={{ marginLeft: 8, fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             Ubah
           </button>
         </p>
       )}
-
       <label style={formLabel}>Layanan (add-ons)</label>
-      {items.map((it, idx) => (
+      {items.map((it) => (
         <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
           <input
-            list="new-layanan-suggestions"
-            value={it.layananName}
+            list="new-layanan-suggestions" value={it.layananName}
             onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
             placeholder="Nama layanan..."
             style={{ flex: 2, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)" }}
           />
           <input
-            type="number"
-            value={it.harga}
+            type="number" value={it.harga}
             onChange={(e) => setItemField(it.key, "harga", e.target.value)}
-            placeholder="Harga (Rp)"
-            min="0"
+            placeholder="Harga (Rp)" min="0"
             style={{ flex: 1, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)", minWidth: 90 }}
           />
           {items.length > 1 && (
-            <button
-              type="button"
-              onClick={() => removeItem(it.key)}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}
-            >
-              ×
-            </button>
+            <button type="button" onClick={() => removeItem(it.key)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}>×</button>
           )}
         </div>
       ))}
       <datalist id="new-layanan-suggestions">
         {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
       </datalist>
-
-      <button
-        type="button"
-        onClick={addItem}
-        style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}
-      >
+      <button type="button" onClick={addItem}
+        style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>
         + Tambah layanan lain
       </button>
-
-      {/* Total */}
       <div style={{ padding: "8px 0", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Total</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "var(--primary)" }}>{formatRupiah(total)}</span>
       </div>
-
       <div style={{ display: "flex", gap: 8 }}>
         <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={saving}>
           {saving ? "Menyimpan..." : "Simpan Order"}
@@ -482,14 +423,22 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
 
 // ─── Container utama ──────────────────────────────────────────────────────────
 export default function OrderSection({ customer, onUpdate }) {
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm]   = useState(false);
+  const [expandedId, setExpandedId] = useState(null); // ID order yang sedang di-expand
 
-  // Refresh: reload customer dari server supaya dapat value + items yang sudah sync
   async function refresh() {
     try {
       const fresh = await api.getCustomer(customer.id);
       onUpdate(fresh);
     } catch {}
+  }
+
+  function handleDelete(orderId) {
+    onUpdate({ ...customer, orders: customer.orders.filter((o) => o.id !== orderId) });
+  }
+
+  function toggleExpand(id) {
+    setExpandedId((prev) => (prev === id ? null : id));
   }
 
   const totalValue = customer.orders.reduce((s, o) => s + o.value, 0);
@@ -501,9 +450,7 @@ export default function OrderSection({ customer, onUpdate }) {
           {customer.orders.length} order · Total {formatRupiah(totalValue)}
         </p>
         {!showForm && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
-            + Order
-          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Order</button>
         )}
       </div>
 
@@ -515,27 +462,75 @@ export default function OrderSection({ customer, onUpdate }) {
         />
       )}
 
-      <div className="order-list">
-        {customer.orders.map((o) => (
-          <OrderCard
-            key={o.id}
-            order={o}
-            customerId={customer.id}
-            onUpdate={(updated) => {
-              onUpdate({ ...customer, orders: customer.orders.map((x) => x.id === updated.id ? updated : x) });
-            }}
-            onRefresh={refresh}
-          />
-        ))}
-        {customer.orders.length === 0 && !showForm && (
-          <p className="text-small">Belum ada order. Klik "+ Order" untuk menambah.</p>
-        )}
-      </div>
+      {/* Tabel ringkasan semua order */}
+      {customer.orders.length > 0 && (
+        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--bg-secondary)" }}>
+                <th style={thStyle}>ID Order</th>
+                <th style={thStyle}>Nilai</th>
+                <th style={thStyle}>Status</th>
+                <th style={{ ...thStyle, width: 36 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {customer.orders.map((o) => {
+                const badge = ORDER_STATUS_BADGE[o.status] || {};
+                const isOpen = expandedId === o.id;
+                return (
+                  <React.Fragment key={o.id}>
+                    <tr
+                      onClick={() => toggleExpand(o.id)}
+                      style={{ borderTop: "1px solid var(--border)", cursor: "pointer", background: isOpen ? "#f8fafc" : "white", transition: "background 0.1s" }}
+                    >
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>
+                        {o.orderNumber || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{formatRupiah(o.value)}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, ...badge }}>
+                          {ORDER_STATUS_LABELS[o.status] || o.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 8px", textAlign: "center" }}>
+                        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: 0 }}>
+                          <OrderDetail
+                            order={o}
+                            customerId={customer.id}
+                            onRefresh={refresh}
+                            onDelete={handleDelete}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {customer.orders.length === 0 && !showForm && (
+        <p className="text-small">Belum ada order. Klik "+ Order" untuk menambah.</p>
+      )}
     </div>
   );
 }
 
 // ─── Style helpers ────────────────────────────────────────────────────────────
+const thStyle = {
+  padding: "8px 12px", textAlign: "left", fontSize: 11,
+  fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
 const formLabel = {
   display: "block", fontSize: 11, fontWeight: 600,
   color: "var(--text-muted)", textTransform: "uppercase",
