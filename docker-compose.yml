@@ -1,5 +1,5 @@
-version: "3.9"
-
+cd ~/klinik-matras
+cat > docker-compose.yml << 'EOF'
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,11 +13,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # WAHA - WhatsApp HTTP API.
-  # WEBJS dipilih karena support PUT /api/contacts (sync nama kontak).
-  # NOWEB lebih ringan tapi tidak support endpoint contacts.
   waha:
     image: devlikeapro/waha
+    restart: unless-stopped
     environment:
       WHATSAPP_DEFAULT_ENGINE: NOWEB
       WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
@@ -38,37 +36,17 @@ services:
     env_file: ./backend/.env
     environment:
       BACKEND_INTERNAL_URL: http://backend:4000
-    # Port 4000 tidak perlu diekspos ke publik lagi — Caddy yang jadi pintu masuk via HTTPS.
-    # Kalau mau akses langsung pakai IP:4000 (tanpa HTTPS), uncomment baris di bawah:
-    # ports:
-    #   - "4000:4000"
+    ports:
+      - "4000:4000"
     volumes:
       - ./frontend/dist:/frontend/dist
-      - ./backend/uploads:/app/uploads          # media chat persisten
-      - ./backend/data/products:/app/data/products  # foto produk persisten
+      - ./backend/uploads:/app/uploads
+      - ./backend/data/products:/app/data/products
     depends_on:
       - postgres
       - waha
 
-  # Caddy: HTTPS reverse proxy dengan auto Let's Encrypt
-  # Butuh: port 80 + 443 terbuka di firewall VPS, dan DNS A record
-  # app.sanomatrassehat.com → IP VPS sudah pointing
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"   # HTTP/3
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - backend
-
 volumes:
   pgdata:
   waha_sessions:
-  caddy_data:
-  caddy_config:
+EOF
