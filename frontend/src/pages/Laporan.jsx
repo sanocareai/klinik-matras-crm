@@ -40,6 +40,7 @@ export default function Laporan() {
   const [overview, setOverview] = useState(null);
   const [perf, setPerf]         = useState(null);
   const [csPerf, setCsPerf]     = useState([]);
+  const [salesPerf, setSalesPerf] = useState([]);
   const [funnel, setFunnel]     = useState([]);
   const [loading, setLoading]   = useState(false);
 
@@ -47,15 +48,20 @@ export default function Laporan() {
     if (!range.from || !range.to) return;
     setLoading(true);
     try {
-      const [ov, pf, cs, fn] = await Promise.all([
+      const rangeDate  = new Date(range.from + "T00:00:00");
+      const rangeYear  = rangeDate.getFullYear();
+      const rangeMonth = rangeDate.getMonth() + 1;
+      const [ov, pf, cs, fn, sp] = await Promise.all([
         api.getAnalyticsOverview(range),
         api.getAnalyticsPerformance(range),
         api.getAnalyticsCsPerformance(range),
         api.getAnalyticsPipelineFunnel(),
+        api.getSalesPerformance({ year: rangeYear, month: rangeMonth }).catch(() => []),
       ]);
       setOverview(ov);
       setPerf(pf);
       setCsPerf(cs || []);
+      setSalesPerf(sp || []);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
         (fn || []).map((item) => ({
@@ -86,14 +92,20 @@ export default function Laporan() {
   }
 
   function handleExportCS() {
+    const tMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
     exportToExcel(
-      csPerf.map((r) => ({
-        "Sales Person":        r.name,
-        "Total Percakapan":    r.totalConversations,
-        "Avg Response (mnt)":  Math.round(r.avgResponseMinutes || 0),
-        "Closing Rate (%)":    r.closingRate ? (r.closingRate * 100).toFixed(1) : 0,
-        "Total Nilai Order":   formatRupiah(r.totalOrderValue || 0),
-      })),
+      csPerf.map((r) => {
+        const sp = tMap[r.userId];
+        return {
+          "Sales Person":       r.name,
+          "Total Percakapan":   r.totalConversations,
+          "Avg Response (mnt)": Math.round(r.avgResponseMinutes || 0),
+          "Closing Rate":       r.closingRate != null ? `${r.closingRate}%` : "—",
+          "Total Nilai Order":  formatRupiah(r.totalOrderValue || 0),
+          "Target Bulanan":     sp?.target > 0 ? formatRupiah(sp.target) : "Belum Diset",
+          "% Pencapaian":       sp?.percentToTarget != null ? `${sp.percentToTarget}%` : "—",
+        };
+      }),
       `laporan-cs-${range.from}-${range.to}`
     );
   }
@@ -101,6 +113,7 @@ export default function Laporan() {
   const monthlyRevenue   = overview?.monthlyRevenue || [];
   const monthlyCustomers = overview?.monthlyCustomers || [];
   const channelBreakdown = overview?.channelBreakdown || [];
+  const targetMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
 
   return (
     <div style={{ padding: "0 0 40px" }}>
@@ -347,7 +360,7 @@ export default function Laporan() {
                   <table className="user-table" style={{ width: "100%" }}>
                     <thead>
                       <tr>
-                        {["Nama", "Total Percakapan", "Avg Response", "Closing Rate", "Nilai Order"].map((h) => (
+                        {["Nama", "Total Percakapan", "Avg Response", "Closing Rate", "Progress Target"].map((h) => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
@@ -363,7 +376,39 @@ export default function Laporan() {
                               {row.closingRate != null ? `${row.closingRate}%` : "—"}
                             </span>
                           </td>
-                          <td style={{ fontWeight: 600 }}>{formatRupiah(row.totalOrderValue || 0)}</td>
+                          <td style={{ minWidth: 180 }}>
+                            {(() => {
+                              const sp = targetMap[row.userId];
+                              const target = sp?.target ?? 0;
+                              const pct    = sp?.percentToTarget ?? null;
+                              const barColor = !pct ? "#d1d5db"
+                                             : pct >= 100 ? "#16a34a"
+                                             : pct >= 50  ? "#2563eb"
+                                             : "#f59e0b";
+                              return (
+                                <div>
+                                  <div style={{ fontSize: 12, marginBottom: 4 }}>
+                                    <span style={{ fontWeight: 700 }}>{formatRupiah(row.totalOrderValue || 0)}</span>
+                                    {target > 0 && (
+                                      <span style={{ color: "var(--text-muted)" }}>{" / "}{formatRupiah(target)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ height: 7, background: "#f3f4f6", borderRadius: 99, overflow: "hidden" }}>
+                                    <div style={{
+                                      height: "100%",
+                                      width: `${Math.min(pct ?? 0, 100)}%`,
+                                      background: barColor,
+                                      borderRadius: 99,
+                                      transition: "width 0.4s ease",
+                                    }} />
+                                  </div>
+                                  <div style={{ fontSize: 11, marginTop: 3, fontWeight: 600, color: pct != null ? barColor : "var(--text-muted)" }}>
+                                    {pct != null ? `${pct}%` : "Target belum diset"}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </td>
                         </tr>
                       ))}
                       {csPerf.length === 0 && (
