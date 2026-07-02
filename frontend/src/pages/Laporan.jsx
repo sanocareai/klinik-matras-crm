@@ -6,16 +6,13 @@ import {
 import { TrendingUp, TrendingDown, Minus, Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
-import { formatRupiah, formatDuration, labelBulan, getDatePreset } from "../utils/format.js";
+import { formatRupiah, formatDuration, labelBulan, getDatePreset, STAGE_LABELS } from "../utils/format.js";
 import { exportToExcel } from "../utils/export.js";
 
 const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Performa CS"];
 
 const STAGE_COLORS = {
   LEAD: "#6366f1", QUALIFIED: "#3b82f6", QUOTED: "#f59e0b", WON: "#22c55e", LOST: "#ef4444",
-};
-const STAGE_NAMES = {
-  LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Penawaran", WON: "Berhasil", LOST: "Gagal",
 };
 const CHANNEL_COLORS = { WHATSAPP: "#22c55e", INSTAGRAM: "#e1306c" };
 
@@ -63,7 +60,7 @@ export default function Laporan() {
       setFunnel(
         (fn || []).map((item) => ({
           stage: item.stage,
-          label: STAGE_NAMES[item.stage] || item.stage,
+          label: STAGE_LABELS[item.stage] || item.stage,
           count: item.count || 0,
           value: item.value || 0,
         }))

@@ -62,12 +62,16 @@ customerRouter.get("/", async (req, res) => {
     orderBy: { updatedAt: "desc" },
   });
 
-  const result = customers.map(({ orders, conversations, ...c }) => ({
-    ...c,
-    orderCount: orders.length,
-    orderValue: orders.reduce((sum, o) => sum + o.value, 0),
-    lastMessageAt: conversations[0]?.lastMessageAt || null,
-  }));
+  const result = customers.map(({ orders, conversations, ...c }) => {
+    const sorted = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return {
+      ...c,
+      orderCount: orders.length,
+      orderValue: orders.reduce((sum, o) => sum + o.value, 0),
+      lastMessageAt: conversations[0]?.lastMessageAt || null,
+      latestOrderStatus: sorted[0]?.status || null,
+    };
+  });
 
   res.json(result);
 });

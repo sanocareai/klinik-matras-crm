@@ -13,6 +13,19 @@ import { exportToExcel } from "../utils/export.js";
 // Pelanggan "Korporat" = berdasarkan field customerType (bukan tag)
 const isKorporat = (c) => c.customerType === "CORPORATE";
 
+const ORDER_STATUS_LABELS = {
+  PENDING: "Menunggu", PICKUP: "Pengambilan", PROCESSING: "Pengerjaan",
+  READY: "Siap Kirim", DELIVERED: "Selesai", CANCELLED: "Dibatalkan",
+};
+const ORDER_STATUS_STYLE = {
+  PENDING:    { background: "#fef3c7", color: "#92400e" },
+  PICKUP:     { background: "#dbeafe", color: "#1e40af" },
+  PROCESSING: { background: "#ede9fe", color: "#5b21b6" },
+  READY:      { background: "#ccfbf1", color: "#065f46" },
+  DELIVERED:  { background: "#dcfce7", color: "#166534" },
+  CANCELLED:  { background: "#fee2e2", color: "#991b1b" },
+};
+
 export default function Customers() {
   const [customers, setCustomers]   = useState([]);
   const [users, setUsers]           = useState([]);
@@ -152,6 +165,7 @@ export default function Customers() {
       Kota: c.city || "",
       "Status Kasur": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
       Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
+      "Status Order Terbaru": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,
       "Total Nilai Order": formatRupiah(c.orderValue || 0),
@@ -267,6 +281,8 @@ export default function Customers() {
               <th>Kota</th>
               <th>Tags</th>
               <th>Pipeline</th>
+              <th>Kesehatan</th>
+              <th>Status Order</th>
               <th>Order</th>
               <th style={{ cursor: "pointer" }} onClick={() => toggleSort("orderValue")}>
                 Nilai Order <SortIcon col="orderValue" />
@@ -322,6 +338,24 @@ export default function Customers() {
                       {STAGE_LABELS[c.pipelineStage] || c.pipelineStage}
                     </span>
                   </td>
+                  <td>
+                    {c.healthStatus === "SAKIT" && (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>Sakit</span>
+                    )}
+                    {c.healthStatus === "TIDAK_SAKIT" && (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>Tidak Sakit</span>
+                    )}
+                    {!c.healthStatus && <span className="muted">—</span>}
+                  </td>
+                  <td>
+                    {c.latestOrderStatus ? (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, ...ORDER_STATUS_STYLE[c.latestOrderStatus] }}>
+                        {ORDER_STATUS_LABELS[c.latestOrderStatus] || c.latestOrderStatus}
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td style={{ textAlign: "center" }}>{c.orderCount}</td>
                   <td>{formatRupiah(c.orderValue)}</td>
                   <td>{c.assignedSales?.name || <span className="muted">—</span>}</td>
@@ -333,7 +367,7 @@ export default function Customers() {
             })}
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
+                <td colSpan={12} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
                   {hasFilters || typeTab !== "all"
                     ? "Tidak ada pelanggan yang cocok dengan filter."
                     : "Belum ada pelanggan."}
