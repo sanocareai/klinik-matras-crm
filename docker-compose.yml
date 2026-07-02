@@ -1,5 +1,3 @@
-cd ~/klinik-matras
-cat > docker-compose.yml << 'EOF'
 services:
   postgres:
     image: postgres:16-alpine
@@ -49,4 +47,3 @@ services:
 volumes:
   pgdata:
   waha_sessions:
-EOF
