@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
+import { VALID_CATEGORIES, CATEGORY_LABELS, appendToKbCategory, countEntries, parseEntries } from "../services/kbQuickAdd.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FAQ_FILE   = path.join(__dirname, "../../data/faq.json");
@@ -181,4 +182,44 @@ knowledgeRouter.delete("/faq/:id", (req, res) => {
   if (filtered.length === faqs.length) return res.status(404).json({ error: "Tidak ditemukan" });
   writeFaq(filtered);
   res.json({ ok: true });
+});
+
+// POST /api/knowledge/quick-add — ADMIN only, tambah entri ke salah satu 4 kategori tetap
+knowledgeRouter.post("/quick-add", (req, res) => {
+  if (req.user?.role !== "ADMIN") {
+    return res.status(403).json({ error: "Hanya admin yang bisa menambah ke Knowledge Base" });
+  }
+  const { category, title, content } = req.body;
+  if (!category || !title || !content) {
+    return res.status(400).json({ error: "category, title, dan content wajib diisi" });
+  }
+  if (!VALID_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `Kategori tidak valid. Pilih dari: ${VALID_CATEGORIES.join(", ")}` });
+  }
+  try {
+    const entry = appendToKbCategory({ category, title, content, authorName: req.user.name });
+    res.status(201).json({ ok: true, entry });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/knowledge/categories — list 4 kategori tetap beserta jumlah entri masing-masing
+knowledgeRouter.get("/categories", (req, res) => {
+  res.json(
+    VALID_CATEGORIES.map((cat) => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat],
+      count: countEntries(cat),
+    }))
+  );
+});
+
+// GET /api/knowledge/categories/:category/entries — daftar entri di satu kategori (terbaru dulu)
+knowledgeRouter.get("/categories/:category/entries", (req, res) => {
+  const { category } = req.params;
+  if (!VALID_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: "Kategori tidak valid" });
+  }
+  res.json(parseEntries(category));
 });

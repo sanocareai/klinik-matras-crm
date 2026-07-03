@@ -34,8 +34,8 @@ export default function CoPilotFloat() {
     setError("");
 
     try {
-      const { reply } = await api.coPilotChat(msg, history);
-      setHistory([...newHistory, { role: "assistant", content: reply }]);
+      const { reply, savedEntry } = await api.coPilotChat(msg, history);
+      setHistory([...newHistory, { role: "assistant", content: reply, savedEntry: savedEntry || null }]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -140,22 +140,34 @@ export default function CoPilotFloat() {
                 {msg.role === "user" ? (
                   <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
                 ) : (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p:     ({ children }) => <p style={{ margin: "0 0 4px" }}>{children}</p>,
-                      ul:    ({ children }) => <ul style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ul>,
-                      ol:    ({ children }) => <ol style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ol>,
-                      li:    ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
-                      table: ({ children }) => <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, margin: "4px 0" }}>{children}</table>,
-                      th:    ({ children }) => <th style={{ border: "1px solid #d1d5db", padding: "3px 8px", background: "#e5e7eb", textAlign: "left" }}>{children}</th>,
-                      td:    ({ children }) => <td style={{ border: "1px solid #d1d5db", padding: "3px 8px" }}>{children}</td>,
-                      pre:   ({ children }) => <pre style={{ background: "#e5e7eb", borderRadius: 6, padding: "6px 10px", overflowX: "auto", fontSize: 11, margin: "4px 0", whiteSpace: "pre-wrap" }}>{children}</pre>,
-                      code:  ({ children }) => <code style={{ background: "#e5e7eb", borderRadius: 3, padding: "1px 4px", fontSize: 11, fontFamily: "monospace" }}>{children}</code>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
+                  <>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p:     ({ children }) => <p style={{ margin: "0 0 4px" }}>{children}</p>,
+                        ul:    ({ children }) => <ul style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ul>,
+                        ol:    ({ children }) => <ol style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ol>,
+                        li:    ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
+                        table: ({ children }) => <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, margin: "4px 0" }}>{children}</table>,
+                        th:    ({ children }) => <th style={{ border: "1px solid #d1d5db", padding: "3px 8px", background: "#e5e7eb", textAlign: "left" }}>{children}</th>,
+                        td:    ({ children }) => <td style={{ border: "1px solid #d1d5db", padding: "3px 8px" }}>{children}</td>,
+                        pre:   ({ children }) => <pre style={{ background: "#e5e7eb", borderRadius: 6, padding: "6px 10px", overflowX: "auto", fontSize: 11, margin: "4px 0", whiteSpace: "pre-wrap" }}>{children}</pre>,
+                        code:  ({ children }) => <code style={{ background: "#e5e7eb", borderRadius: 3, padding: "1px 4px", fontSize: 11, fontFamily: "monospace" }}>{children}</code>,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                    {msg.savedEntry && (
+                      <div style={{
+                        marginTop: 7, fontSize: 11,
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        padding: "2px 10px", borderRadius: 12,
+                        background: "#dcfce7", color: "#166534",
+                      }}>
+                        ✓ Ditambahkan ke KB — {msg.savedEntry.label || msg.savedEntry.category}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}

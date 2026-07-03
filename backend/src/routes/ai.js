@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
+import { appendToKbCategory } from "../services/kbQuickAdd.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -228,6 +229,31 @@ aiRouter.post("/chat", async (req, res) => {
   }
 });
 
+// Definisi tool save_knowledge untuk Claude — hanya dikirim kalau user adalah ADMIN
+const SAVE_KNOWLEDGE_TOOL = {
+  name: "save_knowledge",
+  description: "Simpan informasi baru ke Knowledge Base Klinik Matras. HANYA dipanggil kalau admin eksplisit minta tambah/simpan/catat info baru. Kategori yang tersedia: konsep-istilah-teknis (istilah teknis spesifik Sano), dunia-kasur-umum (industri kasur luas/merk lain/tren), faq-tambahan (FAQ customer), insight-lapangan (pola/insight umum dari sales — BUKAN data satu customer spesifik; kalau satu customer → sarankan catat di profil customer CRM).",
+  input_schema: {
+    type: "object",
+    properties: {
+      category: {
+        type: "string",
+        enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"],
+        description: "Kategori Knowledge Base yang paling sesuai",
+      },
+      title: {
+        type: "string",
+        description: "Judul singkat dan jelas untuk entri ini",
+      },
+      content: {
+        type: "string",
+        description: "Isi informasi lengkap, terstruktur, dirangkum dari yang disampaikan admin",
+      },
+    },
+    required: ["category", "title", "content"],
+  },
+};
+
 // POST /api/ai/copilot-chat — AI Co-pilot internal untuk sales
 // Body: { message, conversationHistory: [{role, content}] }
 // Reuse model Anthropic pertama yang aktif & punya API key (konfigurasi dari AI Playground)
@@ -249,7 +275,7 @@ aiRouter.post("/copilot-chat", async (req, res) => {
   }
 
   let systemPrompt;
-  try { systemPrompt = await buildCoPilotPrompt(); } catch (err) {
+  try { systemPrompt = await buildCoPilotPrompt(req.user?.role); } catch (err) {
     return res.status(500).json({ error: "Gagal membangun prompt: " + err.message });
   }
 
@@ -259,6 +285,15 @@ aiRouter.post("/copilot-chat", async (req, res) => {
   ];
 
   try {
+    const reqBody = {
+      model: m.model || "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages,
+    };
+    // Admin mendapat akses tool save_knowledge
+    if (req.user?.role === "ADMIN") reqBody.tools = [SAVE_KNOWLEDGE_TOOL];
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -266,15 +301,45 @@ aiRouter.post("/copilot-chat", async (req, res) => {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: m.model || "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages,
-      }),
+      body: JSON.stringify(reqBody),
     });
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
+
+    // Cek apakah Claude mau simpan ke Knowledge Base
+    if (data.stop_reason === "tool_use") {
+      const toolBlock = data.content.find((c) => c.type === "tool_use" && c.name === "save_knowledge");
+      if (toolBlock) {
+        let savedEntry = null;
+        let toolResultContent;
+        try {
+          savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
+          toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
+        } catch (err) {
+          toolResultContent = JSON.stringify({ ok: false, error: err.message });
+        }
+
+        // Lanjutkan percakapan dengan mengirim tool_result balik ke Claude
+        const messages2 = [
+          ...messages,
+          { role: "assistant", content: data.content },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: toolBlock.id, content: toolResultContent }] },
+        ];
+        const response2 = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ ...reqBody, messages: messages2 }),
+        });
+        const data2 = await response2.json();
+        if (!response2.ok) return res.status(response2.status).json({ error: data2.error?.message || "Error dari Anthropic" });
+        return res.json({ reply: data2.content[0]?.text || "", savedEntry });
+      }
+    }
+
     res.json({ reply: data.content[0]?.text || "" });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });

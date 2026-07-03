@@ -228,6 +228,9 @@ export const api = {
     request(`/templates/${id}`, { method: "DELETE" }),
 
   // Knowledge Base
+  getKbCategories: () => request("/knowledge/categories"),
+  getKbCategoryEntries: (cat) => request(`/knowledge/categories/${encodeURIComponent(cat)}/entries`),
+
   getKbDocuments: () => request("/knowledge/documents"),
   uploadKbDocument: (formData) => requestFormData("/knowledge/documents", formData),
   updateKbDocument: (id, data) =>

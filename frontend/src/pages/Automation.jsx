@@ -454,6 +454,13 @@ function AiPlaygroundTab() {
 
 // ─── Knowledge Base Tab ───────────────────────────────────────────────────────
 
+const CAT_ICONS = {
+  "konsep-istilah-teknis": "📚",
+  "dunia-kasur-umum":      "🌐",
+  "faq-tambahan":          "❓",
+  "insight-lapangan":      "💡",
+};
+
 function KnowledgeBaseTab() {
   const [docs, setDocs]             = useState([]);
   const [faqs, setFaqs]             = useState([]);
@@ -467,9 +474,27 @@ function KnowledgeBaseTab() {
   const [savingFaq, setSavingFaq]   = useState(false);
   const fileInputRef = useRef(null);
 
+  // Quick-Add KB categories
+  const [categories, setCategories]         = useState([]);
+  const [selectedQCat, setSelectedQCat]     = useState(null);
+  const [qEntries, setQEntries]             = useState([]);
+  const [expandedEntry, setExpandedEntry]   = useState(null);
+  const [loadingQEntries, setLoadingQEntries] = useState(false);
+
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
+    api.getKbCategories().then(setCategories).catch(() => {});
   }, []);
+
+  async function handleSelectQCat(cat) {
+    const next = cat === selectedQCat ? null : cat;
+    setSelectedQCat(next);
+    setExpandedEntry(null);
+    if (!next) return;
+    setLoadingQEntries(true);
+    try { setQEntries(await api.getKbCategoryEntries(cat)); } catch {}
+    finally { setLoadingQEntries(false); }
+  }
 
   async function handleUpload(file) {
     if (!file) return;
@@ -555,12 +580,12 @@ function KnowledgeBaseTab() {
         </div>
 
         {/* Doc list */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ overflowY: "auto" }}>
           {docs.map((d) => (
             <div
               key={d.id}
-              className={`kb-doc-item ${selected?.id === d.id ? "active" : ""}`}
-              onClick={() => handleSelectDoc(d)}
+              className={`kb-doc-item ${selected?.id === d.id && !selectedQCat ? "active" : ""}`}
+              onClick={() => { handleSelectDoc(d); setSelectedQCat(null); }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="kb-doc-name">{d.name}</div>
@@ -578,10 +603,93 @@ function KnowledgeBaseTab() {
             </div>
           ))}
         </div>
+
+        {/* Quick-Add KB Folders */}
+        <div style={{ padding: "12px 12px 0", borderTop: "1px solid var(--border)" }}>
+          <p style={{
+            fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+            marginBottom: 6, textTransform: "uppercase", letterSpacing: 1,
+          }}>
+            Quick-Add Entries
+          </p>
+          {categories.map((c) => (
+            <button
+              key={c.category}
+              onClick={() => handleSelectQCat(c.category)}
+              style={{
+                width: "100%", textAlign: "left", padding: "7px 10px", borderRadius: 8,
+                border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                background: selectedQCat === c.category ? "var(--primary, #2563eb)" : "transparent",
+                color: selectedQCat === c.category ? "#fff" : "var(--text-primary)",
+                fontSize: 13, marginBottom: 2,
+              }}
+            >
+              <span>{CAT_ICONS[c.category]}</span>
+              <span style={{ flex: 1 }}>{c.label}</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>({c.count})</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Main */}
       <div className="kb-main">
+        {/* Panel entri Quick-Add kategori yang dipilih */}
+        {selectedQCat && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 18 }}>{CAT_ICONS[selectedQCat]}</span>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>
+                {categories.find((c) => c.category === selectedQCat)?.label}
+              </span>
+              <button
+                onClick={() => setSelectedQCat(null)}
+                style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 18 }}
+              >
+                ✕
+              </button>
+            </div>
+            {loadingQEntries && (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Memuat...</p>
+            )}
+            {!loadingQEntries && qEntries.length === 0 && (
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                Belum ada entri. Minta Sano Co-pilot "tambahin info: ..." untuk mulai mengisi kategori ini.
+              </p>
+            )}
+            {qEntries.map((entry, i) => (
+              <div
+                key={i}
+                style={{ border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8, overflow: "hidden" }}
+              >
+                <button
+                  onClick={() => setExpandedEntry(expandedEntry === i ? null : i)}
+                  style={{
+                    width: "100%", textAlign: "left", padding: "10px 14px",
+                    background: expandedEntry === i ? "#f8fafc" : "white",
+                    border: "none", cursor: "pointer",
+                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{entry.title}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+                    {entry.date} · {entry.author} {expandedEntry === i ? "▲" : "▼"}
+                  </span>
+                </button>
+                {expandedEntry === i && (
+                  <div style={{
+                    padding: "0 14px 12px", fontSize: 13,
+                    color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6,
+                    borderTop: "1px solid var(--border)",
+                  }}>
+                    {entry.content}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Search */}
         <form onSubmit={handleSearch} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
           <div className="search-input-wrap" style={{ flex: 1, margin: 0 }}>

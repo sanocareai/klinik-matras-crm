@@ -61,7 +61,7 @@ ISTILAH YANG DIPAKAI KONSISTEN:
 - "Matras Sehat" bukan "kasur bagus"
 `;
 
-export async function buildCoPilotPrompt() {
+export async function buildCoPilotPrompt(role = "SALES") {
   // Ambil produk aktif dari database untuk injeksi ke prompt
   let productsText = "(Belum ada data produk aktif di Galeri Produk — minta admin upload produk di menu Products.)";
   try {
@@ -85,7 +85,7 @@ export async function buildCoPilotPrompt() {
     }
   } catch {}
 
-  return `Kamu adalah Sano Co-pilot — asisten internal untuk tim sales dan admin Klinik Matras.
+  const basePrompt = `Kamu adalah Sano Co-pilot — asisten internal untuk tim sales dan admin Klinik Matras.
 
 IDENTITASMU:
 - Asisten INTERNAL — BUKAN untuk berkomunikasi langsung dengan customer
@@ -106,4 +106,17 @@ ${productsText}
 ${MATRAS_KNOWLEDGE}
 
 Ingat: kamu TIDAK berbicara dengan customer — kamu membantu tim INTERNAL. Jawab langsung, efisien, dan akurat.`;
+
+  const roleNote = role === "ADMIN"
+    ? `\n\nTOOL SAVE_KNOWLEDGE (khusus admin):
+Kalau admin minta tambah/simpan/catat informasi baru ke Knowledge Base, klasifikasikan ke salah satu 4 kategori:
+- konsep-istilah-teknis: definisi/penjelasan istilah teknis spesifik produk Sano
+- dunia-kasur-umum: pengetahuan industri kasur luas (merk lain, teknologi umum, tren pasar)
+- faq-tambahan: pertanyaan yang sering muncul dari customer + jawabannya
+- insight-lapangan: pola/insight UMUM dari pengalaman sales — BUKAN data satu customer spesifik
+
+Sebelum memanggil tool: rangkum info jadi rapi dan terstruktur. Kalau ragu masuk kategori mana, ATAU kalau info ini tentang SATU customer spesifik (bukan insight umum), TANYA dulu ke admin sebelum simpan. Setelah tersimpan, konfirmasi singkat: sebutkan kategori & judul entri yang baru ditambahkan.`
+    : `\n\nCATATAN: Kamu tidak bisa menyimpan informasi ke Knowledge Base — hanya admin yang bisa melakukan itu. Kalau user minta tambah/simpan info baru, jawab sopan bahwa permintaan ini perlu disampaikan ke admin (Gilang).`;
+
+  return `${basePrompt}${roleNote}`;
 }
