@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { api } from "../api.js";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export default function CoPilotFloat() {
   const [open, setOpen]       = useState(false);
@@ -133,9 +135,28 @@ export default function CoPilotFloat() {
                 color: msg.role === "user" ? "#fff" : "var(--text-primary)",
                 borderBottomRightRadius: msg.role === "user" ? 3 : 12,
                 borderBottomLeftRadius:  msg.role === "assistant" ? 3 : 12,
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
+                wordBreak: "break-word",
               }}>
-                {msg.content}
+                {msg.role === "user" ? (
+                  <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p:     ({ children }) => <p style={{ margin: "0 0 4px" }}>{children}</p>,
+                      ul:    ({ children }) => <ul style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ul>,
+                      ol:    ({ children }) => <ol style={{ margin: "0 0 4px", paddingLeft: 16 }}>{children}</ol>,
+                      li:    ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
+                      table: ({ children }) => <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, margin: "4px 0" }}>{children}</table>,
+                      th:    ({ children }) => <th style={{ border: "1px solid #d1d5db", padding: "3px 8px", background: "#e5e7eb", textAlign: "left" }}>{children}</th>,
+                      td:    ({ children }) => <td style={{ border: "1px solid #d1d5db", padding: "3px 8px" }}>{children}</td>,
+                      pre:   ({ children }) => <pre style={{ background: "#e5e7eb", borderRadius: 6, padding: "6px 10px", overflowX: "auto", fontSize: 11, margin: "4px 0", whiteSpace: "pre-wrap" }}>{children}</pre>,
+                      code:  ({ children }) => <code style={{ background: "#e5e7eb", borderRadius: 3, padding: "1px 4px", fontSize: 11, fontFamily: "monospace" }}>{children}</code>,
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                )}
               </div>
             ))}
 
