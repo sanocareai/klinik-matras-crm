@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { Plus, Trash2, Upload, Search, Send, X, Pencil } from "lucide-react";
 import { api } from "../api.js";
 
@@ -177,6 +177,44 @@ function WorkflowTab() {
   );
 }
 
+// ─── Helper: highlight teks dengan mark (dipakai KB + Persona) ───────────────
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderWithHighlights(text, query, activeIdx, markIdPrefix = "doc-match") {
+  if (!query.trim()) return <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>{text}</span>;
+  const re = new RegExp(`(${escapeRegex(query)})`, "gi");
+  const parts = text.split(re);
+  let matchCounter = -1;
+  return (
+    <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>
+      {parts.map((part, i) => {
+        if (part.toLowerCase() === query.toLowerCase()) {
+          matchCounter++;
+          const idx = matchCounter;
+          return (
+            <mark
+              key={i}
+              id={`${markIdPrefix}-${idx}`}
+              style={{
+                background: idx === activeIdx ? "#fb923c" : "#fde68a",
+                color: "#111",
+                borderRadius: 2,
+                outline: idx === activeIdx ? "2px solid #f97316" : "none",
+              }}
+            >
+              {part}
+            </mark>
+          );
+        }
+        return part;
+      })}
+    </span>
+  );
+}
+
 // ─── AI Playground Tab ────────────────────────────────────────────────────────
 
 function AiPlaygroundTab() {
@@ -201,6 +239,7 @@ function AiPlaygroundTab() {
   const [personaSearch, setPersonaSearch]   = useState("");
   const [personaMatchIdx, setPersonaMatchIdx] = useState(0);
   const personaTextareaRef = useRef(null);
+  const personaScrollContainerRef = useRef(null);
 
   useEffect(() => {
     api.getAiModels().then(setModels).catch(() => {});
@@ -217,37 +256,18 @@ function AiPlaygroundTab() {
   // Saat search berubah, reset ke match pertama
   useEffect(() => { setPersonaMatchIdx(0); }, [personaSearch]);
 
-  // Navigasi ke match persona — dipanggil eksplisit saat Enter/↑↓
-  function gotoPersonaMatch(targetIdx) {
-    const ta = personaTextareaRef.current;
-    if (!ta || !personaSearch.trim()) return;
-    const positions = findPersonaMatches(systemPrompt, personaSearch);
-    if (!positions.length) return;
-    const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
-    const start = positions[clamp];
-    const end = start + personaSearch.length;
-
-    // Scroll akurat pakai clone dengan lebar sama
-    const clone = ta.cloneNode();
-    clone.style.position = "absolute";
-    clone.style.visibility = "hidden";
-    clone.style.height = "auto";
-    clone.style.overflow = "hidden";
-    clone.style.width = ta.offsetWidth + "px";
-    clone.value = systemPrompt.slice(0, start);
-    document.body.appendChild(clone);
-    const scrollTo = Math.max(0, clone.scrollHeight - ta.clientHeight / 2);
-    document.body.removeChild(clone);
-    ta.scrollTop = scrollTo;
-
-    // Defer selection sampai setelah React flush re-render
-    setTimeout(() => {
-      const el = personaTextareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(start, end);
-    }, 0);
-  }
+  // Scroll persona container ke mark aktif
+  useLayoutEffect(() => {
+    if (!personaSearch.trim()) return;
+    const container = personaScrollContainerRef.current;
+    const el = document.getElementById(`persona-match-${personaMatchIdx}`);
+    if (!el || !container) return;
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const offsetFromTop = elRect.top - containerRect.top;
+    const targetScrollTop = container.scrollTop + offsetFromTop - container.clientHeight / 2 + elRect.height / 2;
+    container.scrollTop = Math.max(0, targetScrollTop);
+  }, [personaMatchIdx, personaSearch]);
 
   function findPersonaMatches(text, query) {
     if (!query.trim()) return [];
@@ -426,11 +446,9 @@ function AiPlaygroundTab() {
                       onChange={(e) => setPersonaSearch(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && personaMatchCount > 0) {
-                          const next = e.shiftKey
+                          setPersonaMatchIdx(e.shiftKey
                             ? (personaMatchIdx - 1 + personaMatchCount) % personaMatchCount
-                            : (personaMatchIdx + 1) % personaMatchCount;
-                          setPersonaMatchIdx(next);
-                          gotoPersonaMatch(next);
+                            : (personaMatchIdx + 1) % personaMatchCount);
                         }
                         if (e.key === "Escape") setPersonaSearch("");
                       }}
@@ -442,11 +460,11 @@ function AiPlaygroundTab() {
                           {noPersonaMatch ? "Tidak ditemukan" : `${personaMatchIdx + 1} / ${personaMatchCount}`}
                         </span>
                         <button
-                          onClick={() => { const next = (personaMatchIdx - 1 + personaMatchCount) % personaMatchCount; setPersonaMatchIdx(next); gotoPersonaMatch(next); }}
+                          onClick={() => setPersonaMatchIdx((personaMatchIdx - 1 + personaMatchCount) % personaMatchCount)}
                           disabled={personaMatchCount === 0}
                           style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↑</button>
                         <button
-                          onClick={() => { const next = (personaMatchIdx + 1) % personaMatchCount; setPersonaMatchIdx(next); gotoPersonaMatch(next); }}
+                          onClick={() => setPersonaMatchIdx((personaMatchIdx + 1) % personaMatchCount)}
                           disabled={personaMatchCount === 0}
                           style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↓</button>
                         <button onClick={() => setPersonaSearch("")}
@@ -456,14 +474,30 @@ function AiPlaygroundTab() {
                       </>
                     )}
                   </div>
+                  {/* Textarea: disembunyikan saat search aktif */}
                   <textarea
                     ref={personaTextareaRef}
                     rows={8}
                     value={systemPrompt}
                     onChange={(e) => setSystemPrompt(e.target.value)}
                     placeholder={"Contoh:\nKamu adalah Sano, konsultan tidur di Klinik Matras...\n\n[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]"}
-                    style={{ width: "100%", fontSize: 12, fontFamily: "monospace", resize: "vertical", border: "1px solid var(--border)", borderRadius: 6, padding: 8 }}
+                    style={{
+                      display: personaSearch.trim() ? "none" : "block",
+                      width: "100%", fontSize: 12, fontFamily: "monospace", resize: "vertical",
+                      border: "1px solid var(--border)", borderRadius: 6, padding: 8,
+                    }}
                   />
+                  {/* Saat search aktif: highlight sama persis dengan view mode */}
+                  {personaSearch.trim() && (
+                    <div ref={personaScrollContainerRef} style={{
+                      background: "#1e1e2e", color: "#cdd6f4",
+                      border: "1px solid var(--border)", borderRadius: 6,
+                      maxHeight: 220, overflowY: "auto", padding: 8,
+                      fontSize: 12,
+                    }}>
+                      {renderWithHighlights(systemPrompt, personaSearch, personaMatchIdx, "persona-match")}
+                    </div>
+                  )}
                   <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}>
                     <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
                       Sisipkan placeholder <code>[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]</code> untuk injeksi KB
@@ -678,6 +712,7 @@ function KnowledgeBaseTab() {
   const [docMatchIdx, setDocMatchIdx] = useState(0);
   const docSearchRef = useRef(null);
   const docEditTextareaRef = useRef(null);
+  const docScrollContainerRef = useRef(null);
 
   // Edit mode untuk dokumen yang dipilih
   const [editingDoc, setEditingDoc]   = useState(false);
@@ -690,13 +725,18 @@ function KnowledgeBaseTab() {
     api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
 
-  // Auto-scroll ke mark aktif: berlaku di view mode DAN edit mode (saat search aktif)
-  useEffect(() => {
+  // Scroll container ke mark aktif — pakai ref eksplisit agar tidak salah container
+  useLayoutEffect(() => {
     if (!docSearch.trim()) return;
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`doc-match-${docMatchIdx}`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+    const container = docScrollContainerRef.current;
+    const el = document.getElementById(`doc-match-${docMatchIdx}`);
+    if (!el || !container) return;
+    // Hitung posisi mark relatif terhadap container (bukan viewport)
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const offsetFromTop = elRect.top - containerRect.top;
+    const targetScrollTop = container.scrollTop + offsetFromTop - container.clientHeight / 2 + elRect.height / 2;
+    container.scrollTop = Math.max(0, targetScrollTop);
   }, [docMatchIdx, docSearch, editingDoc]);
 
   async function handleSelectQCat(cat) {
@@ -757,41 +797,6 @@ function KnowledgeBaseTab() {
     }
   }
 
-  function escapeRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  function renderWithHighlights(text, query, activeIdx) {
-    if (!query.trim()) return <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>{text}</span>;
-    const re = new RegExp(`(${escapeRegex(query)})`, "gi");
-    const parts = text.split(re);
-    let matchCounter = -1;
-    return (
-      <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>
-        {parts.map((part, i) => {
-          if (part.toLowerCase() === query.toLowerCase()) {
-            matchCounter++;
-            const idx = matchCounter;
-            return (
-              <mark
-                key={i}
-                id={`doc-match-${idx}`}
-                style={{
-                  background: idx === activeIdx ? "#fb923c" : "#fde68a",
-                  color: "#111",
-                  borderRadius: 2,
-                  outline: idx === activeIdx ? "2px solid #f97316" : "none",
-                }}
-              >
-                {part}
-              </mark>
-            );
-          }
-          return part;
-        })}
-      </span>
-    );
-  }
 
   async function handleSelectDoc(doc) {
     setSelected(doc);
@@ -1219,7 +1224,7 @@ function KnowledgeBaseTab() {
                   />
                   {/* Saat search aktif: tampilkan highlight sama persis seperti view mode */}
                   {docSearch.trim() && (
-                    <div style={{
+                    <div ref={docScrollContainerRef} style={{
                       color: "#cdd6f4", background: "#1e1e2e",
                       border: "1px solid var(--primary)", borderRadius: 10,
                       maxHeight: 480, overflowY: "auto", padding: "14px 16px",
@@ -1230,7 +1235,7 @@ function KnowledgeBaseTab() {
                 </>
               ) : (
                 /* View mode: highlighted content */
-                <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
+                <div ref={docScrollContainerRef} className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
                   {content
                     ? renderWithHighlights(content, docSearch, docMatchIdx)
                     : <span style={{ color: "var(--text-muted)" }}>Memuat...</span>
