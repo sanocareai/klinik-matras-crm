@@ -251,6 +251,8 @@ export const api = {
   deleteKbDocument: (id) =>
     request(`/knowledge/documents/${id}`, { method: "DELETE" }),
   getKbDocumentContent: (id) => request(`/knowledge/documents/${id}/content`),
+  updateKbDocumentContent: (id, text) =>
+    request(`/knowledge/documents/${id}/content`, { method: "PATCH", body: JSON.stringify({ text }) }),
   searchKnowledge: (q) => request("/knowledge/search?q=" + encodeURIComponent(q)),
   getFaq: () => request("/knowledge/faq"),
   createFaq: (data) =>

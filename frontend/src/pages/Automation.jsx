@@ -585,6 +585,11 @@ function KnowledgeBaseTab() {
   const [docMatchIdx, setDocMatchIdx] = useState(0);
   const docSearchRef = useRef(null);
 
+  // Edit mode untuk dokumen yang dipilih
+  const [editingDoc, setEditingDoc]   = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [savingDoc, setSavingDoc]     = useState(false);
+
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
     api.getKbCategories().then(setCategories).catch(() => {});
@@ -697,10 +702,26 @@ function KnowledgeBaseTab() {
     setContent("");
     setDocSearch("");
     setDocMatchIdx(0);
+    setEditingDoc(false);
+    setEditContent("");
     try {
       const res = await api.getKbDocumentContent(doc.id);
       setContent(res.text);
     } catch {}
+  }
+
+  async function handleSaveDocContent() {
+    if (!selected) return;
+    setSavingDoc(true);
+    try {
+      await api.updateKbDocumentContent(selected.id, editContent);
+      setContent(editContent);
+      setEditingDoc(false);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingDoc(false);
+    }
   }
 
   async function handleToggleDoc(doc) {
@@ -994,75 +1015,118 @@ function KnowledgeBaseTab() {
           </div>
         )}
 
-        {/* Doc preview dengan in-document search */}
+        {/* Doc preview dengan in-document search + edit mode */}
         {selected && (() => {
-          const docMatchCount = docSearch.trim() && content
+          const docMatchCount = !editingDoc && docSearch.trim() && content
             ? (content.match(new RegExp(escapeRegex(docSearch), "gi")) || []).length
             : 0;
           const noMatch = docSearch.trim() && docMatchCount === 0;
           return (
             <div style={{ marginBottom: 24 }}>
+              {/* Header: nama file + tombol Edit/Simpan */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <h4 style={{ margin: 0, flex: 1, fontSize: 14 }}>{selected.name}</h4>
-              </div>
-              {/* Search bar */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 6,
-                marginBottom: 6, padding: "5px 10px",
-                background: noMatch ? "#fef2f2" : "#f8fafc",
-                border: `1px solid ${noMatch ? "#fca5a5" : "var(--border)"}`,
-                borderRadius: 8,
-              }}>
-                <Search size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                <input
-                  ref={docSearchRef}
-                  type="text"
-                  placeholder="Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"
-                  value={docSearch}
-                  onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && docMatchCount > 0) {
-                      if (e.shiftKey) {
-                        setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount);
-                      } else {
-                        setDocMatchIdx((i) => (i + 1) % docMatchCount);
-                      }
-                    }
-                    if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
-                  }}
-                  style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, outline: "none" }}
-                />
-                {docSearch.trim() && (
-                  <>
-                    <span style={{ fontSize: 12, color: noMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>
-                      {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
-                    </span>
+                <h4 style={{ margin: 0, flex: 1, fontSize: 14, wordBreak: "break-all" }}>{selected.name}</h4>
+                {!editingDoc && currentUserRole === "ADMIN" && content && (
+                  <button
+                    onClick={() => { setEditContent(content); setEditingDoc(true); setDocSearch(""); }}
+                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", fontSize: 12, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer", flexShrink: 0 }}
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                )}
+                {editingDoc && (
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                     <button
-                      onClick={() => setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount)}
-                      disabled={docMatchCount === 0}
-                      title="Sebelumnya (Shift+Enter)"
-                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}
-                    >↑</button>
-                    <button
-                      onClick={() => setDocMatchIdx((i) => (i + 1) % docMatchCount)}
-                      disabled={docMatchCount === 0}
-                      title="Berikutnya (Enter)"
-                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}
-                    >↓</button>
-                    <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
-                      <X size={13} />
+                      onClick={handleSaveDocContent}
+                      disabled={savingDoc}
+                      style={{ padding: "5px 14px", fontSize: 12, background: "#16a34a", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer" }}
+                    >
+                      {savingDoc ? "Menyimpan..." : "Simpan"}
                     </button>
-                  </>
+                    <button
+                      onClick={() => { setEditingDoc(false); setEditContent(""); }}
+                      disabled={savingDoc}
+                      style={{ padding: "5px 12px", fontSize: 12, background: "none", border: "1px solid var(--border)", borderRadius: 7, cursor: "pointer" }}
+                    >
+                      Batal
+                    </button>
+                  </div>
                 )}
               </div>
-              {/* Content */}
-              <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
-                {content
-                  ? renderWithHighlights(content, docSearch, docMatchIdx)
-                  : <span style={{ color: "var(--text-muted)" }}>Memuat...</span>
-                }
-              </div>
+
+              {/* Search bar — hanya tampil saat view mode */}
+              {!editingDoc && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  marginBottom: 6, padding: "5px 10px",
+                  background: noMatch ? "#fef2f2" : "#f8fafc",
+                  border: `1px solid ${noMatch ? "#fca5a5" : "var(--border)"}`,
+                  borderRadius: 8,
+                }}>
+                  <Search size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                  <input
+                    ref={docSearchRef}
+                    type="text"
+                    placeholder="Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"
+                    value={docSearch}
+                    onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && docMatchCount > 0) {
+                        if (e.shiftKey) {
+                          setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount);
+                        } else {
+                          setDocMatchIdx((i) => (i + 1) % docMatchCount);
+                        }
+                      }
+                      if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
+                    }}
+                    style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, outline: "none" }}
+                  />
+                  {docSearch.trim() && (
+                    <>
+                      <span style={{ fontSize: 12, color: noMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>
+                        {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
+                      </span>
+                      <button onClick={() => setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount)} disabled={docMatchCount === 0}
+                        title="Sebelumnya (Shift+Enter)"
+                        style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↑</button>
+                      <button onClick={() => setDocMatchIdx((i) => (i + 1) % docMatchCount)} disabled={docMatchCount === 0}
+                        title="Berikutnya (Enter)"
+                        style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↓</button>
+                      <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
+                        <X size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Edit mode: textarea */}
+              {editingDoc ? (
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  spellCheck={false}
+                  style={{
+                    width: "100%", minHeight: 480, boxSizing: "border-box",
+                    padding: "14px 16px", fontSize: 13, lineHeight: 1.7,
+                    fontFamily: "'Courier New', Courier, monospace",
+                    border: "1px solid var(--primary)", borderRadius: 10,
+                    outline: "none", resize: "vertical",
+                    background: "#1e1e2e", color: "#cdd6f4",
+                    caretColor: "#cba6f7",
+                  }}
+                />
+              ) : (
+                /* View mode: highlighted content */
+                <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
+                  {content
+                    ? renderWithHighlights(content, docSearch, docMatchIdx)
+                    : <span style={{ color: "var(--text-muted)" }}>Memuat...</span>
+                  }
+                </div>
+              )}
             </div>
           );
         })()}

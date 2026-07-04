@@ -131,6 +131,24 @@ knowledgeRouter.get("/documents/:id/content", async (req, res) => {
   }
 });
 
+// PATCH /api/knowledge/documents/:id/content — ADMIN only, simpan perubahan isi file
+knowledgeRouter.patch("/documents/:id/content", (req, res) => {
+  if (req.user?.role !== "ADMIN") return res.status(403).json({ error: "Hanya admin yang bisa mengubah isi dokumen" });
+  const meta = readMeta();
+  const doc = meta.find((d) => d.id === req.params.id);
+  if (!doc) return res.status(404).json({ error: "Dokumen tidak ditemukan" });
+  const { text } = req.body;
+  if (typeof text !== "string") return res.status(400).json({ error: "Field 'text' wajib diisi" });
+  try {
+    fs.writeFileSync(doc.filePath, text, "utf-8");
+    doc.preview = text.slice(0, 500);
+    writeMeta(meta);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/knowledge/search?q=keyword
 knowledgeRouter.get("/search", async (req, res) => {
   const q = (req.query.q || "").toLowerCase().trim();
