@@ -202,6 +202,9 @@ export const api = {
   // Fase C — simulasi deteksi handover (SANDBOX ONLY, belum tersambung ke WAHA)
   checkHandover: (messages) =>
     request("/ai/handover-check", { method: "POST", body: JSON.stringify({ messages }) }),
+  // Context Banner — generate 1 kalimat pembuka untuk sales yang baru ambil alih
+  generateDraftReply: (conversationHistory, handoverNote) =>
+    request("/ai/draft-reply", { method: "POST", body: JSON.stringify({ conversationHistory, handoverNote }) }),
 
   // Produk (Galeri)
   getProducts: () => request("/products"),

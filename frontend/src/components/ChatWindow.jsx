@@ -203,6 +203,10 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [showAttachSheet, setShowAttachSheet]     = useState(false);
   const [showDotMenu, setShowDotMenu]             = useState(false);
 
+  // Context Banner (handover)
+  const [bannerCollapsed, setBannerCollapsed] = useState(false);
+  const [draftLoading, setDraftLoading]       = useState(false);
+
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
@@ -225,6 +229,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     setShowProductPicker(false);
     setPendingFile(null);
     setDraft("");
+    setBannerCollapsed(false);
 
     let interval;
     async function load() {
@@ -273,8 +278,28 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
       const msg = await api.sendMessage(conversation.id, draft);
       setMessages((p) => [...p, msg]);
       setDraft("");
+      setBannerCollapsed(true); // sembunyikan banner setelah pesan pertama terkirim
     } catch (err) { alert(err.message); }
     finally { setSending(false); }
+  }
+
+  // ── Draft balasan (Context Banner) ──
+  async function handleGenerateDraft() {
+    setDraftLoading(true);
+    try {
+      const history = messages
+        .map((m) => ({ role: m.direction === "INBOUND" ? "user" : "assistant", content: m.content || "" }))
+        .filter((m) => m.content);
+      const res = await api.generateDraftReply(history, conversation.handoverNote);
+      if (res.draft) {
+        setDraft(res.draft);
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
+    } catch (err) {
+      alert("Gagal generate draft: " + err.message);
+    } finally {
+      setDraftLoading(false);
+    }
   }
 
   // ── Buka preview file (dari input, paste, atau drag-drop) ──
@@ -544,6 +569,51 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           )}
         </div>
       </div>
+
+      {/* ── Context Banner (handover note) ── */}
+      {conversation?.handoverNote && (
+        <div style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", flexShrink: 0 }}>
+          <div
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: bannerCollapsed ? "8px 14px" : "8px 14px 4px", cursor: "pointer",
+            }}
+            onClick={() => setBannerCollapsed((v) => !v)}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#92400e" }}>
+              📋 Ringkasan sebelum kamu lanjutkan
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {!bannerCollapsed && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleGenerateDraft(); }}
+                  disabled={draftLoading}
+                  style={{
+                    fontSize: 11, padding: "2px 8px", borderRadius: 6,
+                    background: "#7c3aed", color: "#fff", border: "none",
+                    cursor: draftLoading ? "not-allowed" : "pointer",
+                    opacity: draftLoading ? 0.6 : 1,
+                  }}
+                >
+                  {draftLoading ? "..." : "✨ Draft balasan"}
+                </button>
+              )}
+              <span style={{ fontSize: 11, color: "#92400e" }}>
+                {bannerCollapsed ? "Tampilkan ▼" : "Sembunyikan ▲"}
+              </span>
+            </div>
+          </div>
+          {!bannerCollapsed && (
+            <div style={{
+              padding: "0 14px 10px", fontSize: 12, color: "#78350f",
+              whiteSpace: "pre-wrap", lineHeight: 1.6,
+              maxHeight: 140, overflowY: "auto",
+            }}>
+              {conversation.handoverNote}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Pesan ── */}
       <div className="chat-messages">

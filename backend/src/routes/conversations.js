@@ -368,11 +368,23 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
     }
 
     const oldAssignedId = conv.assignedToId;
+    let prevName = null;
+    if (oldAssignedId && oldAssignedId !== req.user.id) {
+      const oldUser = await prisma.user.findUnique({
+        where: { id: oldAssignedId }, select: { name: true },
+      });
+      prevName = oldUser?.name || null;
+    }
+
+    // Bangun handoverNote untuk Context Banner di inbox
+    const handoverNote = prevName
+      ? `Percakapan diambil alih dari ${prevName} oleh ${req.user.name}. Cek riwayat chat di atas untuk konteks sebelumnya.`
+      : `Percakapan diambil oleh ${req.user.name}.`;
 
     // Reassign conversation + customer
     const updated = await prisma.conversation.update({
       where: { id: conv.id },
-      data:  { assignedToId: req.user.id },
+      data:  { assignedToId: req.user.id, handoverNote },
       include: {
         customer: true,
         assignedTo: { select: { id: true, name: true } },
@@ -385,11 +397,8 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
 
     // Catat di notes siapa yang ambil alih
     let noteContent;
-    if (oldAssignedId && oldAssignedId !== req.user.id) {
-      const oldUser = await prisma.user.findUnique({
-        where: { id: oldAssignedId }, select: { name: true },
-      });
-      noteContent = `🔄 Lead diambil alih dari ${oldUser?.name || "sales sebelumnya"} oleh ${req.user.name}`;
+    if (prevName) {
+      noteContent = `🔄 Lead diambil alih dari ${prevName} oleh ${req.user.name}`;
     } else {
       noteContent = `✅ ${req.user.name} mengambil lead ini`;
     }
@@ -405,11 +414,12 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
 
 // Update status / unread percakapan
 conversationRouter.patch("/:id", async (req, res) => {
-  const { status, assignedToId, unread } = req.body;
+  const { status, assignedToId, unread, handoverNote } = req.body;
   const data = {};
-  if (status)                  data.status       = status;
+  if (status)                     data.status       = status;
   if (assignedToId !== undefined) data.assignedToId = assignedToId;
-  if (unread !== undefined)    data.unread       = unread;
+  if (unread !== undefined)       data.unread       = unread;
+  if (handoverNote !== undefined) data.handoverNote = handoverNote;
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
     data,

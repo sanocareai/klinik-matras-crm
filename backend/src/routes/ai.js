@@ -387,6 +387,57 @@ aiRouter.post("/handover-check", async (req, res) => {
   }
 });
 
+// POST /api/ai/draft-reply — generate 1 kalimat pembuka natural untuk sales (Context Banner)
+// Body: { conversationHistory: [{role, content}], handoverNote? }
+aiRouter.post("/draft-reply", async (req, res) => {
+  const { conversationHistory = [], handoverNote = "" } = req.body;
+
+  const models = readModels();
+  const m = models.find((x) => x.active && x.provider === "anthropic" && x.encryptedKey);
+  if (!m) return res.status(400).json({ error: "Belum ada model AI yang dikonfigurasi" });
+
+  let apiKey;
+  try { apiKey = decrypt(m.encryptedKey); }
+  catch { return res.status(500).json({ error: "Gagal membaca API key" }); }
+
+  const contextBlock = handoverNote ? `\n\nKonteks handover:\n${handoverNote}` : "";
+
+  const systemPrompt =
+    `Kamu adalah asisten sales Klinik Matras. Berdasarkan riwayat percakapan, ` +
+    `buatkan SATU kalimat pembuka yang natural untuk melanjutkan. ` +
+    `JANGAN menyapa ulang dari nol. JANGAN menanyakan hal yang sudah diketahui dari riwayat. ` +
+    `Langsung lanjutkan dari konteks terakhir dengan hangat. ` +
+    `Jawab HANYA dengan kalimat yang akan dikirim ke customer, tanpa penjelasan tambahan.` +
+    contextBlock;
+
+  const messages = [
+    ...conversationHistory.slice(-10),
+    { role: "user", content: "Buatkan 1 kalimat pembuka untuk melanjutkan percakapan ini." },
+  ];
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: m.model || "claude-sonnet-4-6",
+        max_tokens: 150,
+        system: systemPrompt,
+        messages,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari AI" });
+    res.json({ draft: data.content[0]?.text?.trim() || "" });
+  } catch (err) {
+    res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });
+  }
+});
+
 // POST /api/ai/test-connection — test API key sebelum disimpan
 aiRouter.post("/test-connection", async (req, res) => {
   const { provider, apiKey } = req.body;
