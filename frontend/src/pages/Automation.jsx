@@ -674,33 +674,36 @@ function KnowledgeBaseTab() {
     api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
 
-  // Scroll ke match aktif setiap kali index atau query berubah
+  // View mode: auto-scroll ke mark setelah render (tanpa steal focus)
   useEffect(() => {
-    if (!docSearch.trim()) return;
-    if (editingDoc) {
-      // Edit mode: pakai setSelectionRange di textarea
-      const ta = docEditTextareaRef.current;
-      if (!ta) return;
-      const text = editContent;
-      const q = docSearch.toLowerCase();
-      const lower = text.toLowerCase();
-      const positions = [];
-      let i = 0;
-      while ((i = lower.indexOf(q, i)) !== -1) { positions.push(i); i += q.length; }
-      if (!positions.length) return;
-      const idx = docMatchIdx % positions.length;
-      const start = positions[idx];
-      const end = start + docSearch.length;
-      ta.focus();
-      ta.setSelectionRange(start, end);
-      const linesBefore = text.slice(0, start).split("\n").length - 1;
-      ta.scrollTop = Math.max(0, linesBefore * 19 - ta.clientHeight / 2);
-    } else {
-      // View mode: scroll ke <mark> yang ter-highlight
+    if (editingDoc || !docSearch.trim()) return;
+    requestAnimationFrame(() => {
       const el = document.getElementById(`doc-match-${docMatchIdx}`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   }, [docMatchIdx, docSearch, editingDoc]);
+
+  // Edit mode: navigasi eksplisit ke match di textarea
+  // Dipanggil hanya saat user tekan Enter/↑↓ — TIDAK dipanggil saat typing
+  function gotoDocMatchInEditor(targetIdx) {
+    const ta = docEditTextareaRef.current;
+    if (!ta || !docSearch.trim() || !editContent) return;
+    const lower = editContent.toLowerCase();
+    const q = docSearch.toLowerCase();
+    const positions = [];
+    let i = 0;
+    while ((i = lower.indexOf(q, i)) !== -1) { positions.push(i); i += q.length; }
+    if (!positions.length) return;
+    const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
+    const start = positions[clamp];
+    const end = start + docSearch.length;
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    const linesBefore = editContent.slice(0, start).split("\n").length - 1;
+    ta.scrollTop = Math.max(0, linesBefore * 19 - ta.clientHeight / 2);
+    // Kembalikan fokus ke search bar setelah selection ter-set
+    requestAnimationFrame(() => docSearchRef.current?.focus());
+  }
 
   async function handleSelectQCat(cat) {
     const next = cat === selectedQCat ? null : cat;
@@ -1171,11 +1174,11 @@ function KnowledgeBaseTab() {
                   onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && docMatchCount > 0) {
-                      if (e.shiftKey) {
-                        setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount);
-                      } else {
-                        setDocMatchIdx((i) => (i + 1) % docMatchCount);
-                      }
+                      const next = e.shiftKey
+                        ? (docMatchIdx - 1 + docMatchCount) % docMatchCount
+                        : (docMatchIdx + 1) % docMatchCount;
+                      setDocMatchIdx(next);
+                      if (editingDoc) gotoDocMatchInEditor(next);
                     }
                     if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
                   }}
@@ -1186,11 +1189,13 @@ function KnowledgeBaseTab() {
                     <span style={{ fontSize: 12, color: noMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>
                       {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
                     </span>
-                    <button onClick={() => setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount)} disabled={docMatchCount === 0}
-                      title="Sebelumnya (Shift+Enter)"
+                    <button
+                      onClick={() => { const next = (docMatchIdx - 1 + docMatchCount) % docMatchCount; setDocMatchIdx(next); if (editingDoc) gotoDocMatchInEditor(next); }}
+                      disabled={docMatchCount === 0} title="Sebelumnya (Shift+Enter)"
                       style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↑</button>
-                    <button onClick={() => setDocMatchIdx((i) => (i + 1) % docMatchCount)} disabled={docMatchCount === 0}
-                      title="Berikutnya (Enter)"
+                    <button
+                      onClick={() => { const next = (docMatchIdx + 1) % docMatchCount; setDocMatchIdx(next); if (editingDoc) gotoDocMatchInEditor(next); }}
+                      disabled={docMatchCount === 0} title="Berikutnya (Enter)"
                       style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↓</button>
                     <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
                       style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
