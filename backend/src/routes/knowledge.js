@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
-import { VALID_CATEGORIES, CATEGORY_LABELS, appendToKbCategory, countEntries, parseEntries } from "../services/kbQuickAdd.js";
+import { VALID_CATEGORIES, CATEGORY_LABELS, appendToKbCategory, countEntries, parseEntries, updateEntry, deleteEntry } from "../services/kbQuickAdd.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FAQ_FILE   = path.join(__dirname, "../../data/faq.json");
@@ -236,4 +236,40 @@ knowledgeRouter.get("/categories/:category/entries", (req, res) => {
     return res.status(400).json({ error: "Kategori tidak valid" });
   }
   res.json(parseEntries(category));
+});
+
+// PUT /api/knowledge/categories/:category/entries/:index — ADMIN only, edit entri
+knowledgeRouter.put("/categories/:category/entries/:index", (req, res) => {
+  if (req.user?.role !== "ADMIN") {
+    return res.status(403).json({ error: "Hanya admin yang bisa mengedit entri Knowledge Base" });
+  }
+  const { category } = req.params;
+  const index = parseInt(req.params.index, 10);
+  const { title, content } = req.body;
+  if (!VALID_CATEGORIES.includes(category)) return res.status(400).json({ error: "Kategori tidak valid" });
+  if (isNaN(index) || index < 0) return res.status(400).json({ error: "Index tidak valid" });
+  if (!title || !content) return res.status(400).json({ error: "title dan content wajib diisi" });
+  try {
+    updateEntry(category, index, { title, content });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/knowledge/categories/:category/entries/:index — ADMIN only, hapus entri
+knowledgeRouter.delete("/categories/:category/entries/:index", (req, res) => {
+  if (req.user?.role !== "ADMIN") {
+    return res.status(403).json({ error: "Hanya admin yang bisa menghapus entri Knowledge Base" });
+  }
+  const { category } = req.params;
+  const index = parseInt(req.params.index, 10);
+  if (!VALID_CATEGORIES.includes(category)) return res.status(400).json({ error: "Kategori tidak valid" });
+  if (isNaN(index) || index < 0) return res.status(400).json({ error: "Index tidak valid" });
+  try {
+    deleteEntry(category, index);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });

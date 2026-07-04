@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Plus, Trash2, Upload, Search, Send, X } from "lucide-react";
+import { Plus, Trash2, Upload, Search, Send, X, Pencil } from "lucide-react";
 import { api } from "../api.js";
 
 // ─── Workflow Tab ─────────────────────────────────────────────────────────────
@@ -575,20 +575,56 @@ function KnowledgeBaseTab() {
   const [qEntries, setQEntries]             = useState([]);
   const [expandedEntry, setExpandedEntry]   = useState(null);
   const [loadingQEntries, setLoadingQEntries] = useState(false);
+  const [editingEntry, setEditingEntry]     = useState(null); // { index, title, content }
+  const [savingEntry, setSavingEntry]       = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
 
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
     api.getKbCategories().then(setCategories).catch(() => {});
+    api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
 
   async function handleSelectQCat(cat) {
     const next = cat === selectedQCat ? null : cat;
     setSelectedQCat(next);
     setExpandedEntry(null);
+    setEditingEntry(null);
     if (!next) return;
     setLoadingQEntries(true);
     try { setQEntries(await api.getKbCategoryEntries(cat)); } catch {}
     finally { setLoadingQEntries(false); }
+  }
+
+  async function handleSaveEntry() {
+    if (!editingEntry || !selectedQCat) return;
+    setSavingEntry(true);
+    try {
+      await api.updateKbEntry(selectedQCat, editingEntry.index, {
+        title: editingEntry.title,
+        content: editingEntry.content,
+      });
+      setQEntries(await api.getKbCategoryEntries(selectedQCat));
+      setEditingEntry(null);
+      setExpandedEntry(null);
+    } catch (err) {
+      alert("Gagal menyimpan: " + err.message);
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
+  async function handleDeleteEntry(entry) {
+    if (!window.confirm(`Hapus entri "${entry.title}"?`)) return;
+    try {
+      await api.deleteKbEntry(selectedQCat, entry.index);
+      setQEntries(await api.getKbCategoryEntries(selectedQCat));
+      api.getKbCategories().then(setCategories).catch(() => {});
+      if (editingEntry?.index === entry.index) setEditingEntry(null);
+      setExpandedEntry(null);
+    } catch (err) {
+      alert("Gagal menghapus: " + err.message);
+    }
   }
 
   async function handleUpload(file) {
@@ -752,36 +788,103 @@ function KnowledgeBaseTab() {
                 Belum ada entri. Minta Sano Co-pilot "tambahin info: ..." untuk mulai mengisi kategori ini.
               </p>
             )}
-            {qEntries.map((entry, i) => (
-              <div
-                key={i}
-                style={{ border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8, overflow: "hidden" }}
-              >
-                <button
-                  onClick={() => setExpandedEntry(expandedEntry === i ? null : i)}
-                  style={{
-                    width: "100%", textAlign: "left", padding: "10px 14px",
-                    background: expandedEntry === i ? "#f8fafc" : "white",
-                    border: "none", cursor: "pointer",
-                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-                  }}
+            {qEntries.map((entry, i) => {
+              const isEditing = editingEntry?.index === entry.index;
+              return (
+                <div
+                  key={entry.index}
+                  style={{ border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8, overflow: "hidden" }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: 13, flex: 1 }}>{entry.title}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
-                    {entry.date} · {entry.author} {expandedEntry === i ? "▲" : "▼"}
-                  </span>
-                </button>
-                {expandedEntry === i && (
+                  {/* Header baris */}
                   <div style={{
-                    padding: "0 14px 12px", fontSize: 13,
-                    color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6,
-                    borderTop: "1px solid var(--border)",
+                    padding: "10px 14px", background: expandedEntry === i ? "#f8fafc" : "white",
+                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
                   }}>
-                    {entry.content}
+                    <button
+                      onClick={() => { setExpandedEntry(expandedEntry === i ? null : i); setEditingEntry(null); }}
+                      style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{entry.title}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+                        {entry.date} · {entry.author} {expandedEntry === i ? "▲" : "▼"}
+                      </span>
+                    </button>
+                    {currentUserRole === "ADMIN" && (
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button
+                          onClick={() => {
+                            setEditingEntry({ index: entry.index, title: entry.title, content: entry.content });
+                            setExpandedEntry(i);
+                          }}
+                          title="Edit entri"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary)", padding: "2px 4px" }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(entry)}
+                          title="Hapus entri"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", padding: "2px 4px" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Body — mode baca atau mode edit */}
+                  {expandedEntry === i && !isEditing && (
+                    <div style={{
+                      padding: "0 14px 12px", fontSize: 13,
+                      color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6,
+                      borderTop: "1px solid var(--border)",
+                    }}>
+                      {entry.content}
+                    </div>
+                  )}
+                  {expandedEntry === i && isEditing && (
+                    <div style={{ padding: "10px 14px 12px", borderTop: "1px solid var(--border)" }}>
+                      <input
+                        value={editingEntry.title}
+                        onChange={(e) => setEditingEntry((v) => ({ ...v, title: e.target.value }))}
+                        placeholder="Judul entri"
+                        style={{
+                          width: "100%", marginBottom: 8, padding: "6px 10px", fontSize: 13,
+                          border: "1px solid var(--border)", borderRadius: 6, boxSizing: "border-box",
+                        }}
+                      />
+                      <textarea
+                        value={editingEntry.content}
+                        onChange={(e) => setEditingEntry((v) => ({ ...v, content: e.target.value }))}
+                        rows={6}
+                        placeholder="Isi entri..."
+                        style={{
+                          width: "100%", marginBottom: 8, padding: "6px 10px", fontSize: 13,
+                          border: "1px solid var(--border)", borderRadius: 6, resize: "vertical",
+                          boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.6,
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={handleSaveEntry}
+                          disabled={savingEntry || !editingEntry.title.trim() || !editingEntry.content.trim()}
+                          className="btn btn-primary btn-sm"
+                        >
+                          {savingEntry ? "Menyimpan..." : "Simpan"}
+                        </button>
+                        <button
+                          onClick={() => setEditingEntry(null)}
+                          className="btn btn-sm"
+                          style={{ background: "var(--border)", color: "var(--text-primary)" }}
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

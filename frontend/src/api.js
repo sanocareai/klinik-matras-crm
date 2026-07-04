@@ -237,6 +237,13 @@ export const api = {
   getKbCategories: () => request("/knowledge/categories"),
   getKbCategoryEntries: (cat) => request(`/knowledge/categories/${encodeURIComponent(cat)}/entries`),
 
+  updateKbEntry: (cat, index, data) =>
+    request(`/knowledge/categories/${encodeURIComponent(cat)}/entries/${index}`,
+      { method: "PUT", body: JSON.stringify(data) }),
+  deleteKbEntry: (cat, index) =>
+    request(`/knowledge/categories/${encodeURIComponent(cat)}/entries/${index}`,
+      { method: "DELETE" }),
+
   getKbDocuments: () => request("/knowledge/documents"),
   uploadKbDocument: (formData) => requestFormData("/knowledge/documents", formData),
   updateKbDocument: (id, data) =>

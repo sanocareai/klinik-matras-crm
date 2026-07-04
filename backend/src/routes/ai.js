@@ -62,65 +62,49 @@ function writeSettings(data) {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
 }
 
-// Ambil snippet relevan dari Knowledge Base berdasarkan query user
-async function searchKb(query) {
-  const results = [];
-  const q = query.toLowerCase().slice(0, 200);
-  if (!q) return results;
+// Bangun konteks KB lengkap dari semua sumber aktif
+// Dibaca seluruhnya (bukan keyword search) agar AI punya konteks penuh
+async function buildKbContext() {
+  const parts = [];
 
-  // Cari di dokumen
+  // 1. Dokumen yang di-upload (maks 2000 char/dok)
   try {
     const meta = JSON.parse(fs.readFileSync(KB_META_FILE, "utf-8")).filter((d) => d.active);
     for (const doc of meta) {
       try {
         const text = fs.readFileSync(doc.filePath, "utf-8");
-        const lines = text.split("\n");
-        for (const line of lines) {
-          if (line.toLowerCase().includes(q) && line.trim().length > 10) {
-            results.push(`[${doc.name}] ${line.trim()}`);
-            if (results.length >= 5) break;
-          }
-        }
+        if (text.trim()) parts.push(`--- Dokumen: ${doc.name} ---\n${text.slice(0, 2000)}`);
       } catch {}
-      if (results.length >= 5) break;
     }
   } catch {}
 
-  // Cari di FAQ
+  // 2. FAQ
   try {
     const faqs = JSON.parse(fs.readFileSync(FAQ_FILE, "utf-8")).filter((f) => f.active !== false);
-    for (const faq of faqs) {
-      if (faq.question?.toLowerCase().includes(q) || faq.answer?.toLowerCase().includes(q)) {
-        results.push(`[FAQ] ${faq.question}: ${faq.answer}`);
-        if (results.length >= 8) break;
-      }
+    if (faqs.length) {
+      parts.push(`--- FAQ ---\n` + faqs.map((f) => `T: ${f.question}\nJ: ${f.answer}`).join("\n\n"));
     }
   } catch {}
 
-  // Cari di 4 kategori quick-add (file .md tetap)
-  const CAT_FILES = [
-    "konsep-istilah-teknis.md",
-    "dunia-kasur-umum.md",
-    "faq-tambahan.md",
-    "insight-lapangan.md",
-  ];
-  try {
-    for (const filename of CAT_FILES) {
+  // 3. 4 kategori quick-add (maks 3000 char/file)
+  const CAT_FILES = {
+    "konsep-istilah-teknis.md": "Konsep & Istilah Teknis",
+    "dunia-kasur-umum.md":      "Dunia Kasur Umum",
+    "faq-tambahan.md":          "FAQ Tambahan",
+    "insight-lapangan.md":      "Insight Lapangan",
+  };
+  for (const [filename, label] of Object.entries(CAT_FILES)) {
+    try {
       const fp = path.join(KB_DIR, filename);
       if (!fs.existsSync(fp)) continue;
-      const lines = fs.readFileSync(fp, "utf-8").split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.length > 10 && trimmed !== "---" && trimmed.toLowerCase().includes(q)) {
-          results.push(`[KB] ${trimmed}`);
-          if (results.length >= 14) break;
-        }
-      }
-      if (results.length >= 14) break;
-    }
-  } catch {}
+      const text = fs.readFileSync(fp, "utf-8").trim();
+      if (!text.includes("\n## ")) continue; // skip kalau belum ada entri
+      parts.push(`--- ${label} ---\n${text.slice(0, 3000)}`);
+    } catch {}
+  }
 
-  return results;
+  if (!parts.length) return "";
+  return `=== KNOWLEDGE BASE KLINIK MATRAS ===\n\n${parts.join("\n\n")}\n\n=== AKHIR KNOWLEDGE BASE ===`;
 }
 
 // GET /api/ai/settings — persona prompt + toggle KB
@@ -214,15 +198,17 @@ aiRouter.post("/chat", async (req, res) => {
   let systemPrompt = promptOverride ?? settings.personaPrompt ?? "";
   const useKb      = useKbOverride  ?? settings.useKb ?? true;
 
-  // Inject KB context menggantikan placeholder di system prompt
-  if (useKb && systemPrompt.includes(KB_PLACEHOLDER)) {
-    const lastUserMsg = [...messages].reverse().find((msg) => msg.role === "user");
-    const query = lastUserMsg?.content || "";
-    const kbResults = await searchKb(query);
-    const kbSection = kbResults.length > 0
-      ? "INFORMASI DARI KNOWLEDGE BASE:\n" + kbResults.map((r, i) => `${i + 1}. ${r}`).join("\n")
-      : "INFORMASI DARI KNOWLEDGE BASE:\n(Belum ada konten — tambahkan dokumen dan FAQ di halaman Knowledge Base)";
-    systemPrompt = systemPrompt.replace(KB_PLACEHOLDER, kbSection);
+  // Inject seluruh KB ke system prompt kalau useKb aktif
+  if (useKb) {
+    const kbContext = await buildKbContext();
+    if (kbContext) {
+      // Kalau persona kosong, pakai instruksi default
+      const base = systemPrompt.trim() ||
+        "Kamu adalah asisten Klinik Matras yang ahli kasur sehat. Jawab HANYA berdasarkan informasi di Knowledge Base di atas. Kalau tidak ada informasi yang relevan, katakan dengan jujur.";
+      // Bersihkan placeholder lama kalau masih ada
+      const clean = base.replace(/\[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem\]/g, "").trim();
+      systemPrompt = `${kbContext}\n\n---\n\n${clean}`;
+    }
   }
 
   try {
@@ -303,6 +289,10 @@ aiRouter.post("/copilot-chat", async (req, res) => {
   try { systemPrompt = await buildCoPilotPrompt(req.user?.role); } catch (err) {
     return res.status(500).json({ error: "Gagal membangun prompt: " + err.message });
   }
+
+  // Tambahkan seluruh KB ke Co-pilot juga (sama seperti AI Playground)
+  const kbContext = await buildKbContext();
+  if (kbContext) systemPrompt = `${kbContext}\n\n---\n\n${systemPrompt}`;
 
   const messages = [
     ...conversationHistory.map(({ role, content }) => ({ role, content })),
