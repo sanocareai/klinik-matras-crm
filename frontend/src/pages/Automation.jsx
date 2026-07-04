@@ -217,22 +217,19 @@ function AiPlaygroundTab() {
   // Saat search berubah, reset ke match pertama
   useEffect(() => { setPersonaMatchIdx(0); }, [personaSearch]);
 
-  // Apply selection ke textarea saat match idx berubah
-  useEffect(() => {
-    if (!personaSearch.trim() || !personaTextareaRef.current) return;
+  // Navigasi ke match persona — dipanggil eksplisit saat Enter/↑↓
+  // browser otomatis scroll ke selection setelah focus() + setSelectionRange()
+  function gotoPersonaMatch(targetIdx) {
+    const ta = personaTextareaRef.current;
+    if (!ta || !personaSearch.trim()) return;
     const positions = findPersonaMatches(systemPrompt, personaSearch);
     if (!positions.length) return;
-    const idx = personaMatchIdx % positions.length;
-    const start = positions[idx];
+    const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
+    const start = positions[clamp];
     const end = start + personaSearch.length;
-    const ta = personaTextareaRef.current;
     ta.focus();
     ta.setSelectionRange(start, end);
-    // Scroll textarea supaya match terlihat
-    const linesBefore = systemPrompt.slice(0, start).split("\n").length - 1;
-    const lineHeight = 19;
-    ta.scrollTop = Math.max(0, linesBefore * lineHeight - ta.clientHeight / 2);
-  }, [personaMatchIdx, personaSearch, systemPrompt]);
+  }
 
   function findPersonaMatches(text, query) {
     if (!query.trim()) return [];
@@ -415,6 +412,7 @@ function AiPlaygroundTab() {
                             ? (personaMatchIdx - 1 + personaMatchCount) % personaMatchCount
                             : (personaMatchIdx + 1) % personaMatchCount;
                           setPersonaMatchIdx(next);
+                          gotoPersonaMatch(next);
                         }
                         if (e.key === "Escape") setPersonaSearch("");
                       }}
@@ -426,11 +424,11 @@ function AiPlaygroundTab() {
                           {noPersonaMatch ? "Tidak ditemukan" : `${personaMatchIdx + 1} / ${personaMatchCount}`}
                         </span>
                         <button
-                          onClick={() => setPersonaMatchIdx((i) => (i - 1 + personaMatchCount) % personaMatchCount)}
+                          onClick={() => { const next = (personaMatchIdx - 1 + personaMatchCount) % personaMatchCount; setPersonaMatchIdx(next); gotoPersonaMatch(next); }}
                           disabled={personaMatchCount === 0}
                           style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↑</button>
                         <button
-                          onClick={() => setPersonaMatchIdx((i) => (i + 1) % personaMatchCount)}
+                          onClick={() => { const next = (personaMatchIdx + 1) % personaMatchCount; setPersonaMatchIdx(next); gotoPersonaMatch(next); }}
                           disabled={personaMatchCount === 0}
                           style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↓</button>
                         <button onClick={() => setPersonaSearch("")}
@@ -697,12 +695,11 @@ function KnowledgeBaseTab() {
     const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
     const start = positions[clamp];
     const end = start + docSearch.length;
+    // focus() + setSelectionRange() — browser otomatis scroll ke posisi yang tepat
+    // Jangan set scrollTop manual (tidak akurat karena word-wrap)
+    // Jangan kembalikan fokus ke search bar (kalau fokus pindah, selection hilang)
     ta.focus();
     ta.setSelectionRange(start, end);
-    const linesBefore = editContent.slice(0, start).split("\n").length - 1;
-    ta.scrollTop = Math.max(0, linesBefore * 19 - ta.clientHeight / 2);
-    // Kembalikan fokus ke search bar setelah selection ter-set
-    requestAnimationFrame(() => docSearchRef.current?.focus());
   }
 
   async function handleSelectQCat(cat) {
