@@ -690,52 +690,14 @@ function KnowledgeBaseTab() {
     api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
 
-  // View mode: auto-scroll ke mark setelah render (tanpa steal focus)
+  // Auto-scroll ke mark aktif: berlaku di view mode DAN edit mode (saat search aktif)
   useEffect(() => {
-    if (editingDoc || !docSearch.trim()) return;
+    if (!docSearch.trim()) return;
     requestAnimationFrame(() => {
       const el = document.getElementById(`doc-match-${docMatchIdx}`);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }, [docMatchIdx, docSearch, editingDoc]);
-
-  // Edit mode: navigasi ke match di textarea
-  function gotoDocMatchInEditor(targetIdx) {
-    const ta = docEditTextareaRef.current;
-    if (!ta || !docSearch.trim() || !editContent) return;
-    const lower = editContent.toLowerCase();
-    const q = docSearch.toLowerCase();
-    const positions = [];
-    let i = 0;
-    while ((i = lower.indexOf(q, i)) !== -1) { positions.push(i); i += q.length; }
-    if (!positions.length) return;
-    const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
-    const start = positions[clamp];
-    const end = start + docSearch.length;
-
-    // Scroll akurat: clone textarea dengan LEBAR SAMA agar word-wrap identik
-    const clone = ta.cloneNode();
-    clone.style.position = "absolute";
-    clone.style.visibility = "hidden";
-    clone.style.height = "auto";
-    clone.style.overflow = "hidden";
-    clone.style.width = ta.offsetWidth + "px"; // <-- kritis: tanpa ini wrap beda, scroll salah
-    clone.value = editContent.slice(0, start);
-    document.body.appendChild(clone);
-    const scrollTo = Math.max(0, clone.scrollHeight - ta.clientHeight / 2);
-    document.body.removeChild(clone);
-
-    ta.scrollTop = scrollTo;
-
-    // setTimeout(0): tunggu React selesai flush value ke DOM dulu
-    // (React reset selection saat render ulang controlled textarea)
-    setTimeout(() => {
-      const el = docEditTextareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(start, end);
-    }, 0);
-  }
 
   async function handleSelectQCat(cat) {
     const next = cat === selectedQCat ? null : cat;
@@ -1201,7 +1163,7 @@ function KnowledgeBaseTab() {
                 <input
                   ref={docSearchRef}
                   type="text"
-                  placeholder={editingDoc ? "Cari dalam editor... (Enter: berikutnya)" : "Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"}
+                  placeholder="Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"
                   value={docSearch}
                   onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
                   onKeyDown={(e) => {
@@ -1210,7 +1172,6 @@ function KnowledgeBaseTab() {
                         ? (docMatchIdx - 1 + docMatchCount) % docMatchCount
                         : (docMatchIdx + 1) % docMatchCount;
                       setDocMatchIdx(next);
-                      if (editingDoc) gotoDocMatchInEditor(next);
                     }
                     if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
                   }}
@@ -1222,11 +1183,11 @@ function KnowledgeBaseTab() {
                       {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
                     </span>
                     <button
-                      onClick={() => { const next = (docMatchIdx - 1 + docMatchCount) % docMatchCount; setDocMatchIdx(next); if (editingDoc) gotoDocMatchInEditor(next); }}
+                      onClick={() => { setDocMatchIdx((docMatchIdx - 1 + docMatchCount) % docMatchCount); }}
                       disabled={docMatchCount === 0} title="Sebelumnya (Shift+Enter)"
                       style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↑</button>
                     <button
-                      onClick={() => { const next = (docMatchIdx + 1) % docMatchCount; setDocMatchIdx(next); if (editingDoc) gotoDocMatchInEditor(next); }}
+                      onClick={() => { setDocMatchIdx((docMatchIdx + 1) % docMatchCount); }}
                       disabled={docMatchCount === 0} title="Berikutnya (Enter)"
                       style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↓</button>
                     <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
@@ -1237,24 +1198,36 @@ function KnowledgeBaseTab() {
                 )}
               </div>
 
-              {/* Edit mode: textarea biasa — navigate via setSelectionRange (browser selection = highlight match) */}
               {editingDoc ? (
-                <textarea
-                  ref={docEditTextareaRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  spellCheck={false}
-                  style={{
-                    width: "100%", minHeight: 480, boxSizing: "border-box",
-                    padding: "14px 16px", fontSize: 13, lineHeight: 1.7,
-                    fontFamily: "'Courier New', Courier, monospace",
-                    border: "1px solid var(--primary)", borderRadius: 10,
-                    outline: "none", resize: "vertical",
-                    background: "#1e1e2e", color: "#cdd6f4",
-                    caretColor: "#cba6f7",
-                    display: "block",
-                  }}
-                />
+                <>
+                  {/* Textarea: disembunyikan saat search aktif agar scroll position tidak reset */}
+                  <textarea
+                    ref={docEditTextareaRef}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    spellCheck={false}
+                    style={{
+                      display: docSearch.trim() ? "none" : "block",
+                      width: "100%", minHeight: 480, boxSizing: "border-box",
+                      padding: "14px 16px", fontSize: 13, lineHeight: 1.7,
+                      fontFamily: "'Courier New', Courier, monospace",
+                      border: "1px solid var(--primary)", borderRadius: 10,
+                      outline: "none", resize: "vertical",
+                      background: "#1e1e2e", color: "#cdd6f4",
+                      caretColor: "#cba6f7",
+                    }}
+                  />
+                  {/* Saat search aktif: tampilkan highlight sama persis seperti view mode */}
+                  {docSearch.trim() && (
+                    <div style={{
+                      color: "#cdd6f4", background: "#1e1e2e",
+                      border: "1px solid var(--primary)", borderRadius: 10,
+                      maxHeight: 480, overflowY: "auto", padding: "14px 16px",
+                    }}>
+                      {renderWithHighlights(editContent, docSearch, docMatchIdx)}
+                    </div>
+                  )}
+                </>
               ) : (
                 /* View mode: highlighted content */
                 <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
