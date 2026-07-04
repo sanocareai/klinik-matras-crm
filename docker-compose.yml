@@ -40,6 +40,7 @@ services:
       - ./frontend/dist:/frontend/dist
       - ./backend/uploads:/app/uploads
       - ./backend/data/products:/app/data/products
+      - ./backend/data/knowledge:/app/data/knowledge
     depends_on:
       - postgres
       - waha

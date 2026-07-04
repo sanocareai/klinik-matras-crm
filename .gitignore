@@ -4,3 +4,6 @@ node_modules/
 *.log
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/data/knowledge/documents/*
+!backend/data/knowledge/documents/.gitkeep
+backend/data/knowledge/meta.json

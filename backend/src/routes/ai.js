@@ -12,8 +12,9 @@ const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
 const SETTINGS_FILE  = path.join(__dirname, "../../data/ai-settings.json");
 const FAQ_FILE       = path.join(__dirname, "../../data/faq.json");
-const KB_META_FILE   = path.join(__dirname, "../../data/knowledge-meta.json");
 const KB_DIR         = path.join(__dirname, "../../data/knowledge");
+// meta.json di dalam KB_DIR agar konsisten dengan volume-mount di knowledge.js
+const KB_META_FILE   = path.join(KB_DIR, "meta.json");
 
 // Placeholder di system prompt — akan diganti KB context saat chat
 const KB_PLACEHOLDER = "[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]";
@@ -93,6 +94,29 @@ async function searchKb(query) {
         results.push(`[FAQ] ${faq.question}: ${faq.answer}`);
         if (results.length >= 8) break;
       }
+    }
+  } catch {}
+
+  // Cari di 4 kategori quick-add (file .md tetap)
+  const CAT_FILES = [
+    "konsep-istilah-teknis.md",
+    "dunia-kasur-umum.md",
+    "faq-tambahan.md",
+    "insight-lapangan.md",
+  ];
+  try {
+    for (const filename of CAT_FILES) {
+      const fp = path.join(KB_DIR, filename);
+      if (!fs.existsSync(fp)) continue;
+      const lines = fs.readFileSync(fp, "utf-8").split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.length > 10 && trimmed !== "---" && trimmed.toLowerCase().includes(q)) {
+          results.push(`[KB] ${trimmed}`);
+          if (results.length >= 14) break;
+        }
+      }
+      if (results.length >= 14) break;
     }
   } catch {}
 

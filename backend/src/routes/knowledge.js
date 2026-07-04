@@ -9,13 +9,27 @@ import { VALID_CATEGORIES, CATEGORY_LABELS, appendToKbCategory, countEntries, pa
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FAQ_FILE   = path.join(__dirname, "../../data/faq.json");
 const KB_DIR     = path.join(__dirname, "../../data/knowledge");
-const META_FILE  = path.join(__dirname, "../../data/knowledge-meta.json");
+// meta.json di dalam KB_DIR agar ikut volume-mount bersama dokumen
+const META_FILE  = path.join(KB_DIR, "meta.json");
+const DOCS_DIR   = path.join(KB_DIR, "documents");
 
 // Pastikan direktori ada
-if (!fs.existsSync(KB_DIR)) fs.mkdirSync(KB_DIR, { recursive: true });
+if (!fs.existsSync(KB_DIR))   fs.mkdirSync(KB_DIR,   { recursive: true });
+if (!fs.existsSync(DOCS_DIR)) fs.mkdirSync(DOCS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, DOCS_DIR),
+  filename: (req, file, cb) => {
+    const ext  = path.extname(file.originalname).toLowerCase();
+    const base = path.basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9-_]/g, "_")
+      .slice(0, 60);
+    cb(null, `${Date.now()}-${base}${ext}`);
+  },
+});
 
 const upload = multer({
-  dest: KB_DIR,
+  storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // max 5MB
   fileFilter: (req, file, cb) => {
     const allowed = [".txt", ".md", ".pdf"];
