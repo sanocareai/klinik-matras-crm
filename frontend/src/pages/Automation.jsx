@@ -218,7 +218,6 @@ function AiPlaygroundTab() {
   useEffect(() => { setPersonaMatchIdx(0); }, [personaSearch]);
 
   // Navigasi ke match persona — dipanggil eksplisit saat Enter/↑↓
-  // browser otomatis scroll ke selection setelah focus() + setSelectionRange()
   function gotoPersonaMatch(targetIdx) {
     const ta = personaTextareaRef.current;
     if (!ta || !personaSearch.trim()) return;
@@ -227,8 +226,27 @@ function AiPlaygroundTab() {
     const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
     const start = positions[clamp];
     const end = start + personaSearch.length;
-    ta.focus();
-    ta.setSelectionRange(start, end);
+
+    // Scroll akurat pakai clone dengan lebar sama
+    const clone = ta.cloneNode();
+    clone.style.position = "absolute";
+    clone.style.visibility = "hidden";
+    clone.style.height = "auto";
+    clone.style.overflow = "hidden";
+    clone.style.width = ta.offsetWidth + "px";
+    clone.value = systemPrompt.slice(0, start);
+    document.body.appendChild(clone);
+    const scrollTo = Math.max(0, clone.scrollHeight - ta.clientHeight / 2);
+    document.body.removeChild(clone);
+    ta.scrollTop = scrollTo;
+
+    // Defer selection sampai setelah React flush re-render
+    setTimeout(() => {
+      const el = personaTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start, end);
+    }, 0);
   }
 
   function findPersonaMatches(text, query) {
@@ -682,7 +700,6 @@ function KnowledgeBaseTab() {
   }, [docMatchIdx, docSearch, editingDoc]);
 
   // Edit mode: navigasi ke match di textarea
-  // Pakai clone textarea untuk scroll position yang akurat (memperhitungkan word-wrap)
   function gotoDocMatchInEditor(targetIdx) {
     const ta = docEditTextareaRef.current;
     if (!ta || !docSearch.trim() || !editContent) return;
@@ -695,20 +712,29 @@ function KnowledgeBaseTab() {
     const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
     const start = positions[clamp];
     const end = start + docSearch.length;
-    // Scroll akurat: kloning textarea, isi sampai posisi match, ukur scrollHeight
+
+    // Scroll akurat: clone textarea dengan LEBAR SAMA agar word-wrap identik
     const clone = ta.cloneNode();
-    clone.style.visibility = "hidden";
     clone.style.position = "absolute";
+    clone.style.visibility = "hidden";
     clone.style.height = "auto";
     clone.style.overflow = "hidden";
+    clone.style.width = ta.offsetWidth + "px"; // <-- kritis: tanpa ini wrap beda, scroll salah
     clone.value = editContent.slice(0, start);
     document.body.appendChild(clone);
     const scrollTo = Math.max(0, clone.scrollHeight - ta.clientHeight / 2);
     document.body.removeChild(clone);
+
     ta.scrollTop = scrollTo;
-    // Pilih kata yang dicari (browser selection biru = highlight match aktif)
-    ta.focus();
-    ta.setSelectionRange(start, end);
+
+    // setTimeout(0): tunggu React selesai flush value ke DOM dulu
+    // (React reset selection saat render ulang controlled textarea)
+    setTimeout(() => {
+      const el = docEditTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start, end);
+    }, 0);
   }
 
   async function handleSelectQCat(cat) {
