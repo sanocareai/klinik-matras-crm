@@ -39,8 +39,7 @@ services:
     volumes:
       - ./frontend/dist:/frontend/dist
       - ./backend/uploads:/app/uploads
-      - ./backend/data/products:/app/data/products
-      - ./backend/data/knowledge:/app/data/knowledge
+      - ./backend/data:/app/data
     depends_on:
       - postgres
       - waha
