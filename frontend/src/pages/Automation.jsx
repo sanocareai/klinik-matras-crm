@@ -197,6 +197,10 @@ function AiPlaygroundTab() {
   const messagesEndRef = useRef(null);
   const [handoverSignal, setHandoverSignal]         = useState(null);
   const [showScenariosPanel, setShowScenariosPanel] = useState(false);
+  // Persona search (Ctrl+F style)
+  const [personaSearch, setPersonaSearch]   = useState("");
+  const [personaMatchIdx, setPersonaMatchIdx] = useState(0);
+  const personaTextareaRef = useRef(null);
 
   useEffect(() => {
     api.getAiModels().then(setModels).catch(() => {});
@@ -209,6 +213,36 @@ function AiPlaygroundTab() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Saat search berubah, reset ke match pertama
+  useEffect(() => { setPersonaMatchIdx(0); }, [personaSearch]);
+
+  // Apply selection ke textarea saat match idx berubah
+  useEffect(() => {
+    if (!personaSearch.trim() || !personaTextareaRef.current) return;
+    const positions = findPersonaMatches(systemPrompt, personaSearch);
+    if (!positions.length) return;
+    const idx = personaMatchIdx % positions.length;
+    const start = positions[idx];
+    const end = start + personaSearch.length;
+    const ta = personaTextareaRef.current;
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    // Scroll textarea supaya match terlihat
+    const linesBefore = systemPrompt.slice(0, start).split("\n").length - 1;
+    const lineHeight = 19;
+    ta.scrollTop = Math.max(0, linesBefore * lineHeight - ta.clientHeight / 2);
+  }, [personaMatchIdx, personaSearch, systemPrompt]);
+
+  function findPersonaMatches(text, query) {
+    if (!query.trim()) return [];
+    const positions = [];
+    const lower = text.toLowerCase();
+    const q = query.toLowerCase();
+    let i = 0;
+    while ((i = lower.indexOf(q, i)) !== -1) { positions.push(i); i += q.length; }
+    return positions;
+  }
 
   async function handleAddModel(e) {
     e.preventDefault();
@@ -348,40 +382,83 @@ function AiPlaygroundTab() {
               </button>
             </div>
             {/* Panel Persona — tampil saat tombol "Persona" diklik */}
-            {showPersonaPanel && (
-              <div style={{ borderBottom: "1px solid var(--border)", background: "#f8fafc", padding: "14px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <strong style={{ fontSize: 13 }}>System Prompt / Persona</strong>
-                  <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-secondary)", marginLeft: "auto", cursor: "pointer" }}>
+            {showPersonaPanel && (() => {
+              const personaMatches = findPersonaMatches(systemPrompt, personaSearch);
+              const personaMatchCount = personaMatches.length;
+              const noPersonaMatch = personaSearch.trim() && personaMatchCount === 0;
+              return (
+                <div style={{ borderBottom: "1px solid var(--border)", background: "#f8fafc", padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13 }}>System Prompt / Persona</strong>
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-secondary)", marginLeft: "auto", cursor: "pointer" }}>
+                      <input type="checkbox" checked={useKb} onChange={(e) => setUseKb(e.target.checked)} />
+                      Sisipkan Knowledge Base
+                    </label>
+                  </div>
+                  {/* Search bar */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    marginBottom: 6, padding: "4px 10px",
+                    background: noPersonaMatch ? "#fef2f2" : "white",
+                    border: `1px solid ${noPersonaMatch ? "#fca5a5" : "var(--border)"}`,
+                    borderRadius: 7,
+                  }}>
+                    <Search size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
                     <input
-                      type="checkbox"
-                      checked={useKb}
-                      onChange={(e) => setUseKb(e.target.checked)}
+                      type="text"
+                      placeholder="Cari dalam persona... (Enter: berikutnya)"
+                      value={personaSearch}
+                      onChange={(e) => setPersonaSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && personaMatchCount > 0) {
+                          const next = e.shiftKey
+                            ? (personaMatchIdx - 1 + personaMatchCount) % personaMatchCount
+                            : (personaMatchIdx + 1) % personaMatchCount;
+                          setPersonaMatchIdx(next);
+                        }
+                        if (e.key === "Escape") setPersonaSearch("");
+                      }}
+                      style={{ flex: 1, border: "none", background: "transparent", fontSize: 12, outline: "none" }}
                     />
-                    Sisipkan Knowledge Base
-                  </label>
+                    {personaSearch.trim() && (
+                      <>
+                        <span style={{ fontSize: 11, color: noPersonaMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 52, textAlign: "right" }}>
+                          {noPersonaMatch ? "Tidak ditemukan" : `${personaMatchIdx + 1} / ${personaMatchCount}`}
+                        </span>
+                        <button
+                          onClick={() => setPersonaMatchIdx((i) => (i - 1 + personaMatchCount) % personaMatchCount)}
+                          disabled={personaMatchCount === 0}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↑</button>
+                        <button
+                          onClick={() => setPersonaMatchIdx((i) => (i + 1) % personaMatchCount)}
+                          disabled={personaMatchCount === 0}
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "0px 5px", fontSize: 11, opacity: personaMatchCount === 0 ? 0.4 : 1 }}>↓</button>
+                        <button onClick={() => setPersonaSearch("")}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
+                          <X size={12} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <textarea
+                    ref={personaTextareaRef}
+                    rows={8}
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    placeholder={"Contoh:\nKamu adalah Sano, konsultan tidur di Klinik Matras...\n\n[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]"}
+                    style={{ width: "100%", fontSize: 12, fontFamily: "monospace", resize: "vertical", border: "1px solid var(--border)", borderRadius: 6, padding: 8 }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
+                      Sisipkan placeholder <code>[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]</code> untuk injeksi KB
+                    </span>
+                    <button className="btn btn-primary btn-sm" onClick={handleSavePersona} disabled={savingPersona}>
+                      {savingPersona ? "Menyimpan..." : "Simpan Persona"}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  rows={8}
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder={"Contoh:\nKamu adalah Sano, konsultan tidur di Klinik Matras...\n\n[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]"}
-                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", resize: "vertical", border: "1px solid var(--border)", borderRadius: 6, padding: 8 }}
-                />
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
-                    Sisipkan placeholder <code>[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem]</code> untuk injeksi KB
-                  </span>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleSavePersona}
-                    disabled={savingPersona}
-                  >
-                    {savingPersona ? "Menyimpan..." : "Simpan Persona"}
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
             {/* Panel panduan skenario test Fase C */}
             {showScenariosPanel && (
               <div style={{ borderBottom: "1px solid var(--border)", background: "#f0fdf4", padding: "14px 18px", fontSize: 12 }}>
