@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
 import { appendToKbCategory } from "../services/kbQuickAdd.js";
+import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -343,6 +344,46 @@ aiRouter.post("/copilot-chat", async (req, res) => {
     res.json({ reply: data.content[0]?.text || "" });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });
+  }
+});
+
+// POST /api/ai/handover-check — simulasi deteksi sinyal handover (SANDBOX ONLY — Fase C)
+// ⚠️  Endpoint ini murni untuk testing di AI Playground. Belum tersambung ke WAHA/WhatsApp.
+// Body: { messages: [{role, content}] }
+aiRouter.post("/handover-check", async (req, res) => {
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: "messages wajib diisi" });
+  }
+
+  const models = readModels();
+  const m = models.find((x) => x.active && x.provider === "anthropic" && x.encryptedKey);
+  if (!m) {
+    return res.status(400).json({ error: "Belum ada model AI yang dikonfigurasi" });
+  }
+
+  let apiKey;
+  try { apiKey = decrypt(m.encryptedKey); } catch {
+    return res.status(500).json({ error: "Gagal membaca API key" });
+  }
+
+  const modelId = m.model || "claude-sonnet-4-6";
+
+  try {
+    const detection = await detectHandoverSignal(messages, apiKey, modelId);
+
+    if (!detection.shouldHandover) {
+      return res.json({ shouldHandover: false });
+    }
+
+    // Kalau sinyal terdeteksi, generate ringkasan otomatis untuk sales
+    const summary = await generateHandoverSummary(
+      messages, detection.reason, detection.priority, apiKey, modelId
+    );
+
+    res.json({ ...detection, summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

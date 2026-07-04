@@ -195,6 +195,8 @@ function AiPlaygroundTab() {
   const [showPersonaPanel, setShowPersonaPanel] = useState(false);
   const [savingPersona, setSavingPersona] = useState(false);
   const messagesEndRef = useRef(null);
+  const [handoverSignal, setHandoverSignal]         = useState(null);
+  const [showScenariosPanel, setShowScenariosPanel] = useState(false);
 
   useEffect(() => {
     api.getAiModels().then(setModels).catch(() => {});
@@ -238,12 +240,21 @@ function AiPlaygroundTab() {
     e.preventDefault();
     if (!input.trim() || !activeModel) return;
     const userMsg = { role: "user", content: input.trim() };
-    setMessages((prev) => [...prev, userMsg]);
+    const withUser = [...messages, userMsg];
+    setMessages(withUser);
     setInput("");
     setChatting(true);
     try {
-      const res = await api.aiChat(activeModel.id, [...messages, userMsg], { systemPrompt: systemPrompt || undefined, useKb });
-      setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
+      const res = await api.aiChat(activeModel.id, withUser, { systemPrompt: systemPrompt || undefined, useKb });
+      const aiMsg = { role: "assistant", content: res.content };
+      const allMsgs = [...withUser, aiMsg];
+      setMessages(allMsgs);
+      // Cek sinyal handover di background — tidak blocking, hanya sekali per sesi
+      if (!handoverSignal) {
+        api.checkHandover(allMsgs).then((h) => {
+          if (h?.shouldHandover) setHandoverSignal(h);
+        }).catch(() => {});
+      }
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
     } finally {
@@ -325,7 +336,14 @@ function AiPlaygroundTab() {
               >
                 Persona
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setMessages([])}>
+              <button
+                className={`btn btn-ghost btn-sm ${showScenariosPanel ? "active" : ""}`}
+                onClick={() => setShowScenariosPanel((v) => !v)}
+                title="Panduan Skenario Test Fase C"
+              >
+                🧪 Skenario
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setMessages([]); setHandoverSignal(null); }}>
                 Bersihkan
               </button>
             </div>
@@ -364,6 +382,31 @@ function AiPlaygroundTab() {
                 </div>
               </div>
             )}
+            {/* Panel panduan skenario test Fase C */}
+            {showScenariosPanel && (
+              <div style={{ borderBottom: "1px solid var(--border)", background: "#f0fdf4", padding: "14px 18px", fontSize: 12 }}>
+                <strong style={{ fontSize: 13, display: "block", marginBottom: 8 }}>🧪 Panduan Skenario Test Handover — Fase C (Sandbox)</strong>
+                <p style={{ color: "var(--text-muted)", marginBottom: 10, fontSize: 11 }}>
+                  Isi Persona dengan system prompt Sano dari file ai-persona-sano-draft.md, lalu coba percakapan di bawah.
+                  Card SIMULASI akan muncul di bawah chat kalau sinyal handover terdeteksi.
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    { n: 1, label: "Trigger Harga Spesifik",      msg: '"berapa harga upgrade fondasi?"',                       expect: "Card HARGA_SPESIFIK" },
+                    { n: 2, label: "Komplain Prioritas Tinggi",    msg: '"kasur yang diupgrade makin sakit pinggang, kecewa"',   expect: "Card KOMPLAIN + badge merah" },
+                    { n: 3, label: "Safety Net (8+ balasan)",      msg: "Chat santai soal tidur saja, tanpa tanya harga/order",  expect: "Card SAFETY_NET setelah ≥8 balasan AI" },
+                    { n: 4, label: "Minta Foto Produk",            msg: '"bisa kirim foto-foto produknya kak?"',                 expect: "Card MINTA_FOTO" },
+                    { n: 5, label: "Negatif — Jangan Trigger",     msg: '"saya sering pegal bangun tidur, normal ga ya?"',       expect: "TIDAK ada card (konsultasi biasa)" },
+                  ].map(({ n, label, msg, expect }) => (
+                    <div key={n} style={{ background: "white", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 10px" }}>
+                      <div style={{ fontWeight: 600, marginBottom: 2, fontSize: 12 }}>Skenario {n}: {label}</div>
+                      <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>Coba: {msg}</div>
+                      <div style={{ color: "#16a34a", fontSize: 11, marginTop: 2 }}>✓ Ekspektasi: {expect}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="ai-chat-messages">
               {messages.length === 0 && (
                 <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: 40, fontSize: 13 }}>
@@ -376,6 +419,58 @@ function AiPlaygroundTab() {
                 </div>
               ))}
               {chatting && <div className="ai-bubble ai" style={{ color: "var(--text-muted)" }}>Mengetik...</div>}
+
+              {/* Card simulasi handover — muncul saat sinyal terdeteksi (SANDBOX ONLY) */}
+              {handoverSignal?.shouldHandover && (
+                <div style={{
+                  margin: "12px 0",
+                  padding: "14px 16px",
+                  background: handoverSignal.priority === "tinggi" ? "#fff1f2" : "#fffbeb",
+                  border: `2px solid ${handoverSignal.priority === "tinggi" ? "#f87171" : "#fbbf24"}`,
+                  borderRadius: 10,
+                  fontSize: 13,
+                }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span>🔔 SIMULASI: Handover akan terjadi di sini</span>
+                    {handoverSignal.priority === "tinggi" && (
+                      <span style={{
+                        background: "#dc2626", color: "#fff",
+                        fontSize: 10, fontWeight: 700,
+                        padding: "2px 8px", borderRadius: 10,
+                      }}>
+                        🚨 PRIORITAS TINGGI
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                    Trigger: {handoverSignal.reasonLabel} · Ini SIMULASI sandbox — tidak memicu aksi nyata
+                  </div>
+                  {handoverSignal.summary && (
+                    <pre style={{
+                      margin: 0, fontSize: 12,
+                      whiteSpace: "pre-wrap", lineHeight: 1.6,
+                      background: "white",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6, padding: "10px 12px",
+                      fontFamily: "inherit",
+                    }}>
+                      {handoverSignal.summary}
+                    </pre>
+                  )}
+                  <button
+                    onClick={() => setHandoverSignal(null)}
+                    style={{
+                      marginTop: 8, background: "none",
+                      border: "1px solid var(--border)", borderRadius: 6,
+                      padding: "4px 12px", cursor: "pointer",
+                      fontSize: 11, color: "var(--text-muted)",
+                    }}
+                  >
+                    Tutup
+                  </button>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
             <div className="ai-chat-footer">
