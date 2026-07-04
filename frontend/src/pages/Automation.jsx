@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { Plus, Trash2, Upload, Search, Send, X, Pencil } from "lucide-react";
 import { api } from "../api.js";
+import MarkdownEditor from "../components/knowledge/MarkdownEditor.jsx";
 
 // ─── Workflow Tab ─────────────────────────────────────────────────────────────
 
@@ -707,37 +708,15 @@ function KnowledgeBaseTab() {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [qEntrySearch, setQEntrySearch]    = useState("");
 
-  // In-document search (Ctrl+F style)
-  const [docSearch, setDocSearch]   = useState("");
-  const [docMatchIdx, setDocMatchIdx] = useState(0);
-  const docSearchRef = useRef(null);
-  const docEditTextareaRef = useRef(null);
-  const docScrollContainerRef = useRef(null);
-
-  // Edit mode untuk dokumen yang dipilih
-  const [editingDoc, setEditingDoc]   = useState(false);
-  const [editContent, setEditContent] = useState("");
-  const [savingDoc, setSavingDoc]     = useState(false);
+  // Dokumen yang dipilih
+  const [savingDoc, setSavingDoc]       = useState(false);
+  const [savedContent, setSavedContent] = useState("");  // konten terakhir disimpan ke server
 
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
     api.getKbCategories().then(setCategories).catch(() => {});
     api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
-
-  // Scroll container ke mark aktif — pakai ref eksplisit agar tidak salah container
-  useLayoutEffect(() => {
-    if (!docSearch.trim()) return;
-    const container = docScrollContainerRef.current;
-    const el = document.getElementById(`doc-match-${docMatchIdx}`);
-    if (!el || !container) return;
-    // Hitung posisi mark relatif terhadap container (bukan viewport)
-    const containerRect = container.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const offsetFromTop = elRect.top - containerRect.top;
-    const targetScrollTop = container.scrollTop + offsetFromTop - container.clientHeight / 2 + elRect.height / 2;
-    container.scrollTop = Math.max(0, targetScrollTop);
-  }, [docMatchIdx, docSearch, editingDoc]);
 
   async function handleSelectQCat(cat) {
     const next = cat === selectedQCat ? null : cat;
@@ -801,13 +780,12 @@ function KnowledgeBaseTab() {
   async function handleSelectDoc(doc) {
     setSelected(doc);
     setContent("");
-    setDocSearch("");
-    setDocMatchIdx(0);
-    setEditingDoc(false);
-    setEditContent("");
+    setSavedContent("");
+    setSelectedQCat(null);
     try {
       const res = await api.getKbDocumentContent(doc.id);
       setContent(res.text);
+      setSavedContent(res.text);
     } catch {}
   }
 
@@ -815,9 +793,8 @@ function KnowledgeBaseTab() {
     if (!selected) return;
     setSavingDoc(true);
     try {
-      await api.updateKbDocumentContent(selected.id, editContent);
-      setContent(editContent);
-      setEditingDoc(false);
+      await api.updateKbDocumentContent(selected.id, content);
+      setSavedContent(content);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -834,7 +811,7 @@ function KnowledgeBaseTab() {
     if (!window.confirm("Hapus dokumen ini?")) return;
     await api.deleteKbDocument(doc.id).catch((e) => alert(e.message));
     setDocs((prev) => prev.filter((d) => d.id !== doc.id));
-    if (selected?.id === doc.id) { setSelected(null); setContent(""); }
+    if (selected?.id === doc.id) { setSelected(null); setContent(""); setSavedContent(""); }
   }
 
   async function handleSearch(e) {
@@ -1116,135 +1093,20 @@ function KnowledgeBaseTab() {
           </div>
         )}
 
-        {/* Doc preview dengan in-document search + edit mode */}
-        {selected && (() => {
-          const searchTarget = editingDoc ? editContent : content;
-          const docMatchCount = docSearch.trim() && searchTarget
-            ? (searchTarget.match(new RegExp(escapeRegex(docSearch), "gi")) || []).length
-            : 0;
-          const noMatch = docSearch.trim() && docMatchCount === 0;
-          return (
-            <div style={{ marginBottom: 24 }}>
-              {/* Header: nama file + tombol Edit/Simpan */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <h4 style={{ margin: 0, flex: 1, fontSize: 14, wordBreak: "break-all" }}>{selected.name}</h4>
-                {!editingDoc && currentUserRole === "ADMIN" && content && (
-                  <button
-                    onClick={() => { setEditContent(content); setEditingDoc(true); setDocSearch(""); }}
-                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", fontSize: 12, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer", flexShrink: 0 }}
-                  >
-                    <Pencil size={12} /> Edit
-                  </button>
-                )}
-                {editingDoc && (
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button
-                      onClick={handleSaveDocContent}
-                      disabled={savingDoc}
-                      style={{ padding: "5px 14px", fontSize: 12, background: "#16a34a", color: "#fff", border: "none", borderRadius: 7, cursor: "pointer" }}
-                    >
-                      {savingDoc ? "Menyimpan..." : "Simpan"}
-                    </button>
-                    <button
-                      onClick={() => { setEditingDoc(false); setEditContent(""); }}
-                      disabled={savingDoc}
-                      style={{ padding: "5px 12px", fontSize: 12, background: "none", border: "1px solid var(--border)", borderRadius: 7, cursor: "pointer" }}
-                    >
-                      Batal
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Search bar — selalu tampil, baik view mode maupun edit mode */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 6,
-                marginBottom: 6, padding: "5px 10px",
-                background: noMatch ? "#fef2f2" : "#f8fafc",
-                border: `1px solid ${noMatch ? "#fca5a5" : "var(--border)"}`,
-                borderRadius: 8,
-              }}>
-                <Search size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                <input
-                  ref={docSearchRef}
-                  type="text"
-                  placeholder="Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"
-                  value={docSearch}
-                  onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && docMatchCount > 0) {
-                      const next = e.shiftKey
-                        ? (docMatchIdx - 1 + docMatchCount) % docMatchCount
-                        : (docMatchIdx + 1) % docMatchCount;
-                      setDocMatchIdx(next);
-                    }
-                    if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
-                  }}
-                  style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, outline: "none" }}
-                />
-                {docSearch.trim() && (
-                  <>
-                    <span style={{ fontSize: 12, color: noMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>
-                      {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
-                    </span>
-                    <button
-                      onClick={() => { setDocMatchIdx((docMatchIdx - 1 + docMatchCount) % docMatchCount); }}
-                      disabled={docMatchCount === 0} title="Sebelumnya (Shift+Enter)"
-                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↑</button>
-                    <button
-                      onClick={() => { setDocMatchIdx((docMatchIdx + 1) % docMatchCount); }}
-                      disabled={docMatchCount === 0} title="Berikutnya (Enter)"
-                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}>↓</button>
-                    <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
-                      <X size={13} />
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {editingDoc ? (
-                <>
-                  {/* Textarea: disembunyikan saat search aktif agar scroll position tidak reset */}
-                  <textarea
-                    ref={docEditTextareaRef}
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    spellCheck={false}
-                    style={{
-                      display: docSearch.trim() ? "none" : "block",
-                      width: "100%", minHeight: 480, boxSizing: "border-box",
-                      padding: "14px 16px", fontSize: 13, lineHeight: 1.7,
-                      fontFamily: "'Courier New', Courier, monospace",
-                      border: "1px solid var(--primary)", borderRadius: 10,
-                      outline: "none", resize: "vertical",
-                      background: "#1e1e2e", color: "#cdd6f4",
-                      caretColor: "#cba6f7",
-                    }}
-                  />
-                  {/* Saat search aktif: tampilkan highlight sama persis seperti view mode */}
-                  {docSearch.trim() && (
-                    <div ref={docScrollContainerRef} style={{
-                      color: "#cdd6f4", background: "#1e1e2e",
-                      border: "1px solid var(--primary)", borderRadius: 10,
-                      maxHeight: 480, overflowY: "auto", padding: "14px 16px",
-                    }}>
-                      {renderWithHighlights(editContent, docSearch, docMatchIdx)}
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* View mode: highlighted content */
-                <div ref={docScrollContainerRef} className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
-                  {content
-                    ? renderWithHighlights(content, docSearch, docMatchIdx)
-                    : <span style={{ color: "var(--text-muted)" }}>Memuat...</span>
-                  }
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {/* Doc editor — CodeMirror (search + edit dalam satu komponen) */}
+        {selected && (
+          <div style={{ marginBottom: 24 }}>
+            <h4 style={{ margin: "0 0 10px", fontSize: 14, wordBreak: "break-all" }}>{selected.name}</h4>
+            <MarkdownEditor
+              value={content}
+              onChange={setContent}
+              onSave={handleSaveDocContent}
+              isAdmin={currentUserRole === "ADMIN"}
+              saving={savingDoc}
+              hasChanges={content !== savedContent}
+            />
+          </div>
+        )}
 
         {/* FAQ section */}
         <h4 style={{ margin: "0 0 12px" }}>FAQ Manual</h4>

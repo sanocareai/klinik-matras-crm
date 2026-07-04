@@ -1059,6 +1059,17 @@ input:focus, select:focus, textarea:focus {
 /* Search highlight */
 .highlight { background: #fef08a; border-radius: 2px; padding: 1px 0; }
 
+/* ─── CODEMIRROR — KB Document Editor ───────────────────── */
+.cm-editor { font-family: 'Courier New', Courier, monospace !important; font-size: 13px !important; }
+.cm-editor.cm-focused { outline: none !important; }
+.cm-searchMatch { background: rgba(251, 146, 60, 0.35) !important; border-radius: 2px; }
+.cm-searchMatch.cm-searchMatch-selected { background: rgba(251, 146, 60, 0.75) !important; outline: 2px solid #f97316; }
+.cm-search { background: #2d2d3f !important; border-top: 1px solid #3f3f5a; padding: 6px 10px; gap: 6px; }
+.cm-search input[type="text"] { background: #1e1e2e !important; color: #cdd6f4 !important; border: 1px solid #4f4f7a !important; border-radius: 4px; padding: 2px 6px; }
+.cm-search button { color: #cdd6f4 !important; border: 1px solid #4f4f7a !important; border-radius: 4px; background: none !important; padding: 2px 6px; cursor: pointer; }
+.cm-search button:hover { background: rgba(255,255,255,0.1) !important; }
+.cm-search label { color: #a0a0c0 !important; font-size: 12px; }
+
 /* ─── INTENT DISTRIBUTION ────────────────────────────────── */
 .intent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .intent-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
