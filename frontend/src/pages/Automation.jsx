@@ -580,11 +580,23 @@ function KnowledgeBaseTab() {
   const [currentUserRole, setCurrentUserRole] = useState(null);
   const [qEntrySearch, setQEntrySearch]    = useState("");
 
+  // In-document search (Ctrl+F style)
+  const [docSearch, setDocSearch]   = useState("");
+  const [docMatchIdx, setDocMatchIdx] = useState(0);
+  const docSearchRef = useRef(null);
+
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
     api.getKbCategories().then(setCategories).catch(() => {});
     api.getMe().then((u) => setCurrentUserRole(u.role)).catch(() => {});
   }, []);
+
+  // Scroll ke match aktif setiap kali index atau query berubah
+  useEffect(() => {
+    if (!docSearch.trim()) return;
+    const el = document.getElementById(`doc-match-${docMatchIdx}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [docMatchIdx, docSearch]);
 
   async function handleSelectQCat(cat) {
     const next = cat === selectedQCat ? null : cat;
@@ -644,9 +656,47 @@ function KnowledgeBaseTab() {
     }
   }
 
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function renderWithHighlights(text, query, activeIdx) {
+    if (!query.trim()) return <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>{text}</span>;
+    const re = new RegExp(`(${escapeRegex(query)})`, "gi");
+    const parts = text.split(re);
+    let matchCounter = -1;
+    return (
+      <span style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 13 }}>
+        {parts.map((part, i) => {
+          if (part.toLowerCase() === query.toLowerCase()) {
+            matchCounter++;
+            const idx = matchCounter;
+            return (
+              <mark
+                key={i}
+                id={`doc-match-${idx}`}
+                style={{
+                  background: idx === activeIdx ? "#fb923c" : "#fde68a",
+                  color: "#111",
+                  borderRadius: 2,
+                  outline: idx === activeIdx ? "2px solid #f97316" : "none",
+                }}
+              >
+                {part}
+              </mark>
+            );
+          }
+          return part;
+        })}
+      </span>
+    );
+  }
+
   async function handleSelectDoc(doc) {
     setSelected(doc);
     setContent("");
+    setDocSearch("");
+    setDocMatchIdx(0);
     try {
       const res = await api.getKbDocumentContent(doc.id);
       setContent(res.text);
@@ -944,15 +994,78 @@ function KnowledgeBaseTab() {
           </div>
         )}
 
-        {/* Doc preview */}
-        {selected && (
-          <div style={{ marginBottom: 24 }}>
-            <h4 style={{ margin: "0 0 8px" }}>{selected.name}</h4>
-            <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 320, overflowY: "auto" }}>
-              {content || <span style={{ color: "var(--text-muted)" }}>Memuat...</span>}
+        {/* Doc preview dengan in-document search */}
+        {selected && (() => {
+          const docMatchCount = docSearch.trim() && content
+            ? (content.match(new RegExp(escapeRegex(docSearch), "gi")) || []).length
+            : 0;
+          const noMatch = docSearch.trim() && docMatchCount === 0;
+          return (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <h4 style={{ margin: 0, flex: 1, fontSize: 14 }}>{selected.name}</h4>
+              </div>
+              {/* Search bar */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+                marginBottom: 6, padding: "5px 10px",
+                background: noMatch ? "#fef2f2" : "#f8fafc",
+                border: `1px solid ${noMatch ? "#fca5a5" : "var(--border)"}`,
+                borderRadius: 8,
+              }}>
+                <Search size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                <input
+                  ref={docSearchRef}
+                  type="text"
+                  placeholder="Cari dalam dokumen... (Enter: berikutnya, Shift+Enter: sebelumnya)"
+                  value={docSearch}
+                  onChange={(e) => { setDocSearch(e.target.value); setDocMatchIdx(0); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && docMatchCount > 0) {
+                      if (e.shiftKey) {
+                        setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount);
+                      } else {
+                        setDocMatchIdx((i) => (i + 1) % docMatchCount);
+                      }
+                    }
+                    if (e.key === "Escape") { setDocSearch(""); setDocMatchIdx(0); }
+                  }}
+                  style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, outline: "none" }}
+                />
+                {docSearch.trim() && (
+                  <>
+                    <span style={{ fontSize: 12, color: noMatch ? "#ef4444" : "var(--text-muted)", whiteSpace: "nowrap", minWidth: 60, textAlign: "right" }}>
+                      {noMatch ? "Tidak ditemukan" : `${docMatchIdx + 1} / ${docMatchCount}`}
+                    </span>
+                    <button
+                      onClick={() => setDocMatchIdx((i) => (i - 1 + docMatchCount) % docMatchCount)}
+                      disabled={docMatchCount === 0}
+                      title="Sebelumnya (Shift+Enter)"
+                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}
+                    >↑</button>
+                    <button
+                      onClick={() => setDocMatchIdx((i) => (i + 1) % docMatchCount)}
+                      disabled={docMatchCount === 0}
+                      title="Berikutnya (Enter)"
+                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 12, lineHeight: 1.6, opacity: docMatchCount === 0 ? 0.4 : 1 }}
+                    >↓</button>
+                    <button onClick={() => { setDocSearch(""); setDocMatchIdx(0); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}>
+                      <X size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
+              {/* Content */}
+              <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
+                {content
+                  ? renderWithHighlights(content, docSearch, docMatchIdx)
+                  : <span style={{ color: "var(--text-muted)" }}>Memuat...</span>
+                }
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* FAQ section */}
         <h4 style={{ margin: "0 0 12px" }}>FAQ Manual</h4>
