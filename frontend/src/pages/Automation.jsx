@@ -578,6 +578,7 @@ function KnowledgeBaseTab() {
   const [editingEntry, setEditingEntry]     = useState(null); // { index, title, content }
   const [savingEntry, setSavingEntry]       = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [qEntrySearch, setQEntrySearch]    = useState("");
 
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
@@ -590,6 +591,7 @@ function KnowledgeBaseTab() {
     setSelectedQCat(next);
     setExpandedEntry(null);
     setEditingEntry(null);
+    setQEntrySearch("");
     if (!next) return;
     setLoadingQEntries(true);
     try { setQEntries(await api.getKbCategoryEntries(cat)); } catch {}
@@ -788,7 +790,38 @@ function KnowledgeBaseTab() {
                 Belum ada entri. Minta Sano Co-pilot "tambahin info: ..." untuk mulai mengisi kategori ini.
               </p>
             )}
-            {qEntries.map((entry, i) => {
+            {!loadingQEntries && qEntries.length > 0 && (
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <Search size={13} style={{
+                  position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)",
+                  color: "var(--text-muted)", pointerEvents: "none",
+                }} />
+                <input
+                  type="text"
+                  placeholder="Cari entri di kategori ini..."
+                  value={qEntrySearch}
+                  onChange={(e) => { setQEntrySearch(e.target.value); setExpandedEntry(null); setEditingEntry(null); }}
+                  style={{
+                    width: "100%", padding: "6px 10px 6px 28px", fontSize: 12,
+                    border: "1px solid var(--border)", borderRadius: 7,
+                    boxSizing: "border-box", outline: "none",
+                  }}
+                />
+                {qEntrySearch && (
+                  <button
+                    onClick={() => { setQEntrySearch(""); setExpandedEntry(null); }}
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+            {qEntries.filter((e) => {
+              if (!qEntrySearch.trim()) return true;
+              const q = qEntrySearch.toLowerCase();
+              return e.title.toLowerCase().includes(q) || e.content.toLowerCase().includes(q);
+            }).map((entry, i) => {
               const isEditing = editingEntry?.index === entry.index;
               return (
                 <div
