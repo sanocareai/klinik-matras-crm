@@ -660,7 +660,6 @@ function KnowledgeBaseTab() {
   const [docMatchIdx, setDocMatchIdx] = useState(0);
   const docSearchRef = useRef(null);
   const docEditTextareaRef = useRef(null);
-  const docMirrorRef = useRef(null);
 
   // Edit mode untuk dokumen yang dipilih
   const [editingDoc, setEditingDoc]   = useState(false);
@@ -682,37 +681,34 @@ function KnowledgeBaseTab() {
     });
   }, [docMatchIdx, docSearch, editingDoc]);
 
-  // Render HTML dengan highlights untuk mirror div (teknik overlay)
-  // Semua karakter HTML di-escape, kata yang cocok dibungkus <mark>
-  function renderMirrorHtml(text, query, activeIdx) {
-    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    if (!query.trim()) return esc(text);
-    const re = new RegExp(`(${escapeRegex(query)})`, 'gi');
-    const parts = text.split(re);
-    let counter = -1;
-    return parts.map((part) => {
-      if (part.toLowerCase() === query.toLowerCase()) {
-        counter++;
-        const active = counter === activeIdx;
-        return `<mark id="edit-match-${counter}" style="background:${active ? '#fb923c' : '#fde68a'};color:#111;border-radius:2px${active ? ';outline:2px solid #f97316;outline-offset:1px' : ''}">${esc(part)}</mark>`;
-      }
-      return esc(part);
-    }).join('');
-  }
-
-  // Navigasi ke match di edit mode — scroll mirror + textarea ke posisi mark
+  // Edit mode: navigasi ke match di textarea
+  // Pakai clone textarea untuk scroll position yang akurat (memperhitungkan word-wrap)
   function gotoDocMatchInEditor(targetIdx) {
-    // Tunggu React re-render dulu (agar mark dengan id baru sudah ada di DOM)
-    setTimeout(() => {
-      const mirror = docMirrorRef.current;
-      const ta = docEditTextareaRef.current;
-      if (!mirror || !ta) return;
-      const el = document.getElementById(`edit-match-${targetIdx}`);
-      if (!el) return;
-      const newScrollTop = Math.max(0, el.offsetTop - mirror.clientHeight / 2 + el.offsetHeight / 2);
-      mirror.scrollTop = newScrollTop;
-      ta.scrollTop = newScrollTop;
-    }, 0);
+    const ta = docEditTextareaRef.current;
+    if (!ta || !docSearch.trim() || !editContent) return;
+    const lower = editContent.toLowerCase();
+    const q = docSearch.toLowerCase();
+    const positions = [];
+    let i = 0;
+    while ((i = lower.indexOf(q, i)) !== -1) { positions.push(i); i += q.length; }
+    if (!positions.length) return;
+    const clamp = ((targetIdx % positions.length) + positions.length) % positions.length;
+    const start = positions[clamp];
+    const end = start + docSearch.length;
+    // Scroll akurat: kloning textarea, isi sampai posisi match, ukur scrollHeight
+    const clone = ta.cloneNode();
+    clone.style.visibility = "hidden";
+    clone.style.position = "absolute";
+    clone.style.height = "auto";
+    clone.style.overflow = "hidden";
+    clone.value = editContent.slice(0, start);
+    document.body.appendChild(clone);
+    const scrollTo = Math.max(0, clone.scrollHeight - ta.clientHeight / 2);
+    document.body.removeChild(clone);
+    ta.scrollTop = scrollTo;
+    // Pilih kata yang dicari (browser selection biru = highlight match aktif)
+    ta.focus();
+    ta.setSelectionRange(start, end);
   }
 
   async function handleSelectQCat(cat) {
@@ -1215,49 +1211,24 @@ function KnowledgeBaseTab() {
                 )}
               </div>
 
-              {/* Edit mode: overlay (mirror div + transparent textarea) */}
+              {/* Edit mode: textarea biasa — navigate via setSelectionRange (browser selection = highlight match) */}
               {editingDoc ? (
-                <div style={{ position: "relative", height: 480, border: "1px solid var(--primary)", borderRadius: 10, overflow: "hidden" }}>
-                  {/* Mirror: render HTML dengan highlight mark */}
-                  <div
-                    ref={docMirrorRef}
-                    aria-hidden="true"
-                    style={{
-                      position: "absolute", inset: 0,
-                      padding: "14px 16px",
-                      fontFamily: "'Courier New', Courier, monospace",
-                      fontSize: 13, lineHeight: 1.7,
-                      whiteSpace: "pre-wrap", wordBreak: "break-word",
-                      background: "#1e1e2e", color: "#cdd6f4",
-                      overflowY: "auto", overflowX: "hidden",
-                      scrollbarWidth: "none",
-                      pointerEvents: "none",
-                      boxSizing: "border-box",
-                    }}
-                    dangerouslySetInnerHTML={{ __html: renderMirrorHtml(editContent, docSearch, docMatchIdx) }}
-                  />
-                  {/* Textarea: transparan di atas mirror — hanya untuk input */}
-                  <textarea
-                    ref={docEditTextareaRef}
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    onScroll={(e) => { if (docMirrorRef.current) docMirrorRef.current.scrollTop = e.target.scrollTop; }}
-                    spellCheck={false}
-                    style={{
-                      position: "absolute", inset: 0,
-                      width: "100%", height: "100%",
-                      padding: "14px 16px",
-                      fontFamily: "'Courier New', Courier, monospace",
-                      fontSize: 13, lineHeight: 1.7,
-                      background: "transparent",
-                      color: docSearch.trim() ? "transparent" : "#cdd6f4",
-                      caretColor: "#cba6f7",
-                      border: "none", outline: "none",
-                      resize: "none", boxSizing: "border-box",
-                      overflowY: "auto", overflowX: "hidden",
-                    }}
-                  />
-                </div>
+                <textarea
+                  ref={docEditTextareaRef}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  spellCheck={false}
+                  style={{
+                    width: "100%", minHeight: 480, boxSizing: "border-box",
+                    padding: "14px 16px", fontSize: 13, lineHeight: 1.7,
+                    fontFamily: "'Courier New', Courier, monospace",
+                    border: "1px solid var(--primary)", borderRadius: 10,
+                    outline: "none", resize: "vertical",
+                    background: "#1e1e2e", color: "#cdd6f4",
+                    caretColor: "#cba6f7",
+                    display: "block",
+                  }}
+                />
               ) : (
                 /* View mode: highlighted content */
                 <div className="kb-preview" style={{ background: "white", border: "1px solid var(--border)", borderRadius: 10, maxHeight: 420, overflowY: "auto", padding: "14px 16px" }}>
