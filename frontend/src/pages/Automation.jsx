@@ -695,11 +695,6 @@ function AiPlaygroundTab() {
                 )}
               </div>
 
-              {activeModel?.provider !== "anthropic" && (
-                <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px", lineHeight: 1.4 }}>
-                  ℹ️ Fitur simpan ke Knowledge Base hanya tersedia dengan model Claude.
-                </div>
-              )}
               <form onSubmit={handleChat} style={{ display: "flex", gap: 8, flex: 1 }}>
                 <textarea
                   rows={1}

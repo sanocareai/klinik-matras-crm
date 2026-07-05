@@ -5,10 +5,10 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
-import { appendToKbCategory, parseEntries, updateEntry, deleteEntry } from "../services/kbQuickAdd.js";
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 import { AI_MODELS } from "../config/aiModels.js";
-import { chatWithModel, logChatUsage, anthropicProvider } from "../services/providers/index.js";
+import { chatWithModel, logChatUsage } from "../services/providers/index.js";
+import { KNOWLEDGE_TOOLS } from "../services/knowledgeTools.js";
 import * as openaiProvider  from "../services/providers/openaiProvider.js";
 import * as geminiProvider  from "../services/providers/geminiProvider.js";
 
@@ -233,88 +233,19 @@ aiRouter.post("/chat", async (req, res) => {
   }
 });
 
-// Definisi tool save_knowledge untuk Claude — hanya dikirim kalau user adalah ADMIN
-const SAVE_KNOWLEDGE_TOOL = {
-  name: "save_knowledge",
-  description: "Simpan informasi baru ke Knowledge Base Klinik Matras. HANYA dipanggil kalau admin eksplisit minta tambah/simpan/catat info baru. Kategori yang tersedia: konsep-istilah-teknis (istilah teknis spesifik Sano), dunia-kasur-umum (industri kasur luas/merk lain/tren), faq-tambahan (FAQ customer), insight-lapangan (pola/insight umum dari sales — BUKAN data satu customer spesifik; kalau satu customer → sarankan catat di profil customer CRM).",
-  input_schema: {
-    type: "object",
-    properties: {
-      category: {
-        type: "string",
-        enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"],
-        description: "Kategori Knowledge Base yang paling sesuai",
-      },
-      title: {
-        type: "string",
-        description: "Judul singkat dan jelas untuk entri ini",
-      },
-      content: {
-        type: "string",
-        description: "Isi informasi lengkap, terstruktur, dirangkum dari yang disampaikan admin",
-      },
-    },
-    required: ["category", "title", "content"],
-  },
-};
-
-const FIND_KNOWLEDGE_TOOL = {
-  name: "find_knowledge_entry",
-  description: "Cari entri Knowledge Base berdasarkan topik/judul. Panggil SEBELUM edit atau hapus. Gunakan category 'all' kalau tidak yakin di kategori mana.",
-  input_schema: {
-    type: "object",
-    properties: {
-      query: { type: "string", description: "Kata kunci untuk mencari judul/isi entri" },
-      category: {
-        type: "string",
-        enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan", "all"],
-        description: "Kategori untuk dicari. Gunakan 'all' kalau tidak yakin.",
-      },
-    },
-    required: ["query"],
-  },
-};
-
-const EDIT_KNOWLEDGE_TOOL = {
-  name: "edit_knowledge_entry",
-  description: "Update entri Knowledge Base yang SUDAH ditemukan lewat find_knowledge_entry. HANYA panggil setelah admin konfirmasi entri yang benar dan isi baru.",
-  input_schema: {
-    type: "object",
-    properties: {
-      category: { type: "string", enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"] },
-      entryIndex: { type: "number", description: "Index entri dari hasil find_knowledge_entry" },
-      newTitle: { type: "string", description: "Judul baru (opsional, kosongi kalau tidak berubah)" },
-      newContent: { type: "string", description: "Isi baru yang lengkap" },
-    },
-    required: ["category", "entryIndex", "newContent"],
-  },
-};
-
-const DELETE_KNOWLEDGE_TOOL = {
-  name: "delete_knowledge_entry",
-  description: "Hapus entri Knowledge Base. WAJIB hanya setelah admin eksplisit konfirmasi 'ya, hapus' setelah melihat entri yang ditemukan. JANGAN panggil tanpa konfirmasi eksplisit.",
-  input_schema: {
-    type: "object",
-    properties: {
-      category: { type: "string", enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"] },
-      entryIndex: { type: "number", description: "Index entri dari hasil find_knowledge_entry" },
-    },
-    required: ["category", "entryIndex"],
-  },
-};
-
 // POST /api/ai/copilot-chat — AI Co-pilot internal untuk sales
-// Body: { message, conversationHistory: [{role, content}] }
-// Reuse model Anthropic pertama yang aktif & punya API key (konfigurasi dari AI Playground)
+// Body: { message, conversationHistory: [{role, content}], modelId? }
+// modelId opsional — kalau tidak dikirim, pakai model aktif manapun yang ada API key
 aiRouter.post("/copilot-chat", async (req, res) => {
-  const { message, conversationHistory = [] } = req.body;
+  const { message, conversationHistory = [], modelId } = req.body;
   if (!message?.trim()) return res.status(400).json({ error: "Pesan tidak boleh kosong" });
 
   const models = readModels();
-  const m = models.find((x) => x.active && x.provider === "anthropic" && x.encryptedKey);
+  const m = (modelId && models.find((x) => x.id === modelId && x.encryptedKey))
+         || models.find((x) => x.active && x.encryptedKey);
   if (!m) {
     return res.status(400).json({
-      error: "Belum ada model AI yang dikonfigurasi. Silakan tambah model di menu Otomasi → AI Playground → Kelola Model, lalu masukkan API key Anthropic.",
+      error: "Belum ada model AI yang dikonfigurasi. Silakan tambah model di menu Otomasi → AI Playground → Kelola Model.",
     });
   }
 
@@ -328,7 +259,6 @@ aiRouter.post("/copilot-chat", async (req, res) => {
     return res.status(500).json({ error: "Gagal membangun prompt: " + err.message });
   }
 
-  // Tambahkan seluruh KB ke Co-pilot juga (sama seperti AI Playground)
   const kbContext = await buildKbContext();
   if (kbContext) systemPrompt = `${kbContext}\n\n---\n\n${systemPrompt}`;
 
@@ -337,82 +267,20 @@ aiRouter.post("/copilot-chat", async (req, res) => {
     { role: "user", content: message },
   ];
 
-  const copilotTools = req.user?.role === "ADMIN"
-    ? [SAVE_KNOWLEDGE_TOOL, FIND_KNOWLEDGE_TOOL, EDIT_KNOWLEDGE_TOOL, DELETE_KNOWLEDGE_TOOL]
-    : [];
+  // KB tools hanya untuk ADMIN — berlaku di provider apapun
+  const tools = req.user?.role === "ADMIN" ? KNOWLEDGE_TOOLS : [];
 
   try {
-    // Co-pilot selalu Anthropic (butuh tool use untuk KB management)
-    const result = await anthropicProvider.chatWithTools({
+    const { reply, toolMeta } = await chatWithModel({
+      provider:     m.provider,
       apiKey,
-      model:        AI_MODELS.SANO_COPILOT,
+      model:        m.model || AI_MODELS.SANO_COPILOT,
       systemPrompt,
       messages,
-      tools:        copilotTools,
+      tools,
+      user:         req.user,
     });
-    logChatUsage("/copilot-chat", "anthropic", AI_MODELS.SANO_COPILOT, result.usage);
-
-    // Handle tool use (save/find/edit/delete KB entries)
-    if (result.toolBlock) {
-      const toolBlock = result.toolBlock;
-      let toolResultContent;
-      let toolMeta = null;
-      try {
-        if (toolBlock.name === "save_knowledge") {
-          const savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
-          toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
-          toolMeta = { action: "saved", category: savedEntry.category, label: savedEntry.label, title: savedEntry.title };
-        } else if (toolBlock.name === "find_knowledge_entry") {
-          const cats = !toolBlock.input.category || toolBlock.input.category === "all"
-            ? ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"]
-            : [toolBlock.input.category];
-          const results = [];
-          for (const cat of cats) {
-            const q = toolBlock.input.query.toLowerCase();
-            for (const e of parseEntries(cat)) {
-              const score = (e.title.toLowerCase().includes(q) ? 2 : 0) +
-                            (e.content.toLowerCase().includes(q) ? 1 : 0);
-              if (score > 0) results.push({ ...e, category: cat, score });
-            }
-          }
-          results.sort((a, b) => b.score - a.score);
-          toolResultContent = JSON.stringify({ ok: true, results: results.slice(0, 5) });
-        } else if (toolBlock.name === "edit_knowledge_entry") {
-          const { category, entryIndex, newTitle, newContent } = toolBlock.input;
-          const existing = parseEntries(category).find((e) => e.index === entryIndex);
-          updateEntry(category, entryIndex, { title: newTitle || existing?.title || "Entri", content: newContent });
-          toolResultContent = JSON.stringify({ ok: true, action: "updated", category, entryIndex });
-          toolMeta = { action: "updated", category };
-        } else if (toolBlock.name === "delete_knowledge_entry") {
-          const { category, entryIndex } = toolBlock.input;
-          deleteEntry(category, entryIndex);
-          toolResultContent = JSON.stringify({ ok: true, action: "deleted", category, entryIndex });
-          toolMeta = { action: "deleted", category };
-        } else {
-          toolResultContent = JSON.stringify({ ok: false, error: "Tool tidak dikenal" });
-        }
-      } catch (err) {
-        toolResultContent = JSON.stringify({ ok: false, error: err.message });
-      }
-
-      // Lanjutkan percakapan dengan mengirim tool_result balik ke Claude
-      const messages2 = [
-        ...messages,
-        { role: "assistant", content: result.rawContent },
-        { role: "user", content: [{ type: "tool_result", tool_use_id: toolBlock.id, content: toolResultContent }] },
-      ];
-      const result2 = await anthropicProvider.chatWithTools({
-        apiKey,
-        model:  AI_MODELS.SANO_COPILOT,
-        systemPrompt,
-        messages: messages2,
-        tools:  copilotTools,
-      });
-      logChatUsage("/copilot-chat[tool-result]", "anthropic", AI_MODELS.SANO_COPILOT, result2.usage);
-      return res.json({ reply: result2.reply, toolMeta });
-    }
-
-    res.json({ reply: result.reply });
+    res.json({ reply, toolMeta: toolMeta || null });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });
   }

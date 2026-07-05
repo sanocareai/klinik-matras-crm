@@ -49,8 +49,7 @@ export async function chat({ apiKey, model, systemPrompt, messages, maxTokens = 
 
 /**
  * Panggil Anthropic dengan tool use — untuk co-pilot KB admin tools
- * Kembalikan raw response agar caller bisa handle multi-turn tool loop
- * @returns { reply?, toolBlock?, rawContent, stopReason, usage }
+ * @returns { reply, toolCalls: [{id, name, input}], assistantTurn, usage }
  */
 export async function chatWithTools({ apiKey, model, systemPrompt, messages, tools, maxTokens = 1024 }) {
   const reqBody = { model, max_tokens: maxTokens, messages };
@@ -66,15 +65,15 @@ export async function chatWithTools({ apiKey, model, systemPrompt, messages, too
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || "Anthropic API error");
 
-  const toolBlock = data.stop_reason === "tool_use"
-    ? data.content?.find((c) => c.type === "tool_use")
-    : null;
-
   return {
-    reply:      data.content?.find((c) => c.type === "text")?.text || "",
-    toolBlock,
-    rawContent: data.content,
-    stopReason: data.stop_reason,
-    usage:      normalizeUsage(data.usage),
+    reply:         data.content?.find((c) => c.type === "text")?.text || "",
+    toolCalls:     data.content?.filter((c) => c.type === "tool_use").map((c) => ({ id: c.id, name: c.name, input: c.input })) ?? [],
+    assistantTurn: { role: "assistant", content: data.content },
+    usage:         normalizeUsage(data.usage),
   };
+}
+
+// Tambah tool result ke messages array — format Anthropic
+export function appendToolResult(messages, call, resultStr) {
+  return [...messages, { role: "user", content: [{ type: "tool_result", tool_use_id: call.id, content: resultStr }] }];
 }

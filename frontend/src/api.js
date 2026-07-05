@@ -197,8 +197,8 @@ export const api = {
     request("/ai/settings", { method: "PUT", body: JSON.stringify(data) }),
   aiChat: (modelId, messages, { systemPrompt, useKb } = {}) =>
     request("/ai/chat", { method: "POST", body: JSON.stringify({ modelId, messages, systemPrompt, useKb }) }),
-  coPilotChat: (message, conversationHistory = []) =>
-    request("/ai/copilot-chat", { method: "POST", body: JSON.stringify({ message, conversationHistory }) }),
+  coPilotChat: (message, conversationHistory = [], modelId) =>
+    request("/ai/copilot-chat", { method: "POST", body: JSON.stringify({ message, conversationHistory, ...(modelId && { modelId }) }) }),
   // Fase C — simulasi deteksi handover (SANDBOX ONLY, belum tersambung ke WAHA)
   checkHandover: (messages) =>
     request("/ai/handover-check", { method: "POST", body: JSON.stringify({ messages }) }),

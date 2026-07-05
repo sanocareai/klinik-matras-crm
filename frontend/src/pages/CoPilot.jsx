@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api.js";
-import { Plus, MessageSquare, Copy, Check, Menu, X, Trash2 } from "lucide-react";
+import { Plus, MessageSquare, Copy, Check, Menu, X, Trash2, ChevronDown } from "lucide-react";
 
 // ─── Thread management via localStorage ──────────────────────────────────────
 
@@ -119,20 +119,68 @@ function TypingDots() {
   );
 }
 
+// ─── Model selector helpers ────────────────────────────────────────────────
+
+const MODEL_SHORT_NAMES = {
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
+  "gpt-5.5": "GPT-5.5",
+  "gpt-5.4-mini": "GPT-5.4 Mini",
+  "gemini-2.5-flash": "Gemini Flash",
+  "gemini-2.5-pro": "Gemini Pro",
+};
+
+function formatModelName(modelId) {
+  return MODEL_SHORT_NAMES[modelId] || modelId || "—";
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function CoPilot() {
-  const [threads, setThreads]         = useState(() => loadThreads());
-  const [activeId, setActiveId]       = useState(null);
-  const [messages, setMessages]       = useState([]);
-  const [input, setInput]             = useState("");
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [threads, setThreads]               = useState(() => loadThreads());
+  const [activeId, setActiveId]             = useState(null);
+  const [messages, setMessages]             = useState([]);
+  const [input, setInput]                   = useState("");
+  const [loading, setLoading]               = useState(false);
+  const [error, setError]                   = useState("");
+  const [sidebarOpen, setSidebarOpen]       = useState(false);
+  const [models, setModels]                 = useState([]);
+  const [selectedModelId, setSelectedModelId] = useState(() => localStorage.getItem("copilot_selected_model_id") || null);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+
+  const modelDropdownRef = useRef(null);
 
   const messagesRef = useRef(null);
   const inputRef    = useRef(null);
   const isAtBottom  = useRef(true);
+
+  // Muat daftar model AI yang dikonfigurasi
+  useEffect(() => {
+    api.getAiModels().then((data) => {
+      const list = (data || []).filter((m) => m.encryptedKey || m.active);
+      setModels(list);
+      // Restore pilihan model dari localStorage atau pilih default
+      const saved = localStorage.getItem("copilot_selected_model_id");
+      if (saved && list.find((m) => m.id === saved)) {
+        setSelectedModelId(saved);
+      } else if (list.length > 0) {
+        const def = list.find((m) => m.active) || list[0];
+        setSelectedModelId(def.id);
+        localStorage.setItem("copilot_selected_model_id", def.id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Tutup dropdown model kalau klik di luar
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setShowModelDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   // Deteksi posisi scroll untuk smart auto-scroll
   function handleScroll() {
@@ -242,7 +290,7 @@ export default function CoPilot() {
     isAtBottom.current = true; // paksa scroll ke bawah saat kirim
 
     try {
-      const { reply, toolMeta } = await api.coPilotChat(msg, messages);
+      const { reply, toolMeta } = await api.coPilotChat(msg, messages, selectedModelId);
       const finalMsgs = [...newMsgs, { role: "assistant", content: reply, toolMeta: toolMeta || null }];
       setMessages(finalMsgs);
       persistMessages(currentId, finalMsgs);
@@ -375,7 +423,7 @@ export default function CoPilot() {
                   Tanya apa saja soal produk, harga, spek kasur, atau minta bantu draft pesan untuk customer.
                 </p>
                 <p style={{ margin: "0 0 4px", fontSize: 12 }}>Khusus tim internal — percakapan ini tidak dilihat customer.</p>
-                <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Fitur tambah/edit Knowledge Base hanya tersedia dengan model Claude (Anthropic).</p>
+                <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Fitur tambah/edit Knowledge Base tersedia untuk admin di semua provider.</p>
               </div>
             )}
 
@@ -420,6 +468,54 @@ export default function CoPilot() {
 
           {/* Input area */}
           <div className="copilot-input-area">
+            {/* Model selector pill */}
+            {models.length > 0 && (
+              <div className="model-selector-bar" ref={modelDropdownRef} style={{ marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className="model-selector-pill"
+                  onClick={() => setShowModelDropdown((v) => !v)}
+                >
+                  {(() => {
+                    const m = models.find((x) => x.id === selectedModelId) || models[0];
+                    if (!m) return <span>Pilih model</span>;
+                    return (
+                      <>
+                        <span className={`provider-badge provider-${m.provider}`} style={{ fontSize: 9, padding: "0 4px" }}>
+                          {m.provider === "anthropic" ? "Claude" : m.provider === "openai" ? "GPT" : m.provider === "gemini" ? "Gemini" : m.provider}
+                        </span>
+                        <span className="model-selector-name">{m.name}</span>
+                        <span className="model-selector-sub">{formatModelName(m.model)}</span>
+                        <ChevronDown size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                      </>
+                    );
+                  })()}
+                </button>
+                {showModelDropdown && (
+                  <div className="model-picker-dropdown">
+                    {models.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`model-picker-item ${selectedModelId === m.id ? "active" : ""}`}
+                        onClick={() => {
+                          setSelectedModelId(m.id);
+                          localStorage.setItem("copilot_selected_model_id", m.id);
+                          setShowModelDropdown(false);
+                        }}
+                      >
+                        <span className={`provider-badge provider-${m.provider}`} style={{ fontSize: 9, padding: "0 4px" }}>
+                          {m.provider === "anthropic" ? "Claude" : m.provider === "openai" ? "GPT" : m.provider === "gemini" ? "Gemini" : m.provider}
+                        </span>
+                        <span style={{ flex: 1, fontSize: 13 }}>{m.name}</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatModelName(m.model)}</span>
+                        {selectedModelId === m.id && <Check size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
               <textarea
                 ref={inputRef}

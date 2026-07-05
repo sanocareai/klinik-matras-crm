@@ -1,6 +1,7 @@
 import * as anthropicProvider from "./anthropicProvider.js";
 import * as openaiProvider    from "./openaiProvider.js";
 import * as geminiProvider    from "./geminiProvider.js";
+import { executeKnowledgeTool, toAnthropicTools, toOpenAITools } from "../knowledgeTools.js";
 
 // Tarif per 1 juta token (USD) — verifikasi harga terbaru di pricing page masing-masing
 const PRICING = {
@@ -44,19 +45,47 @@ export function logChatUsage(endpoint, provider, model, usage) {
 /**
  * Router utama — pilih provider berdasarkan field "provider" dari config model
  * Mendukung: "anthropic" | "openai" | "gemini"
+ *
+ * Kalau tools diberikan → jalankan tool loop (max 5 putaran)
+ * Kalau tidak ada tools → langsung call chat() tanpa overhead
+ *
+ * @param user — { role, name } dari req.user; dipakai executeKnowledgeTool untuk ADMIN check
  */
-export async function chatWithModel({ provider, apiKey, model, systemPrompt, messages, maxTokens }) {
-  if (provider === "anthropic") {
-    return anthropicProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
+export async function chatWithModel({ provider, apiKey, model, systemPrompt, messages, tools, user, maxTokens }) {
+  // Fast path: tidak ada tools
+  if (!tools?.length) {
+    if (provider === "anthropic") return anthropicProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
+    if (provider === "openai")    return openaiProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
+    if (provider === "gemini")    return geminiProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
+    throw new Error(`Provider tidak dikenal: ${provider}`);
   }
-  if (provider === "openai") {
-    return openaiProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
-  }
-  if (provider === "gemini") {
-    return geminiProvider.chat({ apiKey, model, systemPrompt, messages, maxTokens });
-  }
-  throw new Error(`Provider tidak dikenal: ${provider}`);
-}
 
-// Re-export provider langsung untuk copilot (perlu chatWithTools Anthropic)
-export { anthropicProvider, geminiProvider };
+  // Tool loop (max 5 putaran — cegah infinite loop)
+  const adapter       = provider === "anthropic" ? anthropicProvider : (provider === "gemini" ? geminiProvider : openaiProvider);
+  const providerTools = provider === "anthropic" ? toAnthropicTools(tools) : toOpenAITools(tools);
+
+  let currentMessages = [...messages];
+  let lastToolMeta    = null;
+
+  for (let round = 0; round < 5; round++) {
+    const result = await adapter.chatWithTools({
+      apiKey, model, systemPrompt,
+      messages: currentMessages,
+      tools:    providerTools,
+      maxTokens,
+    });
+    logChatUsage(`/copilot-chat[r${round}]`, provider, model, result.usage);
+
+    if (!result.toolCalls?.length) {
+      return { reply: result.reply, usage: result.usage, toolMeta: lastToolMeta };
+    }
+
+    currentMessages = [...currentMessages, result.assistantTurn];
+    for (const call of result.toolCalls) {
+      const toolResult = await executeKnowledgeTool(call.name, call.input, user);
+      if (toolResult.meta) lastToolMeta = toolResult.meta;
+      currentMessages = adapter.appendToolResult(currentMessages, call, JSON.stringify(toolResult));
+    }
+  }
+  throw new Error("Terlalu banyak putaran tool-call — kemungkinan ada masalah logic");
+}
