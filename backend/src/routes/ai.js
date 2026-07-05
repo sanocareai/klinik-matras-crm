@@ -7,6 +7,34 @@ import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
 import { appendToKbCategory, parseEntries, updateEntry, deleteEntry } from "../services/kbQuickAdd.js";
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
+import { AI_MODELS } from "../config/aiModels.js";
+
+// Header wajib untuk Anthropic Prompt Caching
+const ANTHROPIC_HEADERS = {
+  "Content-Type": "application/json",
+  "anthropic-version": "2023-06-01",
+  "anthropic-beta": "prompt-caching-2024-07-31",
+};
+
+// Bungkus system prompt sebagai array dengan cache_control agar bagian statis
+// (KB + persona/instruksi) di-cache Anthropic selama 5 menit.
+// Format array wajib kalau pakai prompt caching — string biasa tidak support cache_control.
+function cachedSystem(text) {
+  if (!text?.trim()) return undefined;
+  return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+}
+
+// Log pemakaian cache ke console — untuk verifikasi cache_read muncul di pesan ke-2 dst.
+// Format: [Cache] endpoint | input=X create=Y read=Z out=W
+function logCacheUsage(endpoint, usage) {
+  if (!usage) return;
+  const create = usage.cache_creation_input_tokens || 0;
+  const read   = usage.cache_read_input_tokens    || 0;
+  const status = read > 0 ? "HIT ✓" : create > 0 ? "CREATE" : "NO-CACHE";
+  console.log(
+    `[Cache ${status}] ${endpoint} | in=${usage.input_tokens} create=${create} read=${read} out=${usage.output_tokens}`
+  );
+}
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -217,23 +245,22 @@ aiRouter.post("/chat", async (req, res) => {
   try {
     if (m.provider === "anthropic") {
       const reqBody = {
-        model: m.model || "claude-sonnet-4-6",
+        model: m.model || AI_MODELS.SANO_CHATBOT,
         max_tokens: 1024,
         messages,
       };
-      if (systemPrompt.trim()) reqBody.system = systemPrompt;
+      // Sistem prompt (KB + persona) dibungkus array agar bisa di-cache Anthropic
+      const sysPayload = cachedSystem(systemPrompt);
+      if (sysPayload) reqBody.system = sysPayload;
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
         body: JSON.stringify(reqBody),
       });
       const data = await response.json();
       if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
+      logCacheUsage("/chat", data.usage);
       res.json({ content: data.content[0]?.text || "" });
     } else {
       res.status(400).json({ error: `Provider "${m.provider}" belum didukung di versi ini` });
@@ -349,24 +376,22 @@ aiRouter.post("/copilot-chat", async (req, res) => {
 
   try {
     const reqBody = {
-      model: m.model || "claude-sonnet-4-6",
+      model: AI_MODELS.SANO_COPILOT,   // Haiku — cukup akurat + 3x lebih murah dari Sonnet
       max_tokens: 1024,
-      system: systemPrompt,
+      // KB + co-pilot prompt adalah bagian statis → cache untuk hemat biaya
+      system: cachedSystem(systemPrompt),
       messages,
     };
     if (req.user?.role === "ADMIN") reqBody.tools = [SAVE_KNOWLEDGE_TOOL, FIND_KNOWLEDGE_TOOL, EDIT_KNOWLEDGE_TOOL, DELETE_KNOWLEDGE_TOOL];
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
       body: JSON.stringify(reqBody),
     });
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
+    logCacheUsage("/copilot-chat", data.usage);
 
     // Handle tool use (save/find/edit/delete KB entries)
     if (data.stop_reason === "tool_use") {
@@ -420,11 +445,12 @@ aiRouter.post("/copilot-chat", async (req, res) => {
         ];
         const response2 = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
           body: JSON.stringify({ ...reqBody, messages: messages2 }),
         });
         const data2 = await response2.json();
         if (!response2.ok) return res.status(response2.status).json({ error: data2.error?.message || "Error dari Anthropic" });
+        logCacheUsage("/copilot-chat[tool-result]", data2.usage);
         return res.json({ reply: data2.content[0]?.text || "", toolMeta });
       }
     }
