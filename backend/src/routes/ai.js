@@ -8,33 +8,8 @@ import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
 import { appendToKbCategory, parseEntries, updateEntry, deleteEntry } from "../services/kbQuickAdd.js";
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 import { AI_MODELS } from "../config/aiModels.js";
-
-// Header wajib untuk Anthropic Prompt Caching
-const ANTHROPIC_HEADERS = {
-  "Content-Type": "application/json",
-  "anthropic-version": "2023-06-01",
-  "anthropic-beta": "prompt-caching-2024-07-31",
-};
-
-// Bungkus system prompt sebagai array dengan cache_control agar bagian statis
-// (KB + persona/instruksi) di-cache Anthropic selama 5 menit.
-// Format array wajib kalau pakai prompt caching — string biasa tidak support cache_control.
-function cachedSystem(text) {
-  if (!text?.trim()) return undefined;
-  return [{ type: "text", text, cache_control: { type: "ephemeral" } }];
-}
-
-// Log pemakaian cache ke console — untuk verifikasi cache_read muncul di pesan ke-2 dst.
-// Format: [Cache] endpoint | input=X create=Y read=Z out=W
-function logCacheUsage(endpoint, usage) {
-  if (!usage) return;
-  const create = usage.cache_creation_input_tokens || 0;
-  const read   = usage.cache_read_input_tokens    || 0;
-  const status = read > 0 ? "HIT ✓" : create > 0 ? "CREATE" : "NO-CACHE";
-  console.log(
-    `[Cache ${status}] ${endpoint} | in=${usage.input_tokens} create=${create} read=${read} out=${usage.output_tokens}`
-  );
-}
+import { chatWithModel, logChatUsage, anthropicProvider } from "../services/providers/index.js";
+import * as openaiProvider from "../services/providers/openaiProvider.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -243,28 +218,15 @@ aiRouter.post("/chat", async (req, res) => {
   }
 
   try {
-    if (m.provider === "anthropic") {
-      const reqBody = {
-        model: m.model || AI_MODELS.SANO_CHATBOT,
-        max_tokens: 1024,
-        messages,
-      };
-      // Sistem prompt (KB + persona) dibungkus array agar bisa di-cache Anthropic
-      const sysPayload = cachedSystem(systemPrompt);
-      if (sysPayload) reqBody.system = sysPayload;
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
-        body: JSON.stringify(reqBody),
-      });
-      const data = await response.json();
-      if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
-      logCacheUsage("/chat", data.usage);
-      res.json({ content: data.content[0]?.text || "" });
-    } else {
-      res.status(400).json({ error: `Provider "${m.provider}" belum didukung di versi ini` });
-    }
+    const { reply, usage } = await chatWithModel({
+      provider:     m.provider,
+      apiKey,
+      model:        m.model || AI_MODELS.SANO_CHATBOT,
+      systemPrompt,
+      messages,
+    });
+    logChatUsage("/chat", m.provider, m.model, usage);
+    res.json({ content: reply });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI provider: " + err.message });
   }
@@ -374,88 +336,82 @@ aiRouter.post("/copilot-chat", async (req, res) => {
     { role: "user", content: message },
   ];
 
-  try {
-    const reqBody = {
-      model: AI_MODELS.SANO_COPILOT,   // Haiku — cukup akurat + 3x lebih murah dari Sonnet
-      max_tokens: 1024,
-      // KB + co-pilot prompt adalah bagian statis → cache untuk hemat biaya
-      system: cachedSystem(systemPrompt),
-      messages,
-    };
-    if (req.user?.role === "ADMIN") reqBody.tools = [SAVE_KNOWLEDGE_TOOL, FIND_KNOWLEDGE_TOOL, EDIT_KNOWLEDGE_TOOL, DELETE_KNOWLEDGE_TOOL];
+  const copilotTools = req.user?.role === "ADMIN"
+    ? [SAVE_KNOWLEDGE_TOOL, FIND_KNOWLEDGE_TOOL, EDIT_KNOWLEDGE_TOOL, DELETE_KNOWLEDGE_TOOL]
+    : [];
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
-      body: JSON.stringify(reqBody),
+  try {
+    // Co-pilot selalu Anthropic (butuh tool use untuk KB management)
+    const result = await anthropicProvider.chatWithTools({
+      apiKey,
+      model:        AI_MODELS.SANO_COPILOT,
+      systemPrompt,
+      messages,
+      tools:        copilotTools,
     });
-    const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
-    logCacheUsage("/copilot-chat", data.usage);
+    logChatUsage("/copilot-chat", "anthropic", AI_MODELS.SANO_COPILOT, result.usage);
 
     // Handle tool use (save/find/edit/delete KB entries)
-    if (data.stop_reason === "tool_use") {
-      const toolBlock = data.content.find((c) => c.type === "tool_use");
-      if (toolBlock) {
-        let toolResultContent;
-        let toolMeta = null;
-        try {
-          if (toolBlock.name === "save_knowledge") {
-            const savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
-            toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
-            toolMeta = { action: "saved", category: savedEntry.category, label: savedEntry.label, title: savedEntry.title };
-          } else if (toolBlock.name === "find_knowledge_entry") {
-            const cats = !toolBlock.input.category || toolBlock.input.category === "all"
-              ? ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"]
-              : [toolBlock.input.category];
-            const results = [];
-            for (const cat of cats) {
-              const q = toolBlock.input.query.toLowerCase();
-              for (const e of parseEntries(cat)) {
-                const score = (e.title.toLowerCase().includes(q) ? 2 : 0) +
-                              (e.content.toLowerCase().includes(q) ? 1 : 0);
-                if (score > 0) results.push({ ...e, category: cat, score });
-              }
+    if (result.toolBlock) {
+      const toolBlock = result.toolBlock;
+      let toolResultContent;
+      let toolMeta = null;
+      try {
+        if (toolBlock.name === "save_knowledge") {
+          const savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
+          toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
+          toolMeta = { action: "saved", category: savedEntry.category, label: savedEntry.label, title: savedEntry.title };
+        } else if (toolBlock.name === "find_knowledge_entry") {
+          const cats = !toolBlock.input.category || toolBlock.input.category === "all"
+            ? ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"]
+            : [toolBlock.input.category];
+          const results = [];
+          for (const cat of cats) {
+            const q = toolBlock.input.query.toLowerCase();
+            for (const e of parseEntries(cat)) {
+              const score = (e.title.toLowerCase().includes(q) ? 2 : 0) +
+                            (e.content.toLowerCase().includes(q) ? 1 : 0);
+              if (score > 0) results.push({ ...e, category: cat, score });
             }
-            results.sort((a, b) => b.score - a.score);
-            toolResultContent = JSON.stringify({ ok: true, results: results.slice(0, 5) });
-          } else if (toolBlock.name === "edit_knowledge_entry") {
-            const { category, entryIndex, newTitle, newContent } = toolBlock.input;
-            const existing = parseEntries(category).find((e) => e.index === entryIndex);
-            updateEntry(category, entryIndex, { title: newTitle || existing?.title || "Entri", content: newContent });
-            toolResultContent = JSON.stringify({ ok: true, action: "updated", category, entryIndex });
-            toolMeta = { action: "updated", category };
-          } else if (toolBlock.name === "delete_knowledge_entry") {
-            const { category, entryIndex } = toolBlock.input;
-            deleteEntry(category, entryIndex);
-            toolResultContent = JSON.stringify({ ok: true, action: "deleted", category, entryIndex });
-            toolMeta = { action: "deleted", category };
-          } else {
-            toolResultContent = JSON.stringify({ ok: false, error: "Tool tidak dikenal" });
           }
-        } catch (err) {
-          toolResultContent = JSON.stringify({ ok: false, error: err.message });
+          results.sort((a, b) => b.score - a.score);
+          toolResultContent = JSON.stringify({ ok: true, results: results.slice(0, 5) });
+        } else if (toolBlock.name === "edit_knowledge_entry") {
+          const { category, entryIndex, newTitle, newContent } = toolBlock.input;
+          const existing = parseEntries(category).find((e) => e.index === entryIndex);
+          updateEntry(category, entryIndex, { title: newTitle || existing?.title || "Entri", content: newContent });
+          toolResultContent = JSON.stringify({ ok: true, action: "updated", category, entryIndex });
+          toolMeta = { action: "updated", category };
+        } else if (toolBlock.name === "delete_knowledge_entry") {
+          const { category, entryIndex } = toolBlock.input;
+          deleteEntry(category, entryIndex);
+          toolResultContent = JSON.stringify({ ok: true, action: "deleted", category, entryIndex });
+          toolMeta = { action: "deleted", category };
+        } else {
+          toolResultContent = JSON.stringify({ ok: false, error: "Tool tidak dikenal" });
         }
-
-        // Lanjutkan percakapan dengan mengirim tool_result balik ke Claude
-        const messages2 = [
-          ...messages,
-          { role: "assistant", content: data.content },
-          { role: "user", content: [{ type: "tool_result", tool_use_id: toolBlock.id, content: toolResultContent }] },
-        ];
-        const response2 = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { ...ANTHROPIC_HEADERS, "x-api-key": apiKey },
-          body: JSON.stringify({ ...reqBody, messages: messages2 }),
-        });
-        const data2 = await response2.json();
-        if (!response2.ok) return res.status(response2.status).json({ error: data2.error?.message || "Error dari Anthropic" });
-        logCacheUsage("/copilot-chat[tool-result]", data2.usage);
-        return res.json({ reply: data2.content[0]?.text || "", toolMeta });
+      } catch (err) {
+        toolResultContent = JSON.stringify({ ok: false, error: err.message });
       }
+
+      // Lanjutkan percakapan dengan mengirim tool_result balik ke Claude
+      const messages2 = [
+        ...messages,
+        { role: "assistant", content: result.rawContent },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: toolBlock.id, content: toolResultContent }] },
+      ];
+      const result2 = await anthropicProvider.chatWithTools({
+        apiKey,
+        model:  AI_MODELS.SANO_COPILOT,
+        systemPrompt,
+        messages: messages2,
+        tools:  copilotTools,
+      });
+      logChatUsage("/copilot-chat[tool-result]", "anthropic", AI_MODELS.SANO_COPILOT, result2.usage);
+      return res.json({ reply: result2.reply, toolMeta });
     }
 
-    res.json({ reply: data.content[0]?.text || "" });
+    res.json({ reply: result.reply });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });
   }
@@ -567,20 +523,16 @@ aiRouter.get("/debug-context", (req, res, next) => {
 
 // POST /api/ai/test-connection — test API key sebelum disimpan
 aiRouter.post("/test-connection", async (req, res) => {
-  const { provider, apiKey } = req.body;
+  const { provider, apiKey, model } = req.body;
   if (!provider || !apiKey) return res.status(400).json({ error: "provider dan apiKey wajib" });
 
   try {
     if (provider === "anthropic") {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: model || "claude-haiku-4-5-20251001",
           max_tokens: 10,
           messages: [{ role: "user", content: "Hi" }],
         }),
@@ -588,6 +540,17 @@ aiRouter.post("/test-connection", async (req, res) => {
       if (response.ok) return res.json({ ok: true });
       const d = await response.json();
       res.status(400).json({ error: d.error?.message || "API key tidak valid" });
+    } else if (provider === "openai") {
+      // Test dengan 1 request kecil ke OpenAI
+      const { reply } = await openaiProvider.chat({
+        apiKey,
+        model: model || "gpt-4o-mini",
+        systemPrompt: "",
+        messages: [{ role: "user", content: "Hi" }],
+        maxTokens: 5,
+      });
+      if (reply !== undefined) return res.json({ ok: true });
+      res.status(400).json({ error: "API key tidak valid" });
     } else {
       res.status(400).json({ error: `Provider "${provider}" belum didukung` });
     }
