@@ -5,7 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
-import { appendToKbCategory } from "../services/kbQuickAdd.js";
+import { appendToKbCategory, parseEntries, updateEntry, deleteEntry } from "../services/kbQuickAdd.js";
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,10 @@ async function buildKbContext() {
     const meta = JSON.parse(fs.readFileSync(KB_META_FILE, "utf-8")).filter((d) => d.active);
     for (const doc of meta) {
       try {
-        const text = fs.readFileSync(doc.filePath, "utf-8");
+        const resolvedPath = path.isAbsolute(doc.filePath)
+          ? doc.filePath
+          : path.join(KB_DIR, doc.filePath);
+        const text = fs.readFileSync(resolvedPath, "utf-8");
         if (text.trim()) parts.push(`--- Dokumen: ${doc.name} ---\n${text.slice(0, 2000)}`);
       } catch {}
     }
@@ -265,6 +268,51 @@ const SAVE_KNOWLEDGE_TOOL = {
   },
 };
 
+const FIND_KNOWLEDGE_TOOL = {
+  name: "find_knowledge_entry",
+  description: "Cari entri Knowledge Base berdasarkan topik/judul. Panggil SEBELUM edit atau hapus. Gunakan category 'all' kalau tidak yakin di kategori mana.",
+  input_schema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Kata kunci untuk mencari judul/isi entri" },
+      category: {
+        type: "string",
+        enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan", "all"],
+        description: "Kategori untuk dicari. Gunakan 'all' kalau tidak yakin.",
+      },
+    },
+    required: ["query"],
+  },
+};
+
+const EDIT_KNOWLEDGE_TOOL = {
+  name: "edit_knowledge_entry",
+  description: "Update entri Knowledge Base yang SUDAH ditemukan lewat find_knowledge_entry. HANYA panggil setelah admin konfirmasi entri yang benar dan isi baru.",
+  input_schema: {
+    type: "object",
+    properties: {
+      category: { type: "string", enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"] },
+      entryIndex: { type: "number", description: "Index entri dari hasil find_knowledge_entry" },
+      newTitle: { type: "string", description: "Judul baru (opsional, kosongi kalau tidak berubah)" },
+      newContent: { type: "string", description: "Isi baru yang lengkap" },
+    },
+    required: ["category", "entryIndex", "newContent"],
+  },
+};
+
+const DELETE_KNOWLEDGE_TOOL = {
+  name: "delete_knowledge_entry",
+  description: "Hapus entri Knowledge Base. WAJIB hanya setelah admin eksplisit konfirmasi 'ya, hapus' setelah melihat entri yang ditemukan. JANGAN panggil tanpa konfirmasi eksplisit.",
+  input_schema: {
+    type: "object",
+    properties: {
+      category: { type: "string", enum: ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"] },
+      entryIndex: { type: "number", description: "Index entri dari hasil find_knowledge_entry" },
+    },
+    required: ["category", "entryIndex"],
+  },
+};
+
 // POST /api/ai/copilot-chat — AI Co-pilot internal untuk sales
 // Body: { message, conversationHistory: [{role, content}] }
 // Reuse model Anthropic pertama yang aktif & punya API key (konfigurasi dari AI Playground)
@@ -306,8 +354,7 @@ aiRouter.post("/copilot-chat", async (req, res) => {
       system: systemPrompt,
       messages,
     };
-    // Admin mendapat akses tool save_knowledge
-    if (req.user?.role === "ADMIN") reqBody.tools = [SAVE_KNOWLEDGE_TOOL];
+    if (req.user?.role === "ADMIN") reqBody.tools = [SAVE_KNOWLEDGE_TOOL, FIND_KNOWLEDGE_TOOL, EDIT_KNOWLEDGE_TOOL, DELETE_KNOWLEDGE_TOOL];
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -321,15 +368,46 @@ aiRouter.post("/copilot-chat", async (req, res) => {
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data.error?.message || "Error dari Anthropic" });
 
-    // Cek apakah Claude mau simpan ke Knowledge Base
+    // Handle tool use (save/find/edit/delete KB entries)
     if (data.stop_reason === "tool_use") {
-      const toolBlock = data.content.find((c) => c.type === "tool_use" && c.name === "save_knowledge");
+      const toolBlock = data.content.find((c) => c.type === "tool_use");
       if (toolBlock) {
-        let savedEntry = null;
         let toolResultContent;
+        let toolMeta = null;
         try {
-          savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
-          toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
+          if (toolBlock.name === "save_knowledge") {
+            const savedEntry = appendToKbCategory({ ...toolBlock.input, authorName: req.user.name });
+            toolResultContent = JSON.stringify({ ok: true, category: savedEntry.category, title: savedEntry.title });
+            toolMeta = { action: "saved", category: savedEntry.category, label: savedEntry.label, title: savedEntry.title };
+          } else if (toolBlock.name === "find_knowledge_entry") {
+            const cats = !toolBlock.input.category || toolBlock.input.category === "all"
+              ? ["konsep-istilah-teknis", "dunia-kasur-umum", "faq-tambahan", "insight-lapangan"]
+              : [toolBlock.input.category];
+            const results = [];
+            for (const cat of cats) {
+              const q = toolBlock.input.query.toLowerCase();
+              for (const e of parseEntries(cat)) {
+                const score = (e.title.toLowerCase().includes(q) ? 2 : 0) +
+                              (e.content.toLowerCase().includes(q) ? 1 : 0);
+                if (score > 0) results.push({ ...e, category: cat, score });
+              }
+            }
+            results.sort((a, b) => b.score - a.score);
+            toolResultContent = JSON.stringify({ ok: true, results: results.slice(0, 5) });
+          } else if (toolBlock.name === "edit_knowledge_entry") {
+            const { category, entryIndex, newTitle, newContent } = toolBlock.input;
+            const existing = parseEntries(category).find((e) => e.index === entryIndex);
+            updateEntry(category, entryIndex, { title: newTitle || existing?.title || "Entri", content: newContent });
+            toolResultContent = JSON.stringify({ ok: true, action: "updated", category, entryIndex });
+            toolMeta = { action: "updated", category };
+          } else if (toolBlock.name === "delete_knowledge_entry") {
+            const { category, entryIndex } = toolBlock.input;
+            deleteEntry(category, entryIndex);
+            toolResultContent = JSON.stringify({ ok: true, action: "deleted", category, entryIndex });
+            toolMeta = { action: "deleted", category };
+          } else {
+            toolResultContent = JSON.stringify({ ok: false, error: "Tool tidak dikenal" });
+          }
         } catch (err) {
           toolResultContent = JSON.stringify({ ok: false, error: err.message });
         }
@@ -342,16 +420,12 @@ aiRouter.post("/copilot-chat", async (req, res) => {
         ];
         const response2 = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({ ...reqBody, messages: messages2 }),
         });
         const data2 = await response2.json();
         if (!response2.ok) return res.status(response2.status).json({ error: data2.error?.message || "Error dari Anthropic" });
-        return res.json({ reply: data2.content[0]?.text || "", savedEntry });
+        return res.json({ reply: data2.content[0]?.text || "", toolMeta });
       }
     }
 
@@ -449,6 +523,19 @@ aiRouter.post("/draft-reply", async (req, res) => {
     res.json({ draft: data.content[0]?.text?.trim() || "" });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI: " + err.message });
+  }
+});
+
+// GET /api/ai/debug-context — khusus ADMIN, lihat isi KB yang terbaca AI
+aiRouter.get("/debug-context", (req, res, next) => {
+  if (req.user?.role !== "ADMIN") return res.status(403).json({ error: "Hanya admin" });
+  next();
+}, async (req, res) => {
+  try {
+    const kbContext = await buildKbContext();
+    res.json({ kbContext, length: kbContext.length, isEmpty: kbContext.trim() === "" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

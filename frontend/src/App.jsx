@@ -15,6 +15,7 @@ import Pengaturan from "./pages/Pengaturan.jsx";
 import Pengguna from "./pages/Pengguna.jsx";
 import Products from "./pages/Products.jsx";
 import TrackingLinks from "./pages/TrackingLinks.jsx";
+import CoPilot from "./pages/CoPilot.jsx";
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/pengguna"    element={<Pengguna user={user} />} />
           <Route path="/products"    element={<Products />} />
           <Route path="/tracking"    element={<TrackingLinks />} />
+          <Route path="/copilot"     element={<CoPilot />} />
           <Route path="*"            element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Layout>

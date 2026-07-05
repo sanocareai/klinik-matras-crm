@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, Package, ChevronLeft, ChevronRight, X, Link2,
+  LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles,
 } from "lucide-react";
 import { api } from "../api.js";
 import Topbar from "./Topbar.jsx";
@@ -45,7 +45,8 @@ const NAV_SECTIONS = [
     section: "AI & OTOMASI",
     adminOnly: true,
     items: [
-      { to: "/automation", label: "Otomasi", Icon: Zap },
+      { to: "/copilot",   label: "Tanya Sano", Icon: Sparkles },
+      { to: "/automation", label: "Otomasi",   Icon: Zap },
     ],
   },
   {

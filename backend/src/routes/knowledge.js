@@ -256,6 +256,26 @@ knowledgeRouter.get("/categories/:category/entries", (req, res) => {
   res.json(parseEntries(category));
 });
 
+// GET /api/knowledge/categories/:category/entries/search?q=... — cari entri berdasarkan kemiripan judul/isi
+knowledgeRouter.get("/categories/:category/entries/search", (req, res) => {
+  if (req.user?.role !== "ADMIN") return res.status(403).json({ error: "Hanya admin" });
+  const { category } = req.params;
+  if (!VALID_CATEGORIES.includes(category)) return res.status(400).json({ error: "Kategori tidak valid" });
+  const { q = "" } = req.query;
+  const entries = parseEntries(category);
+  if (!q.trim()) return res.json(entries.slice(0, 5));
+  const query = q.toLowerCase();
+  const scored = entries
+    .map((e) => ({
+      ...e,
+      score: (e.title.toLowerCase().includes(query) ? 2 : 0) +
+             (e.content.toLowerCase().includes(query) ? 1 : 0),
+    }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score);
+  res.json(scored.slice(0, 5));
+});
+
 // PUT /api/knowledge/categories/:category/entries/:index — ADMIN only, edit entri
 knowledgeRouter.put("/categories/:category/entries/:index", (req, res) => {
   if (req.user?.role !== "ADMIN") {

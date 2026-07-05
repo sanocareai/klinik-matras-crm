@@ -710,7 +710,12 @@ function KnowledgeBaseTab() {
 
   // Dokumen yang dipilih
   const [savingDoc, setSavingDoc]       = useState(false);
-  const [savedContent, setSavedContent] = useState("");  // konten terakhir disimpan ke server
+  const [savedContent, setSavedContent] = useState("");
+
+  // Debug context — lihat apa yang terbaca AI dari KB
+  const [showDebugCtx, setShowDebugCtx] = useState(false);
+  const [debugCtx, setDebugCtx]         = useState(null);
+  const [loadingDebug, setLoadingDebug] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getKbDocuments(), api.getFaq()]).then(([d, f]) => { setDocs(d); setFaqs(f); }).catch(() => {});
@@ -799,6 +804,23 @@ function KnowledgeBaseTab() {
       alert(err.message);
     } finally {
       setSavingDoc(false);
+    }
+  }
+
+  async function handleShowDebugContext() {
+    setLoadingDebug(true);
+    setShowDebugCtx(true);
+    setDebugCtx(null);
+    try {
+      const res = await fetch("/api/ai/debug-context", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      const data = await res.json();
+      setDebugCtx(data);
+    } catch (err) {
+      setDebugCtx({ error: err.message });
+    } finally {
+      setLoadingDebug(false);
     }
   }
 
@@ -916,6 +938,18 @@ function KnowledgeBaseTab() {
 
       {/* Main */}
       <div className="kb-main">
+        {/* Tombol debug KB — hanya untuk admin */}
+        {currentUserRole === "ADMIN" && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <button
+              onClick={handleShowDebugContext}
+              style={{ fontSize: 12, padding: "4px 12px", border: "1px solid var(--border)", borderRadius: 6, background: "none", cursor: "pointer", color: "var(--text-secondary)" }}
+            >
+              🔍 Lihat KB yang Terbaca AI
+            </button>
+          </div>
+        )}
+
         {/* Panel entri Quick-Add kategori yang dipilih */}
         {selectedQCat && (
           <div style={{ marginBottom: 20 }}>
@@ -1141,6 +1175,40 @@ function KnowledgeBaseTab() {
           </div>
         ))}
       </div>
+
+      {/* Modal: Lihat KB yang Terbaca AI */}
+      {showDebugCtx && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setShowDebugCtx(false)}
+        >
+          <div
+            style={{ background: "var(--card-bg)", borderRadius: 12, padding: 24, maxWidth: 720, width: "90%", maxHeight: "80vh", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 15 }}>Knowledge Base yang Dibaca AI</h3>
+              <button onClick={() => setShowDebugCtx(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, lineHeight: 1, color: "var(--text-muted)" }}>×</button>
+            </div>
+            {loadingDebug ? (
+              <p style={{ color: "var(--text-muted)" }}>Memuat...</p>
+            ) : debugCtx?.error ? (
+              <p style={{ color: "var(--danger)" }}>{debugCtx.error}</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                  {debugCtx?.isEmpty
+                    ? "⚠️ KB kosong — AI tidak punya konteks tambahan"
+                    : `✅ ${debugCtx?.length?.toLocaleString("id-ID")} karakter terbaca`}
+                </p>
+                <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#f8fafc", padding: 12, borderRadius: 6, border: "1px solid var(--border)", maxHeight: 420, overflow: "auto", margin: 0 }}>
+                  {debugCtx?.kbContext || "(kosong)"}
+                </pre>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

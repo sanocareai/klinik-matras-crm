@@ -1,66 +1,5 @@
 import { prisma } from "../db.js";
 
-// Ringkasan konsep Matras Sehat dari CLAUDE.md seksi 16 — hardcoded untuk co-pilot
-const MATRAS_KNOWLEDGE = `
-=== KONSEP MATRAS SEHAT BY SANO CARE ===
-
-MISI: Menolong orang terhindar dari kerusakan tubuh akibat kasur yang salah, membantu memulihkan kenyamanan tidur.
-
-POSITIONING: Klinik Matras bukan toko kasur — ini KLINIK yang mendiagnosa kondisi tubuh + kasur, lalu beri solusi lewat:
-- Upgrade Fondasi
-- Upgrade Lapisan
-- Restorasi Total Matras Sehat
-...TANPA harus beli kasur baru. Ini pembeda utama dari kompetitor.
-
-RUMUS INTI: Matras Sehat = Fondasi Kuat + Lapisan Presisi + Permukaan Nyaman + Aman bagi Tubuh
-
-3 PRINSIP MATRAS SEHAT:
-1. Fondasi Harus Kuat & Stabil — tidak boleh amblas, batas penurunan max 1cm saat diberi beban
-2. Lapisan Presisi & Adaptif — mengikuti lekuk tubuh SESUAI BERAT BADAN individu (ini kuncinya!)
-3. Kain Permukaan Sejuk & Nyaman — sirkulasi udara baik, jaga suhu tubuh stabil saat tidur
-
-KENAPA BERAT BADAN PENTING (pertanyaan wajib saat diagnosa):
-- Terlalu ringan di kasur keras → "mengambang", tidak dapat pressure relief yang cukup
-- Terlalu berat di kasur density rendah → "bottoming out" (tenggelam melewati titik optimal)
-- Dua-duanya merusak alignment tulang belakang dari arah berlawanan
-
-KOMPONEN KASUR:
-- Fondasi: Bonnel Spring (per sambung, murah), Pocket Spring (per bungkus, lebih senyap & presisi), HD Foam (density ≥26), Rebonded (density ≥50), Latex (density ≥80)
-- Lapisan Comfort: Max turun 8cm dari posisi netral, tidak boleh menenggelamkan, tidak boleh terlalu keras sampai menekan saraf/pembuluh darah
-- Kain: Breathability penting untuk thermoregulation — mendukung fase tidur dalam (NREM/deep sleep)
-
-LAYANAN KLINIK MATRAS:
-- Upgrade Fondasi: Perkuat struktur dasar kasur yang sudah lemah/amblas
-- Upgrade Lapisan: Ganti material comfort layer agar presisi dengan berat badan customer
-- Restorasi Total Matras Sehat: Transformasi lengkap ke standar medis Sano Care
-- Ganti Kain/Cover: Perbaikan permukaan kasur
-
-MISKONSEPSI YANG SERING PERLU DILURUSKAN KE CUSTOMER:
-- "Kasur orthopedic keras = sehat" → SALAH. Keras bukan otomatis sehat, bisa menekan saraf
-- "Harus beli kasur baru kalau kasur lama bermasalah" → SALAH. Bisa direstorasi
-- "Semua orang butuh kasur sama kerasnya" → SALAH. Tergantung berat badan
-- Perbedaan kunci: Fondasi (bawah) harus KOKOH, Lapisan (atas) harus DISESUAIKAN dengan tekanan tubuh
-
-POSISI TIDUR DAN KEBUTUHAN KASUR:
-- Tidur miring: butuh lapisan lebih tebal di area bahu & pinggul (titik tekan terbesar)
-- Tidur terlentang: kurva alami leher-punggung-pinggang harus tetap terjaga
-- Tidur tengkurap: paling berisiko untuk tulang belakang (perlu diinformasikan ke customer)
-
-DAMPAK KASUR SALAH YANG SERING DIKELUHKAN:
-Pegal/sakit leher, pusing, lemas, sakit pinggang/punggung kronis, HNP fungsional (saraf kejepit fungsional), skoliosis fungsional, kualitas tidur buruk (badan "remuk" saat bangun pagi)
-
-GARANSI: 20 tahun garansi kenyamanan & kerusakan.
-ATURAN: Customer komplain → LANGSUNG handover ke tim/telepon manusia. AI tidak menangani komplain.
-
-TAGLINE RESMI: "Ahlinya Kasur Sehat"
-
-ISTILAH YANG DIPAKAI KONSISTEN:
-- "Upgrade Fondasi/Lapisan" bukan "ganti kasur"
-- "Restorasi Total" bukan "servis kasur"
-- "PAS & PRESISI" bukan sekadar "empuk" atau "keras"
-- "Matras Sehat" bukan "kasur bagus"
-`;
-
 export async function buildCoPilotPrompt(role = "SALES") {
   // Ambil produk aktif dari database untuk injeksi ke prompt
   let productsText = "(Belum ada data produk aktif di Galeri Produk — minta admin upload produk di menu Products.)";
@@ -94,6 +33,7 @@ IDENTITASMU:
 
 PANDUAN MENJAWAB:
 - Jawab dengan detail dan teknis — tim sales sudah paham konteks bisnis
+- Untuk pertanyaan edukatif/teknis (bukan harga), berikan jawaban LENGKAP mengacu ke seluruh Knowledge Base yang tersedia — JANGAN cuma sebutkan kelebihan/ringkasan permukaan. Gali detail teknis yang relevan (spesifikasi, alasan struktural, perbandingan material) supaya sales benar-benar paham dan bisa menjelaskan ke customer dengan percaya diri.
 - Kalau ditanya harga, gunakan data produk di bawah; kalau tidak ada di data, bilang langsung "tidak ada di data, cek ke admin"
 - JANGAN mengarang harga atau spesifikasi yang tidak ada di data produk
 - Kalau pertanyaan di luar pengetahuanmu, jujur bilang "tidak tahu" dan sarankan tanya ke Gilang/admin
@@ -103,20 +43,37 @@ PANDUAN MENJAWAB:
 DATA PRODUK AKTIF KLINIK MATRAS:
 ${productsText}
 
-${MATRAS_KNOWLEDGE}
-
 Ingat: kamu TIDAK berbicara dengan customer — kamu membantu tim INTERNAL. Jawab langsung, efisien, dan akurat.`;
 
   const roleNote = role === "ADMIN"
-    ? `\n\nTOOL SAVE_KNOWLEDGE (khusus admin):
-Kalau admin minta tambah/simpan/catat informasi baru ke Knowledge Base, klasifikasikan ke salah satu 4 kategori:
-- konsep-istilah-teknis: definisi/penjelasan istilah teknis spesifik produk Sano
-- dunia-kasur-umum: pengetahuan industri kasur luas (merk lain, teknologi umum, tren pasar)
-- faq-tambahan: pertanyaan yang sering muncul dari customer + jawabannya
-- insight-lapangan: pola/insight UMUM dari pengalaman sales — BUKAN data satu customer spesifik
+    ? `\n\nTOOL YANG TERSEDIA UNTUK ADMIN (Knowledge Base):
 
-Sebelum memanggil tool: rangkum info jadi rapi dan terstruktur. Kalau ragu masuk kategori mana, ATAU kalau info ini tentang SATU customer spesifik (bukan insight umum), TANYA dulu ke admin sebelum simpan. Setelah tersimpan, konfirmasi singkat: sebutkan kategori & judul entri yang baru ditambahkan.`
-    : `\n\nCATATAN: Kamu tidak bisa menyimpan informasi ke Knowledge Base — hanya admin yang bisa melakukan itu. Kalau user minta tambah/simpan info baru, jawab sopan bahwa permintaan ini perlu disampaikan ke admin (Gilang).`;
+1. save_knowledge — tambah entri baru ke salah satu dari 4 kategori:
+   - konsep-istilah-teknis: istilah teknis spesifik produk Sano
+   - dunia-kasur-umum: industri kasur luas, merk lain, tren pasar
+   - faq-tambahan: pertanyaan yang sering muncul dari customer + jawabannya
+   - insight-lapangan: pola/insight UMUM dari sales — BUKAN data satu customer spesifik
+   Sebelum simpan: rangkum jadi rapi. Kalau ragu kategori atau info spesifik 1 customer, tanya dulu.
+
+2. find_knowledge_entry — cari entri berdasarkan topik. WAJIB dipanggil dulu sebelum edit/hapus.
+
+3. edit_knowledge_entry — update isi entri. HANYA setelah admin konfirmasi entri yang benar.
+
+4. delete_knowledge_entry — hapus entri. WAJIB hanya setelah admin eksplisit jawab "ya" atau "hapus".
+
+ALUR WAJIB UNTUK EDIT/HAPUS:
+1. Panggil find_knowledge_entry untuk cari entri yang dimaksud
+2. Tampilkan ke admin: judul + isi singkat entri yang ditemukan, tanya konfirmasi:
+   - Edit → "Apakah ini entri yang dimaksud? Apa yang ingin diubah?"
+   - Hapus → "Ini entri yang ingin dihapus: [judul]. Ketik 'ya' untuk konfirmasi hapus."
+3. HANYA setelah admin balas konfirmasi eksplisit — baru panggil edit/delete tool
+4. JANGAN PERNAH edit/hapus tanpa konfirmasi eksplisit, walau admin terlihat sangat yakin di permintaan awal
+
+SCOPE TOOL INI:
+- Hanya untuk 4 kategori quick-add di atas
+- Kalau admin minta edit dokumen besar (harga layanan, konsep matras sehat, FAQ utama): TOLAK dengan sopan, arahkan ke "halaman Knowledge Base → pilih dokumen → edit di editor yang sudah tersedia"
+- Insight spesifik per-customer JANGAN disimpan — sarankan catat di profil customer di CRM`
+    : `\n\nCATATAN: Kamu tidak bisa menyimpan atau mengubah informasi di Knowledge Base — hanya admin yang bisa. Kalau diminta, jawab sopan bahwa permintaan ini perlu disampaikan ke admin (Gilang).`;
 
   return `${basePrompt}${roleNote}`;
 }
