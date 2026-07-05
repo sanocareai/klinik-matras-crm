@@ -2207,6 +2207,43 @@ input:focus, select:focus, textarea:focus {
 .provider-openai    { background: rgba(16, 163, 127, 0.12); color: #10a37f; }
 .provider-gemini    { background: rgba(66, 133, 244, 0.12); color: #4285f4; }
 
+/* ─── MODEL SELECTOR PILL ─────────────────────────────────────────── */
+.model-selector-bar { position: relative; padding: 4px 12px 0; }
+
+.model-selector-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border);
+  font-size: 12px; color: var(--text-secondary);
+  transition: background 0.15s, border-color 0.15s;
+}
+.model-selector-pill:hover { background: var(--bg); border-color: var(--text-muted); }
+.model-selector-name { font-weight: 600; color: var(--text-primary); }
+.model-selector-sub  { color: var(--text-muted); font-size: 11px; }
+
+.model-picker-dropdown {
+  position: absolute; bottom: calc(100% + 6px); left: 12px;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  min-width: 240px; max-height: 300px; overflow-y: auto;
+  z-index: 200; padding: 4px 0;
+}
+.model-picker-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer; font-size: 13px;
+  color: var(--text-primary);
+}
+.model-picker-item:hover { background: var(--bg); }
+.model-picker-item.active { background: rgba(37, 99, 235, 0.06); }
+.model-picker-item-name { font-weight: 500; }
+.model-picker-item-sub  { font-size: 11px; color: var(--text-muted); margin-left: 2px; }
+.model-picker-manage {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; cursor: pointer; font-size: 12px;
+  color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 4px;
+}
+.model-picker-manage:hover { color: var(--primary); background: var(--bg); }
+
 /* ─── COPILOT PAGE ─────────────────────────────────────────────────── */
 
 .copilot-page {

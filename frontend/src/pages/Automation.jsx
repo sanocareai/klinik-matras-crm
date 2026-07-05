@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from "react";
-import { Plus, Trash2, Upload, Search, Send, X, Pencil } from "lucide-react";
+import { Plus, Trash2, Upload, Search, Send, X, Pencil, ChevronDown, Check } from "lucide-react";
 import { api } from "../api.js";
 import MarkdownEditor from "../components/knowledge/MarkdownEditor.jsx";
 
@@ -218,6 +218,22 @@ function renderWithHighlights(text, query, activeIdx, markIdPrefix = "doc-match"
 
 // ─── AI Playground Tab ────────────────────────────────────────────────────────
 
+const MODEL_SHORT_NAMES = {
+  "claude-sonnet-4-6":         "Sonnet 4.6",
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
+  "claude-opus-4-8":           "Opus 4.8",
+  "gpt-4o":                    "GPT-4o",
+  "gpt-4o-mini":               "GPT-4o Mini",
+  "gpt-5.5":                   "GPT-5.5",
+  "gpt-5.4-mini":              "GPT-5.4 Mini",
+  "gemini-2.5-flash":          "Gemini Flash",
+  "gemini-2.5-pro":            "Gemini Pro",
+  "gemini-1.5-flash":          "Gemini 1.5 Flash",
+};
+function formatModelName(modelId) {
+  return MODEL_SHORT_NAMES[modelId] || modelId || "—";
+}
+
 function AiPlaygroundTab() {
   const [models, setModels]         = useState([]);
   const [activeModel, setActiveModel] = useState(null);
@@ -234,6 +250,8 @@ function AiPlaygroundTab() {
   const [showPersonaPanel, setShowPersonaPanel] = useState(false);
   const [savingPersona, setSavingPersona] = useState(false);
   const messagesEndRef = useRef(null);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const modelDropdownRef = useRef(null);
   const [handoverSignal, setHandoverSignal]         = useState(null);
   const [showScenariosPanel, setShowScenariosPanel] = useState(false);
   // Persona search (Ctrl+F style)
@@ -243,7 +261,12 @@ function AiPlaygroundTab() {
   const personaScrollContainerRef = useRef(null);
 
   useEffect(() => {
-    api.getAiModels().then(setModels).catch(() => {});
+    api.getAiModels().then((data) => {
+      setModels(data);
+      const lastId = localStorage.getItem("playground_last_model_id");
+      const toSelect = (lastId && data.find((m) => m.id === lastId)) || data[0] || null;
+      setActiveModel(toSelect);
+    }).catch(() => {});
     api.getAiSettings().then((s) => {
       setSystemPrompt(s.personaPrompt || "");
       setUseKb(s.useKb !== false);
@@ -269,6 +292,16 @@ function AiPlaygroundTab() {
     const targetScrollTop = container.scrollTop + offsetFromTop - container.clientHeight / 2 + elRect.height / 2;
     container.scrollTop = Math.max(0, targetScrollTop);
   }, [personaMatchIdx, personaSearch]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setShowModelDropdown(false);
+      }
+    }
+    if (showModelDropdown) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showModelDropdown]);
 
   function findPersonaMatches(text, query) {
     if (!query.trim()) return [];
@@ -367,7 +400,7 @@ function AiPlaygroundTab() {
             <div
               key={m.id}
               className={`ai-model-item ${activeModel?.id === m.id ? "active" : ""}`}
-              onClick={() => { setActiveModel(m); setMessages([]); }}
+              onClick={() => { setActiveModel(m); setMessages([]); localStorage.setItem("playground_last_model_id", m.id); }}
             >
               <div style={{ display: "flex", justify: "space-between", alignItems: "center" }}>
                 <div className="ai-model-name">{m.name}</div>
@@ -610,6 +643,58 @@ function AiPlaygroundTab() {
               <div ref={messagesEndRef} />
             </div>
             <div className="ai-chat-footer">
+              {/* Model selector pill — ganti model langsung tanpa buka modal */}
+              <div className="model-selector-bar" ref={modelDropdownRef}>
+                <button
+                  type="button"
+                  className="model-selector-pill"
+                  onClick={() => setShowModelDropdown((v) => !v)}
+                >
+                  <span className={`provider-badge provider-${activeModel.provider}`} style={{ fontSize: 9, padding: "0 4px" }}>
+                    {activeModel.provider === "anthropic" ? "Claude"
+                      : activeModel.provider === "openai" ? "GPT"
+                      : activeModel.provider === "gemini" ? "Gemini"
+                      : activeModel.provider}
+                  </span>
+                  <span className="model-selector-name">{activeModel.name}</span>
+                  <span className="model-selector-sub">{formatModelName(activeModel.model)}</span>
+                  <ChevronDown size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                </button>
+
+                {showModelDropdown && (
+                  <div className="model-picker-dropdown">
+                    {models.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`model-picker-item ${activeModel?.id === m.id ? "active" : ""}`}
+                        onClick={() => {
+                          setActiveModel(m);
+                          localStorage.setItem("playground_last_model_id", m.id);
+                          setShowModelDropdown(false);
+                        }}
+                      >
+                        <span className={`provider-badge provider-${m.provider}`} style={{ fontSize: 9, padding: "0 4px" }}>
+                          {m.provider === "anthropic" ? "Claude"
+                            : m.provider === "openai" ? "GPT"
+                            : m.provider === "gemini" ? "Gemini"
+                            : m.provider}
+                        </span>
+                        <span className="model-picker-item-name">{m.name}</span>
+                        <span className="model-picker-item-sub">{formatModelName(m.model)}</span>
+                        {activeModel?.id === m.id && <Check size={12} style={{ marginLeft: "auto", color: "var(--primary)", flexShrink: 0 }} />}
+                      </div>
+                    ))}
+                    <div
+                      className="model-picker-manage"
+                      onClick={() => { setShowModelDropdown(false); setShowAddModal(true); }}
+                    >
+                      <Plus size={12} />
+                      Kelola Model
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {activeModel?.provider !== "anthropic" && (
                 <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px", lineHeight: 1.4 }}>
                   ℹ️ Fitur simpan ke Knowledge Base hanya tersedia dengan model Claude.
