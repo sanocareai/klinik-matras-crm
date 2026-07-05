@@ -349,7 +349,7 @@ function AiPlaygroundTab() {
     setChatting(true);
     try {
       const res = await api.aiChat(activeModel.id, withUser, { systemPrompt: systemPrompt || undefined, useKb });
-      const aiMsg = { role: "assistant", content: res.content };
+      const aiMsg = { role: "assistant", content: res.content, modelId: activeModel.id, modelName: activeModel.name, modelProvider: activeModel.provider, modelStr: activeModel.model };
       const allMsgs = [...withUser, aiMsg];
       setMessages(allMsgs);
       // Cek sinyal handover di background — tidak blocking, hanya sekali per sesi
@@ -400,7 +400,7 @@ function AiPlaygroundTab() {
             <div
               key={m.id}
               className={`ai-model-item ${activeModel?.id === m.id ? "active" : ""}`}
-              onClick={() => { setActiveModel(m); setMessages([]); localStorage.setItem("playground_last_model_id", m.id); }}
+              onClick={() => { setActiveModel(m); localStorage.setItem("playground_last_model_id", m.id); }}
             >
               <div style={{ display: "flex", justify: "space-between", alignItems: "center" }}>
                 <div className="ai-model-name">{m.name}</div>
@@ -584,6 +584,19 @@ function AiPlaygroundTab() {
               )}
               {messages.map((m, i) => (
                 <div key={i} className={`ai-bubble ${m.role === "user" ? "user" : "ai"}`}>
+                  {m.role === "assistant" && m.modelName && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+                      <span className={`provider-badge provider-${m.modelProvider}`} style={{ fontSize: 9, padding: "1px 5px" }}>
+                        {m.modelProvider === "anthropic" ? "Claude" : m.modelProvider === "openai" ? "GPT" : m.modelProvider === "gemini" ? "Gemini" : m.modelProvider}
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 500 }}>
+                        {m.modelName}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.6 }}>
+                        {formatModelName(m.modelStr)}
+                      </span>
+                    </div>
+                  )}
                   {m.content}
                 </div>
               ))}
