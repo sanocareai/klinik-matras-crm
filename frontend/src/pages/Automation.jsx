@@ -380,7 +380,12 @@ function AiPlaygroundTab() {
               </div>
               <div className="ai-model-meta">
                 <span className={`ai-status-dot ${m.hasKey ? "online" : "offline"}`} />
-                {m.provider} · {m.model || "—"}
+                <span className={`provider-badge provider-${m.provider}`}>
+                  {m.provider === "anthropic" ? "Claude" : m.provider === "openai" ? "GPT" : m.provider}
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {m.model || "—"}
+                </span>
               </div>
             </div>
           ))}
@@ -397,7 +402,10 @@ function AiPlaygroundTab() {
           <>
             <div className="ai-chat-header">
               <strong>{activeModel.name}</strong>
-              <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>{activeModel.model}</span>
+              <span className={`provider-badge provider-${activeModel.provider}`} style={{ marginLeft: 6 }}>
+                {activeModel.provider === "anthropic" ? "Claude" : activeModel.provider === "openai" ? "GPT" : activeModel.provider}
+              </span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 6 }}>{activeModel.model}</span>
               <button
                 className={`btn btn-ghost btn-sm ${showPersonaPanel ? "active" : ""}`}
                 style={{ marginLeft: "auto" }}
@@ -602,6 +610,11 @@ function AiPlaygroundTab() {
               <div ref={messagesEndRef} />
             </div>
             <div className="ai-chat-footer">
+              {activeModel?.provider !== "anthropic" && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px", lineHeight: 1.4 }}>
+                  ℹ️ Fitur simpan ke Knowledge Base hanya tersedia dengan model Claude.
+                </div>
+              )}
               <form onSubmit={handleChat} style={{ display: "flex", gap: 8, flex: 1 }}>
                 <textarea
                   rows={1}

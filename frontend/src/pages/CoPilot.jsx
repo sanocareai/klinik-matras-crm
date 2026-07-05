@@ -374,7 +374,8 @@ export default function CoPilot() {
                 <p style={{ margin: "0 0 4px", fontSize: 14, maxWidth: 360, marginInline: "auto" }}>
                   Tanya apa saja soal produk, harga, spek kasur, atau minta bantu draft pesan untuk customer.
                 </p>
-                <p style={{ margin: 0, fontSize: 12 }}>Khusus tim internal — percakapan ini tidak dilihat customer.</p>
+                <p style={{ margin: "0 0 4px", fontSize: 12 }}>Khusus tim internal — percakapan ini tidak dilihat customer.</p>
+                <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Fitur tambah/edit Knowledge Base hanya tersedia dengan model Claude (Anthropic).</p>
               </div>
             )}
 

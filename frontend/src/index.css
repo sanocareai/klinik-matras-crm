@@ -2192,6 +2192,20 @@ input:focus, select:focus, textarea:focus {
   .settings-sidebar { width: 180px !important; }
 }
 
+/* ─── PROVIDER BADGE (AI Playground model list) ────────────────────── */
+
+.provider-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.provider-anthropic { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+.provider-openai    { background: rgba(16, 163, 127, 0.12); color: #10a37f; }
+
 /* ─── COPILOT PAGE ─────────────────────────────────────────────────── */
 
 .copilot-page {
