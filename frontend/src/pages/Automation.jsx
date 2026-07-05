@@ -249,6 +249,8 @@ function AiPlaygroundTab() {
   const [useKb, setUseKb]           = useState(true);
   const [showPersonaPanel, setShowPersonaPanel] = useState(false);
   const [savingPersona, setSavingPersona] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const historyCache = useRef({});  // { [modelId]: messages[] } — cache antar switch model
   const messagesEndRef = useRef(null);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const modelDropdownRef = useRef(null);
@@ -276,6 +278,31 @@ function AiPlaygroundTab() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Load riwayat chat dari DB saat model aktif berubah
+  useEffect(() => {
+    if (!activeModel) { setMessages([]); return; }
+    // Cache hit — sudah pernah difetch di sesi ini
+    if (historyCache.current[activeModel.id] !== undefined) {
+      setMessages(historyCache.current[activeModel.id]);
+      return;
+    }
+    setLoadingHistory(true);
+    api.getPlaygroundHistory(activeModel.id)
+      .then((data) => {
+        const msgs = (data || []).map((m) => ({
+          role: m.role,
+          content: m.content,
+          modelName: m.modelName || undefined,
+          modelProvider: m.modelProvider || undefined,
+          modelStr: m.modelStr || undefined,
+        }));
+        historyCache.current[activeModel.id] = msgs;
+        setMessages(msgs);
+      })
+      .catch(() => { setMessages([]); })
+      .finally(() => setLoadingHistory(false));
+  }, [activeModel?.id]);
 
   // Saat search berubah, reset ke match pertama
   useEffect(() => { setPersonaMatchIdx(0); }, [personaSearch]);
@@ -348,10 +375,16 @@ function AiPlaygroundTab() {
     setInput("");
     setChatting(true);
     try {
-      const res = await api.aiChat(activeModel.id, withUser, { systemPrompt: systemPrompt || undefined, useKb });
+      const res = await api.aiChat(activeModel.id, withUser, {
+        systemPrompt: systemPrompt || undefined,
+        useKb,
+        saveHistory: true,
+        modelMeta: { name: activeModel.name },
+      });
       const aiMsg = { role: "assistant", content: res.content, modelId: activeModel.id, modelName: activeModel.name, modelProvider: activeModel.provider, modelStr: activeModel.model };
       const allMsgs = [...withUser, aiMsg];
       setMessages(allMsgs);
+      historyCache.current[activeModel.id] = allMsgs;
       // Cek sinyal handover di background — tidak blocking, hanya sekali per sesi
       if (!handoverSignal) {
         api.checkHandover(allMsgs).then((h) => {
@@ -363,6 +396,15 @@ function AiPlaygroundTab() {
     } finally {
       setChatting(false);
     }
+  }
+
+  async function handleClearHistory() {
+    if (activeModel) {
+      await api.clearPlaygroundHistory(activeModel.id).catch(() => {});
+      historyCache.current[activeModel.id] = [];
+    }
+    setMessages([]);
+    setHandoverSignal(null);
   }
 
   async function handleSavePersona() {
@@ -454,7 +496,7 @@ function AiPlaygroundTab() {
               >
                 🧪 Skenario
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setMessages([]); setHandoverSignal(null); }}>
+              <button className="btn btn-ghost btn-sm" onClick={handleClearHistory}>
                 Bersihkan
               </button>
             </div>
@@ -577,12 +619,17 @@ function AiPlaygroundTab() {
               </div>
             )}
             <div className="ai-chat-messages">
-              {messages.length === 0 && (
+              {loadingHistory && (
+                <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: 40, fontSize: 13 }}>
+                  Memuat riwayat...
+                </div>
+              )}
+              {!loadingHistory && messages.length === 0 && (
                 <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: 40, fontSize: 13 }}>
                   Mulai percakapan dengan AI...
                 </div>
               )}
-              {messages.map((m, i) => (
+              {!loadingHistory && messages.map((m, i) => (
                 <div key={i} className={`ai-bubble ${m.role === "user" ? "user" : "ai"}`}>
                   {m.role === "assistant" && m.modelName && (
                     <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
@@ -600,7 +647,7 @@ function AiPlaygroundTab() {
                   {m.content}
                 </div>
               ))}
-              {chatting && <div className="ai-bubble ai" style={{ color: "var(--text-muted)" }}>Mengetik...</div>}
+              {!loadingHistory && chatting && <div className="ai-bubble ai" style={{ color: "var(--text-muted)" }}>Mengetik...</div>}
 
               {/* Card simulasi handover — muncul saat sinyal terdeteksi (SANDBOX ONLY) */}
               {handoverSignal?.shouldHandover && (

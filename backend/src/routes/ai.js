@@ -11,6 +11,7 @@ import { chatWithModel, logChatUsage } from "../services/providers/index.js";
 import { KNOWLEDGE_TOOLS } from "../services/knowledgeTools.js";
 import * as openaiProvider  from "../services/providers/openaiProvider.js";
 import * as geminiProvider  from "../services/providers/geminiProvider.js";
+import { prisma } from "../db.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -182,12 +183,39 @@ aiRouter.delete("/models/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/ai/playground/:modelConfigId/messages — riwayat chat Playground untuk 1 model
+aiRouter.get("/playground/:modelConfigId/messages", async (req, res) => {
+  try {
+    const msgs = await prisma.playgroundMessage.findMany({
+      where: { modelConfigId: req.params.modelConfigId },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+    res.json(msgs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/ai/playground/:modelConfigId/messages — hapus semua riwayat untuk 1 model
+aiRouter.delete("/playground/:modelConfigId/messages", async (req, res) => {
+  try {
+    await prisma.playgroundMessage.deleteMany({
+      where: { modelConfigId: req.params.modelConfigId },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/ai/chat — proxy ke AI provider dengan system prompt + KB injection
-// Body: { modelId, messages, systemPrompt?, useKb? }
+// Body: { modelId, messages, systemPrompt?, useKb?, saveHistory?, modelMeta? }
 //   systemPrompt: override persona (opsional, kalau kosong pakai persona di settings)
 //   useKb: inject knowledge base context ke system prompt (default: ikut settings)
+//   saveHistory: kalau true, simpan pesan ke PlaygroundMessage (AI Playground only)
 aiRouter.post("/chat", async (req, res) => {
-  const { modelId, messages, systemPrompt: promptOverride, useKb: useKbOverride } = req.body;
+  const { modelId, messages, systemPrompt: promptOverride, useKb: useKbOverride, saveHistory, modelMeta } = req.body;
   if (!modelId || !messages?.length) return res.status(400).json({ error: "modelId dan messages wajib" });
 
   const models = readModels();
@@ -227,6 +255,21 @@ aiRouter.post("/chat", async (req, res) => {
       messages,
     });
     logChatUsage("/chat", m.provider, m.model, usage);
+
+    // Simpan riwayat ke DB kalau diminta (AI Playground)
+    if (saveHistory) {
+      const lastUserMsg = messages[messages.length - 1];
+      prisma.playgroundMessage.createMany({
+        data: [
+          { modelConfigId: modelId, role: "user", content: lastUserMsg.content },
+          { modelConfigId: modelId, role: "assistant", content: reply,
+            modelName: modelMeta?.name || null,
+            modelProvider: m.provider,
+            modelStr: m.model || null },
+        ],
+      }).catch((e) => console.error("[Playground] Gagal simpan riwayat:", e.message));
+    }
+
     res.json({ content: reply });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI provider: " + err.message });

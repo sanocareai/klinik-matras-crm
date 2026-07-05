@@ -246,3 +246,17 @@ model SalesTarget {
 
   @@unique([userId, year, month])
 }
+
+// Riwayat chat AI Playground — tersimpan per model config (id dari ai-models.json)
+model PlaygroundMessage {
+  id            String   @id @default(cuid())
+  modelConfigId String
+  role          String   // "user" | "assistant"
+  content       String
+  modelName     String?  // nama display model, denormalized untuk badge di UI
+  modelProvider String?  // "anthropic" | "openai" | "gemini"
+  modelStr      String?  // model string e.g. "claude-sonnet-4-6"
+  createdAt     DateTime @default(now())
+
+  @@index([modelConfigId])
+}
