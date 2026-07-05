@@ -381,7 +381,7 @@ function AiPlaygroundTab() {
               <div className="ai-model-meta">
                 <span className={`ai-status-dot ${m.hasKey ? "online" : "offline"}`} />
                 <span className={`provider-badge provider-${m.provider}`}>
-                  {m.provider === "anthropic" ? "Claude" : m.provider === "openai" ? "GPT" : m.provider}
+                  {m.provider === "anthropic" ? "Claude" : m.provider === "openai" ? "GPT" : m.provider === "gemini" ? "Gemini" : m.provider}
                 </span>
                 <span style={{ color: "var(--text-muted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {m.model || "—"}
@@ -403,7 +403,7 @@ function AiPlaygroundTab() {
             <div className="ai-chat-header">
               <strong>{activeModel.name}</strong>
               <span className={`provider-badge provider-${activeModel.provider}`} style={{ marginLeft: 6 }}>
-                {activeModel.provider === "anthropic" ? "Claude" : activeModel.provider === "openai" ? "GPT" : activeModel.provider}
+                {activeModel.provider === "anthropic" ? "Claude" : activeModel.provider === "openai" ? "GPT" : activeModel.provider === "gemini" ? "Gemini" : activeModel.provider}
               </span>
               <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 6 }}>{activeModel.model}</span>
               <button
@@ -652,16 +652,19 @@ function AiPlaygroundTab() {
                   <select value={addForm.provider} onChange={(e) => setAddForm((f) => ({ ...f, provider: e.target.value, model: "" }))}>
                     <option value="anthropic">Anthropic (Claude)</option>
                     <option value="openai">OpenAI (GPT)</option>
+                    <option value="gemini">Google (Gemini)</option>
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Model ID</label>
                   <input type="text"
-                    placeholder={addForm.provider === "openai" ? "gpt-5.5 atau gpt-5.4-mini" : "claude-sonnet-4-6 atau claude-haiku-4-5-20251001"}
+                    placeholder={addForm.provider === "openai" ? "gpt-5.5 atau gpt-5.4-mini" : addForm.provider === "gemini" ? "gemini-2.5-flash atau gemini-2.5-pro" : "claude-sonnet-4-6 atau claude-haiku-4-5-20251001"}
                     value={addForm.model} onChange={(e) => setAddForm((f) => ({ ...f, model: e.target.value }))} />
                   <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                     {addForm.provider === "openai"
                       ? "gpt-5.5 (setara Sonnet, lebih mahal) · gpt-5.4-mini (setara Haiku, hemat)"
+                      : addForm.provider === "gemini"
+                      ? "gemini-2.5-flash (hemat, cepat) · gemini-2.5-pro (kualitas tinggi)"
                       : "claude-sonnet-4-6 (kualitas) · claude-haiku-4-5-20251001 (hemat)"}
                   </p>
                 </div>
@@ -669,7 +672,7 @@ function AiPlaygroundTab() {
                   <label className="form-label">API Key</label>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input type="password" required
-                      placeholder={addForm.provider === "openai" ? "sk-..." : "sk-ant-..."}
+                      placeholder={addForm.provider === "gemini" ? "AIza..." : addForm.provider === "openai" ? "sk-..." : "sk-ant-..."}
                       value={addForm.apiKey} onChange={(e) => setAddForm((f) => ({ ...f, apiKey: e.target.value }))}
                       style={{ flex: 1 }} />
                     <button type="button" className="btn btn-ghost btn-sm" onClick={handleTestConnection} disabled={testing || !addForm.apiKey}>

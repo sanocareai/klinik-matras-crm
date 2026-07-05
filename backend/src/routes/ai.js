@@ -9,7 +9,8 @@ import { appendToKbCategory, parseEntries, updateEntry, deleteEntry } from "../s
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 import { AI_MODELS } from "../config/aiModels.js";
 import { chatWithModel, logChatUsage, anthropicProvider } from "../services/providers/index.js";
-import * as openaiProvider from "../services/providers/openaiProvider.js";
+import * as openaiProvider  from "../services/providers/openaiProvider.js";
+import * as geminiProvider  from "../services/providers/geminiProvider.js";
 
 const __dirname      = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE      = path.join(__dirname, "../../data/ai-models.json");
@@ -545,6 +546,17 @@ aiRouter.post("/test-connection", async (req, res) => {
       const { reply } = await openaiProvider.chat({
         apiKey,
         model: model || "gpt-4o-mini",
+        systemPrompt: "",
+        messages: [{ role: "user", content: "Hi" }],
+        maxTokens: 5,
+      });
+      if (reply !== undefined) return res.json({ ok: true });
+      res.status(400).json({ error: "API key tidak valid" });
+    } else if (provider === "gemini") {
+      // Test dengan 1 request kecil ke Google Gemini
+      const { reply } = await geminiProvider.chat({
+        apiKey,
+        model: model || "gemini-2.5-flash",
         systemPrompt: "",
         messages: [{ role: "user", content: "Hi" }],
         maxTokens: 5,
