@@ -3,7 +3,7 @@
 export const AI_MODELS = {
   // Customer-facing: Sano Chatbot (AI Playground / nanti production)
   // Pakai Sonnet untuk kualitas jawaban terbaik — customer langsung baca hasilnya
-  SANO_CHATBOT: "claude-sonnet-4-6",
+  SANO_CHATBOT: "claude-haiku-4-5-20251001",
 
   // Internal: Sano Co-pilot untuk sales
   // Haiku cukup akurat untuk pertanyaan internal + 3x lebih murah dari Sonnet
