@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "1783153452113",
+    "name": "Sano AI",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "encryptedKey": "220135bf68f066141566f9383fce9a33:fa71796785c385858dbda7cf5854639668e20622fa88695cb8a051a2630e7a73966e0cbfd3e055ce1d7010e75c1c1317a7726ac02ed523b07eff349791a1559e3b74eb98d1920a619cd91f0447f5109fa60519298aa11ae33425a7ef490209d6250c85f7cdfa961742934c841a1aeb97",
+    "active": true,
+    "createdAt": "2026-07-04T08:24:12.114Z"
+  }
+]
