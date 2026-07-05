@@ -20,7 +20,7 @@ export async function chat({ apiKey, model, systemPrompt, messages, maxTokens = 
   const response = await client.chat.completions.create({
     model,
     messages: openaiMessages,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
   });
 
   const usage = response.usage || {};
