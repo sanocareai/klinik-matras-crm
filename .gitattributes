@@ -1,0 +1,2 @@
+# Script bash HARUS pakai LF (bukan CRLF) agar bisa dijalankan di Linux VPS
+*.sh text eol=lf

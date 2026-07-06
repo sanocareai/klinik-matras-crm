@@ -21,6 +21,7 @@ import { knowledgeRouter }  from "./routes/knowledge.js";
 import { settingsRouter }  from "./routes/settings.js";
 import { templateRouter }  from "./routes/templates.js";
 import { trackingRouter, trackingRedirectRouter } from "./routes/tracking.js";
+import { internalRouter } from "./routes/internal.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +57,7 @@ app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);
 app.use("/api/tracking",   trackingRouter);
+app.use("/api/internal",   internalRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

@@ -798,3 +798,41 @@ broadcast anti-ban rate limiter, handover queue, AI Playground BYOK, Customer 36
 
 **GrowthCircle.id (komunitas):** OpenClaw + Hermes Agent — AI untuk follow-up, 
 handover, closing. Bukan sekadar FAQ bot. Ini inspirasi untuk Phase 4 AI Agent.
+
+---
+
+## 18. BACKUP DATABASE OTOMATIS
+
+**Script backup:** `backend/scripts/backup-database.sh`
+**Script restore:** `backend/scripts/restore-database.sh`
+**Panduan lengkap:** `docs/PANDUAN-RESTORE-BACKUP.md`
+
+**Alur backup:**
+```
+Cron 03:00 WIB → pg_dump | gzip → ~/klinik-matras/backups/
+→ rclone upload → gdrive:klinik-matras-backups/
+→ hapus lokal >7 hari
+→ hapus Drive >30 hari
+→ kalau gagal → WA notifikasi ke BACKUP_NOTIFY_PHONE
+```
+
+**Cron di VPS (setup manual oleh Gilang setelah git pull):**
+```
+0 3 * * * cd /home/ubuntu/klinik-matras && ./backend/scripts/backup-database.sh >> /home/ubuntu/klinik-matras/backups/backup.log 2>&1
+```
+
+**Env var yang perlu ditambah di `backend/.env` di VPS:**
+```
+BACKUP_NOTIFY_PHONE=628xxxxxxxxx   # nomor WA admin untuk notifikasi gagal
+```
+
+**Setup prasyarat di VPS (sekali saja):**
+1. `curl https://rclone.org/install.sh | sudo bash` — install rclone
+2. `rclone config` — tambah remote bernama `gdrive` → pilih Google Drive → ikuti wizard OAuth
+3. `chmod +x backend/scripts/backup-database.sh backend/scripts/restore-database.sh`
+4. Tambah `BACKUP_NOTIFY_PHONE` ke `backend/.env` → `docker compose restart backend`
+5. Setup cron (`crontab -e`)
+6. Test manual: `cd ~/klinik-matras && ./backend/scripts/backup-database.sh`
+
+**Notifikasi gagal:** endpoint `POST /api/internal/backup-alert` (no JWT, localhost only)
+dipanggil oleh `trap ERR` di script bash → backend kirim WA via wahaClient.
