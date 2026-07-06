@@ -246,13 +246,17 @@ aiRouter.post("/chat", async (req, res) => {
     }
   }
 
+  // Bersihkan messages — buang field UI-only (modelName, modelProvider, modelStr, dll)
+  // yang ada di state frontend tapi ditolak oleh provider API
+  const cleanMessages = messages.map(({ role, content }) => ({ role, content }));
+
   try {
     const { reply, usage } = await chatWithModel({
       provider:     m.provider,
       apiKey,
       model:        m.model || AI_MODELS.SANO_CHATBOT,
       systemPrompt,
-      messages,
+      messages:     cleanMessages,
     });
     logChatUsage("/chat", m.provider, m.model, usage);
 
@@ -393,7 +397,7 @@ aiRouter.post("/draft-reply", async (req, res) => {
     contextBlock;
 
   const messages = [
-    ...conversationHistory.slice(-10),
+    ...conversationHistory.slice(-10).map(({ role, content }) => ({ role, content })),
     { role: "user", content: "Buatkan 1 kalimat pembuka untuk melanjutkan percakapan ini." },
   ];
 
