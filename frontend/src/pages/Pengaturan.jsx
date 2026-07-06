@@ -28,7 +28,7 @@ const KATEGORI_LABELS = {
 const KATEGORI_COLORS = {
   pembukaan: { bg: "#dbeafe", color: "#1e40af" },
   follow_up: { bg: "#ede9fe", color: "#5b21b6" },
-  : { bg: "#dcfce7", color: "#166534" },
+  penawaran: { bg: "#dcfce7", color: "#166534" },
   konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
   penutupan: { bg: "#fee2e2", color: "#991b1b" },
   lainnya:   { bg: "#f3f4f6", color: "#374151" },
