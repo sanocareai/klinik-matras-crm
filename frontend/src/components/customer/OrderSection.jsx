@@ -18,14 +18,13 @@ const JENIS_LAYANAN = [
 ];
 
 function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", beratBadan: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
   try {
     const p = JSON.parse(notes);
     return {
       merkKasur: p.merkKasur || "",
       ukuranKasur: p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
-      beratBadan: p.beratBadan || "",
     };
   } catch {
     return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, beratBadan: "" };
@@ -37,7 +36,6 @@ function buildNotes(info) {
     merkKasur:       info.merkKasur || "",
     ukuranKasur:     info.ukuranKasur || "",
     keluhanCustomer: info.keluhanCustomer || "",
-    beratBadan:      info.beratBadan || "",
   });
 }
 
@@ -61,6 +59,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const [status, setStatus]               = useState(order.status);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
   const [orderNumber, setOrderNumber]     = useState(order.orderNumber || "");
+  const [beratBadan, setBeratBadan]       = useState(order.beratBadan ? String(order.beratBadan) : "");
   const [merkKasur, setMerkKasur]     = useState(info.merkKasur);
   const [ukuran, setUkuran]           = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]         = useState(info.keluhanCustomer);
@@ -84,6 +83,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
       await api.updateOrder(order.id, {
         status,
         paymentStatus,
+        beratBadan: beratBadan ? Number(beratBadan) : null,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         orderNumber: orderNumber.trim() || null,
       });
@@ -114,6 +114,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
     setStatus(order.status);
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
     setOrderNumber(order.orderNumber || "");
+    setBeratBadan(order.beratBadan ? String(order.beratBadan) : "");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
     setKeluhan(inf.keluhanCustomer);
@@ -207,6 +208,22 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
             placeholder="cth: ORD-001" style={selStyleFull} />
         ) : (
           <span style={{ fontSize: 13 }}>{order.orderNumber || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+        )}
+      </div>
+
+      {/* Berat Badan */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>Berat Badan (kg)</span>
+        {editing ? (
+          <input
+            type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
+            placeholder="cth: 75" min="1" max="300"
+            style={{ ...selStyleFull, width: 100 }}
+          />
+        ) : (
+          <span style={{ fontSize: 13 }}>
+            {order.beratBadan ? `${order.beratBadan} kg` : <span style={{ color: "var(--text-muted)" }}>—</span>}
+          </span>
         )}
       </div>
 
@@ -307,6 +324,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
 function AddOrderForm({ customerId, onDone, onCancel }) {
   const [step, setStep]               = useState(1);
   const [orderNumber, setOrderNumber] = useState("");
+  const [beratBadan, setBeratBadan]   = useState("");
   const [merkKasur, setMerk]          = useState("");
   const [ukuran, setUkuran]           = useState("");
   const [keluhan, setKeluhan]         = useState("");
@@ -328,6 +346,7 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     setSaving(true);
     try {
       const order = await api.addOrder(customerId, {
+        beratBadan: beratBadan ? Number(beratBadan) : null,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         orderNumber: orderNumber.trim() || null,
       });
@@ -350,6 +369,14 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
           <label style={formLabel}>ID Order (opsional)</label>
           <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
             placeholder="cth: ORD-001" style={formSelect} />
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={formLabel}>Berat Badan (kg)</label>
+          <input
+            type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
+            placeholder="cth: 75" min="1" max="300"
+            style={{ ...formSelect, width: 120 }}
+          />
         </div>
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Merk Kasur</label>

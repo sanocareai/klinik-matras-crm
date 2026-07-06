@@ -219,6 +219,7 @@ model Order {
   paymentStatus PaymentStatus @default(BELUM_BAYAR)
   value         Int           // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
   quantity      Int           @default(1)
+  beratBadan  Int?          // berat badan customer dalam kg, nullable
   orderNumber String?     // ID order manual, diisi sales (contoh: "ORD-001")
   notes       String?
   createdAt   DateTime    @default(now())

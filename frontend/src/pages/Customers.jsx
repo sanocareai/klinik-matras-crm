@@ -154,18 +154,24 @@ export default function Customers() {
   function handleExport() {
     const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     const data = filtered.map((c) => ({
-      "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
-      Nama: c.name || "",
-      Telepon: c.phone || "",
+      /* Urutan kolom cocok dengan urutan tabel di halaman */
+      "Nama Pelanggan": c.name || c.phone || c.instagramHandle || "",
+      "ID Order": c.latestOrderNumber || "",
+      "No HP": c.phone || "",
       Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
       Email: c.email || "",
-      Kota: c.city || "",
-      "Status Kasur": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
       Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
-      "Status Order Terbaru": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
-      "ID Order": c.latestOrderNumber || "",
+      "Status Order": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
       "Status Pembayaran": PAYMENT_STATUS_LABELS[c.latestPaymentStatus] || "",
       "Keluhan Terbaru": c.latestKeluhan || "",
+      "Merk Kasur": c.latestMerkKasur || "",
+      "Ukuran Kasur": c.latestUkuranKasur || "",
+      "Berat Badan (kg)": c.latestBeratBadan || "",
+      Layanan: c.latestLayanan || "",
+      "Status Kesehatan": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
+      Tags: c.tags?.join(", ") || "",
+      "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
+      Kota: c.city || "",
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,
       "Total Nilai Order": formatRupiah(c.orderValue || 0),
@@ -273,18 +279,20 @@ export default function Customers() {
         <table className="customer-table">
           <thead>
             <tr>
+              {/* Urutan wajib: Nama → ID Order → No HP → Pipeline → Status Order → Keluhan → Sakit/Tidak Sakit → Tags */}
               <th style={{ cursor: "pointer" }} onClick={() => toggleSort("name")}>
-                Nama <SortIcon col="name" />
+                Nama Pelanggan <SortIcon col="name" />
               </th>
-              <th>Tipe</th>
-              <th>Kontak</th>
-              <th>Kota</th>
-              <th>Tags</th>
-              <th>Pipeline</th>
-              <th>Kesehatan</th>
-              <th>Status Order</th>
               <th>ID Order</th>
+              <th>No HP</th>
+              <th>Pipeline</th>
+              <th>Status Order</th>
               <th>Keluhan</th>
+              <th>Sakit/Tidak Sakit</th>
+              <th>Tags</th>
+              {/* Kolom tambahan */}
+              <th>Tipe</th>
+              <th>Kota</th>
               <th>Order</th>
               <th style={{ cursor: "pointer" }} onClick={() => toggleSort("orderValue")}>
                 Nilai Order <SortIcon col="orderValue" />
@@ -299,6 +307,7 @@ export default function Customers() {
               const korporat = isKorporat(c);
               return (
                 <tr key={c.id} onClick={() => setDrawerCustomerId(c.id)} style={{ cursor: "pointer" }}>
+                  {/* 1. Nama Pelanggan */}
                   <td>
                     <div className="cell-name-wrap">
                       <Avatar name={displayName} size="sm" />
@@ -310,45 +319,23 @@ export default function Customers() {
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <span style={{
-                      fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6,
-                      background: korporat ? "#ede9fe" : "#f0fdf4",
-                      color: korporat ? "#5b21b6" : "#166534",
-                    }}>
-                      {korporat ? "Korporat" : "End User"}
-                    </span>
+                  {/* 2. ID Order */}
+                  <td style={{ fontSize: 13 }}>
+                    {c.latestOrderNumber || <span className="muted">—</span>}
                   </td>
+                  {/* 3. No HP */}
                   <td>
                     {c.phone && <div style={{ fontSize: 13 }}>{c.phone}</div>}
                     {c.instagramHandle && <div className="cell-sub">@{c.instagramHandle}</div>}
-                    {c.email && <div className="cell-sub">{c.email}</div>}
-                    {!c.phone && !c.instagramHandle && !c.email && <span className="muted">—</span>}
+                    {!c.phone && !c.instagramHandle && <span className="muted">—</span>}
                   </td>
-                  <td>{c.city || <span className="muted">—</span>}</td>
-                  <td>
-                    {c.tags?.length > 0
-                      ? c.tags.slice(0, 3).map((t) => (
-                          <span key={t} className={`tag-chip ${tagClass(t)}`}>{t}</span>
-                        ))
-                      : <span className="muted">—</span>
-                    }
-                    {c.tags?.length > 3 && <span className="muted" style={{ fontSize: 11 }}> +{c.tags.length - 3}</span>}
-                  </td>
+                  {/* 4. Pipeline */}
                   <td>
                     <span className={`stage-badge stage-${c.pipelineStage?.toLowerCase()}`}>
                       {STAGE_LABELS[c.pipelineStage] || c.pipelineStage}
                     </span>
                   </td>
-                  <td>
-                    {c.healthStatus === "SAKIT" && (
-                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>Sakit</span>
-                    )}
-                    {c.healthStatus === "TIDAK_SAKIT" && (
-                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>Tidak Sakit</span>
-                    )}
-                    {!c.healthStatus && <span className="muted">—</span>}
-                  </td>
+                  {/* 5. Status Order */}
                   <td>
                     {c.latestOrderStatus ? (
                       <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, ...ORDER_STATUS_STYLE[c.latestOrderStatus] }}>
@@ -358,9 +345,7 @@ export default function Customers() {
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td style={{ fontSize: 13 }}>
-                    {c.latestOrderNumber || <span className="muted">—</span>}
-                  </td>
+                  {/* 6. Keluhan */}
                   <td style={{ fontSize: 13, maxWidth: 180 }}>
                     {c.latestKeluhan ? (
                       <span title={c.latestKeluhan} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }}>
@@ -370,6 +355,37 @@ export default function Customers() {
                       <span className="muted">—</span>
                     )}
                   </td>
+                  {/* 7. Sakit/Tidak Sakit */}
+                  <td>
+                    {c.healthStatus === "SAKIT" && (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>Sakit</span>
+                    )}
+                    {c.healthStatus === "TIDAK_SAKIT" && (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>Tidak Sakit</span>
+                    )}
+                    {!c.healthStatus && <span className="muted">—</span>}
+                  </td>
+                  {/* 8. Tags */}
+                  <td>
+                    {c.tags?.length > 0
+                      ? c.tags.slice(0, 3).map((t) => (
+                          <span key={t} className={`tag-chip ${tagClass(t)}`}>{t}</span>
+                        ))
+                      : <span className="muted">—</span>
+                    }
+                    {c.tags?.length > 3 && <span className="muted" style={{ fontSize: 11 }}> +{c.tags.length - 3}</span>}
+                  </td>
+                  {/* 9+ Kolom tambahan */}
+                  <td>
+                    <span style={{
+                      fontSize: 11.5, fontWeight: 700, padding: "3px 8px", borderRadius: 6,
+                      background: korporat ? "#ede9fe" : "#f0fdf4",
+                      color: korporat ? "#5b21b6" : "#166534",
+                    }}>
+                      {korporat ? "Korporat" : "End User"}
+                    </span>
+                  </td>
+                  <td>{c.city || <span className="muted">—</span>}</td>
                   <td style={{ textAlign: "center" }}>{c.orderCount}</td>
                   <td>{formatRupiah(c.orderValue)}</td>
                   <td>{c.assignedSales?.name || <span className="muted">—</span>}</td>

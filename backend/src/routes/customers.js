@@ -58,7 +58,11 @@ customerRouter.get("/", async (req, res) => {
 
   const customers = await prisma.customer.findMany({
     where,
-    include: { orders: true, assignedSales: true, conversations: { orderBy: { lastMessageAt: "desc" }, take: 1 } },
+    include: {
+      orders: { include: { items: { orderBy: { sortOrder: "asc" } } } },
+      assignedSales: true,
+      conversations: { orderBy: { lastMessageAt: "desc" }, take: 1 },
+    },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -67,21 +71,36 @@ customerRouter.get("/", async (req, res) => {
     const sorted = [...orders].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     const latest = sorted[0] || null;
 
-    // Parse keluhan dari notes JSON order terbaru
-    let latestKeluhan = null;
+    // Parse field dari notes JSON order terbaru (merk, ukuran, keluhan)
+    let latestKeluhan = null, latestMerkKasur = null, latestUkuranKasur = null;
     if (latest?.notes) {
-      try { latestKeluhan = JSON.parse(latest.notes).keluhanCustomer || null; } catch {}
+      try {
+        const n = JSON.parse(latest.notes);
+        latestKeluhan    = n.keluhanCustomer || null;
+        latestMerkKasur  = n.merkKasur       || null;
+        latestUkuranKasur = n.ukuranKasur    || null;
+      } catch {}
     }
+
+    // Gabung semua nama layanan dari items order terbaru jadi 1 string
+    const latestLayanan = (latest?.items || [])
+      .map((i) => i.layananName)
+      .filter(Boolean)
+      .join(", ") || null;
 
     return {
       ...c,
       orderCount: orders.length,
       orderValue: orders.reduce((sum, o) => sum + o.value, 0),
       lastMessageAt: conversations[0]?.lastMessageAt || null,
-      latestOrderStatus:  latest?.status        || null,
-      latestOrderNumber:  latest?.orderNumber   || null,
+      latestOrderStatus:   latest?.status        || null,
+      latestOrderNumber:   latest?.orderNumber   || null,
       latestPaymentStatus: latest?.paymentStatus || null,
+      latestBeratBadan:    latest?.beratBadan    || null,
       latestKeluhan,
+      latestMerkKasur,
+      latestUkuranKasur,
+      latestLayanan,
     };
   });
 
@@ -187,7 +206,7 @@ customerRouter.get("/:id/conversations", async (req, res) => {
 
 // Catat order baru — value mulai 0, akan dihitung otomatis dari items
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, orderNumber } = req.body;
+  const { quantity, status, notes, orderNumber, beratBadan } = req.body;
 
   const order = await prisma.order.create({
     data: {
@@ -197,6 +216,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
       status: status || "PENDING",
       notes,
       ...(orderNumber !== undefined && { orderNumber: orderNumber?.trim() || null }),
+      ...(beratBadan  !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
     },
     include: { items: true },
   });
