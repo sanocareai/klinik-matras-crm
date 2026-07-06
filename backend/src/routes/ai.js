@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth.js";
 import { buildCoPilotPrompt } from "../services/coPilotPrompt.js";
+import { SANO_PERSONA_PROMPT } from "../services/sanoPersonaPrompt.js";
 import { detectHandoverSignal, generateHandoverSummary } from "../services/handoverDetector.js";
 import { AI_MODELS } from "../config/aiModels.js";
 import { chatWithModel, logChatUsage } from "../services/providers/index.js";
@@ -237,9 +238,8 @@ aiRouter.post("/chat", async (req, res) => {
   if (useKb) {
     const kbContext = await buildKbContext();
     if (kbContext) {
-      // Kalau persona kosong, pakai instruksi default
-      const base = systemPrompt.trim() ||
-        "Kamu adalah asisten Klinik Matras yang ahli kasur sehat. Jawab HANYA berdasarkan informasi di Knowledge Base di atas. Kalau tidak ada informasi yang relevan, katakan dengan jujur.";
+      // Kalau persona kosong, pakai persona Sano default (WhatsApp-compatible)
+      const base = systemPrompt.trim() || SANO_PERSONA_PROMPT;
       // Bersihkan placeholder lama kalau masih ada
       const clean = base.replace(/\[DI SINI: konten Knowledge Base akan disisipkan otomatis oleh sistem\]/g, "").trim();
       systemPrompt = `${kbContext}\n\n---\n\n${clean}`;
@@ -260,13 +260,18 @@ aiRouter.post("/chat", async (req, res) => {
     });
     logChatUsage("/chat", m.provider, m.model, usage);
 
+    // Split respons Sano berdasarkan delimiter ||| jadi beberapa bubble pesan WA
+    // Playground tampilkan sebagai satu teks (join \n\n), WhatsApp kirim terpisah via bubbles[]
+    const bubbles = reply.split("|||").map((s) => s.trim()).filter(Boolean);
+    const fullReply = bubbles.length > 1 ? bubbles.join("\n\n") : reply;
+
     // Simpan riwayat ke DB kalau diminta (AI Playground)
     if (saveHistory) {
       const lastUserMsg = messages[messages.length - 1];
       prisma.playgroundMessage.createMany({
         data: [
           { modelConfigId: modelId, role: "user", content: lastUserMsg.content },
-          { modelConfigId: modelId, role: "assistant", content: reply,
+          { modelConfigId: modelId, role: "assistant", content: fullReply,
             modelName: modelMeta?.name || null,
             modelProvider: m.provider,
             modelStr: m.model || null },
@@ -274,7 +279,7 @@ aiRouter.post("/chat", async (req, res) => {
       }).catch((e) => console.error("[Playground] Gagal simpan riwayat:", e.message));
     }
 
-    res.json({ content: reply });
+    res.json({ content: fullReply, bubbles });
   } catch (err) {
     res.status(500).json({ error: "Gagal menghubungi AI provider: " + err.message });
   }
