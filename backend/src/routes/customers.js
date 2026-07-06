@@ -78,8 +78,9 @@ customerRouter.get("/", async (req, res) => {
       orderCount: orders.length,
       orderValue: orders.reduce((sum, o) => sum + o.value, 0),
       lastMessageAt: conversations[0]?.lastMessageAt || null,
-      latestOrderStatus: latest?.status || null,
-      latestOrderNumber: latest?.orderNumber || null,
+      latestOrderStatus:  latest?.status        || null,
+      latestOrderNumber:  latest?.orderNumber   || null,
+      latestPaymentStatus: latest?.paymentStatus || null,
       latestKeluhan,
     };
   });

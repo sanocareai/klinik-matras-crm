@@ -7,7 +7,7 @@ import Pagination from "../components/Pagination.jsx";
 import {
   formatRupiah, formatPhoneDisplay, STAGE_LABELS, SOURCE_LABELS, LEAD_SOURCES,
   PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat, KOTA_LIST,
-  ORDER_STATUS_LABELS,
+  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
 } from "../utils/format.js";
 import { exportToExcel } from "../utils/export.js";
 
@@ -164,6 +164,7 @@ export default function Customers() {
       Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
       "Status Order Terbaru": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
       "ID Order": c.latestOrderNumber || "",
+      "Status Pembayaran": PAYMENT_STATUS_LABELS[c.latestPaymentStatus] || "",
       "Keluhan Terbaru": c.latestKeluhan || "",
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,

@@ -51,6 +51,12 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  BELUM_BAYAR  // belum ada pembayaran
+  DP           // sudah bayar uang muka
+  LUNAS        // sudah lunas
+}
+
 enum ConversationStatus {
   OPEN
   PENDING
@@ -209,9 +215,10 @@ model Order {
   id          String      @id @default(cuid())
   customerId  String
   customer    Customer    @relation(fields: [customerId], references: [id])
-  status      OrderStatus @default(PENDING)
-  value       Int         // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
-  quantity    Int         @default(1)
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(BELUM_BAYAR)
+  value         Int           // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
+  quantity      Int           @default(1)
   orderNumber String?     // ID order manual, diisi sales (contoh: "ORD-001")
   notes       String?
   createdAt   DateTime    @default(now())

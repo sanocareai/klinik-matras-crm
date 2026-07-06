@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { exportToExcel } from "../utils/export.js";
-import { formatRupiah, STAGE_LABELS, SOURCE_LABELS } from "../utils/format.js";
+import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
 
 const NAV_ITEMS = [
   { key: "profil",        label: "Profil Perusahaan", icon: Building2 },
@@ -19,7 +19,7 @@ const NAV_ITEMS = [
 const KATEGORI_LABELS = {
   pembukaan: "Pembukaan",
   follow_up: "Follow Up",
-  penawaran: "Penawaran",
+  penawaran: "Offers/Negosiasi",
   konfirmasi: "Konfirmasi",
   penutupan: "Penutupan",
   lainnya: "Lainnya",
@@ -28,7 +28,7 @@ const KATEGORI_LABELS = {
 const KATEGORI_COLORS = {
   pembukaan: { bg: "#dbeafe", color: "#1e40af" },
   follow_up: { bg: "#ede9fe", color: "#5b21b6" },
-  penawaran: { bg: "#dcfce7", color: "#166534" },
+  : { bg: "#dcfce7", color: "#166534" },
   konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
   penutupan: { bg: "#fee2e2", color: "#991b1b" },
   lainnya:   { bg: "#f3f4f6", color: "#374151" },
@@ -474,11 +474,14 @@ export default function Pengaturan({ user }) {
           Kota:               c.city || "",
           "Status Kasur":     HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
           Tags:               (c.tags || []).join(", "),
-          Pipeline:           STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
-          "Sumber Lead":      SOURCE_LABELS[c.leadSource] || c.leadSource || "",
-          "Jumlah Order":     c.orderCount || 0,
-          "Total Nilai Order": formatRupiah(c.orderValue || 0),
-          "Sales Person":     c.assignedSales?.name || "",
+          Pipeline:                STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
+          "Status Order Terbaru":  ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
+          "ID Order":              c.latestOrderNumber || "",
+          "Status Pembayaran":     PAYMENT_STATUS_LABELS[c.latestPaymentStatus] || "",
+          "Sumber Lead":           SOURCE_LABELS[c.leadSource] || c.leadSource || "",
+          "Jumlah Order":          c.orderCount || 0,
+          "Total Nilai Order":     formatRupiah(c.orderValue || 0),
+          "Sales Person":          c.assignedSales?.name || "",
         })),
         `export-pelanggan-${new Date().toISOString().slice(0, 10)}`
       );

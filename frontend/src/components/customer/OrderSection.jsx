@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
+  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES,
   UKURAN_KASUR, MERK_KASUR,
 } from "../../utils/format.js";
 
@@ -56,9 +57,10 @@ const ORDER_STATUS_BADGE = {
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
 function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const info = parseNotes(order.notes);
-  const [editing, setEditing]         = useState(false);
-  const [status, setStatus]           = useState(order.status);
-  const [orderNumber, setOrderNumber] = useState(order.orderNumber || "");
+  const [editing, setEditing]             = useState(false);
+  const [status, setStatus]               = useState(order.status);
+  const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
+  const [orderNumber, setOrderNumber]     = useState(order.orderNumber || "");
   const [merkKasur, setMerkKasur]     = useState(info.merkKasur);
   const [ukuran, setUkuran]           = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]         = useState(info.keluhanCustomer);
@@ -81,6 +83,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
     try {
       await api.updateOrder(order.id, {
         status,
+        paymentStatus,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         orderNumber: orderNumber.trim() || null,
       });
@@ -109,6 +112,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   function handleCancel() {
     const inf = parseNotes(order.notes);
     setStatus(order.status);
+    setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
     setOrderNumber(order.orderNumber || "");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
@@ -155,19 +159,29 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         )}
       </div>
 
-      {/* Status */}
+      {/* Status Pengerjaan + Status Pembayaran — dalam 1 baris di view mode */}
       <div style={{ marginBottom: 8 }}>
         <span style={metaLabel}>Status</span>
         {editing ? (
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={selStyleFull}>
-            {ORDER_STATUSES.map((s) => (
-              <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-            ))}
-          </select>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} style={selStyleFull}>
+              {ORDER_STATUSES.map((s) => (
+                <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+              ))}
+            </select>
+            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} style={selStyleFull}>
+              {PAYMENT_STATUSES.map((s) => (
+                <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s] || s}</option>
+              ))}
+            </select>
+          </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
               {ORDER_STATUS_LABELS[order.status] || order.status}
+            </span>
+            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"] }}>
+              {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
             </span>
             <select
               value={order.status}

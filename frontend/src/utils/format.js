@@ -106,15 +106,42 @@ export const ORDER_STATUS_LABELS = {
 };
 
 export const SOURCE_LABELS = {
-  ADS: "Iklan",
-  INSTAGRAM: "Instagram",
+  META_ADS:        "Meta Ads (FB/IG)",
+  GOOGLE_ADS:      "Google Ads",
+  WEBSITE_ORGANIC: "Website Organik",
+  INSTAGRAM:       "Instagram Organik",
+  WHATSAPP_DIRECT: "WhatsApp Langsung",
+  REFERRAL:        "Referral",
+  OTHER:           "Lainnya",
+  // Enum lama — tetap dipetakan agar data customer lama tampil benar
+  ADS:     "Iklan",
   WEBSITE: "Website",
-  WHATSAPP_DIRECT: "WhatsApp",
-  REFERRAL: "Referral",
-  OTHER: "Lainnya",
 };
 
-export const LEAD_SOURCES = Object.entries(SOURCE_LABELS).map(([v, l]) => ({ value: v, label: l }));
+// Opsi dropdown untuk customer baru (hanya enum aktif, bukan yang deprecated)
+export const LEAD_SOURCES = [
+  { value: "META_ADS",        label: "Meta Ads (FB/IG)" },
+  { value: "GOOGLE_ADS",      label: "Google Ads" },
+  { value: "WEBSITE_ORGANIC", label: "Website Organik" },
+  { value: "INSTAGRAM",       label: "Instagram Organik" },
+  { value: "WHATSAPP_DIRECT", label: "WhatsApp Langsung" },
+  { value: "REFERRAL",        label: "Referral" },
+  { value: "OTHER",           label: "Lainnya" },
+];
+
+export const PAYMENT_STATUS_LABELS = {
+  BELUM_BAYAR: "Belum Bayar",
+  DP:          "DP",
+  LUNAS:       "Lunas",
+};
+
+export const PAYMENT_STATUS_BADGE = {
+  BELUM_BAYAR: { background: "#fef2f2", color: "#dc2626" },
+  DP:          { background: "#fff7ed", color: "#f97316" },
+  LUNAS:       { background: "#f0fdf4", color: "#16a34a" },
+};
+
+export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
 
 export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
