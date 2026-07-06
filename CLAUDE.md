@@ -819,20 +819,39 @@ Cron 03:00 WIB → pg_dump | gzip → ~/klinik-matras/backups/
 **Cron di VPS (setup manual oleh Gilang setelah git pull):**
 ```
 0 3 * * * cd /home/ubuntu/klinik-matras && ./backend/scripts/backup-database.sh >> /home/ubuntu/klinik-matras/backups/backup.log 2>&1
+*/15 * * * * cd /home/ubuntu/klinik-matras && ./backend/scripts/check-waha-status.sh >> /home/ubuntu/klinik-matras/backups/waha-monitor.log 2>&1
 ```
+
+**Script monitoring WAHA:** `backend/scripts/check-waha-status.sh`
+- Cek WAHA session setiap 15 menit
+- Debounce: alert maksimal 1x per jam (lock file di /tmp)
+- Lock file hilang saat reboot → langsung alert kalau WAHA belum reconnect
 
 **Env var yang perlu ditambah di `backend/.env` di VPS:**
 ```
-BACKUP_NOTIFY_PHONE=628xxxxxxxxx   # nomor WA admin untuk notifikasi gagal
+BACKUP_NOTIFY_PHONE=628xxxxxxxxx   # nomor WA admin untuk notifikasi backup gagal + WAHA alert
+
+# Email fallback — kalau WAHA mati, alert dikirim via email (opsional tapi dianjurkan)
+# Gmail: buat App Password di https://myaccount.google.com/apppasswords
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=admin@klinikmatras.com
+SMTP_PASS=xxxx xxxx xxxx xxxx    # Gmail App Password (16 karakter dengan spasi)
+SMTP_FROM=admin@klinikmatras.com
+ALERT_EMAIL_TO=admin@klinikmatras.com
 ```
 
 **Setup prasyarat di VPS (sekali saja):**
 1. `curl https://rclone.org/install.sh | sudo bash` — install rclone
 2. `rclone config` — tambah remote bernama `gdrive` → pilih Google Drive → ikuti wizard OAuth
-3. `chmod +x backend/scripts/backup-database.sh backend/scripts/restore-database.sh`
-4. Tambah `BACKUP_NOTIFY_PHONE` ke `backend/.env` → `docker compose restart backend`
+3. `chmod +x backend/scripts/backup-database.sh backend/scripts/restore-database.sh backend/scripts/check-waha-status.sh`
+4. Tambah env var ke `backend/.env` → `docker compose restart backend`
 5. Setup cron (`crontab -e`)
 6. Test manual: `cd ~/klinik-matras && ./backend/scripts/backup-database.sh`
+7. Test WAHA monitor: `cd ~/klinik-matras && ./backend/scripts/check-waha-status.sh`
 
 **Notifikasi gagal:** endpoint `POST /api/internal/backup-alert` (no JWT, localhost only)
 dipanggil oleh `trap ERR` di script bash → backend kirim WA via wahaClient.
+
+**Notifikasi WAHA down:** endpoint `POST /api/internal/waha-alert` (no JWT, localhost only)
+→ coba kirim WA → kalau gagal (WAHA memang down) → fallback kirim email → log ke file.
