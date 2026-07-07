@@ -10,3 +10,4 @@ backend/data/knowledge/meta.json
 
 # Capacitor Android — keystore JANGAN di-commit (simpan terpisah di tempat aman)
 frontend/android/release.keystore
+backups/
