@@ -32,16 +32,19 @@ function normalizeWahaUrl(url) {
 }
 
 // Kirim pesan teks
-export async function sendText(to, text) {
+// quotedMessageId: WAHA externalId pesan yang dikutip (untuk fitur reply/quote), opsional
+export async function sendText(to, text, quotedMessageId = null) {
   const rawDigits = to.split("@")[0];
   if (rawDigits.length > 13 && !rawDigits.startsWith("62")) {
     console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to);
   }
   const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const body = { session: WAHA_SESSION, chatId, text };
+  if (quotedMessageId) body.quotedMessageId = quotedMessageId;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ session: WAHA_SESSION, chatId, text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`WAHA sendText gagal (${res.status}): ${await res.text()}`);
   return res.json();

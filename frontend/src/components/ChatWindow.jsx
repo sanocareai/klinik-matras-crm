@@ -4,6 +4,7 @@ import {
   Send, MessageSquare, CheckCircle, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
   ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical, Eye, CheckCheck,
+  Reply, Forward, Pin,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -106,45 +107,243 @@ function isJsonError(str) {
 }
 
 // ── Media Bubble ──────────────────────────────────────────────────────────────
-function MediaBubble({ m }) {
+function MediaBubble({ m, onReply, onForward }) {
+  const [hovered, setHovered] = useState(false);
+  const longPressRef = useRef(null);
+
+  const isOut  = m.direction === "OUTBOUND";
   const hasMedia = !!m.mediaType;
-  // Jangan tampilkan teks kalau itu JSON error dari bug lama, atau kalau sudah ada media
   const text = (!isJsonError(m.content) && m.content) ? m.content : "";
 
+  function handleTouchStart() {
+    longPressRef.current = setTimeout(() => setHovered(true), 600);
+  }
+  function handleTouchEnd() {
+    clearTimeout(longPressRef.current);
+    // auto-hide setelah 3 detik di mobile
+    setTimeout(() => setHovered(false), 3000);
+  }
+
   return (
-    <div className={`bubble ${m.direction === "OUTBOUND" ? "out" : "in"}`}>
-      {m.mediaType === "image" && m.mediaUrl && (
-        <img
-          src={m.mediaUrl}
-          alt="Foto"
-          className="bubble-img"
-          onClick={() => window.open(m.mediaUrl, "_blank")}
-          onError={(e) => { e.target.style.display = "none"; }}
-        />
-      )}
-      {m.mediaType === "video" && m.mediaUrl && (
-        <video src={m.mediaUrl} controls className="bubble-video" />
-      )}
-      {m.mediaType === "audio" && m.mediaUrl && (
-        <audio src={m.mediaUrl} controls className="bubble-audio" />
-      )}
-      {m.mediaType === "document" && m.mediaUrl && (
-        <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="bubble-doc">
-          <FileText size={18} style={{ flexShrink: 0 }} />
-          <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
-        </a>
-      )}
-      {/* Media ada tapi URL belum tersedia (gagal download saat pesan masuk) */}
-      {hasMedia && !m.mediaUrl && (
-        <div className="bubble-media-placeholder">
-          {m.mediaType === "image"    && <><ImageIcon size={16} /> Foto (tidak bisa diunduh)</>}
-          {m.mediaType === "video"    && <><Video size={16} /> Video (tidak bisa diunduh)</>}
-          {m.mediaType === "audio"    && <><Mic size={16} /> Pesan Suara (tidak bisa diunduh)</>}
-          {m.mediaType === "document" && <><FileText size={16} /> Dokumen (tidak bisa diunduh)</>}
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: isOut ? "flex-end" : "flex-start",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={() => clearTimeout(longPressRef.current)}
+    >
+      {/* Tombol aksi — muncul saat hover (balas + teruskan) */}
+      {hovered && (
+        <div style={{
+          display: "flex",
+          gap: 4,
+          marginBottom: 4,
+          background: "var(--card-bg, #fff)",
+          border: "1px solid var(--border, #e5e7eb)",
+          borderRadius: 14,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+          padding: "3px 8px",
+        }}>
+          {onReply && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReply(m); setHovered(false); }}
+              title="Balas"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #6b7280)", padding: "3px", borderRadius: "50%", display: "flex", alignItems: "center" }}
+            >
+              <Reply size={14} />
+            </button>
+          )}
+          {onForward && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onForward(m); setHovered(false); }}
+              title="Teruskan"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #6b7280)", padding: "3px", borderRadius: "50%", display: "flex", alignItems: "center" }}
+            >
+              <Forward size={14} />
+            </button>
+          )}
         </div>
       )}
-      {text && <span className="bubble-text">{text}</span>}
-      <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
+
+      <div className={`bubble ${isOut ? "out" : "in"}`} style={{ alignSelf: "auto" }}>
+        {/* Preview pesan yang dikutip (reply/quote) */}
+        {m.replyTo && (
+          <div style={{
+            borderLeft: `3px solid ${isOut ? "rgba(255,255,255,0.6)" : "var(--primary, #2563eb)"}`,
+            background: isOut ? "rgba(0,0,0,0.12)" : "rgba(37,99,235,0.07)",
+            borderRadius: 6,
+            padding: "5px 8px",
+            marginBottom: 7,
+            fontSize: 12,
+            cursor: "default",
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 2, fontSize: 11, opacity: 0.85 }}>
+              {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
+            </div>
+            <div style={{
+              opacity: 0.75,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: 220,
+            }}>
+              {m.replyTo.content || (m.replyTo.mediaType ? `[${m.replyTo.mediaType}]` : "Pesan")}
+            </div>
+          </div>
+        )}
+
+        {/* Label diteruskan */}
+        {m.forwarded && (
+          <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, opacity: 0.65, marginBottom: 4 }}>
+            <Forward size={11} /> Diteruskan
+          </div>
+        )}
+
+        {/* Konten media */}
+        {m.mediaType === "image" && m.mediaUrl && (
+          <img
+            src={m.mediaUrl}
+            alt="Foto"
+            className="bubble-img"
+            onClick={() => window.open(m.mediaUrl, "_blank")}
+            onError={(e) => { e.target.style.display = "none"; }}
+          />
+        )}
+        {m.mediaType === "video" && m.mediaUrl && (
+          <video src={m.mediaUrl} controls className="bubble-video" />
+        )}
+        {m.mediaType === "audio" && m.mediaUrl && (
+          <audio src={m.mediaUrl} controls className="bubble-audio" />
+        )}
+        {m.mediaType === "document" && m.mediaUrl && (
+          <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="bubble-doc">
+            <FileText size={18} style={{ flexShrink: 0 }} />
+            <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
+          </a>
+        )}
+        {hasMedia && !m.mediaUrl && (
+          <div className="bubble-media-placeholder">
+            {m.mediaType === "image"    && <><ImageIcon size={16} /> Foto (tidak bisa diunduh)</>}
+            {m.mediaType === "video"    && <><Video size={16} /> Video (tidak bisa diunduh)</>}
+            {m.mediaType === "audio"    && <><Mic size={16} /> Pesan Suara (tidak bisa diunduh)</>}
+            {m.mediaType === "document" && <><FileText size={16} /> Dokumen (tidak bisa diunduh)</>}
+          </div>
+        )}
+        {text && <span className="bubble-text">{text}</span>}
+        <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Forward Modal ─────────────────────────────────────────────────────────────
+function ForwardModal({ messageToForward, onClose, onForwarded }) {
+  const [convs, setConvs]       = useState([]);
+  const [search, setSearch]     = useState("");
+  const [loading, setLoading]   = useState(true);
+  const [forwarding, setForwarding] = useState(false);
+
+  useEffect(() => {
+    api.getConversations().then((data) => { setConvs(data); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+
+  const filtered = convs.filter((c) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      c.customer?.name?.toLowerCase().includes(q) ||
+      (c.customer?.phone || "").includes(q)
+    );
+  });
+
+  async function handleForward(targetConvId) {
+    if (forwarding) return;
+    setForwarding(true);
+    try {
+      await api.forwardMessage(messageToForward.conversationId, messageToForward.id, targetConvId);
+      onForwarded?.();
+      onClose();
+    } catch (err) {
+      alert("Gagal teruskan pesan: " + err.message);
+    } finally {
+      setForwarding(false);
+    }
+  }
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: "var(--card-bg, #fff)", borderRadius: 14, width: "90%", maxWidth: 420, boxShadow: "0 8px 32px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "80vh" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 15 }}>
+            <Forward size={16} /> Teruskan Pesan
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #9ca3af)", padding: 4 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Preview pesan yang diteruskan */}
+        <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border, #e5e7eb)", fontSize: 12, color: "var(--text-secondary, #6b7280)" }}>
+          <div style={{ background: "var(--bg, #f8fafc)", borderRadius: 8, padding: "8px 12px", borderLeft: "3px solid var(--primary, #2563eb)" }}>
+            {messageToForward.content || (messageToForward.mediaType ? `[${messageToForward.mediaType}]` : "Pesan")}
+          </div>
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari percakapan..."
+            style={{ width: "100%", boxSizing: "border-box", padding: "8px 12px", border: "1px solid var(--border, #e5e7eb)", borderRadius: 8, fontSize: 13, outline: "none", fontFamily: "inherit" }}
+          />
+        </div>
+
+        {/* Daftar percakapan */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {loading && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted, #9ca3af)", fontSize: 13 }}>Memuat...</p>}
+          {!loading && filtered.length === 0 && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted, #9ca3af)", fontSize: 13 }}>Tidak ditemukan</p>}
+          {filtered.map((c) => {
+            const name = c.customer?.name || c.customer?.phone || "Pelanggan";
+            return (
+              <button
+                key={c.id}
+                onClick={() => handleForward(c.id)}
+                disabled={forwarding}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 20px", background: "none", border: "none",
+                  borderBottom: "1px solid var(--border, #e5e7eb)",
+                  cursor: forwarding ? "not-allowed" : "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                  {c.customer?.phone && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted, #9ca3af)" }}>{c.customer.phone}</div>
+                  )}
+                </div>
+                <Forward size={13} style={{ color: "var(--primary, #2563eb)", flexShrink: 0 }} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -208,6 +407,12 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [bannerCollapsed, setBannerCollapsed] = useState(false);
   const [draftLoading, setDraftLoading]       = useState(false);
 
+  // Reply (quote) state
+  const [replyingTo, setReplyingTo] = useState(null); // pesan yang sedang dibalas
+  // Forward state
+  const [forwardMsg, setForwardMsg] = useState(null); // pesan yang sedang diteruskan
+  const [showForwardModal, setShowForwardModal] = useState(false);
+
   // Media attachment state
   const [pendingFile, setPendingFile]     = useState(null); // { file, preview, mediaType, sendAs }
   const [caption, setCaption]             = useState("");
@@ -239,6 +444,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     setPendingFile(null);
     setDraft("");
     setBannerCollapsed(false);
+    setReplyingTo(null);
+    setForwardMsg(null);
+    setShowForwardModal(false);
 
     let interval;
     async function load() {
@@ -286,10 +494,17 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     if (!draft.trim()) return;
     setSending(true);
     try {
-      const msg = await api.sendMessage(conversation.id, draft);
+      // Kalau sedang reply, kirim dengan quotedMessageId (externalId di WAHA) + replyToId (DB id)
+      const msg = await api.sendMessage(
+        conversation.id,
+        draft,
+        replyingTo?.externalId || null,
+        replyingTo?.id || null,
+      );
       setMessages((p) => [...p, msg]);
       setDraft("");
-      setBannerCollapsed(true); // sembunyikan banner setelah pesan pertama terkirim
+      setReplyingTo(null); // hapus reply strip setelah kirim
+      setBannerCollapsed(true);
     } catch (err) { alert(err.message); }
     finally { setSending(false); }
   }
@@ -642,7 +857,14 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
 
       {/* ── Pesan ── */}
       <div className="chat-messages">
-        {messages.map((m) => <MediaBubble key={m.id} m={m} />)}
+        {messages.map((m) => (
+          <MediaBubble
+            key={m.id}
+            m={m}
+            onReply={(msg) => { setReplyingTo(msg); textareaRef.current?.focus(); }}
+            onForward={(msg) => { setForwardMsg(msg); setShowForwardModal(true); }}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
 
@@ -686,6 +908,28 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             onClose={() => setShowProductPicker(false)}
             onSent={(msgs) => { setMessages((p) => [...p, ...msgs]); setShowProductPicker(false); }}
           />
+        )}
+
+        {/* Reply strip — tampil saat membalas pesan tertentu */}
+        {replyingTo && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 14px", borderTop: "1px solid var(--border, #e5e7eb)",
+            background: "var(--bg, #f8fafc)",
+          }}>
+            <div style={{ width: 3, alignSelf: "stretch", background: "var(--primary, #2563eb)", borderRadius: 4, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--primary, #2563eb)", marginBottom: 2 }}>
+                Membalas {replyingTo.direction === "OUTBOUND" ? "pesan kamu" : "pelanggan"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary, #6b7280)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {replyingTo.content || (replyingTo.mediaType ? `[${replyingTo.mediaType}]` : "Pesan")}
+              </div>
+            </div>
+            <button onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #9ca3af)", padding: 4, flexShrink: 0 }}>
+              <X size={14} />
+            </button>
+          </div>
         )}
 
         {/* Voice recording bar */}
@@ -822,6 +1066,17 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <CustomerPanel customerId={conversation?.customer?.id} />
           </div>
         </div>
+      )}
+
+      {/* ── Forward Modal ── */}
+      {showForwardModal && forwardMsg && (
+        <ForwardModal
+          messageToForward={forwardMsg}
+          onClose={() => { setShowForwardModal(false); setForwardMsg(null); }}
+          onForwarded={() => {
+            // Tidak perlu refresh — pesan diteruskan ke percakapan LAIN
+          }}
+        />
       )}
     </div>
   );

@@ -73,6 +73,25 @@ export default function Inbox({ user }) {
     if (active?.id === updated.id) setActive((prev) => ({ ...prev, ...updated }));
   }
 
+  async function handlePin(convId, pinned) {
+    try {
+      await api.updateConversation(convId, { pinned });
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === convId ? { ...c, pinned, pinnedAt: pinned ? new Date().toISOString() : null } : c
+        );
+        // Sortir ulang secara optimistik: yang disematkan naik ke atas
+        return updated.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.lastMessageAt) - new Date(a.lastMessageAt);
+        });
+      });
+    } catch (err) {
+      alert("Gagal: " + err.message);
+    }
+  }
+
   return (
     <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}`}>
       <ConversationList
@@ -86,6 +105,7 @@ export default function Inbox({ user }) {
         search={search}
         onSearch={setSearch}
         user={user}
+        onPin={handlePin}
       />
       <ChatWindow
         conversation={active}

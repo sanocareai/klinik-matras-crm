@@ -99,7 +99,11 @@ conversationRouter.get("/", async (req, res) => {
 
   const conversations = await prisma.conversation.findMany({
     where,
-    orderBy: { lastMessageAt: "desc" },
+    orderBy: [
+      { pinned: "desc" },                               // percakapan yang disematkan muncul di atas
+      { pinnedAt: { sort: "desc", nulls: "last" } },   // di antara yang disematkan, terbaru dulu
+      { lastMessageAt: "desc" },
+    ],
     include: {
       customer: true,
       messages: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -130,6 +134,11 @@ conversationRouter.get("/:id/messages", async (req, res) => {
   const messages = await prisma.message.findMany({
     where:   { conversationId: convId },
     orderBy: { createdAt: "asc" },
+    include: {
+      replyTo: {
+        select: { id: true, content: true, direction: true, mediaType: true },
+      },
+    },
   });
   res.json(messages);
 
@@ -166,8 +175,10 @@ conversationRouter.get("/:id/messages", async (req, res) => {
 });
 
 // Kirim pesan teks
+// quotedMessageId: WAHA externalId pesan yang dikutip (opsional, untuk reply/quote)
+// replyToId: DB id pesan yang dikutip (opsional, untuk simpan relasi di DB)
 conversationRouter.post("/:id/messages", async (req, res) => {
-  const { content } = req.body;
+  const { content, quotedMessageId, replyToId } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: "Pesan kosong" });
 
   const conversation = await prisma.conversation.findUnique({
@@ -181,7 +192,7 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      wahaMsg = await sendText(conversation.customer.phone, content);
+      wahaMsg = await sendText(conversation.customer.phone, content, quotedMessageId || null);
     } catch (waErr) {
       console.error("[sendText gagal]", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
@@ -195,8 +206,13 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   let message;
   try {
     message = await prisma.message.create({
-      data: { conversationId: conversation.id, direction: "OUTBOUND", content,
-              externalId: wahaMsg?.id || null },
+      data: {
+        conversationId: conversation.id,
+        direction: "OUTBOUND",
+        content,
+        replyToId: replyToId || null,
+        externalId: wahaMsg?.id || null,
+      },
     });
   } catch (e) {
     if (e.code !== "P2002") throw e;
@@ -462,15 +478,75 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
   }
 });
 
-// Update status / unread / isRead percakapan
+// Teruskan (forward) pesan ke percakapan lain
+conversationRouter.post("/:id/forward", async (req, res) => {
+  const { messageId, targetConversationId } = req.body;
+  if (!messageId || !targetConversationId)
+    return res.status(400).json({ error: "messageId dan targetConversationId wajib diisi" });
+
+  const sourceMsg = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!sourceMsg) return res.status(404).json({ error: "Pesan tidak ditemukan" });
+
+  const targetConv = await prisma.conversation.findUnique({
+    where: { id: targetConversationId },
+    include: { customer: true },
+  });
+  if (!targetConv) return res.status(404).json({ error: "Percakapan tujuan tidak ditemukan" });
+
+  let wahaMsg = null;
+  if (targetConv.channel === "WHATSAPP" && targetConv.customer?.phone) {
+    try {
+      if (sourceMsg.mediaUrl && sourceMsg.mediaType) {
+        const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+        const fileUrl = sourceMsg.mediaUrl.startsWith("http")
+          ? sourceMsg.mediaUrl
+          : `${BACKEND_INTERNAL_URL}${sourceMsg.mediaUrl}`;
+        const mimeMap = { image: "image/jpeg", video: "video/mp4", audio: "audio/ogg", document: "application/octet-stream" };
+        wahaMsg = await sendMedia(
+          targetConv.customer.phone,
+          { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
+          sourceMsg.content || "",
+          "media"
+        );
+      } else if (sourceMsg.content) {
+        wahaMsg = await sendText(targetConv.customer.phone, sourceMsg.content);
+      }
+    } catch (err) {
+      console.error("[forward] WAHA gagal:", err.message);
+      return res.status(502).json({ error: `Gagal teruskan ke WhatsApp: ${err.message}` });
+    }
+  }
+
+  const newMsg = await prisma.message.create({
+    data: {
+      conversationId: targetConversationId,
+      direction: "OUTBOUND",
+      content: sourceMsg.content || "",
+      mediaType: sourceMsg.mediaType || null,
+      mediaUrl: sourceMsg.mediaUrl || null,
+      forwarded: true,
+      externalId: wahaMsg?.id || null,
+    },
+  });
+
+  await prisma.conversation.update({
+    where: { id: targetConversationId },
+    data:  { lastMessageAt: new Date() },
+  });
+
+  res.status(201).json(newMsg);
+});
+
+// Update status / unread / isRead / pinned percakapan
 conversationRouter.patch("/:id", async (req, res) => {
-  const { status, assignedToId, unread, isRead, handoverNote } = req.body;
+  const { status, assignedToId, unread, isRead, handoverNote, pinned } = req.body;
   const data = {};
   if (status)                     data.status       = status;
   if (assignedToId !== undefined) data.assignedToId = assignedToId;
   if (unread !== undefined)       data.unread       = unread;
   if (isRead !== undefined)       { data.isRead = isRead; if (isRead) data.readAt = new Date(); }
   if (handoverNote !== undefined) data.handoverNote = handoverNote;
+  if (pinned !== undefined)       { data.pinned = pinned; data.pinnedAt = pinned ? new Date() : null; }
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
     data,

@@ -99,10 +99,15 @@ export const api = {
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
-  sendMessage: (conversationId, content) =>
+  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, quotedMessageId, replyToId }),
+    }),
+  forwardMessage: (sourceConvId, messageId, targetConversationId) =>
+    request(`/conversations/${sourceConvId}/forward`, {
+      method: "POST",
+      body: JSON.stringify({ messageId, targetConversationId }),
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

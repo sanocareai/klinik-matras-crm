@@ -1,5 +1,5 @@
-import React from "react";
-import { Search, UserCheck, Eye, CheckCheck } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Search, UserCheck, Eye, CheckCheck, Pin } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
 
@@ -24,7 +24,28 @@ export default function ConversationList({
   search,
   onSearch,
   user,
+  onPin,
 }) {
+  // Context menu: { convId, x, y, pinned }
+  const [contextMenu, setContextMenu] = useState(null);
+  const longPressRef = useRef(null);
+
+  // Tutup context menu kalau klik di luar
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [contextMenu]);
+
+  function openContextMenu(e, conv) {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = e.clientX || (e.touches?.[0]?.clientX) || 0;
+    const y = e.clientY || (e.touches?.[0]?.clientY) || 0;
+    setContextMenu({ convId: conv.id, x, y, pinned: !!conv.pinned });
+  }
+
   return (
     <div className="conversation-list">
       {/* Tab filter status */}
@@ -77,15 +98,25 @@ export default function ConversationList({
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
           const isUnread     = !!c.unread;
           const isRead       = !!c.isRead;
-          const isReplied    = !c.isUnanswered; // pesan terakhir adalah outbound = sudah dibalas
+          const isReplied    = !c.isUnanswered;
           const isMine       = c.assignedToId === user?.id;
           const assignedName = c.assignedTo?.name;
+          const isPinned     = !!c.pinned;
 
           return (
             <button
               key={c.id}
               className={`conversation-item${c.id === activeId ? " active" : ""}${isUnread ? " unread" : ""}`}
               onClick={() => onSelect(c)}
+              onContextMenu={(e) => openContextMenu(e, c)}
+              onTouchStart={(e) => {
+                const touch = e.touches[0];
+                longPressRef.current = setTimeout(() => {
+                  setContextMenu({ convId: c.id, x: touch.clientX, y: touch.clientY, pinned: isPinned });
+                }, 600);
+              }}
+              onTouchEnd={() => clearTimeout(longPressRef.current)}
+              onTouchMove={() => clearTimeout(longPressRef.current)}
             >
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
@@ -96,9 +127,14 @@ export default function ConversationList({
                   <span className="customer-name" style={isUnread ? { fontWeight: 800, color: "var(--text-main)" } : {}}>
                     {name}
                   </span>
-                  <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
-                    {formatTanggalWaktu(c.lastMessageAt)}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {isPinned && (
+                      <Pin size={11} style={{ color: "#7c3aed", flexShrink: 0 }} title="Disematkan" />
+                    )}
+                    <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
+                      {formatTanggalWaktu(c.lastMessageAt)}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="conv-badges">
@@ -106,7 +142,7 @@ export default function ConversationList({
                   <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
-                  {/* Badge "Sudah Dibuka" — tampil saat isRead true TAPI belum dibalas */}
+                  {/* Badge "Sudah Dibuka" */}
                   {isRead && !isReplied && (
                     <span title="Sudah dibuka tapi belum dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#ede9fe", color: "#5b21b6" }}>
                       <Eye size={10} /> Dibuka
@@ -118,7 +154,7 @@ export default function ConversationList({
                       <CheckCheck size={10} /> Dibalas
                     </span>
                   )}
-                  {/* Badge pesan belum dibalas ≥ 1 jam */}
+                  {/* Badge belum dibalas ≥ 1 jam */}
                   {c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && (
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>
                       {c.unansweredMinutes >= 120
@@ -144,6 +180,42 @@ export default function ConversationList({
           );
         })}
       </div>
+
+      {/* Context menu: Sematkan / Lepas Sematan */}
+      {contextMenu && onPin && (
+        <div
+          style={{
+            position: "fixed",
+            left: Math.min(contextMenu.x, window.innerWidth - 170),
+            top: Math.min(contextMenu.y, window.innerHeight - 60),
+            background: "var(--card-bg, #fff)",
+            border: "1px solid var(--border, #e5e7eb)",
+            borderRadius: 10,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+            zIndex: 1000,
+            minWidth: 160,
+            overflow: "hidden",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              onPin(contextMenu.convId, !contextMenu.pinned);
+              setContextMenu(null);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", padding: "11px 16px",
+              background: "none", border: "none",
+              cursor: "pointer", fontSize: 13,
+              textAlign: "left", color: "var(--text-primary, #111827)",
+            }}
+          >
+            <Pin size={14} style={{ color: "#7c3aed" }} />
+            {contextMenu.pinned ? "Lepas Sematan" : "Sematkan di Atas"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

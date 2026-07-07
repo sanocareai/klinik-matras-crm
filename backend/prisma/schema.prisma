@@ -144,11 +144,14 @@ model Conversation {
   isRead        Boolean             @default(false)  // sudah dibuka (di CRM atau di HP)
   readAt        DateTime?                             // kapan terakhir dibaca
   handoverNote  String?
+  pinned        Boolean             @default(false)   // disematkan di atas daftar
+  pinnedAt      DateTime?                             // kapan terakhir disematkan
   createdAt     DateTime            @default(now())
 
   messages Message[]
 
   @@index([channel, status])
+  @@index([pinned])
 }
 
 model Message {
@@ -160,6 +163,10 @@ model Message {
   mediaType       String?          // "image" | "video" | "audio" | "document"
   mediaUrl        String?          // path lokal: /uploads/xxx atau URL WAHA
   externalId      String?          @unique
+  replyToId       String?          // ID pesan yang dibalas (untuk fitur quote/reply)
+  replyTo         Message?         @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  replies         Message[]        @relation("MessageReply")
+  forwarded       Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])
