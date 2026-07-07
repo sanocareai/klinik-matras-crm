@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead } from "../services/wahaClient.js";
+import { syncReadFromWaha } from "../services/reconciliation.js";
 import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
@@ -165,8 +166,9 @@ webhookRouter.post("/waha", async (req, res) => {
     // Handle event status sesi — WAHA kirim ini saat WA connect/disconnect
     if (event === "session.status") {
       if (payload?.status === "WORKING") {
-        console.log("[webhook] WAHA session CONNECTED — mulai auto-sync riwayat di background");
+        console.log("[webhook] WAHA session CONNECTED — mulai auto-sync riwayat & read status");
         setImmediate(autoSyncHistory);
+        setImmediate(syncReadFromWaha); // sinkronisasi read status segera setelah konek
       }
       return;
     }

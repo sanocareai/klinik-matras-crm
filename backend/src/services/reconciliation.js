@@ -1,12 +1,85 @@
-// Nightly reconciliation job — dijalankan jam 2 pagi WIB via node-cron.
-// Tujuan: deteksi drift antara jumlah pesan di WAHA vs DB, simpan ke SyncDiscrepancy.
-// Kalau drift >2 pesan → kemungkinan ada pesan yang tidak masuk via webhook.
+// Dua job terjadwal:
+// 1. syncReadFromWaha()    — setiap 2 menit, sinkronisasi status read antara WAHA dan CRM
+//    Kalau sales buka chat di HP WhatsApp → unreadCount=0 di WAHA → CRM update isRead=true
+// 2. runReconciliation()   — setiap jam 2 pagi, deteksi drift jumlah pesan
 
 import cron from "node-cron";
 import { prisma } from "../db.js";
 import { getChats, fetchChatHistory, normalizePhoneNumber } from "./wahaClient.js";
 
 const WAHA_SESSION = process.env.WAHA_SESSION || "default";
+
+// ── Sinkronisasi status read dari WAHA → CRM (dijalankan setiap 2 menit) ──────
+// Cara kerja:
+//   - Ambil 100 chat terbaru dari WAHA — tiap chat punya field unreadCount
+//   - Kalau unreadCount=0 tapi CRM masih unread/belum isRead → berarti sudah dibaca
+//     di HP WhatsApp (bukan lewat CRM) → update CRM supaya sinkron
+//   - Kalau unreadCount>0 tapi CRM sudah isRead → berarti ada pesan baru yang belum
+//     masuk via webhook → reset isRead=false, unread=true di CRM
+// Lock sederhana — cegah dua siklus berjalan bersamaan kalau job lambat
+let syncReadRunning = false;
+
+export async function syncReadFromWaha() {
+  if (syncReadRunning) return; // jangan tumpuk job
+  syncReadRunning = true;
+  try {
+    const chats = await getChats(100);
+    if (!chats.length) return;
+
+    let updated = 0;
+    for (const chat of chats) {
+      const rawId = chat.id || "";
+      // Skip grup dan non-@c.us (broadcast, status, dll)
+      if (!rawId.includes("@c.us")) continue;
+
+      // WAHA chat object field unreadCount (kadang snake_case unread_count)
+      const wahaUnread = chat.unreadCount ?? chat.unread_count ?? null;
+      if (wahaUnread === null) continue; // field tidak ada di response ini, skip
+
+      const phone = await normalizePhoneNumber(rawId, WAHA_SESSION);
+      if (!phone) continue;
+
+      const customer = await prisma.customer.findUnique({
+        where:  { phone },
+        select: { id: true },
+      });
+      if (!customer) continue;
+
+      const conv = await prisma.conversation.findFirst({
+        where:   { customerId: customer.id, channel: "WHATSAPP" },
+        orderBy: { lastMessageAt: "desc" },
+        select:  { id: true, isRead: true, unread: true },
+      });
+      if (!conv) continue;
+
+      if (wahaUnread === 0 && (!conv.isRead || conv.unread)) {
+        // WAHA bilang sudah terbaca (di HP atau CRM) — update CRM supaya sinkron
+        await prisma.conversation.update({
+          where: { id: conv.id },
+          data:  { isRead: true, readAt: new Date(), unread: false },
+        });
+        updated++;
+        console.log(`[syncRead] isRead=true untuk ${phone} (unreadCount=0 di WAHA)`);
+      } else if (wahaUnread > 0 && conv.isRead) {
+        // Ada pesan baru yang belum terbaca — pastikan CRM juga tahu
+        await prisma.conversation.update({
+          where: { id: conv.id },
+          data:  { isRead: false, unread: true },
+        });
+        updated++;
+        console.log(`[syncRead] isRead=false untuk ${phone} (unreadCount=${wahaUnread} di WAHA)`);
+      }
+    }
+
+    if (updated > 0) {
+      console.log(`[syncRead] Sinkronisasi selesai — ${updated} percakapan diperbarui`);
+    }
+  } catch (e) {
+    console.error("[syncRead] Error:", e.message);
+  } finally {
+    syncReadRunning = false;
+  }
+}
 
 // Jalankan satu siklus rekonsiliasi — bisa dipanggil manual untuk test
 export async function runReconciliation() {
@@ -74,14 +147,20 @@ export async function runReconciliation() {
   }
 }
 
-// Daftarkan cron job — jam 2 pagi WIB (UTC+7 = 19:00 UTC)
-// Format: detik menit jam hari-bulan bulan hari-minggu
+// Daftarkan semua cron job:
+// 1. Setiap 2 menit — sinkronisasi status read WAHA ↔ CRM
+// 2. Jam 2 pagi WIB — deteksi drift jumlah pesan
 export function startReconciliationJob() {
-  cron.schedule("0 19 * * *", async () => {
+  // Job 1: sync read status setiap 2 menit
+  cron.schedule("*/2 * * * *", async () => {
+    await syncReadFromWaha();
+  }, { timezone: "Asia/Jakarta" });
+  console.log("[reconciliation] Job syncRead terdaftar — jalan setiap 2 menit");
+
+  // Job 2: nightly reconciliation jam 2 pagi WIB
+  cron.schedule("0 2 * * *", async () => {
     console.log("[reconciliation] Cron fired — jam 2 pagi WIB");
     await runReconciliation();
-  }, {
-    timezone: "Asia/Jakarta",
-  });
-  console.log("[reconciliation] Cron job terdaftar — akan jalan tiap jam 02:00 WIB");
+  }, { timezone: "Asia/Jakarta" });
+  console.log("[reconciliation] Job nightly terdaftar — jalan setiap jam 02:00 WIB");
 }
