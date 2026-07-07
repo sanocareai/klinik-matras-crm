@@ -145,33 +145,20 @@ export async function downloadMediaMessage(messageId) {
 }
 
 // Kirim read receipt ke WhatsApp — supaya pesan berubah jadi centang biru di HP customer.
-// GOWS: PUT /api/{session}/chats/{chatId}/read
-// NOWEB fallback: POST /api/sendSeen
+// Dari log WAHA: PUT /chats/{id}/read → 404 (tidak ada di versi ini)
+//               POST /api/sendSeen   → 201 (berhasil) ← yang kita pakai
 // Return: true kalau berhasil, false kalau gagal (gagal = wajar, tidak crash proses lain)
 export async function markChatAsRead(phone) {
   if (!phone) return false;
   const chatId = `${phone}@c.us`;
   try {
-    // GOWS endpoint (primary)
-    const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/read`,
-      { method: "PUT", headers: headers(), body: JSON.stringify({}) }
-    );
-    if (res.ok) {
-      console.log("[markChatAsRead] GOWS berhasil untuk:", phone);
-      return true;
-    }
-    // Fallback: NOWEB sendSeen
-    const res2 = await fetch(`${WAHA_BASE_URL}/api/sendSeen`, {
+    const res = await fetch(`${WAHA_BASE_URL}/api/sendSeen`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ session: WAHA_SESSION, chatId }),
     });
-    if (res2.ok) {
-      console.log("[markChatAsRead] NOWEB fallback berhasil untuk:", phone);
-      return true;
-    }
-    console.warn("[markChatAsRead] Kedua endpoint gagal:", res.status, res2.status, "phone:", phone);
+    if (res.ok) return true;
+    console.warn("[markChatAsRead] sendSeen gagal:", res.status, "phone:", phone);
     return false;
   } catch (e) {
     console.warn("[markChatAsRead] Error:", e.message);
@@ -306,15 +293,16 @@ export async function resolvePhoneFromLid(lid, session) {
 }
 
 // Ambil daftar chat aktif dari WAHA (untuk reconciliation job)
-// Return: array chat object { id, name, timestamp, ... } atau [] kalau gagal
+// sortBy: WAHA hanya terima "conversationTimestamp" | "id" | "name" (bukan lastMessageAt)
+// Return: array chat object { id, name, unreadCount, timestamp, ... } atau [] kalau gagal
 export async function getChats(limit = 20) {
   try {
     const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats?limit=${limit}&sortBy=lastMessageAt&desc=true`,
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats?limit=${limit}&sortBy=conversationTimestamp`,
       { headers: headers() }
     );
     if (!res.ok) {
-      console.warn("[getChats] Gagal:", res.status);
+      console.warn("[getChats] Gagal:", res.status, await res.text().catch(() => ""));
       return [];
     }
     const data = await res.json();
