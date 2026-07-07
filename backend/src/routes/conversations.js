@@ -137,11 +137,12 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   });
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
+  let wahaMsg = null;
   if (conversation.channel === "WHATSAPP") {
     if (!conversation.customer.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
-      await sendText(conversation.customer.phone, content);
+      wahaMsg = await sendText(conversation.customer.phone, content);
     } catch (waErr) {
       console.error("[sendText gagal]", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
@@ -150,9 +151,18 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     return res.status(400).json({ error: "Channel ini belum didukung (Phase 2)" });
   }
 
-  const message = await prisma.message.create({
-    data: { conversationId: conversation.id, direction: "OUTBOUND", content },
-  });
+  // Simpan pesan ke DB — externalId dari WAHA dipakai untuk dedup dengan webhook fromMe
+  // P2002 = webhook sudah duluan simpan (race condition) → ambil record yang sudah ada
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: { conversationId: conversation.id, direction: "OUTBOUND", content,
+              externalId: wahaMsg?.id || null },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    message = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id } });
+  }
   await prisma.conversation.update({
     where: { id: conversation.id },
     data:  { lastMessageAt: new Date() },
@@ -249,7 +259,8 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   }
 
   const message = await prisma.message.create({
-    data: { conversationId: conversation.id, direction: "OUTBOUND", content: caption, mediaType, mediaUrl },
+    data: { conversationId: conversation.id, direction: "OUTBOUND",
+            content: caption, mediaType, mediaUrl, externalId: waResult?.id || null },
   });
   await prisma.conversation.update({
     where: { id: conversation.id },

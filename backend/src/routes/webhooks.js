@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture } from "../services/wahaClient.js";
+import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory } from "../services/wahaClient.js";
 import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
@@ -85,8 +85,51 @@ webhookRouter.post("/waha", async (req, res) => {
     const { event, payload } = req.body;
     console.log("[WAHA webhook]", event, JSON.stringify(payload));
 
+    // Handle event status sesi — WAHA kirim ini saat WA connect/disconnect
+    if (event === "session.status") {
+      if (payload?.status === "WORKING") {
+        console.log("[webhook] WAHA session CONNECTED — mulai auto-sync riwayat di background");
+        setImmediate(autoSyncHistory);
+      }
+      return;
+    }
+
     if (event !== "message") return;
-    if (!payload || payload.fromMe) return;
+    if (!payload) return;
+
+    // Pesan outbound dari HP admin sendiri (bukan lewat CRM) — tangkap supaya CRM sync
+    if (payload.fromMe) {
+      const externalId = payload.id;
+      if (!externalId) return;
+
+      // Dedupe: kalau sudah disimpan saat kirim dari CRM, skip
+      const dup = await prisma.message.findUnique({ where: { externalId } });
+      if (dup) return;
+
+      // Untuk fromMe: nomor customer ada di chatId — payload.from = nomor admin sendiri
+      const phone = cleanPhoneNumber(payload.chatId || "");
+      if (!phone) return;
+
+      const customer = await prisma.customer.findUnique({ where: { phone } });
+      if (!customer) return; // jangan buat customer baru dari pesan keluar admin
+
+      const conversation = await prisma.conversation.findFirst({
+        where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+        orderBy: { lastMessageAt: "desc" },
+      });
+      if (!conversation) return;
+
+      await prisma.message.create({
+        data: { conversationId: conversation.id, direction: "OUTBOUND",
+                content: payload.body || "", externalId },
+      });
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data:  { lastMessageAt: new Date() },
+      });
+      broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+      return;
+    }
 
     const externalId = payload.id;
     if (!externalId || !payload.from) return;
@@ -246,3 +289,40 @@ webhookRouter.post("/waha", async (req, res) => {
     console.error("Gagal proses webhook WAHA:", err);
   }
 });
+
+// Sinkronisasi riwayat chat dari WAHA untuk semua customer — dipanggil saat session CONNECTED
+async function autoSyncHistory() {
+  try {
+    const convs = await prisma.conversation.findMany({
+      where:   { channel: "WHATSAPP" },
+      include: { customer: { select: { phone: true } } },
+      orderBy: { lastMessageAt: "desc" },
+      distinct: ["customerId"],
+    });
+    console.log("[auto-sync] Mulai sync", convs.length, "percakapan...");
+    for (const conv of convs) {
+      const phone = conv.customer?.phone;
+      if (!phone) continue;
+      const messages = await fetchChatHistory(phone, 200); // limit dinaikkan ke 200
+      for (const msg of messages) {
+        if (!msg.id) continue;
+        try {
+          await prisma.message.create({
+            data: {
+              conversationId: conv.id,
+              direction:      msg.fromMe ? "OUTBOUND" : "INBOUND",
+              content:        msg.body || "",
+              externalId:     msg.id,
+            },
+          });
+        } catch (e) {
+          if (e.code !== "P2002") console.warn("[auto-sync] Gagal simpan pesan:", e.message);
+          // P2002 = duplikat (sudah pernah disimpan), abaikan
+        }
+      }
+    }
+    console.log("[auto-sync] Selesai.");
+  } catch (e) {
+    console.error("[auto-sync] Error:", e.message);
+  }
+}
