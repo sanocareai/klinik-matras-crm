@@ -103,7 +103,7 @@ settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
 
     for (const customer of customers) {
       try {
-        const messages = await fetchChatHistory(customer.phone, 50);
+        const messages = await fetchChatHistory(customer.phone, 200);
         if (!messages.length) continue;
 
         // Cari conversation WA yang ada, atau buat baru (status RESOLVED karena ini history)

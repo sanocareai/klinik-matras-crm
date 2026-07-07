@@ -17,7 +17,7 @@ services:
     environment:
       WHATSAPP_DEFAULT_ENGINE: NOWEB
       WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
-      WHATSAPP_HOOK_EVENTS: message
+      WHATSAPP_HOOK_EVENTS: message,session.status
       WAHA_DASHBOARD_USERNAME: admin
       WAHA_DASHBOARD_PASSWORD: klinikmatras123
       WHATSAPP_SWAGGER_USERNAME: admin
