@@ -15,7 +15,10 @@ services:
     image: devlikeapro/waha
     restart: unless-stopped
     environment:
-      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC: "true"
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: 365
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT: 500
       WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
       WHATSAPP_HOOK_EVENTS: message,session.status
       WAHA_DASHBOARD_USERNAME: admin

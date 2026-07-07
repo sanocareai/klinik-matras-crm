@@ -1,6 +1,8 @@
 // Wrapper sederhana untuk panggil REST API WAHA.
 // Dokumentasi: swagger di WAHA_BASE_URL/docs saat WAHA jalan.
-// Field response/webhook bisa beda antar engine (WEBJS/NOWEB).
+// Field response/webhook bisa beda antar engine (NOWEB/GOWS).
+
+import { prisma } from "../db.js";
 
 const WAHA_BASE_URL = process.env.WAHA_BASE_URL || "http://localhost:3000";
 const WAHA_API_KEY  = process.env.WAHA_API_KEY  || "";
@@ -174,6 +176,76 @@ export function cleanPhoneNumber(rawId) {
   let num = rawId.split("@")[0];
   if (num.startsWith("0")) num = "62" + num.slice(1);
   return num;
+}
+
+// Resolve LID (Local ID WhatsApp) ke nomor telepon asli, dengan caching ke DB.
+// GOWS kadang mengirim JID format "xxx@lid" alih-alih nomor asli.
+// Endpoint WAHA: GET /api/{session}/lids/{lid} → { lid, pn: "628xxx@c.us" } (pn bisa null)
+export async function resolvePhoneFromLid(lid, session) {
+  if (!lid) return null;
+  // Strip suffix @lid kalau masih ada
+  const lidRaw = lid.split("@")[0];
+  if (!lidRaw) return null;
+
+  // 1. Cek cache di tabel LidMapping
+  try {
+    const cached = await prisma.lidMapping.findUnique({ where: { lid: lidRaw } });
+    if (cached) {
+      console.log("[resolvePhoneFromLid] Cache hit:", lidRaw, "→", cached.phoneNumber);
+      return cached.phoneNumber;
+    }
+  } catch (e) {
+    console.warn("[resolvePhoneFromLid] Cache lookup error:", e.message);
+  }
+
+  // 2. Panggil WAHA API
+  const sessionToUse = session || WAHA_SESSION;
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(sessionToUse)}/lids/${encodeURIComponent(lidRaw)}`,
+      { headers: headers() }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const pn = data.pn; // format "628xxx@c.us" atau null
+      if (pn) {
+        const phone = cleanPhoneNumber(pn);
+        if (phone) {
+          // 3. Simpan ke cache
+          await prisma.lidMapping.upsert({
+            where:  { lid: lidRaw },
+            create: { lid: lidRaw, phoneNumber: phone, session: sessionToUse },
+            update: { phoneNumber: phone, session: sessionToUse },
+          }).catch(() => {}); // cache write tidak boleh crash proses utama
+          console.log("[resolvePhoneFromLid] Berhasil resolve:", lidRaw, "→", phone);
+          return phone;
+        }
+      }
+      console.log("[resolvePhoneFromLid] WAHA API kembalikan pn=null untuk LID:", lidRaw);
+    } else {
+      console.warn("[resolvePhoneFromLid] WAHA API error:", res.status, "LID:", lidRaw);
+    }
+  } catch (e) {
+    console.warn("[resolvePhoneFromLid] Fetch error:", e.message);
+  }
+
+  // 4. Fallback: cari di tabel Customer — mungkin LID ini sudah tersimpan sebagai phone (data lama)
+  try {
+    const customer = await prisma.customer.findFirst({
+      where:  { phone: lidRaw },
+      select: { phone: true },
+    });
+    if (customer?.phone) {
+      console.log("[resolvePhoneFromLid] Fallback Customer record ditemukan untuk LID:", lidRaw);
+      return customer.phone; // ini masih LID, tapi setidaknya match ke customer yang ada
+    }
+  } catch (e) {
+    console.warn("[resolvePhoneFromLid] Customer lookup error:", e.message);
+  }
+
+  // 5. Semua cara gagal
+  console.warn(`[resolvePhoneFromLid] LID ${lidRaw} tidak bisa diresolve — pesan mungkin tersimpan dengan LID, perlu fix manual nanti`);
+  return null;
 }
 
 // Ambil riwayat pesan dari WAHA untuk 1 nomor (limit pesan terbaru)

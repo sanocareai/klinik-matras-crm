@@ -288,6 +288,18 @@ model SalesTarget {
   @@unique([userId, year, month])
 }
 
+// Cache resolusi LID (Local ID WhatsApp) → nomor telepon asli
+// GOWS kadang kirim JID format @lid alih-alih @s.whatsapp.net.
+// Setiap berhasil resolve via WAHA API, hasilnya di-cache di sini supaya
+// tidak perlu panggil API berulang untuk nomor yang sama.
+model LidMapping {
+  id          String   @id @default(cuid())
+  lid         String   @unique  // angka LID saja, tanpa suffix @lid
+  phoneNumber String            // nomor asli format 628xxx
+  session     String            // session WAHA yang berhasil resolve
+  resolvedAt  DateTime @default(now())
+}
+
 // Riwayat chat AI Playground — tersimpan per model config (id dari ai-models.json)
 model PlaygroundMessage {
   id            String   @id @default(cuid())
