@@ -170,10 +170,11 @@ export async function getSessionStatus() {
 }
 
 // Bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net / @lid
+// + strip device index WhatsApp multi-device (contoh: "628xxx:43@s.whatsapp.net" → "628xxx")
 // + normalisasi format Indonesia: 0xxx → 62xxx
 export function cleanPhoneNumber(rawId) {
   if (!rawId) return null;
-  let num = rawId.split("@")[0];
+  let num = rawId.split("@")[0].split(":")[0]; // strip domain, lalu strip :device-index
   if (num.startsWith("0")) num = "62" + num.slice(1);
   return num;
 }
