@@ -142,6 +142,22 @@ export async function downloadMediaMessage(messageId) {
   }
 }
 
+// Ambil URL foto profil kontak — return null kalau privasi dibatasi atau gagal (itu WAJAR)
+export async function getProfilePicture(phone) {
+  try {
+    const chatId = `${phone}@c.us`;
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/contacts/profile-picture?contactId=${encodeURIComponent(chatId)}`,
+      { headers: headers() }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.profilePictureURL || null;
+  } catch {
+    return null;
+  }
+}
+
 // Cek status sesi WhatsApp
 export async function getSessionStatus() {
   const res = await fetch(`${WAHA_BASE_URL}/api/sessions/${WAHA_SESSION}`, {

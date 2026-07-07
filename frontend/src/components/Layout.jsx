@@ -43,10 +43,9 @@ const NAV_SECTIONS = [
   },
   {
     section: "AI & OTOMASI",
-    adminOnly: true,
     items: [
-      { to: "/copilot",   label: "Tanya Sano", Icon: Sparkles },
-      { to: "/automation", label: "Otomasi",   Icon: Zap },
+      { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
+      { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
     ],
   },
   {

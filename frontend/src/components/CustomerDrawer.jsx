@@ -135,7 +135,7 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
       <div className="drawer-panel" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="drawer-header">
-          <Avatar name={displayName} size="md" />
+          <Avatar name={displayName} src={customer.profilePictureUrl} size="md" />
           <div className="drawer-header-info">
             <h2 className="drawer-title">{displayName}</h2>
             <p className="drawer-sub">{customer.phone || customer.instagramHandle}</p>

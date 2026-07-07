@@ -471,7 +471,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
         <button className="chat-back-btn" onClick={onBack} title="Kembali ke daftar">
           <ArrowLeft size={18} />
         </button>
-        <Avatar name={name} size="sm" />
+        <Avatar name={name} src={conversation.customer?.profilePictureUrl} size="sm" />
         <div className="chat-header-info" style={{ flex: 1, minWidth: 0 }}>
           <p className="chat-header-name">{name}</p>
           <div className="chat-header-meta">

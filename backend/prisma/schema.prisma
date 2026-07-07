@@ -122,6 +122,7 @@ model Customer {
   leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
   customerType        CustomerType  @default(END_USER)
   healthStatus        HealthStatus?
+  profilePictureUrl   String?       // foto profil WA — diambil sekali saat customer baru, nullable
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 

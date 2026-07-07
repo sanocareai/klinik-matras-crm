@@ -311,7 +311,7 @@ export default function Customers() {
                   {/* 1. Nama Pelanggan */}
                   <td>
                     <div className="cell-name-wrap">
-                      <Avatar name={displayName} size="sm" />
+                      <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
                       <div>
                         <div className="cell-name" style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           {displayName}

@@ -86,7 +86,7 @@ export default function ConversationList({
               onClick={() => onSelect(c)}
             >
               <div style={{ position: "relative", flexShrink: 0 }}>
-                <Avatar name={name} size="sm" />
+                <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
                 {isUnread && <span className="unread-dot" />}
               </div>
               <div className="conversation-item-body">

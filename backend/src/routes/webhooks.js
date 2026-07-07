@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl } from "../services/wahaClient.js";
+import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture } from "../services/wahaClient.js";
 
 export const webhookRouter = express.Router();
 
@@ -161,6 +161,15 @@ webhookRouter.post("/waha", async (req, res) => {
         leadSourceConfirmed: false,
       },
     });
+
+    // Untuk customer BARU: fetch foto profil WA sekali (fire-and-forget, gagal = wajar)
+    if (!existingCustomer) {
+      getProfilePicture(phone).then((url) => {
+        if (url) {
+          prisma.customer.update({ where: { phone }, data: { profilePictureUrl: url } }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
 
     // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan
     if (pendingClickId) {

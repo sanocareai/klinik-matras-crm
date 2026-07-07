@@ -159,7 +159,7 @@ export default function CustomerPanel({ customerId }) {
     <div className="customer-panel">
       {/* Header */}
       <div className="panel-header">
-        <Avatar name={displayName} size="md" />
+        <Avatar name={displayName} src={customer.profilePictureUrl} size="md" />
         <div className="panel-header-info">
           <p className="panel-name">{displayName}</p>
           <p className="panel-contact">{formatPhoneDisplay(customer.phone) || customer.instagramHandle}</p>

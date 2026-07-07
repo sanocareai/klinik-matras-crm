@@ -1,8 +1,13 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function CoPilotFloat() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Sembunyikan total di Inbox — halaman itu sudah punya UI sendiri,
+  // floating button malah menutupi tombol kirim pesan
+  if (location.pathname.startsWith("/inbox")) return null;
 
   return (
     <button
