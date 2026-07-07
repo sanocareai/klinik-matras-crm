@@ -140,7 +140,7 @@ function MediaBubble({ m, onReply, onForward }) {
       onMouseLeave={() => setHovered(false)}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      onTouchMove={() => clearTimeout(longPressRef.current)}
+      onTouchMove={() => clearTimeout(longPressTimerRef.current)}
     >
       {/* Tombol aksi — muncul saat hover (balas + teruskan) */}
       {hovered && (
@@ -211,22 +211,36 @@ function MediaBubble({ m, onReply, onForward }) {
 
         {/* Konten media */}
         {m.mediaType === "image" && m.mediaUrl && (
-          <img
-            src={m.mediaUrl}
-            alt="Foto"
-            className="bubble-img"
-            onClick={() => window.open(m.mediaUrl, "_blank")}
-            onError={(e) => { e.target.style.display = "none"; }}
-          />
+          // Pakai <a> bukan onClick agar tidak kena popup blocker mobile
+          <a
+            href={m.mediaUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "block", lineHeight: 0 }}
+          >
+            <img
+              src={m.mediaUrl}
+              alt="Foto"
+              className="bubble-img"
+              onError={(e) => { e.target.closest("a").style.display = "none"; }}
+            />
+          </a>
         )}
         {m.mediaType === "video" && m.mediaUrl && (
-          <video src={m.mediaUrl} controls className="bubble-video" />
+          <video src={m.mediaUrl} controls className="bubble-video" onClick={(e) => e.stopPropagation()} />
         )}
         {m.mediaType === "audio" && m.mediaUrl && (
-          <audio src={m.mediaUrl} controls className="bubble-audio" />
+          <audio src={m.mediaUrl} controls className="bubble-audio" onClick={(e) => e.stopPropagation()} />
         )}
         {m.mediaType === "document" && m.mediaUrl && (
-          <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="bubble-doc">
+          <a
+            href={m.mediaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="bubble-doc"
+            onClick={(e) => e.stopPropagation()}
+          >
             <FileText size={18} style={{ flexShrink: 0 }} />
             <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
           </a>
@@ -873,6 +887,13 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
       </div>
 
       {/* ── Input area ── */}
+      {conversation.type === "GROUP" ? (
+        <div className="chat-input-area" style={{ justifyContent: "center", padding: "12px 16px" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
+            Percakapan grup — tidak bisa dibalas dari CRM
+          </span>
+        </div>
+      ) : (
       <div
         className={`chat-input-area${dragOver ? " drag-active" : ""}`}
         onDragOver={handleDragOver}
@@ -987,6 +1008,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           </form>
         )}
       </div>
+      )} {/* tutup kondisional type !== GROUP */}
 
       {/* ── Attach Sheet (bottom sheet gaya WhatsApp — grid 2×3) ── */}
       {showAttachSheet && (
@@ -1067,7 +1089,7 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
         <div className="mobile-bottom-sheet-overlay" onClick={() => setShowCustomerDetail(false)}>
           <div className="mobile-bottom-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="bottom-sheet-handle" />
-            <CustomerPanel customerId={conversation?.customer?.id} />
+            <CustomerPanel customerId={conversation?.customer?.id} conversation={conversation} />
           </div>
         </div>
       )}

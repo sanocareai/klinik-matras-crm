@@ -62,7 +62,8 @@ export default function Inbox({ user }) {
     return (
       c.customer?.name?.toLowerCase().includes(q) ||
       c.customer?.phone?.includes(q) ||
-      c.customer?.instagramHandle?.toLowerCase().includes(q)
+      c.customer?.instagramHandle?.toLowerCase().includes(q) ||
+      c.groupName?.toLowerCase().includes(q)
     );
   });
 
@@ -113,7 +114,7 @@ export default function Inbox({ user }) {
         onConversationUpdated={handleConversationUpdated}
         onBack={() => setMobileView("list")}
       />
-      <CustomerPanel customerId={active?.customer?.id} />
+      <CustomerPanel customerId={active?.customer?.id} conversation={active} />
     </div>
   );
 }

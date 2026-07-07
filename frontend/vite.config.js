@@ -49,7 +49,9 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      "/api": "http://localhost:4000",
+      "/api":     "http://localhost:4000",
+      "/uploads": "http://localhost:4000", // file media chat (foto/video/dokumen)
+      "/media":   "http://localhost:4000", // foto produk
     },
   },
 });

@@ -156,6 +156,73 @@ function extFromMime(mime) {
   return map[cleanMime(mime)] || ".bin";
 }
 
+// ── Handler pesan grup WhatsApp ──────────────────────────────────────────────
+// Grup (@g.us) disimpan sebagai Conversation terpisah tanpa Customer record.
+// Tidak ada lead attribution, tidak ada customer upsert, tidak muncul di CRM Pelanggan.
+async function handleGroupMessage(payload, groupJid, externalId) {
+  try {
+    // Nama grup: GOWS mungkin expose di chatName atau Info.PushName (nama sender, bukan grup).
+    // Simpan apapun yang tersedia — bisa diupdate manual nanti.
+    const groupName =
+      payload.chatName ||
+      payload._data?.chatName ||
+      payload._data?.Info?.GroupName ||
+      null;
+
+    const fromMe  = !!payload.fromMe;
+    const text    = payload.body || "";
+    const direction = fromMe ? "OUTBOUND" : "INBOUND";
+
+    // Cari conversation grup yang masih aktif untuk JID ini
+    let conversation = await prisma.conversation.findFirst({
+      where: { groupJid, status: { not: "RESOLVED" } },
+      orderBy: { lastMessageAt: "desc" },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          type:      "GROUP",
+          groupJid,
+          groupName: groupName || groupJid.split("@")[0],
+          channel:   "WHATSAPP",
+          customerId: null,
+        },
+      });
+      console.log("[webhook] Grup baru dibuat:", groupJid, "→", conversation.id);
+    } else if (groupName && !conversation.groupName) {
+      // Update nama grup kalau baru diketahui
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data:  { groupName },
+      });
+    }
+
+    // Simpan pesan grup
+    try {
+      await prisma.message.create({
+        data: { conversationId: conversation.id, direction, content: text, externalId },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      return; // duplikat — race condition, skip
+    }
+
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessageAt: new Date(),
+        ...(direction === "INBOUND" ? { unread: true } : {}),
+      },
+    });
+
+    broadcast("new_message", { conversationId: conversation.id, customerId: null });
+    console.log("[webhook] Pesan grup disimpan:", groupJid, direction);
+  } catch (err) {
+    console.error("[webhook] Gagal proses pesan grup:", err.message);
+  }
+}
+
 webhookRouter.post("/waha", async (req, res) => {
   res.sendStatus(200); // Balas cepat supaya WAHA tidak retry
 
@@ -225,6 +292,14 @@ webhookRouter.post("/waha", async (req, res) => {
     const engine      = detectEngine(req.body);
     const sessionName = req.body.session || process.env.WAHA_SESSION || "default";
     console.log(`[webhook] Engine: ${engine}, Session: ${sessionName}`);
+
+    // ── Deteksi grup WhatsApp (@g.us) — SEBELUM extract phone individual ─────
+    // chatId untuk pesan grup selalu berakhiran "@g.us" di semua engine WAHA.
+    const chatJid = payload.chatId || payload._data?.Info?.Chat || "";
+    if (chatJid.endsWith("@g.us")) {
+      await handleGroupMessage(payload, chatJid, externalId);
+      return;
+    }
 
     // Normalisasi payload NOWEB/GOWS ke struktur yang sama (async — bisa resolve LID via API)
     const msgData = await extractMessageData(payload, engine, sessionName);
@@ -435,7 +510,7 @@ webhookRouter.post("/waha", async (req, res) => {
 async function autoSyncHistory() {
   try {
     const convs = await prisma.conversation.findMany({
-      where:    { channel: "WHATSAPP" },
+      where:    { channel: "WHATSAPP", type: "INDIVIDUAL" }, // skip grup
       include:  { customer: { select: { phone: true } } },
       orderBy:  { lastMessageAt: "desc" },
       distinct: ["customerId"],

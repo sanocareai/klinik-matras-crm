@@ -69,6 +69,11 @@ enum ConversationStatus {
   RESOLVED
 }
 
+enum ConversationType {
+  INDIVIDUAL  // percakapan 1-on-1 dengan customer
+  GROUP       // percakapan grup WhatsApp internal (tidak ada customer)
+}
+
 enum PipelineStage {
   LEAD
   QUALIFIED
@@ -133,8 +138,11 @@ model Customer {
 
 model Conversation {
   id            String              @id @default(cuid())
-  customerId    String
-  customer      Customer            @relation(fields: [customerId], references: [id])
+  type          ConversationType    @default(INDIVIDUAL) // INDIVIDUAL = customer, GROUP = grup WA internal
+  customerId    String?             // nullable — GROUP tidak punya customer
+  customer      Customer?           @relation(fields: [customerId], references: [id])
+  groupJid      String?             // JID grup e.g. "120363376@g.us" (hanya untuk type=GROUP)
+  groupName     String?             // nama grup (hanya untuk type=GROUP)
   channel       Channel
   status        ConversationStatus  @default(OPEN)
   assignedToId  String?
@@ -152,6 +160,7 @@ model Conversation {
 
   @@index([channel, status])
   @@index([pinned])
+  @@index([groupJid])
 }
 
 model Message {

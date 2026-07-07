@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Users } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
@@ -30,7 +30,40 @@ const LEAD_SOURCE_COLORS = {
   OTHER:           { bg: "#f3f4f6", color: "#374151" },
 };
 
-export default function CustomerPanel({ customerId }) {
+// Panel Info Grup — ditampilkan saat conversation.type === "GROUP"
+function GroupPanel({ conversation }) {
+  const groupName = conversation.groupName || conversation.groupJid?.split("@")[0] || "Grup";
+  return (
+    <div className="customer-panel" style={{ padding: "24px 16px" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: "50%",
+          background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <Users size={28} style={{ color: "#4338ca" }} />
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>{groupName}</div>
+          <span style={{ fontSize: 11, background: "#e0e7ff", color: "#4338ca", borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>
+            Grup WhatsApp
+          </span>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, background: "var(--bg)", borderRadius: 8, padding: "12px 14px" }}>
+        <p style={{ margin: 0 }}>
+          Ini adalah percakapan grup internal. Tidak ada profil pelanggan, order, atau catatan yang terkait dengan percakapan ini.
+        </p>
+        {conversation.groupJid && (
+          <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
+            JID: {conversation.groupJid}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function CustomerPanel({ customerId, conversation }) {
   const [customer, setCustomer] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -47,6 +80,8 @@ export default function CustomerPanel({ customerId }) {
   }
 
   useEffect(() => {
+    // Percakapan grup tidak punya customer — reset saja
+    if (conversation?.type === "GROUP") { setCustomer(null); setLoadError(null); return; }
     if (!customerId) { setCustomer(null); setLoadError(null); return; }
     console.log("[CustomerPanel] fetch customerId:", customerId);
     setLoadError(null);
@@ -119,6 +154,11 @@ export default function CustomerPanel({ customerId }) {
     } finally {
       setSavingType(false);
     }
+  }
+
+  // Percakapan grup → tampilkan panel info grup, bukan profil customer
+  if (conversation?.type === "GROUP") {
+    return <GroupPanel conversation={conversation} />;
   }
 
   if (!customerId) {

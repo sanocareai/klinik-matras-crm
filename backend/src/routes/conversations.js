@@ -89,12 +89,14 @@ conversationRouter.get("/", async (req, res) => {
   const where = status ? { status } : {};
 
   if (search) {
-    where.customer = {
-      OR: [
+    // Cari di customer (individual) DAN di groupName (grup)
+    where.OR = [
+      { customer: { OR: [
         { name:  { contains: search, mode: "insensitive" } },
         { phone: { contains: search } },
-      ],
-    };
+      ]}},
+      { groupName: { contains: search, mode: "insensitive" } },
+    ];
   }
 
   const conversations = await prisma.conversation.findMany({
@@ -189,7 +191,10 @@ conversationRouter.post("/:id/messages", async (req, res) => {
 
   let wahaMsg = null;
   if (conversation.channel === "WHATSAPP") {
-    if (!conversation.customer.phone)
+    // Percakapan grup tidak bisa dibalas dari CRM (tidak ada nomor customer tunggal)
+    if (conversation.type === "GROUP")
+      return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
+    if (!conversation.customer?.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
       wahaMsg = await sendText(conversation.customer.phone, content, quotedMessageId || null);
@@ -292,7 +297,9 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   }
 
   if (conversation.channel === "WHATSAPP") {
-    if (!conversation.customer.phone)
+    if (conversation.type === "GROUP")
+      return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
+    if (!conversation.customer?.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
     try {
       console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);

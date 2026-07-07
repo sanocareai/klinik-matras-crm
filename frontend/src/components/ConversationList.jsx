@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Search, UserCheck, Eye, CheckCheck, Pin } from "lucide-react";
+import { Search, UserCheck, Eye, CheckCheck, Pin, Users } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
 
@@ -118,8 +118,12 @@ export default function ConversationList({
         )}
 
         {conversations.map((c) => {
+          const isGroup      = c.type === "GROUP";
           const rawPhone     = c.customer?.phone;
-          const name         = c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan";
+          // Untuk grup, tampilkan nama grup; untuk individual, tampilkan nama/nomor customer
+          const name         = isGroup
+            ? (c.groupName || c.groupJid?.split("@")[0] || "Grup")
+            : (c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan");
           const lastMsg      = c.messages?.[0];
           const channelClass = c.channel?.toLowerCase();
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
@@ -147,7 +151,17 @@ export default function ConversationList({
               }}
             >
               <div style={{ position: "relative", flexShrink: 0 }}>
-                <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
+                {isGroup ? (
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <Users size={18} style={{ color: "#4338ca" }} />
+                  </div>
+                ) : (
+                  <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
+                )}
                 {isUnread && <span className="unread-dot" />}
               </div>
               <div className="conversation-item-body">
