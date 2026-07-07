@@ -176,6 +176,7 @@ model Message {
   replyTo         Message?         @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   replies         Message[]        @relation("MessageReply")
   forwarded       Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
+  senderName      String?          // nama pengirim (untuk pesan grup — beda-beda per pesan)
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])

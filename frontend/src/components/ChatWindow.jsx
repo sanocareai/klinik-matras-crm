@@ -176,6 +176,13 @@ function MediaBubble({ m, onReply, onForward }) {
       )}
 
       <div className={`bubble ${isOut ? "out" : "in"}`} style={{ alignSelf: "auto" }}>
+        {/* Nama pengirim — hanya untuk pesan grup (inbound) */}
+        {!isOut && m.senderName && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>
+            {m.senderName}
+          </div>
+        )}
+
         {/* Preview pesan yang dikutip (reply/quote) */}
         {m.replyTo && (
           <div style={{

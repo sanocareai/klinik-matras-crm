@@ -161,12 +161,20 @@ function extFromMime(mime) {
 // Tidak ada lead attribution, tidak ada customer upsert, tidak muncul di CRM Pelanggan.
 async function handleGroupMessage(payload, groupJid, externalId) {
   try {
-    // Nama grup: GOWS mungkin expose di chatName atau Info.PushName (nama sender, bukan grup).
-    // Simpan apapun yang tersedia — bisa diupdate manual nanti.
+    // Nama grup (bukan nama sender) — GOWS mungkin expose di chatName.
+    // Info.PushName = nama PENGIRIM, bukan nama grup, jadi tidak dipakai untuk groupName.
     const groupName =
       payload.chatName ||
       payload._data?.chatName ||
       payload._data?.Info?.GroupName ||
+      null;
+
+    // Nama pengirim pesan ini dalam grup
+    const senderName =
+      payload._data?.Info?.PushName ||
+      payload._data?.pushName       ||
+      payload.notifyName            ||
+      payload.pushName              ||
       null;
 
     const fromMe  = !!payload.fromMe;
@@ -198,10 +206,11 @@ async function handleGroupMessage(payload, groupJid, externalId) {
       });
     }
 
-    // Simpan pesan grup
+    // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)
     try {
       await prisma.message.create({
-        data: { conversationId: conversation.id, direction, content: text, externalId },
+        data: { conversationId: conversation.id, direction, content: text, externalId,
+                senderName: fromMe ? null : (senderName || null) },
       });
     } catch (e) {
       if (e.code !== "P2002") throw e;
