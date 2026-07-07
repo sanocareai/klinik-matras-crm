@@ -6,6 +6,7 @@ import {
   LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles,
 } from "lucide-react";
 import { api } from "../api.js";
+import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 
@@ -84,10 +85,21 @@ export default function Layout({ user, onLogout, children }) {
     () => localStorage.getItem("sidebar-collapsed") === "true"
   );
   const [mobileOpen, setMobileOpen]   = useState(false);
-  const prevUnread = useRef(null); // null = belum ada data awal
-  const lastSeenAt = useRef(new Date().toISOString()); // timestamp polling terakhir
+  const prevUnread    = useRef(null); // null = belum ada data awal
+  const lastSeenAt    = useRef(new Date().toISOString()); // timestamp polling terakhir
+  const fetchUnreadRef = useRef(null); // ref ke fetchUnread terbaru untuk SSE callback
 
   const isAdmin = user?.role === "ADMIN";
+
+  // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval
+  useSSE("new_message", () => { fetchUnreadRef.current?.(); });
+
+  // Refresh badge saat app kembali ke foreground (dari App.jsx visibilitychange)
+  useEffect(() => {
+    const handler = () => { fetchUnreadRef.current?.(); };
+    window.addEventListener("app-visible", handler);
+    return () => window.removeEventListener("app-visible", handler);
+  }, []);
 
   // Minta izin notifikasi sekali saat pertama login
   useEffect(() => {
@@ -138,8 +150,10 @@ export default function Layout({ user, onLogout, children }) {
         setUnreadCount(count);
       } catch {}
     }
+    fetchUnreadRef.current = fetchUnread; // update ref supaya SSE callback pakai versi terbaru
     fetchUnread();
-    const interval = setInterval(fetchUnread, 10000);
+    // SSE sebagai trigger utama — polling 60s hanya sebagai fallback
+    const interval = setInterval(fetchUnread, 60000);
     return () => clearInterval(interval);
   }, []);
 

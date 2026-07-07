@@ -1,49 +1,82 @@
 // VITE_API_BASE kosong = relative URL (untuk web/PWA browser, pakai proxy Vite dev / same-origin prod)
 // VITE_API_BASE diisi = absolute URL (untuk Capacitor APK, perlu tahu alamat server produksi)
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
+const TIMEOUT_MS = 30000; // 30 detik — cegah request hang selamanya
 
 function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Dipanggil saat server balas 401 — tampilkan modal "sesi berakhir" di App.jsx
+// tanpa hard reload (tidak kehilangan state UI, sales tidak kaget)
+function handleUnauthorized() {
+  localStorage.removeItem("token");
+  window.dispatchEvent(new CustomEvent("auth-error"));
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...options.headers,
-    },
-  });
-  if (res.status === 401) {
-    localStorage.removeItem("token");
-    window.location.reload();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...options.headers,
+      },
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Sesi berakhir, silakan login kembali");
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = "Terjadi kesalahan";
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("Koneksi timeout — coba lagi");
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  if (!res.ok) {
-    const text = await res.text();
-    let msg = "Terjadi kesalahan";
-    try { msg = JSON.parse(text).error || msg; } catch {}
-    throw new Error(msg);
-  }
-  return res.json();
 }
 
 // Khusus untuk upload file (multipart/form-data — tanpa Content-Type header agar boundary otomatis)
 async function requestFormData(path, formData) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: formData,
-  });
-  if (res.status === 401) { localStorage.removeItem("token"); window.location.reload(); }
-  if (!res.ok) {
-    const text = await res.text();
-    let msg = "Terjadi kesalahan";
-    try { msg = JSON.parse(text).error || msg; } catch {}
-    throw new Error(msg);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: authHeaders(),
+      body: formData,
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error("Sesi berakhir, silakan login kembali");
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = "Terjadi kesalahan";
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("Koneksi timeout — coba lagi");
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return res.json();
 }
 
 function buildQuery(params) {

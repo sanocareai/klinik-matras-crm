@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
@@ -22,19 +22,76 @@ export default function App() {
     const saved = localStorage.getItem("user");
     return saved ? JSON.parse(saved) : null;
   });
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   function handleLogin(u) {
     localStorage.setItem("user", JSON.stringify(u));
     setUser(u);
+    setSessionExpired(false);
   }
 
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
+    setSessionExpired(false);
   }
 
-  if (!user) return <Login onLogin={handleLogin} />;
+  // Tangkap event 401 dari api.js — tampilkan modal tanpa hard reload
+  useEffect(() => {
+    const handler = () => setSessionExpired(true);
+    window.addEventListener("auth-error", handler);
+    return () => window.removeEventListener("auth-error", handler);
+  }, []);
+
+  // Refresh SSE dan data saat app kembali ke foreground (relevan untuk APK Capacitor / tab kembali aktif)
+  useEffect(() => {
+    if (!user) return;
+    const handler = () => {
+      if (document.visibilityState === "visible") {
+        // Kirim custom event ke komponen yang perlu refresh — komponen listen sendiri kalau mau
+        window.dispatchEvent(new CustomEvent("app-visible"));
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [user]);
+
+  if (!user || sessionExpired) {
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        {sessionExpired && (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 9999,
+          }}>
+            <div style={{
+              background: "var(--card-bg)", borderRadius: 12, padding: "32px 28px",
+              maxWidth: 340, width: "90%", textAlign: "center",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>⏰</div>
+              <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>
+                Sesi Berakhir
+              </h3>
+              <p style={{ margin: "0 0 20px", color: "var(--text-secondary)", fontSize: 14 }}>
+                Login Anda sudah kadaluarsa. Silakan login kembali untuk melanjutkan.
+              </p>
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%" }}
+                onClick={() => setSessionExpired(false)}
+              >
+                Login Kembali
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <BrowserRouter>

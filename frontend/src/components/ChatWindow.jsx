@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useSSE } from "../hooks/useSSE.js";
 import {
   Send, MessageSquare, CheckCircle, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
@@ -221,6 +222,14 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const timerRef                          = useRef(null);
 
   const bottomRef    = useRef(null);
+  const loadMsgRef   = useRef(null); // selalu pegang versi load() terbaru untuk SSE callback
+
+  // SSE: refresh pesan saat ada pesan masuk di conversation ini
+  useSSE("new_message", (data) => {
+    if (data.conversationId === conversation?.id) {
+      loadMsgRef.current?.();
+    }
+  });
 
   useEffect(() => {
     if (!conversation) return;
@@ -236,8 +245,10 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
       const data = await api.getMessages(conversation.id);
       setMessages(data);
     }
+    loadMsgRef.current = load; // update ref supaya SSE callback pakai versi terbaru
     load();
-    interval = setInterval(load, 5000);
+    // SSE sebagai trigger utama — polling 60s hanya sebagai fallback
+    interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [conversation?.id]);
 

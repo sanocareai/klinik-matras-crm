@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture } from "../services/wahaClient.js";
+import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
 
@@ -233,6 +234,12 @@ webhookRouter.post("/waha", async (req, res) => {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data:  { lastMessageAt: new Date(), status: "OPEN", unread: true },
+    });
+
+    // Kirim SSE ke semua client yang sedang buka CRM — tidak perlu tunggu, fire-and-forget
+    broadcast("new_message", {
+      conversationId: conversation.id,
+      customerId:     customer.id,
     });
 
   } catch (err) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
+import { useSSE } from "../hooks/useSSE.js";
 import ConversationList from "../components/ConversationList.jsx";
 import ChatWindow from "../components/ChatWindow.jsx";
 import CustomerPanel from "../components/CustomerPanel.jsx";
@@ -15,6 +16,10 @@ export default function Inbox({ user }) {
   const [mobileView, setMobileView]       = useState("list");
   const [searchParams, setSearchParams]   = useSearchParams();
   const autoOpenDone = useRef(false);
+  const loadRef      = useRef(null); // selalu pegang versi load() terbaru
+
+  // SSE: refresh daftar percakapan saat ada pesan masuk (real-time, tanpa polling agresif)
+  useSSE("new_message", () => { loadRef.current?.(); });
 
   async function handleSelect(conv) {
     setActive(conv);
@@ -43,8 +48,10 @@ export default function Inbox({ user }) {
         }
       }
     }
+    loadRef.current = load; // update ref supaya SSE callback pakai versi terbaru
     load();
-    const interval = setInterval(load, 5000);
+    // SSE sebagai trigger utama — polling 60s hanya sebagai fallback
+    const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, [filterStatus]);
 
