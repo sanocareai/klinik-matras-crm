@@ -193,18 +193,27 @@ webhookRouter.post("/waha", async (req, res) => {
       // Lapis 3: default sudah diset di atas (WHATSAPP_DIRECT)
     }
 
-    // Upsert customer
-    const customer = await prisma.customer.upsert({
-      where:  { phone },
-      update: {},
-      create: {
-        phone,
-        name:               pushName || null,
-        leadSource:         detectedSource,
-        leadSourceDetail:   detectedDetail,
-        leadSourceConfirmed: false,
-      },
-    });
+    // Upsert customer — bungkus P2002 untuk handle race condition:
+    // dua webhook identik bisa tiba bersamaan sebelum salah satu selesai INSERT
+    let customer;
+    try {
+      customer = await prisma.customer.upsert({
+        where:  { phone },
+        update: {},
+        create: {
+          phone,
+          name:                pushName || null,
+          leadSource:          detectedSource,
+          leadSourceDetail:    detectedDetail,
+          leadSourceConfirmed: false,
+        },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      // Request lain sudah buat customer duluan — ambil yang sudah ada
+      customer = await prisma.customer.findUnique({ where: { phone } });
+      if (!customer) throw e;
+    }
 
     // Untuk customer BARU: fetch foto profil WA sekali (fire-and-forget, gagal = wajar)
     if (!existingCustomer) {
@@ -261,17 +270,22 @@ webhookRouter.post("/waha", async (req, res) => {
       }
     }
 
-    // Simpan pesan
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction:      "INBOUND",
-        content:        text,
-        mediaType:      mediaType || null,
-        mediaUrl:       mediaUrl  || null,
-        externalId,
-      },
-    });
+    // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction:      "INBOUND",
+          content:        text,
+          mediaType:      mediaType || null,
+          mediaUrl:       mediaUrl  || null,
+          externalId,
+        },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      return; // Pesan sudah disimpan oleh request lain, tidak perlu lanjut
+    }
 
     // Tandai unread = true supaya badge di sidebar bertambah
     await prisma.conversation.update({
