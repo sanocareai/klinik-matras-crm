@@ -1,4 +1,6 @@
-const BASE = "/api";
+// VITE_API_BASE kosong = relative URL (untuk web/PWA browser, pakai proxy Vite dev / same-origin prod)
+// VITE_API_BASE diisi = absolute URL (untuk Capacitor APK, perlu tahu alamat server produksi)
+const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 
 function authHeaders() {
   const token = localStorage.getItem("token");

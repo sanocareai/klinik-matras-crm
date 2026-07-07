@@ -1,0 +1,15 @@
+{
+  "appId": "com.klinikmatras.crm",
+  "appName": "Klinik Matras CRM",
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1500,
+      "backgroundColor": "#1e2139",
+      "showSpinner": false,
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP"
+    }
+  }
+}
