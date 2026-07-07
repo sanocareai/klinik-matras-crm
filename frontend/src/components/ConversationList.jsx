@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { Search, UserCheck, Eye, CheckCheck, Pin } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
@@ -26,24 +26,52 @@ export default function ConversationList({
   user,
   onPin,
 }) {
-  // Context menu: { convId, x, y, pinned }
-  const [contextMenu, setContextMenu] = useState(null);
-  const longPressRef = useRef(null);
+  const [contextMenu, setContextMenu] = useState(null); // { convId, x, y, pinned }
 
-  // Tutup context menu kalau klik di luar
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [contextMenu]);
+  // Ref untuk timer long-press + timestamp kapan long-press terpicu
+  // (timestamp dipakai untuk blok onClick yang terpicu tepat setelah long-press)
+  const longPressTimerRef = useRef(null);
+  const longPressAt      = useRef(0);
 
-  function openContextMenu(e, conv) {
+  function closeContextMenu() {
+    setContextMenu(null);
+  }
+
+  function showContextMenu(convId, x, y, pinned) {
+    longPressAt.current = Date.now();
+    // Pastikan menu tidak keluar dari layar
+    const safeX = Math.min(x, window.innerWidth  - 180);
+    const safeY = Math.min(y, window.innerHeight - 70);
+    setContextMenu({ convId, x: safeX, y: safeY, pinned });
+  }
+
+  function handleTouchStart(e, c) {
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    longPressTimerRef.current = setTimeout(() => {
+      showContextMenu(c.id, x, y, !!c.pinned);
+    }, 600);
+  }
+
+  function handleTouchEnd() {
+    clearTimeout(longPressTimerRef.current);
+  }
+
+  function handleTouchMove() {
+    clearTimeout(longPressTimerRef.current);
+  }
+
+  // onClick dipanggil setelah touchend (synthetic click di mobile).
+  // Kalau long-press baru saja terpicu (dalam 800ms), abaikan agar menu tidak langsung tertutup.
+  function handleClick(e, c) {
+    if (Date.now() - longPressAt.current < 800) return;
+    onSelect(c);
+  }
+
+  function handleContextMenu(e, c) {
     e.preventDefault();
-    e.stopPropagation();
-    const x = e.clientX || (e.touches?.[0]?.clientX) || 0;
-    const y = e.clientY || (e.touches?.[0]?.clientY) || 0;
-    setContextMenu({ convId: conv.id, x, y, pinned: !!conv.pinned });
+    showContextMenu(c.id, e.clientX, e.clientY, !!c.pinned);
   }
 
   return (
@@ -59,7 +87,6 @@ export default function ConversationList({
             {t.label}
           </button>
         ))}
-        {/* Tab "Milik Saya" */}
         <button
           onClick={onFilterMine}
           className={`conv-tab${filterMine ? " active" : ""}`}
@@ -107,16 +134,17 @@ export default function ConversationList({
             <button
               key={c.id}
               className={`conversation-item${c.id === activeId ? " active" : ""}${isUnread ? " unread" : ""}`}
-              onClick={() => onSelect(c)}
-              onContextMenu={(e) => openContextMenu(e, c)}
-              onTouchStart={(e) => {
-                const touch = e.touches[0];
-                longPressRef.current = setTimeout(() => {
-                  setContextMenu({ convId: c.id, x: touch.clientX, y: touch.clientY, pinned: isPinned });
-                }, 600);
+              onClick={(e) => handleClick(e, c)}
+              onContextMenu={(e) => handleContextMenu(e, c)}
+              onTouchStart={(e) => handleTouchStart(e, c)}
+              onTouchEnd={handleTouchEnd}
+              onTouchMove={handleTouchMove}
+              style={{
+                // Mencegah text selection saat long-press (penting di iOS)
+                WebkitUserSelect: "none",
+                userSelect: "none",
+                WebkitTouchCallout: "none",
               }}
-              onTouchEnd={() => clearTimeout(longPressRef.current)}
-              onTouchMove={() => clearTimeout(longPressRef.current)}
             >
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
@@ -142,19 +170,16 @@ export default function ConversationList({
                   <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
-                  {/* Badge "Sudah Dibuka" */}
                   {isRead && !isReplied && (
                     <span title="Sudah dibuka tapi belum dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#ede9fe", color: "#5b21b6" }}>
                       <Eye size={10} /> Dibuka
                     </span>
                   )}
-                  {/* Badge "Sudah Dibalas" */}
                   {isReplied && (
                     <span title="Sudah dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>
                       <CheckCheck size={10} /> Dibalas
                     </span>
                   )}
-                  {/* Badge belum dibalas ≥ 1 jam */}
                   {c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && (
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>
                       {c.unansweredMinutes >= 120
@@ -162,7 +187,6 @@ export default function ConversationList({
                         : "1j+ belum dibalas"}
                     </span>
                   )}
-                  {/* Badge siapa yang handle */}
                   {isMine ? (
                     <span className="badge badge-mine">Milik Saya</span>
                   ) : assignedName ? (
@@ -182,39 +206,48 @@ export default function ConversationList({
       </div>
 
       {/* Context menu: Sematkan / Lepas Sematan */}
-      {contextMenu && onPin && (
-        <div
-          style={{
-            position: "fixed",
-            left: Math.min(contextMenu.x, window.innerWidth - 170),
-            top: Math.min(contextMenu.y, window.innerHeight - 60),
-            background: "var(--card-bg, #fff)",
-            border: "1px solid var(--border, #e5e7eb)",
-            borderRadius: 10,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-            zIndex: 1000,
-            minWidth: 160,
-            overflow: "hidden",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              onPin(contextMenu.convId, !contextMenu.pinned);
-              setContextMenu(null);
-            }}
+      {contextMenu && (
+        <>
+          {/* Backdrop transparan — klik di luar menu = tutup */}
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 998 }}
+            onClick={closeContextMenu}
+            onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+          />
+          <div
             style={{
-              display: "flex", alignItems: "center", gap: 10,
-              width: "100%", padding: "11px 16px",
-              background: "none", border: "none",
-              cursor: "pointer", fontSize: 13,
-              textAlign: "left", color: "var(--text-primary, #111827)",
+              position: "fixed",
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: "var(--card-bg, #fff)",
+              border: "1px solid var(--border, #e5e7eb)",
+              borderRadius: 10,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
+              zIndex: 999,
+              minWidth: 160,
+              overflow: "hidden",
             }}
           >
-            <Pin size={14} style={{ color: "#7c3aed" }} />
-            {contextMenu.pinned ? "Lepas Sematan" : "Sematkan di Atas"}
-          </button>
-        </div>
+            {onPin && (
+              <button
+                onClick={() => {
+                  onPin(contextMenu.convId, !contextMenu.pinned);
+                  closeContextMenu();
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  width: "100%", padding: "12px 16px",
+                  background: "none", border: "none",
+                  cursor: "pointer", fontSize: 13,
+                  textAlign: "left", color: "var(--text-primary, #111827)",
+                }}
+              >
+                <Pin size={14} style={{ color: "#7c3aed" }} />
+                {contextMenu.pinned ? "Lepas Sematan" : "Sematkan di Atas"}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

@@ -109,19 +109,23 @@ function isJsonError(str) {
 // ── Media Bubble ──────────────────────────────────────────────────────────────
 function MediaBubble({ m, onReply, onForward }) {
   const [hovered, setHovered] = useState(false);
-  const longPressRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const longPressAt       = useRef(0);
 
   const isOut  = m.direction === "OUTBOUND";
   const hasMedia = !!m.mediaType;
   const text = (!isJsonError(m.content) && m.content) ? m.content : "";
 
   function handleTouchStart() {
-    longPressRef.current = setTimeout(() => setHovered(true), 600);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressAt.current = Date.now();
+      setHovered(true);
+      // Auto-hide setelah 4 detik agar tombol tidak menghalangi layar selamanya
+      setTimeout(() => setHovered(false), 4000);
+    }, 600);
   }
   function handleTouchEnd() {
-    clearTimeout(longPressRef.current);
-    // auto-hide setelah 3 detik di mobile
-    setTimeout(() => setHovered(false), 3000);
+    clearTimeout(longPressTimerRef.current);
   }
 
   return (
