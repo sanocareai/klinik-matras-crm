@@ -31,7 +31,7 @@ export default defineConfig({
           },
           // Static assets: cache dulu untuk loading lebih cepat
           {
-            urlPattern: /\.(?:js|css|html|png|jpg|jpeg|svg|woff2?)$/,
+            urlPattern: /\.(?:js|css|png|jpg|jpeg|svg|woff2?)$/,
             handler: "CacheFirst",
             options: {
               cacheName: "static-assets",
