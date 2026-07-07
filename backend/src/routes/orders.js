@@ -51,6 +51,31 @@ orderRouter.delete("/:id", async (req, res) => {
   }
 });
 
+// PATCH /api/orders/:id/complaint — tandai order sebagai komplain
+// Hanya bisa kalau status order sudah DELIVERED
+orderRouter.patch("/:id/complaint", async (req, res) => {
+  const { complaintDetail } = req.body;
+  try {
+    const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (order.status !== "DELIVERED") {
+      return res.status(400).json({ error: "Komplain hanya bisa dicatat setelah order berstatus DELIVERED (sudah terkirim/selesai)" });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: req.params.id },
+      data: {
+        hasComplaint:    true,
+        complaintDate:   new Date(),
+        complaintDetail: complaintDetail?.trim() || null,
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/orders/:orderId/items — tambah item layanan
 orderRouter.post("/:orderId/items", async (req, res) => {
   const { layananName, harga, sortOrder } = req.body;

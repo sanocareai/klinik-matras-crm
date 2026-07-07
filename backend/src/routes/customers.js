@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -88,6 +89,17 @@ customerRouter.get("/", async (req, res) => {
       .filter(Boolean)
       .join(", ") || null;
 
+    // Riwayat komplain dari semua order
+    const riwayatKomplain = orders
+      .filter((o) => o.hasComplaint)
+      .sort((a, b) => new Date(b.complaintDate) - new Date(a.complaintDate))
+      .map((o) => ({
+        orderId:        o.id,
+        orderNumber:    o.orderNumber,
+        complaintDate:  o.complaintDate,
+        complaintDetail: o.complaintDetail,
+      }));
+
     return {
       ...c,
       orderCount: orders.length,
@@ -101,6 +113,8 @@ customerRouter.get("/", async (req, res) => {
       latestMerkKasur,
       latestUkuranKasur,
       latestLayanan,
+      pernahKomplain: riwayatKomplain.length > 0,
+      riwayatKomplain,
     };
   });
 
@@ -130,7 +144,18 @@ customerRouter.get("/:id", async (req, res) => {
     })
     .filter(Boolean);
 
-  res.json({ ...customer, allKeluhan });
+  // Riwayat komplain
+  const riwayatKomplain = customer.orders
+    .filter((o) => o.hasComplaint)
+    .sort((a, b) => new Date(b.complaintDate) - new Date(a.complaintDate))
+    .map((o) => ({
+      orderId:        o.id,
+      orderNumber:    o.orderNumber,
+      complaintDate:  o.complaintDate,
+      complaintDetail: o.complaintDetail,
+    }));
+
+  res.json({ ...customer, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain });
 });
 
 // Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll
@@ -205,8 +230,12 @@ customerRouter.get("/:id/conversations", async (req, res) => {
 });
 
 // Catat order baru — value mulai 0, akan dihitung otomatis dari items
+// orderNumber di-generate otomatis berdasarkan category (jangan kirim dari frontend)
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, orderNumber, beratBadan } = req.body;
+  const { quantity, status, notes, beratBadan, category } = req.body;
+
+  const cat = category || "LAYANAN";
+  const orderNumber = await generateOrderNumber(cat);
 
   const order = await prisma.order.create({
     data: {
@@ -214,9 +243,10 @@ customerRouter.post("/:id/orders", async (req, res) => {
       value: 0,
       quantity: quantity ? Number(quantity) : 1,
       status: status || "PENDING",
+      category: cat,
+      orderNumber,
       notes,
-      ...(orderNumber !== undefined && { orderNumber: orderNumber?.trim() || null }),
-      ...(beratBadan  !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
+      ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
     },
     include: { items: true },
   });

@@ -57,6 +57,12 @@ enum PaymentStatus {
   LUNAS        // sudah lunas
 }
 
+enum OrderCategory {
+  LAYANAN  // Upgrade/Service/Ganti Kain
+  SEWA     // Kasur Sewa
+  BARU     // Kasur Baru
+}
+
 enum ConversationStatus {
   OPEN
   PENDING
@@ -217,17 +223,32 @@ model Order {
   customer    Customer    @relation(fields: [customerId], references: [id])
   status        OrderStatus   @default(PENDING)
   paymentStatus PaymentStatus @default(BELUM_BAYAR)
+  category      OrderCategory @default(LAYANAN)
   value         Int           // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
   quantity      Int           @default(1)
-  beratBadan  Int?          // berat badan customer dalam kg, nullable
-  orderNumber String?     // ID order manual, diisi sales (contoh: "ORD-001")
-  notes       String?
+  beratBadan    Int?          // berat badan customer dalam kg, nullable
+  orderNumber   String?       @unique // di-generate otomatis saat order dibuat
+  notes         String?
+  hasComplaint    Boolean   @default(false)
+  complaintDate   DateTime?
+  complaintDetail String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   items OrderItem[]
 
   @@index([customerId])
+}
+
+// Counter sequence untuk generate nomor order otomatis per prefix+bulan+tahun
+model OrderSequence {
+  id      String @id @default(cuid())
+  prefix  String // "RES" | "SWS" | "NEW"
+  year    Int
+  month   Int
+  lastSeq Int    @default(0)
+
+  @@unique([prefix, year, month])
 }
 
 // Item layanan dalam satu order (kasur, upgrade, servis, dsb.)

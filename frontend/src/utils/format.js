@@ -209,7 +209,7 @@ export const UKURAN_KASUR = [
 export const MERK_KASUR = [
   "Comforta", "Spring Air", "Dunlopillo", "Therapedic",
   "King Koil", "Sealy", "Serta", "Lady Americana",
-  "Elite", "Florence", "Guhdo", "Lainnya",
+  "Elite", "Florence", "Guhdo", "Sano", "Lainnya",
 ];
 
 // Preset date ranges untuk DateRangePicker
