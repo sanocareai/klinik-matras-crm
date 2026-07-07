@@ -1,5 +1,5 @@
 -- DropIndex
-DROP INDEX "OrderWeightEntry_orderId_idx";
+DROP INDEX IF EXISTS "OrderWeightEntry_orderId_idx";
 
 -- CreateTable
 CREATE TABLE "LidMapping" (

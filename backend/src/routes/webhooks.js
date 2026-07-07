@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { cleanPhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, resolvePhoneFromLid } from "../services/wahaClient.js";
+import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory } from "../services/wahaClient.js";
 import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
@@ -22,68 +22,55 @@ function detectEngine(reqBody) {
 }
 
 // ── Parser NOWEB ─────────────────────────────────────────────────────────────
-// NOWEB: payload.from bisa "@lid" — nomor asli ada di _data.key.remoteJidAlt.
+// NOWEB: payload.from bisa "@lid" — nomor asli dicari di remoteJidAlt dulu,
+// baru fallback ke resolvePhoneFromLid via normalizePhoneNumber.
 // fromMe: nomor customer ada di chatId (payload.from = nomor admin sendiri).
-function extractPhoneNoweb(payload) {
+async function extractPhoneNoweb(payload, session) {
   if (payload.fromMe) {
-    return cleanPhoneNumber(payload.chatId || "");
+    return await normalizePhoneNumber(payload.chatId || "", session);
   }
   const from = payload.from || "";
   if (from.includes("@lid")) {
+    // NOWEB sering punya remoteJidAlt — lebih langsung dari WAHA API
     const realJid =
       payload._data?.key?.remoteJidAlt ||
       payload._data?.remoteJidAlt       ||
       payload.remoteJidAlt;
     if (realJid) {
       console.log("[webhook] NOWEB @lid → pakai remoteJidAlt:", realJid);
-      return cleanPhoneNumber(realJid);
+      const phone = await normalizePhoneNumber(realJid, session);
+      if (phone) return phone;
     }
-    console.warn("[webhook] NOWEB @lid tanpa remoteJidAlt, pesan dibuang. from:", from);
-    return null;
+    // Fallback: resolve via WAHA API (normalizePhoneNumber handles @lid)
   }
-  return cleanPhoneNumber(from);
+  return await normalizePhoneNumber(from, session);
 }
 
 // ── Parser GOWS ──────────────────────────────────────────────────────────────
-// GOWS: struktur bersarang di _data.Info dengan field:
-//   Chat        = JID percakapan (customer untuk 1:1)
-//   Sender      = JID pengirim (bisa @lid)
-//   SenderAlt   = nomor asli pengirim (sering null — privacy WhatsApp)
-//   RecipientAlt= nomor asli penerima (sering null)
-// Kalau semua null/LID: resolve via WAHA API + cache (resolvePhoneFromLid).
-async function extractPhoneGows(payload, sessionName) {
+// GOWS: struktur bersarang di _data.Info.
+// AltJid (SenderAlt/RecipientAlt) berisi nomor asli kalau tersedia — prioritaskan ini.
+// Kalau @lid: normalizePhoneNumber otomatis panggil resolvePhoneFromLid.
+async function extractPhoneGows(payload, session) {
   const info   = payload._data?.Info || {};
   const fromMe = !!payload.fromMe;
 
   let primaryJid, altJid;
   if (fromMe) {
-    // Admin yang kirim: customer adalah penerima — ada di Chat/RecipientAlt
-    primaryJid = info.Chat           || "";
-    altJid     = info.RecipientAlt   || "";
+    primaryJid = info.Chat         || "";
+    altJid     = info.RecipientAlt || "";
   } else {
-    // Customer yang kirim: ada di Sender/SenderAlt; Chat sebagai fallback
     primaryJid = info.Sender || info.Chat || payload.from || "";
     altJid     = info.SenderAlt || "";
   }
 
-  // AltJid berisi nomor asli kalau tersedia (bukan @lid)
-  if (altJid && !altJid.includes("@lid") && altJid.includes("@")) {
-    return cleanPhoneNumber(altJid);
-  }
-
-  // primaryJid bukan LID → bersihkan langsung
-  if (primaryJid && !primaryJid.includes("@lid")) {
-    const phone = cleanPhoneNumber(primaryJid);
+  // AltJid (nomor asli) tersedia → pakai dulu (lebih reliable dari primaryJid)
+  if (altJid && !altJid.includes("@lid")) {
+    const phone = await normalizePhoneNumber(altJid, session);
     if (phone) return phone;
   }
 
-  // primaryJid adalah LID → resolve via WAHA API (dengan cache)
-  if (primaryJid) {
-    const lidPart = primaryJid.split("@")[0];
-    return await resolvePhoneFromLid(lidPart, sessionName);
-  }
-
-  return null;
+  // primaryJid → normalizePhoneNumber handle LID + strip + normalize
+  return await normalizePhoneNumber(primaryJid, session);
 }
 
 // ── Normalisasi payload NOWEB/GOWS ke struktur internal yang sama ─────────────
@@ -93,7 +80,7 @@ async function extractMessageData(payload, engine, sessionName) {
   if (engine === "GOWS") {
     phone = await extractPhoneGows(payload, sessionName);
   } else {
-    phone = extractPhoneNoweb(payload);
+    phone = await extractPhoneNoweb(payload, sessionName);
   }
 
   // pushName: NOWEB pakai _data.pushName; GOWS mungkin di Info.PushName
@@ -208,7 +195,16 @@ webhookRouter.post("/waha", async (req, res) => {
     const { phone, fromMe, pushName, body: text, hasMedia, mediaInfo } = msgData;
 
     if (!phone) {
-      console.warn("[webhook] Tidak bisa extract nomor, pesan diabaikan:", JSON.stringify(payload).slice(0, 300));
+      const rawJid = payload.from || payload._data?.Info?.Sender || payload._data?.Info?.Chat || "";
+      console.warn("[webhook] Tidak bisa extract nomor — disimpan ke UnresolvedMessage:", rawJid);
+      await prisma.unresolvedMessage.create({
+        data: {
+          rawJid:      rawJid || "UNKNOWN",
+          session:     sessionName,
+          reason:      rawJid.includes("@lid") ? "LID_UNRESOLVABLE" : "INVALID_JID",
+          payloadJson: JSON.stringify(payload).slice(0, 8000),
+        },
+      }).catch(e => console.warn("[webhook] Gagal simpan UnresolvedMessage:", e.message));
       return;
     }
 

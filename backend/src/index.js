@@ -23,6 +23,8 @@ import { templateRouter }  from "./routes/templates.js";
 import { trackingRouter, trackingRedirectRouter } from "./routes/tracking.js";
 import { internalRouter } from "./routes/internal.js";
 import { sseRouter }      from "./routes/sse.js";
+import { adminRouter }    from "./routes/admin.js";
+import { startReconciliationJob } from "./services/reconciliation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -60,6 +62,7 @@ app.use("/api/products",    productRouter);
 app.use("/api/tracking",   trackingRouter);
 app.use("/api/internal",   internalRouter);
 app.use("/api/events",     sseRouter);
+app.use("/api/admin",      adminRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
@@ -80,4 +83,7 @@ app.get("*", (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Backend jalan di http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Backend jalan di http://localhost:${PORT}`);
+  startReconciliationJob();
+});

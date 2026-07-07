@@ -172,11 +172,32 @@ export async function getSessionStatus() {
 // Bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net / @lid
 // + strip device index WhatsApp multi-device (contoh: "628xxx:43@s.whatsapp.net" → "628xxx")
 // + normalisasi format Indonesia: 0xxx → 62xxx
+// Fungsi ini SYNC dan low-level — dipakai internal oleh normalizePhoneNumber & resolvePhoneFromLid.
 export function cleanPhoneNumber(rawId) {
   if (!rawId) return null;
   let num = rawId.split("@")[0].split(":")[0]; // strip domain, lalu strip :device-index
   if (num.startsWith("0")) num = "62" + num.slice(1);
-  return num;
+  if (num.startsWith("+62")) num = "62" + num.slice(3);
+  return num || null;
+}
+
+// ─── SATU FUNGSI NORMALISASI UTAMA ────────────────────────────────────────────
+// Semua kode yang terima JID dari WAHA WAJIB pakai fungsi ini.
+// Menangani: strip @domain, strip :device-index, normalize 0xxx→62xxx,
+// dan kalau format @lid → resolve via WAHA API dengan fallback berlapis.
+// Return: nomor bersih "628xxx" atau null kalau gagal total (jangan buat Customer dari null).
+export async function normalizePhoneNumber(rawJid, session) {
+  if (!rawJid) return null;
+
+  // Format @lid → resolve via WAHA API (ada cache di tabel LidMapping)
+  if (rawJid.includes("@lid")) {
+    const lidRaw = rawJid.split("@")[0].split(":")[0];
+    return await resolvePhoneFromLid(lidRaw, session);
+  }
+
+  // Normalisasi biasa: strip domain, device index, +62 prefix
+  const phone = cleanPhoneNumber(rawJid);
+  return phone || null;
 }
 
 // Resolve LID (Local ID WhatsApp) ke nomor telepon asli, dengan caching ke DB.
@@ -247,6 +268,26 @@ export async function resolvePhoneFromLid(lid, session) {
   // 5. Semua cara gagal
   console.warn(`[resolvePhoneFromLid] LID ${lidRaw} tidak bisa diresolve — pesan mungkin tersimpan dengan LID, perlu fix manual nanti`);
   return null;
+}
+
+// Ambil daftar chat aktif dari WAHA (untuk reconciliation job)
+// Return: array chat object { id, name, timestamp, ... } atau [] kalau gagal
+export async function getChats(limit = 20) {
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats?limit=${limit}&sortBy=lastMessageAt&desc=true`,
+      { headers: headers() }
+    );
+    if (!res.ok) {
+      console.warn("[getChats] Gagal:", res.status);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.chats || []);
+  } catch (e) {
+    console.warn("[getChats] Error:", e.message);
+    return [];
+  }
 }
 
 // Ambil riwayat pesan dari WAHA untuk 1 nomor (limit pesan terbaru)

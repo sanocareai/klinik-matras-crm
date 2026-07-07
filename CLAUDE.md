@@ -209,7 +209,172 @@ Bekasi, Tangerang, Bogor, Depok, Bandung, Sukabumi, Karawang
 
 ---
 
-## 7A. REVISI BATCH — 2 Juli 2026 (12 poin dari Gilang)
+## 7D. FITUR BARU — Kategori Order, ID Otomatis, Tracking Komplain (7 Juli 2026)
+
+**Kategori Order (field baru di Order):**
+enum OrderCategory { LAYANAN, SEWA, BARU }
+- LAYANAN → mencakup semua Upgrade/Service/Ganti Kain yang sudah ada
+  (pakai OrderItem add-ons seperti biasa) → prefix ID "RES"
+- SEWA → Kasur Sewa (layanan baru) → prefix ID "SWS"
+- BARU → Kasur Baru/pembelian baru (layanan baru) → prefix ID "NEW"
+
+**Merk Kasur:** tambah "Sano" ke daftar pilihan merk yang sudah ada
+(King Koil, dll).
+
+**ID Order OTOMATIS (mengubah keputusan 7B yang tadinya manual):**
+Format: `{PREFIX}-{DDMMYYYY}-{NNN}` — contoh: `NEW-07072026-001`
+- Nomor urut (NNN) 3 digit, increment per PREFIX per BULAN, reset ke 001
+  di awal bulan baru (RES dan SWS dan NEW masing-masing hitungan sendiri,
+  tidak saling pengaruh)
+- Generate OTOMATIS saat order dibuat lewat UI CRM (Inbox/Drawer) —
+  sales tidak perlu ketik manual lagi
+- KECUALI untuk fitur Import Excel (migrasi data historis Jan-Jun) — di
+  situ ID Order tetap pakai apa yang tertulis di spreadsheet asli, TIDAK
+  di-generate ulang (supaya konsisten dengan pencatatan lama Gilang)
+- Butuh tabel counter terpisah (OrderSequence) supaya aman dari race
+  condition kalau 2 order dibuat bersamaan
+
+**Tracking Komplain (terikat ke Order spesifik, bukan field terpisah):**
+- Field baru di Order: hasComplaint (boolean), complaintDate (datetime),
+  complaintDetail (text)
+- Ditandai MANUAL oleh sales/admin lewat toggle di Order editor — hanya
+  muncul untuk order yang statusnya sudah "selesai/terkirim" (customer
+  baru bisa komplain setelah barang/layanan diterima)
+- Muncul di profil pelanggan sebagai: badge "Pernah Komplain" (kalau ADA
+  order manapun milik customer itu yang hasComplaint=true) + riwayat detail
+  (tanggal, order mana, isi komplain) — bisa lebih dari 1 kalau customer
+  komplain berkali-kali di order berbeda
+
+### Revisi (7 Juli 2026, setelah Gelombang 1-2 selesai)
+
+**1. Merk Kasur untuk kategori BARU/SEWA:** otomatis "Sano", TIDAK perlu
+pilih merk lain — dropdown merk cuma relevan untuk kategori LAYANAN
+(upgrade/service kasur existing customer, yang merknya bisa apa saja).
+
+**2. Berat badan — MULTI-ORANG, bukan field tunggal:** ganti dari
+`Order.beratBadan Int?` (field lama, sudah tidak dipakai untuk order baru)
+jadi tabel terpisah:
+```
+model OrderWeightEntry {
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  label     String  // free text: "Suami", "Istri", "Sendiri", "Anak 1", dst
+  beratKg   Int
+  sortOrder Int    @default(0)
+}
+```
+Alasan: kebanyakan order untuk pasangan (suami+istri) yang tidur di kasur
+sama, masing-masing beda berat badan — dibutuhkan TERPISAH per orang
+untuk analisa layering yang presisi, BUKAN dijumlah/dirata-rata.
+
+**3. Foto profil WhatsApp:** belum ada, sekarang ditambahkan sebagai
+enhancement (fetch dari WAHA contacts API kalau tersedia). CATATAN:
+tingkat keberhasilan tidak akan 100% — tergantung setting privasi
+customer di WhatsApp mereka (kalau foto profil dibatasi "kontak saya
+saja", WAHA/CRM tidak akan bisa ambil). Fallback tetap avatar inisial
+berwarna seperti sekarang.
+
+**4. Bug floating button "Tanya Sano":** menutupi tombol kirim pesan di
+Inbox mobile — perbaikan sebelumnya (hide saat keyboard fokus) TERNYATA
+tidak cukup, perlu disembunyikan TOTAL khusus di halaman Inbox (bukan
+cuma saat mengetik), karena Inbox sudah punya mekanisme kirim pesan
+sendiri, tidak perlu shortcut floating yang bersaing ruang.
+
+Juga ditemukan bug: menu sidebar "Tanya Sano" hilang untuk role SALES
+(padahal fitur ini seharusnya BISA dipakai SALES, itu tujuan awal
+dibangun) — kemungkinan salah kondisi role-check di render sidebar.
+
+**5. Link Pelacakan — verifikasi + insight penting soal Meta Ads:**
+Lapis 1 (deteksi otomatis referral iklan Meta dari payload WAHA) BELUM
+PERNAH dikonfirmasi benar-benar berfungsi dengan klik iklan asli — status
+masih "belum diverifikasi" sejak awal dibangun. REKOMENDASI: untuk Meta
+Ads, JANGAN andalkan Lapis 1 (auto-detect) — pakai TrackedLink juga
+(sama seperti Google Ads/Website), 1 link per campaign, category
+META_ADS. Ini lebih reliable dan sudah pasti berfungsi (Lapis 2, sudah
+terbukti jalan), dibanding menunggu kepastian Lapis 1.
+
+Untuk ORGANIK: TIDAK PERLU setup TrackedLink apapun — ini otomatis
+jadi default/fallback (Lapis 3) kalau chat masuk TANPA ada ClickEvent
+yang cocok dalam 15 menit terakhir. Organik = customer chat random tanpa
+lewat link pelacakan manapun.
+
+
+
+**Konteks:** ADMIN bisa minta Sano Co-pilot langsung simpan info baru ke
+Knowledge Base lewat chat natural ("tambahin info: X adalah..."). Role
+SALES bisa tanya tapi TIDAK bisa menulis — kalau minta tambah info, Sano
+cuma sarankan hubungi admin.
+
+**Struktur: 4 kategori TETAP (folder), BUKAN file bebas per entri** —
+supaya tidak numpuk jadi puluhan file kecil berantakan:
+
+1. **Konsep & Istilah Teknis** — definisi istilah spesifik Sano/produk
+   Klinik Matras (misal "Plasspring", "PE Encasement")
+2. **Dunia Kasur (Umum)** — pengetahuan industri kasur secara luas,
+   BUKAN cuma milik Sano: teknologi kasur pada umumnya, merk kompetitor
+   (King Koil, Serta, Lady Americana, dll), tren pasar. Ini yang bikin
+   Sano bisa ngobrol luas & meyakinkan saat customer bandingkan dengan
+   kasur lain, konsisten dengan positioning "Ahlinya Kasur Sehat"
+3. **FAQ Tambahan** — pertanyaan baru yang sering muncul di lapangan
+4. **Insight Lapangan** — pola umum dari pengalaman sales (BUKAN data
+   spesifik 1 customer — itu tempatnya di Order.keluhanCustomer yang
+   sudah ada, bukan di sini, demi privasi & supaya Knowledge Base tidak
+   penuh nama-nama customer individual)
+
+**Setiap perintah simpan → Sano klasifikasi masuk kategori mana → APPEND
+sebagai entri baru DI DALAM file kategori itu** (bukan bikin file .md
+baru tiap kali).
+
+**Harga TIDAK termasuk quick-add** — perubahan harga tetap wajib lewat
+edit manual `02-harga-layanan.md`, area paling berisiko kalau salah
+kutip ke customer, sengaja tidak dibuka jalur cepat lewat chat.
+
+**UI**: sidebar Knowledge Base jadi struktur folder (4 kategori tetap),
+klik kategori baru kelihatan daftar entri di dalamnya (judul + tanggal),
+bukan daftar file rata.
+
+
+
+Status: 🔨 baru mulai. Konteks: Gelombang 1-4 (7A) SUDAH jalan di production,
+dikonfirmasi visual oleh Gilang. Root cause masalah "deploy tidak muncul"
+sebelumnya ternyata Node.js versi usang di VPS + docker-compose ke-reset
+oleh `git reset --hard` (lihat seksi 12 untuk detail lengkap, sudah
+diperbaiki permanen).
+
+1. BUG: kolom "STATUS ORDE[R]" di tabel Pelanggan (list view) masih kosong,
+   padahal data status order SUDAH benar kalau dilihat dari drawer/detail
+   pelanggan. Kemungkinan besar endpoint GET list customers (dipakai
+   tabel) tidak include/compute status order terbaru, sementara endpoint
+   GET detail customer (dipakai drawer) sudah benar. Perlu disamakan.
+
+2. ID Order manual — field baru Order.orderNumber (String?, nullable,
+   diisi manual oleh sales, BUKAN auto-generate) untuk tracking/sinkron
+   dengan sistem pencatatan lain. Input di form order (Inbox + Drawer),
+   kolom baru "ID Order" di tabel Pelanggan (ambil dari order terbaru).
+
+3. Keluhan Customer di tabel + profil — TIDAK bikin field baru. Order
+   sudah punya `keluhanCustomer` per order. Rangkum jadi:
+   - Kolom baru "Keluhan" di tabel Pelanggan (ringkasan/keluhan terbaru)
+   - Section "Riwayat Keluhan" di tab Profil drawer (bukan cuma tab
+     Order) — list semua keluhan dari semua order customer itu, dengan
+     tanggal, supaya riwayat kesehatan/keluhan customer kelihatan
+     sekilas begitu buka profil (relevan untuk konteks Fase 4 AI nanti)
+
+4. Sistem Take Over percakapan — mengatasi sales yang cuma balas di awal
+   lalu hilang. Aturan:
+   - Kalau conversation BELUM ada assignedToId → tombol "Ambil" selalu
+     aktif untuk siapa saja (klaim awal, normal)
+   - Kalau conversation SUDAH ada assignedToId (sedang dipegang sales
+     tertentu) → tombol "Ambil Alih" HANYA aktif kalau pesan TERAKHIR
+     di percakapan itu adalah dari CUSTOMER (inbound) DAN sudah lebih
+     dari 60 menit tanpa balasan (tidak ada outbound setelahnya)
+   - Dihitung on-the-fly dari Message terakhir per conversation, TIDAK
+     perlu tabel/field baru
+   - UI: badge peringatan "Belum dibalas 1j+" pada percakapan yang
+     kena kondisi ini, tombol takeover disabled sampai syarat terpenuhi
+
+
 
 Status: 🔨 sedang dikerjakan Claude Code, bertahap per gelombang (lihat
 prompt kerja untuk detail lengkap tiap poin). Ringkasan:
@@ -504,6 +669,15 @@ function formatRupiahShort(n) {
 
 ## 12. WORKFLOW DEVELOPMENT
 
+⚠️ **PENYEBAB PALING SERING "kode sudah benar tapi tampilan tidak berubah":**
+`frontend/dist` di VPS itu **bind mount** ke container backend (lihat 
+docker-compose.yml) — artinya perubahan HANYA muncul setelah `npm run build` 
+BENAR-BENAR dijalankan ulang di folder `frontend` di VPS. `docker compose 
+up -d --build` **TIDAK** membangun ulang frontend (itu cuma rebuild image 
+backend). Kalau lupa jalankan `npm run build`, file lama akan terus 
+disajikan selamanya walau kode di GitHub sudah benar. SELALU jalankan 
+kedua langkah di bawah SECARA BERURUTAN, jangan skip salah satu.
+
 ```bash
 # 1. LAPTOP — edit & test lokal
 docker compose up -d postgres waha  # nyalakan DB & WAHA
@@ -515,21 +689,79 @@ git add .
 git commit -m "feat: deskripsi"
 git push
 
-# 3. DEPLOY ke VPS
+# 3. DEPLOY ke VPS — JALANKAN SEMUA BARIS INI, JANGAN ADA YANG DI-SKIP
 ssh ubuntu@43.133.152.6
 cd ~/klinik-matras
 git pull
-cd frontend && npm install && npm run build && cd ..
-docker compose up -d --build
+cd frontend && npm install && npm run build && cd ..   # ← WAJIB, sering kelupaan
+docker compose up -d --build backend                    # ← cuma untuk backend
 
-# 4. KALAU ADA PERUBAHAN SCHEMA DATABASE
+# 4. VERIFIKASI deploy frontend benar-benar baru (bukan asumsi):
+curl -s https://app.sanomatrassehat.com/ | grep -o 'index-[a-zA-Z0-9]*\.js'
+# Bandingkan hash-nya dengan sebelumnya — HARUS beda kalau ada perubahan frontend
+
+# 5. KALAU ADA PERUBAHAN SCHEMA DATABASE
 docker compose exec backend npx prisma migrate deploy
 
-# 5. UTILITAS
+# 6. UTILITAS
 npx prisma migrate dev --name nama_migration  # buat migration baru (lokal)
 npx prisma studio                              # GUI database
 docker compose exec backend node scripts/nama-script.js  # jalankan script
 ```
+
+### Reverse proxy: NGINX (native systemd), BUKAN Docker
+
+Web server yang benar-benar melayani `app.sanomatrassehat.com` adalah 
+**nginx native** (`sudo systemctl status nginx`), config di 
+`/etc/nginx/sites-enabled/klinikmatras`, proxy ke `http://localhost:4000`.
+SSL dikelola Certbot (Let's Encrypt), auto-renew.
+
+⚠️ **Insiden Caddy (Juli 2026, sudah dibereskan):** sempat ada percobaan
+migrasi ke Caddy (docker-compose service `caddy` + `Caddyfile`) yang tidak
+pernah selesai — Caddy gagal total (tidak bisa resolve DNS dari dalam
+container, tidak pernah dapat sertifikat, tidak pernah berhasil pegang
+port 80/443 karena nginx sudah duluan). Caddy SUDAH DIHAPUS dari
+docker-compose.yml. **JANGAN tambahkan Caddy lagi** kecuali benar-benar
+niat migrasi penuh (matikan nginx dulu, pastikan DNS container bisa
+resolve ke internet, test menyeluruh sebelum cutover) — jangan biarkan
+2 reverse proxy jalan bersamaan lagi, itu yang bikin bingung "mana yang
+sebenarnya aktif".
+
+### ⚠️ Node.js di VPS WAJIB versi 20 LTS (insiden Juli 2026, sudah dibereskan)
+
+VPS sempat pakai Node.js versi sangat lama (v12/14, dari `apt install 
+nodejs` — repo default Ubuntu kasih versi usang) — ini bikin `npm run 
+build` di frontend GAGAL TOTAL secara diam-diam selama berminggu-minggu 
+(error `ReferenceError: crypto is not defined` dari dependency 
+`serialize-javascript`), sehingga `frontend/dist` tidak pernah benar-benar 
+ter-update walau proses lain (git pull, docker rebuild) semua "sukses".
+Ini akar masalah sebenarnya di balik banyak kejadian "kode sudah benar 
+tapi tampilan tidak berubah" yang berulang kali muncul.
+
+Fix permanen yang sudah diterapkan:
+```bash
+sudo apt remove -y nodejs npm
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node -v   # HARUS v20.x.x, kalau bukan berarti ada yang salah
+```
+**Selalu cek `node -v` di VPS kalau curiga build frontend bermasalah** — 
+jangan asumsi build sukses hanya karena tidak ada pesan error yang 
+terlihat jelas di terminal (build tools kadang cuma warning, bukan STOP).
+
+### ⚠️ Setelah edit docker-compose.yml, WAJIB `--force-recreate`
+
+Container yang sudah jalan TIDAK otomatis membaca ulang definisi 
+`volumes:`/`ports:`/`environment:` yang baru diedit di docker-compose.yml 
+hanya dengan `docker compose up -d` biasa atau `restart`. Kalau baru 
+saja mengedit docker-compose.yml (misal ubah bind mount, hapus service, 
+ubah port), WAJIB:
+```bash
+docker compose up -d --force-recreate backend
+```
+Tandanya bind mount "putus"/belum ke-refresh: `docker compose exec backend 
+ls -la /frontend/dist/` menunjukkan folder KOSONG padahal file aslinya 
+ada di host — itu sinyal container masih pakai definisi volume yang lama.
 
 ---
 
@@ -770,19 +1002,36 @@ dan "Doktress" (otoritas medis) di persona brand yang sudah ada.
 
 ### 16.8 Garansi & Kebijakan Komplain (PENTING untuk alur AI)
 
-Klinik Matras memberikan **garansi kenyamanan & kerusakan 20 tahun**.
-Ini bukan cuma nilai jual — ini alasan operasional kenapa komplain HARUS
-ditangani manusia secepat mungkin, bukan AI.
+⚠️ **KOREKSI (3 Juli 2026):** garansi Klinik Matras **BUKAN flat 20 tahun**
+untuk semua — ada 2 tingkat paket:
+- **Paket Standard**: garansi amblas 10 tahun, garansi busa/kempes 5
+  tahun, trial kenyamanan 7 hari, pengerjaan 7 hari kerja
+- **Paket Premium**: garansi amblas 20 tahun, garansi busa/kempes 10
+  tahun, trial kenyamanan 30 hari, pengerjaan 3 hari (prioritas) —
+  khusus disarankan untuk keluhan medis (saraf kejepit, skoliosis, nyeri
+  kronis)
+
+**Sano TIDAK BOLEH menyebut "garansi 20 tahun" secara flat/rata** —
+harus jelaskan ada 2 tingkat, dan tanya/rekomendasikan sesuai kondisi
+customer. Detail lengkap ada di
+docs/knowledge-base/02-harga-layanan.md bagian "Paket Garansi".
+
+Garansi ini bukan cuma nilai jual — ini alasan operasional kenapa
+komplain HARUS ditangani manusia secepat mungkin, bukan AI.
 
 **Aturan mutlak: customer yang marah/komplain di chat manapun (termasuk
 chat pertama) → LANGSUNG handover ke sales/tim, JANGAN dicoba diredakan
 oleh AI dulu.** Pola yang sudah terbukti di lapangan: kasus komplain
 biasanya butuh **telepon langsung** dari tim untuk meyakinkan proses
-revisi ulang kasur (bagian dari garansi 20 tahun) — ini butuh nada suara
-manusia dan keputusan real-time yang AI tidak boleh coba ambil alih.
-Trust customer di momen komplain jauh lebih rapuh dibanding chat biasa —
-respons AI yang terasa "template" di saat itu berisiko merusak trust
-yang sudah dibangun garansi 20 tahun.
+revisi ulang kasur (bagian dari garansi trial kenyamanan) — ini butuh
+nada suara manusia dan keputusan real-time yang AI tidak boleh coba
+ambil alih. Trust customer di momen komplain jauh lebih rapuh dibanding
+chat biasa — respons AI yang terasa "template" di saat itu berisiko
+merusak trust yang sudah dibangun lewat garansi ini.
+
+Sumber lengkap: file artikel-1.docx s/d artikel-5.docx (1 Juli 2026),
+Proses_Produksi.xlsx + tabel harga & garansi (3 Juli 2026) — sudah
+diolah jadi docs/knowledge-base/*.md, siap upload ke Knowledge Base CRM.
 
 Sumber lengkap: file artikel-1.docx s/d artikel-5.docx (di-upload Gilang,
 1 Juli 2026) — pertimbangkan upload versi final ke Knowledge Base CRM
@@ -798,60 +1047,3 @@ broadcast anti-ban rate limiter, handover queue, AI Playground BYOK, Customer 36
 
 **GrowthCircle.id (komunitas):** OpenClaw + Hermes Agent — AI untuk follow-up, 
 handover, closing. Bukan sekadar FAQ bot. Ini inspirasi untuk Phase 4 AI Agent.
-
----
-
-## 18. BACKUP DATABASE OTOMATIS
-
-**Script backup:** `backend/scripts/backup-database.sh`
-**Script restore:** `backend/scripts/restore-database.sh`
-**Panduan lengkap:** `docs/PANDUAN-RESTORE-BACKUP.md`
-
-**Alur backup:**
-```
-Cron 03:00 WIB → pg_dump | gzip → ~/klinik-matras/backups/
-→ rclone upload → gdrive:klinik-matras-backups/
-→ hapus lokal >7 hari
-→ hapus Drive >30 hari
-→ kalau gagal → WA notifikasi ke BACKUP_NOTIFY_PHONE
-```
-
-**Cron di VPS (setup manual oleh Gilang setelah git pull):**
-```
-0 3 * * * cd /home/ubuntu/klinik-matras && ./backend/scripts/backup-database.sh >> /home/ubuntu/klinik-matras/backups/backup.log 2>&1
-*/15 * * * * cd /home/ubuntu/klinik-matras && ./backend/scripts/check-waha-status.sh >> /home/ubuntu/klinik-matras/backups/waha-monitor.log 2>&1
-```
-
-**Script monitoring WAHA:** `backend/scripts/check-waha-status.sh`
-- Cek WAHA session setiap 15 menit
-- Debounce: alert maksimal 1x per jam (lock file di /tmp)
-- Lock file hilang saat reboot → langsung alert kalau WAHA belum reconnect
-
-**Env var yang perlu ditambah di `backend/.env` di VPS:**
-```
-BACKUP_NOTIFY_PHONE=628xxxxxxxxx   # nomor WA admin untuk notifikasi backup gagal + WAHA alert
-
-# Email fallback — kalau WAHA mati, alert dikirim via email (opsional tapi dianjurkan)
-# Gmail: buat App Password di https://myaccount.google.com/apppasswords
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=admin@klinikmatras.com
-SMTP_PASS=xxxx xxxx xxxx xxxx    # Gmail App Password (16 karakter dengan spasi)
-SMTP_FROM=admin@klinikmatras.com
-ALERT_EMAIL_TO=admin@klinikmatras.com
-```
-
-**Setup prasyarat di VPS (sekali saja):**
-1. `curl https://rclone.org/install.sh | sudo bash` — install rclone
-2. `rclone config` — tambah remote bernama `gdrive` → pilih Google Drive → ikuti wizard OAuth
-3. `chmod +x backend/scripts/backup-database.sh backend/scripts/restore-database.sh backend/scripts/check-waha-status.sh`
-4. Tambah env var ke `backend/.env` → `docker compose restart backend`
-5. Setup cron (`crontab -e`)
-6. Test manual: `cd ~/klinik-matras && ./backend/scripts/backup-database.sh`
-7. Test WAHA monitor: `cd ~/klinik-matras && ./backend/scripts/check-waha-status.sh`
-
-**Notifikasi gagal:** endpoint `POST /api/internal/backup-alert` (no JWT, localhost only)
-dipanggil oleh `trap ERR` di script bash → backend kirim WA via wahaClient.
-
-**Notifikasi WAHA down:** endpoint `POST /api/internal/waha-alert` (no JWT, localhost only)
-→ coba kirim WA → kalau gagal (WAHA memang down) → fallback kirim email → log ke file.

@@ -288,6 +288,34 @@ model SalesTarget {
   @@unique([userId, year, month])
 }
 
+// Pesan masuk yang tidak bisa diselesaikan nomornya (LID tidak dikenal, JID tidak valid).
+// Disimpan untuk review manual — JANGAN buat Customer dengan nomor sampah.
+model UnresolvedMessage {
+  id          String   @id @default(cuid())
+  rawJid      String             // JID mentah yang gagal di-resolve
+  session     String             // session WAHA yang mengirim
+  reason      String             // "LID_UNRESOLVABLE" | "INVALID_JID"
+  payloadJson String   @db.Text  // JSON payload lengkap untuk diagnostik / retry manual
+  createdAt   DateTime @default(now())
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+
+  @@index([createdAt])
+}
+
+// Hasil nightly reconciliation job: mencatat perbedaan jumlah pesan WAHA vs DB
+model SyncDiscrepancy {
+  id             String   @id @default(cuid())
+  phone          String
+  conversationId String?
+  wahaCount      Int
+  dbCount        Int
+  difference     Int
+  checkedAt      DateTime @default(now())
+
+  @@index([checkedAt])
+}
+
 // Cache resolusi LID (Local ID WhatsApp) → nomor telepon asli
 // GOWS kadang kirim JID format @lid alih-alih @s.whatsapp.net.
 // Setiap berhasil resolve via WAHA API, hasilnya di-cache di sini supaya
