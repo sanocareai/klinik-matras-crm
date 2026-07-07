@@ -44,6 +44,25 @@ services:
       - postgres
       - waha
 
+  waha-test:
+    image: devlikeapro/waha
+    restart: unless-stopped
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC: "true"
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: 365
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT: 500
+      WAHA_DASHBOARD_USERNAME: admin
+      WAHA_DASHBOARD_PASSWORD: klinikmatras123
+      WHATSAPP_SWAGGER_USERNAME: admin
+      WHATSAPP_SWAGGER_PASSWORD: klinikmatras123
+      WAHA_API_KEY: klinikmatras-rahasia-2026
+    ports:
+      - "3001:3000"
+    volumes:
+      - waha_test_sessions:/app/.sessions
+
 volumes:
   pgdata:
   waha_sessions:
+  waha_test_sessions:
