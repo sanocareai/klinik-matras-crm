@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory } from "../services/wahaClient.js";
+import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead } from "../services/wahaClient.js";
 import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
@@ -167,6 +167,40 @@ webhookRouter.post("/waha", async (req, res) => {
       if (payload?.status === "WORKING") {
         console.log("[webhook] WAHA session CONNECTED — mulai auto-sync riwayat di background");
         setImmediate(autoSyncHistory);
+      }
+      return;
+    }
+
+    // ── message.ack: customer sudah baca pesan kita (centang biru di HP mereka) ──
+    // ack=3 / ackName="READ" → update isRead di conversation kita
+    // Ini arah HP → CRM (customer baca pesan yang dikirim sales)
+    if (event === "message.ack") {
+      const ack     = payload?.ack     || payload?._data?.ack || 0;
+      const ackName = payload?.ackName || payload?._data?.ackName || "";
+      const isReadAck = ackName === "READ" || ack >= 3;
+      if (isReadAck && payload) {
+        const sessionName = req.body.session || process.env.WAHA_SESSION || "default";
+        const engine      = detectEngine(req.body);
+        // Ambil nomor dari chatId/from — pesan dari kita KE customer, jadi kita "fromMe"
+        const rawJid = payload.chatId || payload.from || "";
+        const phone  = await normalizePhoneNumber(rawJid, sessionName);
+        if (phone) {
+          const customer = await prisma.customer.findUnique({ where: { phone }, select: { id: true } });
+          if (customer) {
+            const conv = await prisma.conversation.findFirst({
+              where: { customerId: customer.id, channel: "WHATSAPP" },
+              orderBy: { lastMessageAt: "desc" },
+              select: { id: true },
+            });
+            if (conv) {
+              await prisma.conversation.update({
+                where: { id: conv.id },
+                data: { isRead: true, readAt: new Date() },
+              });
+              console.log("[webhook] message.ack READ → isRead=true untuk conv:", conv.id, "phone:", phone);
+            }
+          }
+        }
       }
       return;
     }
@@ -382,10 +416,10 @@ webhookRouter.post("/waha", async (req, res) => {
       return;
     }
 
-    // Tandai unread = true supaya badge di sidebar bertambah
+    // Pesan masuk baru → unread=true (badge sidebar) + isRead=false (belum dibuka lagi)
     await prisma.conversation.update({
       where: { id: conversation.id },
-      data:  { lastMessageAt: new Date(), status: "OPEN", unread: true },
+      data:  { lastMessageAt: new Date(), status: "OPEN", unread: true, isRead: false },
     });
 
     broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });

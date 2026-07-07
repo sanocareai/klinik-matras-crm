@@ -7,7 +7,12 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { sendText, sendMedia } from "../services/wahaClient.js";
+import { sendText, sendMedia, markChatAsRead } from "../services/wahaClient.js";
+
+// Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
+// Key: conversationId, Value: timestamp terakhir kirim read receipt ke WAHA.
+const readReceiptSentAt = new Map();
+const READ_RECEIPT_COOLDOWN_MS = 30_000; // 30 detik
 
 const execAsync = promisify(exec);
 
@@ -118,12 +123,46 @@ conversationRouter.get("/", async (req, res) => {
 });
 
 // Riwayat pesan dalam satu percakapan
+// Side effect: tandai percakapan sebagai "sudah dibuka" (isRead=true, unread=false)
+// + kirim read receipt ke WhatsApp dengan debounce 30 detik
 conversationRouter.get("/:id/messages", async (req, res) => {
+  const convId = req.params.id;
   const messages = await prisma.message.findMany({
-    where:   { conversationId: req.params.id },
+    where:   { conversationId: convId },
     orderBy: { createdAt: "asc" },
   });
   res.json(messages);
+
+  // Mark as read — jalankan setelah response dikirim (tidak blokir respons)
+  setImmediate(async () => {
+    try {
+      const conv = await prisma.conversation.findUnique({
+        where:   { id: convId },
+        include: { customer: { select: { phone: true } } },
+      });
+      if (!conv) return;
+
+      // Update DB: isRead=true, unread=false
+      if (!conv.isRead || conv.unread) {
+        await prisma.conversation.update({
+          where: { id: convId },
+          data:  { isRead: true, readAt: new Date(), unread: false },
+        });
+      }
+
+      // Kirim read receipt ke WAHA (dengan debounce 30 detik per conversation)
+      if (conv.channel === "WHATSAPP" && conv.customer?.phone) {
+        const now      = Date.now();
+        const lastSent = readReceiptSentAt.get(convId) || 0;
+        if (now - lastSent > READ_RECEIPT_COOLDOWN_MS) {
+          readReceiptSentAt.set(convId, now);
+          markChatAsRead(conv.customer.phone).catch(() => {}); // fire-and-forget
+        }
+      }
+    } catch (e) {
+      console.warn("[mark-read] Error:", e.message);
+    }
+  });
 });
 
 // Kirim pesan teks
@@ -423,13 +462,14 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
   }
 });
 
-// Update status / unread percakapan
+// Update status / unread / isRead percakapan
 conversationRouter.patch("/:id", async (req, res) => {
-  const { status, assignedToId, unread, handoverNote } = req.body;
+  const { status, assignedToId, unread, isRead, handoverNote } = req.body;
   const data = {};
   if (status)                     data.status       = status;
   if (assignedToId !== undefined) data.assignedToId = assignedToId;
   if (unread !== undefined)       data.unread       = unread;
+  if (isRead !== undefined)       { data.isRead = isRead; if (isRead) data.readAt = new Date(); }
   if (handoverNote !== undefined) data.handoverNote = handoverNote;
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },

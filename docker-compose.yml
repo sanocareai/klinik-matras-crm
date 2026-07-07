@@ -20,7 +20,7 @@ services:
       WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: 365
       WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT: 500
       WHATSAPP_HOOK_URL: http://backend:4000/api/webhooks/waha
-      WHATSAPP_HOOK_EVENTS: message,session.status
+      WHATSAPP_HOOK_EVENTS: message,session.status,message.ack
       WAHA_DASHBOARD_USERNAME: admin
       WAHA_DASHBOARD_PASSWORD: klinikmatras123
       WHATSAPP_SWAGGER_USERNAME: admin

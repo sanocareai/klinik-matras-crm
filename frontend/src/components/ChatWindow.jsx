@@ -3,7 +3,7 @@ import { useSSE } from "../hooks/useSSE.js";
 import {
   Send, MessageSquare, CheckCircle, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
-  ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical,
+  ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical, Eye, CheckCheck,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -470,7 +470,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const isAdmin       = user?.role === "ADMIN";
 
   // Eligibilitas takeover — pakai nilai yang sudah dihitung di backend
-  const canTakeover = conversation.canTakeOver ?? false;
+  const canTakeover  = conversation.canTakeOver ?? false;
+  const isRead       = !!conversation.isRead;
+  const isReplied    = !conversation.isUnanswered;
 
   const formatRec = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
@@ -487,6 +489,18 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           <p className="chat-header-name">{name}</p>
           <div className="chat-header-meta">
             <span className={`channel-badge ${channelClass}`}>{channelLabel}</span>
+            {/* Badge "Sudah Dibuka" — saat isRead true tapi belum dibalas */}
+            {isRead && !isReplied && (
+              <span title="Sudah dibuka tapi belum dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#ede9fe", color: "#5b21b6", flexShrink: 0 }}>
+                <Eye size={10} /> Dibuka
+              </span>
+            )}
+            {/* Badge "Sudah Dibalas" */}
+            {isReplied && (
+              <span title="Sudah dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#dcfce7", color: "#166534", flexShrink: 0 }}>
+                <CheckCheck size={10} /> Dibalas
+              </span>
+            )}
             {/* Info tambahan — disembunyikan di mobile supaya tidak overflow */}
             <span className="chat-meta-desktop">
               {rawPhone && (

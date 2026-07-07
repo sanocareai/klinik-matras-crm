@@ -1,5 +1,5 @@
 import React from "react";
-import { Search, UserCheck } from "lucide-react";
+import { Search, UserCheck, Eye, CheckCheck } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
 
@@ -76,6 +76,8 @@ export default function ConversationList({
           const channelClass = c.channel?.toLowerCase();
           const channelLabel = c.channel === "WHATSAPP" ? "WA" : "IG";
           const isUnread     = !!c.unread;
+          const isRead       = !!c.isRead;
+          const isReplied    = !c.isUnanswered; // pesan terakhir adalah outbound = sudah dibalas
           const isMine       = c.assignedToId === user?.id;
           const assignedName = c.assignedTo?.name;
 
@@ -104,6 +106,18 @@ export default function ConversationList({
                   <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
+                  {/* Badge "Sudah Dibuka" — tampil saat isRead true TAPI belum dibalas */}
+                  {isRead && !isReplied && (
+                    <span title="Sudah dibuka tapi belum dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#ede9fe", color: "#5b21b6" }}>
+                      <Eye size={10} /> Dibuka
+                    </span>
+                  )}
+                  {/* Badge "Sudah Dibalas" */}
+                  {isReplied && (
+                    <span title="Sudah dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>
+                      <CheckCheck size={10} /> Dibalas
+                    </span>
+                  )}
                   {/* Badge pesan belum dibalas ≥ 1 jam */}
                   {c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && (
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>

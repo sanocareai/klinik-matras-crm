@@ -141,6 +141,8 @@ model Conversation {
   assignedTo    User?               @relation("AssignedAgent", fields: [assignedToId], references: [id])
   lastMessageAt DateTime            @default(now())
   unread        Boolean             @default(false)
+  isRead        Boolean             @default(false)  // sudah dibuka (di CRM atau di HP)
+  readAt        DateTime?                             // kapan terakhir dibaca
   handoverNote  String?
   createdAt     DateTime            @default(now())
 

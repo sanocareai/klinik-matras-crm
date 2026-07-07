@@ -144,6 +144,41 @@ export async function downloadMediaMessage(messageId) {
   }
 }
 
+// Kirim read receipt ke WhatsApp — supaya pesan berubah jadi centang biru di HP customer.
+// GOWS: PUT /api/{session}/chats/{chatId}/read
+// NOWEB fallback: POST /api/sendSeen
+// Return: true kalau berhasil, false kalau gagal (gagal = wajar, tidak crash proses lain)
+export async function markChatAsRead(phone) {
+  if (!phone) return false;
+  const chatId = `${phone}@c.us`;
+  try {
+    // GOWS endpoint (primary)
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/read`,
+      { method: "PUT", headers: headers(), body: JSON.stringify({}) }
+    );
+    if (res.ok) {
+      console.log("[markChatAsRead] GOWS berhasil untuk:", phone);
+      return true;
+    }
+    // Fallback: NOWEB sendSeen
+    const res2 = await fetch(`${WAHA_BASE_URL}/api/sendSeen`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ session: WAHA_SESSION, chatId }),
+    });
+    if (res2.ok) {
+      console.log("[markChatAsRead] NOWEB fallback berhasil untuk:", phone);
+      return true;
+    }
+    console.warn("[markChatAsRead] Kedua endpoint gagal:", res.status, res2.status, "phone:", phone);
+    return false;
+  } catch (e) {
+    console.warn("[markChatAsRead] Error:", e.message);
+    return false;
+  }
+}
+
 // Ambil URL foto profil kontak — return null kalau privasi dibatasi atau gagal (itu WAJAR)
 export async function getProfilePicture(phone) {
   try {
