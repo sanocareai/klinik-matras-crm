@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Search, Plus, X, Download, ArrowUp, ArrowDown, Users, Building2 } from "lucide-react";
+import { Search, Plus, X, Download, ArrowUp, ArrowDown, Users, Building2, AlertTriangle } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
@@ -175,6 +175,7 @@ export default function Customers() {
       "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
       "Jumlah Order": c.orderCount || 0,
       "Total Nilai Order": formatRupiah(c.orderValue || 0),
+      "Pernah Komplain": c.pernahKomplain ? "Ya" : "Tidak",
       "Sales Person": c.assignedSales?.name || "",
     }));
     exportToExcel(data, `pelanggan-${typeTab}-${new Date().toISOString().slice(0, 10)}`);
@@ -312,7 +313,12 @@ export default function Customers() {
                     <div className="cell-name-wrap">
                       <Avatar name={displayName} size="sm" />
                       <div>
-                        <div className="cell-name">{displayName}</div>
+                        <div className="cell-name" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          {displayName}
+                          {c.pernahKomplain && (
+                            <AlertTriangle size={12} color="#dc2626" title="Pernah komplain" />
+                          )}
+                        </div>
                         {isVIP(c) && (
                           <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 10 }}>VIP</span>
                         )}

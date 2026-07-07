@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
@@ -17,17 +17,31 @@ const JENIS_LAYANAN = [
   "Lainnya",
 ];
 
+// Label & ikon untuk pilihan kategori order
+const CATEGORY_OPTIONS = [
+  { value: "LAYANAN", icon: "🔧", label: "Service / Upgrade", sub: "Upgrade fondasi, lapisan, ganti kain, dsb." },
+  { value: "BARU",    icon: "🛏️", label: "Kasur Baru",        sub: "Pembelian kasur baru" },
+  { value: "SEWA",    icon: "📅", label: "Kasur Sewa",        sub: "Sewa kasur" },
+];
+
+const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
+const CATEGORY_BADGE  = {
+  LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
+  BARU:    { bg: "#dcfce7", color: "#166534" },
+  SEWA:    { bg: "#dbeafe", color: "#1e40af" },
+};
+
 function parseNotes(notes) {
   if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
   try {
     const p = JSON.parse(notes);
     return {
-      merkKasur: p.merkKasur || "",
-      ukuranKasur: p.ukuranKasur || "",
+      merkKasur:       p.merkKasur || "",
+      ukuranKasur:     p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, beratBadan: "" };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
   }
 }
 
@@ -52,24 +66,35 @@ const ORDER_STATUS_BADGE = {
   CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
 };
 
+function formatTanggal(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+}
+
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
 function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const info = parseNotes(order.notes);
   const [editing, setEditing]             = useState(false);
   const [status, setStatus]               = useState(order.status);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
-  const [orderNumber, setOrderNumber]     = useState(order.orderNumber || "");
   const [beratBadan, setBeratBadan]       = useState(order.beratBadan ? String(order.beratBadan) : "");
-  const [merkKasur, setMerkKasur]     = useState(info.merkKasur);
-  const [ukuran, setUkuran]           = useState(info.ukuranKasur);
-  const [keluhan, setKeluhan]         = useState(info.keluhanCustomer);
-  const [items, setItems]             = useState(
+  const [merkKasur, setMerkKasur]         = useState(info.merkKasur);
+  const [ukuran, setUkuran]               = useState(info.ukuranKasur);
+  const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
+  const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
-  const [saving, setSaving]           = useState(false);
-  const [deleting, setDeleting]       = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+
+  // State untuk fitur komplain
+  const [showComplaintForm, setShowComplaintForm] = useState(false);
+  const [complaintDetail, setComplaintDetail]     = useState("");
+  const [savingComplaint, setSavingComplaint]     = useState(false);
 
   const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
+  // Kategori: tampilkan add-ons hanya untuk LAYANAN
+  const isLayanan = !order.category || order.category === "LAYANAN";
 
   function addItem() { setItems((p) => [...p, newItem()]); }
   function removeItem(key) { setItems((p) => p.filter((it) => it.key !== key)); }
@@ -85,20 +110,21 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         paymentStatus,
         beratBadan: beratBadan ? Number(beratBadan) : null,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
-        orderNumber: orderNumber.trim() || null,
       });
-      const existingIds = (order.items || []).map((it) => it.id);
-      const currentIds  = items.filter((it) => it.id).map((it) => it.id);
-      for (const id of existingIds) {
-        if (!currentIds.includes(id)) await api.deleteOrderItem(id);
-      }
-      for (const it of items.filter((it) => it.id)) {
-        if (it.layananName?.trim())
-          await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
-      }
-      for (const it of items.filter((it) => !it.id)) {
-        if (it.layananName?.trim())
-          await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+      if (isLayanan) {
+        const existingIds = (order.items || []).map((it) => it.id);
+        const currentIds  = items.filter((it) => it.id).map((it) => it.id);
+        for (const id of existingIds) {
+          if (!currentIds.includes(id)) await api.deleteOrderItem(id);
+        }
+        for (const it of items.filter((it) => it.id)) {
+          if (it.layananName?.trim())
+            await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+        }
+        for (const it of items.filter((it) => !it.id)) {
+          if (it.layananName?.trim())
+            await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+        }
       }
       setEditing(false);
       onRefresh();
@@ -113,7 +139,6 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
     const inf = parseNotes(order.notes);
     setStatus(order.status);
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
-    setOrderNumber(order.orderNumber || "");
     setBeratBadan(order.beratBadan ? String(order.beratBadan) : "");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
@@ -131,6 +156,20 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
     } catch (err) {
       alert(err.message);
       setDeleting(false);
+    }
+  }
+
+  async function handleSaveComplaint() {
+    if (!complaintDetail.trim()) return alert("Isi detail komplain terlebih dahulu");
+    setSavingComplaint(true);
+    try {
+      await api.markOrderComplaint(order.id, { complaintDetail: complaintDetail.trim() });
+      setShowComplaintForm(false);
+      onRefresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingComplaint(false);
     }
   }
 
@@ -160,7 +199,21 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         )}
       </div>
 
-      {/* Status Pengerjaan + Status Pembayaran — dalam 1 baris di view mode */}
+      {/* Badge komplain (jika sudah ada) */}
+      {order.hasComplaint && (
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#fee2e2", borderRadius: 8, border: "1px solid #fca5a5" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+            <AlertTriangle size={13} color="#dc2626" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#991b1b" }}>Ada Komplain</span>
+            <span style={{ fontSize: 11, color: "#b91c1c", marginLeft: "auto" }}>{formatTanggal(order.complaintDate)}</span>
+          </div>
+          {order.complaintDetail && (
+            <p style={{ margin: 0, fontSize: 12, color: "#7f1d1d" }}>{order.complaintDetail}</p>
+          )}
+        </div>
+      )}
+
+      {/* Status Pengerjaan + Status Pembayaran */}
       <div style={{ marginBottom: 8 }}>
         <span style={metaLabel}>Status</span>
         {editing ? (
@@ -200,14 +253,20 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         )}
       </div>
 
-      {/* ID Order */}
+      {/* ID Order — selalu read-only (auto-generated) */}
       <div style={{ marginBottom: 8 }}>
         <span style={metaLabel}>ID Order</span>
-        {editing ? (
-          <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="cth: ORD-001" style={selStyleFull} />
-        ) : (
-          <span style={{ fontSize: 13 }}>{order.orderNumber || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+        <span style={{
+          display: "inline-block", fontFamily: "monospace", fontSize: 12, fontWeight: 700,
+          padding: "2px 8px", borderRadius: 6,
+          ...(CATEGORY_BADGE[order.category] || CATEGORY_BADGE.LAYANAN),
+        }}>
+          {order.orderNumber || "—"}
+        </span>
+        {order.category && order.category !== "LAYANAN" && (
+          <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-muted)" }}>
+            · {CATEGORY_LABELS[order.category]}
+          </span>
         )}
       </div>
 
@@ -252,85 +311,137 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         </div>
       ) : null}
 
-      {/* Items layanan */}
-      {editing ? (
-        <div style={{ marginBottom: 8 }}>
-          <span style={metaLabel}>Layanan (add-ons)</span>
-          {items.map((it) => (
-            <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
-              <input
-                list="layanan-suggestions"
-                value={it.layananName}
-                onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
-                placeholder="Nama layanan..."
-                style={{ flex: 2, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
-              />
-              <input
-                type="number" value={it.harga}
-                onChange={(e) => setItemField(it.key, "harga", e.target.value)}
-                placeholder="Harga" min="0"
-                style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 80 }}
-              />
-              {items.length > 1 && (
-                <button onClick={() => removeItem(it.key)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, padding: "0 2px" }}>×</button>
-              )}
-            </div>
-          ))}
-          <datalist id="layanan-suggestions">
-            {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
-          </datalist>
-          <button onClick={addItem}
-            style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
-            + Tambah layanan lain
-          </button>
-          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600 }}>Total: {formatRupiah(totalItems)}</div>
-        </div>
-      ) : (order.items && order.items.length > 0) ? (
-        <div style={{ marginBottom: 8 }}>
-          <span style={metaLabel}>Layanan</span>
-          {order.items.map((it) => (
-            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0", color: "var(--text-secondary)" }}>
-              <span>{it.layananName}</span>
-              <span style={{ fontWeight: 600 }}>{formatRupiah(it.harga)}</span>
-            </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-            <span>Total</span>
-            <span>{formatRupiah(order.value)}</span>
+      {/* Items layanan — hanya untuk LAYANAN */}
+      {isLayanan && (
+        editing ? (
+          <div style={{ marginBottom: 8 }}>
+            <span style={metaLabel}>Layanan (add-ons)</span>
+            {items.map((it) => (
+              <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+                <input
+                  list="layanan-suggestions"
+                  value={it.layananName}
+                  onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
+                  placeholder="Nama layanan..."
+                  style={{ flex: 2, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
+                />
+                <input
+                  type="number" value={it.harga}
+                  onChange={(e) => setItemField(it.key, "harga", e.target.value)}
+                  placeholder="Harga" min="0"
+                  style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 80 }}
+                />
+                {items.length > 1 && (
+                  <button onClick={() => removeItem(it.key)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, padding: "0 2px" }}>×</button>
+                )}
+              </div>
+            ))}
+            <datalist id="layanan-suggestions">
+              {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
+            </datalist>
+            <button onClick={addItem}
+              style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
+              + Tambah layanan lain
+            </button>
+            <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600 }}>Total: {formatRupiah(totalItems)}</div>
           </div>
-        </div>
-      ) : null}
+        ) : (order.items && order.items.length > 0) ? (
+          <div style={{ marginBottom: 8 }}>
+            <span style={metaLabel}>Layanan</span>
+            {order.items.map((it) => (
+              <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0", color: "var(--text-secondary)" }}>
+                <span>{it.layananName}</span>
+                <span style={{ fontWeight: 600 }}>{formatRupiah(it.harga)}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+              <span>Total</span>
+              <span>{formatRupiah(order.value)}</span>
+            </div>
+          </div>
+        ) : null
+      )}
 
-      {/* Keluhan */}
+      {/* Nilai total untuk BARU/SEWA (non-LAYANAN) */}
+      {!isLayanan && order.value > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <span style={metaLabel}>Nilai</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>{formatRupiah(order.value)}</span>
+        </div>
+      )}
+
+      {/* Keluhan/Catatan */}
       {editing ? (
-        <div>
-          <span style={metaLabel}>Keluhan Customer</span>
+        <div style={{ marginBottom: 8 }}>
+          <span style={metaLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</span>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
-            placeholder="Keluhan kasur customer..." rows={2}
-            style={{ ...selStyleFull, resize: "vertical" }} />
+            placeholder={isLayanan ? "Keluhan kasur customer..." : "Catatan order..."}
+            rows={2} style={{ ...selStyleFull, resize: "vertical" }} />
         </div>
       ) : info.keluhanCustomer ? (
-        <div>
-          <span style={metaLabel}>Keluhan</span>
+        <div style={{ marginBottom: 8 }}>
+          <span style={metaLabel}>{isLayanan ? "Keluhan" : "Catatan"}</span>
           <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>{info.keluhanCustomer}</p>
         </div>
       ) : null}
+
+      {/* Tombol tandai komplain (hanya untuk order DELIVERED yang belum punya komplain) */}
+      {!editing && order.status === "DELIVERED" && !order.hasComplaint && (
+        <div style={{ marginTop: 8 }}>
+          {!showComplaintForm ? (
+            <button
+              onClick={() => setShowComplaintForm(true)}
+              style={{ fontSize: 12, color: "#dc2626", background: "none", border: "1px solid #fca5a5", borderRadius: 6, cursor: "pointer", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <AlertTriangle size={12} /> + Tandai Komplain
+            </button>
+          ) : (
+            <div style={{ padding: 10, background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Detail Komplain</p>
+              <textarea
+                value={complaintDetail}
+                onChange={(e) => setComplaintDetail(e.target.value)}
+                placeholder="Jelaskan masalah yang dilaporkan customer..."
+                rows={3}
+                style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid #fca5a5", resize: "vertical", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button
+                  onClick={handleSaveComplaint}
+                  disabled={savingComplaint}
+                  style={{ flex: 1, fontSize: 12, padding: "5px 0", background: "#dc2626", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}
+                >
+                  {savingComplaint ? "Menyimpan..." : "Simpan Komplain"}
+                </button>
+                <button
+                  onClick={() => { setShowComplaintForm(false); setComplaintDetail(""); }}
+                  style={{ fontSize: 12, padding: "5px 10px", background: "none", border: "1px solid var(--border)", borderRadius: 6, cursor: "pointer" }}
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Form tambah order baru (2 step) ─────────────────────────────────────────
+// ─── Form tambah order baru (step 0: kategori → step 1: info → step 2: layanan) ─
 function AddOrderForm({ customerId, onDone, onCancel }) {
-  const [step, setStep]               = useState(1);
-  const [orderNumber, setOrderNumber] = useState("");
-  const [beratBadan, setBeratBadan]   = useState("");
-  const [merkKasur, setMerk]          = useState("");
-  const [ukuran, setUkuran]           = useState("");
-  const [keluhan, setKeluhan]         = useState("");
-  const [items, setItems]             = useState([newItem()]);
-  const [saving, setSaving]           = useState(false);
+  const [step, setStep]           = useState(0);
+  const [category, setCategory]   = useState("");
+  const [beratBadan, setBeratBadan] = useState("");
+  const [merkKasur, setMerk]      = useState("");
+  const [ukuran, setUkuran]       = useState("");
+  const [keluhan, setKeluhan]     = useState("");
+  const [hargaTotal, setHargaTotal] = useState(""); // untuk BARU/SEWA
+  const [items, setItems]         = useState([newItem()]); // untuk LAYANAN
+  const [saving, setSaving]       = useState(false);
 
+  const isLayanan = category === "LAYANAN";
   const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
   function addItem() { setItems((p) => [...p, newItem()]); }
@@ -339,16 +450,40 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     setItems((p) => p.map((it) => it.key === key ? { ...it, [field]: val } : it));
   }
 
-  async function handleSubmit(e) {
+  // Submit untuk BARU/SEWA (harga total, 1 item)
+  async function handleSubmitSimple(e) {
+    e.preventDefault();
+    const harga = Number(hargaTotal) || 0;
+    setSaving(true);
+    try {
+      const order = await api.addOrder(customerId, {
+        category,
+        beratBadan: beratBadan ? Number(beratBadan) : null,
+        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      });
+      if (harga > 0) {
+        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
+      }
+      onDone();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Submit untuk LAYANAN (add-ons)
+  async function handleSubmitLayanan(e) {
     e.preventDefault();
     const validItems = items.filter((it) => it.layananName?.trim());
     if (validItems.length === 0) return alert("Tambahkan minimal satu layanan");
     setSaving(true);
     try {
       const order = await api.addOrder(customerId, {
+        category: "LAYANAN",
         beratBadan: beratBadan ? Number(beratBadan) : null,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
-        orderNumber: orderNumber.trim() || null,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
@@ -361,22 +496,64 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     }
   }
 
-  if (step === 1) {
+  // ── Step 0: Pilih kategori ──
+  if (step === 0) {
     return (
       <div style={formBox}>
-        <p style={{ margin: "0 0 12px", fontWeight: 700, fontSize: 13 }}>Order Baru — Langkah 1: Info Kasur</p>
-        <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>ID Order (opsional)</label>
-          <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="cth: ORD-001" style={formSelect} />
+        <p style={{ margin: "0 0 12px", fontWeight: 700, fontSize: 13 }}>Order Baru — Pilih Jenis</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {CATEGORY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setCategory(opt.value)}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+                border: category === opt.value ? "2px solid var(--primary)" : "1px solid var(--border)",
+                background: category === opt.value ? "#eff6ff" : "var(--card-bg)",
+                transition: "all 0.15s",
+              }}
+            >
+              <span style={{ fontSize: 22 }}>{opt.icon}</span>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{opt.sub}</div>
+              </div>
+            </button>
+          ))}
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-primary" style={{ flex: 1 }}
+            disabled={!category}
+            onClick={() => setStep(1)}
+          >
+            Lanjut →
+          </button>
+          <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step 1: Info kasur (sama untuk semua kategori) ──
+  if (step === 1) {
+    const opt = CATEGORY_OPTIONS.find((o) => o.value === category);
+    return (
+      <div style={formBox}>
+        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+          {opt?.icon} {opt?.label} — Info Kasur
+        </p>
+        <button type="button" onClick={() => setStep(0)}
+          style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
+          ← Ganti jenis
+        </button>
+
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Berat Badan (kg)</label>
-          <input
-            type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
-            placeholder="cth: 75" min="1" max="300"
-            style={{ ...formSelect, width: 120 }}
-          />
+          <input type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
+            placeholder="cth: 75" min="1" max="300" style={{ ...formSelect, width: 120 }} />
         </div>
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Merk Kasur</label>
@@ -393,24 +570,42 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
           </select>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={formLabel}>Keluhan Customer</label>
+          <label style={formLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</label>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
-            placeholder="Jelaskan keluhan kasur yang dirasakan customer..." rows={3}
-            style={{ ...formSelect, resize: "vertical" }} />
+            placeholder={isLayanan ? "Jelaskan keluhan kasur..." : "Catatan order..."}
+            rows={3} style={{ ...formSelect, resize: "vertical" }} />
         </div>
+
+        {/* BARU/SEWA: harga total langsung di step ini */}
+        {!isLayanan && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={formLabel}>Harga Total (Rp)</label>
+            <input type="number" value={hargaTotal} onChange={(e) => setHargaTotal(e.target.value)}
+              placeholder="cth: 5000000" min="0" style={formSelect} />
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(2)}>
-            Lanjut ke Layanan →
-          </button>
+          {isLayanan ? (
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(2)}>
+              Lanjut ke Layanan →
+            </button>
+          ) : (
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={saving}
+              onClick={handleSubmitSimple}>
+              {saving ? "Menyimpan..." : "Simpan Order"}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
         </div>
       </div>
     );
   }
 
+  // ── Step 2: Layanan (hanya untuk LAYANAN/Service/Upgrade) ──
   return (
-    <form onSubmit={handleSubmit} style={formBox}>
-      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>Langkah 2: Daftar Layanan</p>
+    <form onSubmit={handleSubmitLayanan} style={formBox}>
+      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>🔧 Service/Upgrade — Daftar Layanan</p>
       {(merkKasur || ukuran) && (
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-muted)" }}>
           {[merkKasur, ukuran].filter(Boolean).join(" · ")}
@@ -464,8 +659,8 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
 
 // ─── Container utama ──────────────────────────────────────────────────────────
 export default function OrderSection({ customer, onUpdate }) {
-  const [showForm, setShowForm]   = useState(false);
-  const [expandedId, setExpandedId] = useState(null); // ID order yang sedang di-expand
+  const [showForm, setShowForm]     = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   async function refresh() {
     try {
@@ -517,7 +712,8 @@ export default function OrderSection({ customer, onUpdate }) {
             </thead>
             <tbody>
               {customer.orders.map((o) => {
-                const badge = ORDER_STATUS_BADGE[o.status] || {};
+                const badge  = ORDER_STATUS_BADGE[o.status] || {};
+                const catBadge = CATEGORY_BADGE[o.category] || CATEGORY_BADGE.LAYANAN;
                 const isOpen = expandedId === o.id;
                 return (
                   <React.Fragment key={o.id}>
@@ -525,8 +721,15 @@ export default function OrderSection({ customer, onUpdate }) {
                       onClick={() => toggleExpand(o.id)}
                       style={{ borderTop: "1px solid var(--border)", cursor: "pointer", background: isOpen ? "#f8fafc" : "white", transition: "background 0.1s" }}
                     >
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>
-                        {o.orderNumber || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+                      <td style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, padding: "1px 6px", borderRadius: 5, ...catBadge }}>
+                            {o.orderNumber || "—"}
+                          </span>
+                          {o.hasComplaint && (
+                            <AlertTriangle size={13} color="#dc2626" title="Ada komplain" />
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: "10px 12px", fontWeight: 700 }}>{formatRupiah(o.value)}</td>
                       <td style={{ padding: "10px 12px" }}>

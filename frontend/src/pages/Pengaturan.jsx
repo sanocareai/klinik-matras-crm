@@ -487,6 +487,7 @@ export default function Pengaturan({ user }) {
           "Sumber Lead":        SOURCE_LABELS[c.leadSource] || c.leadSource || "",
           "Jumlah Order":       c.orderCount || 0,
           "Total Nilai Order":  formatRupiah(c.orderValue || 0),
+          "Pernah Komplain":    c.pernahKomplain ? "Ya" : "Tidak",
           "Sales Person":       c.assignedSales?.name || "",
         })),
         `export-pelanggan-${new Date().toISOString().slice(0, 10)}`

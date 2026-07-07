@@ -321,6 +321,39 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
                   </div>
                 )}
               </div>
+
+              {/* Riwayat Komplain */}
+              <div style={{ marginTop: 24 }}>
+                <p className="drawer-section-title" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  Riwayat Komplain
+                  {customer.pernahKomplain && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: "#fee2e2", color: "#991b1b" }}>
+                      Ada
+                    </span>
+                  )}
+                </p>
+                {(!customer.riwayatKomplain || customer.riwayatKomplain.length === 0) ? (
+                  <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Belum pernah komplain.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {customer.riwayatKomplain.map((item, idx) => (
+                      <div key={idx} style={{ background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: "#991b1b" }}>
+                            {item.orderNumber || "—"}
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            {item.complaintDate ? new Date(item.complaintDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                          </span>
+                        </div>
+                        {item.complaintDetail && (
+                          <div style={{ fontSize: 12, color: "#7f1d1d" }}>{item.complaintDetail}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </form>
           )}
 
