@@ -60,7 +60,12 @@ customerRouter.get("/", async (req, res) => {
   const customers = await prisma.customer.findMany({
     where,
     include: {
-      orders: { include: { items: { orderBy: { sortOrder: "asc" } } } },
+      orders: {
+        include: {
+          items:         { orderBy: { sortOrder: "asc" } },
+          weightEntries: { orderBy: { sortOrder: "asc" } },
+        },
+      },
       assignedSales: true,
       conversations: { orderBy: { lastMessageAt: "desc" }, take: 1 },
     },
@@ -109,6 +114,7 @@ customerRouter.get("/", async (req, res) => {
       latestOrderNumber:   latest?.orderNumber   || null,
       latestPaymentStatus: latest?.paymentStatus || null,
       latestBeratBadan:    latest?.beratBadan    || null,
+      latestWeightEntries: latest?.weightEntries || [],
       latestKeluhan,
       latestMerkKasur,
       latestUkuranKasur,
@@ -128,7 +134,10 @@ customerRouter.get("/:id", async (req, res) => {
       notes: { include: { author: true }, orderBy: { createdAt: "desc" } },
       orders: {
         orderBy: { updatedAt: "desc" },
-        include: { items: { orderBy: { sortOrder: "asc" } } },
+        include: {
+          items:         { orderBy: { sortOrder: "asc" } },
+          weightEntries: { orderBy: { sortOrder: "asc" } },
+        },
       },
       assignedSales: true,
     },

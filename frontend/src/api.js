@@ -109,6 +109,12 @@ export const api = {
     request(`/orders/${orderId}`, { method: "DELETE" }),
   markOrderComplaint: (orderId, data) =>
     request(`/orders/${orderId}/complaint`, { method: "PATCH", body: JSON.stringify(data) }),
+  addWeightEntry: (orderId, data) =>
+    request(`/orders/${orderId}/weight-entries`, { method: "POST", body: JSON.stringify(data) }),
+  updateWeightEntry: (entryId, data) =>
+    request(`/orders/weight-entries/${entryId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteWeightEntry: (entryId) =>
+    request(`/orders/weight-entries/${entryId}`, { method: "DELETE" }),
 
   // Analytics
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),

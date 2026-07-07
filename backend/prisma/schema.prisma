@@ -235,7 +235,8 @@ model Order {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  items OrderItem[]
+  items         OrderItem[]
+  weightEntries OrderWeightEntry[]
 
   @@index([customerId])
 }
@@ -260,6 +261,16 @@ model OrderItem {
   layananName String
   harga       Int
   sortOrder   Int    @default(0)
+}
+
+// Berat badan per orang dalam satu order (multi-orang, misal suami + istri)
+model OrderWeightEntry {
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  label     String // "Suami" | "Istri" | "Sendiri" | custom
+  beratKg   Int
+  sortOrder Int    @default(0)
 }
 
 // Target penjualan bulanan per sales person

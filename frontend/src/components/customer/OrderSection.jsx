@@ -57,6 +57,10 @@ function newItem() {
   return { key: Date.now() + Math.random(), layananName: "", harga: "" };
 }
 
+function newWeightEntry() {
+  return { key: Date.now() + Math.random(), label: "", beratKg: "" };
+}
+
 const ORDER_STATUS_BADGE = {
   PENDING:    { bg: "#fef3c7", color: "#92400e" },
   PICKUP:     { bg: "#dbeafe", color: "#1e40af" },
@@ -74,15 +78,22 @@ function formatTanggal(d) {
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
 function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const info = parseNotes(order.notes);
+  const isLayanan = !order.category || order.category === "LAYANAN";
+
   const [editing, setEditing]             = useState(false);
   const [status, setStatus]               = useState(order.status);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
-  const [beratBadan, setBeratBadan]       = useState(order.beratBadan ? String(order.beratBadan) : "");
   const [merkKasur, setMerkKasur]         = useState(info.merkKasur);
   const [ukuran, setUkuran]               = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
+  );
+  // Berat badan multi-orang
+  const [weightEntries, setWeightEntries] = useState(
+    (order.weightEntries && order.weightEntries.length > 0)
+      ? order.weightEntries.map((e) => ({ ...e, key: e.id, beratKg: String(e.beratKg) }))
+      : [newWeightEntry()]
   );
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState(false);
@@ -93,29 +104,58 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
   const [savingComplaint, setSavingComplaint]     = useState(false);
 
   const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
-  // Kategori: tampilkan add-ons hanya untuk LAYANAN
-  const isLayanan = !order.category || order.category === "LAYANAN";
 
+  // ── helpers items ──
   function addItem() { setItems((p) => [...p, newItem()]); }
   function removeItem(key) { setItems((p) => p.filter((it) => it.key !== key)); }
   function setItemField(key, field, val) {
     setItems((p) => p.map((it) => it.key === key ? { ...it, [field]: val } : it));
   }
 
+  // ── helpers weight entries ──
+  function addWeight()         { setWeightEntries((p) => [...p, newWeightEntry()]); }
+  function removeWeight(key)   { setWeightEntries((p) => p.filter((e) => e.key !== key)); }
+  function setWeightField(key, field, val) {
+    setWeightEntries((p) => p.map((e) => e.key === key ? { ...e, [field]: val } : e));
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
+      // Merk otomatis "Sano" untuk BARU/SEWA
+      const finalMerk = isLayanan ? merkKasur : "Sano";
+
       await api.updateOrder(order.id, {
         status,
         paymentStatus,
-        beratBadan: beratBadan ? Number(beratBadan) : null,
-        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
+
+      // Proses weight entries
+      const existingIds = (order.weightEntries || []).map((e) => e.id);
+      const currentIds  = weightEntries.filter((e) => e.id).map((e) => e.id);
+      // Hapus yang dihilangkan
+      for (const id of existingIds) {
+        if (!currentIds.includes(id)) await api.deleteWeightEntry(id);
+      }
+      // Update yang sudah ada
+      for (const e of weightEntries.filter((e) => e.id)) {
+        if (e.label?.trim() && e.beratKg)
+          await api.updateWeightEntry(e.id, { label: e.label.trim(), beratKg: Number(e.beratKg) });
+      }
+      // Tambah yang baru
+      for (let i = 0; i < weightEntries.length; i++) {
+        const e = weightEntries[i];
+        if (!e.id && e.label?.trim() && e.beratKg)
+          await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
+      }
+
+      // Proses items (hanya LAYANAN)
       if (isLayanan) {
-        const existingIds = (order.items || []).map((it) => it.id);
-        const currentIds  = items.filter((it) => it.id).map((it) => it.id);
-        for (const id of existingIds) {
-          if (!currentIds.includes(id)) await api.deleteOrderItem(id);
+        const existingItemIds = (order.items || []).map((it) => it.id);
+        const currentItemIds  = items.filter((it) => it.id).map((it) => it.id);
+        for (const id of existingItemIds) {
+          if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
         }
         for (const it of items.filter((it) => it.id)) {
           if (it.layananName?.trim())
@@ -126,6 +166,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
             await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
         }
       }
+
       setEditing(false);
       onRefresh();
     } catch (err) {
@@ -139,16 +180,20 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
     const inf = parseNotes(order.notes);
     setStatus(order.status);
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
-    setBeratBadan(order.beratBadan ? String(order.beratBadan) : "");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
     setKeluhan(inf.keluhanCustomer);
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
+    setWeightEntries(
+      (order.weightEntries && order.weightEntries.length > 0)
+        ? order.weightEntries.map((e) => ({ ...e, key: e.id, beratKg: String(e.beratKg) }))
+        : [newWeightEntry()]
+    );
     setEditing(false);
   }
 
   async function handleDelete() {
-    if (!confirm("Hapus order ini? Semua item layanan juga akan dihapus.")) return;
+    if (!confirm("Hapus order ini? Semua item & data terkait juga akan dihapus.")) return;
     setDeleting(true);
     try {
       await api.deleteOrder(order.id);
@@ -172,6 +217,11 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
       setSavingComplaint(false);
     }
   }
+
+  // Tampilan berat badan di view mode
+  const weightDisplay = (order.weightEntries && order.weightEntries.length > 0)
+    ? order.weightEntries.map((e) => `${e.label}: ${e.beratKg} kg`).join(" · ")
+    : null;
 
   return (
     <div style={{ padding: "12px 14px", background: "#fafafa", borderTop: "1px solid var(--border)" }}>
@@ -270,19 +320,40 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         )}
       </div>
 
-      {/* Berat Badan */}
+      {/* Berat Badan — multi-orang */}
       <div style={{ marginBottom: 8 }}>
-        <span style={metaLabel}>Berat Badan (kg)</span>
+        <span style={metaLabel}>Berat Badan</span>
         {editing ? (
-          <input
-            type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
-            placeholder="cth: 75" min="1" max="300"
-            style={{ ...selStyleFull, width: 100 }}
-          />
+          <div>
+            {weightEntries.map((e) => (
+              <div key={e.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+                <input
+                  value={e.label}
+                  onChange={(ev) => setWeightField(e.key, "label", ev.target.value)}
+                  placeholder="cth: Suami / Istri / Sendiri"
+                  style={{ flex: 2, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
+                />
+                <input
+                  type="number" value={e.beratKg}
+                  onChange={(ev) => setWeightField(e.key, "beratKg", ev.target.value)}
+                  placeholder="kg" min="1" max="300"
+                  style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 70 }}
+                />
+                {weightEntries.length > 1 && (
+                  <button onClick={() => removeWeight(e.key)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, padding: "0 2px" }}>×</button>
+                )}
+              </div>
+            ))}
+            <button onClick={addWeight}
+              style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
+              + Tambah Orang
+            </button>
+          </div>
+        ) : weightDisplay ? (
+          <span style={{ fontSize: 13 }}>{weightDisplay}</span>
         ) : (
-          <span style={{ fontSize: 13 }}>
-            {order.beratBadan ? `${order.beratBadan} kg` : <span style={{ color: "var(--text-muted)" }}>—</span>}
-          </span>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>—</span>
         )}
       </div>
 
@@ -291,10 +362,14 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
           <div>
             <span style={metaLabel}>Merk Kasur</span>
-            <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
-              <option value="">—</option>
-              {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            {isLayanan ? (
+              <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
+                <option value="">—</option>
+                {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: 13, fontWeight: 700, padding: "5px 0", color: "#166534" }}>Sano ✓</div>
+            )}
           </div>
           <div>
             <span style={metaLabel}>Ukuran</span>
@@ -304,10 +379,10 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
             </select>
           </div>
         </div>
-      ) : (info.merkKasur || info.ukuranKasur) ? (
+      ) : (info.merkKasur || info.ukuranKasur || !isLayanan) ? (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-          {info.merkKasur && <span style={chipStyle}>{info.merkKasur}</span>}
-          {info.ukuranKasur && <span style={chipStyle}>{info.ukuranKasur}</span>}
+          <span style={chipStyle}>{isLayanan ? (info.merkKasur || "—") : "Sano"}</span>
+          {(info.ukuranKasur || ukuran) && <span style={chipStyle}>{info.ukuranKasur || ukuran}</span>}
         </div>
       ) : null}
 
@@ -431,26 +506,46 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
 
 // ─── Form tambah order baru (step 0: kategori → step 1: info → step 2: layanan) ─
 function AddOrderForm({ customerId, onDone, onCancel }) {
-  const [step, setStep]           = useState(0);
-  const [category, setCategory]   = useState("");
-  const [beratBadan, setBeratBadan] = useState("");
-  const [merkKasur, setMerk]      = useState("");
-  const [ukuran, setUkuran]       = useState("");
-  const [keluhan, setKeluhan]     = useState("");
-  const [hargaTotal, setHargaTotal] = useState(""); // untuk BARU/SEWA
-  const [items, setItems]         = useState([newItem()]); // untuk LAYANAN
-  const [saving, setSaving]       = useState(false);
+  const [step, setStep]               = useState(0);
+  const [category, setCategory]       = useState("");
+  const [merkKasur, setMerk]          = useState("");
+  const [ukuran, setUkuran]           = useState("");
+  const [keluhan, setKeluhan]         = useState("");
+  const [hargaTotal, setHargaTotal]   = useState("");
+  const [items, setItems]             = useState([newItem()]);
+  const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
+  const [saving, setSaving]           = useState(false);
 
   const isLayanan = category === "LAYANAN";
-  const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
+  const total     = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
+  // ── helpers items ──
   function addItem() { setItems((p) => [...p, newItem()]); }
   function removeItem(key) { setItems((p) => p.filter((it) => it.key !== key)); }
   function setItemField(key, field, val) {
     setItems((p) => p.map((it) => it.key === key ? { ...it, [field]: val } : it));
   }
 
-  // Submit untuk BARU/SEWA (harga total, 1 item)
+  // ── helpers weight entries ──
+  function addWeight()         { setWeightEntries((p) => [...p, newWeightEntry()]); }
+  function removeWeight(key)   { setWeightEntries((p) => p.filter((e) => e.key !== key)); }
+  function setWeightField(key, field, val) {
+    setWeightEntries((p) => p.map((e) => e.key === key ? { ...e, [field]: val } : e));
+  }
+
+  // Helper: simpan weight entries yang valid setelah order dibuat
+  async function saveWeightEntries(orderId) {
+    const valid = weightEntries.filter((e) => e.label?.trim() && e.beratKg);
+    for (let i = 0; i < valid.length; i++) {
+      await api.addWeightEntry(orderId, {
+        label:    valid[i].label.trim(),
+        beratKg:  Number(valid[i].beratKg),
+        sortOrder: i,
+      });
+    }
+  }
+
+  // Submit untuk BARU/SEWA
   async function handleSubmitSimple(e) {
     e.preventDefault();
     const harga = Number(hargaTotal) || 0;
@@ -458,13 +553,13 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     try {
       const order = await api.addOrder(customerId, {
         category,
-        beratBadan: beratBadan ? Number(beratBadan) : null,
-        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
       if (harga > 0) {
         const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
         await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
       }
+      await saveWeightEntries(order.id);
       onDone();
     } catch (err) {
       alert(err.message);
@@ -482,12 +577,12 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
     try {
       const order = await api.addOrder(customerId, {
         category: "LAYANAN",
-        beratBadan: beratBadan ? Number(beratBadan) : null,
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
       }
+      await saveWeightEntries(order.id);
       onDone();
     } catch (err) {
       alert(err.message);
@@ -550,18 +645,48 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
           ← Ganti jenis
         </button>
 
+        {/* Berat Badan — multi-orang */}
         <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>Berat Badan (kg)</label>
-          <input type="number" value={beratBadan} onChange={(e) => setBeratBadan(e.target.value)}
-            placeholder="cth: 75" min="1" max="300" style={{ ...formSelect, width: 120 }} />
+          <label style={formLabel}>Berat Badan</label>
+          {weightEntries.map((e) => (
+            <div key={e.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+              <input
+                value={e.label}
+                onChange={(ev) => setWeightField(e.key, "label", ev.target.value)}
+                placeholder="cth: Suami / Istri / Sendiri"
+                style={{ flex: 2, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)" }}
+              />
+              <input
+                type="number" value={e.beratKg}
+                onChange={(ev) => setWeightField(e.key, "beratKg", ev.target.value)}
+                placeholder="kg" min="1" max="300"
+                style={{ flex: 1, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)", minWidth: 70 }}
+              />
+              {weightEntries.length > 1 && (
+                <button type="button" onClick={() => removeWeight(e.key)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}>×</button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={addWeight}
+            style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
+            + Tambah Orang
+          </button>
         </div>
+
+        {/* Merk Kasur */}
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Merk Kasur</label>
-          <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
-            <option value="">— Pilih Merk —</option>
-            {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          {isLayanan ? (
+            <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
+              <option value="">— Pilih Merk —</option>
+              {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <div style={{ fontSize: 13, fontWeight: 700, padding: "7px 0", color: "#166534" }}>Sano ✓</div>
+          )}
         </div>
+
         <div style={{ marginBottom: 10 }}>
           <label style={formLabel}>Ukuran Kasur</label>
           <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
@@ -712,9 +837,9 @@ export default function OrderSection({ customer, onUpdate }) {
             </thead>
             <tbody>
               {customer.orders.map((o) => {
-                const badge  = ORDER_STATUS_BADGE[o.status] || {};
+                const badge    = ORDER_STATUS_BADGE[o.status] || {};
                 const catBadge = CATEGORY_BADGE[o.category] || CATEGORY_BADGE.LAYANAN;
-                const isOpen = expandedId === o.id;
+                const isOpen   = expandedId === o.id;
                 return (
                   <React.Fragment key={o.id}>
                     <tr
