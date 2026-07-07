@@ -390,6 +390,10 @@ export default function Pengaturan({ user }) {
   const [waStatus, setWaStatus]     = useState(null);
   const [waLoading, setWaLoading]   = useState(false);
 
+  // Sinkronisasi riwayat chat
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult]   = useState(null); // { synced, total, errors }
+
   // Password change
   const [pwForm, setPwForm]       = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwMsg, setPwMsg]         = useState(null);
@@ -434,6 +438,19 @@ export default function Pengaturan({ user }) {
       setWaStatus({ status: "error", error: err.message });
     } finally {
       setWaLoading(false);
+    }
+  }
+
+  async function handleSyncHistory() {
+    setSyncLoading(true);
+    setSyncResult(null);
+    try {
+      const result = await api.syncChatHistory();
+      setSyncResult(result);
+    } catch (err) {
+      setSyncResult({ error: err.message });
+    } finally {
+      setSyncLoading(false);
     }
   }
 
@@ -609,9 +626,29 @@ export default function Pengaturan({ user }) {
               <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
                 Status real-time koneksi WAHA self-hosted ke nomor WhatsApp klinik.
               </p>
-              <button className="btn btn-primary" onClick={checkWaStatus} disabled={waLoading} style={{ marginBottom: 20 }}>
-                <Wifi size={15} /> {waLoading ? "Mengecek..." : "Cek Status Sekarang"}
-              </button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+                <button className="btn btn-primary" onClick={checkWaStatus} disabled={waLoading}>
+                  <Wifi size={15} /> {waLoading ? "Mengecek..." : "Cek Status Sekarang"}
+                </button>
+                <button className="btn btn-secondary" onClick={handleSyncHistory} disabled={syncLoading}>
+                  <Download size={15} /> {syncLoading ? "Sedang sinkronisasi..." : "Sinkronisasi Riwayat Chat"}
+                </button>
+              </div>
+
+              {syncResult && !syncResult.error && (
+                <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", fontSize: 13 }}>
+                  <strong style={{ color: "#166534" }}>{syncResult.synced} pesan baru</strong>
+                  <span style={{ color: "#374151" }}> ditemukan dari {syncResult.total} pelanggan</span>
+                  {syncResult.errors > 0 && (
+                    <span style={{ color: "#92400e" }}> · {syncResult.errors} pelanggan gagal diproses</span>
+                  )}
+                </div>
+              )}
+              {syncResult?.error && (
+                <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, background: "#fef3c7", border: "1px solid #fde68a", fontSize: 13, color: "#92400e" }}>
+                  Gagal sinkronisasi: {syncResult.error}
+                </div>
+              )}
 
               {waStatus && (
                 <div className={`wa-status ${waStatus.status === "WORKING" ? "connected" : "disconnected"}`}>

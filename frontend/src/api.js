@@ -158,6 +158,8 @@ export const api = {
   updateSettings: (data) =>
     request("/settings", { method: "PATCH", body: JSON.stringify(data) }),
   getWhatsappStatus: () => request("/settings/whatsapp-status"),
+  syncChatHistory: (phone = null) =>
+    request("/settings/sync-history", { method: "POST", body: JSON.stringify(phone ? { phone } : {}) }),
   getSalesTargets: (params) => request("/settings/sales-targets" + buildQuery(params)),
   updateSalesTarget: (data) =>
     request("/settings/sales-targets", { method: "PUT", body: JSON.stringify(data) }),

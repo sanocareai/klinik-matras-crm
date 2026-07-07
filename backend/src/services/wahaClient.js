@@ -168,7 +168,31 @@ export async function getSessionStatus() {
 }
 
 // Bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net / @lid
+// + normalisasi format Indonesia: 0xxx → 62xxx
 export function cleanPhoneNumber(rawId) {
   if (!rawId) return null;
-  return rawId.split("@")[0];
+  let num = rawId.split("@")[0];
+  if (num.startsWith("0")) num = "62" + num.slice(1);
+  return num;
+}
+
+// Ambil riwayat pesan dari WAHA untuk 1 nomor (limit pesan terbaru)
+// Return: array message object, atau [] kalau gagal/tidak tersedia
+export async function fetchChatHistory(phone, limit = 50) {
+  const chatId = `${phone}@c.us`;
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}&downloadMedia=false`,
+      { headers: headers() }
+    );
+    if (!res.ok) {
+      console.warn("[fetchChatHistory] Gagal untuk", phone, "status:", res.status);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.messages || []);
+  } catch (e) {
+    console.warn("[fetchChatHistory] Error untuk", phone, e.message);
+    return [];
+  }
 }

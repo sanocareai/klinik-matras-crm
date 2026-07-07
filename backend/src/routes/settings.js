@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { prisma } from "../db.js";
-import { getSessionStatus } from "../services/wahaClient.js";
+import { getSessionStatus, fetchChatHistory } from "../services/wahaClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, "../../data/settings.json");
@@ -82,6 +82,67 @@ settingsRouter.put("/sales-targets", requireAdmin, async (req, res) => {
       update: { targetValue: Number(targetValue) },
     });
     res.json(target);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/settings/sync-history — pull riwayat chat dari WAHA ke CRM (admin only)
+// Body (opsional): { phone: "628xxx" } → sync 1 customer; kosong → sync semua customer ber-phone
+// Idempotent: pesan yang sudah ada di DB di-skip via externalId @unique
+settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
+  const { phone } = req.body || {};
+  let total = 0, synced = 0, errors = 0;
+
+  try {
+    const customers = await prisma.customer.findMany({
+      where: phone ? { phone } : { phone: { not: null } },
+      select: { id: true, phone: true },
+    });
+    total = customers.length;
+
+    for (const customer of customers) {
+      try {
+        const messages = await fetchChatHistory(customer.phone, 50);
+        if (!messages.length) continue;
+
+        // Cari conversation WA yang ada, atau buat baru (status RESOLVED karena ini history)
+        let convo = await prisma.conversation.findFirst({
+          where: { customerId: customer.id, channel: "WHATSAPP" },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!convo) {
+          convo = await prisma.conversation.create({
+            data: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
+          });
+        }
+
+        for (const msg of messages) {
+          const externalId = msg.id || msg.key?.id;
+          if (!externalId) continue;
+
+          // Skip kalau sudah ada (idempotent)
+          const exists = await prisma.message.findUnique({ where: { externalId } });
+          if (exists) continue;
+
+          const content = msg.body || msg.caption || "";
+          const direction = msg.fromMe ? "OUTBOUND" : "INBOUND";
+          // Timestamp WAHA: epoch seconds di msg.timestamp atau msg._data.t
+          const ts = msg.timestamp || msg._data?.t;
+          const createdAt = ts ? new Date(ts * 1000) : new Date();
+
+          await prisma.message.create({
+            data: { conversationId: convo.id, direction, content, externalId, createdAt },
+          });
+          synced++;
+        }
+      } catch (e) {
+        console.error("[sync-history] Error untuk customer", customer.phone, e.message);
+        errors++;
+      }
+    }
+
+    res.json({ ok: true, total, synced, errors });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
