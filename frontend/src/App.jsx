@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
+import UpdateBanner from "./components/UpdateBanner.jsx";
 import CoPilotFloat from "./components/CoPilotFloat.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Inbox from "./pages/Inbox.jsx";
@@ -96,6 +97,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <InstallPrompt />
+      <UpdateBanner />
       <CoPilotFloat />
       <Layout user={user} onLogout={handleLogout}>
         <Routes>

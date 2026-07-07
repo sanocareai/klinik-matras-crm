@@ -23,6 +23,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,    // SW baru langsung aktif tanpa tunggu tab ditutup
+        clientsClaim: true,   // SW baru langsung klaim semua tab yang terbuka
         runtimeCaching: [
           // API calls: selalu ambil dari network, data harus selalu fresh
           {
