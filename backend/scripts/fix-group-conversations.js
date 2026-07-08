@@ -32,6 +32,22 @@ if (DRY_RUN) {
 // Contoh valid: 6281234567890
 const VALID_PHONE_REGEX = /^62\d{8,12}$/;
 
+// Kata kunci yang menunjukkan nama grup WhatsApp (bukan nama orang)
+// Customer dengan phone=null HANYA di-flag sebagai grup kalau namanya cocok salah satu ini.
+// Tujuan: jangan sampai customer nyata yang belum diisi nomor HP-nya (misal Gilang, Kemal)
+// ikut terhapus.
+const GROUP_NAME_KEYWORDS = [
+  "GRUP", "GROUP", "TIM", "TEAM",
+  "PRODUKSI", "DRIVETHRU", "DRIVE THRU",
+  "SALES", "MARKETING", "ADMIN", "INTERNAL",
+];
+
+function looksLikeGroupName(name) {
+  if (!name) return false;
+  const upper = name.toUpperCase();
+  return GROUP_NAME_KEYWORDS.some((kw) => upper.includes(kw));
+}
+
 async function main() {
   // Ambil SEMUA customer — termasuk yang phone-nya null
   const allCustomers = await prisma.customer.findMany({
@@ -42,11 +58,17 @@ async function main() {
     },
   });
 
-  // Kandidat grup: phone null ATAU tidak cocok format HP Indonesia
+  // Kandidat grup:
+  // - phone tidak null dan tidak cocok format HP → hampir pasti group JID yang salah simpan
+  // - phone null DAN nama mengandung kata kunci grup → grup yang belum dapat phone
+  //   (phone null saja TIDAK cukup — bisa jadi orang nyata yang belum diisi nomornya)
   const candidates = allCustomers.filter((c) => {
-    if (c.phone === null || c.phone === undefined) return true; // phone null = mencurigakan
-    if (VALID_PHONE_REGEX.test(c.phone)) return false;          // valid → skip
-    return true;                                                  // phone tidak valid
+    if (c.phone !== null && c.phone !== undefined) {
+      // Ada phone tapi bukan format HP Indonesia → group JID
+      return !VALID_PHONE_REGEX.test(c.phone);
+    }
+    // phone null: hanya flag kalau nama terlihat seperti grup
+    return looksLikeGroupName(c.name);
   });
 
   if (candidates.length === 0) {
