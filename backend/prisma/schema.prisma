@@ -109,6 +109,19 @@ model User {
   assignedConversations Conversation[] @relation("AssignedAgent")
   notes                 Note[]
   salesTargets          SalesTarget[]
+  pushTokens            PushToken[]
+}
+
+// Token push notification aplikasi mobile (Expo Push Token) — 1 user bisa
+// punya beberapa device. Token dihapus otomatis kalau Expo bilang invalid.
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // format: ExponentPushToken[xxxx]
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Customer {
