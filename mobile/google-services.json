@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "277995513750",
+    "project_id": "sano-sales-app",
+    "storage_bucket": "sano-sales-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:277995513750:android:10ebbb4cff0a70db5c9fb7",
+        "android_client_info": {
+          "package_name": "com.sanomatrassehat.salesapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbhUqWktsI09ij5_9PgoBkwHdMRRB2Z4c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead } from "../services/wahaClient.js";
 import { syncReadFromWaha } from "../services/reconciliation.js";
+import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
 
 export const webhookRouter = express.Router();
@@ -509,6 +510,21 @@ webhookRouter.post("/waha", async (req, res) => {
     });
 
     broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+
+    // Push notification ke aplikasi mobile tim (fire-and-forget).
+    // Hanya pesan individual — pesan grup internal tidak di-push supaya tidak berisik.
+    const preview = text
+      ? text.slice(0, 100)
+      : mediaType === "image"    ? "📷 Foto"
+      : mediaType === "video"    ? "🎥 Video"
+      : mediaType === "audio"    ? "🎤 Pesan suara"
+      : mediaType === "document" ? "📄 Dokumen"
+      : "Pesan baru";
+    sendPushToAllUsers({
+      title: customer.name || customer.phone || "Pelanggan",
+      body:  preview,
+      data:  { conversationId: conversation.id, customerId: customer.id },
+    }).catch((e) => console.warn("[push] Error:", e.message));
 
   } catch (err) {
     console.error("Gagal proses webhook WAHA:", err);

@@ -98,6 +98,36 @@ userRouter.patch("/me", async (req, res) => {
   }
 });
 
+// POST /me/push-token — daftarkan Expo Push Token dari aplikasi mobile
+// Upsert: token sama didaftar ulang tidak apa-apa, pindah user pun ditimpa
+userRouter.post("/me/push-token", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token?.startsWith("ExponentPushToken")) {
+      return res.status(400).json({ error: "Token push tidak valid" });
+    }
+    await prisma.pushToken.upsert({
+      where:  { token },
+      update: { userId: req.user.id },
+      create: { token, userId: req.user.id },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /me/push-token — hapus token saat logout (device berhenti terima notif)
+userRouter.delete("/me/push-token", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (token) await prisma.pushToken.deleteMany({ where: { token } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /me/change-password — ganti password sendiri
 userRouter.post("/me/change-password", async (req, res) => {
   try {

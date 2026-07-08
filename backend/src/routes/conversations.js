@@ -83,10 +83,25 @@ conversationRouter.get("/latest-unread", async (req, res) => {
   res.json({ count, latest });
 });
 
+// Jumlah percakapan per tab filter Inbox (Semua/Terbuka/Pending/Selesai/Milik Saya)
+// Harus di atas /:id agar Express tidak salah routing
+conversationRouter.get("/counts", async (req, res) => {
+  const [semua, terbuka, pending, selesai, milikSaya] = await Promise.all([
+    prisma.conversation.count(),
+    prisma.conversation.count({ where: { status: "OPEN" } }),
+    prisma.conversation.count({ where: { status: "PENDING" } }),
+    prisma.conversation.count({ where: { status: "RESOLVED" } }),
+    prisma.conversation.count({ where: { assignedToId: req.user.id } }),
+  ]);
+  res.json({ semua, terbuka, pending, selesai, milikSaya });
+});
+
 // Daftar percakapan
 conversationRouter.get("/", async (req, res) => {
-  const { status, search } = req.query;
-  const where = status ? { status } : {};
+  const { status, search, assignedToId } = req.query;
+  const where = {};
+  if (status)       where.status       = status;
+  if (assignedToId) where.assignedToId = assignedToId;
 
   if (search) {
     // Cari di customer (individual) DAN di groupName (grup)
