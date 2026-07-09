@@ -4,7 +4,7 @@ import {
   Send, MessageSquare, CheckCircle, X,
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
   ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical, Eye, CheckCheck,
-  Reply, Forward, Pin,
+  Reply, Forward, Pin, Smile, Search, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -100,6 +100,34 @@ function TemplatePicker({ customer, onSelect, onClose }) {
   );
 }
 
+// ── Emoji Picker ──────────────────────────────────────────────────────────────
+const EMOJI_LIST = [
+  "😀","😁","😂","🤣","😊","😍","😘","😉","😎","🤔",
+  "😅","😢","😭","😡","🙏","👍","👎","👏","🙌","💪",
+  "❤️","🔥","✨","🎉","😴","🤗","😇","🥰","😋","🤝",
+  "👋","✅","❌","⭐","💯","😐","😱","🙈","💤","☕",
+];
+function EmojiPicker({ onSelect, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="emoji-picker-popup">
+      <div className="emoji-picker-grid">
+        {EMOJI_LIST.map((em) => (
+          <button key={em} type="button" className="emoji-picker-item" onClick={() => onSelect(em)}>
+            {em}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Cek apakah string adalah JSON error (dari bug lama download media)
 function isJsonError(str) {
   if (!str) return false;
@@ -107,7 +135,7 @@ function isJsonError(str) {
 }
 
 // ── Media Bubble ──────────────────────────────────────────────────────────────
-function MediaBubble({ m, onReply, onForward }) {
+function MediaBubble({ m, onReply, onForward, onJumpTo, registerRef, highlighted, searchMatch }) {
   const [hovered, setHovered] = useState(false);
   const longPressTimerRef = useRef(null);
   const longPressAt       = useRef(0);
@@ -130,6 +158,7 @@ function MediaBubble({ m, onReply, onForward }) {
 
   return (
     <div
+      ref={(el) => registerRef?.(m.id, el)}
       style={{
         width: "100%",
         display: "flex",
@@ -175,7 +204,7 @@ function MediaBubble({ m, onReply, onForward }) {
         </div>
       )}
 
-      <div className={`bubble ${isOut ? "out" : "in"}`} style={{ alignSelf: "auto" }}>
+      <div className={`bubble ${isOut ? "out" : "in"}${highlighted ? " bubble-flash" : ""}${searchMatch ? " bubble-search-match" : ""}`} style={{ alignSelf: "auto" }}>
         {/* Nama pengirim — hanya untuk pesan grup (inbound) */}
         {!isOut && m.senderName && (
           <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>
@@ -183,17 +212,20 @@ function MediaBubble({ m, onReply, onForward }) {
           </div>
         )}
 
-        {/* Preview pesan yang dikutip (reply/quote) */}
+        {/* Preview pesan yang dikutip (reply/quote) — klik untuk lompat ke pesan asli */}
         {m.replyTo && (
-          <div style={{
-            borderLeft: `3px solid ${isOut ? "rgba(255,255,255,0.6)" : "var(--primary, #2563eb)"}`,
-            background: isOut ? "rgba(0,0,0,0.12)" : "rgba(37,99,235,0.07)",
-            borderRadius: 6,
-            padding: "5px 8px",
-            marginBottom: 7,
-            fontSize: 12,
-            cursor: "default",
-          }}>
+          <div
+            onClick={(e) => { e.stopPropagation(); onJumpTo?.(m.replyTo.id); }}
+            className="bubble-quote"
+            style={{
+              borderLeft: `3px solid ${isOut ? "rgba(255,255,255,0.6)" : "var(--primary, #2563eb)"}`,
+              background: isOut ? "rgba(0,0,0,0.12)" : "rgba(37,99,235,0.07)",
+              borderRadius: 6,
+              padding: "5px 8px",
+              marginBottom: 7,
+              fontSize: 12,
+              cursor: "pointer",
+            }}>
             <div style={{ fontWeight: 700, marginBottom: 2, fontSize: 11, opacity: 0.85 }}>
               {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
             </div>
@@ -427,6 +459,15 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
   const [showCustomerDetail, setShowCustomerDetail] = useState(false);
   const [showAttachSheet, setShowAttachSheet]     = useState(false);
   const [showDotMenu, setShowDotMenu]             = useState(false);
+  const [showEmoji, setShowEmoji]                 = useState(false);
+
+  // Pencarian dalam percakapan
+  const [showSearch, setShowSearch]   = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [highlightedId, setHighlightedId] = useState(null);
+  const messageRefs   = useRef({});
+  const highlightTimerRef = useRef(null);
 
   // Context Banner (handover)
   const [bannerCollapsed, setBannerCollapsed] = useState(false);
@@ -472,6 +513,10 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     setReplyingTo(null);
     setForwardMsg(null);
     setShowForwardModal(false);
+    setShowSearch(false);
+    setSearchQuery("");
+    setShowEmoji(false);
+    messageRefs.current = {};
 
     let interval;
     async function load() {
@@ -691,6 +736,59 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
     finally { setTakingOver(false); }
   }
 
+  // ── Referensi elemen pesan (untuk scroll + highlight) ──
+  function registerMessageRef(id, el) {
+    if (el) messageRefs.current[id] = el;
+    else delete messageRefs.current[id];
+  }
+
+  function scrollToMessage(id) {
+    const el = messageRefs.current[id];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(id);
+    clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1600);
+  }
+
+  // ── Pencarian dalam percakapan ──
+  const searchResults = searchQuery.trim()
+    ? messages.filter((m) => (m.content || "").toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : [];
+
+  useEffect(() => { setSearchIndex(0); }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchResults.length) scrollToMessage(searchResults[searchIndex]?.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchIndex, searchQuery]);
+
+  function goSearch(dir) {
+    if (!searchResults.length) return;
+    setSearchIndex((i) => (i + dir + searchResults.length) % searchResults.length);
+  }
+
+  function closeSearch() {
+    setShowSearch(false);
+    setSearchQuery("");
+    setSearchIndex(0);
+  }
+
+  // ── Sisipkan emoji di posisi kursor textarea ──
+  function insertEmoji(emoji) {
+    const el = textareaRef.current;
+    if (!el) { setDraft((d) => d + emoji); return; }
+    const start = el.selectionStart ?? draft.length;
+    const end   = el.selectionEnd ?? draft.length;
+    const next  = draft.slice(0, start) + emoji + draft.slice(end);
+    setDraft(next);
+    setTimeout(() => {
+      el.focus();
+      el.selectionStart = el.selectionEnd = start + emoji.length;
+      autoGrowTextarea(el);
+    }, 0);
+  }
+
   if (!conversation) {
     return (
       <div className="chat-window empty-state">
@@ -759,6 +857,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
 
         {/* Desktop-only: tombol ⓘ, Ambil Alih, status, Selesaikan */}
         <div className="chat-header-desktop-actions">
+          <button className="chat-action-btn" onClick={() => setShowSearch((v) => !v)} title="Cari dalam percakapan">
+            <Search size={17} />
+          </button>
           <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
             <Info size={18} />
           </button>
@@ -808,6 +909,9 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             <>
               <div className="chat-dots-backdrop" onClick={() => setShowDotMenu(false)} />
               <div className="chat-dots-dropdown">
+                <button onClick={() => { setShowSearch(true); setShowDotMenu(false); }}>
+                  <Search size={14} /> Cari Pesan
+                </button>
                 <button onClick={() => { setShowCustomerDetail(true); setShowDotMenu(false); }}>
                   <Info size={14} /> Info Pelanggan
                 </button>
@@ -834,6 +938,34 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           )}
         </div>
       </div>
+
+      {/* ── Search dalam percakapan ── */}
+      {showSearch && (
+        <div className="chat-search-bar">
+          <Search size={14} className="chat-search-icon" />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari pesan dalam percakapan..."
+            className="chat-search-input"
+          />
+          {searchQuery.trim() && (
+            <span className="chat-search-count">
+              {searchResults.length ? `${searchIndex + 1}/${searchResults.length}` : "0/0"}
+            </span>
+          )}
+          <button type="button" className="chat-action-btn" onClick={() => goSearch(-1)} disabled={!searchResults.length} title="Sebelumnya">
+            <ChevronUp size={16} />
+          </button>
+          <button type="button" className="chat-action-btn" onClick={() => goSearch(1)} disabled={!searchResults.length} title="Berikutnya">
+            <ChevronDown size={16} />
+          </button>
+          <button type="button" className="chat-action-btn" onClick={closeSearch} title="Tutup pencarian">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* ── Context Banner (handover note) ── */}
       {conversation?.handoverNote && (
@@ -888,6 +1020,10 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
             m={m}
             onReply={(msg) => { setReplyingTo(msg); textareaRef.current?.focus(); }}
             onForward={(msg) => { setForwardMsg(msg); setShowForwardModal(true); }}
+            onJumpTo={scrollToMessage}
+            registerRef={registerMessageRef}
+            highlighted={highlightedId === m.id}
+            searchMatch={showSearch && searchResults[searchIndex]?.id === m.id}
           />
         ))}
         <div ref={bottomRef} />
@@ -990,6 +1126,16 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
               <Plus size={16} />
             </button>
 
+            {/* Emoji */}
+            <div style={{ position: "relative" }}>
+              <button type="button" onClick={() => setShowEmoji((v) => !v)}
+                className={`chat-action-btn ${showEmoji ? "active" : ""}`} title="Emoji">
+                <Smile size={16} />
+              </button>
+              {showEmoji && (
+                <EmojiPicker onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />
+              )}
+            </div>
 
             {/* Textarea auto-grow — onPaste untuk handle paste gambar dari clipboard */}
             <textarea
