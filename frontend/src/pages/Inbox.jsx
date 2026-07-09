@@ -3,15 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
 import ConversationList from "../features/inbox/components/ConversationList/index.jsx";
-import ChatWindow from "../components/ChatWindow.jsx";
+import ChatWindow from "../features/inbox/components/ChatWindow/index.jsx";
 import CustomerPanel from "../components/CustomerPanel.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useActiveId, useConversation, useConversationStore } from "../features/inbox/stores/conversationStore.js";
 
-// FASE B: daftar percakapan (kolom kiri) sekarang virtualized + di-drive oleh
-// conversationStore (Zustand). ChatWindow & CustomerPanel LAMA tetap dipakai
-// apa adanya (belum direfactor) — mereka cukup diberi objek `conversation`
-// seperti biasa, jadi tidak perlu tahu store itu ada.
+// FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
+// conversationStore (Zustand).
+// FASE C: ChatWindow (kolom tengah) sekarang juga versi baru — virtualized
+// message list + optimistic send lewat messageStore/composerStore, ambil
+// data conversation aktif langsung dari conversationStore (tidak perlu
+// prop onConversationUpdated lagi, ChatWindow update store sendiri).
+// CustomerPanel (kolom kanan) LAMA masih dipakai apa adanya (belum
+// direfactor) — cukup diberi objek `conversation` seperti biasa.
 export default function Inbox({ user }) {
   const [mobileView, setMobileView]         = useState("list"); // 'list' | 'chat' (mobile)
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -53,17 +57,12 @@ export default function Inbox({ user }) {
     if (activeId) setMobileView("chat");
   }, [activeId]);
 
-  function handleConversationUpdated(updated) {
-    useConversationStore.getState().upsertConversation(updated);
-  }
-
   return (
     <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}${panelCollapsed ? " panel-collapsed" : ""}`}>
       <ConversationList userId={user?.id} />
       <ChatWindow
         conversation={active}
         user={user}
-        onConversationUpdated={handleConversationUpdated}
         onBack={() => setMobileView("list")}
         panelCollapsed={panelCollapsed}
         onTogglePanel={() => setPanelCollapsed((v) => !v)}

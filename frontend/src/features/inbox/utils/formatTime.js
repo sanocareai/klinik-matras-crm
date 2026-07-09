@@ -23,3 +23,15 @@ export function smartTimestamp(date) {
   if (diffHari < 7) return HARI_ID[d.day()];
   return d.format("DD/MM/YY");
 }
+
+// Label divider tanggal di dalam percakapan (gaya WhatsApp): "Hari Ini",
+// "Kemarin", atau tanggal lengkap ("12 Juli 2026") untuk yang lebih lama.
+export function dateDividerLabel(date) {
+  if (!date) return "";
+  const d = dayjs(date);
+  if (!d.isValid()) return "";
+  const diffHari = dayjs().startOf("day").diff(d.startOf("day"), "day");
+  if (diffHari === 0) return "Hari Ini";
+  if (diffHari === 1) return "Kemarin";
+  return d.format("D MMMM YYYY");
+}

@@ -2023,6 +2023,95 @@ input:focus, select:focus, textarea:focus {
   pointer-events: none;
 }
 
+/* ─── FASE C — CHATWINDOW BARU (Virtuoso) ─────────────────── */
+.message-list-wrap { flex: 1; min-height: 0; overflow: hidden; position: relative; background: #f8fafc; }
+.message-virtuoso { height: 100%; }
+.message-list-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.msg-row { padding: 3px 20px; }
+
+/* Divider tanggal (inline, lihat catatan di MessageList.jsx soal sticky) */
+.date-divider-row { display: flex; justify-content: center; padding: 10px 0 6px; }
+.date-divider-pill {
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+  background: #e5e7eb; padding: 4px 12px; border-radius: 99px;
+}
+
+/* Kutipan reply di dalam bubble */
+.bubble-quote {
+  border-left: 3px solid rgba(37,99,235,0.5);
+  background: rgba(37,99,235,0.07);
+  border-radius: 6px; padding: 5px 8px; margin-bottom: 7px;
+  font-size: 12px; cursor: pointer; transition: filter 0.12s;
+}
+.bubble.out .bubble-quote { border-left-color: rgba(0,0,0,0.35); background: rgba(0,0,0,0.08); }
+.bubble-quote:hover { filter: brightness(0.96); }
+.bubble-quote-author { font-weight: 700; margin-bottom: 2px; font-size: 11px; opacity: 0.85; }
+.bubble-quote-text { opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.bubble-forwarded { display: flex; align-items: center; gap: 3px; font-size: 11px; font-style: italic; opacity: 0.65; margin-bottom: 4px; }
+.msg-sender-name { font-size: 11px; font-weight: 700; color: #7c3aed; margin-bottom: 3px; }
+
+/* Action bar mini (Reply/Forward) saat hover/long-press */
+.msg-action-bar {
+  display: flex; gap: 4px; margin-bottom: 4px;
+  background: white; border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12); padding: 3px 8px;
+}
+.msg-action-bar button { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 3px; border-radius: 50%; display: flex; align-items: center; transition: background 0.12s, color 0.12s; }
+.msg-action-bar button:hover { background: #f1f5f9; color: var(--color-primary); }
+
+/* Meta (jam + status kirim) di bawah bubble */
+.bubble-meta { display: flex; align-items: center; gap: 3px; justify-content: flex-end; margin-top: 4px; opacity: 0.65; }
+.bubble.in .bubble-meta { justify-content: flex-start; }
+.bubble-status-icon { flex-shrink: 0; }
+.ack-tick { flex-shrink: 0; }
+.ack-tick-blue { color: #53bdeb; }
+.bubble.sending, .bubble-sending { opacity: 0.6; }
+.bubble-failed { border: 1px solid var(--color-danger); }
+.bubble-retry-btn {
+  display: block; margin-top: 6px; background: none; border: none; padding: 0;
+  font-size: 11px; font-weight: 600; color: var(--color-danger); cursor: pointer; text-decoration: underline;
+}
+
+/* Media di dalam bubble baru */
+.bubble-img-btn { display: block; padding: 0; border: none; background: none; cursor: zoom-in; line-height: 0; }
+.bubble-img { max-width: 320px; max-height: 320px; border-radius: 8px; display: block; object-fit: cover; margin-bottom: 4px; }
+.bubble-video-thumb { position: relative; display: block; padding: 0; border: none; background: #000; border-radius: 8px; overflow: hidden; cursor: pointer; margin-bottom: 4px; width: 240px; height: 160px; }
+.bubble-video-thumb-el { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0.85; }
+.bubble-video-play-icon {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: white;
+}
+.bubble-video-play-icon::before {
+  content: ''; position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.45);
+}
+.bubble-video-play-icon svg { position: relative; z-index: 1; }
+
+/* Audio player kustom */
+.audio-player { display: flex; align-items: center; gap: 8px; width: 220px; padding: 2px 0; }
+.audio-player-btn {
+  width: 30px; height: 30px; border-radius: 50%; border: none; flex-shrink: 0;
+  background: rgba(0,0,0,0.08); color: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.bubble.out .audio-player-btn { background: rgba(0,0,0,0.12); }
+.audio-player-track { flex: 1; height: 4px; background: rgba(0,0,0,0.15); border-radius: 99px; cursor: pointer; position: relative; }
+.audio-player-fill { height: 100%; background: currentColor; opacity: 0.7; border-radius: 99px; }
+.audio-player-time { font-size: 10.5px; opacity: 0.7; flex-shrink: 0; min-width: 30px; }
+
+/* Reply strip di composer (dulu inline style, sekarang class) */
+.reply-strip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; border-top: 1px solid var(--border); background: #f8fafc;
+}
+.reply-strip-bar { width: 3px; align-self: stretch; background: var(--color-primary); border-radius: 4px; flex-shrink: 0; }
+.reply-strip-title { font-size: 11px; font-weight: 700; color: var(--color-primary); margin-bottom: 2px; }
+.reply-strip-text { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-strip-close { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px; flex-shrink: 0; }
+
+/* Slide-down animation untuk InChatSearch */
+.in-chat-search-slide { animation: searchSlideDown 0.18s ease; }
+@keyframes searchSlideDown { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */
