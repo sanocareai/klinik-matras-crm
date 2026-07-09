@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Users } from "lucide-react";
+import { ExternalLink, Users, Pencil, X, FileText, Video, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
 import StageSelect from "./customer/StageSelect.jsx";
@@ -30,9 +30,104 @@ const LEAD_SOURCE_COLORS = {
   OTHER:           { bg: "#f3f4f6", color: "#374151" },
 };
 
-// Untuk percakapan grup: panel kanan kosong (tidak perlu info apapun)
-function GroupPanel() {
-  return <div className="customer-panel" />;
+// ── Galeri media percakapan (grid 3 kolom) ──────────────────────────────────
+function MediaGallery({ conversationId }) {
+  const [items, setItems]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [viewerIndex, setViewerIndex] = useState(null);
+
+  useEffect(() => {
+    if (!conversationId) { setItems([]); setLoading(false); return; }
+    setLoading(true);
+    api.getMessages(conversationId)
+      .then((msgs) => {
+        const media = (msgs || []).filter((m) => m.mediaUrl && ["image", "video", "document"].includes(m.mediaType));
+        setItems(media);
+      })
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [conversationId]);
+
+  if (loading) return <p className="text-muted" style={{ fontSize: 12.5 }}>Memuat media...</p>;
+  if (!items.length) return <p className="text-muted" style={{ fontSize: 12.5 }}>Belum ada media di percakapan ini.</p>;
+
+  return (
+    <>
+      <div className="media-gallery-grid">
+        {items.map((m, i) => (
+          <button
+            key={m.id}
+            className="media-gallery-item"
+            onClick={() => (m.mediaType === "document" ? window.open(m.mediaUrl, "_blank") : setViewerIndex(i))}
+            title={m.mediaType === "document" ? (m.mediaUrl.split("/").pop()) : ""}
+          >
+            {m.mediaType === "image" && <img src={m.mediaUrl} alt="" loading="lazy" />}
+            {m.mediaType === "video" && (
+              <div className="media-gallery-thumb-icon"><Video size={20} /></div>
+            )}
+            {m.mediaType === "document" && (
+              <div className="media-gallery-thumb-icon"><FileText size={20} /></div>
+            )}
+          </button>
+        ))}
+      </div>
+      {viewerIndex !== null && (
+        <MediaViewer items={items} index={viewerIndex} onClose={() => setViewerIndex(null)} onNavigate={setViewerIndex} />
+      )}
+    </>
+  );
+}
+
+// ── Viewer fullscreen untuk foto/video ──────────────────────────────────────
+function MediaViewer({ items, index, onClose, onNavigate }) {
+  const item = items[index];
+  function go(dir) {
+    onNavigate((index + dir + items.length) % items.length);
+  }
+  return (
+    <div className="media-viewer-overlay" onClick={onClose}>
+      <button className="media-viewer-close" onClick={onClose} title="Tutup"><X size={20} /></button>
+      {items.length > 1 && (
+        <button className="media-viewer-nav media-viewer-prev" onClick={(e) => { e.stopPropagation(); go(-1); }}>
+          <ChevronLeft size={26} />
+        </button>
+      )}
+      <div className="media-viewer-body" onClick={(e) => e.stopPropagation()}>
+        {item.mediaType === "image"
+          ? <img src={item.mediaUrl} alt="" />
+          : <video src={item.mediaUrl} controls autoPlay />}
+      </div>
+      {items.length > 1 && (
+        <button className="media-viewer-nav media-viewer-next" onClick={(e) => { e.stopPropagation(); go(1); }}>
+          <ChevronRight size={26} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Untuk percakapan grup: panel info grup (tanpa pipeline/order/dll)
+function GroupPanel({ conversation }) {
+  const name = conversation?.groupName || conversation?.groupJid?.split("@")[0] || "Grup";
+  return (
+    <div className="customer-panel">
+      <div className="panel-header">
+        <div className="conv-group-avatar" style={{ width: 48, height: 48 }}>
+          <Users size={24} />
+        </div>
+        <div className="panel-header-info">
+          <p className="panel-name">{name}</p>
+          <p className="panel-contact">Percakapan Grup WhatsApp</p>
+        </div>
+      </div>
+      <div className="panel-body">
+        <div className="panel-section">
+          <span className="panel-section-label">Media</span>
+          <MediaGallery conversationId={conversation?.id} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function CustomerPanel({ customerId, conversation }) {
@@ -45,6 +140,7 @@ export default function CustomerPanel({ customerId, conversation }) {
   const [feedback, setFeedback] = useState(null);
   const [savingHealth, setSavingHealth] = useState(false);
   const [savingType, setSavingType] = useState(false);
+  const nameInputRef = useRef(null);
 
   function showFeedback(type, message) {
     setFeedback({ type, message });
@@ -133,6 +229,11 @@ export default function CustomerPanel({ customerId, conversation }) {
     return <GroupPanel conversation={conversation} />;
   }
 
+  function focusNameField() {
+    nameInputRef.current?.focus();
+    nameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   if (!customerId) {
     return (
       <div className="customer-panel customer-panel-empty" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -171,11 +272,14 @@ export default function CustomerPanel({ customerId, conversation }) {
     <div className="customer-panel">
       {/* Header */}
       <div className="panel-header">
-        <Avatar name={displayName} src={customer.profilePictureUrl} size="md" />
+        <Avatar name={displayName} src={customer.profilePictureUrl} size="lg" />
         <div className="panel-header-info">
           <p className="panel-name">{displayName}</p>
           <p className="panel-contact">{formatPhoneDisplay(customer.phone) || customer.instagramHandle}</p>
         </div>
+        <button className="btn-icon panel-edit-btn" onClick={focusNameField} title="Edit nama/nomor">
+          <Pencil size={15} />
+        </button>
       </div>
 
       {/* Lihat Profil Lengkap */}
@@ -202,6 +306,7 @@ export default function CustomerPanel({ customerId, conversation }) {
           <span className="panel-section-label">Nama Kontak</span>
           <div className="inline-field">
             <input
+              ref={nameInputRef}
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveField("name", nameDraft, "Nama")}
@@ -367,6 +472,14 @@ export default function CustomerPanel({ customerId, conversation }) {
         <div className="panel-section">
           <span className="panel-section-label">Order</span>
           <OrderSection customer={customer} onUpdate={setCustomer} />
+        </div>
+
+        <hr className="divider" />
+
+        {/* Media percakapan */}
+        <div className="panel-section">
+          <span className="panel-section-label">Media</span>
+          <MediaGallery conversationId={conversation?.id} />
         </div>
 
         <hr className="divider" />

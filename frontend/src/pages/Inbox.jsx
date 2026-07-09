@@ -14,6 +14,7 @@ export default function Inbox({ user }) {
   const [search, setSearch]               = useState("");
   // Mobile: 'list' | 'chat'
   const [mobileView, setMobileView]       = useState("list");
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [searchParams, setSearchParams]   = useSearchParams();
   const autoOpenDone = useRef(false);
   const loadRef      = useRef(null); // selalu pegang versi load() terbaru
@@ -94,7 +95,7 @@ export default function Inbox({ user }) {
   }
 
   return (
-    <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}`}>
+    <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}${panelCollapsed ? " panel-collapsed" : ""}`}>
       <ConversationList
         conversations={filtered}
         activeId={active?.id}
@@ -113,8 +114,12 @@ export default function Inbox({ user }) {
         user={user}
         onConversationUpdated={handleConversationUpdated}
         onBack={() => setMobileView("list")}
+        panelCollapsed={panelCollapsed}
+        onTogglePanel={() => setPanelCollapsed((v) => !v)}
       />
-      <CustomerPanel customerId={active?.customer?.id} conversation={active} />
+      {!panelCollapsed && (
+        <CustomerPanel customerId={active?.customer?.id} conversation={active} />
+      )}
     </div>
   );
 }

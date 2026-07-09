@@ -5,6 +5,7 @@ import {
   Paperclip, Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
   ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical, Eye, CheckCheck,
   Reply, Forward, Pin, Smile, Search, ChevronUp, ChevronDown,
+  PanelRightClose, PanelRightOpen,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "./Avatar.jsx";
@@ -447,7 +448,7 @@ function FilePreview({ pending, caption, onCaption, onSend, onCancel, sending })
 }
 
 // ── Main ChatWindow ───────────────────────────────────────────────────────────
-export default function ChatWindow({ conversation, user, onConversationUpdated, onBack }) {
+export default function ChatWindow({ conversation, user, onConversationUpdated, onBack, panelCollapsed, onTogglePanel }) {
   const [messages, setMessages]           = useState([]);
   const [draft, setDraft]                 = useState("");
   const [sending, setSending]             = useState(false);
@@ -863,6 +864,12 @@ export default function ChatWindow({ conversation, user, onConversationUpdated, 
           <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
             <Info size={18} />
           </button>
+          {onTogglePanel && (
+            <button className="chat-action-btn" onClick={onTogglePanel}
+              title={panelCollapsed ? "Tampilkan panel pelanggan" : "Sembunyikan panel pelanggan"}>
+              {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+            </button>
+          )}
           {/* Tombol Ambil Alih/Percakapan — tersembunyi kalau sudah milik kita */}
           {!isMine && (
             !assignedTo ? (
