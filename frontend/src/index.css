@@ -397,8 +397,8 @@ input:focus, select:focus, textarea:focus {
   font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
   background: #e0e7ff; color: #4338ca;
 }
-/* Percakapan yang sudah dibuka tapi tidak lagi unread — sedikit lebih redup */
-.conversation-item.conv-item-read:not(.active) .last-message { opacity: 0.72; }
+/* Percakapan yang sudah dibuka tapi tidak lagi unread — teks lebih redup (slate-400) */
+.conversation-item.conv-item-read:not(.active) .last-message { color: var(--text-muted); }
 /* Tombol clear (x) di search bar */
 .search-clear-btn {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
@@ -417,8 +417,8 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer;
   transition: background 0.15s ease;
 }
-.conversation-item:hover { background: #f8fafc; }
-.conversation-item.active { background: #eef2ff; }
+.conversation-item:hover { background: var(--bg-subtle); }
+.conversation-item.active { background: var(--accent-soft); }
 .conv-avatar-wrap { position: relative; flex-shrink: 0; }
 .conv-group-avatar {
   width: 40px; height: 40px; border-radius: 50%;
@@ -460,8 +460,8 @@ input:focus, select:focus, textarea:focus {
   font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 6px;
 }
 .conv-flag-opened  { background: #ede9fe; color: #5b21b6; }
-.conv-flag-replied { background: #dcfce7; color: #166534; }
-.conv-flag-overdue { background: #fee2e2; color: #991b1b; font-weight: 700; }
+.conv-flag-replied { background: #ECFDF5; color: #059669; }
+.conv-flag-overdue { background: #FFF1F2; color: #E11D48; font-weight: 700; }
 .empty { padding: 24px 16px; color: var(--text-small); font-size: 13px; text-align: center; }
 
 /* Context menu: Sematkan/Lepas Sematan */
@@ -487,7 +487,7 @@ input:focus, select:focus, textarea:focus {
 .conv-context-menu button:hover { background: #f8fafc; }
 
 /* Chat window (center panel) */
-.chat-window { display: flex; flex-direction: column; background: #f8fafc; overflow: hidden; }
+.chat-window { display: flex; flex-direction: column; background: var(--bg-base); overflow: hidden; }
 .chat-window.empty-state { align-items: center; justify-content: center; color: var(--text-muted); gap: 10px; }
 .chat-empty-icon { opacity: 0.3; }
 
@@ -514,15 +514,15 @@ input:focus, select:focus, textarea:focus {
 }
 .bubble.in {
   align-self: flex-start;
-  background: white;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
-  color: var(--text-main);
+  color: var(--text-primary);
 }
 .bubble.out {
   align-self: flex-end;
-  background: #d9fdd3;
-  color: #111b21;
+  background: var(--accent);
+  color: white;
   border-bottom-right-radius: 4px;
 }
 .bubble-time {
@@ -544,7 +544,7 @@ input:focus, select:focus, textarea:focus {
 }
 @keyframes bubbleFlashOut {
   0%, 65% { background-color: #fef08a; }
-  100%    { background-color: #d9fdd3; }
+  100%    { background-color: var(--accent); }
 }
 
 .chat-input {
@@ -1329,8 +1329,8 @@ input:focus, select:focus, textarea:focus {
 .user-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ─── UNREAD INDICATOR ───────────────────────────────────── */
-.conversation-item.unread { background: #f0fdf4; }
-.conversation-item.unread:hover { background: #dcfce7; }
+.conversation-item.unread { background: var(--bg-subtle); }
+.conversation-item.unread:hover { background: var(--accent-soft); }
 
 /* ─── CHAT WINDOW — INPUT AREA WRAPPER ──────────────────── */
 .chat-input-area {
@@ -2042,7 +2042,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* ─── FASE C — CHATWINDOW BARU (Virtuoso) ─────────────────── */
-.message-list-wrap { flex: 1; min-height: 0; overflow: hidden; position: relative; background: #f8fafc; }
+.message-list-wrap { flex: 1; min-height: 0; overflow: hidden; position: relative; background: var(--bg-base); }
 .message-virtuoso { height: 100%; }
 .message-list-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 .msg-row { padding: 3px 20px; }
@@ -2061,7 +2061,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 6px; padding: 5px 8px; margin-bottom: 7px;
   font-size: 12px; cursor: pointer; transition: filter 0.12s;
 }
-.bubble.out .bubble-quote { border-left-color: rgba(0,0,0,0.35); background: rgba(0,0,0,0.08); }
+.bubble.out .bubble-quote { border-left-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.15); }
 .bubble-quote:hover { filter: brightness(0.96); }
 .bubble-quote-author { font-weight: 700; margin-bottom: 2px; font-size: 11px; opacity: 0.85; }
 .bubble-quote-text { opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
@@ -2081,8 +2081,8 @@ input:focus, select:focus, textarea:focus {
 .bubble-meta { display: flex; align-items: center; gap: 3px; justify-content: flex-end; margin-top: 4px; opacity: 0.65; }
 .bubble.in .bubble-meta { justify-content: flex-start; }
 .bubble-status-icon { flex-shrink: 0; }
-.ack-tick { flex-shrink: 0; }
-.ack-tick-blue { color: #53bdeb; }
+.ack-tick { flex-shrink: 0; color: rgba(255,255,255,0.7); }
+.ack-tick-blue { color: #93c5fd; }
 .bubble.sending, .bubble-sending { opacity: 0.6; }
 .bubble-failed { border: 1px solid var(--color-danger); }
 .bubble-retry-btn {
@@ -2111,7 +2111,7 @@ input:focus, select:focus, textarea:focus {
   background: rgba(0,0,0,0.08); color: inherit; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-.bubble.out .audio-player-btn { background: rgba(0,0,0,0.12); }
+.bubble.out .audio-player-btn { background: rgba(255,255,255,0.2); }
 .audio-player-track { flex: 1; height: 4px; background: rgba(0,0,0,0.15); border-radius: 99px; cursor: pointer; position: relative; }
 .audio-player-fill { height: 100%; background: currentColor; opacity: 0.7; border-radius: 99px; }
 .audio-player-time { font-size: 10.5px; opacity: 0.7; flex-shrink: 0; min-width: 30px; }
@@ -2246,12 +2246,13 @@ input:focus, select:focus, textarea:focus {
 .pipeline-undo-toast {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-top: 8px; padding: 7px 10px; border-radius: 8px;
-  background: #1f2937; color: white; font-size: 12px;
+  background: var(--bg-card); color: var(--text-primary); font-size: 12px;
+  border: 1px solid var(--border); box-shadow: var(--shadow-card);
   animation: toastIn 0.2s ease;
 }
 .pipeline-undo-toast button {
   display: inline-flex; align-items: center; gap: 4px;
-  background: none; border: none; color: #93c5fd; font-weight: 700;
+  background: none; border: none; color: var(--accent); font-weight: 700;
   font-size: 12px; cursor: pointer; padding: 0; flex-shrink: 0;
 }
 .pipeline-undo-toast button:hover { text-decoration: underline; }
