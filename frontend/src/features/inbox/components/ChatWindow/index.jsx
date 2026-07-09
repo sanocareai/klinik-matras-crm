@@ -7,7 +7,7 @@ import {
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
-import CustomerPanel from "../../../../components/CustomerPanel.jsx";
+import CustomerPanel from "../CustomerPanel/index.jsx";
 import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
 import Composer from "./Composer.jsx";
@@ -321,7 +321,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         <div className="mobile-bottom-sheet-overlay" onClick={() => setShowCustomerDetail(false)}>
           <div className="mobile-bottom-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="bottom-sheet-handle" />
-            <CustomerPanel customerId={conversation?.customer?.id} conversation={conversation} />
+            <CustomerPanel conversation={conversation} onClose={() => setShowCustomerDetail(false)} />
           </div>
         </div>
       )}

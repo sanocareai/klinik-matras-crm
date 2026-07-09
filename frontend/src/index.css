@@ -2198,6 +2198,67 @@ input:focus, select:focus, textarea:focus {
 }
 .media-quality-toggle.active { background: #ede9fe; border-color: #ddd6fe; color: #5b21b6; }
 
+/* ─── FASE E — CUSTOMER PANEL BARU ────────────────────────── */
+.avatar-xl { width: 64px; height: 64px; font-size: 22px; }
+
+.profile-section {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 20px 16px 16px; border-bottom: 1px solid var(--border);
+}
+.profile-name-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.profile-name-row .panel-name { margin: 0; }
+.profile-name-edit { display: flex; gap: 6px; margin-top: 10px; width: 100%; max-width: 240px; }
+.profile-name-edit input { flex: 1; font-size: 13px; text-align: center; }
+.profile-phone-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.profile-phone-row .panel-contact { margin: 0; }
+.profile-copy-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-muted);
+  padding: 3px; border-radius: 6px; display: flex; align-items: center;
+  transition: background 0.12s, color 0.12s;
+}
+.profile-copy-btn:hover { background: #f1f5f9; color: var(--color-primary); }
+
+.panel-fullprofile-link {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px;
+  color: var(--color-primary); font-weight: 600; text-decoration: none;
+}
+.panel-fullprofile-link:hover { text-decoration: underline; }
+
+/* Toast undo perubahan pipeline stage */
+.pipeline-undo-toast {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 8px; padding: 7px 10px; border-radius: 8px;
+  background: #1f2937; color: white; font-size: 12px;
+  animation: toastIn 0.2s ease;
+}
+.pipeline-undo-toast button {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; color: #93c5fd; font-weight: 700;
+  font-size: 12px; cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.pipeline-undo-toast button:hover { text-decoration: underline; }
+
+/* Galeri media dengan tab Media/Dokumen */
+.media-gallery-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.media-gallery-tab {
+  font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: white; color: var(--text-muted);
+  cursor: pointer; transition: all 0.12s;
+}
+.media-gallery-tab.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+.media-gallery-doc-list { display: flex; flex-direction: column; gap: 6px; }
+.media-gallery-doc-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: #f8fafc; border-radius: 8px; border: 1px solid #f1f5f9;
+  font-size: 12.5px; color: var(--text-main); text-decoration: none;
+  overflow: hidden;
+}
+.media-gallery-doc-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-gallery-doc-item:hover { background: #f1f5f9; }
+
+/* Backdrop drawer panel kanan — hanya aktif di breakpoint tablet (lihat media query) */
+.customer-panel-backdrop { display: none; }
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */
@@ -2553,6 +2614,20 @@ input:focus, select:focus, textarea:focus {
   .page { padding: 16px 20px; }
   /* Pengaturan: sidebar sedikit lebih kecil */
   .settings-sidebar { width: 180px !important; }
+
+  /* ── Fase E: Customer Panel jadi drawer overlay dari kanan (bukan kolom grid) ── */
+  .inbox-body { grid-template-columns: 300px 1fr 0px !important; }
+  .customer-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 320;
+    width: 340px; max-width: 88vw;
+    box-shadow: -8px 0 24px rgba(0,0,0,0.18);
+    animation: drawerSlideIn 0.2s ease;
+  }
+  @keyframes drawerSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  .customer-panel-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 310;
+    background: rgba(0,0,0,0.35);
+  }
 }
 
 /* ─── PROVIDER BADGE (AI Playground model list) ────────────────────── */

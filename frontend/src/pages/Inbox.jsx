@@ -4,25 +4,38 @@ import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
 import ConversationList from "../features/inbox/components/ConversationList/index.jsx";
 import ChatWindow from "../features/inbox/components/ChatWindow/index.jsx";
-import CustomerPanel from "../components/CustomerPanel.jsx";
+import CustomerPanel from "../features/inbox/components/CustomerPanel/index.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useActiveId, useConversation, useConversationStore } from "../features/inbox/stores/conversationStore.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
 // conversationStore (Zustand).
-// FASE C: ChatWindow (kolom tengah) sekarang juga versi baru — virtualized
-// message list + optimistic send lewat messageStore/composerStore, ambil
-// data conversation aktif langsung dari conversationStore (tidak perlu
-// prop onConversationUpdated lagi, ChatWindow update store sendiri).
-// CustomerPanel (kolom kanan) LAMA masih dipakai apa adanya (belum
-// direfactor) — cukup diberi objek `conversation` seperti biasa.
+// FASE C+D: ChatWindow (kolom tengah) versi baru — virtualized message list,
+// optimistic send, composer modern (emoji-mart, media uploader, voice
+// recorder) lewat messageStore/composerStore.
+// FASE E: CustomerPanel (kolom kanan) versi baru — GroupPanel vs profil
+// customer lengkap, collapsible dengan state persist localStorage (kunci
+// "inbox-panel-collapsed", mengikuti konvensi "sidebar-collapsed" yang
+// sudah dipakai Layout.jsx).
+const PANEL_COLLAPSED_KEY = "inbox-panel-collapsed";
+
 export default function Inbox({ user }) {
-  const [mobileView, setMobileView]         = useState("list"); // 'list' | 'chat' (mobile)
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [searchParams, setSearchParams]     = useSearchParams();
+  const [mobileView, setMobileView] = useState("list"); // 'list' | 'chat' (mobile)
+  const [panelCollapsed, setPanelCollapsedState] = useState(
+    () => localStorage.getItem(PANEL_COLLAPSED_KEY) === "true",
+  );
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const activeId = useActiveId();
   const active   = useConversation(activeId);
+
+  function setPanelCollapsed(value) {
+    setPanelCollapsedState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      localStorage.setItem(PANEL_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  }
 
   // Fase C+ akan mulai emit event ini dari backend Socket.IO — aman dipasang
   // sekarang karena getSocket() lazy (lihat lib/socket.js), dorman sampai
@@ -68,7 +81,7 @@ export default function Inbox({ user }) {
         onTogglePanel={() => setPanelCollapsed((v) => !v)}
       />
       {!panelCollapsed && (
-        <CustomerPanel customerId={active?.customer?.id} conversation={active} />
+        <CustomerPanel conversation={active} onClose={() => setPanelCollapsed(true)} />
       )}
     </div>
   );
