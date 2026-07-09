@@ -2112,6 +2112,92 @@ input:focus, select:focus, textarea:focus {
 .in-chat-search-slide { animation: searchSlideDown 0.18s ease; }
 @keyframes searchSlideDown { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
+/* ─── FASE D — COMPOSER MODERN ─────────────────────────────── */
+
+/* Drag & drop full-area (menutupi seluruh chat-window, bukan cuma composer) */
+.chat-window { position: relative; }
+.chat-window-drag { outline: 2px dashed var(--color-primary); outline-offset: -2px; }
+.chat-window-drop-overlay {
+  position: absolute; inset: 0; z-index: 50;
+  background: rgba(37,99,235,0.08);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; color: var(--color-primary);
+  pointer-events: none;
+}
+
+/* Emoji-mart popup wrapper */
+.emoji-mart-popup {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 200;
+  box-shadow: var(--shadow-md); border-radius: 12px; overflow: hidden;
+}
+.emoji-mart-loading {
+  width: 280px; height: 200px; display: flex; align-items: center; justify-content: center;
+  background: white; border: 1px solid var(--border); border-radius: 12px;
+  font-size: 12.5px; color: var(--text-muted);
+}
+
+/* Voice recorder — preview bar setelah rekam */
+.voice-preview-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+}
+.voice-preview-duration { font-size: 12.5px; font-weight: 600; color: var(--text-main); min-width: 34px; }
+.rec-hint { font-size: 11.5px; color: var(--text-muted); }
+
+/* Modal preview media sebelum kirim (MediaUploader) */
+.media-preview-overlay {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+.media-preview-modal {
+  background: white; border-radius: 14px; width: 520px; max-width: 94vw;
+  max-height: 86vh; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.media-preview-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  font-size: 13.5px; font-weight: 700;
+}
+.media-preview-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  padding: 16px 18px; overflow-y: auto; flex: 1;
+}
+.media-preview-item { display: flex; flex-direction: column; gap: 6px; position: relative; }
+.media-preview-thumb {
+  aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #f1f5f9;
+  display: flex; align-items: center; justify-content: center; position: relative;
+  color: var(--text-muted);
+}
+.media-preview-thumb img, .media-preview-thumb video { width: 100%; height: 100%; object-fit: cover; }
+.media-preview-remove {
+  position: absolute; top: -6px; right: -6px; z-index: 2;
+  width: 20px; height: 20px; border-radius: 50%; background: #374151; color: white;
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.media-preview-progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,0.15);
+}
+.media-preview-progress-fill { height: 100%; background: var(--color-success); transition: width 0.15s ease; }
+.media-preview-caption {
+  font-size: 11.5px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; outline: none;
+}
+.media-preview-caption:focus { border-color: var(--color-primary); }
+.media-preview-error { font-size: 10.5px; color: var(--color-danger); }
+.media-preview-footer {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.media-quality-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: white; color: var(--text-muted); cursor: pointer;
+  transition: all 0.12s;
+}
+.media-quality-toggle.active { background: #ede9fe; border-color: #ddd6fe; color: #5b21b6; }
+
 /* ─── MOBILE RESPONSIVE ──────────────────────────────────── */
 @media (max-width: 768px) {
   /* Topbar hamburger tampil di mobile */

@@ -1,135 +1,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Send, MessageSquare, CheckCircle, X,
-  Mic, MicOff, FileText, Phone, Image as ImageIcon, Video, Package,
-  ArrowLeft, UserCheck, Users, Info, Plus, MoreVertical,
-  Reply, Forward, Smile, Search, PanelRightClose, PanelRightOpen,
+  MessageSquare, CheckCircle, X,
+  Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
+  Forward, Search, PanelRightClose, PanelRightOpen,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
-import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 import CustomerPanel from "../../../../components/CustomerPanel.jsx";
 import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
+import Composer from "./Composer.jsx";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useConversationStore } from "../../stores/conversationStore.js";
-import { useDraft, useReplyTarget, useComposerStore } from "../../stores/composerStore.js";
+import { useComposerStore } from "../../stores/composerStore.js";
 
 const STATUS_OPTIONS = [
   { value: "OPEN",     label: "Terbuka" },
   { value: "PENDING",  label: "Pending" },
   { value: "RESOLVED", label: "Selesai" },
 ];
-
-const KATEGORI_COLORS = {
-  pembukaan: { bg: "#dbeafe", color: "#1e40af" },
-  follow_up: { bg: "#ede9fe", color: "#5b21b6" },
-  penawaran: { bg: "#dcfce7", color: "#166534" },
-  konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
-  penutupan: { bg: "#fee2e2", color: "#991b1b" },
-  lainnya:   { bg: "#f3f4f6", color: "#374151" },
-};
-const KATEGORI_LABELS = {
-  pembukaan: "Pembukaan", follow_up: "Follow Up", penawaran: "Penawaran",
-  konfirmasi: "Konfirmasi", penutupan: "Penutupan", lainnya: "Lainnya",
-};
-
-function applyVariables(text, customer) {
-  return text
-    .replace(/\{nama_customer\}/g, customer?.name || "Kak")
-    .replace(/\{nomor_wa\}/g,      customer?.phone || "")
-    .replace(/\{kota\}/g,          customer?.city  || "");
-}
-
-const EMOJI_LIST = [
-  "😀","😁","😂","🤣","😊","😍","😘","😉","😎","🤔",
-  "😅","😢","😭","😡","🙏","👍","👎","👏","🙌","💪",
-  "❤️","🔥","✨","🎉","😴","🤗","😇","🥰","😋","🤝",
-  "👋","✅","❌","⭐","💯","😐","😱","🙈","💤","☕",
-];
-
-// ── Template Picker ───────────────────────────────────────────────────────
-function TemplatePicker({ customer, onSelect, onClose }) {
-  const [templates, setTemplates] = useState([]);
-  const [search, setSearch]       = useState("");
-  const ref = useRef(null);
-
-  useEffect(() => { api.getTemplates().then(setTemplates).catch(() => {}); }, []);
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  const filtered = templates.filter((t) =>
-    !search || t.nama.toLowerCase().includes(search.toLowerCase()) ||
-    t.isi.toLowerCase().includes(search.toLowerCase())
-  );
-  const grouped = Object.keys(KATEGORI_LABELS).reduce((acc, k) => {
-    const items = filtered.filter((t) => t.kategori === k);
-    if (items.length) acc[k] = items;
-    return acc;
-  }, {});
-
-  return (
-    <div ref={ref} className="template-picker-popup">
-      <div className="template-picker-header">
-        <span style={{ fontWeight: 700, fontSize: 13 }}>Pilih Template</span>
-        <button onClick={onClose} className="btn-icon"><X size={14} /></button>
-      </div>
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
-        <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari template..." className="template-search" />
-      </div>
-      <div style={{ overflowY: "auto", flex: 1 }}>
-        {filtered.length === 0 && <p style={{ padding: "12px 16px", fontSize: 13, color: "var(--text-muted)" }}>Tidak ada template.</p>}
-        {Object.entries(grouped).map(([kat, items]) => (
-          <div key={kat}>
-            <div className="template-cat-label">{KATEGORI_LABELS[kat]}</div>
-            {items.map((tpl) => {
-              const c = KATEGORI_COLORS[tpl.kategori] || KATEGORI_COLORS.lainnya;
-              const preview = applyVariables(tpl.isi, customer);
-              return (
-                <button key={tpl.id} className="template-item" onClick={() => { onSelect(preview); onClose(); }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                    <span className="template-badge" style={{ background: c.bg, color: c.color }}>
-                      {KATEGORI_LABELS[tpl.kategori]}
-                    </span>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>{tpl.nama}</span>
-                  </div>
-                  <p className="template-preview">{preview}</p>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Emoji Picker ───────────────────────────────────────────────────────────
-function EmojiPicker({ onSelect, onClose }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  return (
-    <div ref={ref} className="emoji-picker-popup">
-      <div className="emoji-picker-grid">
-        {EMOJI_LIST.map((em) => (
-          <button key={em} type="button" className="emoji-picker-item" onClick={() => onSelect(em)}>{em}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ── Forward Modal ────────────────────────────────────────────────────────
 function ForwardModal({ messageToForward, onClose }) {
@@ -202,209 +94,53 @@ function ForwardModal({ messageToForward, onClose }) {
   );
 }
 
-// ── Preview file sebelum kirim ──────────────────────────────────────────
-function FilePreview({ pending, caption, onCaption, onSend, onCancel, sending }) {
-  return (
-    <div className="file-preview-area">
-      <div className="file-preview-inner">
-        {pending.mediaType === "image" && <img src={pending.preview} alt="Preview" className="preview-img" />}
-        {pending.mediaType === "video" && <video src={pending.preview} controls className="preview-video" />}
-        {pending.mediaType === "audio" && <audio src={pending.preview} controls className="preview-audio" />}
-        {pending.mediaType === "document" && (
-          <div className="preview-doc">
-            <FileText size={28} />
-            <span>{pending.file.name}</span>
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{(pending.file.size / 1024).toFixed(0)} KB</span>
-          </div>
-        )}
-        <button onClick={onCancel} className="preview-close"><X size={14} /></button>
-      </div>
-      <div className="file-preview-footer">
-        <input value={caption} onChange={(e) => onCaption(e.target.value)} placeholder="Tambah caption (opsional)..."
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSend()} className="caption-input" />
-        <button onClick={onSend} disabled={sending} className="btn btn-primary btn-sm">{sending ? "Mengirim..." : "Kirim"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ── Main ChatWindow (Fase C) ────────────────────────────────────────────
+// ── Main ChatWindow (Fase C + D) ────────────────────────────────────────
 export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel }) {
   const conversationId = conversation?.id;
 
   // Fetch + realtime + windowing pesan (lihat useMessages.js)
   useMessages(conversationId);
-  const sendMutation = useSendMessage(conversationId);
+  // Instance terpisah dari yang dipakai Composer — sama-sama menulis ke
+  // messageStore/backend yang sama, aman dipanggil dari 2 tempat berbeda
+  // (dipakai khusus untuk tombol "Coba lagi" di bubble gagal kirim).
+  const retryMutation = useSendMessage(conversationId);
 
-  const draft       = useDraft(conversationId);
-  const replyTarget = useReplyTarget();
-
-  const [sendingMedia, setSendingMedia]           = useState(false);
-  const [showTemplates, setShowTemplates]         = useState(false);
-  const [showProductPicker, setShowProductPicker] = useState(false);
-  const [showEmoji, setShowEmoji]                 = useState(false);
-  const [showSearch, setShowSearch]               = useState(false);
-  const [takingOver, setTakingOver]               = useState(false);
-  const [resolving, setResolving]                 = useState(false);
-  const [showAttachSheet, setShowAttachSheet]     = useState(false);
-  const [showDotMenu, setShowDotMenu]             = useState(false);
-  const [forwardMsg, setForwardMsg]               = useState(null);
+  const [showSearch, setShowSearch]     = useState(false);
+  const [takingOver, setTakingOver]     = useState(false);
+  const [resolving, setResolving]       = useState(false);
+  const [showDotMenu, setShowDotMenu]   = useState(false);
+  const [forwardMsg, setForwardMsg]     = useState(null);
   const [showCustomerDetail, setShowCustomerDetail] = useState(false); // bottom sheet mobile
+  const [dragOver, setDragOver]         = useState(false);
 
-  const [pendingFile, setPendingFile] = useState(null);
-  const [caption, setCaption]         = useState("");
-  const [dragOver, setDragOver]       = useState(false);
-
-  const [recording, setRecording]   = useState(false);
-  const [recSeconds, setRecSeconds] = useState(0);
-  const recorderRef = useRef(null);
-  const chunksRef    = useRef([]);
-  const timerRef      = useRef(null);
-  const textareaRef   = useRef(null);
-  const messageListRef = useRef(null);
+  const messageListRef  = useRef(null);
+  const mediaUploaderRef = useRef(null); // diisi Composer -> MediaUploader, dipakai untuk drag-drop & paste dari luar composer
 
   useEffect(() => {
-    setShowTemplates(false);
-    setShowProductPicker(false);
-    setShowEmoji(false);
     setShowSearch(false);
-    setShowAttachSheet(false);
+    setShowDotMenu(false);
     setShowCustomerDetail(false);
-    setPendingFile(null);
-    setCaption("");
   }, [conversationId]);
 
-  useEffect(() => {
-    if (!draft && textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [draft]);
-
-  function autoGrowTextarea(el) {
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
-  }
-
-  function handleTextareaKeyDown(e) {
-    const isMobile = window.innerWidth < 768;
-    if (e.key === "Enter") {
-      if (isMobile) return;
-      if (!e.shiftKey) { e.preventDefault(); handleSend(); }
-    }
-  }
-
-  function handleSend(e) {
-    e?.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    sendMutation.mutate({ content: text, replyTo: replyTarget });
-    useComposerStore.getState().setDraft(conversationId, "");
-    useComposerStore.getState().clearReply();
-  }
-
   function handleRetry(m) {
-    sendMutation.mutate({ content: m.content, replyTo: m.replyTo || null });
-    // buang bubble gagal yang lama supaya tidak dobel dengan yang baru dikirim
+    // Buang bubble gagal yang lama dulu, baru kirim ulang lewat mutation
+    // yang sama (optimistic) supaya tidak dobel bubble.
     useMessageStore.setState((state) => ({
       messagesByConvId: {
         ...state.messagesByConvId,
         [conversationId]: (state.messagesByConvId[conversationId] || []).filter((x) => x.id !== m.id),
       },
     }));
+    retryMutation.mutate({ content: m.content, replyTo: m.replyTo || null });
   }
 
-  function openFilePreview(file, sendAs) {
-    const mime = file.type || "";
-    let mediaType = "document";
-    let preview   = null;
-    if (mime.startsWith("image/")) { mediaType = "image"; preview = URL.createObjectURL(file); }
-    if (mime.startsWith("video/")) { mediaType = "video"; preview = URL.createObjectURL(file); }
-    if (mime.startsWith("audio/")) { mediaType = "audio"; preview = URL.createObjectURL(file); }
-    const finalSendAs = sendAs || (mediaType === "document" ? "document" : "media");
-    setPendingFile({ file, preview, mediaType, sendAs: finalSendAs });
-  }
-
-  function handleFileSelect(e, sendAs = "media") {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    openFilePreview(file, sendAs);
-    e.target.value = "";
-  }
-
-  function handlePaste(e) {
-    const items = Array.from(e.clipboardData?.items || []);
-    const fileItem = items.find((item) => item.kind === "file");
-    if (!fileItem) return;
-    e.preventDefault();
-    const file = fileItem.getAsFile();
-    if (file) openFilePreview(file);
-  }
-
-  function handleDragOver(e) { e.preventDefault(); setDragOver(true); }
+  // Drag & drop dari area manapun di jendela chat → serahkan ke MediaUploader (lewat ref)
+  function handleDragOver(e) { e.preventDefault(); if (conversation?.type !== "GROUP") setDragOver(true); }
+  function handleDragLeave() { setDragOver(false); }
   function handleDrop(e) {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) openFilePreview(file);
-  }
-
-  async function handleSendMedia() {
-    if (!pendingFile) return;
-    const fd = new FormData();
-    fd.append("file", pendingFile.file);
-    fd.append("sendAs", pendingFile.sendAs || "media");
-    if (caption.trim()) fd.append("caption", caption.trim());
-    setSendingMedia(true);
-    try {
-      const msg = await api.sendMedia(conversationId, fd);
-      useMessageStore.getState().appendMessage(conversationId, msg);
-      setPendingFile(null);
-      setCaption("");
-    } catch (err) { alert(err.message); }
-    finally { setSendingMedia(false); }
-  }
-
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-      const rec = new MediaRecorder(stream, { mimeType: mime });
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: mime });
-        const ext  = mime.includes("webm") ? "webm" : "ogg";
-        const fd   = new FormData();
-        fd.append("file", blob, `voice-${Date.now()}.${ext}`);
-        setSendingMedia(true);
-        try {
-          const msg = await api.sendMedia(conversationId, fd);
-          useMessageStore.getState().appendMessage(conversationId, msg);
-        } catch (err) { alert(err.message); }
-        finally { setSendingMedia(false); }
-      };
-      rec.start(100);
-      recorderRef.current = rec;
-      setRecording(true);
-      setRecSeconds(0);
-      timerRef.current = setInterval(() => setRecSeconds((s) => s + 1), 1000);
-    } catch (err) {
-      alert("Tidak bisa akses mikrofon: " + err.message);
-    }
-  }
-  function stopRecording() {
-    clearInterval(timerRef.current);
-    recorderRef.current?.stop();
-    setRecording(false);
-  }
-  function cancelRecording() {
-    clearInterval(timerRef.current);
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.ondataavailable = null;
-      recorderRef.current.onstop = null;
-      recorderRef.current.stop();
-    }
-    setRecording(false);
-    setRecSeconds(0);
+    if (e.dataTransfer.files?.length) mediaUploaderRef.current?.addFiles(e.dataTransfer.files);
   }
 
   async function handleStatusChange(newStatus) {
@@ -443,18 +179,21 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
     );
   }
 
-  const isGroup      = conversation.type === "GROUP";
-  const rawPhone     = conversation.customer?.phone;
-  const name         = isGroup
+  const isGroup     = conversation.type === "GROUP";
+  const rawPhone    = conversation.customer?.phone;
+  const name        = isGroup
     ? (conversation.groupName || conversation.groupJid?.split("@")[0] || "Grup")
     : (conversation.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || conversation.customer?.instagramHandle || "Pelanggan");
-  const assignedTo   = conversation.assignedTo;
-  const isMine       = assignedTo?.id === user?.id;
-  const canTakeover  = conversation.canTakeOver ?? false;
-  const formatRec    = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const assignedTo  = conversation.assignedTo;
+  const isMine      = assignedTo?.id === user?.id;
+  const canTakeover = conversation.canTakeOver ?? false;
 
   return (
-    <div className="chat-window">
+    <div className={`chat-window${dragOver ? " chat-window-drag" : ""}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      {dragOver && (
+        <div className="chat-window-drop-overlay"><span>Lepaskan untuk mengirim</span></div>
+      )}
+
       {/* ── Header ── */}
       <div className="chat-header">
         <button className="chat-back-btn" onClick={onBack} title="Kembali ke daftar"><ArrowLeft size={18} /></button>
@@ -485,7 +224,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
           </div>
         </div>
 
-        {/* Tombol info — dipakai mobile untuk buka bottom sheet Customer Panel (di desktop info sudah tampil sebagai kolom 3) */}
+        {/* Tombol info — dipakai mobile untuk buka bottom sheet Customer Panel */}
         <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
           <Info size={18} />
         </button>
@@ -566,136 +305,13 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       <MessageList
         ref={messageListRef}
         conversation={conversation}
-        onReply={(msg) => { useComposerStore.getState().setReplyTarget(msg); textareaRef.current?.focus(); }}
+        onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
         onRetry={handleRetry}
       />
 
-      {/* ── Input area ── */}
-      {isGroup ? (
-        <div className="chat-input-area" style={{ justifyContent: "center", padding: "12px 16px" }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
-            Percakapan grup — tidak bisa dibalas dari CRM
-          </span>
-        </div>
-      ) : (
-        <div className={`chat-input-area${dragOver ? " drag-active" : ""}`} onDragOver={handleDragOver} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
-          {dragOver && <div className="chat-drop-zone"><span>Drop file di sini untuk melampirkan</span></div>}
-
-          {pendingFile && (
-            <FilePreview pending={pendingFile} caption={caption} onCaption={setCaption} onSend={handleSendMedia}
-              onCancel={() => { setPendingFile(null); setCaption(""); }} sending={sendingMedia} />
-          )}
-
-          {showTemplates && (
-            <TemplatePicker customer={conversation.customer}
-              onSelect={(text) => { useComposerStore.getState().setDraft(conversationId, text); setShowTemplates(false); }}
-              onClose={() => setShowTemplates(false)} />
-          )}
-
-          {showProductPicker && (
-            <ProductPicker conversation={conversation} onClose={() => setShowProductPicker(false)}
-              onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().appendMessage(conversationId, m)); setShowProductPicker(false); }} />
-          )}
-
-          {replyTarget && (
-            <div className="reply-strip">
-              <div className="reply-strip-bar" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="reply-strip-title">Membalas {replyTarget.direction === "OUTBOUND" ? "pesan kamu" : "pelanggan"}</div>
-                <div className="reply-strip-text">{replyTarget.content || (replyTarget.mediaType ? `[${replyTarget.mediaType}]` : "Pesan")}</div>
-              </div>
-              <button onClick={() => useComposerStore.getState().clearReply()} className="reply-strip-close"><X size={14} /></button>
-            </div>
-          )}
-
-          {recording ? (
-            <div className="recording-bar">
-              <span className="rec-dot" />
-              <span className="rec-time">{formatRec(recSeconds)}</span>
-              <button onClick={cancelRecording} className="btn btn-secondary btn-sm" style={{ marginLeft: "auto" }}><X size={13} /> Batal</button>
-              <button onClick={stopRecording} className="btn btn-primary btn-sm"><MicOff size={13} /> Kirim</button>
-            </div>
-          ) : !pendingFile && (
-            <form className="chat-input" onSubmit={handleSend}>
-              <button type="button" onClick={() => setShowTemplates((v) => !v)} className={`chat-action-btn ${showTemplates ? "active" : ""}`} title="Pilih template">
-                <MessageSquare size={15} />
-              </button>
-              <button type="button" onClick={() => setShowAttachSheet((v) => !v)} className={`chat-action-btn ${showAttachSheet ? "active" : ""}`} title="Lampiran">
-                <Plus size={16} />
-              </button>
-              <div style={{ position: "relative" }}>
-                <button type="button" onClick={() => setShowEmoji((v) => !v)} className={`chat-action-btn ${showEmoji ? "active" : ""}`} title="Emoji">
-                  <Smile size={16} />
-                </button>
-                {showEmoji && (
-                  <EmojiPicker
-                    onSelect={(em) => useComposerStore.getState().setDraft(conversationId, draft + em)}
-                    onClose={() => setShowEmoji(false)}
-                  />
-                )}
-              </div>
-              <textarea
-                ref={textareaRef}
-                value={draft}
-                rows={1}
-                className="chat-textarea"
-                placeholder="Tulis balasan..."
-                onChange={(e) => { useComposerStore.getState().setDraft(conversationId, e.target.value); autoGrowTextarea(e.target); }}
-                onKeyDown={handleTextareaKeyDown}
-                onPaste={handlePaste}
-              />
-              <button type="button" onClick={startRecording} className="chat-action-btn" title="Rekam pesan suara"><Mic size={15} /></button>
-              <button type="submit" className="chat-send-btn" disabled={!draft.trim()}><Send size={16} /></button>
-            </form>
-          )}
-        </div>
-      )}
-
-      {/* ── Attach Sheet ── */}
-      {showAttachSheet && (
-        <div className="attach-sheet-overlay" onClick={() => setShowAttachSheet(false)}>
-          <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="attach-sheet-handle" />
-            <div className="attach-grid-title">Lampirkan</div>
-            <div className="attach-grid">
-              <label className="attach-item">
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#dbeafe" }}><ImageIcon size={24} style={{ color: "#2563eb" }} /></div>
-                <span className="attach-item-label">Foto</span>
-              </label>
-              <label className="attach-item">
-                <input type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#e0f2fe" }}><Video size={24} style={{ color: "#0284c7" }} /></div>
-                <span className="attach-item-label">Video</span>
-              </label>
-              <label className="attach-item">
-                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#dcfce7" }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
-                  </svg>
-                </div>
-                <span className="attach-item-label">Kamera</span>
-              </label>
-              <label className="attach-item">
-                <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv" style={{ display: "none" }} onChange={(e) => { handleFileSelect(e, "document"); setShowAttachSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#fef9c3" }}><FileText size={24} style={{ color: "#ca8a04" }} /></div>
-                <span className="attach-item-label">Dokumen</span>
-              </label>
-              <label className="attach-item">
-                <input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { handleFileSelect(e, "media"); setShowAttachSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#fce7f3" }}><Mic size={24} style={{ color: "#db2777" }} /></div>
-                <span className="attach-item-label">Audio</span>
-              </label>
-              <button className="attach-item" onClick={() => { setShowProductPicker(true); setShowAttachSheet(false); }}>
-                <div className="attach-item-icon" style={{ background: "#ede9fe" }}><Package size={24} style={{ color: "#7c3aed" }} /></div>
-                <span className="attach-item-label">Produk</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Composer (Fase D) ── */}
+      <Composer conversation={conversation} mediaUploaderRef={mediaUploaderRef} />
 
       {/* ── Forward Modal ── */}
       {forwardMsg && <ForwardModal messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} />}
