@@ -32,25 +32,25 @@ export default function UpdateBanner() {
       left:       "50%",
       transform:  "translateX(-50%)",
       zIndex:     9999,
-      background: "#1e2139",
+      background: "#2563EB",
       color:      "#fff",
       borderRadius: 12,
       padding:    "10px 14px",
       display:    "flex",
       alignItems: "center",
       gap:        10,
-      boxShadow:  "0 4px 24px rgba(0,0,0,0.35)",
+      boxShadow:  "0 4px 24px rgba(15,23,42,0.25)",
       fontSize:   14,
       maxWidth:   "calc(100vw - 32px)",
       whiteSpace: "nowrap",
     }}>
-      <RefreshCw size={15} style={{ flexShrink: 0, color: "#60a5fa" }} />
+      <RefreshCw size={15} style={{ flexShrink: 0, color: "#fff" }} />
       <span style={{ fontWeight: 500 }}>Versi baru tersedia</span>
       <button
         onClick={() => updateServiceWorker(true)}
         style={{
-          background:   "#2563eb",
-          color:        "#fff",
+          background:   "#fff",
+          color:        "#2563EB",
           border:       "none",
           borderRadius: 7,
           padding:      "5px 12px",
@@ -66,7 +66,7 @@ export default function UpdateBanner() {
         onClick={() => setNeedRefresh(false)}
         style={{
           background: "transparent",
-          color:      "#a0aec0",
+          color:      "rgba(255,255,255,0.75)",
           border:     "none",
           cursor:     "pointer",
           padding:    "2px 4px",

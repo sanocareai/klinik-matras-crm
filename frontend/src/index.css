@@ -1,29 +1,47 @@
-/* ─── CSS VARIABLES ─────────────────────────────────────── */
+/* ─── DESIGN TOKENS — LIGHT THEME, AKSEN BIRU ─────────────────────────────
+   Satu-satunya tema (tanpa toggle). Referensi visual: dashboard modern ala
+   Boltshift/Medlio — putih bersih, aksen blue-600, rounded, shadow halus. */
 :root {
-  --color-primary:   #262626;
-  --color-success:   #16a34a;
-  --color-warning:   #f59e0b;
-  --color-danger:    #dc2626;
-  --color-purple:    #7c3aed;
-  --color-pink:      #ec4899;
+  --bg-base:        #F8FAFC;  /* slate-50 — background halaman */
+  --bg-card:        #FFFFFF;  /* card/panel */
+  --bg-subtle:      #F1F5F9;  /* slate-100 — hover/secondary bg */
+  --border:         #E2E8F0;  /* slate-200 */
+  --text-primary:   #0F172A;  /* slate-900 */
+  --text-secondary: #64748B;  /* slate-500 */
+  --text-muted:     #94A3B8;  /* slate-400 */
+  --accent:         #2563EB;  /* blue-600 — tombol primer, link, active state */
+  --accent-hover:   #1D4ED8;  /* blue-700 */
+  --accent-soft:    #EFF6FF;  /* blue-50 — bg badge/selected item */
+  --success:        #10B981;  /* emerald-500 */
+  --danger:         #F43F5E;  /* rose-500 */
+  --warning:        #F59E0B;  /* amber-500 */
+  --color-purple:   #7c3aed;
+  --color-pink:     #ec4899;
 
-  --sidebar-bg:      #2f2f2f;
-  --sidebar-text:    #bcbcb1;
-  --sidebar-active-bg: rgba(37,99,235,0.18);
-  --sidebar-active-text: #60a5fa;
-  --sidebar-hover-bg:  rgba(255,255,255,0.06);
+  /* ── Alias nama lama → token baru ──────────────────────────────────────
+     Dipakai di ratusan tempat di file ini (var(--color-primary), var(--bg-page),
+     dst) — dialiaskan ke token baru supaya seluruh app otomatis ikut jadi
+     terang+biru tanpa perlu ganti setiap referensi satu-satu. */
+  --color-primary: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger:  var(--danger);
+  --bg-page:       var(--bg-base);
+  --bg-secondary:  var(--bg-subtle);  /* dipakai beberapa JSX (Pengaturan dll), sebelumnya tidak terdefinisi */
+  --text-main:     var(--text-primary);
+  --text-small:    var(--text-muted);
+
+  /* Sidebar — TERANG (bukan dark lagi) */
+  --sidebar-bg:           #FFFFFF;
+  --sidebar-text:         var(--text-secondary);
+  --sidebar-active-bg:    var(--accent-soft);
+  --sidebar-active-text:  var(--accent);
+  --sidebar-hover-bg:     var(--bg-subtle);
 
   --radius-card:  12px;
   --radius-input: 8px;
-  --shadow-card:  0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md:    0 4px 12px rgba(0,0,0,0.12);
-
-  --bg-page:      #f1f5f9;
-  --bg-card:      #ffffff;
-  --border:       #e5e7eb;
-  --text-main:    #111827;
-  --text-muted:   #6b7280;
-  --text-small:   #9ca3af;
+  --shadow-card:  0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md:    0 4px 16px rgba(15,23,42,0.10);
 }
 
 * { box-sizing: border-box; }
@@ -48,7 +66,7 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255,255,255,0.05);
+  border-right: 1px solid var(--border);
 }
 
 .sidebar-brand {
@@ -56,16 +74,16 @@ body {
   align-items: center;
   gap: 10px;
   padding: 20px 20px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--border);
 }
 .sidebar-brand-icon {
   width: 34px; height: 34px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--color-primary), #1e40af);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   display: flex; align-items: center; justify-content: center;
   color: white; font-size: 16px;
 }
 .sidebar-brand-name {
-  font-weight: 700; font-size: 15px; color: #ffffff; letter-spacing: -0.2px;
+  font-weight: 700; font-size: 15px; color: var(--text-primary); letter-spacing: -0.2px;
 }
 .sidebar-brand-sub {
   font-size: 11px; color: var(--sidebar-text); margin-top: 1px;
@@ -74,7 +92,7 @@ body {
 .sidebar-section { padding: 12px 12px 4px; }
 .sidebar-section-label {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.8px; color: rgba(168,179,207,0.5); padding: 0 8px;
+  letter-spacing: 0.8px; color: var(--text-muted); padding: 0 8px;
 }
 
 .sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 8px 12px; gap: 2px; }
@@ -86,7 +104,7 @@ body {
   transition: background 0.15s, color 0.15s;
   position: relative;
 }
-.sidebar-link:hover { background: var(--sidebar-hover-bg); color: #d1d9f0; }
+.sidebar-link:hover { background: var(--sidebar-hover-bg); color: var(--text-primary); }
 .sidebar-link.active {
   background: var(--sidebar-active-bg);
   color: var(--sidebar-active-text);
@@ -97,12 +115,12 @@ body {
 .sidebar-link-disabled {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 12px; border-radius: 8px;
-  color: rgba(168,179,207,0.35); font-size: 13.5px; font-weight: 500;
+  color: var(--text-muted); font-size: 13.5px; font-weight: 500;
   cursor: not-allowed; user-select: none;
 }
 .badge-soon {
   margin-left: auto; font-size: 9px; font-weight: 700;
-  background: rgba(168,179,207,0.12); color: rgba(168,179,207,0.45);
+  background: var(--bg-subtle); color: var(--text-muted);
   padding: 2px 6px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px;
 }
 
@@ -115,11 +133,11 @@ body {
 
 .sidebar-footer {
   padding: 14px 16px;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  border-top: 1px solid var(--border);
   display: flex; align-items: center; gap: 10px;
 }
 .sidebar-user-info { flex: 1; min-width: 0; }
-.sidebar-user-name { font-size: 13px; font-weight: 600; color: #d1d9f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-name { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-user-role { font-size: 11px; color: var(--sidebar-text); }
 .sidebar-logout-btn {
   background: none; border: none; padding: 6px; cursor: pointer;
@@ -127,7 +145,7 @@ body {
   display: flex; align-items: center;
   transition: background 0.15s, color 0.15s;
 }
-.sidebar-logout-btn:hover { background: rgba(255,255,255,0.08); color: #f87171; }
+.sidebar-logout-btn:hover { background: var(--bg-subtle); color: var(--danger); }
 
 /* ─── PAGE LAYOUTS ───────────────────────────────────────── */
 .page { padding: 28px 32px; }
@@ -314,8 +332,8 @@ input:focus, select:focus, textarea:focus {
   display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
   padding: 2px 6px; border-radius: 4px; letter-spacing: 0.4px;
 }
-.role-badge.admin { background: rgba(37,99,235,0.2); color: #93c5fd; }
-.role-badge.sales { background: rgba(22,163,74,0.2); color: #86efac; }
+.role-badge.admin { background: var(--accent-soft); color: var(--accent); }
+.role-badge.sales { background: #ECFDF5; color: #059669; }
 
 /* ─── TAG CHIPS ──────────────────────────────────────────── */
 .tag-chip {
@@ -1809,17 +1827,17 @@ input:focus, select:focus, textarea:focus {
 /* ─── SIDEBAR COLLAPSE BUTTON (desktop) ─────────────────── */
 .sidebar-collapse-btn {
   width: 28px; height: 28px; border-radius: 6px;
-  background: rgba(255,255,255,0.07); border: none; cursor: pointer;
+  background: var(--bg-subtle); border: none; cursor: pointer;
   color: var(--sidebar-text); display: flex; align-items: center; justify-content: center;
   transition: background 0.15s; flex-shrink: 0; margin-left: auto;
 }
-.sidebar-collapse-btn:hover { background: rgba(255,255,255,0.14); color: white; }
+.sidebar-collapse-btn:hover { background: var(--accent-soft); color: var(--accent); }
 
 /* Tombol X di mobile sidebar */
 .sidebar-close-mobile {
   display: none;
   width: 28px; height: 28px; border-radius: 6px;
-  background: rgba(255,255,255,0.07); border: none; cursor: pointer;
+  background: var(--bg-subtle); border: none; cursor: pointer;
   color: var(--sidebar-text); align-items: center; justify-content: center;
 }
 
@@ -1929,47 +1947,47 @@ input:focus, select:focus, textarea:focus {
   position: fixed;
   bottom: 0; left: 0; right: 0;
   z-index: 9998;
-  background: #1e2139;
-  color: white;
+  background: var(--bg-card);
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
   padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.25);
-  border-top: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 -4px 20px rgba(15,23,42,0.10);
+  border-top: 1px solid var(--border);
 }
 .install-prompt-icon {
   flex-shrink: 0;
   width: 36px; height: 36px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.12);
+  background: var(--accent-soft);
   display: flex; align-items: center; justify-content: center;
-  color: #60a5fa;
+  color: var(--accent);
 }
 .install-prompt-text {
   flex: 1; margin: 0;
   font-size: 13px; font-weight: 500;
-  color: rgba(255,255,255,0.9);
+  color: var(--text-primary);
   line-height: 1.4;
 }
 .install-prompt-btn {
   flex-shrink: 0;
   padding: 8px 16px;
   border-radius: 8px; border: none;
-  background: #60a5fa; color: #0f172a;
+  background: var(--accent); color: white;
   font-size: 13px; font-weight: 700;
   cursor: pointer;
   min-height: 44px;
   transition: background 0.15s;
 }
-.install-prompt-btn:hover { background: #93c5fd; }
+.install-prompt-btn:hover { background: var(--accent-hover); }
 .install-prompt-close {
   flex-shrink: 0;
   width: 36px; height: 36px; min-height: 36px;
   border-radius: 50%; border: none;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.6);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 0.15s;
 }
