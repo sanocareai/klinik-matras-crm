@@ -93,8 +93,22 @@ export const api = {
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
   // Conversations
-  getConversations: (status) =>
-    request("/conversations" + (status ? `?status=${status}` : "")),
+  // Terima string status (cara lama, tetap didukung) ATAU objek
+  // { status, search, assignedToId } (dipakai useConversations — Fase B).
+  getConversations: (statusOrParams) => {
+    let qs = "";
+    if (typeof statusOrParams === "string") {
+      qs = statusOrParams ? `?status=${statusOrParams}` : "";
+    } else if (statusOrParams && typeof statusOrParams === "object") {
+      const params = new URLSearchParams();
+      if (statusOrParams.status)       params.set("status", statusOrParams.status);
+      if (statusOrParams.search)       params.set("search", statusOrParams.search);
+      if (statusOrParams.assignedToId) params.set("assignedToId", statusOrParams.assignedToId);
+      const s = params.toString();
+      qs = s ? `?${s}` : "";
+    }
+    return request("/conversations" + qs);
+  },
   getUnreadCount: () => request("/conversations/unread-count"),
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>

@@ -25,6 +25,11 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,    // SW baru langsung aktif tanpa tunggu tab ditutup
         clientsClaim: true,   // SW baru langsung klaim semua tab yang terbuka
+        // Bundle utama sudah lewat 2MB default sejak Fase B (react-virtuoso,
+        // emoji-mart, dsb ditambahkan) — naikkan limit precache supaya build
+        // tidak gagal. TODO: code-split (dynamic import) di fase berikutnya
+        // supaya chunk utama tidak terus membengkak.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
           // API calls: selalu ambil dari network, data harus selalu fresh
           {
