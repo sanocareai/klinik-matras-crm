@@ -298,9 +298,10 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Conversation status */
-.badge-open     { background: #dcfce7; color: #166534; }
-.badge-pending  { background: #fef3c7; color: #92400e; }
-.badge-resolved { background: #e5e7eb; color: #374151; }
+/* Status badge konsisten: Terbuka=blue, Pending=amber, Selesai=emerald */
+.badge-open     { background: var(--accent-soft); color: var(--accent); }
+.badge-pending  { background: #FFFBEB; color: #D97706; }
+.badge-resolved { background: #ECFDF5; color: #059669; }
 
 /* Channel */
 .channel-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
@@ -325,7 +326,7 @@ input:focus, select:focus, textarea:focus {
 .order-badge.order-processing { background: #dbeafe; color: #1e40af; }
 .order-badge.order-ready      { background: #ede9fe; color: #5b21b6; }
 .order-badge.order-delivered  { background: #dcfce7; color: #166534; }
-.order-badge.order-cancelled  { background: #fee2e2; color: #991b1b; }
+.order-badge.order-cancelled  { background: #FFF1F2; color: #E11D48; }
 
 /* Role badge in sidebar */
 .role-badge {
@@ -874,10 +875,10 @@ input:focus, select:focus, textarea:focus {
   animation: toastIn 0.2s ease;
 }
 @keyframes toastIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.toast-success { background: #166534; color: white; }
-.toast-error   { background: #991b1b; color: white; }
-.toast-info    { background: #1e40af; color: white; }
-.toast-warning { background: #92400e; color: white; }
+.toast-success { background: var(--success); color: white; }
+.toast-error   { background: var(--danger); color: white; }
+.toast-info    { background: var(--accent); color: white; }
+.toast-warning { background: var(--warning); color: white; }
 
 /* ─── DATE RANGE PICKER ──────────────────────────────────── */
 .date-range-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -893,7 +894,7 @@ input:focus, select:focus, textarea:focus {
 
 /* ─── SKELETON LOADING ───────────────────────────────────── */
 .skeleton {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border) 50%, var(--bg-subtle) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   border-radius: 6px;
