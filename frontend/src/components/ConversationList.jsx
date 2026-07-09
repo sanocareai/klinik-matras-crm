@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Search, UserCheck, Eye, CheckCheck, Pin, Users } from "lucide-react";
 import Avatar from "./Avatar.jsx";
-import { formatTanggalWaktu, formatPhoneDisplay } from "../utils/format.js";
+import { formatConvTimestamp, formatPhoneDisplay } from "../utils/format.js";
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
@@ -76,6 +76,19 @@ export default function ConversationList({
 
   return (
     <div className="conversation-list">
+      {/* Search */}
+      <div className="conv-search-bar">
+        <div className="search-input-wrap" style={{ margin: 0 }}>
+          <Search size={14} className="search-icon" />
+          <input
+            className="search-input"
+            placeholder="Cari nama, nomor, atau isi pesan..."
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
       {/* Tab filter status */}
       <div className="conv-tabs">
         {STATUS_TABS.map((t) => (
@@ -97,22 +110,8 @@ export default function ConversationList({
         </button>
       </div>
 
-      {/* Search */}
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <div className="search-input-wrap" style={{ margin: 0 }}>
-          <Search size={14} className="search-icon" />
-          <input
-            className="search-input"
-            placeholder="Cari nama atau nomor..."
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            style={{ fontSize: 13 }}
-          />
-        </div>
-      </div>
-
       {/* List */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div className="conv-list-scroll">
         {conversations.length === 0 && (
           <p className="empty">Belum ada percakapan</p>
         )}
@@ -150,33 +149,32 @@ export default function ConversationList({
                 WebkitTouchCallout: "none",
               }}
             >
-              <div style={{ position: "relative", flexShrink: 0 }}>
+              <div className="conv-avatar-wrap">
                 {isGroup ? (
-                  <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
-                    background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center",
-                    flexShrink: 0,
-                  }}>
-                    <Users size={18} style={{ color: "#4338ca" }} />
+                  <div className="conv-group-avatar">
+                    <Users size={18} />
                   </div>
                 ) : (
-                  <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
+                  <Avatar name={name} src={c.customer?.profilePictureUrl} size="md" />
                 )}
-                {isUnread && <span className="unread-dot" />}
               </div>
               <div className="conversation-item-body">
                 <div className="conversation-top">
-                  <span className="customer-name" style={isUnread ? { fontWeight: 800, color: "var(--text-main)" } : {}}>
+                  <span className="customer-name">
+                    {isPinned && <Pin size={11} className="conv-pin-icon" title="Disematkan" />}
+                    {isGroup && <Users size={12} className="conv-name-group-icon" title="Percakapan grup" />}
                     {name}
                   </span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {isPinned && (
-                      <Pin size={11} style={{ color: "#7c3aed", flexShrink: 0 }} title="Disematkan" />
-                    )}
-                    <span className="conv-time" style={isUnread ? { color: "var(--color-primary)", fontWeight: 700 } : {}}>
-                      {formatTanggalWaktu(c.lastMessageAt)}
-                    </span>
-                  </div>
+                  <span className="conv-time">
+                    {formatConvTimestamp(c.lastMessageAt)}
+                  </span>
+                </div>
+
+                <div className="conversation-bottom">
+                  <p className="last-message">
+                    {lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
+                  </p>
+                  {isUnread && <span className="unread-badge" />}
                 </div>
 
                 <div className="conv-badges">
@@ -185,17 +183,17 @@ export default function ConversationList({
                     {STATUS_LABEL[c.status] || c.status}
                   </span>
                   {isRead && !isReplied && (
-                    <span title="Sudah dibuka tapi belum dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#ede9fe", color: "#5b21b6" }}>
+                    <span title="Sudah dibuka tapi belum dibalas" className="conv-flag-badge conv-flag-opened">
                       <Eye size={10} /> Dibuka
                     </span>
                   )}
                   {isReplied && (
-                    <span title="Sudah dibalas" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>
+                    <span title="Sudah dibalas" className="conv-flag-badge conv-flag-replied">
                       <CheckCheck size={10} /> Dibalas
                     </span>
                   )}
                   {c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: "#fee2e2", color: "#991b1b" }}>
+                    <span className="conv-flag-badge conv-flag-overdue">
                       {c.unansweredMinutes >= 120
                         ? `${Math.floor(c.unansweredMinutes / 60)}j+ belum dibalas`
                         : "1j+ belum dibalas"}
@@ -209,10 +207,6 @@ export default function ConversationList({
                     </span>
                   ) : null}
                 </div>
-
-                <p className="last-message" style={isUnread ? { fontWeight: 600, color: "var(--text-main)" } : {}}>
-                  {lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
-                </p>
               </div>
             </button>
           );
@@ -223,37 +217,16 @@ export default function ConversationList({
       {contextMenu && (
         <>
           {/* Backdrop transparan — klik di luar menu = tutup */}
-          <div
-            style={{ position: "fixed", inset: 0, zIndex: 998 }}
+          <div className="conv-context-backdrop"
             onClick={closeContextMenu}
             onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
           />
-          <div
-            style={{
-              position: "fixed",
-              left: contextMenu.x,
-              top: contextMenu.y,
-              background: "var(--card-bg, #fff)",
-              border: "1px solid var(--border, #e5e7eb)",
-              borderRadius: 10,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-              zIndex: 999,
-              minWidth: 160,
-              overflow: "hidden",
-            }}
-          >
+          <div className="conv-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             {onPin && (
               <button
                 onClick={() => {
                   onPin(contextMenu.convId, !contextMenu.pinned);
                   closeContextMenu();
-                }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "12px 16px",
-                  background: "none", border: "none",
-                  cursor: "pointer", fontSize: 13,
-                  textAlign: "left", color: "var(--text-primary, #111827)",
                 }}
               >
                 <Pin size={14} style={{ color: "#7c3aed" }} />

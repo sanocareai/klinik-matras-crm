@@ -48,6 +48,22 @@ export function formatTanggalWaktu(dateString) {
   return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 }
 
+// Timestamp pintar untuk item daftar percakapan (gaya WhatsApp):
+// hari ini → jam, minggu ini → nama hari, lebih lama → tanggal pendek
+const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+export function formatConvTimestamp(dateString) {
+  if (!dateString) return "";
+  const d = new Date(dateString);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffHari = Math.floor((startOfToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86_400_000);
+
+  if (diffHari <= 0) return formatWaktu(dateString);
+  if (diffHari === 1) return "Kemarin";
+  if (diffHari < 7) return HARI_ID[d.getDay()];
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+}
+
 // Map "YYYY-MM" → nama bulan Indonesia singkat
 export const MONTH_LABELS_ID = [
   "", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
