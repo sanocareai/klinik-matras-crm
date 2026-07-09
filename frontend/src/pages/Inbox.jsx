@@ -37,23 +37,23 @@ export default function Inbox({ user }) {
     });
   }
 
-  // Fase C+ akan mulai emit event ini dari backend Socket.IO — aman dipasang
-  // sekarang karena getSocket() lazy (lihat lib/socket.js), dorman sampai
-  // server-nya benar-benar ada.
+  // Fase F: backend sekarang punya server Socket.IO sungguhan (message:new,
+  // message:ack, conversation:update) — hook ini join/leave room otomatis
+  // mengikuti activeId (lihat useSocketEvents.js).
   useSocketEvents();
 
-  // Realtime SEKARANG masih lewat SSE lama (sudah terbukti jalan) — begitu
-  // ada pesan baru di percakapan manapun, refresh daftar ke store supaya
-  // urutan/preview/badge unread ikut ter-update tanpa reload halaman.
+  // Realtime SSE tetap dipertahankan berjalan paralel sebagai fallback kalau
+  // koneksi Socket.IO putus (keduanya idempotent — appendMessage/upsertConversation
+  // aman dipanggil dobel).
   useSSE("new_message", () => {
-    api.getConversations().then((data) => {
+    api.getConversations().then(({ data }) => {
       useConversationStore.getState().upsertConversations(data);
     }).catch(() => {});
   });
 
   // Fetch awal + buka otomatis dari ?conv=ID (deep link dari toast notifikasi)
   useEffect(() => {
-    api.getConversations().then((data) => {
+    api.getConversations().then(({ data }) => {
       useConversationStore.getState().upsertConversations(data);
       const convId = searchParams.get("conv");
       if (convId && data.some((c) => c.id === convId)) {

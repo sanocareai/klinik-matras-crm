@@ -161,7 +161,7 @@ model Conversation {
   assignedToId  String?
   assignedTo    User?               @relation("AssignedAgent", fields: [assignedToId], references: [id])
   lastMessageAt DateTime            @default(now())
-  unread        Boolean             @default(false)
+  unread        Boolean             @default(false)  // RENCANA: dihapus setelah unreadCount stabil, lihat CLAUDE.md
   isRead        Boolean             @default(false)  // sudah dibuka (di CRM atau di HP)
   readAt        DateTime?                             // kapan terakhir dibaca
   handoverNote  String?
@@ -169,11 +169,17 @@ model Conversation {
   pinnedAt      DateTime?                             // kapan terakhir disematkan
   createdAt     DateTime            @default(now())
 
+  sessionId          String?   // nama session WAHA pengirim, "CS-1"/"CS-2" (multi-nomor)
+  lastMessagePreview String?   // denormalized: potongan teks pesan terakhir, untuk list tanpa join Message
+  unreadCount         Int      @default(0)  // pengganti `unread` (boolean) — jumlah pesan INBOUND belum dibuka
+
   messages Message[]
 
   @@index([channel, status])
   @@index([pinned])
   @@index([groupJid])
+  @@index([status, lastMessageAt(sort: Desc)])
+  @@index([assignedToId, status])
 }
 
 model Message {
@@ -190,6 +196,7 @@ model Message {
   replies         Message[]        @relation("MessageReply")
   forwarded       Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
   senderName      String?          // nama pengirim (untuk pesan grup — beda-beda per pesan)
+  ack             Int              @default(0) // 0 pending, 1 sent, 2 delivered, 3 read (WAHA message.ack)
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])

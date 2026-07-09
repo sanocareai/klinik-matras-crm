@@ -57,7 +57,7 @@ export const useMessageStore = create((set) => ({
   // Update status centang kirim (ack) untuk 1 pesan spesifik via externalId.
   // Dicari di conversation AKTIF dulu (paling umum — user sedang lihat chat itu),
   // baru fallback cari di semua conversation yang sudah dimuat di cache.
-  updateAck: (externalId, ackLevel) => set((state) => {
+  updateAck: (externalId, ack) => set((state) => {
     const activeId = useConversationStore.getState().activeConversationId;
     const searchOrder = activeId
       ? [activeId, ...Object.keys(state.messagesByConvId).filter((id) => id !== activeId)]
@@ -69,7 +69,7 @@ export const useMessageStore = create((set) => ({
       const idx = list.findIndex((m) => m.externalId === externalId);
       if (idx === -1) continue;
       const updatedList = [...list];
-      updatedList[idx] = { ...updatedList[idx], ackLevel };
+      updatedList[idx] = { ...updatedList[idx], ack };
       return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
     }
     return {};

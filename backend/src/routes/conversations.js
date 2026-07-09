@@ -8,6 +8,8 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendText, sendMedia, markChatAsRead } from "../services/wahaClient.js";
+import { buildMessagePreview } from "../utils/messagePreview.js";
+import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 
 // Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
 // Key: conversationId, Value: timestamp terakhir kirim read receipt ke WAHA.
@@ -96,9 +98,14 @@ conversationRouter.get("/counts", async (req, res) => {
   res.json({ semua, terbuka, pending, selesai, milikSaya });
 });
 
-// Daftar percakapan
+// Daftar percakapan — cursor pagination (cursor = id percakapan terakhir dari
+// halaman sebelumnya, limit default 100 kalau tidak dikirim supaya caller lama
+// yang belum paginate — refresh penuh setelah SSE, dsb — tetap dapat batch besar
+// seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
+// mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId } = req.query;
+  const { status, search, assignedToId, cursor } = req.query;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
@@ -126,11 +133,15 @@ conversationRouter.get("/", async (req, res) => {
       messages: { orderBy: { createdAt: "desc" }, take: 1 },
       assignedTo: { select: { id: true, name: true } },
     },
-    take: 100,
+    take: limit + 1, // ambil 1 ekstra buat tahu masih ada halaman berikutnya atau tidak
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
 
+  const hasMore = conversations.length > limit;
+  const page    = hasMore ? conversations.slice(0, limit) : conversations;
+
   const now = Date.now();
-  const result = conversations.map(({ messages, ...conv }) => {
+  const result = page.map(({ messages, ...conv }) => {
     const lastMsg          = messages[0] || null;
     const isUnanswered     = lastMsg?.direction === "INBOUND";
     const unansweredMinutes = isUnanswered
@@ -140,7 +151,7 @@ conversationRouter.get("/", async (req, res) => {
     return { ...conv, messages, isUnanswered, unansweredMinutes, canTakeOver };
   });
 
-  res.json(result);
+  res.json({ data: result, nextCursor: hasMore ? page[page.length - 1].id : null });
 });
 
 // Riwayat pesan dalam satu percakapan
@@ -168,12 +179,13 @@ conversationRouter.get("/:id/messages", async (req, res) => {
       });
       if (!conv) return;
 
-      // Update DB: isRead=true, unread=false
-      if (!conv.isRead || conv.unread) {
-        await prisma.conversation.update({
+      // Update DB: isRead=true, unread=false, unreadCount=0
+      if (!conv.isRead || conv.unread || conv.unreadCount > 0) {
+        const updated = await prisma.conversation.update({
           where: { id: convId },
-          data:  { isRead: true, readAt: new Date(), unread: false },
+          data:  { isRead: true, readAt: new Date(), unread: false, unreadCount: 0 },
         });
+        emitConversationUpdate(updated);
       }
 
       // Kirim read receipt ke WAHA (dengan debounce 30 detik per conversation)
@@ -189,6 +201,35 @@ conversationRouter.get("/:id/messages", async (req, res) => {
       console.warn("[mark-read] Error:", e.message);
     }
   });
+});
+
+// Tandai percakapan sudah dibaca secara eksplisit (dipanggil frontend saat
+// buka chat) — beda dari side-effect di atas: endpoint ini TIDAK ikut fetch
+// seluruh riwayat pesan, cuma update status baca. Reuse logic/debounce yang
+// sama dengan GET /:id/messages (readReceiptSentAt Map di atas).
+conversationRouter.post("/:id/read", async (req, res) => {
+  const convId = req.params.id;
+  const conv = await prisma.conversation.findUnique({
+    where:   { id: convId },
+    include: { customer: { select: { phone: true } } },
+  });
+  if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const updated = await prisma.conversation.update({
+    where: { id: convId },
+    data:  { isRead: true, readAt: new Date(), unread: false, unreadCount: 0 },
+  });
+  emitConversationUpdate(updated);
+  res.json(updated);
+
+  if (conv.channel === "WHATSAPP" && conv.customer?.phone) {
+    const now      = Date.now();
+    const lastSent = readReceiptSentAt.get(convId) || 0;
+    if (now - lastSent > READ_RECEIPT_COOLDOWN_MS) {
+      readReceiptSentAt.set(convId, now);
+      markChatAsRead(conv.customer.phone).catch(() => {});
+    }
+  }
 });
 
 // Kirim pesan teks
@@ -238,10 +279,12 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     if (e.code !== "P2002") throw e;
     message = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id } });
   }
-  await prisma.conversation.update({
+  const updatedConvSend = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  { lastMessageAt: new Date() },
+    data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, null) },
   });
+  emitNewMessage(conversation.id, message);
+  emitConversationUpdate(updatedConvSend);
 
   // Auto-assign lead ke sales yang pertama kali balas
   if (req.user.role === "SALES" && !conversation.assignedToId) {
@@ -339,10 +382,12 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     data: { conversationId: conversation.id, direction: "OUTBOUND",
             content: caption, mediaType, mediaUrl, externalId: waResult?.id || null },
   });
-  await prisma.conversation.update({
+  const updatedConvMedia = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  { lastMessageAt: new Date() },
+    data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, mediaType) },
   });
+  emitNewMessage(conversation.id, message);
+  emitConversationUpdate(updatedConvMedia);
   console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
   res.status(201).json(message);
 });
@@ -419,10 +464,16 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     }
   }
 
-  await prisma.conversation.update({
+  const lastSaved = savedMessages[savedMessages.length - 1];
+  const updatedConvProduct = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  { lastMessageAt: new Date() },
+    data:  {
+      lastMessageAt: new Date(),
+      ...(lastSaved ? { lastMessagePreview: buildMessagePreview(lastSaved.content, lastSaved.mediaType) } : {}),
+    },
   });
+  savedMessages.forEach((m) => emitNewMessage(conversation.id, m));
+  emitConversationUpdate(updatedConvProduct);
 
   res.json({ sent: savedMessages.length, messages: savedMessages });
 });
@@ -494,6 +545,7 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
       data: { customerId: conv.customerId, authorId: req.user.id, content: noteContent },
     });
 
+    emitConversationUpdate(updated);
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -551,10 +603,12 @@ conversationRouter.post("/:id/forward", async (req, res) => {
     },
   });
 
-  await prisma.conversation.update({
+  const updatedConvForward = await prisma.conversation.update({
     where: { id: targetConversationId },
-    data:  { lastMessageAt: new Date() },
+    data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(newMsg.content, newMsg.mediaType) },
   });
+  emitNewMessage(targetConversationId, newMsg);
+  emitConversationUpdate(updatedConvForward);
 
   res.status(201).json(newMsg);
 });
@@ -573,5 +627,6 @@ conversationRouter.patch("/:id", async (req, res) => {
     where: { id: req.params.id },
     data,
   });
+  emitConversationUpdate(conversation);
   res.json(conversation);
 });

@@ -31,7 +31,7 @@ function ForwardModal({ messageToForward, onClose }) {
   const [forwarding, setForwarding] = useState(false);
 
   useEffect(() => {
-    api.getConversations().then((data) => { setConvs(data); setLoading(false); }).catch(() => setLoading(false));
+    api.getConversations().then(({ data }) => { setConvs(data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   const filtered = convs.filter((c) => {

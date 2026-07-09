@@ -4,12 +4,12 @@ import { io } from "socket.io-client";
 // same-origin), diisi untuk APK Capacitor yang perlu tahu alamat server.
 const BASE = import.meta.env.VITE_API_BASE || "";
 
-// ⚠️ CATATAN FASE A: backend saat ini belum punya server Socket.IO — realtime
-// masih jalan lewat SSE (lihat hooks/useSSE.js, endpoint GET /api/events).
-// File ini menyiapkan client-nya lebih dulu supaya Fase B tinggal pakai begitu
-// backend Socket.IO siap. getSocket() SENGAJA lazy — tidak connect otomatis
-// saat modul di-import, supaya tidak spam error koneksi selama endpoint
-// backend belum ada. Baru connect saat sesuatu benar-benar memanggil getSocket().
+// Sejak Fase F, backend punya server Socket.IO sungguhan (lihat
+// backend/src/socket.js, attach ke http.Server yang sama dengan Express).
+// SSE (hooks/useSSE.js) TETAP dipertahankan jalan paralel sebagai fallback —
+// keduanya idempotent di sisi store, aman kalau dobel event masuk.
+// getSocket() tetap lazy (baru connect saat pertama kali dipanggil, dari
+// useSocketEvents.js yang dipasang di Inbox.jsx).
 
 let socket = null;
 

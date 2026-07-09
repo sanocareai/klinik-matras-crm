@@ -7,6 +7,8 @@ import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getPr
 import { syncReadFromWaha } from "../services/reconciliation.js";
 import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
+import { buildMessagePreview } from "../utils/messagePreview.js";
+import { emitNewMessage, emitMessageAck, emitConversationUpdate } from "../socket.js";
 
 export const webhookRouter = express.Router();
 
@@ -160,7 +162,7 @@ function extFromMime(mime) {
 // ── Handler pesan grup WhatsApp ──────────────────────────────────────────────
 // Grup (@g.us) disimpan sebagai Conversation terpisah tanpa Customer record.
 // Tidak ada lead attribution, tidak ada customer upsert, tidak muncul di CRM Pelanggan.
-async function handleGroupMessage(payload, groupJid, externalId) {
+async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
   try {
     // Nama grup (bukan nama sender) — GOWS mungkin expose di chatName.
     // Info.PushName = nama PENGIRIM, bukan nama grup, jadi tidak dipakai untuk groupName.
@@ -208,8 +210,9 @@ async function handleGroupMessage(payload, groupJid, externalId) {
     }
 
     // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)
+    let message;
     try {
-      await prisma.message.create({
+      message = await prisma.message.create({
         data: { conversationId: conversation.id, direction, content: text, externalId,
                 senderName: fromMe ? null : (senderName || null) },
       });
@@ -218,15 +221,19 @@ async function handleGroupMessage(payload, groupJid, externalId) {
       return; // duplikat — race condition, skip
     }
 
-    await prisma.conversation.update({
+    const updatedConv = await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        ...(direction === "INBOUND" ? { unread: true } : {}),
+        lastMessagePreview: buildMessagePreview(text, null),
+        sessionId: sessionName || null,
+        ...(direction === "INBOUND" ? { unread: true, unreadCount: { increment: 1 } } : {}),
       },
     });
 
     broadcast("new_message", { conversationId: conversation.id, customerId: null });
+    emitNewMessage(conversation.id, message);
+    emitConversationUpdate(updatedConv);
     console.log("[webhook] Pesan grup disimpan:", groupJid, direction);
   } catch (err) {
     console.error("[webhook] Gagal proses pesan grup:", err.message);
@@ -250,16 +257,43 @@ webhookRouter.post("/waha", async (req, res) => {
       return;
     }
 
-    // ── message.ack: customer sudah baca pesan kita (centang biru di HP mereka) ──
-    // ack=3 / ackName="READ" → update isRead di conversation kita
-    // Ini arah HP → CRM (customer baca pesan yang dikirim sales)
+    // ── message.ack: status centang kirim pesan KITA (sent/delivered/read) ──
+    // WAHA hanya pernah fire ack untuk pesan OUTBOUND (yang kita kirim) — jadi
+    // "pesan INBOUND" tidak relevan di sini, ack menceritakan status pesan kita
+    // di sisi HP customer, bukan status baca kita atas pesan customer (itu beda
+    // konsep: unreadCount, ditangani terpisah lewat GET /:id/messages &
+    // POST /:id/read, BUKAN dari event ack ini).
     if (event === "message.ack") {
       const ack     = payload?.ack     || payload?._data?.ack || 0;
       const ackName = payload?.ackName || payload?._data?.ackName || "";
+      const externalId = payload?.id;
+
+      // 1) Update status centang per-pesan (Message.ack) via externalId —
+      // dual-engine aware (NOWEB: payload.ack, GOWS: kadang di _data.ack).
+      // Diamkan kalau externalId tidak ditemukan (race dgn pesan yg belum
+      // sempat tersimpan, atau ack utk pesan lama sebelum fitur ini ada).
+      if (externalId) {
+        try {
+          const msg = await prisma.message.findUnique({
+            where: { externalId },
+            select: { id: true, conversationId: true, ack: true },
+          });
+          if (msg && ack > msg.ack) { // jangan mundur (delivered lalu read datang belakangan, tapi kalau retry ack lama jangan timpa yang baru)
+            await prisma.message.update({ where: { id: msg.id }, data: { ack } });
+            emitMessageAck(msg.conversationId, externalId, ack);
+          }
+        } catch (e) {
+          console.warn("[webhook] message.ack: gagal update Message.ack:", e.message);
+        }
+      }
+
+      // 2) ack=READ (>=3) → customer sudah baca pesan kita → Conversation.isRead=true
+      // (perilaku existing, dipertahankan — TIDAK menyentuh unreadCount, itu
+      // hitungan pesan MASUK yang belum kita buka, bukan pesan KELUAR yang
+      // sudah dibaca customer, dua hal yang berbeda meski namanya mirip)
       const isReadAck = ackName === "READ" || ack >= 3;
       if (isReadAck && payload) {
         const sessionName = req.body.session || process.env.WAHA_SESSION || "default";
-        const engine      = detectEngine(req.body);
         // Ambil nomor dari chatId/from — pesan dari kita KE customer, jadi kita "fromMe"
         const rawJid = payload.chatId || payload.from || "";
         const phone  = await normalizePhoneNumber(rawJid, sessionName);
@@ -272,10 +306,11 @@ webhookRouter.post("/waha", async (req, res) => {
               select: { id: true },
             });
             if (conv) {
-              await prisma.conversation.update({
+              const updatedConv = await prisma.conversation.update({
                 where: { id: conv.id },
                 data: { isRead: true, readAt: new Date() },
               });
+              emitConversationUpdate(updatedConv);
               console.log("[webhook] message.ack READ → isRead=true untuk conv:", conv.id, "phone:", phone);
             }
           }
@@ -307,7 +342,7 @@ webhookRouter.post("/waha", async (req, res) => {
     // chatId untuk pesan grup selalu berakhiran "@g.us" di semua engine WAHA.
     const chatJid = payload.chatId || payload._data?.Info?.Chat || "";
     if (chatJid.endsWith("@g.us")) {
-      await handleGroupMessage(payload, chatJid, externalId);
+      await handleGroupMessage(payload, chatJid, externalId, sessionName);
       return;
     }
 
@@ -344,8 +379,9 @@ webhookRouter.post("/waha", async (req, res) => {
       });
       if (!conversation) return;
 
+      let outboundMsg;
       try {
-        await prisma.message.create({
+        outboundMsg = await prisma.message.create({
           data: { conversationId: conversation.id, direction: "OUTBOUND",
                   content: text, externalId },
         });
@@ -353,11 +389,17 @@ webhookRouter.post("/waha", async (req, res) => {
         if (e.code !== "P2002") throw e;
         return; // race condition — sudah disimpan concurrent request
       }
-      await prisma.conversation.update({
+      const updatedConvFromMe = await prisma.conversation.update({
         where: { id: conversation.id },
-        data:  { lastMessageAt: new Date() },
+        data:  {
+          lastMessageAt: new Date(),
+          lastMessagePreview: buildMessagePreview(text, null),
+          sessionId: sessionName || null,
+        },
       });
       broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+      emitNewMessage(conversation.id, outboundMsg);
+      emitConversationUpdate(updatedConvFromMe);
       return;
     }
 
@@ -487,8 +529,9 @@ webhookRouter.post("/waha", async (req, res) => {
     }
 
     // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
+    let inboundMsg;
     try {
-      await prisma.message.create({
+      inboundMsg = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           direction:      "INBOUND",
@@ -503,13 +546,24 @@ webhookRouter.post("/waha", async (req, res) => {
       return;
     }
 
-    // Pesan masuk baru → unread=true (badge sidebar) + isRead=false (belum dibuka lagi)
-    await prisma.conversation.update({
+    // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
+    // + isRead=false (belum dibuka lagi)
+    const updatedConvInbound = await prisma.conversation.update({
       where: { id: conversation.id },
-      data:  { lastMessageAt: new Date(), status: "OPEN", unread: true, isRead: false },
+      data:  {
+        lastMessageAt: new Date(),
+        status: "OPEN",
+        unread: true,
+        isRead: false,
+        lastMessagePreview: buildMessagePreview(text, mediaType),
+        sessionId: sessionName || null,
+        unreadCount: { increment: 1 },
+      },
     });
 
     broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+    emitNewMessage(conversation.id, inboundMsg);
+    emitConversationUpdate(updatedConvInbound);
 
     // Push notification ke aplikasi mobile tim (fire-and-forget).
     // Hanya pesan individual — pesan grup internal tidak di-push supaya tidak berisik.

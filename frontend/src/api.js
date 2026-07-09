@@ -94,7 +94,9 @@ export const api = {
 
   // Conversations
   // Terima string status (cara lama, tetap didukung) ATAU objek
-  // { status, search, assignedToId } (dipakai useConversations — Fase B).
+  // { status, search, assignedToId, cursor, limit } (Fase B/F).
+  // ⚠️ Response SEKARANG { data, nextCursor } (cursor pagination, Fase F),
+  // BUKAN array mentah lagi — semua caller harus baca `.data`.
   getConversations: (statusOrParams) => {
     let qs = "";
     if (typeof statusOrParams === "string") {
@@ -104,6 +106,8 @@ export const api = {
       if (statusOrParams.status)       params.set("status", statusOrParams.status);
       if (statusOrParams.search)       params.set("search", statusOrParams.search);
       if (statusOrParams.assignedToId) params.set("assignedToId", statusOrParams.assignedToId);
+      if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
+      if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
       qs = s ? `?${s}` : "";
     }
@@ -113,6 +117,10 @@ export const api = {
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
+  // Tandai percakapan sudah dibaca (unreadCount=0) tanpa fetch seluruh riwayat
+  // pesan — endpoint baru Fase F, terpisah dari side-effect GET .../messages.
+  markConversationRead: (conversationId) =>
+    request(`/conversations/${conversationId}/read`, { method: "POST" }),
   sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",

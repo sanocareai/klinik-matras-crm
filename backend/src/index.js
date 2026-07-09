@@ -1,8 +1,10 @@
 import "dotenv/config";
 import express from "express";
+import http from "http";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import { initSocket } from "./socket.js";
 
 import { webhookRouter }    from "./routes/webhooks.js";
 import { productRouter }    from "./routes/products.js";
@@ -83,7 +85,13 @@ app.get("*", (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+// http.createServer dibutuhkan supaya Socket.IO bisa attach ke server yang
+// SAMA dengan Express (bukan server terpisah/port lain) — app.listen() biasa
+// sebenarnya juga bikin http.Server di baliknya, tapi kita perlu instance-nya
+// secara eksplisit untuk dikasih ke initSocket().
+const server = http.createServer(app);
+initSocket(server);
+server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
   startReconciliationJob();
 });

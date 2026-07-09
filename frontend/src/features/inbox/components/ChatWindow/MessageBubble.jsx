@@ -12,13 +12,13 @@ function isJsonError(str) {
   try { const p = JSON.parse(str); return !!p.message || !!p.error; } catch { return false; }
 }
 
-// ⚠️ Backend belum punya field ack per-pesan (lihat ackLevel.js) — pesan
-// outbound yang sudah sukses tersimpan (bukan sending/failed) ditampilkan
-// dengan 1 centang ("terkirim") sebagai default paling jujur yang bisa
-// dipastikan, KECUALI m.ackLevel memang ada (siap dipakai begitu backend
-// menambahkannya nanti).
-function AckTicks({ ackLevel }) {
-  const ticks = ackToTicks(ackLevel ?? ACK.SENT);
+// Backend sekarang punya Message.ack (Fase F) — 0 pending, 1 sent, 2
+// delivered, 3 read, diupdate dari webhook message.ack via Socket.IO
+// (message:ack) atau ikut ke-load dari GET /:id/messages. Default ke
+// ACK.SENT kalau field belum terisi (pesan lama sebelum migration, atau
+// belum ada event ack masuk sama sekali).
+function AckTicks({ ack }) {
+  const ticks = ackToTicks(ack ?? ACK.SENT);
   if (ticks === "none") return null;
   if (ticks === "blue") return <CheckCheck size={14} className="ack-tick ack-tick-blue" />;
   if (ticks === "double") return <CheckCheck size={14} className="ack-tick" />;
@@ -181,7 +181,7 @@ function MessageBubbleBase({ message: m, isGroup, onReply, onForward, onJumpToRe
         <span className="bubble-meta">
           {isSending && <Clock size={11} className="bubble-status-icon" />}
           <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
-          {isOut && !isSending && !isFailed && <AckTicks ackLevel={m.ackLevel} />}
+          {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
         </span>
 
         {isFailed && (

@@ -43,9 +43,10 @@ function ConversationItemBase({ id }) {
 
   function selectConversation() {
     useConversationStore.getState().setActive(id);
-    if (c.unread) {
-      useConversationStore.getState().upsertConversation({ id, unread: false });
-      api.updateConversation(id, { unread: false }).catch(() => {});
+    if (c.unread || c.unreadCount > 0) {
+      useConversationStore.getState().upsertConversation({ id, unread: false, unreadCount: 0 });
+      // Endpoint khusus (Fase F) — reset unreadCount di server juga, bukan cuma unread lama
+      api.markConversationRead(id).catch(() => {});
     }
   }
 
