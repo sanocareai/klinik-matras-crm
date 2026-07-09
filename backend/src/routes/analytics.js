@@ -391,3 +391,40 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Order terbaru (untuk widget "Recent Orders" di Dashboard) — dibuat karena
+// belum ada endpoint listing Order langsung, cuma agregat per-customer di
+// GET /api/customers (lihat CLAUDE.md/riset dashboard redesign).
+analyticsRouter.get("/recent-orders", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 8, 50);
+  try {
+    const orders = await prisma.order.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        items: { orderBy: { sortOrder: "asc" }, select: { layananName: true } },
+      },
+    });
+
+    const CATEGORY_FALLBACK = { BARU: "Kasur Baru", SEWA: "Kasur Sewa", LAYANAN: "Layanan" };
+
+    const result = orders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      customerId: o.customer?.id || null,
+      customerName: o.customer?.name || o.customer?.phone || "Pelanggan",
+      product: o.items.map((i) => i.layananName).filter(Boolean).join(", ") || CATEGORY_FALLBACK[o.category] || "Layanan",
+      category: o.category,
+      value: o.value,
+      status: o.status,
+      hasComplaint: o.hasComplaint,
+      createdAt: o.createdAt,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});

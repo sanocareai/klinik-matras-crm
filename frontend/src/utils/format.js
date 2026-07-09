@@ -2,6 +2,14 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// Singkatan untuk ruang terbatas (dashboard KPI card, chart)
+export function formatRupiahShort(n) {
+  const v = n || 0;
+  if (v >= 1_000_000) return "Rp" + (v / 1_000_000).toFixed(1) + "jt";
+  if (v >= 1_000) return "Rp" + (v / 1_000).toFixed(0) + "rb";
+  return "Rp" + v;
+}
+
 // Format nomor HP untuk tampilan: "6281234567890" → "+62 812-3456-7890"
 export function formatPhoneDisplay(phone) {
   if (!phone) return "";

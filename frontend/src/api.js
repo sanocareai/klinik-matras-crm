@@ -185,6 +185,7 @@ export const api = {
   getAnalyticsPipelineFunnel: () => request("/analytics/pipeline-funnel"),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
+  getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
 
   // Tracking Links
   getTrackingLinks: () => request("/tracking/links"),
