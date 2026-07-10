@@ -1,4 +1,9 @@
 /**
+ * ⚠ DIGABUNG ke scripts/backfill-group-names.js (Task 4, Fase 1 di script itu
+ * berisi logika yang SAMA PERSIS dengan file ini + Fase 2 backfill nama grup
+ * dari WAHA sekaligus dalam 1 jalan). Pakai backfill-group-names.js untuk
+ * pekerjaan baru — file ini dipertahankan hanya untuk referensi/riwayat.
+ *
  * Script cleanup: tandai percakapan grup yang tersimpan salah sebagai customer individu.
  *
  * Latar belakang:
