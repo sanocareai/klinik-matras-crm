@@ -1,5 +1,30 @@
 // Utility format tanggal & uang — konvensi sama dengan versi web (seksi 11 CLAUDE.md)
+import dayjs from "dayjs";
+import "dayjs/locale/id.js";
 import { avatarColors } from "../theme";
+
+dayjs.locale("id");
+
+const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
+// Timestamp pintar gaya WhatsApp — SAMA dengan
+// frontend/src/features/inbox/utils/formatTime.js#smartTimestamp: "14:30"
+// hari ini, "Kemarin", nama hari kalau <7 hari, "12/07/26" kalau lebih lama.
+// Dipakai InboxScreen (ChatListScreen.js), beda dari timeAgo() di bawah yang
+// masih dipakai layar lama (relatif "5 mnt", "2 jam").
+export function smartTimestamp(date) {
+  if (!date) return "";
+  const d = dayjs(date);
+  if (!d.isValid()) return "";
+
+  const now = dayjs();
+  const diffHari = now.startOf("day").diff(d.startOf("day"), "day");
+
+  if (diffHari <= 0) return d.format("HH:mm");
+  if (diffHari === 1) return "Kemarin";
+  if (diffHari < 7) return HARI_ID[d.day()];
+  return d.format("DD/MM/YY");
+}
 
 export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");

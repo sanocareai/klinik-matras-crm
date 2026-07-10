@@ -1,8 +1,9 @@
 // Entry point aplikasi mobile Klinik Matras CRM.
 // Navigasi: Login → Daftar Percakapan → Chat → Info Pelanggan
 import React, { useEffect } from "react";
-import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef, useNavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { isExpoGo } from "./src/push";
@@ -15,12 +16,28 @@ import ChatListScreen from "./src/screens/ChatListScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import CustomerScreen from "./src/screens/CustomerScreen";
 import { colors } from "./src/theme";
+import { tokens } from "./src/constants/theme";
 import { queryClient } from "./src/lib/queryClient";
 import { useSocketEvents } from "./src/hooks/useSocketEvents";
 import { initOutboxFlush } from "./src/lib/outboxFlush";
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
+
+// InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang
+// masih gaya header biru tua lama. Warna strip status bar/notch ikut
+// menyesuaikan layar aktif supaya tidak ada strip gelap ganjil di atas Inbox
+// yang sudah terang.
+function SafeAreaTopBg({ children }) {
+  const routeName = useNavigationState((state) => state?.routes?.[state.index]?.name);
+  const bg = routeName === "ChatList" ? tokens.color.bg : colors.header;
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={["top"]}>
+      <StatusBar style={routeName === "ChatList" ? "dark" : "light"} />
+      {children}
+    </SafeAreaView>
+  );
+}
 
 function Root() {
   const { user, loading } = useAuth();
@@ -95,17 +112,18 @@ export default function App() {
   applyInterGlobally();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <NavigationContainer ref={navigationRef}>
-            <SafeAreaView style={{ flex: 1, backgroundColor: colors.header }} edges={["top"]}>
-              <StatusBar style="light" />
-              <Root />
-            </SafeAreaView>
-          </NavigationContainer>
-        </AuthProvider>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <NavigationContainer ref={navigationRef}>
+              <SafeAreaTopBg>
+                <Root />
+              </SafeAreaTopBg>
+            </NavigationContainer>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

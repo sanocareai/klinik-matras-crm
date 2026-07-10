@@ -1,6 +1,8 @@
 // Store percakapan (Inbox) — pola SAMA dengan
-// frontend/src/features/inbox/stores/conversationStore.js versi web, supaya
-// perilaku (urutan list, upsert dari socket) konsisten di kedua platform.
+// frontend/src/features/inbox/stores/conversationStore.js versi web: cache
+// GLOBAL & akumulatif (semua percakapan yang pernah di-fetch dari filter
+// manapun tetap ada di sini), list yang tampil disaring ulang di komponen
+// lewat filter/search AKTIF SEKARANG (lihat ChatListScreen.js#matches).
 import { create } from "zustand";
 
 // Urutan daftar: pinned dulu (by pinnedAt terbaru), lalu sisanya
@@ -20,25 +22,16 @@ function sortOrder(conversationsById, order) {
 
 export const useConversationStore = create((set) => ({
   activeConversationId: null,
+  filter: "ALL", // 'ALL' | 'OPEN' | 'PENDING' | 'CLOSED' | 'MINE'
+  searchQuery: "",
   conversationsById: {},
   conversationOrder: [], // array of ids, sudah terurut
 
   setActive: (id) => set({ activeConversationId: id }),
+  setFilter: (filter) => set({ filter }),
+  setSearch: (searchQuery) => set({ searchQuery }),
 
-  // Ganti daftar percakapan yang TAMPIL saat ini (mis. hasil fetch tab
-  // "Terbuka") — merge data ke byId (supaya event socket utk percakapan lain
-  // yang belum tampil tidak hilang), tapi order mengikuti persis hasil fetch
-  // ini (supaya konsisten dengan filter tab/status di server).
-  setConversationList: (list) => set((state) => {
-    const conversationsById = { ...state.conversationsById };
-    for (const conv of list) {
-      conversationsById[conv.id] = { ...conversationsById[conv.id], ...conv };
-    }
-    const order = sortOrder(conversationsById, list.map((c) => c.id));
-    return { conversationsById, conversationOrder: order };
-  }),
-
-  // Insert/update 1 percakapan (dari event socket conversation:update) + re-sort.
+  // Insert/update 1 percakapan (dari fetch detail, event socket, dll) + re-sort.
   upsertConversation: (conv) => set((state) => {
     const conversationsById = {
       ...state.conversationsById,
@@ -47,6 +40,19 @@ export const useConversationStore = create((set) => ({
     const order = state.conversationOrder.includes(conv.id)
       ? state.conversationOrder
       : [...state.conversationOrder, conv.id];
+    return { conversationsById, conversationOrder: sortOrder(conversationsById, order) };
+  }),
+
+  // Insert/update banyak percakapan sekaligus (dari hasil fetch halaman
+  // useConversations/useInfiniteQuery) — MERGE ke cache global, bukan ganti.
+  upsertConversations: (list) => set((state) => {
+    const conversationsById = { ...state.conversationsById };
+    const orderSet = new Set(state.conversationOrder);
+    for (const conv of list) {
+      conversationsById[conv.id] = { ...conversationsById[conv.id], ...conv };
+      orderSet.add(conv.id);
+    }
+    const order = Array.from(orderSet);
     return { conversationsById, conversationOrder: sortOrder(conversationsById, order) };
   }),
 
@@ -60,6 +66,7 @@ export const useConversationStore = create((set) => ({
       ...existing,
       lastMessageAt: ts || new Date().toISOString(),
       unread: unreadDelta > 0 ? true : existing.unread,
+      unreadCount: unreadDelta > 0 ? (existing.unreadCount || 0) + unreadDelta : existing.unreadCount,
     };
     const conversationsById = { ...state.conversationsById, [id]: updated };
     return { conversationsById, conversationOrder: sortOrder(conversationsById, state.conversationOrder) };
@@ -70,3 +77,5 @@ export const useConversationStore = create((set) => ({
 export const useActiveId = () => useConversationStore((s) => s.activeConversationId);
 export const useConversation = (id) => useConversationStore((s) => (id ? s.conversationsById[id] : undefined));
 export const useOrderedIds = () => useConversationStore((s) => s.conversationOrder);
+export const useFilter = () => useConversationStore((s) => s.filter);
+export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);

@@ -124,12 +124,18 @@ export const api = {
     request("/users/me/push-token", { method: "DELETE", body: JSON.stringify({ token }) }),
 
   // Percakapan (Inbox)
-  // params: { status, assignedToId } — keduanya opsional
+  // params: { status, search, assignedToId, cursor, limit } — semua opsional.
+  // ⚠️ Response { data, nextCursor } (cursor pagination) — lihat
+  // backend/src/routes/conversations.js, dikonsumsi lewat useConversations.js.
   getConversations: (params) => request("/conversations" + buildQuery(params)),
   getConversationCounts: () => request("/conversations/counts"),
   getUnreadCount: () => request("/conversations/unread-count"),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
+  // Tandai sudah dibaca (unreadCount=0) tanpa fetch seluruh riwayat pesan —
+  // dipakai saat tap percakapan unread / swipe "tandai dibaca" di Inbox.
+  markConversationRead: (conversationId) =>
+    request(`/conversations/${conversationId}/read`, { method: "POST" }),
   sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",

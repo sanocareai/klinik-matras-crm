@@ -1,214 +1,189 @@
-// Daftar percakapan (gaya layar utama WhatsApp) + tab filter status + search.
-// Polling 5 detik (fallback) + Socket.IO real-time — data sumber kebenaran
-// sekarang conversationStore (bukan state lokal), FlashList gantikan FlatList
-// supaya scroll tetap 60fps walau daftar percakapan banyak.
-import React, { useCallback, useEffect, useRef, useState } from "react";
+// InboxScreen (Fase M-B) — desain light-blue: card putih rounded-2xl, tab
+// pill biru, search expandable, swipe actions, infinite scroll + real-time.
+// Data: cache global conversationStore (Zustand) + useConversations
+// (TanStack useInfiniteQuery, cursor pagination) — list yang tampil disaring
+// ulang di sini lewat filter/search AKTIF SEKARANG (pola sama dengan
+// frontend/src/features/inbox/components/ConversationList/index.jsx).
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  RefreshControl, Alert, ActivityIndicator, ScrollView,
+  RefreshControl, ActivityIndicator, ScrollView, Modal, Switch,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api";
-import { colors } from "../theme";
-import { timeAgo } from "../utils/format";
-import Avatar from "../components/Avatar";
+import { tokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
-import { useConversationStore, useOrderedIds } from "../store/conversationStore";
+import ConversationItem from "../components/ConversationItem";
+import { useConversations } from "../hooks/useConversations";
+import {
+  useConversationStore, useOrderedIds, useFilter, useConvSearchQuery,
+} from "../store/conversationStore";
 
-// key "MINE" filter berdasarkan assignedToId (user login), sisanya berdasarkan status.
-// countKey menunjuk field yang cocok di response GET /conversations/counts.
+const DEBOUNCE_MS = 300;
+
 const TABS = [
-  { key: "", label: "Semua", countKey: "semua" },
-  { key: "OPEN", label: "Terbuka", countKey: "terbuka" },
-  { key: "PENDING", label: "Pending", countKey: "pending" },
-  { key: "RESOLVED", label: "Selesai", countKey: "selesai" },
-  { key: "MINE", label: "Milik Saya", countKey: "milikSaya" },
+  { key: "ALL", label: "Semua" },
+  { key: "OPEN", label: "Terbuka" },
+  { key: "PENDING", label: "Pending" },
+  { key: "CLOSED", label: "Selesai" },
+  { key: "MINE", label: "Milik Saya" },
 ];
 
-const POLL_MS = 5000;
+const EMPTY_STATE = {
+  ALL:     { icon: "📭", text: "Belum ada percakapan" },
+  OPEN:    { icon: "💬", text: "Tidak ada percakapan terbuka" },
+  PENDING: { icon: "⏳", text: "Tidak ada percakapan pending" },
+  CLOSED:  { icon: "✅", text: "Tidak ada percakapan selesai" },
+  MINE:    { icon: "👤", text: "Belum ada percakapan milik kamu" },
+};
 
-// Nama tampilan percakapan: nama grup, atau nama/nomor customer
-function convName(conv) {
-  if (conv.type === "GROUP") return conv.groupName || "Grup WhatsApp";
-  return conv.customer?.name || conv.customer?.phone || "Pelanggan";
-}
-
-// Preview pesan terakhir untuk baris daftar
-function lastPreview(conv) {
-  const msg = conv.messages?.[0];
-  if (!msg) return "";
-  const prefix = msg.direction === "OUTBOUND" ? "✓ " : "";
-  if (msg.content) return prefix + msg.content;
-  if (msg.mediaType === "image") return prefix + "📷 Foto";
-  if (msg.mediaType === "video") return prefix + "🎥 Video";
-  if (msg.mediaType === "audio") return prefix + "🎤 Pesan suara";
-  if (msg.mediaType === "document") return prefix + "📄 Dokumen";
-  return "";
+// Cocokkan 1 conversation dengan filter + search + toggle "belum dibaca"
+// AKTIF SEKARANG. Perlu re-filter di client karena store bersifat
+// global/akumulatif (percakapan dari tab lain yang pernah di-fetch tetap
+// ada di cache) — lihat komentar di conversationStore.js.
+function matches(c, filter, userId, query, onlyUnread) {
+  if (!c) return false;
+  if (filter === "MINE" && c.assignedToId !== userId) return false;
+  if (filter === "OPEN" && c.status !== "OPEN") return false;
+  if (filter === "PENDING" && c.status !== "PENDING") return false;
+  if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
+  if (onlyUnread && !c.unread) return false;
+  if (query) {
+    const hay = [c.customer?.name, c.customer?.phone, c.groupName]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (!hay.includes(query)) return false;
+  }
+  return true;
 }
 
 export default function ChatListScreen({ navigation }) {
   const { user, logout } = useAuth();
-  // Sumber data daftar percakapan: conversationStore (Zustand), diisi dari
-  // fetch di bawah + di-update real-time lewat socket (lihat useSocketEvents).
+  const filter = useFilter();
+  const search = useConvSearchQuery();
   const orderedIds = useOrderedIds();
   const conversationsById = useConversationStore((s) => s.conversationsById);
-  const conversations = orderedIds.map((id) => conversationsById[id]).filter(Boolean);
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState(search);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [onlyUnread, setOnlyUnread] = useState(false);
   const [counts, setCounts] = useState({});
-  // Tab tidak di-persist ke storage (sengaja) — reset ke "Semua" tiap app dibuka lagi
-  const [tab, setTab] = useState("");
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const pollRef = useRef(null);
+  const debounceRef = useRef(null);
 
-  const load = useCallback(async (silent = false) => {
-    // Daftar percakapan dan badge count dipisah sengaja — kalau endpoint /counts
-    // belum tersedia di server (misal server produksi belum di-deploy versi baru),
-    // daftar percakapan tetap tampil, cuma badge-nya kosong (bukan error total).
-    try {
-      const params = tab === "MINE"
-        ? { assignedToId: user?.id }
-        : { status: tab || undefined };
-      const data = await api.getConversations(params);
-      useConversationStore.getState().setConversationList(data);
-    } catch (err) {
-      // Saat polling diam-diam, jangan spam alert kalau koneksi putus sebentar
-      if (!silent) Alert.alert("Gagal memuat", err.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const { isLoading, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
+    useConversations({ filter, search, userId: user?.id });
 
-    try {
-      const countData = await api.getConversationCounts();
-      setCounts(countData);
-    } catch {
-      // Diamkan — badge count memang fitur pelengkap, bukan syarat Inbox jalan
-    }
-  }, [tab, user?.id]);
-
-  // Muat ulang + polling hanya saat layar ini aktif (hemat baterai & kuota)
+  // Badge jumlah per tab — dipisah dari list utama (fitur pelengkap, kalau
+  // gagal list tetap tampil normal).
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      load();
-      pollRef.current = setInterval(() => load(true), POLL_MS);
-      return () => clearInterval(pollRef.current);
-    }, [load])
+      let alive = true;
+      api.getConversationCounts().then((d) => { if (alive) setCounts(d); }).catch(() => {});
+      return () => { alive = false; };
+    }, [])
   );
 
-  // Filter search di sisi client (data sudah di memori, max 100 percakapan)
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? conversations.filter(
-        (c) =>
-          convName(c).toLowerCase().includes(q) ||
-          (c.customer?.phone || "").includes(q)
-      )
-    : conversations;
+  const visibleIds = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q, onlyUnread));
+  }, [orderedIds, conversationsById, filter, user?.id, search, onlyUnread]);
 
-  function renderItem({ item }) {
-    const name = convName(item);
-    const isGroup = item.type === "GROUP";
-    return (
-      <TouchableOpacity
-        style={styles.row}
-        onPress={() =>
-          navigation.navigate("Chat", {
-            conversationId: item.id,
-            name,
-            isGroup,
-            customerId: item.customerId,
-            assignedTo: item.assignedTo?.name || null,
-          })
-        }
-      >
-        <Avatar name={name} isGroup={isGroup} />
-        <View style={styles.rowBody}>
-          <View style={styles.rowTop}>
-            <Text style={[styles.name, item.unread && styles.nameUnread]} numberOfLines={1}>
-              {item.pinned ? "📌 " : ""}{name}
-            </Text>
-            <Text style={[styles.time, item.unread && styles.timeUnread]}>
-              {timeAgo(item.lastMessageAt)}
-            </Text>
-          </View>
-          <View style={styles.rowBottom}>
-            <Text
-              style={[styles.preview, item.unread && styles.previewUnread]}
-              numberOfLines={1}
-            >
-              {lastPreview(item)}
-            </Text>
-            {item.unread && <View style={styles.unreadDot} />}
-          </View>
-          <View style={styles.badges}>
-            {item.assignedTo && (
-              <Text style={styles.assignedBadge}>👤 {item.assignedTo.name}</Text>
-            )}
-            {item.isUnanswered && item.unansweredMinutes >= 60 && (
-              <Text style={styles.warnBadge}>Belum dibalas {Math.floor(item.unansweredMinutes / 60)}j+</Text>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
+  function handleSearchChange(v) {
+    setSearchInput(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      useConversationStore.getState().setSearch(v);
+    }, DEBOUNCE_MS);
   }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchInput("");
+    clearTimeout(debounceRef.current);
+    useConversationStore.getState().setSearch("");
+  }
+
+  function handleEndReached() {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }
+
+  function openChat(c) {
+    const isGroup = c.type === "GROUP";
+    navigation.navigate("Chat", {
+      conversationId: c.id,
+      name: isGroup ? (c.groupName || "Grup WhatsApp") : (c.customer?.name || c.customer?.phone || "Pelanggan"),
+      isGroup,
+      customerId: c.customerId,
+      assignedTo: c.assignedTo?.name || null,
+    });
+  }
+
+  const empty = EMPTY_STATE[filter] || EMPTY_STATE.ALL;
 
   return (
     <View style={styles.container}>
-      {/* Header hijau gaya WhatsApp */}
+      {/* Header */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Klinik Matras</Text>
-          <Text style={styles.headerSub}>{user?.name} · {user?.role === "ADMIN" ? "Admin" : "Sales"}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() =>
-            Alert.alert("Keluar", "Yakin ingin keluar dari akun ini?", [
-              { text: "Batal", style: "cancel" },
-              { text: "Keluar", style: "destructive", onPress: logout },
-            ])
-          }
-        >
-          <Text style={styles.logoutIcon}>⎋</Text>
-        </TouchableOpacity>
+        {searchOpen ? (
+          <View style={styles.searchRow}>
+            <TextInput
+              autoFocus
+              style={styles.searchInput}
+              placeholder="Cari nama, nomor, atau grup…"
+              placeholderTextColor={tokens.color.textMuted}
+              value={searchInput}
+              onChangeText={handleSearchChange}
+            />
+            <TouchableOpacity onPress={closeSearch} style={styles.headerIconBtn}>
+              <Text style={styles.headerIconText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Inbox</Text>
+              <Text style={styles.subtitle}>{user?.name} · {user?.role === "ADMIN" ? "Admin" : "Sales"}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setSearchOpen(true)} style={styles.headerIconBtn}>
+              <Text style={styles.headerIconText}>🔍</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowFilterSheet(true)} style={styles.headerIconBtn}>
+              <Text style={styles.headerIconText}>{onlyUnread ? "🔵" : "☰"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => logout()}
+              style={styles.headerIconBtn}
+            >
+              <Text style={styles.headerIconText}>⎋</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
-      {/* Search */}
-      <View style={styles.searchWrap}>
-        <TextInput
-          style={styles.search}
-          placeholder="Cari nama atau nomor…"
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-        />
-      </View>
-
-      {/* Tab filter — horizontal scroll, mirip WhatsApp Business */}
+      {/* Tab pill horizontal scrollable */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.tabs}
+        style={styles.tabsWrap}
         contentContainerStyle={styles.tabsContent}
       >
         {TABS.map((t) => {
-          const count = counts[t.countKey] || 0;
-          const active = tab === t.key;
+          const active = filter === t.key;
+          const count = counts[
+            t.key === "ALL" ? "semua" : t.key === "OPEN" ? "terbuka" :
+            t.key === "PENDING" ? "pending" : t.key === "CLOSED" ? "selesai" : "milikSaya"
+          ] || 0;
           return (
             <TouchableOpacity
               key={t.key}
-              style={[styles.tab, active && styles.tabActive]}
-              onPress={() => setTab(t.key)}
+              style={[styles.pill, active && styles.pillActive]}
+              onPress={() => useConversationStore.getState().setFilter(t.key)}
             >
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>
-                {t.label}
-              </Text>
+              <Text style={[styles.pillText, active && styles.pillTextActive]}>{t.label}</Text>
               {count > 0 && (
-                <View style={[styles.tabBadge, active && styles.tabBadgeActive]}>
-                  <Text style={styles.tabBadgeText}>{count}</Text>
+                <View style={[styles.pillBadge, active && styles.pillBadgeActive]}>
+                  <Text style={[styles.pillBadgeText, active && styles.pillBadgeTextActive]}>{count}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -216,84 +191,97 @@ export default function ChatListScreen({ navigation }) {
         })}
       </ScrollView>
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.header} size="large" />
+      {/* Daftar percakapan */}
+      {isLoading && visibleIds.length === 0 ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={tokens.color.accent} size="large" />
+      ) : visibleIds.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyIcon}>{empty.icon}</Text>
+          <Text style={styles.emptyText}>{empty.text}</Text>
+        </View>
       ) : (
         <FlashList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          estimatedItemSize={78}
+          data={visibleIds}
+          keyExtractor={(id) => id}
+          renderItem={({ item }) => <ConversationItem id={item} onPress={openChat} />}
+          estimatedItemSize={90}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.4}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(); }}
-            />
+            <RefreshControl refreshing={!!isRefetching} onRefresh={refetch} colors={[tokens.color.accent]} />
           }
-          ListEmptyComponent={
-            <Text style={styles.empty}>Tidak ada percakapan</Text>
+          ListFooterComponent={
+            isFetchingNextPage ? (
+              <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} />
+            ) : null
           }
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
         />
       )}
+
+      {/* Sheet filter tambahan */}
+      <Modal visible={showFilterSheet} transparent animationType="fade" onRequestClose={() => setShowFilterSheet(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Filter Tambahan</Text>
+            <View style={styles.sheetRow}>
+              <Text style={styles.sheetRowText}>Hanya pesan belum dibaca</Text>
+              <Switch
+                value={onlyUnread}
+                onValueChange={setOnlyUnread}
+                trackColor={{ false: tokens.color.border, true: tokens.color.accentSoft }}
+                thumbColor={onlyUnread ? tokens.color.accent : "#f4f3f4"}
+              />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.card },
+  container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
-    backgroundColor: colors.header, flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12,
+    flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.bg,
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, gap: 4,
   },
-  headerTitle: { color: colors.headerText, fontSize: 20, fontWeight: "700" },
-  headerSub: { color: "#b2dfdb", fontSize: 12, marginTop: 2 },
-  logoutIcon: { color: colors.headerText, fontSize: 22, padding: 6 },
-  searchWrap: { padding: 10, backgroundColor: colors.header, paddingTop: 0 },
-  search: {
-    backgroundColor: "#ffffff", borderRadius: 20, paddingHorizontal: 16,
-    paddingVertical: 8, fontSize: 14, color: colors.text,
+  title: { color: tokens.color.textPrimary, fontSize: 24, fontWeight: "700" },
+  subtitle: { color: tokens.color.textSecondary, fontSize: 12, marginTop: 2 },
+  headerIconBtn: { padding: 8 },
+  headerIconText: { fontSize: 18, color: tokens.color.textPrimary },
+  searchRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  searchInput: {
+    flex: 1, backgroundColor: tokens.color.card, borderRadius: tokens.radius.control,
+    paddingHorizontal: 14, paddingVertical: 9, fontSize: 14, color: tokens.color.textPrimary,
+    borderWidth: 1, borderColor: tokens.color.border,
   },
-  tabs: { backgroundColor: colors.header, flexGrow: 0 },
-  tabsContent: { paddingHorizontal: 8 },
-  tab: {
-    flexDirection: "row", alignItems: "center", paddingVertical: 10,
-    paddingHorizontal: 14, borderBottomWidth: 3, borderBottomColor: "transparent",
+  tabsWrap: { flexGrow: 0, marginBottom: 4 },
+  tabsContent: { paddingHorizontal: 12, gap: 8, paddingBottom: 8 },
+  pill: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 14,
+    borderRadius: 20, backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+    marginRight: 8,
   },
-  tabActive: { borderBottomColor: colors.accent },
-  tabText: { color: "#b2dfdb", fontWeight: "600", fontSize: 13 },
-  tabTextActive: { color: "#fff" },
-  tabBadge: {
+  pillActive: { backgroundColor: tokens.color.accent, borderColor: tokens.color.accent },
+  pillText: { color: tokens.color.textSecondary, fontWeight: "600", fontSize: 13 },
+  pillTextActive: { color: "#fff" },
+  pillBadge: {
     marginLeft: 6, minWidth: 18, height: 18, borderRadius: 9,
-    backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center",
-    justifyContent: "center", paddingHorizontal: 4,
+    backgroundColor: tokens.color.subtle, alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
   },
-  tabBadgeActive: { backgroundColor: colors.accent },
-  tabBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  row: {
-    flexDirection: "row", paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
-    alignItems: "center", gap: 12,
+  pillBadgeActive: { backgroundColor: "rgba(255,255,255,0.25)" },
+  pillBadgeText: { color: tokens.color.textSecondary, fontSize: 11, fontWeight: "700" },
+  pillBadgeTextActive: { color: "#fff" },
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80 },
+  emptyIcon: { fontSize: 40, marginBottom: 8 },
+  emptyText: { color: tokens.color.textMuted, fontSize: 14 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    padding: 18, paddingBottom: 28,
   },
-  rowBody: { flex: 1 },
-  rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  name: { fontSize: 16, fontWeight: "600", color: colors.text, flex: 1, marginRight: 8 },
-  nameUnread: { fontWeight: "800" },
-  time: { fontSize: 12, color: colors.textMuted },
-  timeUnread: { color: colors.accent, fontWeight: "700" },
-  rowBottom: { flexDirection: "row", alignItems: "center", marginTop: 2 },
-  preview: { flex: 1, fontSize: 14, color: colors.textSecondary },
-  previewUnread: { color: colors.text, fontWeight: "600" },
-  unreadDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent, marginLeft: 8,
-  },
-  badges: { flexDirection: "row", gap: 6, marginTop: 3 },
-  assignedBadge: {
-    fontSize: 11, color: colors.primary, backgroundColor: "#eff6ff",
-    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, overflow: "hidden",
-  },
-  warnBadge: {
-    fontSize: 11, color: "#92400e", backgroundColor: "#fef3c7",
-    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, overflow: "hidden",
-  },
-  empty: { textAlign: "center", marginTop: 60, color: colors.textMuted },
+  sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 12 },
+  sheetRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8 },
+  sheetRowText: { fontSize: 14, color: tokens.color.textPrimary },
 });
