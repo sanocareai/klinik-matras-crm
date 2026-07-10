@@ -23,7 +23,7 @@ services:
       # message.receipt ditambahkan (Task 2b) berjaga-jaga kalau GOWS pakai
       # nama event berbeda dari message.ack untuk sinkronisasi status baca
       # multi-device (baca di HP) — webhooks.js sudah handle kedua nama event.
-      WHATSAPP_HOOK_EVENTS: message,session.status,message.ack,message.receipt
+      WHATSAPP_HOOK_EVENTS: message,session.status,message.ack
       WAHA_DASHBOARD_USERNAME: admin
       WAHA_DASHBOARD_PASSWORD: klinikmatras123
       WHATSAPP_SWAGGER_USERNAME: admin
