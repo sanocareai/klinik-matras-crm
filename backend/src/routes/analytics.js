@@ -76,11 +76,14 @@ analyticsRouter.get("/overview", async (req, res) => {
 
       prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhere }),
 
+      // type = 'INDIVIDUAL' — grup WA internal (Grup Sales/Driver/Produksi)
+      // BUKAN lead/customer, tidak boleh ikut hitungan traffic.
       prisma.$queryRaw`
         SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
                COUNT(*)::int as count
         FROM "Conversation"
         WHERE "createdAt" >= NOW() - INTERVAL '6 months'
+          AND "type" = 'INDIVIDUAL'
         GROUP BY 1
         ORDER BY 1
       `,
@@ -106,11 +109,12 @@ analyticsRouter.get("/overview", async (req, res) => {
         ORDER BY 1
       `,
 
-      // Channel breakdown percakapan
+      // Channel breakdown percakapan — hanya INDIVIDUAL, grup WA internal
+      // bukan lead dan selalu channel WHATSAPP juga (akan skew breakdown).
       prisma.conversation.groupBy({
         by: ["channel"],
         _count: { _all: true },
-        where: convWhere,
+        where: { ...convWhere, type: "INDIVIDUAL" },
       }),
 
       // Jumlah pelanggan yang punya minimal 1 order
@@ -166,7 +170,9 @@ analyticsRouter.get("/overview", async (req, res) => {
 analyticsRouter.get("/performance", async (req, res) => {
   try {
     const { from, to } = req.query;
-    const convWhere = buildDateWhere(from, to);
+    // type: INDIVIDUAL — grup WA internal bukan percakapan lead, tidak boleh
+    // ikut menghitung Total Percakapan/Closing Rate di Laporan.
+    const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
 
     const [totalConversations, openCount, resolvedCount] = await Promise.all([
       prisma.conversation.count({ where: convWhere }),
@@ -179,6 +185,7 @@ analyticsRouter.get("/performance", async (req, res) => {
       : 0;
 
     // Rata-rata response time: selisih pesan INBOUND pertama vs OUTBOUND pertama per conv
+    // (JOIN ke Conversation supaya grup WA internal tidak ikut terhitung)
     let avgResponseMinutes = null;
     try {
       const result = await prisma.$queryRaw`
@@ -193,7 +200,8 @@ analyticsRouter.get("/performance", async (req, res) => {
           FROM "Message" WHERE direction = 'OUTBOUND'
           GROUP BY "conversationId"
         ) o ON i."conversationId" = o."conversationId"
-        WHERE o."createdAt" > i."createdAt"
+        JOIN "Conversation" c ON c.id = i."conversationId"
+        WHERE o."createdAt" > i."createdAt" AND c."type" = 'INDIVIDUAL'
       `;
       avgResponseMinutes = result[0]?.avg_minutes
         ? Math.round(Number(result[0].avg_minutes))
@@ -210,7 +218,9 @@ analyticsRouter.get("/performance", async (req, res) => {
 analyticsRouter.get("/cs-performance", async (req, res) => {
   try {
     const { from, to } = req.query;
-    const convWhere = buildDateWhere(from, to);
+    // type: INDIVIDUAL — grup WA internal (kalau pernah ke-assign lewat
+    // takeover) tidak boleh ikut menghitung performa CS per sales.
+    const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
 
     const users = await prisma.user.findMany({ where: { role: { not: "ADMIN" } } });
 
@@ -238,14 +248,14 @@ analyticsRouter.get("/cs-performance", async (req, res) => {
               SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
               FROM "Message" m
               JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id}
+              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
               GROUP BY m."conversationId"
             ) i
             JOIN (
               SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
               FROM "Message" m
               JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id}
+              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
               GROUP BY m."conversationId"
             ) o ON i."conversationId" = o."conversationId"
             WHERE o."createdAt" > i."createdAt"
