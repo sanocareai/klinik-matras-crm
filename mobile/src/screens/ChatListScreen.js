@@ -1,16 +1,20 @@
 // Daftar percakapan (gaya layar utama WhatsApp) + tab filter status + search.
-// Polling 5 detik — sama dengan Inbox versi web.
+// Polling 5 detik (fallback) + Socket.IO real-time — data sumber kebenaran
+// sekarang conversationStore (bukan state lokal), FlashList gantikan FlatList
+// supaya scroll tetap 60fps walau daftar percakapan banyak.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
+  View, Text, TouchableOpacity, StyleSheet, TextInput,
   RefreshControl, Alert, ActivityIndicator, ScrollView,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api";
 import { colors } from "../theme";
 import { timeAgo } from "../utils/format";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
+import { useConversationStore, useOrderedIds } from "../store/conversationStore";
 
 // key "MINE" filter berdasarkan assignedToId (user login), sisanya berdasarkan status.
 // countKey menunjuk field yang cocok di response GET /conversations/counts.
@@ -45,7 +49,11 @@ function lastPreview(conv) {
 
 export default function ChatListScreen({ navigation }) {
   const { user, logout } = useAuth();
-  const [conversations, setConversations] = useState([]);
+  // Sumber data daftar percakapan: conversationStore (Zustand), diisi dari
+  // fetch di bawah + di-update real-time lewat socket (lihat useSocketEvents).
+  const orderedIds = useOrderedIds();
+  const conversationsById = useConversationStore((s) => s.conversationsById);
+  const conversations = orderedIds.map((id) => conversationsById[id]).filter(Boolean);
   const [counts, setCounts] = useState({});
   // Tab tidak di-persist ke storage (sengaja) — reset ke "Semua" tiap app dibuka lagi
   const [tab, setTab] = useState("");
@@ -63,7 +71,7 @@ export default function ChatListScreen({ navigation }) {
         ? { assignedToId: user?.id }
         : { status: tab || undefined };
       const data = await api.getConversations(params);
-      setConversations(data);
+      useConversationStore.getState().setConversationList(data);
     } catch (err) {
       // Saat polling diam-diam, jangan spam alert kalau koneksi putus sebentar
       if (!silent) Alert.alert("Gagal memuat", err.message);
@@ -211,10 +219,11 @@ export default function ChatListScreen({ navigation }) {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.header} size="large" />
       ) : (
-        <FlatList
+        <FlashList
           data={filtered}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          estimatedItemSize={78}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

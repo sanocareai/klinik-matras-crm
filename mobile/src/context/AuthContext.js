@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, configureApi, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
+import { refreshSocketAuth, disconnectSocket } from "../lib/socket";
 
 const AuthContext = createContext(null);
 
@@ -31,6 +32,7 @@ export function AuthProvider({ children }) {
         if (savedToken && savedUser) {
           setUser(JSON.parse(savedUser));
           registerForPush(); // refresh token push tiap app dibuka (fire-and-forget)
+          refreshSocketAuth(); // sambungkan socket pakai token yang baru dipulihkan
         }
       } finally {
         setLoading(false);
@@ -51,12 +53,14 @@ export function AuthProvider({ children }) {
     setServer(srv);
     setUser(res.user);
     registerForPush(); // daftarkan device untuk notifikasi pesan masuk
+    refreshSocketAuth(); // sambungkan socket pakai token yang baru login
   }
 
   async function logout() {
     await unregisterPush(); // hapus token dulu selagi masih terautentikasi
     await AsyncStorage.multiRemove(["token", "user"]);
     configureApi({ jwt: null });
+    disconnectSocket();
     setUser(null);
   }
 

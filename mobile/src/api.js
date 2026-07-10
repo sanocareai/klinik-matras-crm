@@ -22,6 +22,12 @@ export function getServerUrl() {
   return serverUrl;
 }
 
+// Dipakai src/lib/socket.js untuk auth handshake Socket.IO (butuh token JWT
+// yang sama persis dengan yang dipakai request REST di atas).
+export function getToken() {
+  return token;
+}
+
 // mediaUrl dari backend berbentuk relatif ("/uploads/xxx") — jadikan absolut
 export function mediaUrl(pathOrUrl) {
   if (!pathOrUrl) return null;

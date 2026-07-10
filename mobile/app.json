@@ -33,7 +33,8 @@
           "photosPermission": "Aplikasi butuh akses galeri untuk kirim foto ke pelanggan",
           "cameraPermission": "Aplikasi butuh akses kamera untuk kirim foto ke pelanggan"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

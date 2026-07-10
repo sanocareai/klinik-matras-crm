@@ -1,12 +1,15 @@
 // Layar chat — bubble gaya WhatsApp, kirim teks/media, template balasan cepat,
-// ubah status percakapan, dan Ambil Alih. Polling 5 detik.
+// ubah status percakapan, dan Ambil Alih. Polling 5 detik (fallback) +
+// Socket.IO real-time. Pesan bersumber dari messageStore (bukan state lokal),
+// kirim teks optimistic + antre ke outbox kalau gagal/offline.
 // Grup: tampilkan senderName per pesan, input dinonaktifkan (backend menolak
 // balas ke grup dari CRM).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
   KeyboardAvoidingView, Platform, Image, Alert, ActivityIndicator, Modal,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { api, mediaUrl } from "../api";
@@ -14,6 +17,10 @@ import { colors } from "../theme";
 import { clockTime, dayLabel } from "../utils/format";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
+import { useConversationStore } from "../store/conversationStore";
+import { useMessageStore, useMessagesForConv } from "../store/messageStore";
+import { useComposerStore, useDraft } from "../store/composerStore";
+import { useOutboxStore } from "../store/outboxStore";
 
 const POLL_MS = 5000;
 
@@ -32,8 +39,9 @@ function fileNameFromUri(uri, fallbackExt) {
 export default function ChatScreen({ route, navigation }) {
   const { conversationId, name, isGroup, customerId } = route.params;
   const { user } = useAuth();
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
+  const messages = useMessagesForConv(conversationId);
+  const draft = useDraft(conversationId);
+  const [text, setText] = useState(draft);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -47,7 +55,7 @@ export default function ChatScreen({ route, navigation }) {
   const load = useCallback(async (silent = false) => {
     try {
       const data = await api.getMessages(conversationId);
-      setMessages(data);
+      useMessageStore.getState().setMessages(conversationId, data);
     } catch (err) {
       if (!silent) Alert.alert("Gagal memuat pesan", err.message);
     } finally {
@@ -61,13 +69,21 @@ export default function ChatScreen({ route, navigation }) {
     return () => clearInterval(pollRef.current);
   }, [load]);
 
+  // Join room socket percakapan ini selama layar dibuka — dipakai
+  // useSocketEvents (dipasang sekali di App.js) untuk scope message:new/ack.
+  useEffect(() => {
+    useConversationStore.getState().setActive(conversationId);
+    return () => useConversationStore.getState().setActive(null);
+  }, [conversationId]);
+
   // Template balasan cepat dimuat sekali (bukan tiap buka modal)
   useEffect(() => {
     if (!isGroup) api.getTemplates().then(setTemplates).catch(() => {});
   }, [isGroup]);
 
-  function appendMessage(msg) {
-    setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+  function handleChangeText(t) {
+    setText(t);
+    useComposerStore.getState().setDraft(conversationId, t);
   }
 
   async function handleSend() {
@@ -75,12 +91,26 @@ export default function ChatScreen({ route, navigation }) {
     if (!content || sending) return;
     setSending(true);
     setText("");
+    useComposerStore.getState().setDraft(conversationId, "");
+
+    // Optimistic — bubble muncul instan, diganti pesan asli setelah server jawab.
+    const tempId = `temp-${Date.now()}`;
+    useMessageStore.getState().appendMessage(conversationId, {
+      id: tempId,
+      conversationId,
+      direction: "OUTBOUND",
+      content,
+      createdAt: new Date().toISOString(),
+      status: "sending",
+    });
+
     try {
       const msg = await api.sendMessage(conversationId, content);
-      appendMessage(msg);
+      useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg);
     } catch (err) {
-      setText(content); // kembalikan teks supaya tidak hilang
-      Alert.alert("Gagal kirim", err.message);
+      // Gagal (kemungkinan besar offline di lapangan) — antre, dicoba otomatis
+      // lagi begitu koneksi kembali (lihat src/lib/outboxFlush.js).
+      useOutboxStore.getState().enqueue({ convId: conversationId, tempId, payload: { content } });
     } finally {
       setSending(false);
     }
@@ -91,8 +121,8 @@ export default function ChatScreen({ route, navigation }) {
     setUploading(true);
     try {
       const msg = await api.sendMedia(conversationId, file, text.trim());
-      setText(""); // teks di input terpakai sebagai caption
-      appendMessage(msg);
+      handleChangeText(""); // teks di input terpakai sebagai caption
+      useMessageStore.getState().appendMessage(conversationId, msg);
     } catch (err) {
       Alert.alert("Gagal kirim media", err.message);
     } finally {
@@ -249,12 +279,15 @@ export default function ChatScreen({ route, navigation }) {
       {loading ? (
         <ActivityIndicator style={{ flex: 1 }} color={colors.header} size="large" />
       ) : (
-        <FlatList
+        <FlashList
           ref={listRef}
           style={styles.list}
           data={items}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          getItemType={(item) => (item._type === "day" ? "day" : "message")}
+          estimatedItemSize={60}
+          onLoad={() => listRef.current?.scrollToEnd({ animated: false })}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           ListEmptyComponent={<Text style={styles.empty}>Belum ada pesan</Text>}
         />
@@ -287,7 +320,7 @@ export default function ChatScreen({ route, navigation }) {
             placeholder="Ketik pesan…"
             placeholderTextColor={colors.textMuted}
             value={text}
-            onChangeText={setText}
+            onChangeText={handleChangeText}
             multiline
           />
           <TouchableOpacity
@@ -344,7 +377,7 @@ export default function ChatScreen({ route, navigation }) {
               renderItem={({ item: t }) => (
                 <TouchableOpacity
                   style={styles.sheetItem}
-                  onPress={() => { setText(t.isi); setShowTemplates(false); }}
+                  onPress={() => { handleChangeText(t.isi); setShowTemplates(false); }}
                 >
                   <Text style={styles.templateName}>{t.nama}</Text>
                   <Text style={styles.templatePreview} numberOfLines={2}>{t.isi}</Text>
