@@ -78,3 +78,17 @@ export const useConversation = (id) => useConversationStore((s) => (id ? s.conve
 export const useOrderedIds   = () => useConversationStore((s) => s.conversationOrder);
 export const useFilter       = () => useConversationStore((s) => s.filter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
+
+// Total unread lintas semua percakapan — dipakai untuk title tab browser
+// "(N) Inbox — Klinik Matras" (Fase G). unreadCount belum selalu diisi
+// backend lama, fallback ke 1 kalau cuma tahu unread=true (sama seperti
+// pola ConversationItem.jsx).
+export const useTotalUnreadCount = () => useConversationStore((s) => {
+  let total = 0;
+  for (const id of s.conversationOrder) {
+    const c = s.conversationsById[id];
+    if (!c) continue;
+    total += c.unreadCount ?? (c.unread ? 1 : 0);
+  }
+  return total;
+});

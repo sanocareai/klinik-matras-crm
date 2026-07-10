@@ -197,9 +197,6 @@ export const api = {
     request(`/tracking/links/${id}`, { method: "DELETE" }),
   getTrackingLinkStats: (id) => request(`/tracking/links/${id}/stats`),
 
-  // Dashboard
-  getRecentConversations: () => request("/dashboard/recent-conversations"),
-
   // Users
   getUsers: () => request("/users"),
   getMe: () => request("/users/me"),

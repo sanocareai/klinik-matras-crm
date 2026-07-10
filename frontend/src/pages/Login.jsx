@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { BedDouble } from "lucide-react";
 import { api } from "../api.js";
+import { refreshSocketAuth } from "../lib/socket.js";
 
 export default function Login({ onLogin }) {
   const [email, setEmail]       = useState("");
@@ -15,6 +16,7 @@ export default function Login({ onLogin }) {
     try {
       const { token, user } = await api.login(email, password);
       localStorage.setItem("token", token);
+      refreshSocketAuth();
       onLogin(user);
     } catch (err) {
       setError(err.message);

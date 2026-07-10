@@ -1,22 +1,40 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
 import CoPilotFloat from "./components/CoPilotFloat.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import Inbox from "./pages/Inbox.jsx";
-import Customers from "./pages/Customers.jsx";
-import Pipeline from "./pages/Pipeline.jsx";
-import Broadcast from "./pages/Broadcast.jsx";
-import Automation from "./pages/Automation.jsx";
-import Laporan from "./pages/Laporan.jsx";
-import Pengaturan from "./pages/Pengaturan.jsx";
-import Pengguna from "./pages/Pengguna.jsx";
-import Products from "./pages/Products.jsx";
-import TrackingLinks from "./pages/TrackingLinks.jsx";
-import CoPilot from "./pages/CoPilot.jsx";
+import { disconnectSocket } from "./lib/socket.js";
+
+// Fase G — code splitting: tiap halaman jadi chunk terpisah, cuma di-load
+// saat route-nya benar-benar dibuka (bukan semua halaman ikut initial bundle
+// login/Dashboard). Ini leverage terbesar untuk turunkan ukuran bundle awal —
+// CRM ini punya 12 halaman fitur penuh (termasuk chart library recharts/
+// framer-motion di Dashboard, react-virtuoso/emoji-mart/lightbox di Inbox),
+// tidak mungkin semua "gratis" masuk initial load kalau mau di bawah 350KB gzip.
+const Dashboard     = lazy(() => import("./pages/Dashboard.jsx"));
+const Inbox         = lazy(() => import("./pages/Inbox.jsx"));
+const Customers     = lazy(() => import("./pages/Customers.jsx"));
+const Pipeline      = lazy(() => import("./pages/Pipeline.jsx"));
+const Broadcast     = lazy(() => import("./pages/Broadcast.jsx"));
+const Automation    = lazy(() => import("./pages/Automation.jsx"));
+const Laporan       = lazy(() => import("./pages/Laporan.jsx"));
+const Pengaturan    = lazy(() => import("./pages/Pengaturan.jsx"));
+const Pengguna      = lazy(() => import("./pages/Pengguna.jsx"));
+const Products      = lazy(() => import("./pages/Products.jsx"));
+const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
+const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
+
+// Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
+// pola skeleton yang sudah dipakai di seluruh app.
+function RouteFallback() {
+  return (
+    <div className="page-loading">
+      <div className="skeleton skeleton-card" style={{ maxWidth: 400, margin: "0 auto" }} />
+    </div>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -34,6 +52,7 @@ export default function App() {
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    disconnectSocket();
     setUser(null);
     setSessionExpired(false);
   }
@@ -100,22 +119,24 @@ export default function App() {
       <UpdateBanner />
       <CoPilotFloat />
       <Layout user={user} onLogout={handleLogout}>
-        <Routes>
-          <Route path="/"            element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"   element={<Dashboard user={user} />} />
-          <Route path="/inbox"       element={<Inbox user={user} />} />
-          <Route path="/customers"   element={<Customers />} />
-          <Route path="/pipeline"    element={<Pipeline />} />
-          <Route path="/broadcast"   element={<Broadcast />} />
-          <Route path="/automation"  element={<Automation />} />
-          <Route path="/laporan"     element={<Laporan />} />
-          <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
-          <Route path="/pengguna"    element={<Pengguna user={user} />} />
-          <Route path="/products"    element={<Products />} />
-          <Route path="/tracking"    element={<TrackingLinks />} />
-          <Route path="/copilot"     element={<CoPilot />} />
-          <Route path="*"            element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/"            element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard"   element={<Dashboard user={user} />} />
+            <Route path="/inbox"       element={<Inbox user={user} />} />
+            <Route path="/customers"   element={<Customers />} />
+            <Route path="/pipeline"    element={<Pipeline />} />
+            <Route path="/broadcast"   element={<Broadcast />} />
+            <Route path="/automation"  element={<Automation />} />
+            <Route path="/laporan"     element={<Laporan />} />
+            <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
+            <Route path="/pengguna"    element={<Pengguna user={user} />} />
+            <Route path="/products"    element={<Products />} />
+            <Route path="/tracking"    element={<TrackingLinks />} />
+            <Route path="/copilot"     element={<CoPilot />} />
+            <Route path="*"            element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </BrowserRouter>
   );

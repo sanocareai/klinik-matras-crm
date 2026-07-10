@@ -1,15 +1,26 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
-import Lightbox from "yet-another-react-lightbox";
-import "yet-another-react-lightbox/styles.css";
 import { X } from "lucide-react";
+import "yet-another-react-lightbox/styles.css";
+
+// Fase G: lightbox cuma di-load saat foto pertama kali diklik, bukan ikut
+// initial bundle chat (dipakai jarang dibanding teks/media dasar lainnya).
+const Lightbox = lazy(() => import("yet-another-react-lightbox"));
 import dayjs from "dayjs";
 import MessageBubble from "./MessageBubble.jsx";
+import { MessageListSkeleton } from "../Skeletons.jsx";
 import { useMessagesForConv } from "../../stores/messageStore.js";
 import { dateDividerLabel } from "../../utils/formatTime.js";
 
 const START_INDEX = 1_000_000;
 const PAGE_SIZE = 50;
+
+// Fase G: posisi scroll per percakapan — Virtuoso di-key={conversationId}
+// (full remount tiap ganti chat), jadi state internalnya tidak otomatis
+// bertahan. Simpan snapshot resmi Virtuoso (getState/restoreStateFrom,
+// lihat dok react-virtuoso) di Map level modul supaya "buka chat lain lalu
+// balik lagi" mengembalikan posisi scroll, bukan selalu lompat ke bawah.
+const scrollStateByConvId = new Map();
 
 // Susun array flat [divider, message, message, divider, message, ...] dari
 // window pesan yang sedang ditampilkan.
@@ -42,7 +53,7 @@ function buildItems(messages) {
 // pergantian hari meski tidak menempel di atas saat scroll. Kandidat
 // perbaikan di fase berikutnya kalau perlu betul-betul sticky.
 const MessageList = forwardRef(function MessageList(
-  { conversation, onReply, onForward, onRetry },
+  { conversation, onReply, onForward, onRetry, loading },
   ref,
 ) {
   const conversationId = conversation?.id;
@@ -143,7 +154,9 @@ const MessageList = forwardRef(function MessageList(
 
   return (
     <div className="message-list-wrap">
-      {items.length === 0 ? (
+      {items.length === 0 && loading ? (
+        <MessageListSkeleton />
+      ) : items.length === 0 ? (
         <div className="message-list-empty">Belum ada pesan di percakapan ini.</div>
       ) : (
         <Virtuoso
@@ -152,7 +165,14 @@ const MessageList = forwardRef(function MessageList(
           className="message-virtuoso"
           data={items}
           firstItemIndex={firstItemIndex}
-          initialTopMostItemIndex={items.length - 1}
+          {...(scrollStateByConvId.has(conversationId)
+            ? { restoreStateFrom: scrollStateByConvId.get(conversationId) }
+            : { initialTopMostItemIndex: items.length - 1 })}
+          rangeChanged={() => {
+            virtuosoRef.current?.getState((state) => {
+              scrollStateByConvId.set(conversationId, state);
+            });
+          }}
           startReached={handleStartReached}
           followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
           computeItemKey={(_, item) => item.key}
@@ -181,12 +201,16 @@ const MessageList = forwardRef(function MessageList(
         />
       )}
 
-      {/* Lightbox foto */}
-      <Lightbox
-        open={lightbox?.type === "image"}
-        close={() => setLightbox(null)}
-        slides={lightbox?.type === "image" ? [{ src: lightbox.url }] : []}
-      />
+      {/* Lightbox foto — mount (dan download chunk-nya) cuma saat benar-benar dibuka */}
+      {lightbox?.type === "image" && (
+        <Suspense fallback={null}>
+          <Lightbox
+            open
+            close={() => setLightbox(null)}
+            slides={[{ src: lightbox.url }]}
+          />
+        </Suspense>
+      )}
 
       {/* Video fullscreen — dipakai class media-viewer yang sama dengan galeri Customer Panel */}
       {lightbox?.type === "video" && (

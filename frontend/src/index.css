@@ -354,6 +354,8 @@ input:focus, select:focus, textarea:focus {
   display: grid;
   grid-template-columns: 320px 1fr 340px;
   overflow: hidden;
+  position: relative;
+  transition: grid-template-columns 0.2s ease;
 }
 .inbox-body.panel-collapsed {
   grid-template-columns: 320px 1fr 0px;
@@ -1414,7 +1416,7 @@ input:focus, select:focus, textarea:focus {
   width: 34px; height: 34px; border-radius: 50%; border: none;
   background: transparent; color: var(--text-muted);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; flex-shrink: 0; transition: background 0.12s, color 0.12s;
+  cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease;
 }
 .chat-action-btn:hover  { background: #f1f5f9; color: var(--color-primary); }
 .chat-action-btn.active { background: #eff6ff; color: var(--color-primary); }
@@ -2973,5 +2975,45 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 640px) {
   .dash-metric-grid { grid-template-columns: 1fr; }
   .dash-page { padding: 16px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FASE G — polish & performance
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Error boundary per kolom Inbox */
+.column-error-boundary {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; height: 100%; padding: 32px 20px; text-align: center;
+  background: var(--bg-card);
+}
+.column-error-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); margin: 0; }
+.column-error-sub { font-size: 12.5px; color: var(--text-muted); margin: 0; }
+
+/* Offline / reconnecting banner */
+.offline-banner {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 7px 12px; font-size: 12.5px; font-weight: 500;
+  background: #FFFBEB; color: #92400E; border-bottom: 1px solid #FDE68A;
+  animation: fadeIn 0.2s ease;
+}
+.offline-banner-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #D97706;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+/* Focus states — keyboard accessible di seluruh Inbox */
+.conversation-item:focus-visible,
+.chat-action-btn:focus-visible,
+.conv-tab:focus-visible,
+.media-gallery-item:focus-visible,
+.stage-btn:focus-visible,
+.inbox-body button:focus-visible,
+.inbox-body a:focus-visible,
+.inbox-body input:focus-visible,
+.inbox-body textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 

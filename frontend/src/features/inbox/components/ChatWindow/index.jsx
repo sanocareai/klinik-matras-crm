@@ -99,7 +99,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const conversationId = conversation?.id;
 
   // Fetch + realtime + windowing pesan (lihat useMessages.js)
-  useMessages(conversationId);
+  const { isLoading: messagesLoading } = useMessages(conversationId);
   // Instance terpisah dari yang dipakai Composer — sama-sama menulis ke
   // messageStore/backend yang sama, aman dipanggil dari 2 tempat berbeda
   // (dipakai khusus untuk tombol "Coba lagi" di bubble gagal kirim).
@@ -305,6 +305,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       <MessageList
         ref={messageListRef}
         conversation={conversation}
+        loading={messagesLoading}
         onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
         onRetry={handleRetry}

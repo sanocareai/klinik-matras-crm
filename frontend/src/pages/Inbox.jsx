@@ -5,8 +5,10 @@ import { useSSE } from "../hooks/useSSE.js";
 import ConversationList from "../features/inbox/components/ConversationList/index.jsx";
 import ChatWindow from "../features/inbox/components/ChatWindow/index.jsx";
 import CustomerPanel from "../features/inbox/components/CustomerPanel/index.jsx";
+import ColumnErrorBoundary from "../features/inbox/components/ColumnErrorBoundary.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
-import { useActiveId, useConversation, useConversationStore } from "../features/inbox/stores/conversationStore.js";
+import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
+import { useActiveId, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
 // conversationStore (Zustand).
@@ -28,6 +30,8 @@ export default function Inbox({ user }) {
 
   const activeId = useActiveId();
   const active   = useConversation(activeId);
+  const socketConnected = useSocketStatus();
+  const totalUnread = useTotalUnreadCount();
 
   function setPanelCollapsed(value) {
     setPanelCollapsedState((prev) => {
@@ -70,18 +74,38 @@ export default function Inbox({ user }) {
     if (activeId) setMobileView("chat");
   }, [activeId]);
 
+  // Judul tab browser mencerminkan total unread — supaya kelihatan dari
+  // tab lain tanpa perlu buka CRM. Dikembalikan ke judul default saat
+  // Inbox di-unmount (pindah halaman).
+  useEffect(() => {
+    const base = "Inbox — Klinik Matras";
+    document.title = totalUnread > 0 ? `(${totalUnread > 99 ? "99+" : totalUnread}) ${base}` : base;
+    return () => { document.title = base; };
+  }, [totalUnread]);
+
   return (
     <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}${panelCollapsed ? " panel-collapsed" : ""}`}>
-      <ConversationList userId={user?.id} />
-      <ChatWindow
-        conversation={active}
-        user={user}
-        onBack={() => setMobileView("list")}
-        panelCollapsed={panelCollapsed}
-        onTogglePanel={() => setPanelCollapsed((v) => !v)}
-      />
+      {!socketConnected && (
+        <div className="offline-banner">
+          <span className="offline-banner-dot" /> Menyambung ulang...
+        </div>
+      )}
+      <ColumnErrorBoundary label="Daftar Percakapan">
+        <ConversationList userId={user?.id} />
+      </ColumnErrorBoundary>
+      <ColumnErrorBoundary label="Chat">
+        <ChatWindow
+          conversation={active}
+          user={user}
+          onBack={() => setMobileView("list")}
+          panelCollapsed={panelCollapsed}
+          onTogglePanel={() => setPanelCollapsed((v) => !v)}
+        />
+      </ColumnErrorBoundary>
       {!panelCollapsed && (
-        <CustomerPanel conversation={active} onClose={() => setPanelCollapsed(true)} />
+        <ColumnErrorBoundary label="Panel Pelanggan">
+          <CustomerPanel conversation={active} onClose={() => setPanelCollapsed(true)} />
+        </ColumnErrorBoundary>
       )}
     </div>
   );

@@ -59,4 +59,22 @@ export default defineConfig({
       "/media":   "http://localhost:4000", // foto produk
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Fase G — pisahkan vendor besar ke chunk sendiri: browser cache
+        // chunk ini terpisah dari kode app (jarang berubah antar deploy),
+        // dan halaman yang tidak butuh vendor tertentu (mis. bukan Inbox)
+        // tidak perlu menariknya sama sekali kalau sudah lazy di level rute.
+        manualChunks: {
+          "vendor-react":   ["react", "react-dom", "react-router-dom"],
+          "vendor-virtuoso": ["react-virtuoso"],
+          "vendor-query":   ["@tanstack/react-query"],
+          "vendor-charts":  ["recharts"],
+          "vendor-motion":  ["framer-motion"],
+          "vendor-socket":  ["socket.io-client"],
+        },
+      },
+    },
+  },
 });

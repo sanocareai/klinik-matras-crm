@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Video, X } from "lucide-react";
-import Lightbox from "yet-another-react-lightbox";
 import "yet-another-react-lightbox/styles.css";
 import { useMessagesForConv } from "../../stores/messageStore.js";
+
+// Fase G: lightbox cuma di-load saat foto pertama kali diklik.
+const Lightbox = lazy(() => import("yet-another-react-lightbox"));
 
 const PAGE = 30;
 
@@ -85,7 +87,11 @@ export default function MediaGallery({ conversationId }) {
 
       {visibleCount < items.length && <div ref={sentinelRef} style={{ height: 1 }} />}
 
-      <Lightbox open={lightboxIndex !== null} index={lightboxIndex ?? 0} close={() => setLightboxIndex(null)} slides={imageSlides} />
+      {lightboxIndex !== null && (
+        <Suspense fallback={null}>
+          <Lightbox open index={lightboxIndex} close={() => setLightboxIndex(null)} slides={imageSlides} />
+        </Suspense>
+      )}
 
       {videoUrl && (
         <div className="media-viewer-overlay" onClick={() => setVideoUrl(null)}>

@@ -3,6 +3,7 @@ import { Virtuoso } from "react-virtuoso";
 import FilterTabs from "./FilterTabs.jsx";
 import SearchBar from "./SearchBar.jsx";
 import ConversationItem from "./ConversationItem.jsx";
+import { ConversationListSkeleton } from "../Skeletons.jsx";
 import { useConversations } from "../../hooks/useConversations.js";
 import {
   useOrderedIds, useFilter, useConvSearchQuery, useConversationStore,
@@ -51,7 +52,7 @@ export default function ConversationList({ userId }) {
       <FilterTabs />
       <div className="conv-virtuoso-wrap">
         {isLoading && visibleIds.length === 0 && (
-          <p className="empty">Memuat percakapan...</p>
+          <ConversationListSkeleton count={8} />
         )}
         {!isLoading && visibleIds.length === 0 && (
           <p className="empty">Belum ada percakapan</p>

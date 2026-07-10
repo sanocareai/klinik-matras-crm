@@ -1,12 +1,25 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Send, MessageSquare, X, Smile } from "lucide-react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Send, MessageSquare, X, Smile, Paperclip, Mic } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
-import MediaUploader from "./MediaUploader.jsx";
-import VoiceRecorder from "./VoiceRecorder.jsx";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useDraft, useReplyTarget, useComposerStore } from "../../stores/composerStore.js";
+
+// Fase G: MediaUploader & VoiceRecorder jadi chunk terpisah, di-load begitu
+// ChatWindow pertama kali dibuka — bukan ikut initial bundle app/login/Dashboard.
+const MediaUploader = lazy(() => import("./MediaUploader.jsx"));
+const VoiceRecorder  = lazy(() => import("./VoiceRecorder.jsx"));
+
+// Fallback tombol saat chunk MediaUploader/VoiceRecorder masih di-download —
+// tampil disabled sebentar, bukan area kosong (hindari layout shift).
+function ActionBtnFallback({ icon: Icon }) {
+  return (
+    <button type="button" className="chat-action-btn" disabled>
+      <Icon size={15} />
+    </button>
+  );
+}
 
 const MAX_ROWS = 5;
 
@@ -234,7 +247,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           <MessageSquare size={15} />
         </button>
 
-        <MediaUploader ref={mediaUploaderRef} conversationId={conversationId} onOpenProduct={() => setShowProductPicker(true)} />
+        <Suspense fallback={<ActionBtnFallback icon={Paperclip} />}>
+          <MediaUploader ref={mediaUploaderRef} conversationId={conversationId} onOpenProduct={() => setShowProductPicker(true)} />
+        </Suspense>
 
         <div style={{ position: "relative" }}>
           <button type="button" onClick={() => setShowEmoji((v) => !v)} className={`chat-action-btn ${showEmoji ? "active" : ""}`} title="Emoji">
@@ -254,7 +269,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           onPaste={handlePaste}
         />
 
-        <VoiceRecorder conversationId={conversationId} />
+        <Suspense fallback={<ActionBtnFallback icon={Mic} />}>
+          <VoiceRecorder conversationId={conversationId} />
+        </Suspense>
 
         <button type="submit" className="chat-send-btn" disabled={!draft.trim()}><Send size={16} /></button>
       </form>

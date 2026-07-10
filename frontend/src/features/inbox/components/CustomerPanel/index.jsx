@@ -9,6 +9,7 @@ import OrdersSection from "./OrdersSection.jsx";
 import MediaGallery from "./MediaGallery.jsx";
 import NotesSection from "./NotesSection.jsx";
 import GroupPanel from "./GroupPanel.jsx";
+import { CustomerPanelSkeleton } from "../Skeletons.jsx";
 
 // Panel kanan Inbox (Fase E). type=GROUP → GroupPanel (tanpa pipeline/order/
 // dll), INDIVIDUAL → profil customer lengkap. Collapsible via onClose (state
@@ -57,10 +58,8 @@ export default function CustomerPanel({ conversation, onClose }) {
 
   if (!customer) {
     return (
-      <div className="customer-panel" style={{ padding: 20 }}>
-        <div className="skeleton" style={{ height: 60, borderRadius: 10, marginBottom: 12 }} />
-        <div className="skeleton skeleton-text" style={{ width: "80%" }} />
-        <div className="skeleton skeleton-text" style={{ width: "60%" }} />
+      <div className="customer-panel">
+        <CustomerPanelSkeleton />
       </div>
     );
   }
