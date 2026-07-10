@@ -6,9 +6,10 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
-import { sendText, sendMedia, markChatAsRead } from "../services/wahaClient.js";
+import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { sendText, sendMedia, markChatAsRead, fetchChatHistory } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
+import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 
 // Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
@@ -711,4 +712,63 @@ conversationRouter.patch("/:id/session", async (req, res) => {
   });
   emitConversationUpdate(conversation);
   res.json(conversation);
+});
+
+// Sync riwayat 1 percakapan saja dari WAHA — dipakai tombol "Sinkronisasi
+// Riwayat" di header chat (admin only), utk recovery kasus per-kasus tanpa
+// perlu sync SEMUA customer (POST /settings/sync-history, bisa lama & berat
+// kalau chat yang bermasalah cuma 1-2). Paginasi penuh + parsing semua tipe
+// pesan sama seperti sync massal — lihat utils/parseHistoryMessage.js.
+conversationRouter.post("/:id/sync-history", requireAdmin, async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: { select: { phone: true } } },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (conversation.type === "GROUP") {
+    return res.status(400).json({ error: "Sinkronisasi riwayat belum didukung untuk grup" });
+  }
+  if (!conversation.customer?.phone) {
+    return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+  }
+
+  let newMessages = 0, unsupportedMessages = 0;
+  try {
+    const messages = await fetchChatHistory(conversation.customer.phone, conversation.sessionId || undefined, { maxMessages: 1000 });
+
+    for (const msg of messages) {
+      const parsed = parseHistoryMessage(msg);
+      if (!parsed.externalId) continue;
+
+      const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });
+      if (exists) continue;
+
+      if (parsed.unsupported) {
+        unsupportedMessages++;
+        console.warn("[sync-history:1] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
+      }
+
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction:      parsed.direction,
+          content:        parsed.content,
+          mediaType:      parsed.mediaType,
+          mediaUrl:       parsed.mediaUrl,
+          externalId:     parsed.externalId,
+          createdAt:      parsed.createdAt,
+        },
+      });
+      newMessages++;
+    }
+
+    res.json({
+      ok: true,
+      messagesFound: messages.length,
+      newMessages,
+      unsupportedMessages,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Gagal sync riwayat: ${err.message}` });
+  }
 });

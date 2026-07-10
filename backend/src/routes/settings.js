@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { prisma } from "../db.js";
 import { getSessionStatus, fetchChatHistory } from "../services/wahaClient.js";
+import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, "../../data/settings.json");
@@ -90,27 +91,31 @@ settingsRouter.put("/sales-targets", requireAdmin, async (req, res) => {
 // POST /api/settings/sync-history — pull riwayat chat dari WAHA ke CRM (admin only)
 // Body (opsional): { phone: "628xxx" } → sync 1 customer; kosong → sync semua customer ber-phone
 // Idempotent: pesan yang sudah ada di DB di-skip via externalId @unique
+// Paginasi penuh + parsing semua tipe pesan lewat parseHistoryMessage — lihat
+// backend/src/utils/parseHistoryMessage.js untuk detail (fix bubble kosong).
 settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
   const { phone } = req.body || {};
-  let total = 0, synced = 0, errors = 0;
+  let chatsProcessed = 0, newMessages = 0, failedChats = 0, unsupportedMessages = 0;
 
   try {
     const customers = await prisma.customer.findMany({
       where: phone ? { phone } : { phone: { not: null } },
       select: { id: true, phone: true },
     });
-    total = customers.length;
 
     for (const customer of customers) {
       try {
-        const messages = await fetchChatHistory(customer.phone, 200);
-        if (!messages.length) continue;
-
-        // Cari conversation WA yang ada, atau buat baru (status RESOLVED karena ini history)
+        // Cari conversation WA yang ada (dan sessionId-nya kalau ada), atau
+        // buat baru (status RESOLVED karena ini history, bukan chat aktif).
         let convo = await prisma.conversation.findFirst({
           where: { customerId: customer.id, channel: "WHATSAPP" },
           orderBy: { createdAt: "desc" },
         });
+
+        const messages = await fetchChatHistory(customer.phone, convo?.sessionId || undefined, { maxMessages: 1000 });
+        chatsProcessed++;
+        if (!messages.length) continue;
+
         if (!convo) {
           convo = await prisma.conversation.create({
             data: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
@@ -118,31 +123,49 @@ settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
         }
 
         for (const msg of messages) {
-          const externalId = msg.id || msg.key?.id;
-          if (!externalId) continue;
+          const parsed = parseHistoryMessage(msg);
+          if (!parsed.externalId) continue;
 
           // Skip kalau sudah ada (idempotent)
-          const exists = await prisma.message.findUnique({ where: { externalId } });
+          const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });
           if (exists) continue;
 
-          const content = msg.body || msg.caption || "";
-          const direction = msg.fromMe ? "OUTBOUND" : "INBOUND";
-          // Timestamp WAHA: epoch seconds di msg.timestamp atau msg._data.t
-          const ts = msg.timestamp || msg._data?.t;
-          const createdAt = ts ? new Date(ts * 1000) : new Date();
+          if (parsed.unsupported) {
+            unsupportedMessages++;
+            console.warn("[sync-history] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
+          }
 
           await prisma.message.create({
-            data: { conversationId: convo.id, direction, content, externalId, createdAt },
+            data: {
+              conversationId: convo.id,
+              direction:      parsed.direction,
+              content:        parsed.content,
+              mediaType:      parsed.mediaType,
+              mediaUrl:       parsed.mediaUrl,
+              externalId:     parsed.externalId,
+              createdAt:      parsed.createdAt,
+            },
           });
-          synced++;
+          newMessages++;
         }
       } catch (e) {
         console.error("[sync-history] Error untuk customer", customer.phone, e.message);
-        errors++;
+        failedChats++;
       }
     }
 
-    res.json({ ok: true, total, synced, errors });
+    // Ringkasan jujur (Task 5) — bukan cuma "0 pesan baru" tanpa konteks.
+    res.json({
+      ok: true,
+      chatsProcessed,
+      newMessages,
+      failedChats,
+      unsupportedMessages,
+      // Field lama dipertahankan supaya konsumen existing (kalau ada) tidak patah
+      total: customers.length,
+      synced: newMessages,
+      errors: failedChats,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

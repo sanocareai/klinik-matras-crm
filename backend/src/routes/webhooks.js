@@ -8,6 +8,7 @@ import { syncReadFromWaha } from "../services/reconciliation.js";
 import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
+import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate } from "../socket.js";
 
 export const webhookRouter = express.Router();
@@ -721,28 +722,36 @@ async function autoSyncHistory() {
       distinct: ["customerId"],
     });
     console.log("[auto-sync] Mulai sync", convs.length, "percakapan...");
+    let totalNew = 0, totalFailed = 0;
     for (const conv of convs) {
       const phone = conv.customer?.phone;
       if (!phone) continue;
-      const messages = await fetchChatHistory(phone, 200);
+      // Paginasi penuh + fallback session (sessionId conversation kalau ada)
+      const messages = await fetchChatHistory(phone, conv.sessionId || undefined, { maxMessages: 1000 });
       for (const msg of messages) {
-        if (!msg.id) continue;
+        const parsed = parseHistoryMessage(msg);
+        if (!parsed.externalId) continue;
+        if (parsed.unsupported) console.warn("[auto-sync] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
         try {
           await prisma.message.create({
             data: {
               conversationId: conv.id,
-              direction:      msg.fromMe ? "OUTBOUND" : "INBOUND",
-              content:        msg.body || "",
-              externalId:     msg.id,
+              direction:      parsed.direction,
+              content:        parsed.content,
+              mediaType:      parsed.mediaType,
+              mediaUrl:       parsed.mediaUrl,
+              externalId:     parsed.externalId,
+              createdAt:      parsed.createdAt,
             },
           });
+          totalNew++;
         } catch (e) {
-          if (e.code !== "P2002") console.warn("[auto-sync] Gagal simpan pesan:", e.message);
+          if (e.code !== "P2002") { console.warn("[auto-sync] Gagal simpan pesan:", e.message); totalFailed++; }
           // P2002 = duplikat (sudah pernah disimpan), abaikan
         }
       }
     }
-    console.log("[auto-sync] Selesai.");
+    console.log(`[auto-sync] Selesai. ${convs.length} chat diproses, ${totalNew} pesan baru, ${totalFailed} gagal.`);
   } catch (e) {
     console.error("[auto-sync] Error:", e.message);
   }

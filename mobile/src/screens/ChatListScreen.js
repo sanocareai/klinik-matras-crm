@@ -55,22 +55,28 @@ export default function ChatListScreen({ navigation }) {
   const pollRef = useRef(null);
 
   const load = useCallback(async (silent = false) => {
+    // Daftar percakapan dan badge count dipisah sengaja — kalau endpoint /counts
+    // belum tersedia di server (misal server produksi belum di-deploy versi baru),
+    // daftar percakapan tetap tampil, cuma badge-nya kosong (bukan error total).
     try {
       const params = tab === "MINE"
         ? { assignedToId: user?.id }
         : { status: tab || undefined };
-      const [data, countData] = await Promise.all([
-        api.getConversations(params),
-        api.getConversationCounts(),
-      ]);
+      const data = await api.getConversations(params);
       setConversations(data);
-      setCounts(countData);
     } catch (err) {
       // Saat polling diam-diam, jangan spam alert kalau koneksi putus sebentar
       if (!silent) Alert.alert("Gagal memuat", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+
+    try {
+      const countData = await api.getConversationCounts();
+      setCounts(countData);
+    } catch {
+      // Diamkan — badge count memang fitur pelengkap, bukan syarat Inbox jalan
     }
   }, [tab, user?.id]);
 

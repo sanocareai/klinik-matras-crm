@@ -1,0 +1,6 @@
+import{c as p,g as c}from"./index-DfO6NC13.js";import{r as f,j as e}from"./vendor-query-CQwPk_Wp.js";/**
+ * @license lucide-react v1.22.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const x=[["path",{d:"M16 17h6v-6",key:"t6n2it"}],["path",{d:"m22 17-8.5-8.5-5 5L2 7",key:"x473p"}]],k=p("trending-down",x),h=[{key:"today",label:"Hari Ini"},{key:"7d",label:"7 Hari"},{key:"30d",label:"30 Hari"},{key:"3m",label:"3 Bulan"}];function l({value:t,onChange:n}){const[o,i]=f.useState(!1);function a(s){i(!1),n(c(s))}function d(){i(!0),n({from:"",to:""})}function m(s){if(o)return!1;const r=c(s);return r.from===(t==null?void 0:t.from)&&r.to===(t==null?void 0:t.to)}return e.jsxs("div",{className:"date-range-picker",children:[h.map(({key:s,label:r})=>e.jsx("button",{className:`drp-btn ${m(s)?"active":""}`,onClick:()=>a(s),children:r},s)),e.jsx("button",{className:`drp-btn ${o?"active":""}`,onClick:d,children:"Custom"}),o&&e.jsxs("div",{className:"drp-custom",children:[e.jsx("input",{type:"date",value:(t==null?void 0:t.from)||"",onChange:s=>n({...t,from:s.target.value})}),e.jsx("span",{children:"–"}),e.jsx("input",{type:"date",value:(t==null?void 0:t.to)||"",onChange:s=>n({...t,to:s.target.value})})]})]})}export{l as D,k as T};

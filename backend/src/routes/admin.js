@@ -45,8 +45,9 @@ adminRouter.get("/diagnostics/customer/:phone", async (req, res) => {
       ? await prisma.message.count({ where: { conversationId: activeConv.id } })
       : 0;
 
-    // Ambil pesan langsung dari WAHA (maks 50)
-    const wahaMessages = await fetchChatHistory(cleanPhone, 50);
+    // Ambil pesan langsung dari WAHA (maks 50) — sessionId conversation aktif
+    // kalau ada (fetchChatHistory fallback ke session lain sendiri).
+    const wahaMessages = await fetchChatHistory(cleanPhone, activeConv?.sessionId || undefined, { maxMessages: 50, pageSize: 50 });
     const wahaCount    = wahaMessages.length;
 
     // Discrepancy terbaru untuk nomor ini

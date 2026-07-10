@@ -16,6 +16,11 @@ export function getDefaultOpsSession() {
   return WAHA_SESSION;
 }
 
+// 2 session WA aktif (lihat CLAUDE.md §"Multi-session WAHA aktif") — dipakai
+// fetchChatHistory sebagai fallback kalau session yang diminta tidak punya
+// riwayat (chat mungkin sebenarnya ada di sesi lain).
+export const KNOWN_SESSIONS = ["CS-1", "CS-2"];
+
 function headers() {
   const h = { "Content-Type": "application/json" };
   if (WAHA_API_KEY) h["X-Api-Key"] = WAHA_API_KEY;
@@ -370,23 +375,64 @@ export async function getChats(limit = 20, session = WAHA_SESSION) {
   }
 }
 
-// Ambil riwayat pesan dari WAHA untuk 1 nomor (limit pesan terbaru)
-// Return: array message object, atau [] kalau gagal/tidak tersedia
-export async function fetchChatHistory(phone, limit = 50) {
-  const chatId = `${phone}@c.us`;
-  try {
-    const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}&downloadMedia=false`,
-      { headers: headers() }
-    );
-    if (!res.ok) {
-      console.warn("[fetchChatHistory] Gagal untuk", phone, "status:", res.status);
-      return [];
-    }
-    const data = await res.json();
-    return Array.isArray(data) ? data : (data.messages || []);
-  } catch (e) {
-    console.warn("[fetchChatHistory] Error untuk", phone, e.message);
-    return [];
+// Ambil SATU halaman riwayat pesan dari WAHA (internal, dipakai fetchChatHistory).
+async function fetchChatHistoryPage(chatId, session, pageSize, offset) {
+  const res = await fetch(
+    `${WAHA_BASE_URL}/api/${session}/chats/${encodeURIComponent(chatId)}/messages?limit=${pageSize}&offset=${offset}&downloadMedia=false`,
+    { headers: headers() }
+  );
+  if (!res.ok) {
+    throw new Error(`status ${res.status}`);
   }
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data.messages || []);
+}
+
+// Ambil riwayat pesan dari WAHA untuk 1 nomor — PAGINASI PENUH (bukan 1 kali
+// fetch limit tetap): fetch berulang pakai limit+offset sampai habis (halaman
+// balik lebih sedikit dari pageSize) atau maxMessages tercapai (safety cap,
+// cegah runaway loop untuk chat dengan riwayat sangat panjang). Log jumlah
+// per halaman.
+//
+// session: preferredSession opsional — kalau diisi dicoba duluan, kalau
+// hasil kosong (0 pesan di halaman pertama) fallback coba KNOWN_SESSIONS
+// lain (chat mungkin sebenarnya ada di sesi WA lain). Kalau tidak diisi,
+// coba semua KNOWN_SESSIONS berurutan.
+//
+// Return: array message object (urutan gabungan semua halaman), atau []
+// kalau gagal/tidak tersedia di session manapun.
+export async function fetchChatHistory(phone, preferredSession, opts = {}) {
+  const { maxMessages = 1000, pageSize = 100 } = opts;
+  const chatId = `${phone}@c.us`;
+  const sessionsToTry = preferredSession
+    ? [preferredSession, ...KNOWN_SESSIONS.filter((s) => s !== preferredSession)]
+    : KNOWN_SESSIONS;
+
+  for (const session of sessionsToTry) {
+    const allMessages = [];
+    let offset = 0;
+    let pageNum = 1;
+    const maxPages = Math.ceil(maxMessages / pageSize);
+
+    try {
+      while (pageNum <= maxPages) {
+        const page = await fetchChatHistoryPage(chatId, session, pageSize, offset);
+        console.log(`[fetchChatHistory] ${phone} session=${session} halaman ${pageNum}: ${page.length} pesan (offset=${offset})`);
+        if (page.length === 0) break;
+        allMessages.push(...page);
+        if (page.length < pageSize) break; // halaman terakhir — WAHA balikin lebih sedikit dari yang diminta
+        offset += pageSize;
+        pageNum++;
+      }
+    } catch (e) {
+      console.warn(`[fetchChatHistory] Gagal untuk ${phone} session=${session}:`, e.message);
+      continue; // coba session berikutnya
+    }
+
+    if (allMessages.length > 0) return allMessages;
+    // 0 pesan di session ini — coba session lain sebelum menyerah
+  }
+
+  console.warn(`[fetchChatHistory] ${phone} — tidak ada riwayat di session manapun (${sessionsToTry.join(", ")})`);
+  return [];
 }

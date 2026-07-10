@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
-  Forward, Search, PanelRightClose, PanelRightOpen,
+  Forward, Search, PanelRightClose, PanelRightOpen, Download,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
@@ -97,6 +98,7 @@ function ForwardModal({ messageToForward, onClose }) {
 // ── Main ChatWindow (Fase C + D) ────────────────────────────────────────
 export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel }) {
   const conversationId = conversation?.id;
+  const queryClient = useQueryClient();
 
   // Fetch + realtime + windowing pesan (lihat useMessages.js)
   const { isLoading: messagesLoading } = useMessages(conversationId);
@@ -112,6 +114,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [forwardMsg, setForwardMsg]     = useState(null);
   const [showCustomerDetail, setShowCustomerDetail] = useState(false); // bottom sheet mobile
   const [dragOver, setDragOver]         = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
 
   const messageListRef  = useRef(null);
   const mediaUploaderRef = useRef(null); // diisi Composer -> MediaUploader, dipakai untuk drag-drop & paste dari luar composer
@@ -171,6 +174,22 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       useConversationStore.getState().upsertConversation(updated);
     } catch (err) { alert(err.message); }
     finally { setResolving(false); }
+  }
+
+  // Sync riwayat 1 percakapan ini saja dari WAHA (admin only) — recovery
+  // kasus per-kasus (mis. bubble kosong/pesan hilang) tanpa perlu sync
+  // SEMUA customer lewat Pengaturan > Status WhatsApp.
+  async function handleSyncHistory() {
+    setSyncingHistory(true);
+    try {
+      const result = await api.syncConversationHistory(conversationId);
+      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+      alert(`Sync selesai — ${result.messagesFound} pesan ditemukan di WAHA, ${result.newMessages} pesan baru disimpan.`);
+    } catch (err) {
+      alert("Gagal sync riwayat: " + err.message);
+    } finally {
+      setSyncingHistory(false);
+    }
   }
 
   async function handleTakeover() {
@@ -255,6 +274,12 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
             <button className="chat-action-btn" onClick={onTogglePanel}
               title={panelCollapsed ? "Tampilkan panel pelanggan" : "Sembunyikan panel pelanggan"}>
               {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+            </button>
+          )}
+          {!isGroup && user?.role === "ADMIN" && (
+            <button className="chat-action-btn" onClick={handleSyncHistory} disabled={syncingHistory}
+              title={syncingHistory ? "Sedang sinkronisasi..." : "Tarik ulang riwayat chat ini dari WAHA (recovery pesan hilang/bubble kosong)"}>
+              <Download size={17} />
             </button>
           )}
           {!isGroup && !isMine && (

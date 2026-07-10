@@ -696,8 +696,10 @@ export default function Pengaturan({ user }) {
 
               {syncResult && !syncResult.error && (
                 <div className="inline-feedback inline-feedback-success" style={{ marginTop: 14 }}>
-                  <strong>{syncResult.synced} pesan baru</strong> ditemukan dari {syncResult.total} pelanggan
-                  {syncResult.errors > 0 && <> · {syncResult.errors} pelanggan gagal diproses</>}
+                  <strong>{syncResult.chatsProcessed ?? syncResult.total} chat diproses</strong>,{" "}
+                  {syncResult.newMessages ?? syncResult.synced} pesan baru
+                  {(syncResult.failedChats ?? syncResult.errors) > 0 && <> · {syncResult.failedChats ?? syncResult.errors} chat gagal (lihat log)</>}
+                  {syncResult.unsupportedMessages > 0 && <> · {syncResult.unsupportedMessages} pesan tipe tidak dikenal (lihat log)</>}
                 </div>
               )}
               {syncResult?.error && (

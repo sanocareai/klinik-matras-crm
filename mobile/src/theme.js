@@ -2,11 +2,11 @@
 // Dipusatkan di sini supaya konsisten & gampang diubah.
 export const colors = {
   // Gaya WhatsApp
-  header: "#075E54",        // hijau tua header
+  header: "#2064b7",        // hijau tua header
   headerText: "#ffffff",
-  accent: "#25D366",        // hijau tombol/FAB
+  accent: "#225594",        // hijau tombol/FAB
   chatBg: "#ECE5DD",        // latar area chat
-  bubbleOut: "#DCF8C6",     // bubble pesan keluar
+  bubbleOut: "#aed3ff",     // bubble pesan keluar
   bubbleIn: "#ffffff",      // bubble pesan masuk
   tick: "#4FC3F7",
 

@@ -137,6 +137,10 @@ export const api = {
   // belum diketahui). Dropdown CS-1/CS-2 di header chat (lihat ChatWindow).
   setConversationSession: (id, sessionId) =>
     request(`/conversations/${id}/session`, { method: "PATCH", body: JSON.stringify({ sessionId }) }),
+  // Sync riwayat 1 percakapan saja dari WAHA (admin only) — tombol kecil di
+  // header chat, recovery kasus per-kasus tanpa perlu sync semua customer.
+  syncConversationHistory: (id) =>
+    request(`/conversations/${id}/sync-history`, { method: "POST" }),
   sendMedia: (conversationId, formData) =>
     requestFormData(`/conversations/${conversationId}/media`, formData),
   takeoverConversation: (id) =>

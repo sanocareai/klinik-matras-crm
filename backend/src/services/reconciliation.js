@@ -123,7 +123,7 @@ export async function runReconciliation() {
       const conversation = await prisma.conversation.findFirst({
         where: { customerId: customer.id, channel: "WHATSAPP" },
         orderBy: { lastMessageAt: "desc" },
-        select: { id: true },
+        select: { id: true, sessionId: true },
       });
 
       // Hitung pesan di DB
@@ -131,8 +131,10 @@ export async function runReconciliation() {
         ? await prisma.message.count({ where: { conversationId: conversation.id } })
         : 0;
 
-      // Hitung pesan dari WAHA (ambil 50 saja — cukup untuk deteksi drift kasar)
-      const wahaMessages = await fetchChatHistory(phone, 50);
+      // Hitung pesan dari WAHA (ambil 50 saja — cukup untuk deteksi drift kasar).
+      // sessionId conversation dipakai kalau ada (fetchChatHistory sudah
+      // fallback ke session lain sendiri kalau kosong/salah).
+      const wahaMessages = await fetchChatHistory(phone, conversation?.sessionId || undefined, { maxMessages: 50, pageSize: 50 });
       const wahaCount = wahaMessages.length;
 
       checked++;

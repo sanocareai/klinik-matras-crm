@@ -765,6 +765,7 @@ ada di host — itu sinyal container masih pakai definisi volume yang lama.
 
 ---
 
+
 ## 13. WAHA — CATATAN PENTING
 
 ```
@@ -793,6 +794,31 @@ Payload NOWEB untuk pesan dari iklan Meta (CTWA):
 Belum dikonfirmasi apakah referral/ctwaClid ikut terbawa di NOWEB.
 Perlu test langsung dengan klik iklan nyata untuk verifikasi.
 ```
+## Konsep baru: Conversation type GROUP vs INDIVIDUAL
+Ditemukan bahwa nomor CS juga tergabung di grup WhatsApp internal: Grup
+Sales, Grup Driver (report pengiriman), Grup Produksi (dokumentasi order).
+Ini BUKAN customer/lead — jangan masuk Pipeline atau bikin Customer record.
+Perlu field `type` (INDIVIDUAL/GROUP) di model Conversation, panel kanan
+beda (Info Grup vs Customer Profile), dan grup terdeteksi dari JID berformat
+"@g.us". [Status: belum dikerjakan / sudah dikerjakan — isi sesuai kondisi]
+
+## Multi-session WAHA aktif
+Sistem sekarang punya 2 session WAHA aktif: CS-1 (628518728390) dan CS-2
+(6285166662896), bukan lagi 1 session "default". WAHA_SESSION di .env sudah
+diubah ke "CS-1". PENTING: kalau ada kode yang masih hardcode nama session
+"default", itu bug — harus dinamis handle multi-session. Field sessionId di
+Conversation dipakai untuk bedain asal pesan dari CS-1 atau CS-2, tapi label
+visual di Inbox (badge CS-1/CS-2) [belum/sudah] diimplementasikan.
+
+## Fitur WA yang masih kurang / diminta (belum semua dikerjakan)
+- Pinned chat
+- Forward pesan (field forwarded + replyToId di Message)
+- Go to message (jump ke pesan yang di-reply)
+- Galeri media per percakapan
+- Auto-sync nama kontak dari pushName WAHA (kecuali sudah manual diedit,
+  ditandai flag nameManuallyEdited)
+- Sync status "sudah dibaca" jangan ikut status read-receipt asli WA
+- History chat lama (sebelum WA connect ke WAHA) belum ter-backfill ke CRM
 
 ---
 
