@@ -175,7 +175,26 @@ model Conversation {
 
   messages Message[]
 
+  // CATATAN RACE CONDITION FIX: 2 event webhook (message + message.any)
+  // bisa tiba <1ms terpisah dan sama-sama gagal menemukan Conversation aktif
+  // yang sama sebelum salah satunya selesai INSERT — hasilnya 2 Conversation
+  // dobel untuk 1 customer. Perlindungan SEBENARNYA adalah PARTIAL UNIQUE
+  // INDEX di level database (bukan `@@unique` polos — customer yang
+  // percakapannya di-"Tandai Selesai"/RESOLVED harus tetap bisa dapat
+  // Conversation BARU saat chat lagi nanti, alur ini sudah lama dipakai di
+  // 3 tempat di webhooks.js):
+  //   CREATE UNIQUE INDEX ... ON "Conversation" ("customerId", "channel")
+  //     WHERE status != 'RESOLVED'
+  //   CREATE UNIQUE INDEX ... ON "Conversation" ("groupJid")
+  //     WHERE status != 'RESOLVED'
+  // Prisma schema DSL TIDAK bisa menyatakan WHERE pada @@unique, jadi index
+  // ini HANYA ada di file migration.sql (raw SQL), TIDAK dideklarasikan
+  // sebagai @@unique di sini — kalau dideklarasikan di sini, `prisma
+  // migrate dev` berikutnya akan coba "perbaiki drift" dengan menghapus
+  // partial index dan menggantinya index unique polos yang salah.
+  // @@index biasa di bawah ini cuma untuk performa query, BUKAN proteksi.
   @@index([channel, status])
+  @@index([customerId, channel])
   @@index([pinned])
   @@index([groupJid])
   @@index([status, lastMessageAt(sort: Desc)])

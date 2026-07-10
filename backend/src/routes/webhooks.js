@@ -204,16 +204,32 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     }
 
     if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          type:      "GROUP",
-          groupJid,
-          groupName: groupName || null, // null (bukan JID mentah) — ChatWindow/ConversationItem fallback ke "Grup WhatsApp"
-          channel:   "WHATSAPP",
-          customerId: null,
-        },
-      });
-      console.log("[webhook] Grup baru dibuat:", groupJid, "→", conversation.id, "nama:", groupName || "(belum diketahui)");
+      // RACE CONDITION FIX: 2 event webhook (message + message.any) untuk
+      // pesan grup yang sama bisa tiba nyaris bersamaan, keduanya lolos
+      // findFirst di atas (belum ada conversation) sebelum salah satu
+      // selesai INSERT. Partial unique index (Conversation_groupJid_active_unique,
+      // lihat migration) menolak yang kedua dengan P2002 — tangkap, lalu
+      // pakai conversation yang MENANG race itu (bukan buat conversation dobel).
+      try {
+        conversation = await prisma.conversation.create({
+          data: {
+            type:      "GROUP",
+            groupJid,
+            groupName: groupName || null, // null (bukan JID mentah) — ChatWindow/ConversationItem fallback ke "Grup WhatsApp"
+            channel:   "WHATSAPP",
+            customerId: null,
+          },
+        });
+        console.log("[webhook] Grup baru dibuat:", groupJid, "→", conversation.id, "nama:", groupName || "(belum diketahui)");
+      } catch (e) {
+        if (e.code !== "P2002") throw e;
+        conversation = await prisma.conversation.findFirst({
+          where: { groupJid, status: { not: "RESOLVED" } },
+          orderBy: { lastMessageAt: "desc" },
+        });
+        if (!conversation) throw e; // seharusnya tidak mungkin, tapi jaga-jaga
+        console.log("[webhook] Race condition tertangkap — pakai Conversation grup yang sudah dibuat request lain:", conversation.id);
+      }
     } else if (groupName && !conversation.groupName) {
       // Update nama grup kalau baru diketahui
       await prisma.conversation.update({
@@ -339,15 +355,31 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     }).catch(() => {});
   }
 
-  // Cari/buat conversation aktif
+  // Cari/buat conversation aktif — RACE CONDITION FIX: 2 event webhook
+  // (message + message.any) untuk pesan yang sama bisa tiba nyaris
+  // bersamaan, keduanya lolos findFirst ini sebelum salah satu selesai
+  // INSERT. Partial unique index (Conversation_customerId_channel_active_unique,
+  // lihat migration) menolak yang kedua dengan P2002 — tangkap, pakai
+  // conversation yang MENANG race itu (bukan buat conversation dobel, bug
+  // produksi FX BENZ: 2 conversation createdAt beda <1ms).
   let conversation = await prisma.conversation.findFirst({
     where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
     orderBy: { lastMessageAt: "desc" },
   });
   if (!conversation) {
-    conversation = await prisma.conversation.create({
-      data: { customerId: customer.id, channel: "WHATSAPP" },
-    });
+    try {
+      conversation = await prisma.conversation.create({
+        data: { customerId: customer.id, channel: "WHATSAPP" },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      conversation = await prisma.conversation.findFirst({
+        where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+        orderBy: { lastMessageAt: "desc" },
+      });
+      if (!conversation) throw e;
+      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat request lain:", conversation.id);
+    }
   }
 
   // Download & simpan media kalau ada
@@ -469,15 +501,29 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     }
   }
 
+  // RACE CONDITION FIX: sama seperti handleInboundMessage — event "message"
+  // dan "message.any" bisa overlap untuk pesan fromMe yang sama, keduanya
+  // lolos findFirst sebelum salah satu selesai INSERT. Partial unique index
+  // menolak yang kedua dengan P2002 — tangkap, pakai yang menang race.
   let conversation = await prisma.conversation.findFirst({
     where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
     orderBy: { lastMessageAt: "desc" },
   });
   if (!conversation) {
     if (!allowCreateCustomer) return "dropped-no-customer"; // perilaku lama: skip kalau conversation belum ada juga
-    conversation = await prisma.conversation.create({
-      data: { customerId: customer.id, channel: "WHATSAPP" },
-    });
+    try {
+      conversation = await prisma.conversation.create({
+        data: { customerId: customer.id, channel: "WHATSAPP" },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      conversation = await prisma.conversation.findFirst({
+        where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+        orderBy: { lastMessageAt: "desc" },
+      });
+      if (!conversation) throw e;
+      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat request lain:", conversation.id);
+    }
   }
 
   let outboundMsg;
