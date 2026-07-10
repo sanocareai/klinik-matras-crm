@@ -186,8 +186,11 @@ export async function getProfilePicture(phone) {
 }
 
 // Cek status sesi WhatsApp
-export async function getSessionStatus() {
-  const res = await fetch(`${WAHA_BASE_URL}/api/sessions/${WAHA_SESSION}`, {
+// session opsional — default tetap WAHA_SESSION (perilaku lama tidak berubah).
+// Dipakai Pengaturan > Status WhatsApp untuk cek CS-1/CS-2 secara terpisah
+// (multi-session WAHA, lihat CLAUDE.md).
+export async function getSessionStatus(session = WAHA_SESSION) {
+  const res = await fetch(`${WAHA_BASE_URL}/api/sessions/${session}`, {
     headers: headers(),
   });
   if (!res.ok) throw new Error(`Gagal cek status sesi WAHA (${res.status})`);

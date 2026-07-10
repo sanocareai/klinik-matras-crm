@@ -217,7 +217,8 @@ export const api = {
   getSettings: () => request("/settings"),
   updateSettings: (data) =>
     request("/settings", { method: "PATCH", body: JSON.stringify(data) }),
-  getWhatsappStatus: () => request("/settings/whatsapp-status"),
+  getWhatsappStatus: (session = null) =>
+    request("/settings/whatsapp-status" + (session ? `?session=${encodeURIComponent(session)}` : "")),
   syncChatHistory: (phone = null) =>
     request("/settings/sync-history", { method: "POST", body: JSON.stringify(phone ? { phone } : {}) }),
   getSalesTargets: (params) => request("/settings/sales-targets" + buildQuery(params)),

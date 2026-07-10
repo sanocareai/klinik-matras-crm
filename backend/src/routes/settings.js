@@ -148,10 +148,12 @@ settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
   }
 });
 
-// GET /api/settings/whatsapp-status — cek koneksi WAHA live
+// GET /api/settings/whatsapp-status?session=CS-1 — cek koneksi WAHA live.
+// ?session opsional (default WAHA_SESSION) — dipakai Pengaturan untuk cek
+// CS-1/CS-2 terpisah (multi-session WAHA, lihat CLAUDE.md).
 settingsRouter.get("/whatsapp-status", async (req, res) => {
   try {
-    const data = await getSessionStatus();
+    const data = await getSessionStatus(req.query.session || undefined);
     // WAHA mengembalikan { status: "WORKING"|"SCAN_QR_CODE"|"STOPPED", ... }
     res.json({ status: data.status || "UNKNOWN", me: data.me, connected: data.status === "WORKING" });
   } catch (err) {

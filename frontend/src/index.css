@@ -1291,15 +1291,28 @@ input:focus, select:focus, textarea:focus {
 .settings-section-title { font-size: 17px; font-weight: 700; color: var(--text-main); margin: 0 0 4px; }
 .settings-section-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
 .settings-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
-.wa-status { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-radius: 10px; }
-.wa-status.connected    { background: #dcfce7; border: 1px solid #bbf7d0; }
-.wa-status.disconnected { background: #fee2e2; border: 1px solid #fecaca; }
-.wa-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.wa-status.connected .wa-status-dot    { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
-.wa-status.disconnected .wa-status-dot { background: #dc2626; }
-.wa-status-text { font-size: 13.5px; font-weight: 600; }
-.wa-status.connected .wa-status-text    { color: #166534; }
-.wa-status.disconnected .wa-status-text { color: #991b1b; }
+
+/* Dropdown sub-menu Pengaturan — mobile saja (lihat breakpoint di bawah) */
+.settings-mobile-select { display: none; }
+
+/* Status koneksi CS-1/CS-2 — 2 card side-by-side */
+.wa-session-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.wa-session-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
+  background: var(--bg-subtle, #f8fafc);
+}
+.wa-session-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wa-session-name { font-size: 14px; font-weight: 700; color: var(--text-main); }
+.wa-status-dot-wrap {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+}
+.wa-status-dot-wrap.connected    { background: #dcfce7; color: #166534; }
+.wa-status-dot-wrap.disconnected { background: #fee2e2; color: #991b1b; }
+.wa-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.wa-status-dot-wrap.connected    .wa-status-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
+.wa-status-dot-wrap.disconnected .wa-status-dot { background: #dc2626; }
+.wa-session-error { margin: 10px 0 0; font-size: 12px; color: #991b1b; }
 
 /* ─── USER MANAGEMENT PAGE ───────────────────────────────── */
 .user-table { width: 100%; border-collapse: collapse; }
@@ -2558,36 +2571,22 @@ input:focus, select:focus, textarea:focus {
   .laporan-body { padding: 14px 12px; }
   .laporan-grid { grid-template-columns: 1fr !important; }
 
-  /* ── Pengaturan — sidebar jadi tab horizontal ── */
+  /* ── Pengaturan — sidebar diganti dropdown di mobile ── */
   .settings-layout { flex-direction: column; }
-  .settings-sidebar {
-    width: 100% !important;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 0;
-    flex-shrink: 0;
-    scrollbar-width: none;
-  }
-  .settings-sidebar::-webkit-scrollbar { display: none; }
-  .settings-nav-item {
-    flex-shrink: 0;
-    padding: 12px 14px;
-    font-size: 12.5px;
-    border-left: none !important;
-    border-bottom: 3px solid transparent;
-    white-space: nowrap;
-    gap: 6px;
-  }
-  .settings-nav-item.active {
-    border-left-color: transparent !important;
-    border-bottom-color: var(--color-primary);
+  .settings-sidebar { display: none; }
+  .settings-mobile-select {
+    display: block;
+    width: 100%;
+    margin: 0 0 12px;
+    padding: 11px 14px;
+    font-size: 14px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: white; color: var(--text-main);
   }
   .settings-main { padding: 16px; }
   .settings-section { max-width: 100%; }
   .settings-section-title { font-size: 15px; }
+  .wa-session-grid { grid-template-columns: 1fr; }
 
   /* ── Pipeline — card overflow ── */
   .kanban-card-value { font-size: 11px; }

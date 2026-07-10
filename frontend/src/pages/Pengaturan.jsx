@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle, XCircle,
+  Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp,
 } from "lucide-react";
 import { api } from "../api.js";
@@ -261,6 +261,55 @@ function TemplateSection() {
   );
 }
 
+// 2 session WAHA aktif (lihat CLAUDE.md §"Multi-session WAHA aktif") — CS-1
+// dan CS-2, masing-masing dicek terpisah lewat ?session= (backend tetap
+// backward-compatible, default WAHA_SESSION kalau param tidak dikirim).
+const WA_SESSIONS = [
+  { key: "CS-1", label: "CS-1" },
+  { key: "CS-2", label: "CS-2" },
+];
+
+function WaSessionCard({ session, label }) {
+  const [status, setStatus]   = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function checkStatus() {
+    setLoading(true);
+    try {
+      const data = await api.getWhatsappStatus(session);
+      setStatus(data);
+    } catch (err) {
+      setStatus({ status: "ERROR", connected: false, error: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { checkStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const connected = status?.connected;
+
+  return (
+    <div className="wa-session-card">
+      <div className="wa-session-card-head">
+        <span className="wa-session-name">{label}</span>
+        {status && (
+          <span className={`wa-status-dot-wrap ${connected ? "connected" : "disconnected"}`}>
+            <span className="wa-status-dot" />
+            {connected ? "WORKING" : (status.status || "DOWN")}
+          </span>
+        )}
+      </div>
+      {status?.error && (
+        <p className="wa-session-error">{status.error}</p>
+      )}
+      <button className="btn btn-secondary btn-sm" onClick={checkStatus} disabled={loading} style={{ marginTop: 12 }}>
+        <Wifi size={13} /> {loading ? "Mengecek..." : "Cek Status"}
+      </button>
+    </div>
+  );
+}
+
 const BULAN_LABELS = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
@@ -386,10 +435,6 @@ export default function Pengaturan({ user }) {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg]       = useState(null);
 
-  // WhatsApp status
-  const [waStatus, setWaStatus]     = useState(null);
-  const [waLoading, setWaLoading]   = useState(false);
-
   // Sinkronisasi riwayat chat
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult]   = useState(null); // { synced, total, errors }
@@ -426,18 +471,6 @@ export default function Pengaturan({ user }) {
       showMsg(setSettingsMsg, "error", err.message);
     } finally {
       setSavingSettings(false);
-    }
-  }
-
-  async function checkWaStatus() {
-    setWaLoading(true);
-    try {
-      const status = await api.getWhatsappStatus();
-      setWaStatus(status);
-    } catch (err) {
-      setWaStatus({ status: "error", error: err.message });
-    } finally {
-      setWaLoading(false);
     }
   }
 
@@ -535,6 +568,17 @@ export default function Pengaturan({ user }) {
         </div>
       </div>
 
+      {/* Dropdown sub-menu — mobile saja (sidebar disembunyikan via CSS di breakpoint ini) */}
+      <select
+        className="settings-mobile-select"
+        value={section}
+        onChange={(e) => setSection(e.target.value)}
+      >
+        {NAV_ITEMS.map(({ key, label }) => (
+          <option key={key} value={key}>{label}</option>
+        ))}
+      </select>
+
       <div className="settings-layout">
         {/* Sidebar */}
         <nav className="settings-sidebar">
@@ -612,9 +656,11 @@ export default function Pengaturan({ user }) {
                   </div>
                 </div>
 
-                <button type="submit" className="btn btn-primary" style={{ marginTop: 8 }} disabled={savingSettings}>
-                  <Save size={15} /> {savingSettings ? "Menyimpan..." : "Simpan Pengaturan"}
-                </button>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                  <button type="submit" className="btn btn-primary" disabled={savingSettings}>
+                    <Save size={15} /> {savingSettings ? "Menyimpan..." : "Simpan Pengaturan"}
+                  </button>
+                </div>
               </form>
             </div>
           )}
@@ -624,52 +670,30 @@ export default function Pengaturan({ user }) {
             <div className="settings-card">
               <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Status Koneksi WhatsApp</h2>
               <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
-                Status real-time koneksi WAHA self-hosted ke nomor WhatsApp klinik.
+                Status real-time koneksi WAHA self-hosted untuk kedua nomor CS.
               </p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-                <button className="btn btn-primary" onClick={checkWaStatus} disabled={waLoading}>
-                  <Wifi size={15} /> {waLoading ? "Mengecek..." : "Cek Status Sekarang"}
-                </button>
+
+              <div className="wa-session-grid">
+                {WA_SESSIONS.map((s) => (
+                  <WaSessionCard key={s.key} session={s.key} label={s.label} />
+                ))}
+              </div>
+
+              <div style={{ marginTop: 20 }}>
                 <button className="btn btn-secondary" onClick={handleSyncHistory} disabled={syncLoading}>
                   <Download size={15} /> {syncLoading ? "Sedang sinkronisasi..." : "Sinkronisasi Riwayat Chat"}
                 </button>
               </div>
 
               {syncResult && !syncResult.error && (
-                <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", fontSize: 13 }}>
-                  <strong style={{ color: "#166534" }}>{syncResult.synced} pesan baru</strong>
-                  <span style={{ color: "#374151" }}> ditemukan dari {syncResult.total} pelanggan</span>
-                  {syncResult.errors > 0 && (
-                    <span style={{ color: "#92400e" }}> · {syncResult.errors} pelanggan gagal diproses</span>
-                  )}
+                <div className="inline-feedback inline-feedback-success" style={{ marginTop: 14 }}>
+                  <strong>{syncResult.synced} pesan baru</strong> ditemukan dari {syncResult.total} pelanggan
+                  {syncResult.errors > 0 && <> · {syncResult.errors} pelanggan gagal diproses</>}
                 </div>
               )}
               {syncResult?.error && (
-                <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, background: "#fef3c7", border: "1px solid #fde68a", fontSize: 13, color: "#92400e" }}>
+                <div className="inline-feedback inline-feedback-error" style={{ marginTop: 14 }}>
                   Gagal sinkronisasi: {syncResult.error}
-                </div>
-              )}
-
-              {waStatus && (
-                <div className={`wa-status ${waStatus.status === "WORKING" ? "connected" : "disconnected"}`}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {waStatus.status === "WORKING"
-                      ? <CheckCircle size={20} color="#166534" />
-                      : <XCircle size={20} color="#991b1b" />}
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: 15 }}>
-                        {waStatus.status === "WORKING" ? "Terhubung" : "Tidak Terhubung"}
-                      </p>
-                      <p style={{ margin: "2px 0 0", fontSize: 12, opacity: 0.8 }}>
-                        Status WAHA: <strong>{waStatus.status || "Unknown"}</strong>
-                      </p>
-                    </div>
-                  </div>
-                  {waStatus.error && (
-                    <p style={{ margin: "12px 0 0", fontSize: 12, opacity: 0.85 }}>
-                      Error: {waStatus.error}
-                    </p>
-                  )}
                 </div>
               )}
 
@@ -677,10 +701,10 @@ export default function Pengaturan({ user }) {
                 <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700 }}>Cara menghubungkan ulang</h3>
                 <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.7, color: "var(--text-muted)" }}>
                   <li>Buka WAHA dashboard di browser (URL dari pengaturan profil)</li>
-                  <li>Pilih session &ldquo;default&rdquo; (atau nama yang dikonfigurasi)</li>
+                  <li>Pilih session &ldquo;CS-1&rdquo; atau &ldquo;CS-2&rdquo; sesuai nomor yang terputus</li>
                   <li>Klik &ldquo;Start&rdquo; → scan QR code dengan WhatsApp di HP</li>
                   <li>Tunggu status berubah menjadi &ldquo;WORKING&rdquo;</li>
-                  <li>Klik tombol di atas untuk verifikasi status</li>
+                  <li>Klik &ldquo;Cek Status&rdquo; di card di atas untuk verifikasi</li>
                 </ol>
               </div>
             </div>
@@ -727,9 +751,11 @@ export default function Pengaturan({ user }) {
                     </div>
                   </div>
                 ))}
-                <button type="submit" className="btn btn-primary" style={{ marginTop: 8 }} disabled={pwLoading}>
-                  <Lock size={15} /> {pwLoading ? "Menyimpan..." : "Ubah Password"}
-                </button>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                  <button type="submit" className="btn btn-primary" disabled={pwLoading}>
+                    <Lock size={15} /> {pwLoading ? "Menyimpan..." : "Ubah Password"}
+                  </button>
+                </div>
               </form>
             </div>
           )}
