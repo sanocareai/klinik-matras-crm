@@ -1,11 +1,15 @@
 // Dua job terjadwal:
-// 1. syncReadFromWaha()    — setiap 2 menit, sinkronisasi status read antara WAHA dan CRM
+// 1. syncReadFromWaha()    — setiap 5 menit, FALLBACK sinkronisasi status read
+//    (jalur utama sekarang event message.ack di webhooks.js, lihat Task 2 —
+//    diperjarang dari 2 menit karena event ack sudah reliable, ini cuma
+//    jaring pengaman kalau event terlewat/webhook down sesaat)
 //    Kalau sales buka chat di HP WhatsApp → unreadCount=0 di WAHA → CRM update isRead=true
 // 2. runReconciliation()   — setiap jam 2 pagi, deteksi drift jumlah pesan
 
 import cron from "node-cron";
 import { prisma } from "../db.js";
 import { getChats, fetchChatHistory, normalizePhoneNumber } from "./wahaClient.js";
+import { emitConversationUpdate } from "../socket.js";
 
 const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 
@@ -48,26 +52,35 @@ export async function syncReadFromWaha() {
       const conv = await prisma.conversation.findFirst({
         where:   { customerId: customer.id, channel: "WHATSAPP" },
         orderBy: { lastMessageAt: "desc" },
-        select:  { id: true, isRead: true, unread: true },
+        select:  { id: true, isRead: true, unread: true, unreadCount: true },
       });
       if (!conv) continue;
 
-      if (wahaUnread === 0 && (!conv.isRead || conv.unread)) {
+      // Fallback polling (Task 2c) — jaring pengaman kalau event message.ack
+      // (fix utama, lihat webhooks.js) terlewat/gagal. BUG lama: hanya reset
+      // `unread` (boolean lama) tapi TIDAK `unreadCount` (badge angka yang
+      // sekarang dipakai ConversationItem) dan TIDAK emit ke socket — jadi
+      // walau job ini jalan tiap 2 menit, badge angka tetap nyangkut dan
+      // frontend baru lihat perubahan setelah refresh manual. Sekarang
+      // keduanya diperbaiki.
+      if (wahaUnread === 0 && (!conv.isRead || conv.unread || conv.unreadCount > 0)) {
         // WAHA bilang sudah terbaca (di HP atau CRM) — update CRM supaya sinkron
-        await prisma.conversation.update({
+        const updatedConv = await prisma.conversation.update({
           where: { id: conv.id },
-          data:  { isRead: true, readAt: new Date(), unread: false },
+          data:  { isRead: true, readAt: new Date(), unread: false, unreadCount: 0 },
         });
+        emitConversationUpdate(updatedConv);
         updated++;
-        console.log(`[syncRead] isRead=true untuk ${phone} (unreadCount=0 di WAHA)`);
+        console.log(`[syncRead] isRead=true, unreadCount=0 untuk ${phone} (unreadCount=0 di WAHA)`);
       } else if (wahaUnread > 0 && conv.isRead) {
         // Ada pesan baru yang belum terbaca — pastikan CRM juga tahu
-        await prisma.conversation.update({
+        const updatedConv = await prisma.conversation.update({
           where: { id: conv.id },
-          data:  { isRead: false, unread: true },
+          data:  { isRead: false, unread: true, unreadCount: wahaUnread },
         });
+        emitConversationUpdate(updatedConv);
         updated++;
-        console.log(`[syncRead] isRead=false untuk ${phone} (unreadCount=${wahaUnread} di WAHA)`);
+        console.log(`[syncRead] isRead=false, unreadCount=${wahaUnread} untuk ${phone} (unreadCount=${wahaUnread} di WAHA)`);
       }
     }
 
@@ -148,14 +161,14 @@ export async function runReconciliation() {
 }
 
 // Daftarkan semua cron job:
-// 1. Setiap 2 menit — sinkronisasi status read WAHA ↔ CRM
+// 1. Setiap 5 menit — sinkronisasi status read WAHA ↔ CRM (fallback)
 // 2. Jam 2 pagi WIB — deteksi drift jumlah pesan
 export function startReconciliationJob() {
-  // Job 1: sync read status setiap 2 menit
-  cron.schedule("*/2 * * * *", async () => {
+  // Job 1: sync read status setiap 5 menit (fallback — jalur utama event message.ack)
+  cron.schedule("*/5 * * * *", async () => {
     await syncReadFromWaha();
   }, { timezone: "Asia/Jakarta" });
-  console.log("[reconciliation] Job syncRead terdaftar — jalan setiap 2 menit");
+  console.log("[reconciliation] Job syncRead terdaftar — jalan setiap 5 menit (fallback)");
 
   // Job 2: nightly reconciliation jam 2 pagi WIB
   cron.schedule("0 2 * * *", async () => {

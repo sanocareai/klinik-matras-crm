@@ -70,6 +70,13 @@ export function emitConversationUpdate(conv) {
     id: conv.id,
     lastMessagePreview: conv.lastMessagePreview,
     unreadCount: conv.unreadCount,
+    // BUG (Task 2d): `unread` (boolean) sebelumnya TIDAK ikut di slim
+    // payload ini — ConversationItem.jsx pakai field ini (bukan isRead)
+    // untuk class CSS ".unread" yang mengontrol bold/dim. Tanpa ini, fix
+    // backend (message.ack case B, syncReadFromWaha) menyimpan unread=false
+    // dengan benar ke DB, tapi frontend tidak pernah tahu lewat socket —
+    // item tetap tampak "belum dibuka" sampai reload manual.
+    unread: conv.unread,
     lastMessageAt: conv.lastMessageAt,
     status: conv.status,
     isRead: conv.isRead,

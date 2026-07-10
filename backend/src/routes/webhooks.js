@@ -269,41 +269,53 @@ webhookRouter.post("/waha", async (req, res) => {
       return;
     }
 
-    // ── message.ack: status centang kirim pesan KITA (sent/delivered/read) ──
-    // WAHA hanya pernah fire ack untuk pesan OUTBOUND (yang kita kirim) — jadi
-    // "pesan INBOUND" tidak relevan di sini, ack menceritakan status pesan kita
-    // di sisi HP customer, bukan status baca kita atas pesan customer (itu beda
-    // konsep: unreadCount, ditangani terpisah lewat GET /:id/messages &
-    // POST /:id/read, BUKAN dari event ack ini).
-    if (event === "message.ack") {
+    // ── message.ack / message.receipt: status centang ──
+    // 2 skenario berbeda ditangani di sini (Task 2 — bug produksi "status
+    // dibuka di HP tidak sinkron ke CRM"):
+    //   A) ack pesan OUTBOUND (yang KITA kirim) → customer baca pesan kita
+    //      → Conversation.isRead=true (perilaku existing, TIDAK menyentuh
+    //      unreadCount — itu hitungan pesan MASUK yang belum kita buka).
+    //   B) ack pesan INBOUND (dari customer) dengan ack=READ → berarti SALES
+    //      baca pesan itu di HP WhatsApp langsung (WhatsApp multi-device sync
+    //      "read" ke semua device terhubung, termasuk sesi WAHA) — BUKAN lewat
+    //      CRM. Sebelumnya TIDAK ADA case ini sama sekali, jadi CRM tidak
+    //      pernah tahu chat sudah dibuka di HP → unreadCount tidak pernah
+    //      ke-reset dari jalur ini (cuma reset lewat GET/POST di CRM sendiri
+    //      atau fallback polling syncReadFromWaha tiap 2 menit).
+    // NOWEB taruh ack di payload.ack, GOWS kadang di payload._data.ack —
+    // sudah dual-engine aware. WHATSAPP_HOOK_EVENTS wajib subscribe
+    // "message.ack" (lihat docker-compose.yml) — kalau GOWS pakai nama event
+    // lain (mis. "message.receipt") untuk kasus ini, event listener di bawah
+    // "message" dispatcher WAJIB ditambahkan juga (lihat webhookRouter.post).
+    if (event === "message.ack" || event === "message.receipt") {
       const ack     = payload?.ack     || payload?._data?.ack || 0;
       const ackName = payload?.ackName || payload?._data?.ackName || "";
       const externalId = payload?.id;
+      const isReadAck = ackName === "READ" || ack >= 3;
 
       // 1) Update status centang per-pesan (Message.ack) via externalId —
       // dual-engine aware (NOWEB: payload.ack, GOWS: kadang di _data.ack).
       // Diamkan kalau externalId tidak ditemukan (race dgn pesan yg belum
       // sempat tersimpan, atau ack utk pesan lama sebelum fitur ini ada).
+      // Sekaligus ambil `direction` — dipakai untuk bedakan skenario A vs B.
+      let ackedMessage = null;
       if (externalId) {
         try {
-          const msg = await prisma.message.findUnique({
+          ackedMessage = await prisma.message.findUnique({
             where: { externalId },
-            select: { id: true, conversationId: true, ack: true },
+            select: { id: true, conversationId: true, ack: true, direction: true },
           });
-          if (msg && ack > msg.ack) { // jangan mundur (delivered lalu read datang belakangan, tapi kalau retry ack lama jangan timpa yang baru)
-            await prisma.message.update({ where: { id: msg.id }, data: { ack } });
-            emitMessageAck(msg.conversationId, externalId, ack);
+          if (ackedMessage && ack > ackedMessage.ack) { // jangan mundur
+            await prisma.message.update({ where: { id: ackedMessage.id }, data: { ack } });
+            emitMessageAck(ackedMessage.conversationId, externalId, ack);
           }
         } catch (e) {
           console.warn("[webhook] message.ack: gagal update Message.ack:", e.message);
         }
       }
 
-      // 2) ack=READ (>=3) → customer sudah baca pesan kita → Conversation.isRead=true
-      // (perilaku existing, dipertahankan — TIDAK menyentuh unreadCount, itu
-      // hitungan pesan MASUK yang belum kita buka, bukan pesan KELUAR yang
-      // sudah dibaca customer, dua hal yang berbeda meski namanya mirip)
-      const isReadAck = ackName === "READ" || ack >= 3;
+      // 2A) Skenario existing: ack utk pesan OUTBOUND kita + read → customer
+      // baca pesan kita → Conversation.isRead=true (TIDAK sentuh unreadCount).
       if (isReadAck && payload) {
         const sessionName = req.body.session || process.env.WAHA_SESSION || "default";
         // Ambil nomor dari chatId/from — pesan dari kita KE customer, jadi kita "fromMe"
@@ -327,6 +339,19 @@ webhookRouter.post("/waha", async (req, res) => {
             }
           }
         }
+      }
+
+      // 2B) BARU (fix Task 2) — ack READ untuk pesan INBOUND → sales baca di
+      // HP, reset unreadCount supaya item ConversationList langsung dim tanpa
+      // perlu buka CRM. emit conversation:update supaya frontend update live
+      // tanpa refresh (Task 2d).
+      if (isReadAck && ackedMessage?.direction === "INBOUND") {
+        const updatedConv = await prisma.conversation.update({
+          where: { id: ackedMessage.conversationId },
+          data: { isRead: true, readAt: new Date(), unread: false, unreadCount: 0 },
+        });
+        emitConversationUpdate(updatedConv);
+        console.log("[webhook] message.ack READ (INBOUND, dibaca di HP) → unreadCount=0 untuk conv:", ackedMessage.conversationId);
       }
       return;
     }
