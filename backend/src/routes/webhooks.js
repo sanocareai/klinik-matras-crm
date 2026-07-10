@@ -378,6 +378,17 @@ webhookRouter.post("/waha", async (req, res) => {
     // ── Deteksi grup WhatsApp (@g.us) — SEBELUM extract phone individual ─────
     // chatId untuk pesan grup selalu berakhiran "@g.us" di semua engine WAHA.
     const chatJid = payload.chatId || payload._data?.Info?.Chat || "";
+
+    // "status@g.us" = WhatsApp Status/broadcast, BUKAN grup sungguhan —
+    // secara teknis JID-nya berakhiran "@g.us" juga jadi HARUS di-gate
+    // eksplisit SEBELUM cek endsWith umum, supaya tidak nyasar kebuat jadi
+    // Conversation type=GROUP palsu (lihat scripts/backfill-group-names.js
+    // Fase 0 untuk cleanup data lama yang sudah terlanjur nyasar).
+    if (chatJid === "status@g.us") {
+      console.log("[webhook] Pesan status@g.us (WhatsApp Status broadcast) — bukan grup, dilewati.");
+      return;
+    }
+
     if (chatJid.endsWith("@g.us")) {
       await handleGroupMessage(payload, chatJid, externalId, sessionName);
       return;

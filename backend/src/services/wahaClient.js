@@ -206,7 +206,11 @@ export async function getGroupInfo(groupJid, session = WAHA_SESSION) {
       return null;
     }
     const data = await res.json();
-    return data.subject || data.name || null;
+    // WAHA GOWS balikin field PascalCase "Name" (bukan "name"/"subject" —
+    // itu asumsi awal yang salah, dikonfirmasi via curl manual return 200
+    // dengan body { "Name": "SANO TIM PRODUKSI", ... }). Fallback name/subject
+    // dipertahankan untuk kompatibilitas versi WAHA/engine lain.
+    return data.Name || data.name || data.subject || null;
   } catch (e) {
     console.warn("[getGroupInfo] Error:", e.message);
     return null;
