@@ -372,7 +372,7 @@ input:focus, select:focus, textarea:focus {
 .conv-list-header {
   padding: 16px 16px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 14px; font-weight: 700; color: var(--text-main);
+  font-size: 14px; font-weight: 600; color: var(--text-main);
   flex-shrink: 0;
 }
 .conv-search-bar {
@@ -391,13 +391,13 @@ input:focus, select:focus, textarea:focus {
 .unread-count-badge {
   min-width: 19px; height: 19px; padding: 0 5px;
   border-radius: 99px; background: var(--color-success); color: white;
-  font-size: 10.5px; font-weight: 700;
+  font-size: 10.5px; font-weight: 400;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 /* Badge sesi WA (CS-1/CS-2) — belum aktif sampai backend expose sessionId */
 .session-badge {
-  font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
+  font-size: 10px; font-weight: 400; padding: 2px 6px; border-radius: 6px;
   background: #e0e7ff; color: #4338ca;
 }
 /* Percakapan yang sudah dibuka tapi tidak lagi unread — teks lebih redup (slate-400) */
@@ -433,38 +433,42 @@ input:focus, select:focus, textarea:focus {
   display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
   margin-bottom: 2px;
 }
+/* Hirarki font PRD (Task 1): tebal HANYA untuk yang butuh perhatian
+   (unread). Nama kontak: medium (500) default, semibold (600) hanya kalau
+   unread. Preview: normal (400) selalu, cuma warna yang berubah gelap saat
+   unread (BUKAN bold). Timestamp/badge: xs + normal, tidak pernah bold. */
 .customer-name {
-  font-weight: 600; font-size: 14px; color: var(--text-main);
+  font-weight: 500; font-size: 14px; color: var(--text-main);
   display: flex; align-items: center; gap: 4px; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.conversation-item.unread .customer-name { font-weight: 800; }
+.conversation-item.unread .customer-name { font-weight: 600; }
 .conv-pin-icon { color: #7c3aed; flex-shrink: 0; }
 .conv-name-group-icon { color: #4338ca; flex-shrink: 0; }
 .conv-meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.conv-time { font-size: 11.5px; color: var(--text-small); flex-shrink: 0; }
-.conversation-item.unread .conv-time { color: var(--color-success); font-weight: 700; }
+.conv-time { font-size: 11.5px; font-weight: 400; color: var(--text-small); flex-shrink: 0; }
+.conversation-item.unread .conv-time { color: var(--color-success); }
 .conversation-bottom {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
 }
 .conv-badges { display: flex; gap: 4px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .last-message {
-  font-size: 12.5px; color: var(--text-muted);
+  font-size: 12.5px; font-weight: 400; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex: 1; min-width: 0; margin: 0;
 }
-.conversation-item.unread .last-message { font-weight: 600; color: var(--text-main); }
+.conversation-item.unread .last-message { color: #334155; } /* slate-700 — cuma warna gelap, bukan bold */
 .unread-badge {
   width: 10px; height: 10px; border-radius: 50%;
   background: var(--color-success); flex-shrink: 0;
 }
 .conv-flag-badge {
   display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 6px;
+  font-size: 10px; font-weight: 400; padding: 2px 6px; border-radius: 6px;
 }
 .conv-flag-opened  { background: #ede9fe; color: #5b21b6; }
 .conv-flag-replied { background: #ECFDF5; color: #059669; }
-.conv-flag-overdue { background: #FFF1F2; color: #E11D48; font-weight: 700; }
+.conv-flag-overdue { background: #FFF1F2; color: #E11D48; font-weight: 400; }
 .empty { padding: 24px 16px; color: var(--text-small); font-size: 13px; text-align: center; }
 
 /* Context menu: Sematkan/Lepas Sematan */
@@ -500,7 +504,7 @@ input:focus, select:focus, textarea:focus {
 }
 .chat-header-info { flex: 1; min-width: 0; }
 .chat-header-name {
-  font-weight: 700; font-size: 14px; color: var(--text-main); margin: 0;
+  font-weight: 600; font-size: 14px; color: var(--text-main); margin: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chat-header-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
@@ -1903,7 +1907,7 @@ input:focus, select:focus, textarea:focus {
 }
 .conv-tab:hover { color: var(--color-primary); }
 .conv-tab.active {
-  color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 700;
+  color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600;
 }
 
 /* ─── ASSIGNMENT BADGES ──────────────────────────────────── */
