@@ -29,6 +29,7 @@ import VoiceRecorderBar from "../components/VoiceRecorderBar";
 import MediaViewerModal from "../components/MediaViewerModal";
 import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
+import CustomerSheet from "../components/CustomerSheet";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
@@ -84,6 +85,7 @@ export default function ChatScreen({ route, navigation }) {
   const pollRef = useRef(null);
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
+  const customerSheetRef = useRef(null);
 
   const isGroup = conversation ? conversation.type === "GROUP" : !!routeIsGroup;
   const customerId = conversation?.customerId ?? routeCustomerId;
@@ -243,13 +245,27 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
-  async function handleTakeover() {
-    setShowMenu(false);
+  async function doTakeover() {
     try {
       const updated = await api.takeoverConversation(conversationId);
       useConversationStore.getState().upsertConversation(updated);
     } catch (err) {
-      Alert.alert("Ambil Alih", err.message);
+      Alert.alert("Gagal", err.message);
+    }
+  }
+
+  // Ambil Percakapan (belum ada assignedToId) → langsung, tidak perlu konfirmasi.
+  // Ambil Alih (dari sales lain) → konfirmasi dulu, sama seperti web (confirm()).
+  function handleTakeover() {
+    setShowMenu(false);
+    if (assignedTo) {
+      Alert.alert(
+        "Ambil Alih Percakapan",
+        `Percakapan ini sedang ditangani ${assignedTo.name}. Ambil alih sebagai lead kamu?`,
+        [{ text: "Batal", style: "cancel" }, { text: "Ambil Alih", onPress: doTakeover }],
+      );
+    } else {
+      doTakeover();
     }
   }
 
@@ -290,8 +306,7 @@ export default function ChatScreen({ route, navigation }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerInfo}
-          disabled={isGroup || !customerId}
-          onPress={() => navigation.navigate("Customer", { customerId, name })}
+          onPress={() => customerSheetRef.current?.open()}
         >
           <Avatar name={name} size={38} isGroup={isGroup} />
           <View style={{ marginLeft: 10, flex: 1 }}>
@@ -344,6 +359,16 @@ export default function ChatScreen({ route, navigation }) {
         </View>
       ) : (
         <>
+          {assignedTo && !isMine && (
+            <View style={styles.assignedBanner}>
+              <Text style={styles.assignedBannerText} numberOfLines={1}>
+                Ditangani oleh {assignedTo.name}
+              </Text>
+              <TouchableOpacity onPress={handleTakeover}>
+                <Text style={styles.assignedBannerBtn}>Ambil Alih</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {isOffline && (
             <View style={styles.offlineBanner}>
               <Text style={styles.offlineBannerText}>📡 Menunggu koneksi… pesan akan otomatis terkirim</Text>
@@ -441,6 +466,16 @@ export default function ChatScreen({ route, navigation }) {
           onClose={() => setMediaViewer(null)}
         />
       )}
+
+      <CustomerSheet
+        ref={customerSheetRef}
+        conversation={conversation || {
+          id: conversationId,
+          type: isGroup ? "GROUP" : "INDIVIDUAL",
+          customerId,
+          groupName: isGroup ? name : undefined,
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -470,6 +505,12 @@ const styles = StyleSheet.create({
   groupNoticeText: { color: "#92400e", fontSize: 13, textAlign: "center" },
   offlineBanner: { backgroundColor: "#fef3c7", paddingVertical: 6, paddingHorizontal: 12 },
   offlineBannerText: { color: "#92400e", fontSize: 12, textAlign: "center" },
+  assignedBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: tokens.color.accentSoft, paddingVertical: 8, paddingHorizontal: 12,
+  },
+  assignedBannerText: { color: tokens.color.accent, fontSize: 12, fontWeight: "600", flex: 1, marginRight: 8 },
+  assignedBannerBtn: { color: tokens.color.accent, fontSize: 12, fontWeight: "700", textDecorationLine: "underline" },
   replyBar: {
     flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.subtle,
     paddingHorizontal: 10, paddingVertical: 8, gap: 8,

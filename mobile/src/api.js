@@ -169,6 +169,20 @@ export const api = {
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
 
+  // Order — dua langkah sama seperti web (addOrder bikin shell order kosong,
+  // addOrderItem nambah baris layanan+harga yang otomatis hitung ulang
+  // Order.value). Lihat backend/src/routes/customers.js #POST /:id/orders
+  // dan backend/src/routes/orders.js #POST /:orderId/items.
+  addOrder: (customerId, data) =>
+    request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
+  addOrderItem: (orderId, data) =>
+    request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Galeri Produk — dipakai OrderFormModal sebagai pemilih cepat nama+harga
+  // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,
+  // cuma dipakai untuk prefill form, sama seperti send-product di chat).
+  getProducts: () => request("/products"),
+
   // Daftar user (untuk modal Transfer percakapan ke sales lain)
   getUsers: () => request("/users"),
 

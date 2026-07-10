@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { NavigationContainer, createNavigationContainerRef, useNavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { isExpoGo } from "./src/push";
@@ -14,7 +15,6 @@ import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChatListScreen from "./src/screens/ChatListScreen";
 import ChatScreen from "./src/screens/ChatScreen";
-import CustomerScreen from "./src/screens/CustomerScreen";
 import { colors } from "./src/theme";
 import { tokens } from "./src/constants/theme";
 import { queryClient } from "./src/lib/queryClient";
@@ -82,7 +82,6 @@ function Root() {
         <>
           <Stack.Screen name="ChatList" component={ChatListScreen} />
           <Stack.Screen name="Chat" component={ChatScreen} />
-          <Stack.Screen name="Customer" component={CustomerScreen} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />
@@ -113,17 +112,19 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
-          <AuthProvider>
-            <NavigationContainer ref={navigationRef}>
-              <SafeAreaTopBg>
-                <Root />
-              </SafeAreaTopBg>
-            </NavigationContainer>
-          </AuthProvider>
-        </SafeAreaProvider>
-      </QueryClientProvider>
+      <BottomSheetModalProvider>
+        <QueryClientProvider client={queryClient}>
+          <SafeAreaProvider>
+            <AuthProvider>
+              <NavigationContainer ref={navigationRef}>
+                <SafeAreaTopBg>
+                  <Root />
+                </SafeAreaTopBg>
+              </NavigationContainer>
+            </AuthProvider>
+          </SafeAreaProvider>
+        </QueryClientProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }
