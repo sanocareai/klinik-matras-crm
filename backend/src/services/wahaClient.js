@@ -345,10 +345,13 @@ export async function resolvePhoneFromLid(lid, session) {
 // Ambil daftar chat aktif dari WAHA (untuk reconciliation job)
 // sortBy: WAHA hanya terima "conversationTimestamp" | "id" | "name" (bukan lastMessageAt)
 // Return: array chat object { id, name, unreadCount, timestamp, ... } atau [] kalau gagal
-export async function getChats(limit = 20) {
+// session opsional — default tetap WAHA_SESSION (perilaku lama tidak
+// berubah). Dipakai scripts/backfill-session-id.js untuk cek chat ada di
+// CS-1 atau CS-2 (multi-session WAHA, lihat CLAUDE.md).
+export async function getChats(limit = 20, session = WAHA_SESSION) {
   try {
     const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/chats?limit=${limit}&sortBy=conversationTimestamp`,
+      `${WAHA_BASE_URL}/api/${session}/chats?limit=${limit}&sortBy=conversationTimestamp`,
       { headers: headers() }
     );
     if (!res.ok) {
