@@ -231,8 +231,11 @@ export const api = {
     request("/settings", { method: "PATCH", body: JSON.stringify(data) }),
   getWhatsappStatus: (session = null) =>
     request("/settings/whatsapp-status" + (session ? `?session=${encodeURIComponent(session)}` : "")),
+  // Return 202 { jobId, status } segera — job jalan di background (lihat
+  // syncHistoryJob.js). 409 kalau job lain masih running.
   syncChatHistory: (phone = null) =>
     request("/settings/sync-history", { method: "POST", body: JSON.stringify(phone ? { phone } : {}) }),
+  getSyncHistoryStatus: () => request("/settings/sync-history/status"),
   getSalesTargets: (params) => request("/settings/sales-targets" + buildQuery(params)),
   updateSalesTarget: (data) =>
     request("/settings/sales-targets", { method: "PUT", body: JSON.stringify(data) }),

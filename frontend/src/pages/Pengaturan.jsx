@@ -1,12 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp,
 } from "lucide-react";
 import { api } from "../api.js";
+import { getSocket } from "../lib/socket.js";
 import { exportToExcel } from "../utils/export.js";
 import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
+
+// Polling fallback (Fix UX sync-history) kalau socket putus/belum sempat
+// connect — 3 detik sesuai spec.
+const SYNC_POLL_INTERVAL_MS = 3000;
 
 const NAV_ITEMS = [
   { key: "profil",        label: "Profil Perusahaan", icon: Building2 },
@@ -36,6 +41,14 @@ const KATEGORI_COLORS = {
 };
 
 const EMPTY_TPL_FORM = { nama: "", kategori: "pembukaan", isi: "" };
+
+function formatSyncDuration(startedAt, finishedAt) {
+  const seconds = Math.round((new Date(finishedAt) - new Date(startedAt)) / 1000);
+  if (seconds < 60) return `${seconds} detik`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes} mnt ${rest} dtk`;
+}
 
 function TemplateSection() {
   const [templates, setTemplates] = useState([]);
@@ -444,9 +457,11 @@ export default function Pengaturan({ user }) {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg]       = useState(null);
 
-  // Sinkronisasi riwayat chat
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncResult, setSyncResult]   = useState(null); // { synced, total, errors }
+  // Sinkronisasi riwayat chat — job background (Fix UX timeout), bukan
+  // request panjang yang di-await. syncJob = job dari backend penuh:
+  // { jobId, status: running|done|failed, progress: {...}, error }.
+  const [syncJob, setSyncJob] = useState(null);
+  const syncPollRef = useRef(null);
 
   // Password change
   const [pwForm, setPwForm]       = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
@@ -483,16 +498,55 @@ export default function Pengaturan({ user }) {
     }
   }
 
+  // Cek job yang mungkin masih berjalan (mis. admin refresh halaman di
+  // tengah sync) — dipanggil saat mount, BUKAN cuma setelah klik tombol.
+  useEffect(() => {
+    api.getSyncHistoryStatus().then((job) => {
+      if (job?.status === "running") setSyncJob(job);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Socket real-time (jalur utama) + polling 3 detik (fallback kalau socket
+  // putus/belum connect) — SELALU jalan berdua selama job running, whichever
+  // sampai duluan yang menang (keduanya idempotent, sama-sama cuma setState).
+  useEffect(() => {
+    if (syncJob?.status !== "running") {
+      clearInterval(syncPollRef.current);
+      return;
+    }
+
+    const socket = getSocket();
+    function handleProgress(job) { setSyncJob(job); }
+    function handleDone(job) { setSyncJob(job); }
+    socket.on("sync:progress", handleProgress);
+    socket.on("sync:done", handleDone);
+
+    syncPollRef.current = setInterval(() => {
+      api.getSyncHistoryStatus().then((job) => {
+        if (job?.status) setSyncJob(job);
+      }).catch(() => {});
+    }, SYNC_POLL_INTERVAL_MS);
+
+    return () => {
+      socket.off("sync:progress", handleProgress);
+      socket.off("sync:done", handleDone);
+      clearInterval(syncPollRef.current);
+    };
+  }, [syncJob?.status]);
+
   async function handleSyncHistory() {
-    setSyncLoading(true);
-    setSyncResult(null);
     try {
       const result = await api.syncChatHistory();
-      setSyncResult(result);
+      setSyncJob({ jobId: result.jobId, status: "running", progress: { totalChats: 0, processedChats: 0, newMessages: 0, failedChats: 0, unsupportedMessages: 0, currentChat: null } });
     } catch (err) {
-      setSyncResult({ error: err.message });
-    } finally {
-      setSyncLoading(false);
+      // 409 = job lain sudah jalan (mis. admin lain klik duluan) — bukan
+      // error sungguhan, cuma "nempel" ke job yang sedang berjalan itu.
+      if (err.message === "Sinkronisasi sedang berjalan") {
+        api.getSyncHistoryStatus().then((job) => job?.status === "running" && setSyncJob(job)).catch(() => {});
+        return;
+      }
+      setSyncJob({ status: "failed", error: err.message, progress: {} });
     }
   }
 
@@ -689,22 +743,42 @@ export default function Pengaturan({ user }) {
               </div>
 
               <div style={{ marginTop: 20 }}>
-                <button className="btn btn-secondary" onClick={handleSyncHistory} disabled={syncLoading}>
-                  <Download size={15} /> {syncLoading ? "Sedang sinkronisasi..." : "Sinkronisasi Riwayat Chat"}
+                <button className="btn btn-secondary" onClick={handleSyncHistory} disabled={syncJob?.status === "running"}>
+                  <Download size={15} /> {syncJob?.status === "running" ? "Sedang sinkronisasi..." : "Sinkronisasi Riwayat Chat"}
                 </button>
               </div>
 
-              {syncResult && !syncResult.error && (
-                <div className="inline-feedback inline-feedback-success" style={{ marginTop: 14 }}>
-                  <strong>{syncResult.chatsProcessed ?? syncResult.total} chat diproses</strong>,{" "}
-                  {syncResult.newMessages ?? syncResult.synced} pesan baru
-                  {(syncResult.failedChats ?? syncResult.errors) > 0 && <> · {syncResult.failedChats ?? syncResult.errors} chat gagal (lihat log)</>}
-                  {syncResult.unsupportedMessages > 0 && <> · {syncResult.unsupportedMessages} pesan tipe tidak dikenal (lihat log)</>}
+              {syncJob?.status === "running" && (
+                <div style={{ marginTop: 14, maxWidth: 420 }}>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${syncJob.progress.totalChats ? Math.min(100, Math.round((syncJob.progress.processedChats / syncJob.progress.totalChats) * 100)) : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
+                    {syncJob.progress.processedChats}/{syncJob.progress.totalChats || "?"} chat diproses
+                    {syncJob.progress.currentChat && <> — Memproses {syncJob.progress.currentChat}...</>}
+                  </p>
+                  <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                    {syncJob.progress.newMessages} pesan baru ditemukan
+                  </p>
                 </div>
               )}
-              {syncResult?.error && (
+
+              {syncJob?.status === "done" && (
+                <div className="inline-feedback inline-feedback-success" style={{ marginTop: 14 }}>
+                  <strong>Selesai:</strong> {syncJob.progress.processedChats} chat diproses, {syncJob.progress.newMessages} pesan baru
+                  {syncJob.progress.failedChats > 0 && <> · {syncJob.progress.failedChats} chat gagal (lihat log)</>}
+                  {syncJob.progress.unsupportedMessages > 0 && <> · {syncJob.progress.unsupportedMessages} pesan tipe tidak dikenal (lihat log)</>}
+                  {syncJob.startedAt && syncJob.finishedAt && <> · durasi {formatSyncDuration(syncJob.startedAt, syncJob.finishedAt)}</>}
+                </div>
+              )}
+              {syncJob?.status === "failed" && (
                 <div className="inline-feedback inline-feedback-error" style={{ marginTop: 14 }}>
-                  Gagal sinkronisasi: {syncResult.error}
+                  Gagal sinkronisasi: {syncJob.error}
                 </div>
               )}
 

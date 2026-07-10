@@ -6,6 +6,8 @@ import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { prisma } from "../db.js";
 import { getSessionStatus, fetchChatHistory } from "../services/wahaClient.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
+import { getJob, isJobRunning, startJob } from "../services/syncHistoryJob.js";
+import { emitSyncProgress, emitSyncDone } from "../socket.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, "../../data/settings.json");
@@ -93,17 +95,31 @@ settingsRouter.put("/sales-targets", requireAdmin, async (req, res) => {
 // Idempotent: pesan yang sudah ada di DB di-skip via externalId @unique
 // Paginasi penuh + parsing semua tipe pesan lewat parseHistoryMessage — lihat
 // backend/src/utils/parseHistoryMessage.js untuk detail (fix bubble kosong).
+//
+// BACKGROUND JOB (fix UX timeout) — endpoint ini SEBELUMNYA menahan request
+// HTTP sampai SELURUH sync selesai (bisa berapa menit utk ratusan chat),
+// sehingga frontend abort di 30 detik dan tampilkan "Gagal: Koneksi timeout"
+// padahal sync-nya sendiri terus jalan sukses di belakang layar. Sekarang:
+// validasi → startJob (TIDAK di-await) → langsung return 202. Progress bisa
+// dipantau lewat GET /sync-history/status (polling) atau socket
+// sync:progress/sync:done.
 settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
-  const { phone } = req.body || {};
-  let chatsProcessed = 0, newMessages = 0, failedChats = 0, unsupportedMessages = 0;
+  if (isJobRunning()) {
+    return res.status(409).json({ error: "Sinkronisasi sedang berjalan", job: getJob() });
+  }
 
-  try {
+  const { phone } = req.body || {};
+
+  const job = startJob(async (job) => {
     const customers = await prisma.customer.findMany({
       where: phone ? { phone } : { phone: { not: null } },
-      select: { id: true, phone: true },
+      select: { id: true, phone: true, name: true },
     });
+    job.progress.totalChats = customers.length;
 
     for (const customer of customers) {
+      job.progress.currentChat = customer.name || customer.phone;
+
       try {
         // Cari conversation WA yang ada (dan sessionId-nya kalau ada), atau
         // buat baru (status RESOLVED karena ini history, bukan chat aktif).
@@ -113,62 +129,68 @@ settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
         });
 
         const messages = await fetchChatHistory(customer.phone, convo?.sessionId || undefined, { maxMessages: 1000 });
-        chatsProcessed++;
-        if (!messages.length) continue;
+        job.progress.processedChats++;
 
-        if (!convo) {
-          convo = await prisma.conversation.create({
-            data: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
-          });
-        }
-
-        for (const msg of messages) {
-          const parsed = parseHistoryMessage(msg);
-          if (!parsed.externalId) continue;
-
-          // Skip kalau sudah ada (idempotent)
-          const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });
-          if (exists) continue;
-
-          if (parsed.unsupported) {
-            unsupportedMessages++;
-            console.warn("[sync-history] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
+        if (messages.length) {
+          if (!convo) {
+            convo = await prisma.conversation.create({
+              data: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
+            });
           }
 
-          await prisma.message.create({
-            data: {
-              conversationId: convo.id,
-              direction:      parsed.direction,
-              content:        parsed.content,
-              mediaType:      parsed.mediaType,
-              mediaUrl:       parsed.mediaUrl,
-              externalId:     parsed.externalId,
-              createdAt:      parsed.createdAt,
-            },
-          });
-          newMessages++;
+          for (const msg of messages) {
+            const parsed = parseHistoryMessage(msg);
+            if (!parsed.externalId) continue;
+
+            // Skip kalau sudah ada (idempotent)
+            const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });
+            if (exists) continue;
+
+            if (parsed.unsupported) {
+              job.progress.unsupportedMessages++;
+              console.warn("[sync-history] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
+            }
+
+            await prisma.message.create({
+              data: {
+                conversationId: convo.id,
+                direction:      parsed.direction,
+                content:        parsed.content,
+                mediaType:      parsed.mediaType,
+                mediaUrl:       parsed.mediaUrl,
+                externalId:     parsed.externalId,
+                createdAt:      parsed.createdAt,
+              },
+            });
+            job.progress.newMessages++;
+          }
         }
       } catch (e) {
         console.error("[sync-history] Error untuk customer", customer.phone, e.message);
-        failedChats++;
+        job.progress.failedChats++;
+      }
+
+      // Emit progress tiap ~10 chat (bukan tiap chat — hindari spam socket
+      // untuk sync ratusan chat) + selalu emit di chat terakhir.
+      if (job.progress.processedChats % 10 === 0 || job.progress.processedChats === job.progress.totalChats) {
+        emitSyncProgress(job);
       }
     }
+  }, {
+    onDone: (job) => emitSyncDone(job),
+    onError: (job) => emitSyncDone(job),
+  });
 
-    // Ringkasan jujur (Task 5) — bukan cuma "0 pesan baru" tanpa konteks.
-    res.json({
-      ok: true,
-      chatsProcessed,
-      newMessages,
-      failedChats,
-      unsupportedMessages,
-      // Field lama dipertahankan supaya konsumen existing (kalau ada) tidak patah
-      total: customers.length,
-      synced: newMessages,
-      errors: failedChats,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.status(202).json({ jobId: job.jobId, status: job.status });
+});
+
+// GET /api/settings/sync-history/status — polling fallback (kalau socket
+// putus/tidak tersedia) dan dipakai saat mount halaman utk cek job yang
+// mungkin masih berjalan dari sebelum refresh.
+settingsRouter.get("/sync-history/status", requireAdmin, (req, res) => {
+  const job = getJob();
+  if (!job) return res.json({ status: "idle" });
+  res.json(job);
 });
 
 // GET /api/settings/whatsapp-status?session=CS-1 — cek koneksi WAHA live.

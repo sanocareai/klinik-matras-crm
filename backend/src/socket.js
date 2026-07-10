@@ -85,3 +85,14 @@ export function emitConversationUpdate(conv) {
     sessionId: conv.sessionId,
   });
 }
+
+// sync:progress / sync:done — status job "Sinkronisasi Riwayat Chat"
+// (settings.js). Broadcast ke SEMUA client (bukan per-room) — cuma admin
+// yang buka halaman Pengaturan yang peduli, tapi payload kecil jadi aman
+// broadcast luas (fallback polling tetap ada di frontend kalau socket putus).
+export function emitSyncProgress(job) {
+  io?.emit("sync:progress", job);
+}
+export function emitSyncDone(job) {
+  io?.emit("sync:done", job);
+}
