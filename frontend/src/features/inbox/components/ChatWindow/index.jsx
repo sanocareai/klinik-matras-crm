@@ -143,6 +143,17 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
     if (e.dataTransfer.files?.length) mediaUploaderRef.current?.addFiles(e.dataTransfer.files);
   }
 
+  // BUG KRITIS produksi — conversation.sessionId bisa null untuk conversation
+  // lama (dibuat sebelum Fase F, atau lewat sync-history yang tidak lewat
+  // webhook). Backend TOLAK kirim (409) sampai ini dibetulkan manual di sini,
+  // supaya balasan tidak pernah nyasar keluar dari nomor CS yang salah.
+  async function handleSetSession(sessionId) {
+    try {
+      const updated = await api.setConversationSession(conversationId, sessionId);
+      useConversationStore.getState().upsertConversation(updated);
+    } catch (err) { alert(err.message); }
+  }
+
   async function handleStatusChange(newStatus) {
     try {
       const updated = await api.updateConversation(conversationId, { status: newStatus });
@@ -187,6 +198,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const assignedTo  = conversation.assignedTo;
   const isMine      = assignedTo?.id === user?.id;
   const canTakeover = conversation.canTakeOver ?? false;
+  const sessionUnknown = !isGroup && conversation.channel === "WHATSAPP" && !conversation.sessionId;
 
   return (
     <div className={`chat-window${dragOver ? " chat-window-drag" : ""}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
@@ -291,6 +303,21 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
           )}
         </div>
       </div>
+
+      {/* ── Sesi WA belum diketahui — wajib dipilih dulu sebelum bisa kirim ── */}
+      {sessionUnknown && (
+        <div className="session-unknown-banner">
+          <span>Sesi WA percakapan ini belum diketahui — pilih sesi untuk bisa membalas.</span>
+          <select
+            defaultValue=""
+            onChange={(e) => { if (e.target.value) handleSetSession(e.target.value); }}
+          >
+            <option value="" disabled>Pilih sesi...</option>
+            <option value="CS-1">CS-1</option>
+            <option value="CS-2">CS-2</option>
+          </select>
+        </div>
+      )}
 
       {/* ── Search dalam percakapan ── */}
       {showSearch && (

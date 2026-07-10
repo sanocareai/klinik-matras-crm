@@ -43,6 +43,29 @@ function mimeToMediaType(mime) {
   return "document";
 }
 
+// BUG KRITIS (produksi) — sebelumnya sendText/sendMedia/markChatAsRead diam-diam
+// pakai WAHA_SESSION (env global), sehingga balasan CRM bisa keluar dari nomor
+// CS yang SALAH (customer chat masuk ke CS-1, balasan malah lewat CS-2).
+// Sekarang WAJIB pakai conversation.sessionId — field ini di-set otomatis dari
+// nama session webhook di setiap pesan masuk/keluar-dari-HP-admin (lihat
+// webhooks.js baris ~229, ~397, ~559 — sudah diverifikasi selalu terisi untuk
+// conversation yang sudah pernah menerima event webhook).
+//
+// sessionId BISA null untuk 2 kasus lama yang belum ter-backfill:
+//  1. Conversation dibuat lewat sync-history (settings.js) — proses itu tidak
+//     lewat webhook sama sekali, jadi sessionId tidak pernah ke-set.
+//  2. Conversation sangat lama dari sebelum field sessionId ada (Fase F).
+// Message model TIDAK punya field session sendiri (cek schema.prisma) — jadi
+// tidak ada sumber lain untuk "menebak" sesi selain conversation.sessionId itu
+// sendiri. Kalau null, JANGAN diam-diam pakai default — tolak dengan pesan
+// jelas, sales/admin perbaiki manual lewat PATCH /:id/session (dropdown di
+// header chat, lihat ChatWindow/index.jsx).
+function resolveSendSession(conversation) {
+  return conversation.sessionId || null;
+}
+
+const SESSION_UNKNOWN_ERROR = "Sesi WA percakapan ini belum diketahui — buka menu dan pilih sesi";
+
 // Jumlah percakapan belum dibaca (untuk badge sidebar)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/unread-count", async (req, res) => {
@@ -194,7 +217,10 @@ conversationRouter.get("/:id/messages", async (req, res) => {
         const lastSent = readReceiptSentAt.get(convId) || 0;
         if (now - lastSent > READ_RECEIPT_COOLDOWN_MS) {
           readReceiptSentAt.set(convId, now);
-          markChatAsRead(conv.customer.phone).catch(() => {}); // fire-and-forget
+          // sessionId bisa null (lihat resolveSendSession) — markChatAsRead
+          // sudah aman menangani ini (return false, tidak throw), read receipt
+          // bukan operasi kritis jadi tidak perlu blok user kalau sesi belum diketahui.
+          markChatAsRead(conv.customer.phone, resolveSendSession(conv)).catch(() => {}); // fire-and-forget
         }
       }
     } catch (e) {
@@ -227,7 +253,7 @@ conversationRouter.post("/:id/read", async (req, res) => {
     const lastSent = readReceiptSentAt.get(convId) || 0;
     if (now - lastSent > READ_RECEIPT_COOLDOWN_MS) {
       readReceiptSentAt.set(convId, now);
-      markChatAsRead(conv.customer.phone).catch(() => {});
+      markChatAsRead(conv.customer.phone, resolveSendSession(conv)).catch(() => {});
     }
   }
 });
@@ -252,8 +278,10 @@ conversationRouter.post("/:id/messages", async (req, res) => {
       return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
     if (!conversation.customer?.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+    const session = resolveSendSession(conversation);
+    if (!session) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
     try {
-      wahaMsg = await sendText(conversation.customer.phone, content, quotedMessageId || null);
+      wahaMsg = await sendText(conversation.customer.phone, content, quotedMessageId || null, session);
     } catch (waErr) {
       console.error("[sendText gagal]", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
@@ -359,13 +387,19 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
       return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
     if (!conversation.customer?.phone)
       return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+    const session = resolveSendSession(conversation);
+    if (!session) {
+      fs.unlink(file.path, () => {});
+      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+    }
     try {
       console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);
       const waResult = await sendMedia(
         conversation.customer.phone,
         { mimetype: wahaFileMime, filename: wahaFileName, url: wahaFileUrl },
         caption,
-        sendAs
+        sendAs,
+        session
       );
       console.log("[media] WAHA berhasil:", JSON.stringify(waResult).slice(0, 200));
     } catch (waErr) {
@@ -404,6 +438,8 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
   if (!conversation.customer.phone)
     return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+  const productSendSession = resolveSendSession(conversation);
+  if (!productSendSession) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -442,7 +478,8 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
         conversation.customer.phone,
         { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
         caption,
-        "media"
+        "media",
+        productSendSession
       );
       const msg = await prisma.message.create({
         data: {
@@ -569,6 +606,10 @@ conversationRouter.post("/:id/forward", async (req, res) => {
 
   let wahaMsg = null;
   if (targetConv.channel === "WHATSAPP" && targetConv.customer?.phone) {
+    // Session diambil dari conversation TUJUAN (targetConv), bukan sumber —
+    // pesan diteruskan KELUAR lewat nomor CS yang menangani percakapan tujuan.
+    const forwardSession = resolveSendSession(targetConv);
+    if (!forwardSession) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
     try {
       if (sourceMsg.mediaUrl && sourceMsg.mediaType) {
         const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
@@ -580,10 +621,11 @@ conversationRouter.post("/:id/forward", async (req, res) => {
           targetConv.customer.phone,
           { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
           sourceMsg.content || "",
-          "media"
+          "media",
+          forwardSession
         );
       } else if (sourceMsg.content) {
-        wahaMsg = await sendText(targetConv.customer.phone, sourceMsg.content);
+        wahaMsg = await sendText(targetConv.customer.phone, sourceMsg.content, null, forwardSession);
       }
     } catch (err) {
       console.error("[forward] WAHA gagal:", err.message);
@@ -626,6 +668,22 @@ conversationRouter.patch("/:id", async (req, res) => {
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
     data,
+  });
+  emitConversationUpdate(conversation);
+  res.json(conversation);
+});
+
+// Set sessionId manual — dipakai saat conversation.sessionId belum diketahui
+// (lihat resolveSendSession di atas) dan sales/admin perlu betulkan lewat
+// dropdown CS-1/CS-2 di header chat sebelum bisa kirim pesan.
+conversationRouter.patch("/:id/session", async (req, res) => {
+  const { sessionId } = req.body;
+  if (!sessionId || typeof sessionId !== "string" || !sessionId.trim()) {
+    return res.status(400).json({ error: "sessionId wajib diisi" });
+  }
+  const conversation = await prisma.conversation.update({
+    where: { id: req.params.id },
+    data:  { sessionId: sessionId.trim() },
   });
   emitConversationUpdate(conversation);
   res.json(conversation);

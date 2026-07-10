@@ -8,6 +8,14 @@ const WAHA_BASE_URL = process.env.WAHA_BASE_URL || "http://localhost:3000";
 const WAHA_API_KEY  = process.env.WAHA_API_KEY  || "";
 const WAHA_SESSION  = process.env.WAHA_SESSION  || "default";
 
+// Dipakai HANYA untuk notifikasi ops internal (backup gagal, WAHA down) yang
+// kirim ke nomor admin tetap — BUKAN bagian dari alur balasan customer, jadi
+// tidak ada conversation.sessionId untuk diambil. JANGAN pakai ini untuk
+// mengirim balasan ke customer manapun (lihat catatan di sendText/sendMedia).
+export function getDefaultOpsSession() {
+  return WAHA_SESSION;
+}
+
 function headers() {
   const h = { "Content-Type": "application/json" };
   if (WAHA_API_KEY) h["X-Api-Key"] = WAHA_API_KEY;
@@ -33,13 +41,20 @@ function normalizeWahaUrl(url) {
 
 // Kirim pesan teks
 // quotedMessageId: WAHA externalId pesan yang dikutip (untuk fitur reply/quote), opsional
-export async function sendText(to, text, quotedMessageId = null) {
+// session: WAJIB DIISI oleh caller — nomor WA aktif ada 2 (CS-1/CS-2, lihat
+// CLAUDE.md), tidak boleh diam-diam pakai WAHA_SESSION global (itu penyebab
+// bug kritis "balasan keluar lewat sesi salah"). Caller HARUS ambil dari
+// conversation.sessionId — lihat conversations.js.
+export async function sendText(to, text, quotedMessageId = null, session) {
+  if (!session) {
+    throw new Error("sendText: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
   const rawDigits = to.split("@")[0];
   if (rawDigits.length > 13 && !rawDigits.startsWith("62")) {
     console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to);
   }
   const chatId = to.includes("@") ? to : `${to}@c.us`;
-  const body = { session: WAHA_SESSION, chatId, text };
+  const body = { session, chatId, text };
   if (quotedMessageId) body.quotedMessageId = quotedMessageId;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
@@ -54,7 +69,11 @@ export async function sendText(to, text, quotedMessageId = null) {
 // file   = { mimetype, filename, url }
 // sendAs = "media"    → sendImage/sendVideo/sendVoice (tampil inline di WA)
 //        = "document" → sendFile (tampil sebagai attachment)
-export async function sendMedia(to, file, caption, sendAs = "media") {
+// session: WAJIB DIISI caller (lihat catatan di sendText di atas).
+export async function sendMedia(to, file, caption, sendAs = "media", session) {
+  if (!session) {
+    throw new Error("sendMedia: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
   const chatId = to.includes("@") ? to : `${to}@c.us`;
   const mime   = file.mimetype || "";
 
@@ -72,7 +91,7 @@ export async function sendMedia(to, file, caption, sendAs = "media") {
     ? { url: file.url, mimetype: mime, filename: file.filename || "file" }
     : { data: file.data, mimetype: mime, filename: file.filename || "file" };
 
-  const body = { session: WAHA_SESSION, chatId, file: filePayload };
+  const body = { session, chatId, file: filePayload };
   if (caption) body.caption = caption;
   // ptt = push-to-talk: wajib true agar WhatsApp kenali sebagai voice note (bukan file attachment biasa)
   if (endpoint === "/api/sendVoice") body.ptt = true;
@@ -150,15 +169,17 @@ export async function downloadMediaMessage(messageId) {
 // Kirim read receipt ke WhatsApp — supaya pesan berubah jadi centang biru di HP customer.
 // Dari log WAHA: PUT /chats/{id}/read → 404 (tidak ada di versi ini)
 //               POST /api/sendSeen   → 201 (berhasil) ← yang kita pakai
-// Return: true kalau berhasil, false kalau gagal (gagal = wajar, tidak crash proses lain)
-export async function markChatAsRead(phone) {
-  if (!phone) return false;
+// session: WAJIB DIISI caller (lihat catatan di sendText). Return: true kalau
+// berhasil, false kalau gagal ATAU session tidak diisi (gagal = wajar, tidak
+// crash proses lain — read receipt bukan operasi kritis).
+export async function markChatAsRead(phone, session) {
+  if (!phone || !session) return false;
   const chatId = `${phone}@c.us`;
   try {
     const res = await fetch(`${WAHA_BASE_URL}/api/sendSeen`, {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ session: WAHA_SESSION, chatId }),
+      body: JSON.stringify({ session, chatId }),
     });
     if (res.ok) return true;
     console.warn("[markChatAsRead] sendSeen gagal:", res.status, "phone:", phone);

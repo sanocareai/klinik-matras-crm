@@ -133,6 +133,10 @@ export const api = {
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Set sessionId manual — dipakai saat backend tolak kirim (409, sesi WA
+  // belum diketahui). Dropdown CS-1/CS-2 di header chat (lihat ChatWindow).
+  setConversationSession: (id, sessionId) =>
+    request(`/conversations/${id}/session`, { method: "PATCH", body: JSON.stringify({ sessionId }) }),
   sendMedia: (conversationId, formData) =>
     requestFormData(`/conversations/${conversationId}/media`, formData),
   takeoverConversation: (id) =>

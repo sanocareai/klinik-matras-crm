@@ -1,6 +1,6 @@
 import fs from "fs";
 import express from "express";
-import { sendText } from "../services/wahaClient.js";
+import { sendText, getDefaultOpsSession } from "../services/wahaClient.js";
 import { sendEmailAlert } from "../services/emailAlert.js";
 
 export const internalRouter = express.Router();
@@ -52,7 +52,7 @@ internalRouter.post("/backup-alert", async (req, res) => {
   ].join("\n");
 
   try {
-    await sendText(ADMIN_PHONE, pesan);
+    await sendText(ADMIN_PHONE, pesan, null, getDefaultOpsSession());
     console.log("[Backup Alert] Notifikasi WA terkirim ke", ADMIN_PHONE);
   } catch (err) {
     console.error("[Backup Alert] Gagal kirim WA:", err.message);
@@ -98,7 +98,7 @@ internalRouter.post("/waha-alert", async (req, res) => {
   let waSent = false;
   if (ADMIN_PHONE) {
     try {
-      await sendText(ADMIN_PHONE, pesan);
+      await sendText(ADMIN_PHONE, pesan, null, getDefaultOpsSession());
       waSent = true;
       console.log("[WAHA Alert] Notifikasi WA terkirim ke", ADMIN_PHONE);
     } catch (err) {
