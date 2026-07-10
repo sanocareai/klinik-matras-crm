@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp,
@@ -426,8 +427,16 @@ function SalesTargetSection() {
   );
 }
 
+const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
+
 export default function Pengaturan({ user }) {
-  const [section, setSection] = useState("profil");
+  // Deep link ?section=target-sales — dipakai widget Target Sales di
+  // Dashboard supaya empty state bisa langsung buka tab yang relevan.
+  const [searchParams] = useSearchParams();
+  const initialSection = NAV_KEYS.includes(searchParams.get("section"))
+    ? searchParams.get("section")
+    : "profil";
+  const [section, setSection] = useState(initialSection);
 
   // Settings
   const [settings, setSettings]   = useState(null);

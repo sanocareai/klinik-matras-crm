@@ -2939,6 +2939,59 @@ input:focus, select:focus, textarea:focus {
   border-top: 1px solid var(--border); font-size: 12px; color: var(--danger); font-weight: 500;
 }
 
+/* ── Target Sales Tim widget ── */
+.target-sales-heading { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0 0 12px; }
+.target-sales-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 16px; align-items: stretch; }
+.target-sales-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 36px 20px; text-align: center;
+}
+.target-sales-empty-text { font-size: 13px; color: var(--text-muted); margin: 0; max-width: 320px; }
+
+.target-sales-total-card { display: flex; flex-direction: column; }
+.target-sales-total-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px;
+}
+.target-ontrack-badge {
+  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px;
+}
+.target-ontrack-badge.onTrack { background: #d1fae5; color: #047857; }
+.target-ontrack-badge.behind  { background: #fef3c7; color: #92400e; }
+
+.target-sales-total-numbers { display: flex; align-items: baseline; gap: 6px; margin-bottom: 14px; }
+.target-sales-achieved { font-size: 28px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.3px; }
+.target-sales-of { font-size: 14px; color: var(--text-muted); }
+
+.target-sales-track { height: 8px; background: var(--bg-subtle); border-radius: 99px; overflow: hidden; }
+.target-sales-track-lg { height: 10px; margin-bottom: 8px; }
+.target-sales-fill { height: 100%; border-radius: 99px; }
+.target-sales-fill.onTrack { background: var(--success, #10b981); }
+.target-sales-fill.behind  { background: #f59e0b; }
+.target-sales-percent { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; display: block; }
+
+.target-sales-people-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+  align-content: start;
+}
+.target-sales-person-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px;
+}
+.target-sales-person-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.target-sales-person-name { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.target-sales-person-numbers { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--text-muted); }
+.target-sales-person-pct { font-weight: 600; color: var(--text-primary); }
+.target-sales-person-notarget { font-size: 12px; color: var(--text-muted); margin: 0; font-style: italic; }
+
+@media (max-width: 900px) {
+  .target-sales-grid { grid-template-columns: 1fr; }
+  .target-sales-people-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .target-sales-people-grid { grid-template-columns: 1fr; }
+}
+
 /* Recent orders table */
 .dash-orders-card { grid-column: 1 / -1; }
 .dash-orders-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
