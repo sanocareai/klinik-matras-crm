@@ -66,6 +66,16 @@ function resolveSendSession(conversation) {
 
 const SESSION_UNKNOWN_ERROR = "Sesi WA percakapan ini belum diketahui — buka menu dan pilih sesi";
 
+// Task 3 — grup WA sekarang bisa dibalas dari CRM (sebelumnya diblok,
+// commit 1a210d2/1ba6a23). Tujuan kirim beda tergantung type: INDIVIDUAL
+// pakai nomor customer, GROUP pakai groupJid (sudah format "xxx@g.us",
+// wahaClient.js#sendText/sendMedia sudah handle string yang sudah punya "@"
+// tanpa nambah "@c.us" lagi — tidak perlu ubah wahaClient.js).
+function resolveSendTarget(conversation) {
+  if (conversation.type === "GROUP") return conversation.groupJid || null;
+  return conversation.customer?.phone || null;
+}
+
 // Jumlah percakapan belum dibaca (untuk badge sidebar)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/unread-count", async (req, res) => {
@@ -273,15 +283,20 @@ conversationRouter.post("/:id/messages", async (req, res) => {
 
   let wahaMsg = null;
   if (conversation.channel === "WHATSAPP") {
-    // Percakapan grup tidak bisa dibalas dari CRM (tidak ada nomor customer tunggal)
-    if (conversation.type === "GROUP")
-      return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
-    if (!conversation.customer?.phone)
-      return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+    // Task 3 — grup WA sekarang BISA dibalas dari CRM (sebelumnya diblok di
+    // sini). Target kirim: groupJid untuk GROUP, nomor customer untuk
+    // INDIVIDUAL (lihat resolveSendTarget). Pipeline/order/customer record
+    // TETAP tidak ada untuk grup — cuma kemampuan chat yang dibuka.
+    const target = resolveSendTarget(conversation);
+    if (!target) {
+      return res.status(400).json({
+        error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+      });
+    }
     const session = resolveSendSession(conversation);
     if (!session) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
     try {
-      wahaMsg = await sendText(conversation.customer.phone, content, quotedMessageId || null, session);
+      wahaMsg = await sendText(target, content, quotedMessageId || null, session);
     } catch (waErr) {
       console.error("[sendText gagal]", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
@@ -314,8 +329,11 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConvSend);
 
-  // Auto-assign lead ke sales yang pertama kali balas
-  if (req.user.role === "SALES" && !conversation.assignedToId) {
+  // Auto-assign lead ke sales yang pertama kali balas — TIDAK berlaku untuk
+  // grup (Task 3d: grup tidak punya Customer/pipeline record, cuma chat-nya
+  // saja yang dibuka; conversation.customer null utk GROUP, akses
+  // .assignedSalesId di bawah akan crash kalau tidak di-guard).
+  if (req.user.role === "SALES" && !conversation.assignedToId && conversation.type !== "GROUP") {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data:  { assignedToId: req.user.id },
@@ -383,10 +401,16 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   }
 
   if (conversation.channel === "WHATSAPP") {
-    if (conversation.type === "GROUP")
-      return res.status(400).json({ error: "Percakapan grup tidak bisa dibalas dari CRM" });
-    if (!conversation.customer?.phone)
-      return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+    // Task 3 — media/VN sekarang juga bisa dikirim ke grup (composer grup
+    // sudah aktif penuh). Target: groupJid untuk GROUP, nomor customer
+    // untuk INDIVIDUAL.
+    const target = resolveSendTarget(conversation);
+    if (!target) {
+      fs.unlink(file.path, () => {});
+      return res.status(400).json({
+        error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+      });
+    }
     const session = resolveSendSession(conversation);
     if (!session) {
       fs.unlink(file.path, () => {});
@@ -395,7 +419,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     try {
       console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);
       const waResult = await sendMedia(
-        conversation.customer.phone,
+        target,
         { mimetype: wahaFileMime, filename: wahaFileName, url: wahaFileUrl },
         caption,
         sendAs,

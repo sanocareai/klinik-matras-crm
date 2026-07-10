@@ -210,15 +210,12 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     }, 0);
   }
 
-  if (conversation.type === "GROUP") {
-    return (
-      <div className="chat-input-area" style={{ justifyContent: "center", padding: "12px 16px" }}>
-        <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
-          Percakapan grup — tidak bisa dibalas dari CRM
-        </span>
-      </div>
-    );
-  }
+  // Task 3 — grup WA sekarang BISA dibalas dari CRM (sebelumnya sengaja
+  // di-disable, commit 1a210d2/1ba6a23). Composer aktif penuh untuk grup:
+  // teks, media, VN, reply, emoji — cuma template picker yang kurang pas
+  // (placeholder {nama_customer} fallback ke "Kak" karena grup tidak
+  // punya Customer record, lihat applyVariables di atas), tapi tidak
+  // di-block karena tetap berfungsi, cuma kurang presisi personalisasinya.
 
   return (
     <div className="chat-input-area">

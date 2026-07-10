@@ -135,7 +135,9 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   }
 
   // Drag & drop dari area manapun di jendela chat → serahkan ke MediaUploader (lewat ref)
-  function handleDragOver(e) { e.preventDefault(); if (conversation?.type !== "GROUP") setDragOver(true); }
+  // Task 3 — drag & drop media sekarang berlaku juga untuk grup (composer
+  // grup sudah aktif penuh, tidak ada alasan media di-block khusus di sini).
+  function handleDragOver(e) { e.preventDefault(); setDragOver(true); }
   function handleDragLeave() { setDragOver(false); }
   function handleDrop(e) {
     e.preventDefault();
@@ -198,7 +200,11 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const assignedTo  = conversation.assignedTo;
   const isMine      = assignedTo?.id === user?.id;
   const canTakeover = conversation.canTakeOver ?? false;
-  const sessionUnknown = !isGroup && conversation.channel === "WHATSAPP" && !conversation.sessionId;
+  // Task 3 — grup sekarang bisa dibalas juga, jadi butuh sessionId yang
+  // benar sama seperti conversation individual (grup TETAP dapat sessionId
+  // dari webhook, lihat handleGroupMessage di webhooks.js) — tidak lagi
+  // dikecualikan dari pengecekan ini.
+  const sessionUnknown = conversation.channel === "WHATSAPP" && !conversation.sessionId;
 
   return (
     <div className={`chat-window${dragOver ? " chat-window-drag" : ""}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
