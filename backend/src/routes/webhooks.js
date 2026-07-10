@@ -252,6 +252,265 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
   }
 }
 
+// ── Pesan masuk dari customer (inbound) — dipakai event "message" DAN
+// "message.any" (fromMe:false). Return "saved" kalau berhasil, "skip-dupe"
+// kalau race condition P2002 kejar duluan disimpan request lain.
+async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName }) {
+  // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
+  const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
+  let detectedSource = "WHATSAPP_DIRECT";
+  let detectedDetail = null;
+  let pendingClickId = null;
+
+  if (!existingCustomer) {
+    // Lapis 1: referral Meta Ads dari payload mentah (GOWS mungkin expose di Info.CtwaContext)
+    const rawData = payload._data || {};
+    const ctwa =
+      rawData.ctwaContext              ||
+      rawData.contextInfo?.referral    ||
+      rawData.conversionSource         ||
+      rawData.Info?.CtwaContext;
+    if (ctwa) {
+      detectedSource = "META_ADS";
+      detectedDetail = ctwa.sourceUrl || ctwa.headline || JSON.stringify(ctwa).slice(0, 200);
+      console.log("[attribution] Lapis 1 META_ADS:", detectedDetail);
+    } else {
+      console.log("[attribution] Lapis 1 tidak kena — NOWEB/GOWS mungkin tidak expose ctwaContext");
+    }
+
+    // Lapis 2: cari ClickEvent terbaru (15 menit) yang belum ter-match
+    if (detectedSource === "WHATSAPP_DIRECT") {
+      const since = new Date(Date.now() - 15 * 60 * 1000);
+      const recentClick = await prisma.clickEvent.findFirst({
+        where: { matchedCustomerId: null, createdAt: { gte: since } },
+        orderBy: { createdAt: "desc" },
+        include: { trackedLink: true },
+      });
+      if (recentClick) {
+        const MAP = {
+          META_ADS: "META_ADS", GOOGLE_ADS: "GOOGLE_ADS",
+          WEBSITE_ORGANIC: "WEBSITE_ORGANIC", OTHER: "OTHER",
+        };
+        detectedSource = MAP[recentClick.trackedLink.category] || "OTHER";
+        detectedDetail = recentClick.trackedLink.name;
+        pendingClickId = recentClick.id;
+        console.log("[attribution] Lapis 2 hit:", recentClick.trackedLink.name);
+      }
+    }
+    // Lapis 3: default WHATSAPP_DIRECT sudah diset di atas
+  }
+
+  // Upsert customer — bungkus P2002 untuk handle race condition:
+  // dua webhook identik bisa tiba bersamaan sebelum salah satu selesai INSERT
+  let customer;
+  try {
+    customer = await prisma.customer.upsert({
+      where:  { phone },
+      update: {},
+      create: {
+        phone,
+        name:                pushName || null,
+        leadSource:          detectedSource,
+        leadSourceDetail:    detectedDetail,
+        leadSourceConfirmed: false,
+      },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    customer = await prisma.customer.findUnique({ where: { phone } });
+    if (!customer) throw e;
+  }
+
+  // Untuk customer BARU: fetch foto profil WA sekali (fire-and-forget, gagal = wajar)
+  if (!existingCustomer) {
+    getProfilePicture(phone).then((url) => {
+      if (url) {
+        prisma.customer.update({ where: { phone }, data: { profilePictureUrl: url } }).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+
+  // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan ke customer ini
+  if (pendingClickId) {
+    await prisma.clickEvent.update({
+      where: { id: pendingClickId },
+      data:  { matchedCustomerId: customer.id },
+    }).catch(() => {});
+  }
+
+  // Cari/buat conversation aktif
+  let conversation = await prisma.conversation.findFirst({
+    where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+    orderBy: { lastMessageAt: "desc" },
+  });
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: { customerId: customer.id, channel: "WHATSAPP" },
+    });
+  }
+
+  // Download & simpan media kalau ada
+  let mediaType = null;
+  let mediaUrl  = null;
+
+  if (hasMedia) {
+    // GOWS mungkin simpan MIME di Info.Mimetype, NOWEB di _data.mimetype
+    const mime =
+      mediaInfo?.mimetype           ||
+      payload._data?.mimetype       ||
+      payload._data?.Info?.Mimetype ||
+      "";
+    mediaType = mimeToMediaType(mime);
+
+    console.log("[webhook] Ada media, mime:", mime, "ext:", extFromMime(mime), "url:", mediaInfo?.url?.slice(0, 80));
+
+    const downloaded = await downloadWithRetry(mediaInfo, externalId);
+
+    if (downloaded?.data) {
+      const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
+        ? downloaded.mimetype : mime;
+      const ext      = extFromMime(finalMime);
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+      fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
+      mediaUrl = `/uploads/${filename}`;
+      console.log("[webhook] Media disimpan:", mediaUrl);
+    } else {
+      console.warn("[webhook] Tidak bisa download media untuk id:", externalId);
+    }
+  }
+
+  // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
+  let inboundMsg;
+  try {
+    inboundMsg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction:      "INBOUND",
+        content:        text,
+        mediaType:      mediaType || null,
+        mediaUrl:       mediaUrl  || null,
+        externalId,
+      },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    return "skip-dupe";
+  }
+
+  // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
+  // + isRead=false (belum dibuka lagi)
+  const updatedConvInbound = await prisma.conversation.update({
+    where: { id: conversation.id },
+    data:  {
+      lastMessageAt: new Date(),
+      status: "OPEN",
+      unread: true,
+      isRead: false,
+      lastMessagePreview: buildMessagePreview(text, mediaType),
+      sessionId: sessionName || null,
+      unreadCount: { increment: 1 },
+    },
+  });
+
+  broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+  emitNewMessage(conversation.id, inboundMsg);
+  emitConversationUpdate(updatedConvInbound);
+
+  // Push notification ke aplikasi mobile tim (fire-and-forget).
+  // Hanya pesan individual — pesan grup internal tidak di-push supaya tidak berisik.
+  const preview = text
+    ? text.slice(0, 100)
+    : mediaType === "image"    ? "📷 Foto"
+    : mediaType === "video"    ? "🎥 Video"
+    : mediaType === "audio"    ? "🎤 Pesan suara"
+    : mediaType === "document" ? "📄 Dokumen"
+    : "Pesan baru";
+  sendPushToAllUsers({
+    title: customer.name || customer.phone || "Pelanggan",
+    body:  preview,
+    data:  { conversationId: conversation.id, customerId: customer.id },
+  }).catch((e) => console.warn("[push] Error:", e.message));
+
+  return "saved";
+}
+
+// ── Pesan OUTBOUND dari HP admin sendiri (bukan lewat CRM) ──────────────────
+// Dipakai event "message" (allowCreateCustomer=false, perilaku lama
+// dipertahankan persis) DAN event "message.any" (allowCreateCustomer=true —
+// fix BUG FATAL: balasan sales dari HP tidak tersimpan kalau customer/
+// conversation belum ada, mis. sales mulai chat duluan dari HP bukan CRM).
+// phone di sini SUDAH resolve dari Chat JID (lawan bicara), BUKAN Sender —
+// lihat extractPhoneGows: primaryJid = info.Chat saat fromMe true.
+// Return "saved" | "skip-dupe" | "dropped-no-customer".
+async function handleOutboundFromPhone(payload, phone, text, externalId, sessionName, initialAck, { allowCreateCustomer }) {
+  let customer = await prisma.customer.findUnique({ where: { phone } });
+
+  if (!customer) {
+    if (!allowCreateCustomer) {
+      console.log("[webhook] fromMe: customer belum ada di DB, dilewati:", phone);
+      return "dropped-no-customer";
+    }
+    // Sales mulai chat duluan dari HP — buat customer+conversation seperti
+    // pesan masuk biasa, TAPI pakai Chat (lawan bicara) sebagai identitas.
+    // Tidak ikut lead-attribution 3-lapis (itu murni utk pesan MASUK dari
+    // customer baru) — leadSource default WHATSAPP_DIRECT sudah representatif
+    // untuk kontak yang diinisiasi internal.
+    try {
+      customer = await prisma.customer.upsert({
+        where:  { phone },
+        update: {},
+        create: { phone, leadSource: "WHATSAPP_DIRECT", leadSourceConfirmed: false },
+      });
+    } catch (e) {
+      if (e.code !== "P2002") throw e;
+      customer = await prisma.customer.findUnique({ where: { phone } });
+      if (!customer) throw e;
+    }
+  }
+
+  let conversation = await prisma.conversation.findFirst({
+    where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+    orderBy: { lastMessageAt: "desc" },
+  });
+  if (!conversation) {
+    if (!allowCreateCustomer) return "dropped-no-customer"; // perilaku lama: skip kalau conversation belum ada juga
+    conversation = await prisma.conversation.create({
+      data: { customerId: customer.id, channel: "WHATSAPP" },
+    });
+  }
+
+  let outboundMsg;
+  try {
+    outboundMsg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: "OUTBOUND",
+        content: text,
+        externalId,
+        ack: initialAck || 0,
+      },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    return "skip-dupe"; // race condition — sudah disimpan concurrent request
+  }
+
+  // JANGAN sentuh unread/unreadCount/isRead — ini pesan KITA sendiri, bukan
+  // sinyal baca/belum-baca pesan customer.
+  const updatedConv = await prisma.conversation.update({
+    where: { id: conversation.id },
+    data:  {
+      lastMessageAt: new Date(),
+      lastMessagePreview: buildMessagePreview(text, null),
+      sessionId: sessionName || null,
+    },
+  });
+  broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
+  emitNewMessage(conversation.id, outboundMsg);
+  emitConversationUpdate(updatedConv);
+  return "saved";
+}
+
 webhookRouter.post("/waha", async (req, res) => {
   res.sendStatus(200); // Balas cepat supaya WAHA tidak retry
 
@@ -356,17 +615,26 @@ webhookRouter.post("/waha", async (req, res) => {
       return;
     }
 
-    if (event !== "message") return;
+    // "message" = pesan MASUK saja di setup ini (GOWS + hook events yang
+    // dipakai sekarang). "message.any" = SEMUA pesan (masuk & keluar) — ini
+    // satu-satunya jalur yang membawa balasan sales dari HP langsung
+    // (fromMe:true) sejak BUG FATAL (balasan HP tidak tersimpan di CRM)
+    // ditemukan. Event ini bisa OVERLAP dengan "message" untuk pesan masuk —
+    // idempotency check di bawah (by externalId) yang mencegah duplikat.
+    if (event !== "message" && event !== "message.any") return;
     if (!payload) return;
+    const isAnyEvent = event === "message.any";
 
     // TAHAP C — Idempotency check PERTAMA, sebelum proses apapun.
-    // Cegah duplikat dari: webhook retry WAHA, double delivery, atau
-    // fromMe dari HP admin yang bersamaan dengan CRM kirim pesan (externalId sama).
+    // Cegah duplikat dari: webhook retry WAHA, double delivery, overlap
+    // "message"/"message.any" untuk pesan yang sama, atau fromMe dari HP
+    // admin yang bersamaan dengan CRM kirim pesan (externalId sama).
     const externalId = payload.id;
     if (!externalId) return;
     const existing = await prisma.message.findUnique({ where: { externalId } });
     if (existing) {
       console.log("[webhook] Duplikat dibuang (externalId sudah ada):", externalId);
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${payload.chatId || payload._data?.Info?.Chat || "?"} resolved=- action=skip-dupe`);
       return;
     }
 
@@ -377,6 +645,7 @@ webhookRouter.post("/waha", async (req, res) => {
 
     // ── Deteksi grup WhatsApp (@g.us) — SEBELUM extract phone individual ─────
     // chatId untuk pesan grup selalu berakhiran "@g.us" di semua engine WAHA.
+    // Berlaku SAMA untuk message.any (grup gate + status@g.us drop tetap jalan).
     const chatJid = payload.chatId || payload._data?.Info?.Chat || "";
 
     // "status@g.us" = WhatsApp Status/broadcast, BUKAN grup sungguhan —
@@ -386,15 +655,21 @@ webhookRouter.post("/waha", async (req, res) => {
     // Fase 0 untuk cleanup data lama yang sudah terlanjur nyasar).
     if (chatJid === "status@g.us") {
       console.log("[webhook] Pesan status@g.us (WhatsApp Status broadcast) — bukan grup, dilewati.");
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${chatJid} resolved=- action=dropped-group`);
       return;
     }
 
     if (chatJid.endsWith("@g.us")) {
       await handleGroupMessage(payload, chatJid, externalId, sessionName);
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${chatJid} resolved=group action=saved`);
       return;
     }
 
-    // Normalisasi payload NOWEB/GOWS ke struktur yang sama (async — bisa resolve LID via API)
+    // Normalisasi payload NOWEB/GOWS ke struktur yang sama (async — bisa resolve LID via API).
+    // extractPhoneGows SUDAH benar pakai info.Chat (lawan bicara) saat
+    // fromMe:true, BUKAN Sender (Sender = nomor kita sendiri utk fromMe) —
+    // jadi `phone` di bawah ini otomatis identitas customer yang benar utk
+    // kedua arah, tidak perlu logic tambahan.
     const msgData = await extractMessageData(payload, engine, sessionName);
     const { phone, fromMe, pushName, body: text, hasMedia, mediaInfo } = msgData;
 
@@ -409,224 +684,27 @@ webhookRouter.post("/waha", async (req, res) => {
           payloadJson: JSON.stringify(payload).slice(0, 8000),
         },
       }).catch(e => console.warn("[webhook] Gagal simpan UnresolvedMessage:", e.message));
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=${fromMe} chat=${chatJid} resolved=- action=dropped-unresolved`);
       return;
     }
 
-    // ── Pesan outbound dari HP admin sendiri (bukan lewat CRM) ───────────────
-    // Simpan sebagai OUTBOUND, JANGAN buat customer baru dari pesan keluar admin.
     if (fromMe) {
-      const customer = await prisma.customer.findUnique({ where: { phone } });
-      if (!customer) {
-        console.log("[webhook] fromMe: customer belum ada di DB, dilewati:", phone);
-        return;
-      }
-
-      const conversation = await prisma.conversation.findFirst({
-        where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
-        orderBy: { lastMessageAt: "desc" },
-      });
-      if (!conversation) return;
-
-      let outboundMsg;
-      try {
-        outboundMsg = await prisma.message.create({
-          data: { conversationId: conversation.id, direction: "OUTBOUND",
-                  content: text, externalId },
-        });
-      } catch (e) {
-        if (e.code !== "P2002") throw e;
-        return; // race condition — sudah disimpan concurrent request
-      }
-      const updatedConvFromMe = await prisma.conversation.update({
-        where: { id: conversation.id },
-        data:  {
-          lastMessageAt: new Date(),
-          lastMessagePreview: buildMessagePreview(text, null),
-          sessionId: sessionName || null,
-        },
-      });
-      broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
-      emitNewMessage(conversation.id, outboundMsg);
-      emitConversationUpdate(updatedConvFromMe);
+      // ack awal dari payload kalau ada (dual-engine: NOWEB payload.ack, GOWS _data.ack)
+      const initialAck = payload.ack ?? payload._data?.ack ?? 0;
+      // allowCreateCustomer HANYA true utk message.any — event "message" di
+      // setup ini historically tidak pernah bawa fromMe, tapi kalau suatu
+      // saat ada engine/config lain yang tetap kirim fromMe lewat "message",
+      // perilaku lama (skip kalau customer belum ada) dipertahankan persis.
+      const action = await handleOutboundFromPhone(payload, phone, text, externalId, sessionName, initialAck, { allowCreateCustomer: isAnyEvent });
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=true chat=${chatJid} resolved=${phone} action=${action}`);
       return;
     }
 
-    // ── Pesan masuk dari customer (inbound) ───────────────────────────────────
-
-    // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
-    const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
-    let detectedSource = "WHATSAPP_DIRECT";
-    let detectedDetail = null;
-    let pendingClickId = null;
-
-    if (!existingCustomer) {
-      // Lapis 1: referral Meta Ads dari payload mentah (GOWS mungkin expose di Info.CtwaContext)
-      const rawData = payload._data || {};
-      const ctwa =
-        rawData.ctwaContext              ||
-        rawData.contextInfo?.referral    ||
-        rawData.conversionSource         ||
-        rawData.Info?.CtwaContext;
-      if (ctwa) {
-        detectedSource = "META_ADS";
-        detectedDetail = ctwa.sourceUrl || ctwa.headline || JSON.stringify(ctwa).slice(0, 200);
-        console.log("[attribution] Lapis 1 META_ADS:", detectedDetail);
-      } else {
-        console.log("[attribution] Lapis 1 tidak kena — NOWEB/GOWS mungkin tidak expose ctwaContext");
-      }
-
-      // Lapis 2: cari ClickEvent terbaru (15 menit) yang belum ter-match
-      if (detectedSource === "WHATSAPP_DIRECT") {
-        const since = new Date(Date.now() - 15 * 60 * 1000);
-        const recentClick = await prisma.clickEvent.findFirst({
-          where: { matchedCustomerId: null, createdAt: { gte: since } },
-          orderBy: { createdAt: "desc" },
-          include: { trackedLink: true },
-        });
-        if (recentClick) {
-          const MAP = {
-            META_ADS: "META_ADS", GOOGLE_ADS: "GOOGLE_ADS",
-            WEBSITE_ORGANIC: "WEBSITE_ORGANIC", OTHER: "OTHER",
-          };
-          detectedSource = MAP[recentClick.trackedLink.category] || "OTHER";
-          detectedDetail = recentClick.trackedLink.name;
-          pendingClickId = recentClick.id;
-          console.log("[attribution] Lapis 2 hit:", recentClick.trackedLink.name);
-        }
-      }
-      // Lapis 3: default WHATSAPP_DIRECT sudah diset di atas
-    }
-
-    // Upsert customer — bungkus P2002 untuk handle race condition:
-    // dua webhook identik bisa tiba bersamaan sebelum salah satu selesai INSERT
-    let customer;
-    try {
-      customer = await prisma.customer.upsert({
-        where:  { phone },
-        update: {},
-        create: {
-          phone,
-          name:                pushName || null,
-          leadSource:          detectedSource,
-          leadSourceDetail:    detectedDetail,
-          leadSourceConfirmed: false,
-        },
-      });
-    } catch (e) {
-      if (e.code !== "P2002") throw e;
-      customer = await prisma.customer.findUnique({ where: { phone } });
-      if (!customer) throw e;
-    }
-
-    // Untuk customer BARU: fetch foto profil WA sekali (fire-and-forget, gagal = wajar)
-    if (!existingCustomer) {
-      getProfilePicture(phone).then((url) => {
-        if (url) {
-          prisma.customer.update({ where: { phone }, data: { profilePictureUrl: url } }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
-
-    // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan ke customer ini
-    if (pendingClickId) {
-      await prisma.clickEvent.update({
-        where: { id: pendingClickId },
-        data:  { matchedCustomerId: customer.id },
-      }).catch(() => {});
-    }
-
-    // Cari/buat conversation aktif
-    let conversation = await prisma.conversation.findFirst({
-      where: { customerId: customer.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
-      orderBy: { lastMessageAt: "desc" },
-    });
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: { customerId: customer.id, channel: "WHATSAPP" },
-      });
-    }
-
-    // Download & simpan media kalau ada
-    let mediaType = null;
-    let mediaUrl  = null;
-
-    if (hasMedia) {
-      // GOWS mungkin simpan MIME di Info.Mimetype, NOWEB di _data.mimetype
-      const mime =
-        mediaInfo?.mimetype           ||
-        payload._data?.mimetype       ||
-        payload._data?.Info?.Mimetype ||
-        "";
-      mediaType = mimeToMediaType(mime);
-
-      console.log("[webhook] Ada media, mime:", mime, "ext:", extFromMime(mime), "url:", mediaInfo?.url?.slice(0, 80));
-
-      const downloaded = await downloadWithRetry(mediaInfo, externalId);
-
-      if (downloaded?.data) {
-        const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
-          ? downloaded.mimetype : mime;
-        const ext      = extFromMime(finalMime);
-        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-        fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
-        mediaUrl = `/uploads/${filename}`;
-        console.log("[webhook] Media disimpan:", mediaUrl);
-      } else {
-        console.warn("[webhook] Tidak bisa download media untuk id:", externalId);
-      }
-    }
-
-    // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
-    let inboundMsg;
-    try {
-      inboundMsg = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction:      "INBOUND",
-          content:        text,
-          mediaType:      mediaType || null,
-          mediaUrl:       mediaUrl  || null,
-          externalId,
-        },
-      });
-    } catch (e) {
-      if (e.code !== "P2002") throw e;
-      return;
-    }
-
-    // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
-    // + isRead=false (belum dibuka lagi)
-    const updatedConvInbound = await prisma.conversation.update({
-      where: { id: conversation.id },
-      data:  {
-        lastMessageAt: new Date(),
-        status: "OPEN",
-        unread: true,
-        isRead: false,
-        lastMessagePreview: buildMessagePreview(text, mediaType),
-        sessionId: sessionName || null,
-        unreadCount: { increment: 1 },
-      },
-    });
-
-    broadcast("new_message", { conversationId: conversation.id, customerId: customer.id });
-    emitNewMessage(conversation.id, inboundMsg);
-    emitConversationUpdate(updatedConvInbound);
-
-    // Push notification ke aplikasi mobile tim (fire-and-forget).
-    // Hanya pesan individual — pesan grup internal tidak di-push supaya tidak berisik.
-    const preview = text
-      ? text.slice(0, 100)
-      : mediaType === "image"    ? "📷 Foto"
-      : mediaType === "video"    ? "🎥 Video"
-      : mediaType === "audio"    ? "🎤 Pesan suara"
-      : mediaType === "document" ? "📄 Dokumen"
-      : "Pesan baru";
-    sendPushToAllUsers({
-      title: customer.name || customer.phone || "Pelanggan",
-      body:  preview,
-      data:  { conversationId: conversation.id, customerId: customer.id },
-    }).catch((e) => console.warn("[push] Error:", e.message));
+    // ── Pesan masuk dari customer (inbound) — event "message" ATAU
+    // "message.any" dengan fromMe:false (idempotency di atas cegah dobel
+    // proses kalau "message" sudah duluan simpan pesan yang sama) ─────────
+    const action = await handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName });
+    if (isAnyEvent) console.log(`[webhook][any] fromMe=false chat=${chatJid} resolved=${phone} action=${action}`);
 
   } catch (err) {
     console.error("Gagal proses webhook WAHA:", err);
