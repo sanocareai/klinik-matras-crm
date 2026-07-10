@@ -145,11 +145,20 @@ export const api = {
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   takeoverConversation: (id) =>
     request(`/conversations/${id}/takeover`, { method: "POST" }),
-  // file = { uri, name, type } dari image/document picker
-  sendMedia: (conversationId, file, caption = "") => {
+  // Teruskan pesan ke percakapan lain (dipakai modal Forward di ChatScreen)
+  forwardMessage: (sourceConvId, messageId, targetConversationId) =>
+    request(`/conversations/${sourceConvId}/forward`, {
+      method: "POST",
+      body: JSON.stringify({ messageId, targetConversationId }),
+    }),
+  // file = { uri, name, type } dari image/document/kamera picker.
+  // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
+  // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.
+  sendMedia: (conversationId, file, caption = "", sendAs = "media") => {
     const formData = new FormData();
     formData.append("file", file);
     if (caption) formData.append("caption", caption);
+    formData.append("sendAs", sendAs);
     return requestFormData(`/conversations/${conversationId}/media`, formData);
   },
 
@@ -159,6 +168,9 @@ export const api = {
     request(`/customers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
+
+  // Daftar user (untuk modal Transfer percakapan ke sales lain)
+  getUsers: () => request("/users"),
 
   // Template pesan (quick reply)
   getTemplates: () => request("/templates"),

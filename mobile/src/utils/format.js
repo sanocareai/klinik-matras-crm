@@ -57,19 +57,16 @@ export function clockTime(dateStr) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// Pemisah tanggal di chat: "Hari ini", "Kemarin", atau "Senin, 1 Juli 2026"
-export function dayLabel(dateStr) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const sameDay = (a, b) =>
-    a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
-  if (sameDay(d, today)) return "Hari ini";
-  if (sameDay(d, yesterday)) return "Kemarin";
-  const hari = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
-  const bulan = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-  return `${hari[d.getDay()]}, ${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+// Label divider tanggal di dalam percakapan (gaya WhatsApp) — SAMA dengan
+// frontend/src/features/inbox/utils/formatTime.js#dateDividerLabel: "Hari
+// Ini", "Kemarin", atau tanggal lengkap ("12 Juli 2026") untuk yang lebih lama.
+export function dateDividerLabel(dateStr) {
+  const d = dayjs(dateStr);
+  if (!d.isValid()) return "";
+  const diffHari = dayjs().startOf("day").diff(d.startOf("day"), "day");
+  if (diffHari === 0) return "Hari Ini";
+  if (diffHari === 1) return "Kemarin";
+  return d.format("D MMMM YYYY");
 }
 
 // Inisial nama untuk avatar: "Budi Santoso" → "BS"

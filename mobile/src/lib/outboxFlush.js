@@ -11,7 +11,12 @@ async function flushOutbox() {
   const { queue } = useOutboxStore.getState();
   for (const item of queue) {
     try {
-      const msg = await api.sendMessage(item.convId, item.payload.content);
+      const msg = await api.sendMessage(
+        item.convId,
+        item.payload.content,
+        item.payload.quotedMessageId || null,
+        item.payload.replyToId || null,
+      );
       useMessageStore.getState().replaceTempMessage(item.convId, item.tempId, msg);
       useOutboxStore.getState().dequeue(item.tempId);
     } catch (err) {

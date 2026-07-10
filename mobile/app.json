@@ -34,7 +34,14 @@
           "cameraPermission": "Aplikasi butuh akses kamera untuk kirim foto ke pelanggan"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-sharing",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Aplikasi butuh akses mikrofon untuk merekam pesan suara ke pelanggan"
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

@@ -1,28 +1,42 @@
-// Layar chat — bubble gaya WhatsApp, kirim teks/media, template balasan cepat,
-// ubah status percakapan, dan Ambil Alih. Polling 5 detik (fallback) +
-// Socket.IO real-time. Pesan bersumber dari messageStore (bukan state lokal),
-// kirim teks optimistic + antre ke outbox kalau gagal/offline.
-// Grup: tampilkan senderName per pesan, input dinonaktifkan (backend menolak
-// balas ke grup dari CRM).
-import React, { useCallback, useEffect, useRef, useState } from "react";
+// ChatScreen (Fase M-C) — desain light-blue, paritas WA: semua varian bubble,
+// reply/forward, VN, offline outbox. Pola SAMA dengan
+// frontend/src/features/inbox/components/ChatWindow/index.jsx +
+// MessageList.jsx + MessageBubble.jsx + Composer.jsx, diadaptasi ke RN.
+//
+// Windowing pesan: backend GET /:id/messages balikin SELURUH riwayat
+// sekaligus (tidak ada pagination server) — "muat pesan lebih lama saat
+// scroll ke atas" di sini murni WINDOWING lokal (reveal lebih banyak dari
+// array yang sudah lengkap di messageStore), sama seperti versi web.
+//
+// Catatan FlashList v2: prop "inverted" (yang diminta prompt fase ini)
+// SUDAH DIHAPUS dari FlashList v2 — API resminya sekarang
+// maintainVisibleContentPosition.startRenderingFromBottom untuk chat UI
+// (lihat dokumen paket), jadi list di bawah pakai itu, bukan inverted.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
-  KeyboardAvoidingView, Platform, Image, Alert, ActivityIndicator, Modal,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Modal,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import * as ImagePicker from "expo-image-picker";
-import * as DocumentPicker from "expo-document-picker";
+import NetInfo from "@react-native-community/netinfo";
 import { api, mediaUrl } from "../api";
-import { colors } from "../theme";
-import { clockTime, dayLabel } from "../utils/format";
+import { tokens } from "../constants/theme";
+import { dateDividerLabel } from "../utils/format";
 import Avatar from "../components/Avatar";
+import MessageBubble from "../components/MessageBubble";
+import AttachComposer from "../components/AttachComposer";
+import VoiceRecorderBar from "../components/VoiceRecorderBar";
+import MediaViewerModal from "../components/MediaViewerModal";
+import ForwardModal from "../components/ForwardModal";
+import TransferModal from "../components/TransferModal";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
-import { useComposerStore, useDraft } from "../store/composerStore";
+import { useComposerStore, useDraft, useReplyTarget } from "../store/composerStore";
 import { useOutboxStore } from "../store/outboxStore";
 
 const POLL_MS = 5000;
+const PAGE_SIZE = 50;
 
 const STATUS_OPTIONS = [
   { key: "OPEN", label: "🔵 Tandai Terbuka" },
@@ -30,32 +44,63 @@ const STATUS_OPTIONS = [
   { key: "RESOLVED", label: "✅ Tandai Selesai" },
 ];
 
-// Nama file dari URI kalau picker tidak kasih nama
-function fileNameFromUri(uri, fallbackExt) {
-  const last = (uri || "").split("/").pop() || "";
-  return last.includes(".") ? last : `file-${Date.now()}.${fallbackExt}`;
+// Susun array flat [divider, message, message, divider, ...] dari window
+// pesan yang sedang ditampilkan.
+function buildItems(messages) {
+  const items = [];
+  let lastDateKey = null;
+  for (const m of messages) {
+    const dateKey = new Date(m.createdAt).toDateString();
+    if (dateKey !== lastDateKey) {
+      items.push({ _type: "divider", id: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
+      lastDateKey = dateKey;
+    }
+    items.push({ _type: "message", id: m.id, message: m });
+  }
+  return items;
 }
 
 export default function ChatScreen({ route, navigation }) {
-  const { conversationId, name, isGroup, customerId } = route.params;
+  const { conversationId, name: routeName, isGroup: routeIsGroup, customerId: routeCustomerId } = route.params;
   const { user } = useAuth();
-  const messages = useMessagesForConv(conversationId);
+
+  const conversation = useConversationStore((s) => s.conversationsById[conversationId]);
+  const allMessages = useMessagesForConv(conversationId);
   const draft = useDraft(conversationId);
+  const replyTarget = useReplyTarget();
+
   const [text, setText] = useState(draft);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showAttach, setShowAttach] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [highlightedId, setHighlightedId] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const [mediaViewer, setMediaViewer] = useState(null); // { items, index }
+  const [isOffline, setIsOffline] = useState(false);
+
   const listRef = useRef(null);
   const pollRef = useRef(null);
+  const pendingScrollIdRef = useRef(null);
+  const highlightTimerRef = useRef(null);
+
+  const isGroup = conversation ? conversation.type === "GROUP" : !!routeIsGroup;
+  const customerId = conversation?.customerId ?? routeCustomerId;
+  const name = isGroup
+    ? (conversation?.groupName || routeName || "Grup WhatsApp")
+    : (conversation?.customer?.name || conversation?.customer?.phone || routeName || "Pelanggan");
+  const assignedTo = conversation?.assignedTo;
+  const isMine = assignedTo?.id === user?.id;
+  const canTakeover = conversation?.canTakeOver ?? false;
 
   const load = useCallback(async (silent = false) => {
     try {
       const data = await api.getMessages(conversationId);
       useMessageStore.getState().setMessages(conversationId, data);
+      // Cerminkan efek samping backend (isRead=true, unread=false) supaya
+      // badge unread di Inbox hilang seketika, tidak perlu nunggu refetch list.
+      useConversationStore.getState().upsertConversation({ id: conversationId, unread: false, isRead: true });
     } catch (err) {
       if (!silent) Alert.alert("Gagal memuat pesan", err.message);
     } finally {
@@ -69,17 +114,66 @@ export default function ChatScreen({ route, navigation }) {
     return () => clearInterval(pollRef.current);
   }, [load]);
 
-  // Join room socket percakapan ini selama layar dibuka — dipakai
-  // useSocketEvents (dipasang sekali di App.js) untuk scope message:new/ack.
+  // Join room socket percakapan ini selama layar dibuka (lihat useSocketEvents di App.js)
   useEffect(() => {
     useConversationStore.getState().setActive(conversationId);
     return () => useConversationStore.getState().setActive(null);
   }, [conversationId]);
 
-  // Template balasan cepat dimuat sekali (bukan tiap buka modal)
   useEffect(() => {
-    if (!isGroup) api.getTemplates().then(setTemplates).catch(() => {});
-  }, [isGroup]);
+    setVisibleCount(PAGE_SIZE);
+  }, [conversationId]);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => setIsOffline(state.isConnected === false));
+    return unsubscribe;
+  }, []);
+
+  const windowed = useMemo(() => allMessages.slice(-visibleCount), [allMessages, visibleCount]);
+  const items = useMemo(() => buildItems(windowed), [windowed]);
+
+  // Semua foto/video yang sudah termuat di percakapan ini — dipakai swipe gallery MediaViewerModal.
+  const galleryItems = useMemo(() => allMessages
+    .filter((m) => (m.mediaType === "image" || m.mediaType === "video") && m.mediaUrl)
+    .map((m) => ({ id: m.id, type: m.mediaType, url: mediaUrl(m.mediaUrl) })),
+  [allMessages]);
+
+  // Setelah window diperlebar demi "jump to reply", baru scroll (lihat scrollToMessage)
+  useEffect(() => {
+    if (!pendingScrollIdRef.current) return;
+    const id = pendingScrollIdRef.current;
+    const target = items.find((it) => it._type === "message" && it.message.id === id);
+    if (!target) return;
+    pendingScrollIdRef.current = null;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToItem({ item: target, animated: true, viewPosition: 0.5 });
+      setHighlightedId(id);
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
+    });
+  }, [items]);
+
+  function scrollToMessage(id) {
+    const rawIndex = allMessages.findIndex((m) => m.id === id);
+    if (rawIndex === -1) return; // pesan belum ke-load sama sekali di percakapan ini
+    const needed = allMessages.length - rawIndex + 5;
+    if (needed > visibleCount) {
+      pendingScrollIdRef.current = id;
+      setVisibleCount(Math.min(needed, allMessages.length));
+      return;
+    }
+    const target = items.find((it) => it._type === "message" && it.message.id === id);
+    if (!target) return;
+    listRef.current?.scrollToItem({ item: target, animated: true, viewPosition: 0.5 });
+    setHighlightedId(id);
+    clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
+  }
+
+  function handleStartReached() {
+    if (visibleCount >= allMessages.length) return;
+    setVisibleCount((v) => Math.min(v + PAGE_SIZE, allMessages.length));
+  }
 
   function handleChangeText(t) {
     setText(t);
@@ -89,97 +183,61 @@ export default function ChatScreen({ route, navigation }) {
   async function handleSend() {
     const content = text.trim();
     if (!content || sending) return;
+    const currentReply = replyTarget;
     setSending(true);
     setText("");
-    useComposerStore.getState().setDraft(conversationId, "");
+    useComposerStore.getState().clearComposer(conversationId);
 
-    // Optimistic — bubble muncul instan, diganti pesan asli setelah server jawab.
     const tempId = `temp-${Date.now()}`;
     useMessageStore.getState().appendMessage(conversationId, {
       id: tempId,
       conversationId,
       direction: "OUTBOUND",
       content,
+      replyTo: currentReply || null,
       createdAt: new Date().toISOString(),
       status: "sending",
     });
 
     try {
-      const msg = await api.sendMessage(conversationId, content);
+      const msg = await api.sendMessage(
+        conversationId, content, currentReply?.externalId || null, currentReply?.id || null,
+      );
       useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg);
     } catch (err) {
-      // Gagal (kemungkinan besar offline di lapangan) — antre, dicoba otomatis
-      // lagi begitu koneksi kembali (lihat src/lib/outboxFlush.js).
-      useOutboxStore.getState().enqueue({ convId: conversationId, tempId, payload: { content } });
+      // Gagal (kemungkinan offline di lapangan) — antre, dicoba otomatis lagi
+      // begitu koneksi kembali (lihat src/lib/outboxFlush.js).
+      useOutboxStore.getState().enqueue({
+        convId: conversationId, tempId,
+        payload: { content, quotedMessageId: currentReply?.externalId || null, replyToId: currentReply?.id || null },
+      });
     } finally {
       setSending(false);
     }
   }
 
-  // ---- Kirim media (galeri / kamera / dokumen) ----
-  async function uploadFile(file) {
-    setUploading(true);
-    try {
-      const msg = await api.sendMedia(conversationId, file, text.trim());
-      handleChangeText(""); // teks di input terpakai sebagai caption
-      useMessageStore.getState().appendMessage(conversationId, msg);
-    } catch (err) {
-      Alert.alert("Gagal kirim media", err.message);
-    } finally {
-      setUploading(false);
-    }
+  function handleRetry(m) {
+    const tempId = `temp-${Date.now()}`;
+    useMessageStore.setState((state) => ({
+      messagesByConvId: {
+        ...state.messagesByConvId,
+        [conversationId]: (state.messagesByConvId[conversationId] || [])
+          .filter((x) => x.id !== m.id)
+          .concat([{ ...m, id: tempId, status: "sending" }]),
+      },
+    }));
+    api.sendMessage(conversationId, m.content, m.replyTo?.externalId || null, m.replyTo?.id || null)
+      .then((msg) => useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg))
+      .catch(() => useOutboxStore.getState().enqueue({
+        convId: conversationId, tempId, payload: { content: m.content },
+      }));
   }
 
-  async function pickFromGallery() {
-    setShowAttach(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      quality: 0.7, // kompres foto supaya hemat kuota & cepat terkirim
-    });
-    if (result.canceled || !result.assets?.length) return;
-    const a = result.assets[0];
-    await uploadFile({
-      uri: a.uri,
-      name: a.fileName || fileNameFromUri(a.uri, a.type === "video" ? "mp4" : "jpg"),
-      type: a.mimeType || (a.type === "video" ? "video/mp4" : "image/jpeg"),
-    });
-  }
-
-  async function pickFromCamera() {
-    setShowAttach(false);
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (result.canceled || !result.assets?.length) return;
-    const a = result.assets[0];
-    await uploadFile({
-      uri: a.uri,
-      name: a.fileName || fileNameFromUri(a.uri, "jpg"),
-      type: a.mimeType || "image/jpeg",
-    });
-  }
-
-  async function pickDocument() {
-    setShowAttach(false);
-    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
-    if (result.canceled || !result.assets?.length) return;
-    const a = result.assets[0];
-    await uploadFile({
-      uri: a.uri,
-      name: a.name || fileNameFromUri(a.uri, "bin"),
-      type: a.mimeType || "application/octet-stream",
-    });
-  }
-
-  // ---- Aksi percakapan (menu ⋮) ----
   async function changeStatus(status) {
     setShowMenu(false);
     try {
-      await api.updateConversation(conversationId, { status });
-      Alert.alert("Berhasil", `Status percakapan diubah`);
+      const updated = await api.updateConversation(conversationId, { status });
+      useConversationStore.getState().upsertConversation(updated);
     } catch (err) {
       Alert.alert("Gagal", err.message);
     }
@@ -188,72 +246,47 @@ export default function ChatScreen({ route, navigation }) {
   async function handleTakeover() {
     setShowMenu(false);
     try {
-      await api.takeoverConversation(conversationId);
-      Alert.alert("Berhasil", "Percakapan sekarang jadi lead kamu");
+      const updated = await api.takeoverConversation(conversationId);
+      useConversationStore.getState().upsertConversation(updated);
     } catch (err) {
       Alert.alert("Ambil Alih", err.message);
     }
   }
 
-  // Sisipkan label tanggal ("Hari ini", "Kemarin", …) di antara pesan
-  const items = [];
-  let lastDay = null;
-  for (const m of messages) {
-    const day = dayLabel(m.createdAt);
-    if (day !== lastDay) {
-      items.push({ id: `day-${m.id}`, _type: "day", label: day });
-      lastDay = day;
-    }
-    items.push(m);
+  function openMediaViewer(msg) {
+    const idx = galleryItems.findIndex((x) => x.id === msg.id);
+    setMediaViewer({ items: galleryItems, index: idx === -1 ? 0 : idx });
   }
 
   function renderItem({ item }) {
-    if (item._type === "day") {
+    if (item._type === "divider") {
       return (
-        <View style={styles.dayWrap}>
-          <Text style={styles.dayText}>{item.label}</Text>
+        <View style={styles.dividerWrap}>
+          <Text style={styles.dividerText}>{item.label}</Text>
         </View>
       );
     }
-    const out = item.direction === "OUTBOUND";
+    const m = item.message;
     return (
-      <View style={[styles.bubbleRow, out ? styles.rowOut : styles.rowIn]}>
-        <View style={[styles.bubble, out ? styles.bubbleOut : styles.bubbleIn]}>
-          {isGroup && !out && item.senderName ? (
-            <Text style={styles.senderName}>{item.senderName}</Text>
-          ) : null}
-          {item.forwarded && <Text style={styles.forwarded}>↪️ Diteruskan</Text>}
-          {item.replyTo && (
-            <View style={styles.quote}>
-              <Text style={styles.quoteText} numberOfLines={2}>
-                {item.replyTo.content || `[${item.replyTo.mediaType || "media"}]`}
-              </Text>
-            </View>
-          )}
-          {item.mediaType === "image" && item.mediaUrl ? (
-            <Image source={{ uri: mediaUrl(item.mediaUrl) }} style={styles.image} resizeMode="cover" />
-          ) : item.mediaType ? (
-            <Text style={styles.mediaLabel}>
-              {item.mediaType === "video" ? "🎥 Video" :
-               item.mediaType === "audio" ? "🎤 Pesan suara" : "📄 Dokumen"}
-            </Text>
-          ) : null}
-          {item.content ? <Text style={styles.msgText}>{item.content}</Text> : null}
-          <Text style={styles.msgTime}>{clockTime(item.createdAt)}</Text>
-        </View>
-      </View>
+      <MessageBubble
+        message={m}
+        isGroup={isGroup}
+        highlighted={highlightedId === m.id}
+        onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
+        onForward={(msg) => setForwardMsg(msg)}
+        onJumpToReply={scrollToMessage}
+        onRetry={handleRetry}
+        onOpenMedia={openMediaViewer}
+      />
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹</Text>
+          <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerInfo}
@@ -263,8 +296,8 @@ export default function ChatScreen({ route, navigation }) {
           <Avatar name={name} size={38} isGroup={isGroup} />
           <View style={{ marginLeft: 10, flex: 1 }}>
             <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
-            <Text style={styles.headerSub}>
-              {isGroup ? "Grup WhatsApp internal" : "Ketuk untuk info pelanggan"}
+            <Text style={styles.headerSub} numberOfLines={1}>
+              {isGroup ? "Percakapan Grup" : (conversation?.customer?.phone || "Ketuk untuk info pelanggan")}
             </Text>
           </View>
         </TouchableOpacity>
@@ -277,27 +310,29 @@ export default function ChatScreen({ route, navigation }) {
 
       {/* Daftar pesan */}
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} color={colors.header} size="large" />
+        <ActivityIndicator style={{ flex: 1 }} color={tokens.color.accent} size="large" />
+      ) : items.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyText}>Belum ada pesan di percakapan ini</Text>
+        </View>
       ) : (
         <FlashList
           ref={listRef}
           style={styles.list}
           data={items}
           keyExtractor={(item) => item.id}
+          getItemType={(item) => item._type}
+          estimatedItemSize={70}
+          maintainVisibleContentPosition={{
+            startRenderingFromBottom: true,
+            autoscrollToBottomThreshold: 0.2,
+            autoscrollToTopThreshold: 0.2,
+          }}
+          onStartReached={handleStartReached}
+          onStartReachedThreshold={0.3}
           renderItem={renderItem}
-          getItemType={(item) => (item._type === "day" ? "day" : "message")}
-          estimatedItemSize={60}
-          onLoad={() => listRef.current?.scrollToEnd({ animated: false })}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          ListEmptyComponent={<Text style={styles.empty}>Belum ada pesan</Text>}
+          contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 8 }}
         />
-      )}
-
-      {uploading && (
-        <View style={styles.uploadingBar}>
-          <ActivityIndicator color="#fff" size="small" />
-          <Text style={styles.uploadingText}>Mengirim media…</Text>
-        </View>
       )}
 
       {/* Input kirim pesan */}
@@ -308,187 +343,161 @@ export default function ChatScreen({ route, navigation }) {
           </Text>
         </View>
       ) : (
-        <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowTemplates(true)}>
-            <Text style={styles.iconBtnText}>⚡</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowAttach(true)}>
-            <Text style={styles.iconBtnText}>📎</Text>
-          </TouchableOpacity>
-          <TextInput
-            style={styles.input}
-            placeholder="Ketik pesan…"
-            placeholderTextColor={colors.textMuted}
-            value={text}
-            onChangeText={handleChangeText}
-            multiline
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!text.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator color="#fff" size="small" />
+        <>
+          {isOffline && (
+            <View style={styles.offlineBanner}>
+              <Text style={styles.offlineBannerText}>📡 Menunggu koneksi… pesan akan otomatis terkirim</Text>
+            </View>
+          )}
+          {replyTarget && (
+            <View style={styles.replyBar}>
+              <View style={styles.replyBarAccent} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.replyBarTitle}>
+                  Membalas {replyTarget.direction === "OUTBOUND" ? "pesan kamu" : "pelanggan"}
+                </Text>
+                <Text style={styles.replyBarText} numberOfLines={1}>
+                  {replyTarget.content || (replyTarget.mediaType ? `[${replyTarget.mediaType}]` : "Pesan")}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => useComposerStore.getState().clearReply()}>
+                <Text style={styles.replyBarClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.inputBar}>
+            <AttachComposer
+              conversationId={conversationId}
+              onSent={(msg) => useMessageStore.getState().appendMessage(conversationId, msg)}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Ketik pesan…"
+              placeholderTextColor={tokens.color.textMuted}
+              value={text}
+              onChangeText={handleChangeText}
+              multiline
+            />
+            {text.trim() ? (
+              <TouchableOpacity
+                style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+                onPress={handleSend}
+                disabled={sending}
+              >
+                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendIcon}>➤</Text>}
+              </TouchableOpacity>
             ) : (
-              <Text style={styles.sendIcon}>➤</Text>
+              <VoiceRecorderBar
+                conversationId={conversationId}
+                onSent={(msg) => useMessageStore.getState().appendMessage(conversationId, msg)}
+              />
             )}
-          </TouchableOpacity>
-        </View>
+          </View>
+        </>
       )}
 
-      {/* Modal pilih lampiran */}
-      <Modal visible={showAttach} transparent animationType="fade"
-             onRequestClose={() => setShowAttach(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
-                          onPress={() => setShowAttach(false)}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Kirim Media</Text>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickFromGallery}>
-              <Text style={styles.sheetItemText}>🖼️ Foto / Video dari Galeri</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickFromCamera}>
-              <Text style={styles.sheetItemText}>📷 Ambil Foto (Kamera)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickDocument}>
-              <Text style={styles.sheetItemText}>📄 Dokumen</Text>
-            </TouchableOpacity>
-            <Text style={styles.sheetHint}>
-              Teks di kolom pesan akan ikut terkirim sebagai caption
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Modal template balasan cepat */}
-      <Modal visible={showTemplates} transparent animationType="fade"
-             onRequestClose={() => setShowTemplates(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
-                          onPress={() => setShowTemplates(false)}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Template Balasan</Text>
-            {templates.length === 0 && (
-              <Text style={styles.sheetHint}>Belum ada template — buat di CRM web</Text>
-            )}
-            <FlatList
-              data={templates}
-              keyExtractor={(t) => String(t.id)}
-              style={{ maxHeight: 320 }}
-              renderItem={({ item: t }) => (
-                <TouchableOpacity
-                  style={styles.sheetItem}
-                  onPress={() => { handleChangeText(t.isi); setShowTemplates(false); }}
-                >
-                  <Text style={styles.templateName}>{t.nama}</Text>
-                  <Text style={styles.templatePreview} numberOfLines={2}>{t.isi}</Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Modal menu aksi percakapan */}
-      <Modal visible={showMenu} transparent animationType="fade"
-             onRequestClose={() => setShowMenu(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
-                          onPress={() => setShowMenu(false)}>
+      {/* Menu aksi percakapan */}
+      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowMenu(false)}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>Aksi Percakapan</Text>
+            {!assignedTo && (
+              <TouchableOpacity style={styles.sheetItem} onPress={handleTakeover}>
+                <Text style={styles.sheetItemText}>🙋 Ambil Percakapan</Text>
+              </TouchableOpacity>
+            )}
+            {assignedTo && !isMine && canTakeover && (
+              <TouchableOpacity style={styles.sheetItem} onPress={handleTakeover}>
+                <Text style={styles.sheetItemText}>🙋 Ambil Alih (belum dibalas 1j+)</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setShowMenu(false); setShowTransfer(true); }}>
+              <Text style={styles.sheetItemText}>👤 Transfer ke Sales Lain</Text>
+            </TouchableOpacity>
             {STATUS_OPTIONS.map((s) => (
-              <TouchableOpacity key={s.key} style={styles.sheetItem}
-                                onPress={() => changeStatus(s.key)}>
+              <TouchableOpacity key={s.key} style={styles.sheetItem} onPress={() => changeStatus(s.key)}>
                 <Text style={styles.sheetItemText}>{s.label}</Text>
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={styles.sheetItem} onPress={handleTakeover}>
-              <Text style={styles.sheetItemText}>🙋 Ambil Alih Lead Ini</Text>
-            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <TransferModal
+        visible={showTransfer}
+        conversationId={conversationId}
+        currentAssignedId={assignedTo?.id}
+        onClose={() => setShowTransfer(false)}
+        onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
+      />
+
+      <ForwardModal visible={!!forwardMsg} message={forwardMsg} onClose={() => setForwardMsg(null)} />
+
+      {mediaViewer && (
+        <MediaViewerModal
+          visible={!!mediaViewer}
+          items={mediaViewer.items}
+          initialIndex={mediaViewer.index}
+          onClose={() => setMediaViewer(null)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.chatBg },
+  container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
-    backgroundColor: colors.header, flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 8, paddingVertical: 10,
+    backgroundColor: tokens.color.card, flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: tokens.color.border,
   },
   backBtn: { paddingHorizontal: 8 },
-  backText: { color: "#fff", fontSize: 30, lineHeight: 32 },
+  backIcon: { color: tokens.color.textPrimary, fontSize: 30, lineHeight: 32 },
   headerInfo: { flexDirection: "row", alignItems: "center", flex: 1 },
-  headerName: { color: colors.headerText, fontSize: 16, fontWeight: "700" },
-  headerSub: { color: "#b2dfdb", fontSize: 11 },
+  headerName: { color: tokens.color.textPrimary, fontSize: 16, fontWeight: "700" },
+  headerSub: { color: tokens.color.textSecondary, fontSize: 11 },
   menuBtn: { paddingHorizontal: 12 },
-  menuIcon: { color: "#fff", fontSize: 22, fontWeight: "700" },
-  list: { flex: 1, paddingHorizontal: 10 },
-  dayWrap: { alignItems: "center", marginVertical: 8 },
-  dayText: {
-    backgroundColor: "#e1f2fb", color: colors.textSecondary, fontSize: 12,
+  menuIcon: { color: tokens.color.textPrimary, fontSize: 22, fontWeight: "700" },
+  list: { flex: 1 },
+  dividerWrap: { alignItems: "center", marginVertical: 8 },
+  dividerText: {
+    backgroundColor: tokens.color.subtle, color: tokens.color.textSecondary, fontSize: 12,
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, overflow: "hidden",
   },
-  bubbleRow: { flexDirection: "row", marginVertical: 2 },
-  rowOut: { justifyContent: "flex-end" },
-  rowIn: { justifyContent: "flex-start" },
-  bubble: {
-    maxWidth: "80%", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
-    elevation: 1,
-  },
-  bubbleOut: { backgroundColor: colors.bubbleOut, borderTopRightRadius: 2 },
-  bubbleIn: { backgroundColor: colors.bubbleIn, borderTopLeftRadius: 2 },
-  senderName: { fontSize: 12, fontWeight: "700", color: colors.primary, marginBottom: 2 },
-  forwarded: { fontSize: 11, color: colors.textMuted, fontStyle: "italic", marginBottom: 2 },
-  quote: {
-    borderLeftWidth: 3, borderLeftColor: colors.accent, backgroundColor: "rgba(0,0,0,0.05)",
-    borderRadius: 6, padding: 6, marginBottom: 4,
-  },
-  quoteText: { fontSize: 12, color: colors.textSecondary },
-  image: { width: 220, height: 220, borderRadius: 8, marginBottom: 4 },
-  mediaLabel: { fontSize: 13, color: colors.textSecondary, fontStyle: "italic" },
-  msgText: { fontSize: 15, color: colors.text },
-  msgTime: { fontSize: 10, color: colors.textMuted, alignSelf: "flex-end", marginTop: 2 },
-  empty: { textAlign: "center", marginTop: 60, color: colors.textMuted },
-  uploadingBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: colors.header, paddingVertical: 6,
-  },
-  uploadingText: { color: "#fff", fontSize: 12 },
-  inputBar: {
-    flexDirection: "row", alignItems: "flex-end", padding: 8, gap: 6,
-  },
-  iconBtn: {
-    width: 40, height: 44, alignItems: "center", justifyContent: "center",
-  },
-  iconBtnText: { fontSize: 20 },
-  input: {
-    flex: 1, backgroundColor: "#fff", borderRadius: 22, paddingHorizontal: 16,
-    paddingVertical: 10, fontSize: 15, maxHeight: 110, color: colors.text,
-  },
-  sendBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.header,
-    alignItems: "center", justifyContent: "center",
-  },
-  sendBtnDisabled: { opacity: 0.5 },
-  sendIcon: { color: "#fff", fontSize: 18 },
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  emptyText: { color: tokens.color.textMuted },
   groupNotice: { backgroundColor: "#fef3c7", padding: 12 },
   groupNoticeText: { color: "#92400e", fontSize: 13, textAlign: "center" },
-  modalOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end",
+  offlineBanner: { backgroundColor: "#fef3c7", paddingVertical: 6, paddingHorizontal: 12 },
+  offlineBannerText: { color: "#92400e", fontSize: 12, textAlign: "center" },
+  replyBar: {
+    flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.subtle,
+    paddingHorizontal: 10, paddingVertical: 8, gap: 8,
   },
+  replyBarAccent: { width: 3, alignSelf: "stretch", backgroundColor: tokens.color.accent, borderRadius: 2 },
+  replyBarTitle: { fontSize: 11, fontWeight: "700", color: tokens.color.accent },
+  replyBarText: { fontSize: 12, color: tokens.color.textSecondary },
+  replyBarClose: { fontSize: 15, color: tokens.color.textMuted, padding: 4 },
+  inputBar: {
+    flexDirection: "row", alignItems: "flex-end", padding: 8, gap: 4,
+    backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,
+  },
+  input: {
+    flex: 1, backgroundColor: tokens.color.subtle, borderRadius: 20, paddingHorizontal: 14,
+    paddingVertical: 9, fontSize: 15, maxHeight: 110, color: tokens.color.textPrimary,
+  },
+  sendBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent,
+    alignItems: "center", justifyContent: "center",
+  },
+  sendBtnDisabled: { opacity: 0.6 },
+  sendIcon: { color: "#fff", fontSize: 17 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
     padding: 18, paddingBottom: 28,
   },
-  sheetTitle: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 8 },
-  sheetItem: {
-    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  sheetItemText: { fontSize: 15, color: colors.text },
-  sheetHint: { fontSize: 12, color: colors.textMuted, marginTop: 10, textAlign: "center" },
-  templateName: { fontSize: 14, fontWeight: "700", color: colors.text },
-  templatePreview: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
+  sheetItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+  sheetItemText: { fontSize: 15, color: tokens.color.textPrimary },
 });
