@@ -12,7 +12,7 @@ import MediaGallery from "./MediaGallery.jsx";
 // di WAHA lalu di-serve ke frontend — di luar scope Fase E (frontend-only).
 // Sampai itu ada, panel grup cuma nama grup + galeri media.
 export default function GroupPanel({ conversation }) {
-  const name = conversation?.groupName || conversation?.groupJid?.split("@")[0] || "Grup";
+  const name = conversation?.groupName || "Grup WhatsApp";
 
   return (
     <div className="customer-panel">

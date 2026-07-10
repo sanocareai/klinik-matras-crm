@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead } from "../services/wahaClient.js";
+import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead, getGroupInfo } from "../services/wahaClient.js";
 import { syncReadFromWaha } from "../services/reconciliation.js";
 import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
@@ -165,8 +165,11 @@ function extFromMime(mime) {
 async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
   try {
     // Nama grup (bukan nama sender) — GOWS mungkin expose di chatName.
-    // Info.PushName = nama PENGIRIM, bukan nama grup, jadi tidak dipakai untuk groupName.
-    const groupName =
+    // Info.PushName = nama PENGIRIM, bukan nama grup, jadi TIDAK PERNAH dipakai
+    // untuk groupName (bug produksi lama: grup tampil nama member, bukan nama
+    // grup — root cause: payload chatName/GroupName kosong lalu tidak ada
+    // fallback lain sampai fix ini, jadi kadang salah kesasar data lama).
+    let groupName =
       payload.chatName ||
       payload._data?.chatName ||
       payload._data?.Info?.GroupName ||
@@ -190,17 +193,26 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       orderBy: { lastMessageAt: "desc" },
     });
 
+    // Tier 2 — payload tidak menyertakan nama grup yang bisa diandalkan →
+    // tanya WAHA langsung (authoritative source, bukan tebak-tebak dari
+    // payload). Cuma dipanggil sekali per grup (di-cache ke groupName di DB),
+    // BUKAN tiap pesan masuk — supaya tidak membebani WAHA API.
+    const needsNameLookup = !groupName && (!conversation || !conversation.groupName);
+    if (needsNameLookup) {
+      groupName = await getGroupInfo(groupJid, sessionName);
+    }
+
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
           type:      "GROUP",
           groupJid,
-          groupName: groupName || groupJid.split("@")[0],
+          groupName: groupName || null, // null (bukan JID mentah) — ChatWindow/ConversationItem fallback ke "Grup WhatsApp"
           channel:   "WHATSAPP",
           customerId: null,
         },
       });
-      console.log("[webhook] Grup baru dibuat:", groupJid, "→", conversation.id);
+      console.log("[webhook] Grup baru dibuat:", groupJid, "→", conversation.id, "nama:", groupName || "(belum diketahui)");
     } else if (groupName && !conversation.groupName) {
       // Update nama grup kalau baru diketahui
       await prisma.conversation.update({

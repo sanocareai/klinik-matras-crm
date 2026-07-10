@@ -190,6 +190,29 @@ export async function markChatAsRead(phone, session) {
   }
 }
 
+// Ambil info grup (nama/subject) dari WAHA by groupJid — dipakai webhooks.js
+// saat payload webhook tidak menyertakan nama grup yang bisa diandalkan.
+// WAHA REST: GET /api/{session}/groups/{id} → { id, subject, ... }.
+// Return: nama grup (string) atau null kalau gagal/tidak tersedia (WAJAR,
+// caller fallback ke groupJid mentah).
+export async function getGroupInfo(groupJid, session = WAHA_SESSION) {
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupJid)}`,
+      { headers: headers() }
+    );
+    if (!res.ok) {
+      console.warn("[getGroupInfo] Gagal:", res.status, "groupJid:", groupJid);
+      return null;
+    }
+    const data = await res.json();
+    return data.subject || data.name || null;
+  } catch (e) {
+    console.warn("[getGroupInfo] Error:", e.message);
+    return null;
+  }
+}
+
 // Ambil URL foto profil kontak — return null kalau privasi dibatasi atau gagal (itu WAJAR)
 export async function getProfilePicture(phone) {
   try {

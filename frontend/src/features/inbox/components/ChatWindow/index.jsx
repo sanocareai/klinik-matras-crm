@@ -193,7 +193,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const isGroup     = conversation.type === "GROUP";
   const rawPhone    = conversation.customer?.phone;
   const name        = isGroup
-    ? (conversation.groupName || conversation.groupJid?.split("@")[0] || "Grup")
+    ? (conversation.groupName || "Grup WhatsApp")
     : (conversation.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || conversation.customer?.instagramHandle || "Pelanggan");
   const assignedTo  = conversation.assignedTo;
   const isMine      = assignedTo?.id === user?.id;

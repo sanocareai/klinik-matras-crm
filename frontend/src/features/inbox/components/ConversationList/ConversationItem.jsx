@@ -24,7 +24,7 @@ function ConversationItemBase({ id }) {
   const isGroup    = c.type === "GROUP";
   const rawPhone   = c.customer?.phone;
   const name       = isGroup
-    ? (c.groupName || c.groupJid?.split("@")[0] || "Grup")
+    ? (c.groupName || "Grup WhatsApp")
     : (c.customer?.name || (rawPhone ? formatPhoneDisplay(rawPhone) : null) || c.customer?.instagramHandle || "Pelanggan");
   const lastMsg    = c.messages?.[0];
   const isUnread   = !!c.unread;
