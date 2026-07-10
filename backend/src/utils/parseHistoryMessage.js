@@ -35,6 +35,18 @@ const RAW_MEDIA_KEY_TO_TYPE = {
   stickerMessage:  "sticker",
 };
 
+// _data.Info.MediaType (GOWS) — string tipe LANGSUNG ("image"/"video"/
+// "audio"/"document"/"sticker"/"ptt"), BUKAN mimetype. Dikonfirmasi via
+// testing payload langsung WAHA GOWS — field ini SELALU ada untuk pesan
+// media walau msg.media (URL) null (URL cuma terisi kalau WAHA di-fetch
+// dengan downloadMedia=true). "ptt" = push-to-talk = voice note → audio.
+const KNOWN_MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
+function normalizeRawMediaType(raw) {
+  const t = (raw || "").toLowerCase();
+  if (t === "ptt") return "audio";
+  return KNOWN_MEDIA_TYPES.has(t) ? t : null;
+}
+
 function mimeToMediaType(mime) {
   const m = (mime || "").split(";")[0].trim().toLowerCase();
   if (m.startsWith("image/")) return "image";
@@ -72,9 +84,14 @@ export function parseHistoryMessage(msg) {
   let mediaUrl  = null;
   let caption   = null;
 
-  if (msg.hasMedia || msg.media) {
+  const rawMediaType = normalizeRawMediaType(msg._data?.Info?.MediaType);
+
+  if (msg.hasMedia || msg.media || rawMediaType) {
     const mime = msg.media?.mimetype || msg._data?.mimetype || msg._data?.Info?.Mimetype || "";
-    mediaType = mime ? mimeToMediaType(mime) : "document";
+    // Prioritas: mimetype (paling presisi) > _data.Info.MediaType (string
+    // tipe langsung, sering satu-satunya sumber saat media.url belum
+    // ter-download) > "document" (fallback aman terakhir).
+    mediaType = mime ? mimeToMediaType(mime) : (rawMediaType || "document");
     mediaUrl  = msg.media?.url || null; // URL dari WAHA sendiri — aman dipakai langsung kalau ada
     caption   = msg.caption || text || null;
   } else {

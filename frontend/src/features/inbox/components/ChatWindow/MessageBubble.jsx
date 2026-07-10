@@ -1,10 +1,12 @@
 import React, { memo, useRef, useState } from "react";
 import {
-  Reply, Forward, FileText, Image as ImageIcon, Video, Mic,
-  Play, Pause, Check, CheckCheck, Clock,
+  Reply, Forward, FileText, Image as ImageIcon, Video, Mic, Smile,
+  Play, Pause, Check, CheckCheck, Clock, Download, Loader2,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
+import { api } from "../../../../api.js";
+import { useMessageStore } from "../../stores/messageStore.js";
 
 // Cek apakah string adalah JSON error (dari bug lama download media)
 function isJsonError(str) {
@@ -82,6 +84,48 @@ function AudioPlayer({ src }) {
   );
 }
 
+const MEDIA_TYPE_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText, sticker: Smile };
+const MEDIA_TYPE_LABEL = { image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker" };
+
+// Kartu placeholder untuk media yang mediaType-nya diketahui tapi mediaUrl
+// belum tersedia (Fix 4 — WAHA gagal auto-download saat webhook masuk, atau
+// data lama sebelum Fix 1). Tombol "Muat Media" panggil fetch-on-demand
+// (POST .../load-media) — kalau berhasil, update store langsung supaya
+// bubble ini otomatis ganti jadi media asli tanpa perlu refresh chat.
+function MediaPlaceholderCard({ message, conversationId }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const Icon = MEDIA_TYPE_ICON[message.mediaType] || FileText;
+  const label = MEDIA_TYPE_LABEL[message.mediaType] || "Media";
+
+  async function handleLoad(e) {
+    e.stopPropagation();
+    if (!conversationId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await api.loadMessageMedia(conversationId, message.id);
+      useMessageStore.getState().updateMessage(message.id, { mediaUrl: updated.mediaUrl });
+    } catch (err) {
+      setError(err.message || "Gagal muat media");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="bubble-media-placeholder">
+      <Icon size={16} />
+      <span>{label}{message.content && !message.content.startsWith("[") ? ` — ${message.content}` : ""}</span>
+      <button type="button" className="bubble-media-load-btn" onClick={handleLoad} disabled={loading}>
+        {loading ? <Loader2 size={13} className="spin" /> : <Download size={13} />}
+        {loading ? "Memuat..." : "Muat Media"}
+      </button>
+      {error && <span className="bubble-media-load-error">{error}</span>}
+    </div>
+  );
+}
+
 function VideoThumb({ src, onClick }) {
   return (
     <button type="button" className="bubble-video-thumb" onClick={onClick}>
@@ -91,7 +135,7 @@ function VideoThumb({ src, onClick }) {
   );
 }
 
-function MessageBubbleBase({ message: m, isGroup, onReply, onForward, onJumpToReply, highlighted, onRetry, onOpenMedia }) {
+function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onForward, onJumpToReply, highlighted, onRetry, onOpenMedia }) {
   const [hovered, setHovered] = useState(false);
   const longPressTimerRef = useRef(null);
 
@@ -99,7 +143,11 @@ function MessageBubbleBase({ message: m, isGroup, onReply, onForward, onJumpToRe
   const isSending = m.status === "sending";
   const isFailed  = m.status === "failed";
   const hasMedia  = !!m.mediaType;
-  const text      = (!isJsonError(m.content) && m.content) ? m.content : "";
+  // Placeholder bracket ("[Foto]" dst, lihat parseHistoryMessage.js) sudah
+  // ditampilkan via MediaPlaceholderCard di bawah — JANGAN dobel-render
+  // sebagai bubble-text terpisah juga.
+  const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
+  const text = (!isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
 
   function handleTouchStart() {
     longPressTimerRef.current = setTimeout(() => {
@@ -168,12 +216,7 @@ function MessageBubbleBase({ message: m, isGroup, onReply, onForward, onJumpToRe
           </a>
         )}
         {hasMedia && !m.mediaUrl && (
-          <div className="bubble-media-placeholder">
-            {m.mediaType === "image"    && <><ImageIcon size={16} /> Foto (tidak bisa diunduh)</>}
-            {m.mediaType === "video"    && <><Video size={16} /> Video (tidak bisa diunduh)</>}
-            {m.mediaType === "audio"    && <><Mic size={16} /> Pesan Suara (tidak bisa diunduh)</>}
-            {m.mediaType === "document" && <><FileText size={16} /> Dokumen (tidak bisa diunduh)</>}
-          </div>
+          <MediaPlaceholderCard message={m} conversationId={conversationId} />
         )}
 
         {text && <span className="bubble-text">{text}</span>}

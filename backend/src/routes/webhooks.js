@@ -160,6 +160,25 @@ function extFromMime(mime) {
   return map[cleanMime(mime)] || ".bin";
 }
 
+// Download & simpan 1 file media ke disk — DIPAKAI BERSAMA oleh handler
+// grup, inbound, dan outbound-dari-HP (Fix 1 bug produksi: sebelumnya cuma
+// handleInboundMessage yang punya logic ini, handleGroupMessage &
+// handleOutboundFromPhone TIDAK SAMA SEKALI — itu sebabnya mayoritas bubble
+// kosong ada di grup, karena SEMUA pesan media grup lewat sini tanpa pernah
+// coba download/simpan apapun). Return mediaUrl (path lokal) atau null
+// kalau gagal/tidak ada sumber — caller WAJIB isi placeholder teks kalau null.
+async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime) {
+  const downloaded = await downloadWithRetry(mediaInfo, externalId);
+  if (!downloaded?.data) return null;
+  const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
+    ? downloaded.mimetype : (fallbackMime || "");
+  const ext = extFromMime(finalMime);
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
+  console.log("[webhook] Media disimpan:", filename);
+  return `/uploads/${filename}`;
+}
+
 // ── Handler pesan grup WhatsApp ──────────────────────────────────────────────
 // Grup (@g.us) disimpan sebagai Conversation terpisah tanpa Customer record.
 // Tidak ada lead attribution, tidak ada customer upsert, tidak muncul di CRM Pelanggan.
@@ -185,7 +204,6 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       null;
 
     const fromMe  = !!payload.fromMe;
-    const text    = payload.body || "";
     const direction = fromMe ? "OUTBOUND" : "INBOUND";
 
     // Cari conversation grup yang masih aktif untuk JID ini
@@ -238,11 +256,28 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       });
     }
 
+    // Media (Fix 1 — bug produksi: handler grup ini SEBELUMNYA sama sekali
+    // tidak baca media, cuma content:text, jadi SEMUA pesan media grup
+    // (mayoritas trafik grup produksi) tersimpan sebagai bubble kosong.
+    // parseHistoryMessage (shared parser, sama dengan jalur sync riwayat)
+    // baca hasMedia + _data.Info.MediaType + fallback placeholder — content
+    // TIDAK PERNAH kosong lagi walau download gagal.
+    const parsedMedia = parseHistoryMessage(payload);
+    const mediaType = parsedMedia.mediaType;
+    let mediaUrl = null;
+    let content = parsedMedia.content;
+
+    if (mediaType) {
+      const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
+      mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
+      if (!mediaUrl) console.warn("[webhook] Grup: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
+    }
+
     // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)
     let message;
     try {
       message = await prisma.message.create({
-        data: { conversationId: conversation.id, direction, content: text, externalId,
+        data: { conversationId: conversation.id, direction, content, mediaType, mediaUrl, externalId,
                 senderName: fromMe ? null : (senderName || null) },
       });
     } catch (e) {
@@ -254,7 +289,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        lastMessagePreview: buildMessagePreview(text, null),
+        lastMessagePreview: buildMessagePreview(content, mediaType),
         sessionId: sessionName || null,
         ...(direction === "INBOUND" ? { unread: true, unreadCount: { increment: 1 } } : {}),
       },
@@ -382,34 +417,21 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     }
   }
 
-  // Download & simpan media kalau ada
-  let mediaType = null;
-  let mediaUrl  = null;
+  // Media (Fix 1) — parseHistoryMessage (shared parser, sama dengan jalur
+  // sync riwayat) baca hasMedia + _data.Info.MediaType (WAHA GOWS taruh
+  // tipe pesan media di sini walau media.url belum ke-download) + fallback
+  // placeholder sesuai tipe. content TIDAK PERNAH kosong lagi walau
+  // download gagal (bug lama: content="" + mediaUrl=null = bubble kosong).
+  const parsedMedia = parseHistoryMessage(payload);
+  const mediaType = parsedMedia.mediaType;
+  let mediaUrl = null;
+  const content = parsedMedia.content;
 
-  if (hasMedia) {
-    // GOWS mungkin simpan MIME di Info.Mimetype, NOWEB di _data.mimetype
-    const mime =
-      mediaInfo?.mimetype           ||
-      payload._data?.mimetype       ||
-      payload._data?.Info?.Mimetype ||
-      "";
-    mediaType = mimeToMediaType(mime);
-
-    console.log("[webhook] Ada media, mime:", mime, "ext:", extFromMime(mime), "url:", mediaInfo?.url?.slice(0, 80));
-
-    const downloaded = await downloadWithRetry(mediaInfo, externalId);
-
-    if (downloaded?.data) {
-      const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
-        ? downloaded.mimetype : mime;
-      const ext      = extFromMime(finalMime);
-      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-      fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
-      mediaUrl = `/uploads/${filename}`;
-      console.log("[webhook] Media disimpan:", mediaUrl);
-    } else {
-      console.warn("[webhook] Tidak bisa download media untuk id:", externalId);
-    }
+  if (mediaType) {
+    const fallbackMime = mediaInfo?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
+    console.log("[webhook] Ada media, tipe:", mediaType, "mime:", fallbackMime, "url:", mediaInfo?.url?.slice(0, 80));
+    mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime);
+    if (!mediaUrl) console.warn("[webhook] Tidak bisa download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
   // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
@@ -419,9 +441,9 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       data: {
         conversationId: conversation.id,
         direction:      "INBOUND",
-        content:        text,
-        mediaType:      mediaType || null,
-        mediaUrl:       mediaUrl  || null,
+        content,
+        mediaType,
+        mediaUrl,
         externalId,
       },
     });
@@ -526,13 +548,29 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     }
   }
 
+  // Media (Fix 1) — handler ini SEBELUMNYA tidak baca media SAMA SEKALI
+  // (sales kirim foto langsung dari HP, bukan lewat CRM, jadi tersimpan
+  // sebagai bubble kosong). parseHistoryMessage sama seperti 2 handler lain.
+  const parsedMedia = parseHistoryMessage(payload);
+  const mediaType = parsedMedia.mediaType;
+  let mediaUrl = null;
+  const content = parsedMedia.content;
+
+  if (mediaType) {
+    const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
+    mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
+    if (!mediaUrl) console.warn("[webhook] fromMe: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
+  }
+
   let outboundMsg;
   try {
     outboundMsg = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         direction: "OUTBOUND",
-        content: text,
+        content,
+        mediaType,
+        mediaUrl,
         externalId,
         ack: initialAck || 0,
       },
@@ -548,7 +586,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     where: { id: conversation.id },
     data:  {
       lastMessageAt: new Date(),
-      lastMessagePreview: buildMessagePreview(text, null),
+      lastMessagePreview: buildMessagePreview(text, mediaType),
       sessionId: sessionName || null,
     },
   });

@@ -376,9 +376,15 @@ export async function getChats(limit = 20, session = WAHA_SESSION) {
 }
 
 // Ambil SATU halaman riwayat pesan dari WAHA (internal, dipakai fetchChatHistory).
+// downloadMedia=true (Fix 2, bug bubble kosong) — supaya msg.media.url
+// terisi kalau WAHA berhasil download+decrypt. Kalau WAHA gagal/lambat
+// untuk media tertentu, msg.media tetap null utk pesan itu SAJA (tidak
+// gagalkan seluruh halaman) — parseHistoryMessage sudah gracefully
+// fallback ke placeholder teks sesuai tipe kalau mediaUrl tidak tersedia,
+// jadi tidak perlu mekanisme fetch-on-demand terpisah di jalur sync ini.
 async function fetchChatHistoryPage(chatId, session, pageSize, offset) {
   const res = await fetch(
-    `${WAHA_BASE_URL}/api/${session}/chats/${encodeURIComponent(chatId)}/messages?limit=${pageSize}&offset=${offset}&downloadMedia=false`,
+    `${WAHA_BASE_URL}/api/${session}/chats/${encodeURIComponent(chatId)}/messages?limit=${pageSize}&offset=${offset}&downloadMedia=true`,
     { headers: headers() }
   );
   if (!res.ok) {
@@ -403,7 +409,10 @@ async function fetchChatHistoryPage(chatId, session, pageSize, offset) {
 // kalau gagal/tidak tersedia di session manapun.
 export async function fetchChatHistory(phone, preferredSession, opts = {}) {
   const { maxMessages = 1000, pageSize = 100 } = opts;
-  const chatId = `${phone}@c.us`;
+  // phone bisa berupa nomor polos ("628xxx") ATAU JID lengkap yang sudah
+  // ada @-nya (dipakai scripts/fix-empty-messages.js utk grup — groupJid
+  // sudah dalam format "xxx@g.us", JANGAN ditambah "@c.us" lagi).
+  const chatId = phone.includes("@") ? phone : `${phone}@c.us`;
   const sessionsToTry = preferredSession
     ? [preferredSession, ...KNOWN_SESSIONS.filter((s) => s !== preferredSession)]
     : KNOWN_SESSIONS;

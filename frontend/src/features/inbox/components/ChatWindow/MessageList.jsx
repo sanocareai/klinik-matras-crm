@@ -188,6 +188,7 @@ const MessageList = forwardRef(function MessageList(
             return (
               <MessageBubble
                 message={m}
+                conversationId={conversationId}
                 isGroup={isGroup}
                 onReply={onReply}
                 onForward={onForward}

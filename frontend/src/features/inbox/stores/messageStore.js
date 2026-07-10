@@ -75,6 +75,27 @@ export const useMessageStore = create((set) => ({
     return {};
   }),
 
+  // Update field arbitrer (mis. mediaUrl setelah "Muat Media" berhasil) —
+  // dicari lintas conversation sama seperti updateAck (id pesan unik global,
+  // tidak perlu tahu convId dari caller).
+  updateMessage: (messageId, patch) => set((state) => {
+    const activeId = useConversationStore.getState().activeConversationId;
+    const searchOrder = activeId
+      ? [activeId, ...Object.keys(state.messagesByConvId).filter((id) => id !== activeId)]
+      : Object.keys(state.messagesByConvId);
+
+    for (const convId of searchOrder) {
+      const list = state.messagesByConvId[convId];
+      if (!list) continue;
+      const idx = list.findIndex((m) => m.id === messageId);
+      if (idx === -1) continue;
+      const updatedList = [...list];
+      updatedList[idx] = { ...updatedList[idx], ...patch };
+      return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
+    }
+    return {};
+  }),
+
   clearConversation: (convId) => set((state) => {
     const messagesByConvId = { ...state.messagesByConvId };
     delete messagesByConvId[convId];

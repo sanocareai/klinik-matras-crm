@@ -141,6 +141,10 @@ export const api = {
   // header chat, recovery kasus per-kasus tanpa perlu sync semua customer.
   syncConversationHistory: (id) =>
     request(`/conversations/${id}/sync-history`, { method: "POST" }),
+  // Fetch-on-demand 1 media pesan (Fix 4) — dipakai tombol "Muat Media" di
+  // MessageBubble saat mediaType diketahui tapi mediaUrl belum tersedia.
+  loadMessageMedia: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}/load-media`, { method: "POST" }),
   sendMedia: (conversationId, formData) =>
     requestFormData(`/conversations/${conversationId}/media`, formData),
   takeoverConversation: (id) =>

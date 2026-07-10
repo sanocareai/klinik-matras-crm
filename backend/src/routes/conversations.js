@@ -7,7 +7,7 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { sendText, sendMedia, markChatAsRead, fetchChatHistory } from "../services/wahaClient.js";
+import { sendText, sendMedia, markChatAsRead, fetchChatHistory, downloadMediaMessage } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
@@ -42,6 +42,18 @@ function mimeToMediaType(mime) {
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
   return "document";
+}
+
+// Ekstensi file dari MIME type — dipakai POST /:id/messages/:messageId/load-media
+function extFromMime(mime) {
+  const map = {
+    "image/jpeg": ".jpg",  "image/png": ".png",   "image/gif": ".gif",
+    "image/webp": ".webp", "video/mp4": ".mp4",   "video/webm": ".webm",
+    "audio/ogg":  ".ogg",  "audio/opus": ".ogg",  "audio/webm": ".webm",
+    "audio/mpeg": ".mp3",  "audio/mp4": ".m4a",   "audio/aac": ".aac",
+    "application/pdf": ".pdf",
+  };
+  return map[(mime || "").split(";")[0].trim().toLowerCase()] || ".bin";
 }
 
 // BUG KRITIS (produksi) — sebelumnya sendText/sendMedia/markChatAsRead diam-diam
@@ -770,5 +782,44 @@ conversationRouter.post("/:id/sync-history", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: `Gagal sync riwayat: ${err.message}` });
+  }
+});
+
+// Fetch-on-demand 1 media pesan (Fix 4) — dipakai tombol "Muat Media" di
+// MessageBubble saat mediaType diketahui tapi mediaUrl belum tersedia
+// (WAHA gagal download otomatis saat webhook masuk). Coba download ulang
+// via externalId, simpan ke disk, update Message.mediaUrl.
+conversationRouter.post("/:id/messages/:messageId/load-media", async (req, res) => {
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== req.params.id) {
+    return res.status(404).json({ error: "Pesan tidak ditemukan" });
+  }
+  if (message.mediaUrl) {
+    return res.json(message); // sudah ada, idempotent
+  }
+  if (!message.mediaType) {
+    return res.status(400).json({ error: "Pesan ini bukan media" });
+  }
+  if (!message.externalId) {
+    return res.status(400).json({ error: "Pesan ini tidak punya externalId, tidak bisa diunduh ulang" });
+  }
+
+  try {
+    const downloaded = await downloadMediaMessage(message.externalId);
+    if (!downloaded?.data) {
+      return res.status(502).json({ error: "WAHA tidak bisa kasih media ini lagi (mungkin sudah kedaluwarsa di server WhatsApp)" });
+    }
+    const ext = extFromMime(downloaded.mimetype);
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+    fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
+    const mediaUrl = `/uploads/${filename}`;
+
+    const updated = await prisma.message.update({
+      where: { id: message.id },
+      data: { mediaUrl },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(502).json({ error: `Gagal muat media: ${err.message}` });
   }
 });

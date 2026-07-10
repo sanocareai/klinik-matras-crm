@@ -1,21 +1,26 @@
 // Script perbaikan: cari Message dengan bubble KOSONG (content null/'' DAN
-// mediaUrl null) — akibat bug lama sync riwayat yang cuma baca msg.body
-// tanpa parsing media/tipe pesan lain (lihat parseHistoryMessage.js untuk
-// fix-nya di jalur sync baru; script ini reparasi data LAMA yang sudah
-// terlanjur kosong).
+// mediaUrl null) — akibat bug lama webhook/sync yang tidak parsing media
+// grup & individual (lihat webhooks.js Fix 1 utk perbaikan jalur baru;
+// script ini reparasi data LAMA yang sudah terlanjur kosong, termasuk grup
+// — mayoritas bubble kosong produksi ada di grup, mis. SANO TIM PRODUKSI
+// 61 dari 94 pesan adalah media yang sebelumnya tidak pernah di-parse).
 //
 // Strategi per Message kosong:
-//   1. Ambil Conversation + Customer.phone (skip GROUP — belum didukung,
-//      groupJid butuh alur re-fetch beda dari fetchChatHistory per-nomor).
+//   1. Ambil Conversation — INDIVIDUAL pakai Customer.phone, GROUP pakai
+//      groupJid langsung (fetchChatHistory terima keduanya, lihat
+//      wahaClient.js).
 //   2. Re-fetch riwayat chat itu dari WAHA (fetchChatHistory, paginasi
-//      penuh, sessionId conversation kalau ada), cari pesan dengan
-//      externalId yang sama, parse ulang pakai parseHistoryMessage.
-//   3. Kalau ketemu & hasil parse punya content/media yang lebih baik →
-//      update Message.
-//   4. Kalau TIDAK ketemu di WAHA (chat mungkin sudah di-archive/dihapus)
-//      → isi placeholder: pakai mediaType YANG SUDAH TERSIMPAN kalau ada
-//      (mis. dulu mediaType='image' tapi bubble kosong → "[Foto]"), kalau
-//      mediaType juga null sama sekali → "[Pesan tidak didukung]".
+//      penuh + downloadMedia=true sejak Fix 2, sessionId conversation
+//      kalau ada), cari pesan dengan externalId yang sama, parse ulang
+//      pakai parseHistoryMessage (shared parser, sama dgn webhooks.js).
+//   3. Kalau ketemu DAN dapat mediaUrl sungguhan → "diperbaiki-dengan-media".
+//   4. Kalau ketemu tapi TETAP tidak ada mediaUrl (WAHA gagal decrypt/media
+//      sudah kedaluwarsa di server WA) → isi placeholder sesuai tipe →
+//      "placeholder-saja".
+//   5. Kalau TIDAK ketemu di WAHA sama sekali (chat/pesan sudah di-archive
+//      atau dihapus) → pakai mediaType YANG SUDAH TERSIMPAN kalau ada
+//      (placeholder sesuai itu), atau "[Media]" generik kalau mediaType
+//      juga null sama sekali → "gagal".
 //
 // JANGAN auto-run — WAJIB pakai --dry-run dulu:
 //   docker compose exec backend node scripts/fix-empty-messages.js --dry-run
@@ -33,12 +38,12 @@ async function main() {
 
   const emptyMessages = await prisma.message.findMany({
     where: {
-      OR: [{ content: null }, { content: "" }],
+      content: "", // Message.content bukan nullable (@default("")), jadi kosong = string ""
       mediaUrl: null,
     },
     include: {
       conversation: {
-        select: { id: true, type: true, sessionId: true, customer: { select: { phone: true } } },
+        select: { id: true, type: true, sessionId: true, groupJid: true, customer: { select: { phone: true } } },
       },
     },
   });
@@ -59,28 +64,24 @@ async function main() {
     byConversation.get(msg.conversationId).push(msg);
   }
 
-  let repaired = 0, placeholdered = 0, skippedGroup = 0, failed = 0;
+  let repairedWithMedia = 0, placeholderOnly = 0, failed = 0;
 
   for (const [conversationId, msgs] of byConversation) {
     const conv = msgs[0].conversation;
 
-    if (conv.type === "GROUP") {
-      console.log(`  [SKIP] Conversation ${conversationId} (GROUP) — ${msgs.length} pesan kosong, belum didukung di script ini.`);
-      skippedGroup += msgs.length;
-      continue;
-    }
-
-    const phone = conv.customer?.phone;
-    if (!phone) {
-      console.log(`  [GAGAL] Conversation ${conversationId} — tidak ada nomor customer, tidak bisa re-fetch.`);
+    // INDIVIDUAL pakai nomor customer, GROUP pakai groupJid langsung —
+    // fetchChatHistory terima keduanya (deteksi otomatis via "@" di string).
+    const identity = conv.type === "GROUP" ? conv.groupJid : conv.customer?.phone;
+    if (!identity) {
+      console.log(`  [GAGAL] Conversation ${conversationId} (${conv.type}) — tidak ada identitas (phone/groupJid), tidak bisa re-fetch.`);
       failed += msgs.length;
       continue;
     }
 
-    console.log(`  Conversation ${conversationId} (${phone}) — ${msgs.length} pesan kosong, re-fetch dari WAHA...`);
+    console.log(`  Conversation ${conversationId} (${conv.type}, ${identity}) — ${msgs.length} pesan kosong, re-fetch dari WAHA...`);
     let history = [];
     try {
-      history = await fetchChatHistory(phone, conv.sessionId || undefined, { maxMessages: 1000 });
+      history = await fetchChatHistory(identity, conv.sessionId || undefined, { maxMessages: 1000 });
     } catch (e) {
       console.warn(`    Gagal fetch riwayat: ${e.message}`);
     }
@@ -91,34 +92,38 @@ async function main() {
 
       if (rawMatch) {
         const parsed = parseHistoryMessage(rawMatch);
-        console.log(`    [KETEMU] ${msg.externalId} → "${parsed.content}" (mediaType: ${parsed.mediaType || "-"})`);
         if (!DRY_RUN) {
           await prisma.message.update({
             where: { id: msg.id },
             data: { content: parsed.content, mediaType: parsed.mediaType, mediaUrl: parsed.mediaUrl },
           });
         }
-        repaired++;
+        if (parsed.mediaUrl) {
+          console.log(`    [DIPERBAIKI+MEDIA] ${msg.externalId} → "${parsed.content}" (${parsed.mediaType}, url tersimpan)`);
+          repairedWithMedia++;
+        } else {
+          console.log(`    [PLACEHOLDER] ${msg.externalId} → "${parsed.content}" (mediaType: ${parsed.mediaType || "-"}, WAHA tidak kasih URL media)`);
+          placeholderOnly++;
+        }
         continue;
       }
 
       // Tidak ketemu di WAHA — isi placeholder dari mediaType tersimpan kalau ada
       const placeholder = msg.mediaType && MEDIA_TYPE_PLACEHOLDER[msg.mediaType]
         ? MEDIA_TYPE_PLACEHOLDER[msg.mediaType]
-        : "[Pesan tidak didukung]";
-      console.log(`    [TIDAK KETEMU] ${msg.externalId || msg.id} → placeholder: "${placeholder}"`);
+        : "[Media]";
+      console.log(`    [GAGAL — tidak ketemu di WAHA] ${msg.externalId || msg.id} → placeholder: "${placeholder}"`);
       if (!DRY_RUN) {
         await prisma.message.update({ where: { id: msg.id }, data: { content: placeholder } });
       }
-      placeholdered++;
+      failed++;
     }
   }
 
   console.log(`\n${DRY_RUN ? "[DRY-RUN] Akan " : ""}Selesai.`);
-  console.log(`Diperbaiki dari WAHA : ${repaired}`);
-  console.log(`Diisi placeholder    : ${placeholdered}`);
-  console.log(`Dilewati (grup)      : ${skippedGroup}`);
-  console.log(`Gagal (no phone)     : ${failed}`);
+  console.log(`Diperbaiki dengan media (URL tersimpan) : ${repairedWithMedia}`);
+  console.log(`Placeholder saja (ketemu, tanpa URL)     : ${placeholderOnly}`);
+  console.log(`Gagal (tidak ketemu di WAHA)             : ${failed}`);
 
   await prisma.$disconnect();
 }
