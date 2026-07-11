@@ -30,8 +30,9 @@ export function AuthProvider({ children }) {
           unauthorizedHandler: () => setUser(null),
         });
         if (savedToken && savedUser) {
-          setUser(JSON.parse(savedUser));
-          registerForPush(); // refresh token push tiap app dibuka (fire-and-forget)
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
+          registerForPush(parsedUser); // refresh token push tiap app dibuka (fire-and-forget)
           refreshSocketAuth(); // sambungkan socket pakai token yang baru dipulihkan
         }
       } finally {
@@ -52,7 +53,7 @@ export function AuthProvider({ children }) {
     ]);
     setServer(srv);
     setUser(res.user);
-    registerForPush(); // daftarkan device untuk notifikasi pesan masuk
+    registerForPush(res.user); // daftarkan device untuk notifikasi pesan masuk
     refreshSocketAuth(); // sambungkan socket pakai token yang baru login
   }
 

@@ -137,8 +137,13 @@ export const api = {
   getMe: () => request("/users/me"),
 
   // Push notification
-  savePushToken: (token) =>
-    request("/users/me/push-token", { method: "POST", body: JSON.stringify({ token }) }),
+  // extra: { userId, platform } — userId sebenarnya sudah otomatis ke-scope
+  // dari JWT di endpoint (req.user.id), disertakan eksplisit sesuai spec;
+  // backend saat ini belum simpan/pakai field platform (lihat PushToken
+  // model di schema.prisma) — aman dikirim, cuma diabaikan sampai backend
+  // ditambah kolomnya.
+  savePushToken: (token, extra = {}) =>
+    request("/users/me/push-token", { method: "POST", body: JSON.stringify({ token, ...extra }) }),
   deletePushToken: (token) =>
     request("/users/me/push-token", { method: "DELETE", body: JSON.stringify({ token }) }),
 

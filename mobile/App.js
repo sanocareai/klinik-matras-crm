@@ -1,13 +1,13 @@
 // Entry point aplikasi mobile Klinik Matras CRM.
 // Navigasi: Login → Daftar Percakapan → Chat → Info Pelanggan
 import React, { useEffect, useState } from "react";
-import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
-import { isExpoGo } from "./src/push";
+import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ActivityIndicator, View, Text, TextInput } from "react-native";
@@ -15,14 +15,17 @@ import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChatListScreen from "./src/screens/ChatListScreen";
 import ChatScreen from "./src/screens/ChatScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
+import InAppBanner from "./src/components/InAppBanner";
 import { colors } from "./src/theme";
 import { tokens } from "./src/constants/theme";
 import { queryClient } from "./src/lib/queryClient";
 import { useSocketEvents } from "./src/hooks/useSocketEvents";
+import { useBadgeSync } from "./src/hooks/useBadgeSync";
 import { initOutboxFlush } from "./src/lib/outboxFlush";
+import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
 
 const Stack = createNativeStackNavigator();
-const navigationRef = createNavigationContainerRef();
 
 // InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang
 // masih gaya header biru tua lama. Warna strip status bar/notch ikut
@@ -38,14 +41,22 @@ const navigationRef = createNavigationContainerRef();
 // Pola resmi React Navigation untuk kasus ini: pasang onStateChange di
 // NavigationContainer, simpan nama route aktif ke state di App(), lalu
 // teruskan sebagai prop ke sini.
+const LIGHT_SCREENS = ["ChatList", "Profile"];
 function SafeAreaTopBg({ routeName, children }) {
-  const bg = routeName === "ChatList" ? tokens.color.bg : colors.header;
+  const isLight = LIGHT_SCREENS.includes(routeName);
+  const bg = isLight ? tokens.color.bg : colors.header;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={["top"]}>
-      <StatusBar style={routeName === "ChatList" ? "dark" : "light"} />
+      <StatusBar style={isLight ? "dark" : "light"} />
       {children}
     </SafeAreaView>
   );
+}
+
+function respondToNotification(response) {
+  const { conversationId, customerId, isGroup } = response?.notification?.request?.content?.data || {};
+  const name = response?.notification?.request?.content?.title || "Pelanggan";
+  navigateToChat({ conversationId, name, isGroup: !!isGroup, customerId });
 }
 
 function Root() {
@@ -54,25 +65,32 @@ function Root() {
   // Socket.IO event → store, dan flush antrean outbox — aktif selama user
   // login, tidak peduli sedang di layar mana (Inbox/Chat/Customer).
   useSocketEvents();
+  // Badge angka ikon app mengikuti total unread — lihat useBadgeSync.js.
+  useBadgeSync();
   useEffect(() => {
     if (!user) return;
     const unsubscribe = initOutboxFlush();
     return unsubscribe;
   }, [user]);
 
-  // Ketuk notifikasi → langsung buka chat percakapan itu.
-  // Nama customer diambil dari judul notifikasi (dikirim backend).
-  // Dilewati di Expo Go — lihat catatan isExpoGo di src/push.js.
+  // Ketuk notifikasi → langsung buka chat percakapan itu. Nama customer
+  // diambil dari judul notifikasi (dikirim backend). Dilewati di Expo Go —
+  // lihat catatan isExpoGo di src/push.js.
+  //
+  // 2 jalur ditangani (keduanya perlu, tidak saling gantikan):
+  // 1. addNotificationResponseReceivedListener — app sudah berjalan
+  //    (foreground/background), user tap notifikasi → listener ini terpanggil.
+  // 2. getLaunchNotificationResponse() — app di-COLD-START (killed) lewat tap
+  //    notifikasi. Listener #1 baru terpasang SETELAH app selesai boot, jadi
+  //    response yang justru me-launch app bisa lewat tanpa terdeteksi kalau
+  //    HANYA mengandalkan listener — perlu dicek eksplisit sekali di awal.
   useEffect(() => {
-    if (isExpoGo) return;
-    const Notifications = require("expo-notifications");
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const { conversationId, customerId } = response.notification.request.content.data || {};
-      const name = response.notification.request.content.title || "Pelanggan";
-      if (conversationId && user && navigationRef.isReady()) {
-        navigationRef.navigate("Chat", { conversationId, name, isGroup: false, customerId });
-      }
+    if (isExpoGo || !user) return;
+    getLaunchNotificationResponse().then((response) => {
+      if (response) respondToNotification(response);
     });
+    const Notifications = require("expo-notifications");
+    const sub = Notifications.addNotificationResponseReceivedListener(respondToNotification);
     return () => sub.remove();
   }, [user]);
 
@@ -86,16 +104,20 @@ function Root() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {user ? (
-        <>
-          <Stack.Screen name="ChatList" component={ChatListScreen} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-        </>
-      ) : (
-        <Stack.Screen name="Login" component={LoginScreen} />
-      )}
-    </Stack.Navigator>
+    <>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {user ? (
+          <>
+            <Stack.Screen name="ChatList" component={ChatListScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+          </>
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
+      </Stack.Navigator>
+      {user && <InAppBanner />}
+    </>
   );
 }
 

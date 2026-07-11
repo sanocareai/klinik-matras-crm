@@ -79,3 +79,13 @@ export const useConversation = (id) => useConversationStore((s) => (id ? s.conve
 export const useOrderedIds = () => useConversationStore((s) => s.conversationOrder);
 export const useFilter = () => useConversationStore((s) => s.filter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
+
+// Total unread lintas SEMUA percakapan (cache global) — dipakai badge ikon
+// app (lihat hooks/useBadgeSync.js). unreadCount bisa belum terisi utk
+// beberapa payload lama, fallback ke 1 kalau cuma flag boolean unread yang
+// ada (pola sama dengan ConversationItem.js).
+export const useTotalUnreadCount = () => useConversationStore((s) =>
+  Object.values(s.conversationsById).reduce(
+    (sum, c) => sum + (c.unreadCount ?? (c.unread ? 1 : 0)), 0
+  )
+);

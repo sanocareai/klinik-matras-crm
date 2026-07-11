@@ -151,6 +151,12 @@ export default function ChatListScreen({ navigation }) {
             <TouchableOpacity onPress={() => setShowFilterSheet(true)} style={styles.headerIconBtn}>
               <Text style={styles.headerIconText}>{onlyUnread ? "🔵" : "☰"}</Text>
             </TouchableOpacity>
+            {/* Profil — pengaturan notifikasi, versi app/cek update, logout
+                (lihat ProfileScreen.js). Tombol ⎋ shortcut logout langsung
+                di sini TETAP dipertahankan untuk akses cepat. */}
+            <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.headerIconBtn}>
+              <Text style={styles.headerIconText}>👤</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => logout()}
               style={styles.headerIconBtn}
