@@ -1,9 +1,12 @@
-// Rekam pesan suara — tahan tombol mic (expo-av Audio.Recording), lepas →
+// Rekam pesan suara — tahan tombol mic (expo-audio useAudioRecorder), lepas →
 // preview (player + Kirim/Batal). Pola SAMA dengan
 // frontend/src/features/inbox/components/ChatWindow/VoiceRecorder.jsx,
-// diadaptasi ke expo-av (RN tidak punya MediaRecorder browser).
+// diadaptasi ke expo-audio (RN tidak punya MediaRecorder browser).
 //
-// ⚠️ Format rekaman: expo-av preset default menghasilkan .m4a (AAC), BUKAN
+// ⚠️ Ganti dari expo-av (deprecated, crash New Architecture — lihat
+// mobile/CLAUDE.md) ke expo-audio, API resmi pengganti sejak SDK 54+.
+//
+// ⚠️ Format rekaman: preset default menghasilkan .m4a (AAC), BUKAN
 // audio/webm seperti browser. Backend cuma auto-transcode ke ogg/opus untuk
 // file bermimetype "audio/webm" (lihat backend/src/routes/conversations.js)
 // — konversi itu pakai ffmpeg yang MENDETEKSI ISI FILE (bukan mimetype yang
@@ -12,7 +15,12 @@
 // bukan attachment dokumen biasa.
 import React, { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
-import { Audio } from "expo-av";
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from "expo-audio";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import AudioPlayer from "./AudioPlayer";
@@ -26,26 +34,28 @@ function fmtTime(s) {
 }
 
 export default function VoiceRecorderBar({ conversationId, onSent }) {
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [preview, setPreview] = useState(null); // { uri, seconds }
   const [sending, setSending] = useState(false);
 
-  const recordingRef = useRef(null);
+  const isRecordingRef = useRef(false);
   const secondsRef = useRef(0);
   const timerRef = useRef(null);
 
   async function startRecording() {
-    if (recordingRef.current) return;
+    if (isRecordingRef.current) return;
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert("Mikrofon", "Izin mikrofon diperlukan untuk rekam pesan suara");
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = rec;
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      isRecordingRef.current = true;
       secondsRef.current = 0;
       setSeconds(0);
       setRecording(true);
@@ -59,18 +69,18 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
   }
 
   async function finishRecording() {
-    const rec = recordingRef.current;
-    if (!rec) return;
-    recordingRef.current = null;
+    if (!isRecordingRef.current) return;
+    isRecordingRef.current = false;
     clearInterval(timerRef.current);
     setRecording(false);
     try {
-      await rec.stopAndUnloadAsync();
+      await recorder.stop();
     } catch {}
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {});
+    await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     const finalSeconds = secondsRef.current;
-    if (finalSeconds < MIN_DURATION_SEC) return; // kepencet sebentar — buang diam-diam
-    setPreview({ uri: rec.getURI(), seconds: finalSeconds });
+    const uri = recorder.uri;
+    if (finalSeconds < MIN_DURATION_SEC || !uri) return; // kepencet sebentar — buang diam-diam
+    setPreview({ uri, seconds: finalSeconds });
   }
 
   function discardPreview() {
@@ -123,7 +133,7 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
         style={[styles.micBtn, recording && styles.micBtnActive]}
         onLongPress={startRecording}
         delayLongPress={150}
-        onPressOut={() => { if (recordingRef.current) finishRecording(); }}
+        onPressOut={() => { if (isRecordingRef.current) finishRecording(); }}
       >
         <Text style={styles.micIcon}>🎤</Text>
       </TouchableOpacity>

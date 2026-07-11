@@ -2,11 +2,13 @@
 // foto/video yang sudah termuat di percakapan ini, urut kronologis, mulai
 // dari item yang di-tap). Tidak pakai library lightbox eksternal — pinch/pan
 // dibangun manual pakai react-native-gesture-handler (sudah ada sejak M-B).
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Modal, View, Image, StyleSheet, Dimensions, TouchableOpacity, Text, FlatList,
 } from "react-native";
-import { Video, ResizeMode } from "expo-av";
+// Ganti dari expo-av (deprecated, crash New Architecture — lihat
+// mobile/CLAUDE.md) ke expo-video, API resmi pengganti sejak SDK 54+.
+import { VideoView, useVideoPlayer } from "expo-video";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
@@ -78,15 +80,24 @@ function ZoomableImage({ uri, onZoomChange }) {
 }
 
 function VideoPage({ uri, active }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+  });
+
+  // useVideoPlayer tidak punya prop shouldPlay seperti expo-av — kontrol
+  // play/pause manual mengikuti halaman mana yang lagi aktif di swiper.
+  useEffect(() => {
+    if (active) player.play();
+    else player.pause();
+  }, [active, player]);
+
   return (
     <View style={styles.page}>
-      <Video
-        source={{ uri }}
+      <VideoView
+        player={player}
         style={styles.fullImage}
-        useNativeControls
-        resizeMode={ResizeMode.CONTAIN}
-        shouldPlay={active}
-        isLooping={false}
+        nativeControls
+        contentFit="contain"
       />
     </View>
   );

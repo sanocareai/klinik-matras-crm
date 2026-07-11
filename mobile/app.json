@@ -37,7 +37,7 @@
       "expo-font",
       "expo-sharing",
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Aplikasi butuh akses mikrofon untuk merekam pesan suara ke pelanggan"
         }

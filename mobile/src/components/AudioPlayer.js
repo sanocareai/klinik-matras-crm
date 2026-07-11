@@ -1,54 +1,56 @@
 // Player pesan suara kustom (play/pause + progress bar + durasi) — bukan
 // widget bawaan, sesuai spec Fase M-C. Pola state SAMA dengan
 // frontend/src/features/inbox/components/ChatWindow/MessageBubble.jsx#AudioPlayer,
-// cuma sumber playback-nya expo-av Audio.Sound (RN tidak punya <audio> HTML).
-import React, { useEffect, useRef, useState } from "react";
+// cuma sumber playback-nya expo-audio useAudioPlayer (RN tidak punya <audio> HTML).
+//
+// ⚠️ Ganti dari expo-av (deprecated, crash New Architecture — lihat
+// mobile/CLAUDE.md) ke expo-audio, API resmi pengganti sejak SDK 54+.
+// useAudioPlayer/useAudioPlayerStatus pakai satuan DETIK (currentTime/duration),
+// BUKAN milidetik seperti expo-av (positionMillis/durationMillis) — konversi
+// ke ms cuma dilakukan di fmtDuration untuk format tampilan, state internal
+// sekarang simpan detik langsung dari status hook.
+import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Audio } from "expo-av";
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { tokens } from "../constants/theme";
 
-function fmtDuration(ms) {
-  if (!isFinite(ms) || ms < 0) return "0:00";
-  const totalSec = Math.floor(ms / 1000);
+function fmtDuration(sec) {
+  if (!isFinite(sec) || sec < 0) return "0:00";
+  const totalSec = Math.floor(sec);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export default function AudioPlayer({ uri, tint = tokens.color.accent }) {
-  const soundRef = useRef(null);
-  const [playing, setPlaying] = useState(false);
-  const [positionMs, setPositionMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
+  const [finished, setFinished] = useState(false);
 
+  const playing = status.playing;
+  const positionSec = status.currentTime || 0;
+  const durationSec = status.duration || 0;
+
+  // useAudioPlayer tidak punya event "didJustFinish" seperti expo-av —
+  // deteksi manual dari status: sudah loaded, ada durasi, posisi mentok di
+  // ujung durasi, dan tidak lagi playing (lawan dari "baru saja di-pause").
   useEffect(() => {
-    return () => {
-      soundRef.current?.unloadAsync().catch(() => {});
-    };
-  }, [uri]);
-
-  function onStatus(status) {
-    if (!status.isLoaded) return;
-    setPositionMs(status.positionMillis || 0);
-    setDurationMs(status.durationMillis || 0);
-    setPlaying(status.isPlaying);
-    if (status.didJustFinish) {
-      setPlaying(false);
-      soundRef.current?.setPositionAsync(0).catch(() => {});
+    if (status.isLoaded && durationSec > 0 && !playing && positionSec >= durationSec - 0.05) {
+      if (!finished) {
+        setFinished(true);
+        player.seekTo(0).catch(() => {});
+      }
+    } else if (positionSec < durationSec - 0.05) {
+      setFinished(false);
     }
+  }, [status.isLoaded, playing, positionSec, durationSec]);
+
+  function toggle() {
+    if (playing) player.pause();
+    else player.play();
   }
 
-  async function toggle() {
-    if (!soundRef.current) {
-      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true }, onStatus);
-      soundRef.current = sound;
-      return;
-    }
-    if (playing) await soundRef.current.pauseAsync();
-    else await soundRef.current.playAsync();
-  }
-
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const progress = durationSec > 0 ? positionSec / durationSec : 0;
 
   return (
     <View style={styles.wrap}>
@@ -58,7 +60,7 @@ export default function AudioPlayer({ uri, tint = tokens.color.accent }) {
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${Math.min(100, progress * 100)}%`, backgroundColor: tint }]} />
       </View>
-      <Text style={styles.time}>{fmtDuration(playing || positionMs ? positionMs : durationMs)}</Text>
+      <Text style={styles.time}>{fmtDuration(playing || positionSec ? positionSec : durationSec)}</Text>
     </View>
   );
 }
