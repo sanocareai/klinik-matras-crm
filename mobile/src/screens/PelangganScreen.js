@@ -1,23 +1,49 @@
-// Tab Pelanggan — list customer + search (Fase M5.5-B).
-// ⚠️ GET /customers TIDAK paginated di backend (balikin array penuh) —
-// lihat catatan di api.js#getCustomers. "Infinite scroll" di sini jadi
-// WINDOWING client-side atas array penuh hasil search (pola sama dengan
-// windowing pesan di ChatScreen.js), bukan cursor pagination server asli.
-import React, { useCallback, useEffect, useRef, useState } from "react";
+// Tab Pelanggan — list customer + search (Fase M5.5-B), diperluas M5.5-D:
+// filter pipeline stage bergaya chip + view "Pipeline Board" (kanban mini).
+// ⚠️ GET /customers TIDAK paginated di backend (balikin array PENUH hasil
+// search+salesId, tanpa filter stage — lihat catatan di api.js#getCustomers).
+// Ini dimanfaatkan: SATU fetch dipakai utk list, count per stage, DAN board
+// — semua difilter/dikelompokkan CLIENT-SIDE dari array yang sudah LENGKAP
+// (bukan dari subset ter-paginate, jadi count-nya akurat), baru di-WINDOWING
+// per tampilan (list: visibleCount, board: per-kolom) demi performa render.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, FlatList,
+  View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, FlatList, ScrollView,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlashList } from "@shopify/flash-list";
-import { Search, MapPin, Users as UsersIcon, ChevronDown } from "lucide-react-native";
+import { Search, MapPin, Users as UsersIcon, ChevronDown, LayoutGrid, List as ListIcon } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
-import { stageColors, stageLabels } from "../theme";
+import { stageColors } from "../theme";
+import { formatRupiah } from "../utils/format";
 import { useAuth } from "../context/AuthContext";
 import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
+import PipelineBoard from "../components/PipelineBoard";
 
 const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 20;
+const VIEW_MODE_KEY = "pelangganViewMode"; // "list" | "board" — persist AsyncStorage
+
+// Label pipeline KHUSUS layar ini (chip/board) — beda dari stageLabels
+// global di theme.js (dipakai CustomerProfileContent.js pipeline-pill
+// editor, TIDAK diubah supaya tidak ada efek samping di layar lain). Warna
+// TETAP reuse stageColors global (konsisten dengan badge stage yang sudah
+// dipakai di mana-mana).
+const STAGE_ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+const PIPELINE_LABELS = {
+  LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Offers/Negosiasi", WON: "Berhasil", LOST: "Gagal",
+};
+const STAGE_TABS = [{ key: "ALL", label: "Semua" }, ...STAGE_ORDER.map((s) => ({ key: s, label: PIPELINE_LABELS[s] }))];
+
+function daysSinceChat(lastMessageAt) {
+  if (!lastMessageAt) return "Belum pernah chat";
+  const days = Math.floor((Date.now() - new Date(lastMessageAt).getTime()) / 86_400_000);
+  if (days <= 0) return "Chat hari ini";
+  if (days === 1) return "1 hari sejak chat terakhir";
+  return `${days} hari sejak chat terakhir`;
+}
 
 function CustomerRow({ customer, onPress }) {
   const stage = customer.pipelineStage;
@@ -34,10 +60,14 @@ function CustomerRow({ customer, onPress }) {
             <Text style={styles.city} numberOfLines={1}>{customer.city}</Text>
           </View>
         ) : null}
+        <Text style={styles.followUpCue} numberOfLines={1}>{daysSinceChat(customer.lastMessageAt)}</Text>
       </View>
+      {customer.orderValue > 0 && (
+        <Text style={styles.rowValue} numberOfLines={1}>{formatRupiah(customer.orderValue)}</Text>
+      )}
       {stage ? (
         <View style={[styles.stageBadge, { backgroundColor: stageColor + "22" }]}>
-          <Text style={[styles.stageBadgeText, { color: stageColor }]}>{stageLabels[stage] || stage}</Text>
+          <Text style={[styles.stageBadgeText, { color: stageColor }]}>{PIPELINE_LABELS[stage] || stage}</Text>
         </View>
       ) : null}
     </PressableScale>
@@ -66,6 +96,8 @@ export default function PelangganScreen({ navigation }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [salesUsers, setSalesUsers] = useState([]);
+  const [stageFilter, setStageFilter] = useState("ALL");
+  const [viewMode, setViewMode] = useState("list"); // "list" | "board"
   // Definisi kepemilikan: conversation yang DITANGANI sales itu
   // (Conversation.assignedToId — sama seperti definisi take-over), BUKAN
   // Customer.assignedSalesId (kepemilikan lead/pipeline) — lihat catatan di
@@ -74,6 +106,21 @@ export default function PelangganScreen({ navigation }) {
   const [salesId, setSalesId] = useState(user?.role === "SALES" ? user.id : null);
   const [showSalesPicker, setShowSalesPicker] = useState(false);
   const debounceRef = useRef(null);
+
+  // Preferensi view (list/board) persist AsyncStorage — dibaca sekali saat mount.
+  useEffect(() => {
+    AsyncStorage.getItem(VIEW_MODE_KEY).then((v) => {
+      if (v === "board" || v === "list") setViewMode(v);
+    }).catch(() => {});
+  }, []);
+
+  function toggleViewMode() {
+    setViewMode((prev) => {
+      const next = prev === "list" ? "board" : "list";
+      AsyncStorage.setItem(VIEW_MODE_KEY, next).catch(() => {});
+      return next;
+    });
+  }
 
   // Daftar sales utk picker — role SALES saja (ADMIN tidak "menangani" chat
   // sebagai sales), sama pola exclude-ADMIN yang dipakai cs-performance.
@@ -113,20 +160,70 @@ export default function PelangganScreen({ navigation }) {
   }
 
   function handleEndReached() {
-    setVisibleCount((v) => Math.min(v + PAGE_SIZE, customers.length));
+    setVisibleCount((v) => Math.min(v + PAGE_SIZE, filteredByStage.length));
   }
 
   function openDetail(c) {
     navigation.navigate("CustomerDetail", { customerId: c.id, name: c.name, phone: c.phone });
   }
 
-  const visible = customers.slice(0, visibleCount);
+  // Count per stage — DARI ARRAY PENUH hasil search+salesId (bukan dari
+  // subset ter-windowing/ter-paginate), jadi selalu akurat & independen
+  // dari stage tab mana yang sedang aktif.
+  const stageCounts = useMemo(() => {
+    const counts = { ALL: customers.length };
+    STAGE_ORDER.forEach((s) => { counts[s] = 0; });
+    customers.forEach((c) => {
+      const s = c.pipelineStage || "LEAD";
+      counts[s] = (counts[s] || 0) + 1;
+    });
+    return counts;
+  }, [customers]);
+
+  const filteredByStage = useMemo(() => {
+    if (stageFilter === "ALL") return customers;
+    return customers.filter((c) => (c.pipelineStage || "LEAD") === stageFilter);
+  }, [customers, stageFilter]);
+
+  const customersByStage = useMemo(() => {
+    const grouped = {};
+    STAGE_ORDER.forEach((s) => { grouped[s] = []; });
+    customers.forEach((c) => {
+      const s = c.pipelineStage || "LEAD";
+      if (!grouped[s]) grouped[s] = [];
+      grouped[s].push(c);
+    });
+    return grouped;
+  }, [customers]);
+
+  // Pindahkan pelanggan ke stage lain dari Pipeline Board (long-press card)
+  // — optimistic update ke state lokal, revert + alert kalau gagal. Endpoint
+  // SAMA yang dipakai CustomerProfileContent.js (PATCH /customers/:id).
+  async function handleMoveStage(customer, newStage) {
+    const prevStage = customer.pipelineStage;
+    setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: newStage } : c)));
+    try {
+      await api.updateCustomer(customer.id, { pipelineStage: newStage });
+    } catch (err) {
+      setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: prevStage } : c)));
+      throw err;
+    }
+  }
+
+  const visible = filteredByStage.slice(0, visibleCount);
   const selectedSalesName = salesId ? (salesUsers.find((u) => u.id === salesId)?.name || "…") : "Semua";
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Pelanggan</Text>
+        <TouchableOpacity style={styles.viewToggleBtn} onPress={toggleViewMode}>
+          {viewMode === "list" ? (
+            <LayoutGrid size={20} color={tokens.color.textPrimary} strokeWidth={2} />
+          ) : (
+            <ListIcon size={20} color={tokens.color.textPrimary} strokeWidth={2} />
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.searchWrap}>
@@ -148,6 +245,32 @@ export default function PelangganScreen({ navigation }) {
         <ChevronDown size={14} color={tokens.color.textSecondary} strokeWidth={2} style={{ marginLeft: 4 }} />
       </TouchableOpacity>
 
+      {/* Chip pipeline stage — cuma relevan di list view (board sudah
+          menampilkan semua stage sebagai kolom sekaligus). */}
+      {viewMode === "list" && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsWrap}
+          contentContainerStyle={styles.tabsContent}
+        >
+          {STAGE_TABS.map((t) => {
+            const active = stageFilter === t.key;
+            const color = t.key === "ALL" ? tokens.color.accent : (stageColors[t.key] || tokens.color.textMuted);
+            const count = stageCounts[t.key] || 0;
+            return (
+              <PressableScale
+                key={t.key}
+                style={[styles.stageChip, active && { backgroundColor: color + "22", borderColor: color }]}
+                onPress={() => setStageFilter(t.key)}
+              >
+                <Text style={[styles.stageChipText, active && { color }]}>{t.label} ({count})</Text>
+              </PressableScale>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {loading ? (
         <View style={styles.list}>
           {Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)}
@@ -156,6 +279,15 @@ export default function PelangganScreen({ navigation }) {
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Gagal memuat pelanggan: {errorMsg}</Text>
         </View>
+      ) : viewMode === "board" ? (
+        <PipelineBoard
+          customersByStage={customersByStage}
+          stageOrder={STAGE_ORDER}
+          pipelineLabels={PIPELINE_LABELS}
+          pipelineColors={stageColors}
+          onCardPress={openDetail}
+          onMoveStage={handleMoveStage}
+        />
       ) : visible.length === 0 ? (
         <View style={styles.emptyWrap}>
           <UsersIcon size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
@@ -168,14 +300,14 @@ export default function PelangganScreen({ navigation }) {
           data={visible}
           keyExtractor={(c) => c.id}
           renderItem={({ item }) => <CustomerRow customer={item} onPress={() => openDetail(item)} />}
-          estimatedItemSize={72}
+          estimatedItemSize={82}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[tokens.color.accent]} />
           }
           ListFooterComponent={
-            visibleCount < customers.length ? (
+            visibleCount < filteredByStage.length ? (
               <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} />
             ) : null
           }
@@ -211,8 +343,12 @@ export default function PelangganScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
-  header: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+  },
   title: { fontSize: 24, fontWeight: "700", color: tokens.color.textPrimary },
+  viewToggleBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   searchWrap: {
     flexDirection: "row", alignItems: "center", gap: 8,
     marginHorizontal: 16, marginBottom: 8, backgroundColor: tokens.color.card,
@@ -228,6 +364,13 @@ const styles = StyleSheet.create({
   },
   salesFilterLabel: { fontSize: 12, color: tokens.color.textMuted, fontWeight: "600" },
   salesFilterValue: { fontSize: 12, color: tokens.color.textPrimary, fontWeight: "700", maxWidth: 140 },
+  tabsWrap: { flexGrow: 0, marginBottom: 8 },
+  tabsContent: { paddingHorizontal: 16, gap: 8 },
+  stageChip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: tokens.radius.chip,
+    backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+  },
+  stageChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   list: { paddingHorizontal: 0 },
   row: {
     flexDirection: "row", alignItems: "center",
@@ -240,6 +383,8 @@ const styles = StyleSheet.create({
   cityRow: { flexDirection: "row", alignItems: "center", marginTop: 2 },
   cityIcon: { marginRight: 3 },
   city: { fontSize: 11, color: tokens.color.textMuted },
+  followUpCue: { fontSize: 11, color: tokens.color.textMuted, marginTop: 2 },
+  rowValue: { fontSize: 12, fontWeight: "700", color: tokens.color.success, marginLeft: 8, maxWidth: 90 },
   stageBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8 },
   stageBadgeText: { fontSize: 10, fontWeight: "700" },
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80, paddingHorizontal: 24 },
