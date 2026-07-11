@@ -7,24 +7,27 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { useConversationStore } from "../store/conversationStore";
 
-// Filter store ('ALL'|'OPEN'|'PENDING'|'CLOSED'|'MINE') → status yang
-// dikenal backend (enum ConversationStatus: OPEN/PENDING/RESOLVED).
+// Filter store ('ALL'|'OPEN'|'PENDING'|'CLOSED'|'MINE'|'UNREAD') → status
+// yang dikenal backend (enum ConversationStatus: OPEN/PENDING/RESOLVED).
 // 'MINE' tidak difilter lewat status, tapi lewat assignedToId.
+// 'UNREAD' tidak difilter lewat status, tapi lewat ?unread=true (lihat
+// backend/src/routes/conversations.js).
 function filterToStatus(filter) {
   if (filter === "OPEN") return "OPEN";
   if (filter === "PENDING") return "PENDING";
   if (filter === "CLOSED") return "RESOLVED";
-  return undefined; // 'ALL' | 'MINE'
+  return undefined; // 'ALL' | 'MINE' | 'UNREAD'
 }
 
 export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   const status = filterToStatus(filter);
   const assignedToId = filter === "MINE" ? userId : undefined;
+  const unread = filter === "UNREAD" ? true : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId }],
+    queryKey: ["conversations", { status, search, assignedToId, unread }],
     queryFn: ({ pageParam }) =>
-      api.getConversations({ status, search, assignedToId, cursor: pageParam || undefined }),
+      api.getConversations({ status, search, assignedToId, unread, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });
