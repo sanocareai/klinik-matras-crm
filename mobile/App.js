@@ -20,6 +20,7 @@ import ChatScreen from "./src/screens/ChatScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import PelangganScreen from "./src/screens/PelangganScreen";
+import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
 import InAppBanner from "./src/components/InAppBanner";
 import { colors } from "./src/theme";
 import { tokens } from "./src/constants/theme";
@@ -137,7 +138,7 @@ const tabStyles = StyleSheet.create({
 // Pola resmi React Navigation untuk kasus ini: pasang onStateChange di
 // NavigationContainer, simpan nama route aktif ke state di App(), lalu
 // teruskan sebagai prop ke sini.
-const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Profil"];
+const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Profil", "CustomerDetail"];
 function SafeAreaTopBg({ routeName, children }) {
   const isLight = LIGHT_SCREENS.includes(routeName);
   const bg = isLight ? tokens.color.bg : colors.header;
@@ -210,6 +211,7 @@ function Root() {
                 nested navigator React Navigation, tidak perlu config manual). */}
             <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen name="ChatRoom" component={ChatScreen} />
+            <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

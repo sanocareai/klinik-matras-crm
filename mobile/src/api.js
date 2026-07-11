@@ -185,11 +185,25 @@ export const api = {
   },
 
   // Pelanggan
+  // ⚠️ GET /customers TIDAK paginated di backend (balikin array penuh semua
+  // pelanggan cocok filter) — beda dengan /conversations yang sudah cursor
+  // pagination. "Infinite scroll" di PelangganScreen.js jadi WINDOWING
+  // client-side atas array penuh ini (pola sama dengan windowing pesan di
+  // ChatScreen.js), bukan cursor pagination asli dari server.
+  getCustomers: (params) => request("/customers" + buildQuery(params)),
   getCustomer: (id) => request(`/customers/${id}`),
+  getCustomerConversations: (id) => request(`/customers/${id}/conversations`),
   updateCustomer: (id, data) =>
     request(`/customers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
+
+  // Target & performa sales bulanan — endpoint SAMA yang dipakai halaman
+  // Laporan/Dashboard web (backend/src/routes/analytics.js#sales-performance).
+  // Balikin array SEMUA sales (bukan cuma diri sendiri) — caller cari entry
+  // milik user login sendiri by userId.
+  getSalesPerformance: (year, month) =>
+    request("/analytics/sales-performance" + buildQuery({ year, month })),
 
   // Order — dua langkah sama seperti web (addOrder bikin shell order kosong,
   // addOrderItem nambah baris layanan+harga yang otomatis hitung ulang
