@@ -7,7 +7,7 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { sendText, sendMedia, markChatAsRead, fetchChatHistory, downloadMediaMessage } from "../services/wahaClient.js";
+import { sendText, sendMedia, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
@@ -78,6 +78,47 @@ function resolveSendSession(conversation) {
 }
 
 const SESSION_UNKNOWN_ERROR = "Sesi WA percakapan ini belum diketahui — buka menu dan pilih sesi";
+
+// Dilempar sendWithSessionFallback() kalau conversation.sessionId null DAN
+// semua KNOWN_SESSIONS gagal — caller HARUS tangkap ini terpisah dari error
+// WAHA biasa supaya balikin 409 (munculkan pilihan manual "Pilih sesi..."),
+// bukan 502 (yang berarti sesi sudah benar tapi WAHA-nya yang bermasalah).
+class SessionResolutionError extends Error {}
+
+// Self-healing session resolver — dipakai semua endpoint kirim (messages,
+// media, send-product, forward). Kalau conversation.sessionId SUDAH ada,
+// pakai itu saja (tidak coba sesi lain — kalau WAHA gagal di sini itu
+// masalah lain, bukan salah sesi, jadi TIDAK boleh diam-diam coba sesi lain
+// dan berisiko kirim dobel/ke nomor salah). Kalau sessionId NULL, coba tiap
+// KNOWN_SESSIONS berurutan (CS-1 dulu, lalu CS-2) sampai salah satu
+// berhasil — begitu berhasil, SIMPAN sessionId itu ke conversation supaya
+// tidak perlu tanya/coba-coba lagi lain kali (self-healing permanen).
+// sendFn menerima 1 argumen: nama session yang sedang dicoba.
+async function sendWithSessionFallback(conversation, sendFn) {
+  if (conversation.sessionId) {
+    const result = await sendFn(conversation.sessionId);
+    return { result, session: conversation.sessionId };
+  }
+
+  let lastErr = null;
+  for (const session of KNOWN_SESSIONS) {
+    try {
+      const result = await sendFn(session);
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { sessionId: session },
+      }).catch((e) => {
+        console.warn(`[sendWithSessionFallback] Gagal simpan sessionId ke DB untuk conversation ${conversation.id}:`, e.message);
+      });
+      console.log(`[sendWithSessionFallback] conversation ${conversation.id} self-healed → sessionId=${session}`);
+      return { result, session };
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[sendWithSessionFallback] Gagal kirim via ${session} untuk conversation ${conversation.id}:`, e.message);
+    }
+  }
+  throw new SessionResolutionError(lastErr?.message || SESSION_UNKNOWN_ERROR);
+}
 
 // Task 3 — grup WA sekarang bisa dibalas dari CRM (sebelumnya diblok,
 // commit 1a210d2/1ba6a23). Tujuan kirim beda tergantung type: INDIVIDUAL
@@ -306,11 +347,14 @@ conversationRouter.post("/:id/messages", async (req, res) => {
         error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
       });
     }
-    const session = resolveSendSession(conversation);
-    if (!session) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
     try {
-      wahaMsg = await sendText(target, content, quotedMessageId || null, session);
+      ({ result: wahaMsg } = await sendWithSessionFallback(conversation, (session) =>
+        sendText(target, content, quotedMessageId || null, session)
+      ));
     } catch (waErr) {
+      if (waErr instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
       console.error("[sendText gagal]", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
     }
@@ -431,25 +475,26 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
         error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
       });
     }
-    const session = resolveSendSession(conversation);
-    if (!session) {
-      fs.unlink(file.path, () => {});
-      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
-    }
+    let waResult;
     try {
       console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);
-      const waResult = await sendMedia(
-        target,
-        { mimetype: wahaFileMime, filename: wahaFileName, url: wahaFileUrl },
-        caption,
-        sendAs,
-        session
-      );
+      ({ result: waResult } = await sendWithSessionFallback(conversation, (session) =>
+        sendMedia(
+          target,
+          { mimetype: wahaFileMime, filename: wahaFileName, url: wahaFileUrl },
+          caption,
+          sendAs,
+          session
+        )
+      ));
       console.log("[media] WAHA berhasil:", JSON.stringify(waResult).slice(0, 200));
     } catch (waErr) {
-      console.error("[media] WAHA gagal:", waErr.message);
       // Hapus file yang sudah tersimpan karena gagal kirim
       fs.unlink(file.path, () => {});
+      if (waErr instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
+      console.error("[media] WAHA gagal:", waErr.message);
       return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
     }
   } else {
@@ -482,8 +527,6 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
   if (!conversation.customer.phone)
     return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
-  const productSendSession = resolveSendSession(conversation);
-  if (!productSendSession) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -518,13 +561,21 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     const fileUrl  = `${BACKEND_INTERNAL_URL}${img.url}`;
 
     try {
-      await sendMedia(
-        conversation.customer.phone,
-        { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
-        caption,
-        "media",
-        productSendSession
+      // sendWithSessionFallback pakai conversation.sessionId kalau sudah ada;
+      // begitu berhasil self-heal di gambar pertama, session yang berhasil
+      // di-cache ke conversation.sessionId (in-memory) supaya gambar
+      // berikutnya di loop yang sama langsung pakai sesi itu, tidak
+      // mengulang percobaan CS-1/CS-2 dari awal tiap gambar.
+      const { session } = await sendWithSessionFallback(conversation, (s) =>
+        sendMedia(
+          conversation.customer.phone,
+          { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
+          caption,
+          "media",
+          s
+        )
       );
+      conversation.sessionId = session;
       const msg = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -543,6 +594,13 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     if (i < selectedImages.length - 1) {
       await new Promise((r) => setTimeout(r, 1500));
     }
+  }
+
+  // Tidak ada satupun gambar terkirim DAN sesi masih belum diketahui — berarti
+  // CS-1 & CS-2 dua-duanya gagal, munculkan pilihan manual (bukan diam-diam
+  // balikin sent:0 seperti kegagalan WAHA biasa).
+  if (savedMessages.length === 0 && !conversation.sessionId) {
+    return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
   }
 
   const lastSaved = savedMessages[savedMessages.length - 1];
@@ -652,8 +710,6 @@ conversationRouter.post("/:id/forward", async (req, res) => {
   if (targetConv.channel === "WHATSAPP" && targetConv.customer?.phone) {
     // Session diambil dari conversation TUJUAN (targetConv), bukan sumber —
     // pesan diteruskan KELUAR lewat nomor CS yang menangani percakapan tujuan.
-    const forwardSession = resolveSendSession(targetConv);
-    if (!forwardSession) return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
     try {
       if (sourceMsg.mediaUrl && sourceMsg.mediaType) {
         const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
@@ -661,17 +717,24 @@ conversationRouter.post("/:id/forward", async (req, res) => {
           ? sourceMsg.mediaUrl
           : `${BACKEND_INTERNAL_URL}${sourceMsg.mediaUrl}`;
         const mimeMap = { image: "image/jpeg", video: "video/mp4", audio: "audio/ogg", document: "application/octet-stream" };
-        wahaMsg = await sendMedia(
-          targetConv.customer.phone,
-          { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
-          sourceMsg.content || "",
-          "media",
-          forwardSession
-        );
+        ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
+          sendMedia(
+            targetConv.customer.phone,
+            { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
+            sourceMsg.content || "",
+            "media",
+            session
+          )
+        ));
       } else if (sourceMsg.content) {
-        wahaMsg = await sendText(targetConv.customer.phone, sourceMsg.content, null, forwardSession);
+        ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
+          sendText(targetConv.customer.phone, sourceMsg.content, null, session)
+        ));
       }
     } catch (err) {
+      if (err instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
       console.error("[forward] WAHA gagal:", err.message);
       return res.status(502).json({ error: `Gagal teruskan ke WhatsApp: ${err.message}` });
     }
