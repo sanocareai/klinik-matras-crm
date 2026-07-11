@@ -2,9 +2,20 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <!-- viewport-fit=cover WAJIB utk env(safe-area-inset-*) di CSS berfungsi
+         di iPhone X+ (notch/home indicator) — sebelumnya tidak ada, jadi
+         padding safe-area yang sudah ditulis di index.css diam-diam TIDAK
+         PERNAH aktif di iOS. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#2563EB" />
+    <!-- mobile-web-app-capable = standar (Chrome/Android/Brave/Opera, semua
+         Chromium). apple-mobile-web-app-capable = WAJIB TERPISAH utk Safari
+         iOS — tanpa ini, "Add to Home Screen" tetap buka di dalam Safari
+         (address bar dsb kelihatan), bukan mode standalone layar penuh. -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Klinik Matras" />
     <script>
       // Capture beforeinstallprompt sebelum React mount supaya tidak terlewat
       window.addEventListener('beforeinstallprompt', function(e) {

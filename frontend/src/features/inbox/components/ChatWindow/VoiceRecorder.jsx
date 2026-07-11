@@ -3,11 +3,31 @@ import { Mic, X, Send, Play, Pause } from "lucide-react";
 import { api } from "../../../../api.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 
-// ⚠️ Format rekaman: browser (MediaRecorder) menghasilkan audio/webm;codecs=opus.
-// Backend SUDAH otomatis transcode ke ogg/opus (ffmpeg) sebelum dikirim ke
-// WAHA sebagai voice note (ptt) — lihat backend/src/routes/conversations.js
-// (endpoint /media yang sama dipakai di sini, tidak ada perubahan backend).
-// Jadi frontend tidak perlu konversi apapun, cukup kirim blob apa adanya.
+// ⚠️ Format rekaman: audio/webm;codecs=opus HANYA didukung Chrome/Edge/
+// Brave/Opera/Firefox — Safari (desktop MAUPUN iOS) TIDAK PERNAH mendukung
+// container webm sama sekali. Sebelumnya fallback-nya "audio/webm" polos,
+// yang di Safari TETAP unsupported → `new MediaRecorder(..., {mimeType})`
+// LANGSUNG throw NotSupportedError, rekaman suara gagal total di Safari.
+// Sekarang: cek berurutan lewat MediaRecorder.isTypeSupported, Safari akan
+// jatuh ke "audio/mp4" (yang didukungnya) — backend SUDAH transcode
+// webm→ogg via ffmpeg (lihat conversations.js), diperluas juga utk mp4→ogg
+// supaya voice note dari Safari tetap tampil sebagai voice note WA asli,
+// bukan attachment dokumen biasa.
+const MIME_CANDIDATES = [
+  "audio/webm;codecs=opus", // Chrome, Edge, Brave, Opera, Firefox
+  "audio/webm",
+  "audio/mp4",              // Safari desktop & iOS
+  "audio/mp4;codecs=mp4a.40.2",
+  "audio/ogg;codecs=opus",  // fallback tambahan Firefox lama
+];
+function pickSupportedMimeType() {
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
+  for (const type of MIME_CANDIDATES) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return ""; // semua kandidat gagal — biarkan browser pilih default sendiri
+}
+
 const MIN_DURATION_SEC = 1; // rekaman lebih pendek dari ini otomatis dibuang (kepencet nggak sengaja)
 
 function fmtTime(s) {
@@ -39,14 +59,16 @@ export default function VoiceRecorder({ conversationId }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-      const rec = new MediaRecorder(stream, { mimeType: mime });
+      const mime = pickSupportedMimeType();
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const seconds = recSecondsRef.current;
-        const blob = new Blob(chunksRef.current, { type: mime });
+        // rec.mimeType = sumber kebenaran tipe yang BENAR-BENAR dipakai browser
+        // (bisa beda dari yang kita minta kalau mime="" dan browser pilih sendiri).
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || "audio/webm" });
         if (seconds < MIN_DURATION_SEC) return; // kepencet sebentar — buang diam-diam
         setPreview({ blob, url: URL.createObjectURL(blob), seconds });
       };
@@ -98,8 +120,11 @@ export default function VoiceRecorder({ conversationId }) {
     if (!preview) return;
     setSending(true);
     try {
+      // Ekstensi harus cocok dengan blob.type sungguhan — Safari hasilkan
+      // audio/mp4, bukan webm (lihat pickSupportedMimeType di atas).
+      const ext = preview.blob.type.includes("mp4") ? "m4a" : preview.blob.type.includes("ogg") ? "ogg" : "webm";
       const fd = new FormData();
-      fd.append("file", preview.blob, `voice-${Date.now()}.webm`);
+      fd.append("file", preview.blob, `voice-${Date.now()}.${ext}`);
       const msg = await api.sendMedia(conversationId, fd);
       useMessageStore.getState().appendMessage(conversationId, msg);
       discardPreview();

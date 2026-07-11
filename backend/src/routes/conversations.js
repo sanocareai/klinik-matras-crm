@@ -385,17 +385,24 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   let wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${file.filename}`;
   let wahaFileName = file.originalname;
 
-  // Audio selain webm/ogg (MP3, AAC, dll) tidak bisa jadi voice note di WA — kirim sebagai file
+  // Audio selain webm/ogg/mp4 (MP3, AAC lepas, dll) tidak bisa jadi voice
+  // note di WA — kirim sebagai file. audio/mp4 DIIKUTKAN di sini (bukan
+  // dianggap "non-OGG/webm") karena itu format asli MediaRecorder Safari
+  // (browser TIDAK PERNAH hasilkan webm sama sekali) — dikonversi ke ogg
+  // di bawah, sama seperti webm dari Chrome/Edge/Brave/Opera.
   if (file.mimetype.startsWith("audio/") &&
       !file.mimetype.startsWith("audio/webm") &&
-      !file.mimetype.startsWith("audio/ogg")) {
+      !file.mimetype.startsWith("audio/ogg") &&
+      !file.mimetype.startsWith("audio/mp4")) {
     sendAs = "document";
-    console.log("[media] Audio format non-OGG/webm, kirim sebagai dokumen:", file.mimetype);
+    console.log("[media] Audio format non-OGG/webm/mp4, kirim sebagai dokumen:", file.mimetype);
   }
 
   // WhatsApp hanya bisa memutar voice note dalam format audio/ogg (codec Opus).
-  // Browser merekam dalam audio/webm;codecs=opus → perlu konversi container ke OGG via FFmpeg.
-  if (file.mimetype.startsWith("audio/webm")) {
+  // Browser merekam dalam audio/webm;codecs=opus (Chrome/Edge/Brave/Opera)
+  // ATAU audio/mp4 (Safari desktop & iOS, lihat VoiceRecorder.jsx frontend)
+  // → perlu konversi container ke OGG via FFmpeg untuk kedua kasus.
+  if (file.mimetype.startsWith("audio/webm") || file.mimetype.startsWith("audio/mp4")) {
     const baseName    = file.filename.replace(/\.[^.]+$/, "");
     const oggFilename = `${baseName}.ogg`;
     const oggPath     = path.join(uploadsDir, oggFilename);
@@ -403,13 +410,13 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
       await execAsync(`ffmpeg -y -i "${file.path}" -vn -c:a libopus -f ogg "${oggPath}"`);
       wahaFileMime = "audio/ogg";
       wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${oggFilename}`;
-      wahaFileName = oggFilename; // pakai nama file OGG, bukan .webm asli
+      wahaFileName = oggFilename; // pakai nama file OGG, bukan file asli
       mediaUrl     = `/uploads/${oggFilename}`;
-      fs.unlink(file.path, () => {}); // hapus webm lama
-      console.log("[media] Audio dikonversi webm→ogg:", oggFilename);
+      fs.unlink(file.path, () => {}); // hapus file sumber (webm/mp4)
+      console.log(`[media] Audio dikonversi ${file.mimetype}→ogg:`, oggFilename);
     } catch (convErr) {
-      console.warn("[media] Konversi webm→ogg gagal:", convErr.message);
-      // Fallback: kirim webm, WhatsApp mungkin tidak bisa memutar sebagai voice note
+      console.warn(`[media] Konversi ${file.mimetype}→ogg gagal:`, convErr.message);
+      // Fallback: kirim file asli, WhatsApp mungkin tidak bisa memutar sebagai voice note
     }
   }
 
