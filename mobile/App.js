@@ -1,7 +1,7 @@
 // Entry point aplikasi mobile Klinik Matras CRM.
 // Navigasi: Login → Daftar Percakapan → Chat → Info Pelanggan
-import React, { useEffect } from "react";
-import { NavigationContainer, createNavigationContainerRef, useNavigationState } from "@react-navigation/native";
+import React, { useEffect, useState } from "react";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -28,8 +28,17 @@ const navigationRef = createNavigationContainerRef();
 // masih gaya header biru tua lama. Warna strip status bar/notch ikut
 // menyesuaikan layar aktif supaya tidak ada strip gelap ganjil di atas Inbox
 // yang sudah terang.
-function SafeAreaTopBg({ children }) {
-  const routeName = useNavigationState((state) => state?.routes?.[state.index]?.name);
+//
+// ⚠️ SafeAreaTopBg MEMBUNGKUS <NavigationContainer><Root/></NavigationContainer>
+// dari LUAR Stack.Navigator (lihat App()) — jadi tidak bisa pakai
+// useNavigationState/useRoute di sini, komponen ini BUKAN keturunan
+// Stack.Navigator, cuma keturunan NavigationContainer (yang provide
+// context "default" kosong sebelum ada Navigator aktif → error "Couldn't
+// get the navigation state. Is your component inside a navigator?").
+// Pola resmi React Navigation untuk kasus ini: pasang onStateChange di
+// NavigationContainer, simpan nama route aktif ke state di App(), lalu
+// teruskan sebagai prop ke sini.
+function SafeAreaTopBg({ routeName, children }) {
   const bg = routeName === "ChatList" ? tokens.color.bg : colors.header;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={["top"]}>
@@ -104,11 +113,19 @@ function applyInterGlobally() {
 
 export default function App() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
+  const [routeName, setRouteName] = useState();
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.header }} />;
   }
   applyInterGlobally();
+
+  // Update nama route aktif lewat navigationRef (bukan hook) — dibaca ulang
+  // saat navigator pertama kali siap (onReady) dan tiap kali state navigasi
+  // berubah (onStateChange, misal push/pop/back).
+  function syncRouteName() {
+    setRouteName(navigationRef.getCurrentRoute()?.name);
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -116,8 +133,12 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <SafeAreaProvider>
             <AuthProvider>
-              <NavigationContainer ref={navigationRef}>
-                <SafeAreaTopBg>
+              <NavigationContainer
+                ref={navigationRef}
+                onReady={syncRouteName}
+                onStateChange={syncRouteName}
+              >
+                <SafeAreaTopBg routeName={routeName}>
                   <Root />
                 </SafeAreaTopBg>
               </NavigationContainer>
