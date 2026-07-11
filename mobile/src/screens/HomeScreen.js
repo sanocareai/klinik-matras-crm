@@ -30,6 +30,7 @@ import { tokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
 import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
+import SanoAssistant from "../components/SanoAssistant";
 import { navigateToChat } from "../lib/navigationRef";
 
 function fmtWaitDuration(mins) {
@@ -142,13 +143,13 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[tokens.color.accent]} />
-      }
-    >
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[tokens.color.accent]} />
+        }
+      >
       {/* Header */}
       <View style={styles.header}>
         <Avatar name={user?.name} size={44} />
@@ -308,7 +309,11 @@ export default function HomeScreen({ navigation }) {
           })
         )}
       </View>
-    </ScrollView>
+      </ScrollView>
+      {/* "Tanya Sano" FAB — TANPA context (Home bukan konteks percakapan
+          tertentu, lihat spec: konteks cuma relevan dari ChatRoom). */}
+      <SanoAssistant bottomOffset={16} />
+    </View>
   );
 }
 

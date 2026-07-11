@@ -184,6 +184,19 @@ export const api = {
     return uploadFile(`/conversations/${conversationId}/media`, file, fields);
   },
 
+  // AI Co-pilot "Tanya Sano" — endpoint SAMA yang dipakai CoPilot.jsx web
+  // (backend/src/routes/ai.js#copilot-chat), JANGAN bikin endpoint AI baru.
+  // conversationHistory: [{role, content}] — endpoint ini TIDAK punya field
+  // conversationId/customer-context terpisah (sudah dicek di ai.js &
+  // CoPilot.jsx web, keduanya plain chat saja) — konteks ChatRoom (kalau
+  // ada) dititipkan sebagai entri PERTAMA di conversationHistory (bukan
+  // field baru), sesuai mekanisme yang MEMANG sudah didukung endpoint ini.
+  coPilotChat: (message, conversationHistory = [], modelId) =>
+    request("/ai/copilot-chat", {
+      method: "POST",
+      body: JSON.stringify({ message, conversationHistory, ...(modelId && { modelId }) }),
+    }),
+
   // Pelanggan
   // ⚠️ GET /customers TIDAK paginated di backend (balikin array penuh semua
   // pelanggan cocok filter) — beda dengan /conversations yang sudah cursor

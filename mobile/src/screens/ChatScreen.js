@@ -35,6 +35,7 @@ import MediaViewerModal from "../components/MediaViewerModal";
 import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
+import SanoAssistant from "../components/SanoAssistant";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
@@ -486,6 +487,12 @@ export default function ChatScreen({ route, navigation }) {
           groupName: isGroup ? name : undefined,
         }}
       />
+
+      {/* "Tanya Sano" FAB — bottomOffset lebih tinggi dari Home supaya tidak
+          menutupi composer/input bar di bawahnya. Konteks pelanggan
+          dititipkan (lihat catatan di SanoChatSheet.js) — grup tidak punya
+          konteks pelanggan tunggal, FAB tetap tampil tanpa context. */}
+      <SanoAssistant bottomOffset={84} context={!isGroup ? { customerName: name } : null} />
     </KeyboardAvoidingView>
   );
 }
