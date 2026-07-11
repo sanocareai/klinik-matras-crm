@@ -9,7 +9,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, interpolateColor } from "react-native-reanimated";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -40,15 +40,18 @@ const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil:
 
 function TabIcon({ routeName, focused }) {
   const Icon = TAB_ICONS[routeName];
-  // Spring ringan pada pill indikator tab aktif (spec animasi standar) —
-  // bukan cuma snap warna/ukuran instan.
-  const scale = useSharedValue(focused ? 1 : 0.86);
+  // Transisi warna sederhana 150ms — TANPA spring/scale (review Gilang:
+  // shadow/glow dari animasi sebelumnya terlihat tidak presisi/kotor).
+  // Cuma crossfade background pill, ikon (putih/slate-400) ganti langsung.
+  const progress = useSharedValue(focused ? 1 : 0);
   useEffect(() => {
-    scale.value = withSpring(focused ? 1 : 0.86, { damping: 14, stiffness: 220 });
+    progress.value = withTiming(focused ? 1 : 0, { duration: 150 });
   }, [focused]);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ["transparent", tokens.color.accent]),
+  }));
   return (
-    <Animated.View style={[tabStyles.iconWrap, focused && tabStyles.iconWrapActive, animatedStyle]}>
+    <Animated.View style={[tabStyles.iconWrap, animatedStyle]}>
       <Icon size={22} color={focused ? "#fff" : tokens.color.textMuted} strokeWidth={2.2} />
     </Animated.View>
   );
@@ -76,6 +79,9 @@ function MainTabs() {
 }
 
 const tabStyles = StyleSheet.create({
+  // SATU soft shadow di container bar SAJA — item/ikon di dalamnya TIDAK
+  // boleh punya shadow/elevation sendiri (review Gilang: shadow ganda di
+  // ikon aktif terlihat tidak presisi/kotor).
   bar: {
     position: "absolute",
     left: 16, right: 16, bottom: 16,
@@ -88,8 +94,10 @@ const tabStyles = StyleSheet.create({
   item: { alignItems: "center", justifyContent: "center", height: 64 },
   iconWrap: {
     width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
+    // Eksplisit nol-kan shadow/elevation — jangan sampai warisan style lain
+    // bikin ikon aktif kelihatan ada shadow/glow sendiri.
+    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
   },
-  iconWrapActive: { backgroundColor: tokens.color.accent },
 });
 
 // InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang

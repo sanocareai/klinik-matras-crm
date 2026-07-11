@@ -2,7 +2,7 @@
 // kalau conversation dengan id ini berubah, bukan seluruh list). Pola SAMA
 // dengan frontend/src/features/inbox/components/ConversationList/ConversationItem.jsx.
 // Swipe kanan → toggle dibaca/belum, swipe kiri → sematkan/lepas sematan.
-import React, { memo, useRef } from "react";
+import React, { memo, useRef, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -40,6 +40,7 @@ function lastPreviewParts(c) {
 function ConversationItemBase({ id, onPress }) {
   const c = useConversation(id);
   const swipeableRef = useRef(null);
+  const [pressed, setPressed] = useState(false);
 
   if (!c) return null;
 
@@ -128,7 +129,12 @@ function ConversationItemBase({ id, onPress }) {
         leftThreshold={60}
         rightThreshold={60}
       >
-        <PressableScale style={styles.card} onPress={() => onPress(c)}>
+        <PressableScale
+          style={[styles.card, pressed && styles.cardPressed]}
+          onPress={() => onPress(c)}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+        >
           <AvatarStack avatars={[{ name }]} size={48} isGroup={isGroup} />
           <View style={styles.body}>
             <View style={styles.top}>
@@ -172,12 +178,21 @@ function ConversationItemBase({ id, onPress }) {
 }
 
 const styles = StyleSheet.create({
-  itemWrap: { marginHorizontal: 12, marginBottom: 8 },
+  // List flat gaya WhatsApp/Telegram — TANPA card per item (tanpa radius,
+  // shadow, gap antar item). Pemisah cuma hairline tipis (slate-100) di
+  // bawah tiap item, background menyatu putih polos dengan list.
+  itemWrap: {
+    backgroundColor: tokens.color.card,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: tokens.color.subtle,
+  },
   card: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: tokens.color.card, borderRadius: tokens.radius.card,
-    padding: 12, ...tokens.shadow.soft,
+    backgroundColor: tokens.color.card,
+    paddingHorizontal: 16, paddingVertical: 13,
   },
+  // Tap feedback: highlight bg-slate-50 biasa (bukan card shadow/scale doang)
+  cardPressed: { backgroundColor: tokens.color.bg },
   body: { flex: 1 },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   nameRow: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 },
@@ -204,7 +219,6 @@ const styles = StyleSheet.create({
   },
   actionBox: {
     flex: 1, justifyContent: "center", paddingHorizontal: 18,
-    borderRadius: tokens.radius.card, marginVertical: 0,
   },
   actionRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   actionText: { color: "#fff", fontWeight: "700", fontSize: 13 },
