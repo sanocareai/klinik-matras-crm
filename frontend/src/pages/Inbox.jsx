@@ -8,6 +8,7 @@ import CustomerPanel from "../features/inbox/components/CustomerPanel/index.jsx"
 import ColumnErrorBoundary from "../features/inbox/components/ColumnErrorBoundary.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
+import { useIsMobile } from "../features/inbox/hooks/useIsMobile.js";
 import { useActiveId, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
@@ -32,6 +33,7 @@ export default function Inbox({ user }) {
   const active   = useConversation(activeId);
   const socketConnected = useSocketStatus();
   const totalUnread = useTotalUnreadCount();
+  const isMobile = useIsMobile();
 
   function setPanelCollapsed(value) {
     setPanelCollapsedState((prev) => {
@@ -83,8 +85,45 @@ export default function Inbox({ user }) {
     return () => { document.title = base; };
   }, [totalUnread]);
 
+  // BUG FIX — sebelumnya ConversationList & ChatWindow SELALU mount
+  // berdua, disembunyikan lewat class CSS ".mobile-chat-active" saja.
+  // ChatWindow (termasuk empty-state "Pilih percakapan") tetap ada di DOM
+  // dan ikut makan ruang grid row (grid-auto-rows default "auto", bukan
+  // stretch ke tinggi penuh) — hasilnya area kosong besar di bawah List,
+  // bukan cuma "disembunyikan". Di mobile sekarang betul-betul MOUNT
+  // SATU kolom saja lewat conditional return, bukan CSS display:none.
+  // CustomerPanel di mobile TIDAK PERNAH mount di sini sama sekali — cuma
+  // muncul sebagai bottom-sheet terpisah (lihat ChatWindow/index.jsx,
+  // dipicu tombol info, state showCustomerDetail).
+  if (isMobile) {
+    return (
+      <div className="inbox-body mobile-single-column">
+        {!socketConnected && (
+          <div className="offline-banner">
+            <span className="offline-banner-dot" /> Menyambung ulang...
+          </div>
+        )}
+        {mobileView === "chat" ? (
+          <ColumnErrorBoundary label="Chat">
+            <ChatWindow
+              conversation={active}
+              user={user}
+              onBack={() => setMobileView("list")}
+              panelCollapsed={panelCollapsed}
+              onTogglePanel={() => setPanelCollapsed((v) => !v)}
+            />
+          </ColumnErrorBoundary>
+        ) : (
+          <ColumnErrorBoundary label="Daftar Percakapan">
+            <ConversationList userId={user?.id} />
+          </ColumnErrorBoundary>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className={`inbox-body${mobileView === "chat" ? " mobile-chat-active" : ""}${panelCollapsed ? " panel-collapsed" : ""}`}>
+    <div className={`inbox-body${panelCollapsed ? " panel-collapsed" : ""}`}>
       {!socketConnected && (
         <div className="offline-banner">
           <span className="offline-banner-dot" /> Menyambung ulang...

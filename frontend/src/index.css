@@ -361,6 +361,7 @@ input:focus, select:focus, textarea:focus {
   height: 100%;
   display: grid;
   grid-template-columns: 320px 1fr 340px;
+  grid-template-rows: 1fr; /* baris tunggal stretch penuh, bukan auto ke tinggi konten */
   overflow: hidden;
   position: relative;
   transition: grid-template-columns 0.2s ease;
@@ -382,6 +383,9 @@ input:focus, select:focus, textarea:focus {
   border-bottom: 1px solid var(--border);
   font-size: 14px; font-weight: 600; color: var(--text-main);
   flex-shrink: 0;
+  /* Sama seperti .chat-header — .offline-banner absolute di atasnya bisa
+     mem-block interaksi kalau z-index tidak dinaikkan. */
+  position: relative; z-index: 41;
 }
 .conv-search-bar {
   padding: 12px 16px;
@@ -509,6 +513,11 @@ input:focus, select:focus, textarea:focus {
 .chat-header {
   padding: 12px 20px; background: white; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  /* Ditemukan lewat testing: .offline-banner (position:absolute; top:0;
+     z-index:40) numpuk persis di area ini saat tampil, mem-block klik
+     tombol back/info. position+z-index lebih tinggi supaya header (dan
+     tombol di dalamnya) tetap bisa diklik meski banner sedang tampil. */
+  position: relative; z-index: 41;
 }
 .chat-header-info { flex: 1; min-width: 0; }
 .chat-header-name {
@@ -2357,17 +2366,22 @@ input:focus, select:focus, textarea:focus {
   /* Main content full width */
   .app-content { width: 100%; }
 
-  /* Inbox: 3-panel → 1-panel */
-  .inbox-body {
+  /* Inbox mobile: List DAN ChatWindow SEKARANG di-unmount kondisional dari
+     React (lihat Inbox.jsx `isMobile` branch) — cuma SATU yang benar-benar
+     ada di DOM sekaligus, bukan dua-duanya mount + disembunyikan via CSS.
+     BUG LAMA: .inbox-body tetap display:grid dengan cuma
+     grid-template-columns diubah (bukan rows) — implicit grid row default
+     "auto" (sized ke konten), BUKAN stretch ke tinggi penuh container.
+     Akibatnya satu-satunya child yang mount (mis. ConversationList) cuma
+     setinggi kontennya sendiri, nyisain area kosong besar di bawahnya
+     (yang terlihat seperti "elemen lain numpuk" padahal cuma blank space).
+     grid-template-rows: 1fr FIX di sini — baris tunggal itu sekarang
+     stretch ke tinggi penuh, siapa pun child-nya (list atau chat). */
+  .inbox-body.mobile-single-column {
     grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr !important;
     position: relative;
   }
-  /* Default: tampilkan list, sembunyikan chat + customer panel */
-  .inbox-body .chat-window    { display: none; }
-  .inbox-body .customer-panel { display: none; }
-  /* Saat chat aktif: tampilkan chat, sembunyikan list */
-  .inbox-body.mobile-chat-active .conversation-list { display: none; }
-  .inbox-body.mobile-chat-active .chat-window       { display: flex; }
 
   /* Back button tampil di mobile */
   .chat-back-btn { display: flex; }
@@ -2375,24 +2389,14 @@ input:focus, select:focus, textarea:focus {
   /* Sembunyikan label "Selesaikan" di mobile, hanya ikon */
   .resolve-label { display: none; }
 
-  /* ── Chat window: full-screen overlay saat aktif di mobile ── */
-  .inbox-body.mobile-chat-active .chat-window {
-    position: fixed;
-    inset: 0;
-    z-index: 300;
-    height: 100vh;
-    height: 100dvh; /* keyboard-aware di Android Chrome */
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Safe area padding untuk notch/home indicator — chat full-screen overlay
-     duduk persis di inset:0, jadi header/composer bisa ketutup notch/status
-     bar (top) atau home indicator (bottom) tanpa padding ini. */
+  /* Safe area padding untuk notch/home indicator — ChatWindow di mobile
+     mengisi penuh row grid (bukan lagi position:fixed overlay, tidak perlu
+     lagi sejak jadi conditional mount), tapi tetap bisa berbatasan langsung
+     dengan notch/status bar (top) & home indicator (bottom) tanpa padding ini. */
   .chat-input-area {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
-  .inbox-body.mobile-chat-active .chat-header {
+  .inbox-body.mobile-single-column .chat-header {
     padding-top: max(10px, env(safe-area-inset-top));
   }
 
