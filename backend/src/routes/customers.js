@@ -42,12 +42,20 @@ customerRouter.post("/", async (req, res) => {
 
 // Daftar semua pelanggan + agregat order + filter opsional
 customerRouter.get("/", async (req, res) => {
-  const { search, stage, source, sales } = req.query;
+  const { search, stage, source, sales, salesId } = req.query;
 
   const where = {};
   if (stage)  where.pipelineStage = stage;
   if (source) where.leadSource    = source;
   if (sales)  where.assignedSalesId = sales;
+  // ?salesId= — BEDA dari ?sales= di atas: ?sales= filter Customer.assignedSalesId
+  // (kepemilikan LEAD/pipeline). ?salesId= filter lewat conversation yang
+  // DITANGANI sales itu (Conversation.assignedToId — definisi take-over),
+  // dipakai filter "Sales:" di tab Pelanggan mobile (lihat
+  // mobile/src/screens/PelangganScreen.js). Customer bisa punya banyak
+  // conversation (individual biasanya cuma 1) — "some" berarti customer
+  // ikut kalau ADA conversation yang assignedToId-nya cocok.
+  if (salesId) where.conversations = { some: { assignedToId: salesId } };
   if (search) {
     where.OR = [
       { name:            { contains: search, mode: "insensitive" } },

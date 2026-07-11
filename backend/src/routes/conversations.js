@@ -175,14 +175,15 @@ conversationRouter.get("/latest-unread", async (req, res) => {
 // Jumlah percakapan per tab filter Inbox (Semua/Terbuka/Pending/Selesai/Milik Saya)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/counts", async (req, res) => {
-  const [semua, terbuka, pending, selesai, milikSaya] = await Promise.all([
+  const [semua, terbuka, pending, selesai, milikSaya, belumDibaca] = await Promise.all([
     prisma.conversation.count(),
     prisma.conversation.count({ where: { status: "OPEN" } }),
     prisma.conversation.count({ where: { status: "PENDING" } }),
     prisma.conversation.count({ where: { status: "RESOLVED" } }),
     prisma.conversation.count({ where: { assignedToId: req.user.id } }),
+    prisma.conversation.count({ where: { unread: true } }),
   ]);
-  res.json({ semua, terbuka, pending, selesai, milikSaya });
+  res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca });
 });
 
 // Daftar percakapan — cursor pagination (cursor = id percakapan terakhir dari
@@ -191,11 +192,15 @@ conversationRouter.get("/counts", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor } = req.query;
+  const { status, search, assignedToId, cursor, unread } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?unread=true — dipakai chip "Belum Dibaca" di Inbox mobile (lihat
+  // mobile/src/screens/ChatListScreen.js). Sama persis definisi yang
+  // dipakai badge unread-count di bawah (unread=true), bukan hitungan baru.
+  if (unread === "true") where.unread = true;
 
   if (search) {
     // Cari di customer (individual) DAN di groupName (grup)
