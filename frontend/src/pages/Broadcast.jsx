@@ -112,7 +112,7 @@ export default function Broadcast() {
   }
 
   return (
-    <div className="wizard-layout" style={{ height: "calc(100vh - 56px)" }}>
+    <div className="wizard-layout" style={{ height: "calc(100dvh - 56px)" }}>
       {/* Sidebar */}
       <div className="wizard-sidebar">
         <div className="wizard-sidebar-header">

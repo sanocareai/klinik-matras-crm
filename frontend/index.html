@@ -6,7 +6,12 @@
          di iPhone X+ (notch/home indicator) — sebelumnya tidak ada, jadi
          padding safe-area yang sudah ditulis di index.css diam-diam TIDAK
          PERNAH aktif di iOS. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content (Chrome/Android 108+) — saat
+         keyboard on-screen dibuka, visual viewport benar-benar MENGECIL
+         (bukan cuma di-overlay keyboard), supaya Composer di Inbox tetap
+         kelihatan DI ATAS keyboard, bukan ketutup. Browser yang belum kenal
+         token ini mengabaikannya (aman, tidak invalid). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#2563EB" />
     <!-- mobile-web-app-capable = standar (Chrome/Android/Brave/Opera, semua
          Chromium). apple-mobile-web-app-capable = WAJIB TERPISAH utk Safari

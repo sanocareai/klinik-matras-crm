@@ -1,8 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync } from "fs";
+
+// Versi + waktu build di-cetak kecil di halaman Login (Bug 1c) — supaya
+// bisa verifikasi user benar-benar pegang bundle TERBARU (bukan basi dari
+// service worker lama), tanpa perlu buka DevTools.
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url)));
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -25,12 +35,33 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,    // SW baru langsung aktif tanpa tunggu tab ditutup
         clientsClaim: true,   // SW baru langsung klaim semua tab yang terbuka
+        // Bug 1a fix: HAPUS cache lama begitu SW baru aktif — sebelumnya
+        // cache dari deploy2x-3x lalu bisa numpuk tak terpakai, dan dalam
+        // beberapa kasus browser (terutama non-Chrome) tetap resolve request
+        // ke entry cache LAMA yang belum sempat dibersihkan.
+        cleanupOutdatedCaches: true,
         // Bundle utama sudah lewat 2MB default sejak Fase B (react-virtuoso,
         // emoji-mart, dsb ditambahkan) — naikkan limit precache supaya build
         // tidak gagal. TODO: code-split (dynamic import) di fase berikutnya
         // supaya chunk utama tidak terus membengkak.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
+          // Bug 1a fix (AKAR bug "UI dark lama/basi"): dokumen HTML (index.html
+          // / app shell) SEBELUMNYA ikut precache manifest workbox generateSW,
+          // yang default-nya perilaku cache-first utk precached entries — user
+          // yang tabnya tetap terbuka lama atau browser non-Chrome yang lebih
+          // agresif soal cache bisa "terjebak" di index.html versi lama TANPA
+          // pernah cek network dulu. NetworkFirst DI SINI eksplisit memaksa
+          // browser SELALU coba network dulu utk navigasi (buka/refresh
+          // halaman) — fallback ke cache HANYA kalau benar-benar offline.
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "html-shell",
+              networkTimeoutSeconds: 3,
+            },
+          },
           // API calls: selalu ambil dari network, data harus selalu fresh
           {
             urlPattern: /\/api\//,

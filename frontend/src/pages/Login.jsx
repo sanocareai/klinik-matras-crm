@@ -63,6 +63,14 @@ export default function Login({ onLogin }) {
           {loading ? "Memuat..." : "Masuk"}
         </button>
       </form>
+
+      {/* Bug 1c: versi + waktu build kecil — verifikasi cepat user pegang
+          bundle TERBARU, bukan basi dari service worker lama (tanpa perlu
+          buka DevTools). __APP_VERSION__/__BUILD_TIME__ di-inject vite.config.js. */}
+      <p className="login-version">
+        v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
+        {typeof __BUILD_TIME__ !== "undefined" ? ` · ${new Date(__BUILD_TIME__).toLocaleString("id-ID")}` : ""}
+      </p>
     </div>
   );
 }

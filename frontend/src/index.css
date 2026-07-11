@@ -56,7 +56,15 @@ body {
 }
 
 /* ─── APP SHELL ─────────────────────────────────────────── */
-.app-shell { height: 100vh; display: flex; overflow: hidden; }
+/* 100vh di mobile browser (Chrome/Safari) dihitung dari viewport PENUH
+   termasuk area yang ketutup address bar/toolbar — bikin app-shell lebih
+   tinggi dari yang benar-benar kelihatan, akar dari "Inbox terpotong, area
+   blank putih besar" (rantai tinggi ke Virtuoso ikut salah semua di
+   bawahnya). 100dvh = tinggi viewport yang BENAR-BENAR terlihat saat itu,
+   otomatis menyesuaikan saat address bar collapse/expand. Baris 100vh
+   dipertahankan sebagai fallback (browser lama yang belum kenal dvh abaikan
+   baris kedua, bukan dianggap invalid dan gagal ke baris pertama).*/
+.app-shell { height: 100vh; height: 100dvh; display: flex; overflow: hidden; }
 .app-content { flex: 1; overflow-y: auto; background: var(--bg-page); }
 
 /* ─── SIDEBAR ────────────────────────────────────────────── */
@@ -795,8 +803,14 @@ input:focus, select:focus, textarea:focus {
 
 /* ─── LOGIN ──────────────────────────────────────────────── */
 .login-page {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh; /* fallback lalu override — browser lama abaikan baris dvh */
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 50%, #EFF6FF 100%);
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+.login-version {
+  margin: 14px 0 0; font-size: 11px; color: var(--text-muted);
+  text-align: center; letter-spacing: 0.2px;
 }
 .login-card {
   background: var(--bg-card); padding: 40px; border-radius: 20px;
@@ -963,7 +977,8 @@ input:focus, select:focus, textarea:focus {
 .kanban-col {
   min-width: 260px; width: 260px; flex-shrink: 0;
   background: #f1f5f9; border-radius: 14px;
-  display: flex; flex-direction: column; max-height: calc(100vh - 200px);
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px);
 }
 .kanban-col-header {
   padding: 14px 16px 10px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
@@ -1742,7 +1757,7 @@ input:focus, select:focus, textarea:focus {
   display: flex; align-items: flex-end; justify-content: flex-end;
 }
 .product-picker-panel {
-  width: 380px; height: 100vh; background: white;
+  width: 380px; height: 100vh; height: 100dvh; background: white;
   display: flex; flex-direction: column;
   box-shadow: -4px 0 20px rgba(0,0,0,0.15);
   overflow: hidden;
@@ -2371,9 +2386,14 @@ input:focus, select:focus, textarea:focus {
     flex-direction: column;
   }
 
-  /* Safe area padding untuk notch/home indicator */
+  /* Safe area padding untuk notch/home indicator — chat full-screen overlay
+     duduk persis di inset:0, jadi header/composer bisa ketutup notch/status
+     bar (top) atau home indicator (bottom) tanpa padding ini. */
   .chat-input-area {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+  .inbox-body.mobile-chat-active .chat-header {
+    padding-top: max(10px, env(safe-area-inset-top));
   }
 
   /* Chat header lebih kompak */
@@ -2413,20 +2433,35 @@ input:focus, select:focus, textarea:focus {
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.45); z-index: 450;
   }
+  /* Level 3 navigasi mobile — CustomerPanel FULL-SCREEN (bukan cuma
+     sebagian layar) supaya konsisten dengan pola List→Chat→Panel yang
+     masing-masing full-screen dengan tombol back/close eksplisit. */
   .mobile-bottom-sheet {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    height: 85vh;
+    position: absolute; inset: 0;
+    height: 100vh; height: 100dvh;
     background: #ffffff;
-    border-radius: 16px 16px 0 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
+  .bottom-sheet-header {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    background: #ffffff; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding-top: env(safe-area-inset-top);
+  }
   .bottom-sheet-handle {
     width: 40px; height: 4px;
     background: var(--border); border-radius: 99px;
-    margin: 10px auto 8px;
-    flex-shrink: 0;
+    margin: 10px auto;
+  }
+  .bottom-sheet-close-btn {
+    position: absolute; right: 8px; top: calc(6px + env(safe-area-inset-top));
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-subtle); border: none; color: var(--text-primary);
+    cursor: pointer;
   }
   /* Override: .inbox-body .customer-panel { display:none } tidak berlaku di dalam bottom sheet */
   .mobile-bottom-sheet .customer-panel {
@@ -2500,6 +2535,7 @@ input:focus, select:focus, textarea:focus {
     right: 0; left: 0;
     border-radius: 0;
     max-height: 100vh;
+    max-height: 100dvh;
   }
   .drawer-tabs { overflow-x: auto; flex-wrap: nowrap; }
   .drawer-tab { flex-shrink: 0; }
@@ -2618,9 +2654,12 @@ input:focus, select:focus, textarea:focus {
   .user-table-wrap { display: none; }
   .user-card-list { display: flex; flex-direction: column; gap: 8px; }
 
-  /* ── Channel badge hilang di layar sangat sempit ── */
-  @media (max-width: 380px) {
+  /* ── Layar sangat sempit (360-400px, iPhone SE/mini & Android kecil) ──
+     2 kolom KPI/metric card masih kepotong/cramped di lebar ini — 1 kolom
+     penuh lebih aman & tetap gampang dibaca. */
+  @media (max-width: 400px) {
     .chat-header .channel-badge { display: none; }
+    .kpi-grid, .kpi-mini-grid, .dash-metric-grid { grid-template-columns: 1fr !important; }
   }
 
   /* ── Laporan: tabel performa CS scroll horizontal ── */
@@ -2727,6 +2766,7 @@ input:focus, select:focus, textarea:focus {
 .copilot-page {
   display: flex;
   height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
   overflow: hidden;
   background: var(--card-bg);
 }

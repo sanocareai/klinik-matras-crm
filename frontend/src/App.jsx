@@ -64,6 +64,41 @@ export default function App() {
     return () => window.removeEventListener("auth-error", handler);
   }, []);
 
+  // BUG FIX — tombol "Login Kembali" SEBELUMNYA cuma setSessionExpired(false),
+  // yang cuma menyembunyikan modal (Login sudah tampil di baliknya via
+  // `!user`, jadi SECARA VISUAL kelihatan "tidak melakukan apa-apa"). Kalau
+  // browser sedang menjalankan bundle JS BASI dari service worker (Bug 1
+  // utama — SW gagal update), tombol ini jadi satu-satunya jalan keluar user
+  // dari versi lama itu. Sekarang: bersihkan semua state SISI KLIEN + PAKSA
+  // reload penuh dari network (bukan SPA navigate) — supaya user pasti dapat
+  // bundle TERBARU, bukan terus jalan di versi lama yang sama.
+  async function handleForceRelogin() {
+    try {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    } catch {}
+
+    // Unregister SW + hapus cache — best-effort, JANGAN sampai gagal disini
+    // membuat redirect di bawah tidak jalan (makanya di-wrap try/catch
+    // terpisah dari redirect, bukan di-chain .then yang bisa reject diam-diam).
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {}
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {}
+
+    // Hard redirect (BUKAN setSessionExpired/SPA state) — paksa browser
+    // fetch index.html + bundle baru dari network dari nol.
+    window.location.href = "/login";
+  }
+
   // Refresh SSE dan data saat app kembali ke foreground (relevan untuk APK Capacitor / tab kembali aktif)
   useEffect(() => {
     if (!user) return;
@@ -102,7 +137,7 @@ export default function App() {
               <button
                 className="btn btn-primary"
                 style={{ width: "100%" }}
-                onClick={() => setSessionExpired(false)}
+                onClick={handleForceRelogin}
               >
                 Login Kembali
               </button>

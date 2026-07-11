@@ -375,11 +375,23 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       {/* ── Forward Modal ── */}
       {forwardMsg && <ForwardModal messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} />}
 
-      {/* ── CustomerPanel Bottom Sheet (mobile only, via CSS) ── */}
+      {/* ── CustomerPanel — full-screen sheet di mobile (Level 3 navigasi,
+          via CSS breakpoint), modal biasa di desktop ── */}
       {showCustomerDetail && (
         <div className="mobile-bottom-sheet-overlay" onClick={() => setShowCustomerDetail(false)}>
           <div className="mobile-bottom-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="bottom-sheet-handle" />
+            <div className="bottom-sheet-header">
+              <div className="bottom-sheet-handle" />
+              <button
+                type="button"
+                className="bottom-sheet-close-btn"
+                onClick={() => setShowCustomerDetail(false)}
+                title="Tutup"
+                aria-label="Tutup"
+              >
+                <X size={18} />
+              </button>
+            </div>
             <CustomerPanel conversation={conversation} onClose={() => setShowCustomerDetail(false)} />
           </div>
         </div>

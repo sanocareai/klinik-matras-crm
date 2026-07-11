@@ -1388,7 +1388,7 @@ export default function Automation() {
   const [tab, setTab] = useState("workflow");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 56px)" }}>
       {/* Sub-tab bar */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--border)", padding: "0 24px", background: "white", flexShrink: 0 }}>
         {SUB_TABS.map((t) => (
