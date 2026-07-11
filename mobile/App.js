@@ -38,11 +38,13 @@ const Tab = createBottomTabNavigator();
 // polos tanpa background. Bar mengambang rounded penuh dengan soft shadow.
 const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil: UserRound };
 
-// Tinggi AREA KONTEN bar (tempat ikon benar-benar center) — insets.bottom
-// ditambahkan TERPISAH sebagai paddingBottom di MainTabs(), bukan dicampur
-// ke sini, supaya ikon tidak ikut terdorong turun/kepotong oleh gesture
-// nav bar Android (review Gilang: ikon terpotong di bawah).
-const TAB_BAR_CONTENT_HEIGHT = 64;
+// Tinggi AREA KONTEN bar (tempat ikon benar-benar center) — pas 56, compact
+// (review Gilang: 64 kemarin bikin bar tampak gemuk/ruang kosong berlebih
+// di bawah baris ikon). insets.bottom TIDAK ditambahkan mentah-mentah —
+// dibatasi Math.max(insets.bottom, 8) di MainTabs() supaya di device TANPA
+// gesture nav (insets.bottom kecil/0) bar tidak jadi terlalu mepet, tapi
+// juga tidak membengkak jadi "lautan putih" di device DENGAN gesture nav.
+const TAB_BAR_CONTENT_HEIGHT = 56;
 const TAB_CIRCLE_SIZE = 44; // spec: 44-48, dan harus muat di dalam TAB_BAR_CONTENT_HEIGHT
 
 function TabIcon({ routeName, focused }) {
@@ -83,6 +85,12 @@ function TabBarButton({ children, style, ...rest }) {
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
+  // SATU sumber kebenaran untuk padding bawah — dipakai PERSIS SEKALI di
+  // total height DAN di paddingBottom (bukan dua nilai/dua tempat berbeda
+  // yang keduanya menambahkan insets.bottom secara terpisah — itu penyebab
+  // bar jadi gemuk di review sebelumnya). Math.max(..., 8) supaya tetap ada
+  // jarak minimal di device tanpa gesture nav (insets.bottom bisa 0).
+  const bottomPad = Math.max(insets.bottom, 8);
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -90,11 +98,11 @@ function MainTabs() {
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
         tabBarButton: (props) => <TabBarButton {...props} />,
-        // Tinggi bar = area konten ikon + insets.bottom (gesture nav bar
-        // Android) sebagai paddingBottom TERPISAH — jadi ikon tetap center
-        // sempurna di TAB_BAR_CONTENT_HEIGHT bagian ATAS, bukan ikut
-        // "diperas"/kepotong oleh ruang gesture bar di bawahnya.
-        tabBarStyle: [tabStyles.bar, { height: TAB_BAR_CONTENT_HEIGHT + insets.bottom, paddingBottom: insets.bottom }],
+        // Total tinggi bar = TAB_BAR_CONTENT_HEIGHT + bottomPad, TIDAK LEBIH.
+        // paddingBottom = bottomPad (persis nilai yang sama, bukan insets.bottom
+        // mentah) — jadi area konten di ATAS padding selalu pas
+        // TAB_BAR_CONTENT_HEIGHT, ikon center sempurna di situ.
+        tabBarStyle: [tabStyles.bar, { height: TAB_BAR_CONTENT_HEIGHT + bottomPad, paddingBottom: bottomPad }],
         tabBarActiveTintColor: tokens.color.accent,
         tabBarInactiveTintColor: tokens.color.textMuted,
       })}
