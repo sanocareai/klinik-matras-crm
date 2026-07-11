@@ -11,10 +11,12 @@ import {
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
+import { Search, SlidersHorizontal, LogOut, Inbox, MessageCircle, Clock, CheckCircle2, User, X } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import ConversationItem from "../components/ConversationItem";
+import PressableScale from "../components/PressableScale";
 import { useConversations } from "../hooks/useConversations";
 import {
   useConversationStore, useOrderedIds, useFilter, useConvSearchQuery,
@@ -31,11 +33,11 @@ const TABS = [
 ];
 
 const EMPTY_STATE = {
-  ALL:     { icon: "📭", text: "Belum ada percakapan" },
-  OPEN:    { icon: "💬", text: "Tidak ada percakapan terbuka" },
-  PENDING: { icon: "⏳", text: "Tidak ada percakapan pending" },
-  CLOSED:  { icon: "✅", text: "Tidak ada percakapan selesai" },
-  MINE:    { icon: "👤", text: "Belum ada percakapan milik kamu" },
+  ALL:     { Icon: Inbox, text: "Belum ada percakapan" },
+  OPEN:    { Icon: MessageCircle, text: "Tidak ada percakapan terbuka" },
+  PENDING: { Icon: Clock, text: "Tidak ada percakapan pending" },
+  CLOSED:  { Icon: CheckCircle2, text: "Tidak ada percakapan selesai" },
+  MINE:    { Icon: User, text: "Belum ada percakapan milik kamu" },
 };
 
 // Cocokkan 1 conversation dengan filter + search + toggle "belum dibaca"
@@ -110,7 +112,7 @@ export default function ChatListScreen({ navigation }) {
 
   function openChat(c) {
     const isGroup = c.type === "GROUP";
-    navigation.navigate("Chat", {
+    navigation.navigate("ChatRoom", {
       conversationId: c.id,
       name: isGroup ? (c.groupName || "Grup WhatsApp") : (c.customer?.name || c.customer?.phone || "Pelanggan"),
       isGroup,
@@ -136,7 +138,7 @@ export default function ChatListScreen({ navigation }) {
               onChangeText={handleSearchChange}
             />
             <TouchableOpacity onPress={closeSearch} style={styles.headerIconBtn}>
-              <Text style={styles.headerIconText}>✕</Text>
+              <X size={20} color={tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -146,22 +148,20 @@ export default function ChatListScreen({ navigation }) {
               <Text style={styles.subtitle}>{user?.name} · {user?.role === "ADMIN" ? "Admin" : "Sales"}</Text>
             </View>
             <TouchableOpacity onPress={() => setSearchOpen(true)} style={styles.headerIconBtn}>
-              <Text style={styles.headerIconText}>🔍</Text>
+              <Search size={20} color={tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowFilterSheet(true)} style={styles.headerIconBtn}>
-              <Text style={styles.headerIconText}>{onlyUnread ? "🔵" : "☰"}</Text>
+              <SlidersHorizontal size={20} color={onlyUnread ? tokens.color.accent : tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
-            {/* Profil — pengaturan notifikasi, versi app/cek update, logout
-                (lihat ProfileScreen.js). Tombol ⎋ shortcut logout langsung
-                di sini TETAP dipertahankan untuk akses cepat. */}
-            <TouchableOpacity onPress={() => navigation.navigate("Profile")} style={styles.headerIconBtn}>
-              <Text style={styles.headerIconText}>👤</Text>
-            </TouchableOpacity>
+            {/* Profil (pengaturan notifikasi, versi app/cek update, logout)
+                sekarang tab tersendiri di bottom nav — tombol shortcut lama
+                di sini dihapus karena sudah redundan. Logout tetap
+                dipertahankan sebagai akses cepat. */}
             <TouchableOpacity
               onPress={() => logout()}
               style={styles.headerIconBtn}
             >
-              <Text style={styles.headerIconText}>⎋</Text>
+              <LogOut size={20} color={tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
           </>
         )}
@@ -181,7 +181,7 @@ export default function ChatListScreen({ navigation }) {
             t.key === "PENDING" ? "pending" : t.key === "CLOSED" ? "selesai" : "milikSaya"
           ] || 0;
           return (
-            <TouchableOpacity
+            <PressableScale
               key={t.key}
               style={[styles.pill, active && styles.pillActive]}
               onPress={() => useConversationStore.getState().setFilter(t.key)}
@@ -192,7 +192,7 @@ export default function ChatListScreen({ navigation }) {
                   <Text style={[styles.pillBadgeText, active && styles.pillBadgeTextActive]}>{count}</Text>
                 </View>
               )}
-            </TouchableOpacity>
+            </PressableScale>
           );
         })}
       </ScrollView>
@@ -202,7 +202,7 @@ export default function ChatListScreen({ navigation }) {
         <ActivityIndicator style={{ marginTop: 40 }} color={tokens.color.accent} size="large" />
       ) : visibleIds.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyIcon}>{empty.icon}</Text>
+          <empty.Icon size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
           <Text style={styles.emptyText}>{empty.text}</Text>
         </View>
       ) : (
@@ -266,10 +266,10 @@ const styles = StyleSheet.create({
   tabsContent: { paddingHorizontal: 12, gap: 8, paddingBottom: 8 },
   pill: {
     flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 14,
-    borderRadius: 20, backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
-    marginRight: 8,
+    borderRadius: tokens.radius.chip, backgroundColor: tokens.color.card,
+    marginRight: 8, ...tokens.shadow.soft, shadowOpacity: 0.05, shadowRadius: 6, elevation: 1,
   },
-  pillActive: { backgroundColor: tokens.color.accent, borderColor: tokens.color.accent },
+  pillActive: { backgroundColor: tokens.color.accent, shadowOpacity: 0.12 },
   pillText: { color: tokens.color.textSecondary, fontWeight: "600", fontSize: 13 },
   pillTextActive: { color: "#fff" },
   pillBadge: {

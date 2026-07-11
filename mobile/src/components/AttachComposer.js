@@ -11,8 +11,10 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { Plus, Image as ImageIcon, Camera, FileText, X, Video } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
+import PressableScale from "./PressableScale";
 
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
@@ -123,23 +125,26 @@ export default function AttachComposer({ conversationId, onSent }) {
 
   return (
     <>
-      <TouchableOpacity style={styles.attachBtn} onPress={() => setShowSheet(true)}>
-        <Text style={styles.attachIcon}>＋</Text>
-      </TouchableOpacity>
+      <PressableScale style={styles.attachBtn} onPress={() => setShowSheet(true)}>
+        <Plus size={22} color={tokens.color.textSecondary} strokeWidth={2.2} />
+      </PressableScale>
 
       {/* Sheet pilih sumber lampiran */}
       <Modal visible={showSheet} transparent animationType="fade" onRequestClose={() => setShowSheet(false)}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowSheet(false)}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>Lampirkan</Text>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickFromGallery}>
-              <Text style={styles.sheetItemText}>🖼️ Foto / Video dari Galeri</Text>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={pickFromGallery}>
+              <ImageIcon size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Foto / Video dari Galeri</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickFromCamera}>
-              <Text style={styles.sheetItemText}>📷 Ambil Foto (Kamera)</Text>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={pickFromCamera}>
+              <Camera size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Ambil Foto (Kamera)</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItem} onPress={pickDocument}>
-              <Text style={styles.sheetItemText}>📄 Dokumen</Text>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={pickDocument}>
+              <FileText size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Dokumen</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -152,7 +157,7 @@ export default function AttachComposer({ conversationId, onSent }) {
             <View style={styles.previewHeader}>
               <Text style={styles.previewHeaderText}>{items.length} file dipilih</Text>
               <TouchableOpacity onPress={closePreview} disabled={sending}>
-                <Text style={styles.previewClose}>✕</Text>
+                <X size={18} color={tokens.color.textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 380 }}>
@@ -163,12 +168,16 @@ export default function AttachComposer({ conversationId, onSent }) {
                       <Image source={{ uri: item.uri }} style={styles.previewThumb} />
                     ) : (
                       <View style={[styles.previewThumb, styles.previewThumbIcon]}>
-                        <Text style={{ fontSize: 22 }}>{item.mediaType === "video" ? "🎥" : "📄"}</Text>
+                        {item.mediaType === "video" ? (
+                          <Video size={22} color={tokens.color.textSecondary} strokeWidth={1.8} />
+                        ) : (
+                          <FileText size={22} color={tokens.color.textSecondary} strokeWidth={1.8} />
+                        )}
                       </View>
                     )}
                     {!sending && (
                       <TouchableOpacity style={styles.previewRemove} onPress={() => removeItem(item.uid)}>
-                        <Text style={styles.previewRemoveText}>✕</Text>
+                        <X size={11} color="#fff" strokeWidth={2.6} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -213,6 +222,11 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   sheetItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+  sheetItemRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+  },
+  sheetItemIcon: { marginRight: 10 },
   sheetItemText: { fontSize: 15, color: tokens.color.textPrimary },
   previewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   previewModal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16 },

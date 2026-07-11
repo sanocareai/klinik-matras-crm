@@ -10,6 +10,7 @@ import {
 // mobile/CLAUDE.md) ke expo-video, API resmi pengganti sejak SDK 54+.
 import { VideoView, useVideoPlayer } from "expo-video";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { X } from "lucide-react-native";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const MIN_SCALE = 1;
@@ -120,7 +121,7 @@ export default function MediaViewerModal({ visible, items, initialIndex = 0, onC
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-          <Text style={styles.closeText}>✕</Text>
+          <X size={18} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
         <Text style={styles.counter}>{activeIndex + 1} / {items.length}</Text>
 

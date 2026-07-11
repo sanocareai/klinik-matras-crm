@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import * as Clipboard from "expo-clipboard";
+import { Pencil, Copy, Check } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import { stageLabels, stageColors } from "../theme";
@@ -280,14 +281,19 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
                 onPress={() => { setNameDraft(customer.name || ""); setNameEditing(true); }}
               >
                 <Text style={styles.name}>{customer.name || "Tanpa nama"}</Text>
-                <Text style={styles.editIcon}>✎</Text>
+                <Pencil size={14} color={tokens.color.textMuted} strokeWidth={2} style={styles.editIcon} />
               </TouchableOpacity>
             )}
             <View style={styles.phoneRow}>
               <Text style={styles.phone}>{customer.phone ? "+" + customer.phone : "-"}</Text>
               {customer.phone && (
-                <TouchableOpacity onPress={copyPhone} style={styles.copyBtn}>
-                  <Text style={styles.copyBtnText}>{copied ? "✓ Disalin" : "📋 Salin"}</Text>
+                <TouchableOpacity onPress={copyPhone} style={styles.copyBtnRow}>
+                  {copied ? (
+                    <Check size={13} color={tokens.color.success} strokeWidth={2.2} style={styles.copyBtnIcon} />
+                  ) : (
+                    <Copy size={13} color={tokens.color.accent} strokeWidth={2} style={styles.copyBtnIcon} />
+                  )}
+                  <Text style={styles.copyBtnText}>{copied ? "Disalin" : "Salin"}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -448,7 +454,7 @@ const styles = StyleSheet.create({
   profile: { alignItems: "center", padding: 20 },
   name: { fontSize: 19, fontWeight: "700", color: tokens.color.textPrimary },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
-  editIcon: { fontSize: 13, color: tokens.color.textMuted },
+  editIcon: { marginLeft: 6 },
   nameEditRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, width: "100%", paddingHorizontal: 20 },
   nameInput: {
     flex: 1, backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12,
@@ -459,6 +465,8 @@ const styles = StyleSheet.create({
   phoneRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
   phone: { fontSize: 14, color: tokens.color.textSecondary },
   copyBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+  copyBtnRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 2 },
+  copyBtnIcon: { marginRight: 4 },
   copyBtnText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600" },
   section: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: tokens.color.border },
   sectionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textMuted, marginBottom: 8, textTransform: "uppercase" },

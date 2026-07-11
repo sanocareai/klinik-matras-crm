@@ -9,5 +9,5 @@ export const navigationRef = createNavigationContainerRef();
 // App.js/push.js/InAppBanner.js secara terpisah.
 export function navigateToChat({ conversationId, name, isGroup = false, customerId }) {
   if (!conversationId || !navigationRef.isReady()) return;
-  navigationRef.navigate("Chat", { conversationId, name, isGroup, customerId });
+  navigationRef.navigate("ChatRoom", { conversationId, name, isGroup, customerId });
 }

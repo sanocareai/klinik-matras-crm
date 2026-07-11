@@ -20,12 +20,31 @@ export const tokens = {
     warning: "#F59E0B",
   },
   radius: {
-    card: 16,
-    control: 12,
+    card: 20,      // card/sheet — spec: 20-24
+    bubble: 18,    // bubble chat
+    bubbleTail: 6, // sudut "ekor" bubble (borderBottomRightRadius outbound / borderBottomLeftRadius inbound)
+    control: 12,   // kontrol kecil (tombol persegi, dsb) — dipertahankan dari sebelumnya
+    pill: 24,      // input/composer pill penuh
+    chip: 999,     // filter chip / pill tab — bulat penuh
+  },
+  // Soft elevation ala Apple — GANTI border keras yang tersisa di card
+  // manapun dengan ini, jangan campur border+shadow di komponen yang sama.
+  shadow: {
+    soft: {
+      shadowColor: "#0F172A",
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 3, // Android — react-native-shadow tidak baca shadow* di Android
+    },
+  },
+  spacing: {
+    screen: 16, // padding default layar
+    gap: 12,    // gap antar card
   },
   font: {
-    regular: "Inter_400Regular",
-    medium: "Inter_500Medium",
-    semiBold: "Inter_600SemiBold",
+    regular: "Inter_400Regular", // body — weight 400
+    medium: "Inter_500Medium",   // angka/stat — weight 500
+    semiBold: "Inter_600SemiBold", // judul — weight 600
   },
 };

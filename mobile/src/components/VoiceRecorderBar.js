@@ -21,6 +21,7 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from "expo-audio";
+import { Mic } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import AudioPlayer from "./AudioPlayer";
@@ -135,7 +136,7 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
         delayLongPress={150}
         onPressOut={() => { if (isRecordingRef.current) finishRecording(); }}
       >
-        <Text style={styles.micIcon}>🎤</Text>
+        <Mic size={20} color={recording ? "#fff" : tokens.color.textSecondary} strokeWidth={2} />
       </TouchableOpacity>
     </View>
   );

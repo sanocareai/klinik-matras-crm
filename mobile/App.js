@@ -3,19 +3,24 @@
 import React, { useEffect, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { ActivityIndicator, View, Text, TextInput } from "react-native";
+import { ActivityIndicator, View, Text, TextInput, StyleSheet } from "react-native";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChatListScreen from "./src/screens/ChatListScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
+import HomeScreen from "./src/screens/HomeScreen";
+import PelangganScreen from "./src/screens/PelangganScreen";
 import InAppBanner from "./src/components/InAppBanner";
 import { colors } from "./src/theme";
 import { tokens } from "./src/constants/theme";
@@ -26,6 +31,66 @@ import { initOutboxFlush } from "./src/lib/outboxFlush";
 import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+// 4 tab bawah (spec design refresh Apple-style) — ikon lucide, TANPA label
+// teks, aktif = pill bg accent + ikon putih, non-aktif = ikon slate-400
+// polos tanpa background. Bar mengambang rounded penuh dengan soft shadow.
+const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil: UserRound };
+
+function TabIcon({ routeName, focused }) {
+  const Icon = TAB_ICONS[routeName];
+  // Spring ringan pada pill indikator tab aktif (spec animasi standar) —
+  // bukan cuma snap warna/ukuran instan.
+  const scale = useSharedValue(focused ? 1 : 0.86);
+  useEffect(() => {
+    scale.value = withSpring(focused ? 1 : 0.86, { damping: 14, stiffness: 220 });
+  }, [focused]);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={[tabStyles.iconWrap, focused && tabStyles.iconWrapActive, animatedStyle]}>
+      <Icon size={22} color={focused ? "#fff" : tokens.color.textMuted} strokeWidth={2.2} />
+    </Animated.View>
+  );
+}
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
+        tabBarStyle: tabStyles.bar,
+        tabBarItemStyle: tabStyles.item,
+        tabBarActiveTintColor: tokens.color.accent,
+        tabBarInactiveTintColor: tokens.color.textMuted,
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Chats" component={ChatListScreen} />
+      <Tab.Screen name="Pelanggan" component={PelangganScreen} />
+      <Tab.Screen name="Profil" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+const tabStyles = StyleSheet.create({
+  bar: {
+    position: "absolute",
+    left: 16, right: 16, bottom: 16,
+    height: 64,
+    borderRadius: 999,
+    backgroundColor: tokens.color.card,
+    borderTopWidth: 0,
+    ...tokens.shadow.soft,
+  },
+  item: { alignItems: "center", justifyContent: "center", height: 64 },
+  iconWrap: {
+    width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
+  },
+  iconWrapActive: { backgroundColor: tokens.color.accent },
+});
 
 // InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang
 // masih gaya header biru tua lama. Warna strip status bar/notch ikut
@@ -41,7 +106,7 @@ const Stack = createNativeStackNavigator();
 // Pola resmi React Navigation untuk kasus ini: pasang onStateChange di
 // NavigationContainer, simpan nama route aktif ke state di App(), lalu
 // teruskan sebagai prop ke sini.
-const LIGHT_SCREENS = ["ChatList", "Profile"];
+const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Profil"];
 function SafeAreaTopBg({ routeName, children }) {
   const isLight = LIGHT_SCREENS.includes(routeName);
   const bg = isLight ? tokens.color.bg : colors.header;
@@ -108,9 +173,12 @@ function Root() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>
-            <Stack.Screen name="ChatList" component={ChatListScreen} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
+            {/* MainTabs = 4 tab bawah (Home/Chats/Pelanggan/Profil). Layar di
+                bawah ini di-push DI ATAS tab navigator — otomatis fullscreen
+                & tab bar tersembunyi selama layar ini aktif (perilaku baku
+                nested navigator React Navigation, tidak perlu config manual). */}
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="ChatRoom" component={ChatScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

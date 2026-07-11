@@ -19,10 +19,15 @@ import {
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
+import {
+  ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
+  Circle, CircleDot, CheckCircle2,
+} from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
 import Avatar from "../components/Avatar";
+import PressableScale from "../components/PressableScale";
 import MessageBubble from "../components/MessageBubble";
 import AttachComposer from "../components/AttachComposer";
 import VoiceRecorderBar from "../components/VoiceRecorderBar";
@@ -40,9 +45,9 @@ const POLL_MS = 5000;
 const PAGE_SIZE = 50;
 
 const STATUS_OPTIONS = [
-  { key: "OPEN", label: "🔵 Tandai Terbuka" },
-  { key: "PENDING", label: "🟡 Tandai Pending" },
-  { key: "RESOLVED", label: "✅ Tandai Selesai" },
+  { key: "OPEN", label: "Tandai Terbuka", Icon: CircleDot, color: tokens.color.accent },
+  { key: "PENDING", label: "Tandai Pending", Icon: Circle, color: tokens.color.warning },
+  { key: "RESOLVED", label: "Tandai Selesai", Icon: CheckCircle2, color: tokens.color.success },
 ];
 
 // Susun array flat [divider, message, message, divider, ...] dari window
@@ -302,7 +307,7 @@ export default function ChatScreen({ route, navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backIcon}>‹</Text>
+          <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerInfo}
@@ -318,7 +323,7 @@ export default function ChatScreen({ route, navigation }) {
         </TouchableOpacity>
         {!isGroup && (
           <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuBtn}>
-            <Text style={styles.menuIcon}>⋮</Text>
+            <MoreVertical size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
           </TouchableOpacity>
         )}
       </View>
@@ -371,7 +376,8 @@ export default function ChatScreen({ route, navigation }) {
           )}
           {isOffline && (
             <View style={styles.offlineBanner}>
-              <Text style={styles.offlineBannerText}>📡 Menunggu koneksi… pesan akan otomatis terkirim</Text>
+              <WifiOff size={14} color={styles.offlineBannerText.color} strokeWidth={2} style={{ marginRight: 6 }} />
+              <Text style={styles.offlineBannerText}>Menunggu koneksi… pesan akan otomatis terkirim</Text>
             </View>
           )}
           {replyTarget && (
@@ -386,7 +392,7 @@ export default function ChatScreen({ route, navigation }) {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => useComposerStore.getState().clearReply()}>
-                <Text style={styles.replyBarClose}>✕</Text>
+                <X size={18} color={tokens.color.textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
           )}
@@ -404,13 +410,13 @@ export default function ChatScreen({ route, navigation }) {
               multiline
             />
             {text.trim() ? (
-              <TouchableOpacity
+              <PressableScale
                 style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
                 onPress={handleSend}
                 disabled={sending}
               >
-                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendIcon}>➤</Text>}
-              </TouchableOpacity>
+                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send size={18} color="#fff" strokeWidth={2.2} />}
+              </PressableScale>
             ) : (
               <VoiceRecorderBar
                 conversationId={conversationId}
@@ -427,20 +433,24 @@ export default function ChatScreen({ route, navigation }) {
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>Aksi Percakapan</Text>
             {!assignedTo && (
-              <TouchableOpacity style={styles.sheetItem} onPress={handleTakeover}>
-                <Text style={styles.sheetItemText}>🙋 Ambil Percakapan</Text>
+              <TouchableOpacity style={styles.sheetItemRow} onPress={handleTakeover}>
+                <UserPlus size={17} color={tokens.color.textPrimary} strokeWidth={2} style={styles.sheetItemIcon} />
+                <Text style={styles.sheetItemText}>Ambil Percakapan</Text>
               </TouchableOpacity>
             )}
             {assignedTo && !isMine && canTakeover && (
-              <TouchableOpacity style={styles.sheetItem} onPress={handleTakeover}>
-                <Text style={styles.sheetItemText}>🙋 Ambil Alih (belum dibalas 1j+)</Text>
+              <TouchableOpacity style={styles.sheetItemRow} onPress={handleTakeover}>
+                <UserPlus size={17} color={tokens.color.textPrimary} strokeWidth={2} style={styles.sheetItemIcon} />
+                <Text style={styles.sheetItemText}>Ambil Alih (belum dibalas 1j+)</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.sheetItem} onPress={() => { setShowMenu(false); setShowTransfer(true); }}>
-              <Text style={styles.sheetItemText}>👤 Transfer ke Sales Lain</Text>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={() => { setShowMenu(false); setShowTransfer(true); }}>
+              <UserCog size={17} color={tokens.color.textPrimary} strokeWidth={2} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Transfer ke Sales Lain</Text>
             </TouchableOpacity>
             {STATUS_OPTIONS.map((s) => (
-              <TouchableOpacity key={s.key} style={styles.sheetItem} onPress={() => changeStatus(s.key)}>
+              <TouchableOpacity key={s.key} style={styles.sheetItemRow} onPress={() => changeStatus(s.key)}>
+                <s.Icon size={17} color={s.color} strokeWidth={2} style={styles.sheetItemIcon} />
                 <Text style={styles.sheetItemText}>{s.label}</Text>
               </TouchableOpacity>
             ))}
@@ -503,7 +513,10 @@ const styles = StyleSheet.create({
   emptyText: { color: tokens.color.textMuted },
   groupNotice: { backgroundColor: "#fef3c7", padding: 12 },
   groupNoticeText: { color: "#92400e", fontSize: 13, textAlign: "center" },
-  offlineBanner: { backgroundColor: "#fef3c7", paddingVertical: 6, paddingHorizontal: 12 },
+  offlineBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#fef3c7", paddingVertical: 6, paddingHorizontal: 12,
+  },
   offlineBannerText: { color: "#92400e", fontSize: 12, textAlign: "center" },
   assignedBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -524,7 +537,7 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,
   },
   input: {
-    flex: 1, backgroundColor: tokens.color.subtle, borderRadius: 20, paddingHorizontal: 14,
+    flex: 1, backgroundColor: tokens.color.subtle, borderRadius: tokens.radius.pill, paddingHorizontal: 16,
     paddingVertical: 9, fontSize: 15, maxHeight: 110, color: tokens.color.textPrimary,
   },
   sendBtn: {
@@ -532,7 +545,6 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   sendBtnDisabled: { opacity: 0.6 },
-  sendIcon: { color: "#fff", fontSize: 17 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
@@ -540,5 +552,10 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   sheetItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+  sheetItemRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+  },
+  sheetItemIcon: { marginRight: 10 },
   sheetItemText: { fontSize: 15, color: tokens.color.textPrimary },
 });

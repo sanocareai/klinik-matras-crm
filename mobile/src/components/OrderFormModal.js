@@ -12,6 +12,7 @@ import React, { useEffect, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, Image,
 } from "react-native";
+import { Package, X } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
@@ -80,9 +81,9 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>+ Order Baru</Text>
+            <Text style={styles.headerTitle}>Order Baru</Text>
             <TouchableOpacity onPress={onClose} disabled={saving}>
-              <Text style={styles.closeText}>✕</Text>
+              <X size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
@@ -115,7 +116,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
                     <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} />
                   ) : (
                     <View style={[styles.productThumb, styles.productThumbPlaceholder]}>
-                      <Text style={{ fontSize: 16 }}>📦</Text>
+                      <Package size={16} color={tokens.color.textMuted} strokeWidth={1.8} />
                     </View>
                   )}
                   <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>

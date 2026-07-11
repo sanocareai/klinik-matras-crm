@@ -6,6 +6,7 @@ import React, { useEffect, useState } from "react";
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert,
 } from "react-native";
+import { UserCog, X } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import Avatar from "./Avatar";
@@ -40,8 +41,11 @@ export default function TransferModal({ visible, conversationId, currentAssigned
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>👤 Transfer Percakapan</Text>
-            <TouchableOpacity onPress={onClose}><Text style={styles.closeText}>✕</Text></TouchableOpacity>
+            <View style={styles.headerTitleRow}>
+              <UserCog size={16} color={tokens.color.textPrimary} strokeWidth={2} style={{ marginRight: 6 }} />
+              <Text style={styles.headerTitle}>Transfer Percakapan</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}><X size={20} color={tokens.color.textSecondary} strokeWidth={2.2} /></TouchableOpacity>
           </View>
           {loading ? (
             <ActivityIndicator style={{ marginTop: 24 }} color={tokens.color.accent} />
@@ -77,6 +81,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "80%" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center" },
   headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
   closeText: { fontSize: 16, color: tokens.color.textSecondary, padding: 4 },
   empty: { textAlign: "center", color: tokens.color.textMuted, marginTop: 24 },

@@ -5,6 +5,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
+import { BedDouble } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
 import { DEFAULT_SERVER } from "../api";
@@ -38,7 +39,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.logo}>🛏️</Text>
+        <BedDouble size={44} color={colors.header} strokeWidth={1.8} style={styles.logo} />
         <Text style={styles.title}>Klinik Matras CRM</Text>
         <Text style={styles.subtitle}>Ahlinya Kasur Sehat</Text>
 
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
   },
-  logo: { fontSize: 48, marginBottom: 4 },
+  logo: { marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "700", color: colors.text },
   subtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
   input: {
