@@ -12,8 +12,8 @@ import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, interpolateColor } from "react-native-reanimated";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { ActivityIndicator, View, Text, TextInput, StyleSheet } from "react-native";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable } from "react-native";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChatListScreen from "./src/screens/ChatListScreen";
@@ -38,6 +38,13 @@ const Tab = createBottomTabNavigator();
 // polos tanpa background. Bar mengambang rounded penuh dengan soft shadow.
 const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil: UserRound };
 
+// Tinggi AREA KONTEN bar (tempat ikon benar-benar center) — insets.bottom
+// ditambahkan TERPISAH sebagai paddingBottom di MainTabs(), bukan dicampur
+// ke sini, supaya ikon tidak ikut terdorong turun/kepotong oleh gesture
+// nav bar Android (review Gilang: ikon terpotong di bawah).
+const TAB_BAR_CONTENT_HEIGHT = 64;
+const TAB_CIRCLE_SIZE = 44; // spec: 44-48, dan harus muat di dalam TAB_BAR_CONTENT_HEIGHT
+
 function TabIcon({ routeName, focused }) {
   const Icon = TAB_ICONS[routeName];
   // Transisi warna sederhana 150ms — TANPA spring/scale (review Gilang:
@@ -57,15 +64,37 @@ function TabIcon({ routeName, focused }) {
   );
 }
 
+// Tombol tab kustom — GANTI TOTAL PlatformPressable bawaan bottom-tabs,
+// yang di Android otomatis pasang android_ripple (tampak seperti
+// shadow/glow abu di belakang lingkaran aktif saat ditekan — keluhan
+// review Gilang). Feedback tekan di sini CUMA opacity 0.7, tanpa
+// ripple/shadow/elevation apa pun.
+function TabBarButton({ children, style, ...rest }) {
+  return (
+    <Pressable
+      {...rest}
+      android_ripple={null}
+      style={({ pressed }) => [style, tabStyles.item, pressed && tabStyles.itemPressed]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 function MainTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
-        tabBarStyle: tabStyles.bar,
-        tabBarItemStyle: tabStyles.item,
+        tabBarButton: (props) => <TabBarButton {...props} />,
+        // Tinggi bar = area konten ikon + insets.bottom (gesture nav bar
+        // Android) sebagai paddingBottom TERPISAH — jadi ikon tetap center
+        // sempurna di TAB_BAR_CONTENT_HEIGHT bagian ATAS, bukan ikut
+        // "diperas"/kepotong oleh ruang gesture bar di bawahnya.
+        tabBarStyle: [tabStyles.bar, { height: TAB_BAR_CONTENT_HEIGHT + insets.bottom, paddingBottom: insets.bottom }],
         tabBarActiveTintColor: tokens.color.accent,
         tabBarInactiveTintColor: tokens.color.textMuted,
       })}
@@ -79,21 +108,27 @@ function MainTabs() {
 }
 
 const tabStyles = StyleSheet.create({
-  // SATU soft shadow di container bar SAJA — item/ikon di dalamnya TIDAK
-  // boleh punya shadow/elevation sendiri (review Gilang: shadow ganda di
-  // ikon aktif terlihat tidak presisi/kotor).
+  // SATU soft shadow di container bar SAJA — item/ikon/tombol di dalamnya
+  // TIDAK boleh punya shadow/elevation/ripple sendiri (review Gilang:
+  // shadow/glow di ikon aktif & saat ditekan terlihat tidak presisi/kotor).
   bar: {
     position: "absolute",
     left: 16, right: 16, bottom: 16,
-    height: 64,
     borderRadius: 999,
     backgroundColor: tokens.color.card,
     borderTopWidth: 0,
     ...tokens.shadow.soft,
   },
-  item: { alignItems: "center", justifyContent: "center", height: 64 },
+  item: {
+    alignItems: "center", justifyContent: "center", height: TAB_BAR_CONTENT_HEIGHT,
+    // Nol-kan eksplisit — PlatformPressable bawaan sudah diganti TabBarButton,
+    // tapi tetap dijaga di sini kalau ada style lain yang ikut nempel.
+    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
+  },
+  itemPressed: { opacity: 0.7 },
   iconWrap: {
-    width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
+    width: TAB_CIRCLE_SIZE, height: TAB_CIRCLE_SIZE, borderRadius: TAB_CIRCLE_SIZE / 2,
+    alignItems: "center", justifyContent: "center",
     // Eksplisit nol-kan shadow/elevation — jangan sampai warisan style lain
     // bikin ikon aktif kelihatan ada shadow/glow sendiri.
     shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
