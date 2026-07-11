@@ -92,7 +92,7 @@ export default function ChatListScreen({ navigation }) {
   const visibleIds = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q));
-  }, [orderedIds, conversationsById, filter, user?.id, search, onlyUnread]);
+  }, [orderedIds, conversationsById, filter, user?.id, search]);
 
   function handleSearchChange(v) {
     setSearchInput(v);
