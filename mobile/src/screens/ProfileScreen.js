@@ -12,11 +12,28 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Switch, Modal, ScrollView, Alert, Platform,
 } from "react-native";
 import Constants from "expo-constants";
-import * as Updates from "expo-updates";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { tokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import Avatar from "../components/Avatar";
+
+// ⚠️ expo-updates BELUM ter-link di dev build M6 sekarang (native module
+// "ExpoUpdates" belum ada) — import statis bikin app crash total begitu
+// ProfileScreen.js dievaluasi (bukan cuma saat tombol ditekan), karena
+// expo-updates cek native module-nya di top-level module evaluation.
+// Dibungkus require() + try/catch (pola sama dengan expo-notifications di
+// push.js) supaya crash-nya tertangkap di sini saja — Updates jadi null,
+// tombol "Cek Update" di bawah otomatis disabled dgn keterangan kecil.
+// JANGAN dikembalikan ke import statis sampai APK M6 (yang sudah nge-link
+// expo-updates) benar-benar dipasang — fitur ini akan otomatis hidup lagi
+// tanpa perlu ubah kode apa pun begitu native module-nya tersedia.
+let Updates = null;
+try {
+  Updates = require("expo-updates");
+} catch (err) {
+  console.warn("[ProfileScreen] expo-updates native module belum tersedia:", err.message);
+  Updates = null;
+}
 
 const NOTIF_PREFS_KEY = "notifPrefs";
 const DEFAULT_PREFS = { enabled: true, startHour: 8, endHour: 21 };
@@ -59,6 +76,13 @@ export default function ProfileScreen({ navigation }) {
   }
 
   async function handleCheckUpdate() {
+    // Jaga-jaga ganda — tombol sudah disabled (lihat prop disabled di JSX)
+    // kalau native module belum tersedia, tapi dicek lagi di sini supaya
+    // fungsi ini aman dipanggil dari mana saja.
+    if (!Updates) {
+      Alert.alert("Cek Update", "Fitur ini belum tersedia di build sekarang — akan aktif di build berikutnya.");
+      return;
+    }
     if (isDevBuild()) {
       Alert.alert("Cek Update", "Fitur ini hanya aktif di APK hasil build (EAS), bukan di mode development.");
       return;
@@ -185,9 +209,18 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.rowLabel}>Versi</Text>
             <Text style={styles.rowValue}>{appVersion}{buildNumber ? ` (${buildNumber})` : ""}</Text>
           </View>
-          <TouchableOpacity style={styles.updateBtn} onPress={handleCheckUpdate} disabled={checkingUpdate}>
-            <Text style={styles.updateBtnText}>{checkingUpdate ? "Mengecek…" : "Cek Update"}</Text>
+          <TouchableOpacity
+            style={[styles.updateBtn, !Updates && styles.updateBtnDisabled]}
+            onPress={handleCheckUpdate}
+            disabled={checkingUpdate || !Updates}
+          >
+            <Text style={[styles.updateBtnText, !Updates && styles.updateBtnTextDisabled]}>
+              {checkingUpdate ? "Mengecek…" : "Cek Update"}
+            </Text>
           </TouchableOpacity>
+          {!Updates && (
+            <Text style={styles.updateUnavailableNote}>Tersedia di build berikutnya</Text>
+          )}
         </View>
 
         {/* Logout */}
@@ -277,6 +310,9 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.control, paddingVertical: 10, alignItems: "center",
   },
   updateBtnText: { color: tokens.color.accent, fontWeight: "700", fontSize: 13 },
+  updateBtnDisabled: { backgroundColor: tokens.color.subtle },
+  updateBtnTextDisabled: { color: tokens.color.textMuted },
+  updateUnavailableNote: { alignSelf: "center", fontSize: 11, color: tokens.color.textMuted, marginTop: 6 },
   logoutBtn: {
     backgroundColor: tokens.color.danger, borderRadius: tokens.radius.control,
     paddingVertical: 14, alignItems: "center",
