@@ -205,6 +205,13 @@ export const api = {
   getSalesPerformance: (year, month) =>
     request("/analytics/sales-performance" + buildQuery({ year, month })),
 
+  // Performa CS per sales (chat ditangani + closingRate = RESOLVED/total —
+  // definisi "conversion rate" yang SAMA dipakai Laporan.jsx web, lihat
+  // backend/src/routes/analytics.js#cs-performance). from/to: "YYYY-MM-DD".
+  // Balikin SEMUA sales (role != ADMIN) — caller filter/sort di client.
+  getCsPerformance: (from, to) =>
+    request("/analytics/cs-performance" + buildQuery({ from, to })),
+
   // Order — dua langkah sama seperti web (addOrder bikin shell order kosong,
   // addOrderItem nambah baris layanan+harga yang otomatis hitung ulang
   // Order.value). Lihat backend/src/routes/customers.js #POST /:id/orders

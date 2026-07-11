@@ -1,19 +1,29 @@
-// Tab Home — ringkasan hari ini (Fase M5.5-B). Data dari endpoint existing
-// (tidak ada endpoint baru dibuat di backend untuk tab ini):
+// Tab Home — ringkasan hari ini (Fase M5.5-B, diperluas M5.5-C: target +
+// performa sales per-role). SEMUA data dari endpoint existing (SUDAH dicek
+// dulu — TIDAK ada endpoint backend baru dibuat untuk layar ini):
 // - Target bulanan: GET /analytics/sales-performance (SAMA yang dipakai
-//   halaman Laporan web) — cari entry milik user login sendiri by userId.
-// - Belum Dibalas: GET /conversations/unread-count (SAMA badge lonceng).
+//   Laporan.jsx & TargetSalesWidget.jsx web) — per user: target,
+//   totalOrderValue, percentToTarget. Role SALES: cari entry milik sendiri.
+//   Role ADMIN: agregat SEMUA baris client-side (total target, total
+//   achieved) — PERSIS pola yang sama dengan TargetSalesWidget.jsx web
+//   (frontend/src/features/dashboard/components/TargetSalesWidget.jsx),
+//   supaya angka tim konsisten & tidak duplikat logic.
+// - Performa Sales (chat ditangani + conversion): GET /analytics/cs-performance
+//   (SAMA yang dipakai Laporan.jsx web) — per user: totalConversations,
+//   closingRate. closingRate = RESOLVED/total conversation yang ditangani —
+//   ini DEFINISI "conversion rate" yang sudah dipakai web (bukan
+//   order-based; sudah dicek dulu di Laporan.jsx/backend sebelum dipakai
+//   di sini, supaya tidak beda definisi dengan dashboard web).
+// - Belum Dibalas: GET /conversations/unread-count.
 // - Percakapan Saya: GET /conversations/counts (field milikSaya).
-// - Order Bulan Ini: totalOrderValue dari entry sales-performance yang sama.
-// - Perlu Ditindak: GET /conversations (list biasa, limit default 100)
-//   sudah balikin isUnanswered + unansweredMinutes per item (lihat backend/
-//   src/routes/conversations.js) — difilter & diurutkan CLIENT-SIDE di sini
-//   (tidak ada endpoint khusus "top unanswered" di backend).
-import React, { useCallback, useEffect, useState } from "react";
+// - Perlu Ditindak: GET /conversations (list biasa) sudah balikin
+//   isUnanswered + unansweredMinutes per item — difilter/diurutkan
+//   client-side (tidak ada endpoint khusus "top unanswered" di backend).
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator,
 } from "react-native";
-import { Bell, CheckCircle2 } from "lucide-react-native";
+import { Bell, CheckCircle2, ArrowUpDown } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
@@ -30,12 +40,22 @@ function fmtWaitDuration(mins) {
   return `${Math.floor(hours / 24)} hari`;
 }
 
+function monthRangeStrings() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const to = now.toISOString().slice(0, 10);
+  return { from, to };
+}
+
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [target, setTarget] = useState(null); // { target, totalOrderValue, percentToTarget } | null
+  const [perf, setPerf] = useState([]); // sales-performance rows (target/achieved), semua sales
+  const [csPerf, setCsPerf] = useState([]); // cs-performance rows (chat/conversion), semua sales
+  const [csSortAsc, setCsSortAsc] = useState(false); // default: conversion tertinggi dulu
   const [unreadCount, setUnreadCount] = useState(0);
   const [myConvCount, setMyConvCount] = useState(0);
   const [needsAction, setNeedsAction] = useState([]);
@@ -45,13 +65,16 @@ export default function HomeScreen({ navigation }) {
     setErrorMsg(null);
     try {
       const now = new Date();
-      const [perf, unread, counts, convRes] = await Promise.all([
+      const { from, to } = monthRangeStrings();
+      const [perfRows, csRows, unread, counts, convRes] = await Promise.all([
         api.getSalesPerformance(now.getFullYear(), now.getMonth() + 1).catch(() => []),
+        api.getCsPerformance(from, to).catch(() => []),
         api.getUnreadCount().catch(() => ({ count: 0 })),
         api.getConversationCounts().catch(() => ({})),
         api.getConversations({}).catch(() => ({ data: [] })),
       ]);
-      setTarget((perf || []).find((p) => p.userId === user?.id) || null);
+      setPerf(perfRows || []);
+      setCsPerf(csRows || []);
       setUnreadCount(unread?.count || 0);
       setMyConvCount(counts?.milikSaya || 0);
 
@@ -66,7 +89,7 @@ export default function HomeScreen({ navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -85,8 +108,30 @@ export default function HomeScreen({ navigation }) {
     });
   }
 
-  const hasTarget = !!target && target.target > 0;
-  const percent = hasTarget ? Math.max(0, Math.min(100, target.percentToTarget ?? 0)) : 0;
+  // Target pribadi (role SALES) — entry milik user login sendiri.
+  const myTarget = useMemo(() => perf.find((p) => p.userId === user?.id) || null, [perf, user?.id]);
+  const hasMyTarget = !!myTarget && myTarget.target > 0;
+  const myPercent = hasMyTarget ? Math.max(0, Math.min(100, myTarget.percentToTarget ?? 0)) : 0;
+
+  // Total tim (role ADMIN) — agregat client-side, PERSIS pola
+  // TargetSalesWidget.jsx web (bukan hitungan baru/beda definisi).
+  const teamTotals = useMemo(() => {
+    const totalTarget = perf.reduce((sum, r) => sum + (r.target || 0), 0);
+    const totalAchieved = perf.reduce((sum, r) => sum + (r.totalOrderValue || 0), 0);
+    const percent = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
+    return { totalTarget, totalAchieved, percent };
+  }, [perf]);
+  const hasTeamTarget = teamTotals.totalTarget > 0;
+
+  // Baris Performa Sales yang ditampilkan — SALES cuma lihat baris sendiri,
+  // ADMIN lihat semua + sortable by conversion (closingRate).
+  const csRowsToShow = useMemo(() => {
+    if (!isAdmin) return csPerf.filter((r) => r.userId === user?.id);
+    const sorted = [...csPerf].sort((a, b) =>
+      csSortAsc ? a.closingRate - b.closingRate : b.closingRate - a.closingRate
+    );
+    return sorted;
+  }, [csPerf, isAdmin, user?.id, csSortAsc]);
 
   if (loading) {
     return (
@@ -124,25 +169,73 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Hero target card */}
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Target Bulan Ini</Text>
-        {hasTarget ? (
-          <>
-            <Text style={styles.heroPercent}>{percent}%</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${percent}%` }]} />
+      {/* Hero target — beda per role */}
+      {isAdmin ? (
+        <>
+          <View style={styles.heroCard}>
+            <Text style={styles.heroLabel}>Target Tim Bulan Ini</Text>
+            {hasTeamTarget ? (
+              <>
+                <Text style={styles.heroPercent}>{teamTotals.percent}%</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.min(teamTotals.percent, 100)}%` }]} />
+                </View>
+                <Text style={styles.heroSub}>
+                  {formatRupiah(teamTotals.totalAchieved)} dari {formatRupiah(teamTotals.totalTarget)}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.heroSub}>
+                Target bulan ini belum diatur untuk Sales manapun — atur lewat CRM web (menu Laporan/Pengaturan).
+              </Text>
+            )}
+          </View>
+
+          {perf.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Progress per Sales</Text>
+              {perf.map((r) => {
+                const pct = r.target > 0 ? Math.max(0, Math.min(100, Math.round((r.totalOrderValue / r.target) * 100))) : 0;
+                return (
+                  <View key={r.userId} style={styles.personRow}>
+                    <Avatar name={r.name} size={28} />
+                    <View style={styles.personBody}>
+                      <Text style={styles.personName} numberOfLines={1}>{r.name}</Text>
+                      {r.target > 0 ? (
+                        <View style={styles.personTrack}>
+                          <View style={[styles.personFill, { width: `${pct}%` }]} />
+                        </View>
+                      ) : (
+                        <Text style={styles.personNoTarget}>Belum ada target</Text>
+                      )}
+                    </View>
+                    {r.target > 0 && <Text style={styles.personPct}>{pct}%</Text>}
+                  </View>
+                );
+              })}
             </View>
+          )}
+        </>
+      ) : (
+        <View style={styles.heroCard}>
+          <Text style={styles.heroLabel}>Target Bulan Ini</Text>
+          {hasMyTarget ? (
+            <>
+              <Text style={styles.heroPercent}>{myPercent}%</Text>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${myPercent}%` }]} />
+              </View>
+              <Text style={styles.heroSub}>
+                {formatRupiah(myTarget.totalOrderValue)} dari {formatRupiah(myTarget.target)}
+              </Text>
+            </>
+          ) : (
             <Text style={styles.heroSub}>
-              {formatRupiah(target.totalOrderValue)} dari {formatRupiah(target.target)}
+              Target belum diatur — atur lewat CRM web (menu Laporan/Pengaturan).
             </Text>
-          </>
-        ) : (
-          <Text style={styles.heroSub}>
-            Target belum diatur — atur lewat CRM web (menu Laporan/Pengaturan).
-          </Text>
-        )}
-      </View>
+          )}
+        </View>
+      )}
 
       {/* Quick stats */}
       <View style={styles.statsRow}>
@@ -156,10 +249,39 @@ export default function HomeScreen({ navigation }) {
         </PressableScale>
         <View style={styles.statCard}>
           <Text style={styles.statValue} numberOfLines={1}>
-            {hasTarget ? formatRupiah(target.totalOrderValue) : "-"}
+            {hasMyTarget ? formatRupiah(myTarget.totalOrderValue) : "-"}
           </Text>
           <Text style={styles.statLabel}>Order Bulan Ini</Text>
         </View>
+      </View>
+
+      {/* Performa Sales — chat ditangani + conversion (closingRate) */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Performa Sales</Text>
+          {isAdmin && csPerf.length > 1 && (
+            <TouchableOpacity style={styles.sortBtn} onPress={() => setCsSortAsc((v) => !v)}>
+              <ArrowUpDown size={12} color={tokens.color.accent} strokeWidth={2.2} style={{ marginRight: 4 }} />
+              <Text style={styles.sortBtnText}>Conversion {csSortAsc ? "Terendah" : "Tertinggi"}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        {csRowsToShow.length === 0 ? (
+          <Text style={styles.emptyHint}>Belum ada data percakapan bulan ini</Text>
+        ) : (
+          csRowsToShow.map((r) => (
+            <View key={r.userId} style={styles.perfRow}>
+              <Avatar name={r.name} size={32} />
+              <View style={styles.perfBody}>
+                <Text style={styles.perfName} numberOfLines={1}>{r.name}</Text>
+                <Text style={styles.perfMeta}>{r.totalConversations} chat ditangani</Text>
+              </View>
+              <View style={styles.perfBadge}>
+                <Text style={styles.perfBadgeText}>{r.closingRate}%</Text>
+              </View>
+            </View>
+          ))
+        )}
       </View>
 
       {/* Perlu Ditindak */}
@@ -223,10 +345,13 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 16, ...tokens.shadow.soft,
   },
+  sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   sectionTitle: {
-    fontSize: 13, fontWeight: "700", color: tokens.color.textSecondary, marginBottom: 10,
+    fontSize: 13, fontWeight: "700", color: tokens.color.textSecondary,
     textTransform: "uppercase", letterSpacing: 0.4,
   },
+  sortBtn: { flexDirection: "row", alignItems: "center" },
+  sortBtnText: { fontSize: 11, fontWeight: "700", color: tokens.color.accent },
   emptyHintRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4 },
   emptyHint: { fontSize: 13, color: tokens.color.textMuted },
   actionRow: {
@@ -236,4 +361,25 @@ const styles = StyleSheet.create({
   actionBody: { flex: 1, marginLeft: 10 },
   actionName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
   actionMeta: { fontSize: 12, color: tokens.color.danger, marginTop: 2 },
+  personRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tokens.color.subtle,
+  },
+  personBody: { flex: 1, marginLeft: 10 },
+  personName: { fontSize: 13, fontWeight: "600", color: tokens.color.textPrimary, marginBottom: 4 },
+  personTrack: { height: 5, borderRadius: 3, backgroundColor: tokens.color.subtle, overflow: "hidden" },
+  personFill: { height: "100%", borderRadius: 3, backgroundColor: tokens.color.accent },
+  personNoTarget: { fontSize: 11, color: tokens.color.textMuted },
+  personPct: { fontSize: 12, fontWeight: "700", color: tokens.color.textPrimary, marginLeft: 10 },
+  perfRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tokens.color.subtle,
+  },
+  perfBody: { flex: 1, marginLeft: 10 },
+  perfName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
+  perfMeta: { fontSize: 12, color: tokens.color.textSecondary, marginTop: 1 },
+  perfBadge: {
+    backgroundColor: tokens.color.accentSoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
+  },
+  perfBadgeText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
 });
