@@ -9,7 +9,6 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, interpolateColor } from "react-native-reanimated";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,44 +32,34 @@ import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// 4 tab bawah (spec design refresh Apple-style) — ikon lucide, TANPA label
-// teks, aktif = pill bg accent + ikon putih, non-aktif = ikon slate-400
-// polos tanpa background. Bar mengambang rounded penuh dengan soft shadow.
+// 4 tab bawah — gaya flat full-width ala Instagram (review Gilang: buang
+// konsep floating/rounded/pill sebelumnya). Ikon lucide polos TANPA
+// lingkaran/pill background sama sekali — aktif cuma beda warna+ketebalan
+// stroke, non-aktif slate-400 biasa.
 const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil: UserRound };
 
-// Tinggi AREA KONTEN bar (tempat ikon benar-benar center) — pas 56, compact
-// (review Gilang: 64 kemarin bikin bar tampak gemuk/ruang kosong berlebih
-// di bawah baris ikon). insets.bottom TIDAK ditambahkan mentah-mentah —
-// dibatasi Math.max(insets.bottom, 8) di MainTabs() supaya di device TANPA
-// gesture nav (insets.bottom kecil/0) bar tidak jadi terlalu mepet, tapi
-// juga tidak membengkak jadi "lautan putih" di device DENGAN gesture nav.
+// Tinggi AREA KONTEN bar — 52-56 (compact, TANPA circle/pill jadi tidak
+// butuh ruang ekstra). paddingBottom dihitung terpisah di MainTabs() dari
+// SATU sumber (bottomPad), bukan ditambah dua kali ke height & padding.
 const TAB_BAR_CONTENT_HEIGHT = 56;
-const TAB_CIRCLE_SIZE = 44; // spec: 44-48, dan harus muat di dalam TAB_BAR_CONTENT_HEIGHT
+const TAB_ICON_SIZE = 24;
 
 function TabIcon({ routeName, focused }) {
   const Icon = TAB_ICONS[routeName];
-  // Transisi warna sederhana 150ms — TANPA spring/scale (review Gilang:
-  // shadow/glow dari animasi sebelumnya terlihat tidak presisi/kotor).
-  // Cuma crossfade background pill, ikon (putih/slate-400) ganti langsung.
-  const progress = useSharedValue(focused ? 1 : 0);
-  useEffect(() => {
-    progress.value = withTiming(focused ? 1 : 0, { duration: 150 });
-  }, [focused]);
-  const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ["transparent", tokens.color.accent]),
-  }));
+  // Flat — cuma warna & ketebalan stroke yang beda, TANPA lingkaran/pill
+  // background, TANPA animasi (Instagram-style, polos).
   return (
-    <Animated.View style={[tabStyles.iconWrap, animatedStyle]}>
-      <Icon size={22} color={focused ? "#fff" : tokens.color.textMuted} strokeWidth={2.2} />
-    </Animated.View>
+    <Icon
+      size={TAB_ICON_SIZE}
+      color={focused ? tokens.color.accent : tokens.color.textMuted}
+      strokeWidth={focused ? 2.5 : 2}
+    />
   );
 }
 
-// Tombol tab kustom — GANTI TOTAL PlatformPressable bawaan bottom-tabs,
-// yang di Android otomatis pasang android_ripple (tampak seperti
-// shadow/glow abu di belakang lingkaran aktif saat ditekan — keluhan
-// review Gilang). Feedback tekan di sini CUMA opacity 0.7, tanpa
-// ripple/shadow/elevation apa pun.
+// Tombol tab kustom — GANTI TOTAL PlatformPressable bawaan bottom-tabs
+// (di Android otomatis pasang android_ripple/shadow saat ditekan). Feedback
+// tekan di sini CUMA opacity 0.6 sesaat, tanpa efek lain apa pun.
 function TabBarButton({ children, style, ...rest }) {
   return (
     <Pressable
@@ -88,9 +77,9 @@ function MainTabs() {
   // SATU sumber kebenaran untuk padding bawah — dipakai PERSIS SEKALI di
   // total height DAN di paddingBottom (bukan dua nilai/dua tempat berbeda
   // yang keduanya menambahkan insets.bottom secara terpisah — itu penyebab
-  // bar jadi gemuk di review sebelumnya). Math.max(..., 8) supaya tetap ada
+  // bar jadi gemuk di review sebelumnya). Math.max(..., 6) supaya tetap ada
   // jarak minimal di device tanpa gesture nav (insets.bottom bisa 0).
-  const bottomPad = Math.max(insets.bottom, 8);
+  const bottomPad = Math.max(insets.bottom, 6);
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -99,9 +88,6 @@ function MainTabs() {
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
         tabBarButton: (props) => <TabBarButton {...props} />,
         // Total tinggi bar = TAB_BAR_CONTENT_HEIGHT + bottomPad, TIDAK LEBIH.
-        // paddingBottom = bottomPad (persis nilai yang sama, bukan insets.bottom
-        // mentah) — jadi area konten di ATAS padding selalu pas
-        // TAB_BAR_CONTENT_HEIGHT, ikon center sempurna di situ.
         tabBarStyle: [tabStyles.bar, { height: TAB_BAR_CONTENT_HEIGHT + bottomPad, paddingBottom: bottomPad }],
         tabBarActiveTintColor: tokens.color.accent,
         tabBarInactiveTintColor: tokens.color.textMuted,
@@ -116,31 +102,25 @@ function MainTabs() {
 }
 
 const tabStyles = StyleSheet.create({
-  // SATU soft shadow di container bar SAJA — item/ikon/tombol di dalamnya
-  // TIDAK boleh punya shadow/elevation/ripple sendiri (review Gilang:
-  // shadow/glow di ikon aktif & saat ditekan terlihat tidak presisi/kotor).
+  // Flat full-width — TANPA margin, TANPA border radius, TANPA shadow
+  // container. Pemisah dari konten cuma border-top hairline tipis.
   bar: {
-    position: "absolute",
-    left: 16, right: 16, bottom: 16,
-    borderRadius: 999,
+    position: "relative",
+    left: 0, right: 0, bottom: 0,
+    borderRadius: 0,
     backgroundColor: tokens.color.card,
-    borderTopWidth: 0,
-    ...tokens.shadow.soft,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: tokens.color.border,
+    // Nol-kan eksplisit — jangan sampai warisan shadow token lain nempel lagi.
+    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
   },
+  // 4 ikon terdistribusi merata — flex:1 per item (default bottom-tabs)
+  // sudah otomatis space-evenly di dalam row penuh lebar bar.
   item: {
-    alignItems: "center", justifyContent: "center", height: TAB_BAR_CONTENT_HEIGHT,
-    // Nol-kan eksplisit — PlatformPressable bawaan sudah diganti TabBarButton,
-    // tapi tetap dijaga di sini kalau ada style lain yang ikut nempel.
+    flex: 1, alignItems: "center", justifyContent: "center", height: TAB_BAR_CONTENT_HEIGHT,
     shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
   },
-  itemPressed: { opacity: 0.7 },
-  iconWrap: {
-    width: TAB_CIRCLE_SIZE, height: TAB_CIRCLE_SIZE, borderRadius: TAB_CIRCLE_SIZE / 2,
-    alignItems: "center", justifyContent: "center",
-    // Eksplisit nol-kan shadow/elevation — jangan sampai warisan style lain
-    // bikin ikon aktif kelihatan ada shadow/glow sendiri.
-    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
-  },
+  itemPressed: { opacity: 0.6 },
 });
 
 // InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang
