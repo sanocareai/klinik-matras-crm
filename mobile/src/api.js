@@ -2,6 +2,7 @@
 // Sama persis dengan frontend/src/api.js versi web, tapi pakai AsyncStorage
 // (React Native tidak punya localStorage) dan base URL absolut ke server produksi.
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { File, UploadType } from "expo-file-system";
 
 // Alamat server default — bisa diubah di layar Login (untuk testing server lokal)
 export const DEFAULT_SERVER = "https://app.sanomatrassehat.com";
@@ -70,31 +71,49 @@ async function request(path, options = {}) {
   }
 }
 
-// Upload multipart (kirim media) — tanpa Content-Type manual supaya boundary otomatis
-async function requestFormData(path, formData) {
+// Upload multipart (kirim media) — lewat expo-file-system File.upload(), BUKAN
+// fetch + FormData.append({ uri, name, type }) gaya lama. Di New Architecture,
+// FormData tidak lagi menerima object { uri, name, type } sebagai "part" —
+// bikin error "unsupported FormData part implementation" saat file dilampirkan
+// (lihat AGENTS.md — API expo berubah banyak di SDK 57, FormData RN juga ikut
+// berubah perilakunya di New Architecture). File.upload() baca file dari path
+// asli via native filesystem module (bukan lewat FormData bridge JS↔native),
+// jadi tidak kena masalah ini.
+//
+// file: { uri, name, type } — name TIDAK dipakai lagi sebagai nama part (API
+// baru tidak punya opsi override nama file di multipart, cuma fieldName/
+// mimeType) — tapi backend tidak pernah bergantung pada nama file utk logika
+// (mediaType & keputusan convert-ke-ogg pakai `file.mimetype`, bukan
+// ekstensi nama file — lihat backend/src/routes/conversations.js), jadi aman.
+// fields: object string key-value tambahan (caption, sendAs, dst) — dikirim
+// sebagai form field biasa lewat `parameters`.
+async function uploadFile(path, file, fields) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000); // media bisa besar — 2 menit
 
   try {
-    const res = await fetch(`${serverUrl}/api${path}`, {
-      method: "POST",
-      signal: controller.signal,
+    const fileRef = new File(file.uri);
+    const result = await fileRef.upload(`${serverUrl}/api${path}`, {
+      httpMethod: "POST",
+      uploadType: UploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: file.type,
+      parameters: fields,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
+      signal: controller.signal,
     });
-    if (res.status === 401) {
+    if (result.status === 401) {
       token = null;
       await AsyncStorage.removeItem("token");
       if (onUnauthorized) onUnauthorized();
       throw new Error("Sesi berakhir, silakan login kembali");
     }
-    if (!res.ok) {
-      const text = await res.text();
+    if (result.status < 200 || result.status >= 300) {
       let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(text).error || msg; } catch {}
+      try { msg = JSON.parse(result.body).error || msg; } catch {}
       throw new Error(msg);
     }
-    return res.json();
+    return JSON.parse(result.body);
   } catch (err) {
     if (err.name === "AbortError") throw new Error("Koneksi timeout — coba lagi");
     throw err;
@@ -155,11 +174,9 @@ export const api = {
   // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
   // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.
   sendMedia: (conversationId, file, caption = "", sendAs = "media") => {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (caption) formData.append("caption", caption);
-    formData.append("sendAs", sendAs);
-    return requestFormData(`/conversations/${conversationId}/media`, formData);
+    const fields = { sendAs };
+    if (caption) fields.caption = caption;
+    return uploadFile(`/conversations/${conversationId}/media`, file, fields);
   },
 
   // Pelanggan
