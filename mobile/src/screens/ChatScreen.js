@@ -59,6 +59,14 @@ const STATUS_OPTIONS = [
 
 // Susun array flat [divider, message, message, divider, ...] dari window
 // pesan yang sedang ditampilkan.
+// BUG (fix): `id` di sini dulu = m.id langsung — begitu pesan optimistic
+// (id="temp-...") diganti objek asli dari server (id=cuid asli, lihat
+// messageStore.js#replaceTempMessage), key cell FlashList berubah TOTAL di
+// posisi yang sama, dipaksa unmount+remount tepat di anchor bawah list
+// (tempat maintainVisibleContentPosition kerja) — itu penyebab list
+// "loncat" tiap kirim pesan. m._key (lihat messageStore.js#ensureKey) STABIL
+// dari awal pesan dibuat sampai selamanya, TIDAK IKUT berubah saat id
+// berganti — pakai itu utk identitas cell, m.id tetap dipakai sebagai data.
 function buildItems(messages) {
   const items = [];
   let lastDateKey = null;
@@ -68,7 +76,7 @@ function buildItems(messages) {
       items.push({ _type: "divider", id: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
       lastDateKey = dateKey;
     }
-    items.push({ _type: "message", id: m.id, message: m });
+    items.push({ _type: "message", id: m._key || m.id, message: m });
   }
   return items;
 }
