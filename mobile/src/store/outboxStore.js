@@ -1,9 +1,10 @@
-// Antrean pesan gagal kirim/offline — dipersist ke MMKV supaya kalau app
-// ditutup sebelum sempat online lagi, pesan tetap ada dan otomatis dicoba
-// kirim ulang begitu app dibuka & koneksi kembali (lihat src/lib/outboxFlush.js).
+// Antrean pesan gagal kirim/offline — dipersist (AsyncStorage, lihat
+// lib/storage.js) supaya kalau app ditutup sebelum sempat online lagi,
+// pesan tetap ada dan otomatis dicoba kirim ulang begitu app dibuka &
+// koneksi kembali (lihat src/lib/outboxFlush.js).
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { zustandMMKVStorage } from "../lib/storage";
+import { zustandAsyncStorage } from "../lib/storage";
 
 export const useOutboxStore = create(
   persist(
@@ -26,7 +27,7 @@ export const useOutboxStore = create(
     }),
     {
       name: "outbox-store",
-      storage: createJSONStorage(() => zustandMMKVStorage),
+      storage: createJSONStorage(() => zustandAsyncStorage),
     }
   )
 );

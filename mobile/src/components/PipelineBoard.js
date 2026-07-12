@@ -13,20 +13,7 @@ import { Check } from "lucide-react-native";
 import Avatar from "./Avatar";
 import { tokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
-
-// expo-haptics BELUM tentu ter-link di build yang sedang jalan (native
-// module baru, sama seperti kasus MMKV/expo-av/expo-updates sebelumnya) —
-// dibungkus require()+try/catch spy pola push.js, supaya kalau belum
-// ter-rebuild TIDAK crash, cuma diam-diam tanpa getar.
-let Haptics = null;
-try {
-  Haptics = require("expo-haptics");
-} catch {
-  Haptics = null;
-}
-function lightHaptic() {
-  try { Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-}
+import { lightHaptic } from "../lib/haptics";
 
 const SCREEN_W = Dimensions.get("window").width;
 const COLUMN_WIDTH = Math.round(SCREEN_W * 0.85);

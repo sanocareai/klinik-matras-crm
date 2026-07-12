@@ -6,8 +6,26 @@ import { useEffect } from "react";
 import { getSocket } from "../lib/socket";
 import { useMessageStore } from "../store/messageStore";
 import { useConversationStore } from "../store/conversationStore";
+import { useSocketStatusStore } from "../store/socketStatusStore";
 
 export function useSocketEvents() {
+  // Status koneksi → banner "Menyambung ulang..." (SocketStatusBanner.js).
+  // Socket.IO client sudah reconnect otomatis (reconnection:true di
+  // lib/socket.js) — di sini cuma mencerminkan status itu ke UI.
+  useEffect(() => {
+    const socket = getSocket();
+    function handleConnect() { useSocketStatusStore.getState().setConnected(true); }
+    function handleDisconnect() { useSocketStatusStore.getState().setConnected(false); }
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    // Sinkronkan status awal (socket bisa saja sudah connect sebelum listener ini terpasang)
+    useSocketStatusStore.getState().setConnected(socket.connected);
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+    };
+  }, []);
+
   useEffect(() => {
     const socket = getSocket();
 

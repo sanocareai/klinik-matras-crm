@@ -1,8 +1,9 @@
-// Draft pesan per percakapan — dipersist ke MMKV supaya draft tidak hilang
-// kalau app ditutup paksa/sinyal jelek pas sales lagi ngetik di lapangan.
+// Draft pesan per percakapan — dipersist (AsyncStorage, lihat lib/storage.js)
+// supaya draft tidak hilang kalau app ditutup paksa/sinyal jelek pas sales
+// lagi ngetik di lapangan.
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { zustandMMKVStorage } from "../lib/storage";
+import { zustandAsyncStorage } from "../lib/storage";
 
 export const useComposerStore = create(
   persist(
@@ -34,7 +35,7 @@ export const useComposerStore = create(
     }),
     {
       name: "composer-store",
-      storage: createJSONStorage(() => zustandMMKVStorage),
+      storage: createJSONStorage(() => zustandAsyncStorage),
       // replyTarget & attachments sengaja TIDAK dipersist — cuma draft teks
       // yang perlu selamat lintas sesi.
       partialize: (state) => ({ draftByConvId: state.draftByConvId }),

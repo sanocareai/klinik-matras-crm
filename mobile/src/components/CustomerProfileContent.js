@@ -13,16 +13,18 @@
 // lihat CLAUDE.md "Conversation type GROUP").
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, FlatList,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Pencil, Copy, Check, MessageCircle } from "lucide-react-native";
+import { Pencil, Copy, Check, MessageCircle, AlertTriangle, RefreshCw } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import { stageLabels } from "../theme";
 import { formatRupiah, shortDate } from "../utils/format";
 import Avatar from "./Avatar";
 import OrderFormModal from "./OrderFormModal";
+import { ProfileSkeleton } from "./SkeletonLoader";
+import PressableScale from "./PressableScale";
 
 const STAGE_ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
 const ORDER_STATUS_LABELS = { WAITING_LIST: "Waiting List", PENGAMBILAN: "Pengambilan", PENGERJAAN: "Pengerjaan", FINISH: "Finish" };
@@ -85,6 +87,7 @@ function Section({ title, children }) {
 export default function CustomerProfileContent({ customerId, onOpenChat, onCustomerLoaded, reloadKey }) {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [nameEditing, setNameEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [copied, setCopied] = useState(false);
@@ -101,8 +104,9 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
       const data = await api.getCustomer(customerId);
       setCustomer(data);
       onCustomerLoaded?.(data);
+      setLoadError(null);
     } catch (err) {
-      Alert.alert("Gagal memuat data pelanggan", err.message);
+      setLoadError(err.message || "Gagal memuat data pelanggan");
     } finally {
       setLoading(false);
     }
@@ -209,11 +213,23 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
     setCustomer((c) => (c ? { ...c, orders: [order, ...(c.orders || [])] } : c));
   }
 
-  if (loading || !customer) {
+  if (loading) {
+    return <ProfileSkeleton />;
+  }
+  if (loadError && !customer) {
     return (
-      <View style={styles.loadingWrap}><ActivityIndicator color={tokens.color.accent} size="large" /></View>
+      <View style={styles.loadingWrap}>
+        <AlertTriangle size={32} color={tokens.color.danger} strokeWidth={1.8} style={{ marginBottom: 8 }} />
+        <Text style={styles.hint}>Gagal memuat data pelanggan</Text>
+        <Text style={[styles.hint, { marginTop: 2 }]}>{loadError}</Text>
+        <PressableScale style={styles.retryBtn} onPress={load}>
+          <RefreshCw size={14} color="#fff" strokeWidth={2.2} style={{ marginRight: 6 }} />
+          <Text style={styles.retryBtnText}>Coba Lagi</Text>
+        </PressableScale>
+      </View>
     );
   }
+  if (!customer) return null;
 
   const orders = customer?.orders || [];
   const notes = customer?.notes || [];
@@ -415,7 +431,12 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
 }
 
 const styles = StyleSheet.create({
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60 },
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
+  retryBtn: {
+    flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.accent,
+    borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
+  },
+  retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   profile: { alignItems: "center", padding: 20 },
   name: { fontSize: 19, fontWeight: "700", color: tokens.color.textPrimary },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },

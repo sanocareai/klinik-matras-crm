@@ -15,6 +15,7 @@ import { tokens } from "../constants/theme";
 import { smartTimestamp } from "../utils/format";
 import { useConversation, useConversationStore } from "../store/conversationStore";
 import { api } from "../api";
+import { lightHaptic } from "../lib/haptics";
 
 const MEDIA_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText };
 const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan suara", document: "Dokumen" };
@@ -59,6 +60,7 @@ function ConversationItemBase({ id, onPress }) {
   const { OutboundIcon, MediaIcon, text: previewText } = lastPreviewParts(c);
 
   function toggleReadUnread() {
+    lightHaptic();
     swipeableRef.current?.close();
     if (isUnread) {
       useConversationStore.getState().upsertConversation({ id, unread: false, unreadCount: 0, isRead: true });
@@ -73,6 +75,7 @@ function ConversationItemBase({ id, onPress }) {
   }
 
   function togglePin() {
+    lightHaptic();
     swipeableRef.current?.close();
     const nextPinned = !isPinned;
     const prevPinnedAt = c.pinnedAt;

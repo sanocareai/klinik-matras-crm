@@ -8,12 +8,14 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image, Linking, Alert, Modal,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy } from "lucide-react-native";
 import { mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { clockTime } from "../utils/format";
 import AudioPlayer from "./AudioPlayer";
 import PressableScale from "./PressableScale";
+import { lightHaptic } from "../lib/haptics";
 
 // Backend Message.ack: 0 pending, 1 sent, 2 delivered, 3 read — sama
 // dengan frontend/src/features/inbox/utils/ackLevel.js.
@@ -64,9 +66,13 @@ function MessageBubbleBase({
   }
 
   return (
-    <View style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
+    // entering: fade + slide-in ringan SEKALI saat bubble ini pertama mount —
+    // memo() di bawah (lihat export) mencegah remount tiap FlashList recycle
+    // cell dengan pesan lain, jadi animasi ini tidak mengganggu recycling,
+    // sama seperti pola yang sudah dipakai ConversationItem.js.
+    <Animated.View entering={FadeInDown.duration(180)} style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
       <PressableScale
-        onLongPress={() => !isSending && !isFailed && setShowActions(true)}
+        onLongPress={() => { if (!isSending && !isFailed) { lightHaptic(); setShowActions(true); } }}
         style={[
           styles.bubble,
           isOut ? styles.bubbleOut : styles.bubbleIn,
@@ -155,7 +161,7 @@ function MessageBubbleBase({
           </View>
         </TouchableOpacity>
       </Modal>
-    </View>
+    </Animated.View>
   );
 }
 

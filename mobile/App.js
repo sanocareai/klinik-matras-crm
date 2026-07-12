@@ -22,6 +22,7 @@ import HomeScreen from "./src/screens/HomeScreen";
 import PelangganScreen from "./src/screens/PelangganScreen";
 import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
 import InAppBanner from "./src/components/InAppBanner";
+import SocketStatusBanner from "./src/components/SocketStatusBanner";
 import { colors } from "./src/theme";
 import { tokens } from "./src/constants/theme";
 import { queryClient } from "./src/lib/queryClient";
@@ -218,6 +219,7 @@ function Root() {
         )}
       </Stack.Navigator>
       {user && <InAppBanner />}
+      {user && <SocketStatusBanner />}
     </>
   );
 }

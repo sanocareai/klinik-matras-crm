@@ -21,13 +21,15 @@ import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
-  Circle, CircleDot, CheckCircle2,
+  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
+import { lightHaptic } from "../lib/haptics";
 import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
+import { ChatListSkeleton } from "../components/SkeletonLoader";
 import MessageBubble from "../components/MessageBubble";
 import AttachComposer from "../components/AttachComposer";
 import VoiceRecorderBar from "../components/VoiceRecorderBar";
@@ -78,6 +80,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const [text, setText] = useState(draft);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [sending, setSending] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [highlightedId, setHighlightedId] = useState(null);
@@ -109,8 +112,9 @@ export default function ChatScreen({ route, navigation }) {
       // Cerminkan efek samping backend (isRead=true, unread=false) supaya
       // badge unread di Inbox hilang seketika, tidak perlu nunggu refetch list.
       useConversationStore.getState().upsertConversation({ id: conversationId, unread: false, isRead: true });
+      setLoadError(null);
     } catch (err) {
-      if (!silent) Alert.alert("Gagal memuat pesan", err.message);
+      if (!silent) setLoadError(err.message || "Gagal memuat pesan");
     } finally {
       setLoading(false);
     }
@@ -191,6 +195,7 @@ export default function ChatScreen({ route, navigation }) {
   async function handleSend() {
     const content = text.trim();
     if (!content || sending) return;
+    lightHaptic();
     const currentReply = replyTarget;
     setSending(true);
     setText("");
@@ -331,7 +336,17 @@ export default function ChatScreen({ route, navigation }) {
 
       {/* Daftar pesan */}
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} color={tokens.color.accent} size="large" />
+        <ChatListSkeleton />
+      ) : loadError && items.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <AlertTriangle size={36} color={tokens.color.danger} strokeWidth={1.6} style={{ marginBottom: 8 }} />
+          <Text style={styles.emptyText}>Gagal memuat pesan</Text>
+          <Text style={styles.errorDetail} numberOfLines={2}>{loadError}</Text>
+          <PressableScale style={styles.retryBtn} onPress={() => { setLoading(true); load(); }}>
+            <RefreshCw size={14} color="#fff" strokeWidth={2.2} style={{ marginRight: 6 }} />
+            <Text style={styles.retryBtnText}>Coba Lagi</Text>
+          </PressableScale>
+        </View>
       ) : items.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Belum ada pesan di percakapan ini</Text>
@@ -517,8 +532,14 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.subtle, color: tokens.color.textSecondary, fontSize: 12,
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, overflow: "hidden",
   },
-  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  emptyText: { color: tokens.color.textMuted },
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
+  emptyText: { color: tokens.color.textMuted, textAlign: "center" },
+  errorDetail: { color: tokens.color.textMuted, fontSize: 12, marginTop: 4, textAlign: "center" },
+  retryBtn: {
+    flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.accent,
+    borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
+  },
+  retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   groupNotice: { backgroundColor: "#fef3c7", padding: 12 },
   groupNoticeText: { color: "#92400e", fontSize: 13, textAlign: "center" },
   offlineBanner: {

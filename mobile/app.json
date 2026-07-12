@@ -2,7 +2,7 @@
   "expo": {
     "name": "Klinik Matras CRM",
     "slug": "klinik-matras-crm",
-    "version": "1.1.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,14 +11,18 @@
     },
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#075E54",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       [
@@ -41,10 +45,24 @@
         {
           "microphonePermission": "Aplikasi butuh akses mikrofon untuk merekam pesan suara ke pelanggan"
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "backgroundColor": "#F8FAFC",
+          "resizeMode": "contain",
+          "imageWidth": 180
+        }
       ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d3d84ffc-6fdb-4525-bd47-e04a844fa37b"
+      }
     }
   }
 }

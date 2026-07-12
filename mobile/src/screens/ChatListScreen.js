@@ -11,12 +11,13 @@ import {
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
-import { Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X } from "lucide-react-native";
+import { Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
+import { InboxListSkeleton } from "../components/SkeletonLoader";
 import { useConversations } from "../hooks/useConversations";
 import {
   useConversationStore, useOrderedIds, useFilter, useConvSearchQuery,
@@ -76,7 +77,7 @@ export default function ChatListScreen({ navigation }) {
   const [counts, setCounts] = useState({});
   const debounceRef = useRef(null);
 
-  const { isLoading, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
+  const { isLoading, isError, error, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
     useConversations({ filter, search, userId: user?.id });
 
   // Badge jumlah per tab — dipisah dari list utama (fitur pelengkap, kalau
@@ -200,7 +201,17 @@ export default function ChatListScreen({ navigation }) {
 
       {/* Daftar percakapan */}
       {isLoading && visibleIds.length === 0 ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={tokens.color.accent} size="large" />
+        <InboxListSkeleton />
+      ) : isError && visibleIds.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <MailWarning size={36} color={tokens.color.danger} strokeWidth={1.6} style={{ marginBottom: 8 }} />
+          <Text style={styles.emptyText}>Gagal memuat percakapan</Text>
+          <Text style={styles.errorDetail} numberOfLines={2}>{error?.message}</Text>
+          <PressableScale style={styles.retryBtn} onPress={() => refetch()}>
+            <RefreshCw size={14} color="#fff" strokeWidth={2.2} style={{ marginRight: 6 }} />
+            <Text style={styles.retryBtnText}>Coba Lagi</Text>
+          </PressableScale>
+        </View>
       ) : visibleIds.length === 0 ? (
         <View style={styles.emptyWrap}>
           <empty.Icon size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
@@ -262,7 +273,13 @@ const styles = StyleSheet.create({
   pillBadgeActive: { backgroundColor: "rgba(255,255,255,0.25)" },
   pillBadgeText: { color: tokens.color.textSecondary, fontSize: 11, fontWeight: "700" },
   pillBadgeTextActive: { color: "#fff" },
-  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80 },
+  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 8 },
-  emptyText: { color: tokens.color.textMuted, fontSize: 14 },
+  emptyText: { color: tokens.color.textMuted, fontSize: 14, textAlign: "center" },
+  errorDetail: { color: tokens.color.textMuted, fontSize: 12, marginTop: 4, textAlign: "center" },
+  retryBtn: {
+    flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.accent,
+    borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
+  },
+  retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 });
