@@ -147,7 +147,20 @@ export function parseHistoryMessage(msg) {
     ? (typeof tsRaw === "number" ? new Date(tsRaw * 1000) : new Date(tsRaw))
     : new Date();
 
-  const rawMsg = msg._data?.Message || {};
+  // BUG (fix): rawMsg cuma cek "_data.Message" (PascalCase) — itu struktur
+  // GOWS (whatsmeow, Go). NOWEB (Baileys, JS) bungkus raw message-nya di
+  // "_data.message" (lowercase) — konsisten dengan "_data.key" lowercase
+  // yang sudah dipakai extractPhoneNoweb() di webhooks.js. Selama ini rawMsg
+  // SELALU kosong ({}) untuk payload NOWEB, jadi SEMUA fallback yang
+  // bergantung padanya (imageMessage/videoMessage/.../locationMessage/
+  // contactMessage/pollCreationMessage) diam-diam tidak pernah kena untuk
+  // sesi ber-engine NOWEB — persis kenapa lokasi/kontak/poll baru "kelihatan
+  // kepasang" di grup (kalau kebetulan sesi grup itu GOWS) tapi tidak di
+  // chat individual (kalau sesi individual itu NOWEB, atau sebaliknya).
+  // BUKAN 2 fungsi parsing terduplikasi — ini SATU fungsi shared yang sudah
+  // benar dipanggil oleh handleGroupMessage & handleInboundMessage/
+  // handleOutboundFromPhone, cuma buta terhadap salah satu casing engine.
+  const rawMsg = msg._data?.Message || msg._data?.message || {};
 
   // 1) Teks — normalized (msg.body) dulu, fallback raw GOWS
   let text =
