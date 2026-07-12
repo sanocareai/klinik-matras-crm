@@ -61,6 +61,15 @@ export function emitMessageAck(conversationId, externalId, ack) {
   io?.to(`conv:${conversationId}`).emit("message:ack", { externalId, ack });
 }
 
+// message:update — konten pesan berubah SETELAH awalnya tersimpan (diedit
+// via WAHA message.edited, atau dihapus/direvoke via message.revoked) —
+// payload PENUH (bukan slim) supaya client bisa langsung replace-in-place
+// tanpa refetch, sama seperti message:new. Beda dari message:new: ini
+// UPDATE pesan yang SUDAH ada di store client (by id), bukan pesan baru.
+export function emitMessageUpdate(conversationId, message) {
+  io?.to(`conv:${conversationId}`).emit("message:update", message);
+}
+
 // conversation:update — SLIM payload untuk daftar percakapan (kolom kiri),
 // broadcast ke SEMUA client (bukan cuma room percakapan itu) karena daftar
 // percakapan siapa saja bisa perlu tahu urutan/preview/badge terbaru.

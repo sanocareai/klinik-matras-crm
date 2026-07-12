@@ -54,14 +54,24 @@ export function useSocketEvents() {
       useConversationStore.getState().upsertConversation(payload);
     }
 
+    // Pesan yang SUDAH ada berubah kontennya (diedit/dihapus lewat WAHA
+    // message.edited/message.revoked) — payload penuh, lihat
+    // backend/src/socket.js#emitMessageUpdate.
+    function handleMessageUpdate(message) {
+      if (!message?.id) return;
+      useMessageStore.getState().updateMessage(message.id, message);
+    }
+
     socket.on("message:new", handleNewMessage);
     socket.on("message:ack", handleAck);
     socket.on("conversation:update", handleConversationUpdate);
+    socket.on("message:update", handleMessageUpdate);
 
     return () => {
       socket.off("message:new", handleNewMessage);
       socket.off("message:ack", handleAck);
       socket.off("conversation:update", handleConversationUpdate);
+      socket.off("message:update", handleMessageUpdate);
     };
   }, []);
 

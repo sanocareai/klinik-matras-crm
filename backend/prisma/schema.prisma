@@ -217,6 +217,8 @@ model Message {
   forwarded       Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
   senderName      String?          // nama pengirim (untuk pesan grup — beda-beda per pesan)
   ack             Int              @default(0) // 0 pending, 1 sent, 2 delivered, 3 read (WAHA message.ack)
+  editedAt        DateTime?        // diisi saat WAHA message.edited masuk — bubble tampilkan label "diedit"
+  isRevoked       Boolean          @default(false) // soft-delete (WAHA message.revoked) — content dikosongkan, bubble tetap ada ("Pesan ini telah dihapus")
   createdAt       DateTime         @default(now())
 
   @@index([conversationId])

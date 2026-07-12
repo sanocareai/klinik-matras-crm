@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState } from "react";
 import {
   Reply, Forward, FileText, Image as ImageIcon, Video, Mic, Smile,
-  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3,
+  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
@@ -212,6 +212,7 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   const isOut     = m.direction === "OUTBOUND";
   const isSending = m.status === "sending";
   const isFailed  = m.status === "failed";
+  const isRevoked = !!m.isRevoked;
   const hasMedia  = !!m.mediaType;
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
@@ -219,7 +220,7 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   // ditampilkan via MediaPlaceholderCard di bawah — JANGAN dobel-render
   // sebagai bubble-text terpisah juga.
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = (!isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
+  const text = (!isRevoked && !isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
 
   function handleTouchStart() {
     longPressTimerRef.current = setTimeout(() => {
@@ -239,7 +240,7 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
       onTouchEnd={handleTouchEnd}
       onTouchMove={() => clearTimeout(longPressTimerRef.current)}
     >
-      {hovered && !isSending && !isFailed && (
+      {hovered && !isSending && !isFailed && !isRevoked && (
         <div className="msg-action-bar">
           {onReply && (
             <button onClick={(e) => { e.stopPropagation(); onReply(m); setHovered(false); }} title="Balas">
@@ -263,7 +264,9 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           <div className="bubble-quote" onClick={(e) => { e.stopPropagation(); onJumpToReply?.(m.replyTo.id); }}>
             <div className="bubble-quote-author">{m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}</div>
             <div className="bubble-quote-text">
-              {STRUCTURED_TYPES.has(m.replyTo.mediaType)
+              {m.replyTo.isRevoked
+                ? "Pesan ini telah dihapus"
+                : STRUCTURED_TYPES.has(m.replyTo.mediaType)
                 ? MEDIA_TYPE_LABEL[m.replyTo.mediaType]
                 : (m.replyTo.content || (m.replyTo.mediaType ? `[${m.replyTo.mediaType}]` : "Pesan"))}
             </div>
@@ -274,45 +277,58 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           <div className="bubble-forwarded"><Forward size={11} /> Diteruskan</div>
         )}
 
-        {m.mediaType === "sticker" && m.mediaUrl && (
-          // Stiker WhatsApp = WebP transparan kecil — bukan foto, tidak masuk
-          // lightbox onOpenMedia (WhatsApp asli juga tidak bisa di-zoom stiker),
-          // objectFit "contain" (bukan "cover" seperti .bubble-img) supaya
-          // transparansi & rasio aslinya tidak terpotong/di-crop.
-          <img src={m.mediaUrl} alt="Stiker" className="bubble-sticker" onError={(e) => { e.target.style.display = "none"; }} />
-        )}
-        {m.mediaType === "image" && m.mediaUrl && (
-          <button type="button" className="bubble-img-btn" onClick={() => onOpenMedia?.("image", m.mediaUrl)}>
-            <img src={m.mediaUrl} alt="Foto" className="bubble-img" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
-          </button>
-        )}
-        {m.mediaType === "video" && m.mediaUrl && (
-          <VideoThumb src={m.mediaUrl} onClick={() => onOpenMedia?.("video", m.mediaUrl)} />
-        )}
-        {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer src={m.mediaUrl} />}
-        {m.mediaType === "document" && m.mediaUrl && (
-          <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="bubble-doc" onClick={(e) => e.stopPropagation()}>
-            <FileText size={18} style={{ flexShrink: 0 }} />
-            <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
-          </a>
-        )}
-        {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
-          <div className="bubble-media-placeholder"><MapPin size={16} /><span>Lokasi tidak bisa ditampilkan</span></div>
-        ))}
-        {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
-          <div className="bubble-media-placeholder"><User size={16} /><span>Kontak tidak bisa ditampilkan</span></div>
-        ))}
-        {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
-          <div className="bubble-media-placeholder"><BarChart3 size={16} /><span>Polling tidak bisa ditampilkan</span></div>
-        ))}
-        {hasMedia && !m.mediaUrl && !isStructured && (
-          <MediaPlaceholderCard message={m} conversationId={conversationId} />
-        )}
+        {isRevoked ? (
+          // Soft-delete (WAHA message.revoked) — row TETAP ADA di DB, bubble
+          // tampilkan penanda "dihapus" (pola WhatsApp asli), BUKAN bubble
+          // kosong/hilang.
+          <div className="bubble-revoked">
+            <Ban size={14} />
+            <span>Pesan ini telah dihapus</span>
+          </div>
+        ) : (
+          <>
+            {m.mediaType === "sticker" && m.mediaUrl && (
+              // Stiker WhatsApp = WebP transparan kecil — bukan foto, tidak masuk
+              // lightbox onOpenMedia (WhatsApp asli juga tidak bisa di-zoom stiker),
+              // objectFit "contain" (bukan "cover" seperti .bubble-img) supaya
+              // transparansi & rasio aslinya tidak terpotong/di-crop.
+              <img src={m.mediaUrl} alt="Stiker" className="bubble-sticker" onError={(e) => { e.target.style.display = "none"; }} />
+            )}
+            {m.mediaType === "image" && m.mediaUrl && (
+              <button type="button" className="bubble-img-btn" onClick={() => onOpenMedia?.("image", m.mediaUrl)}>
+                <img src={m.mediaUrl} alt="Foto" className="bubble-img" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
+              </button>
+            )}
+            {m.mediaType === "video" && m.mediaUrl && (
+              <VideoThumb src={m.mediaUrl} onClick={() => onOpenMedia?.("video", m.mediaUrl)} />
+            )}
+            {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer src={m.mediaUrl} />}
+            {m.mediaType === "document" && m.mediaUrl && (
+              <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="bubble-doc" onClick={(e) => e.stopPropagation()}>
+                <FileText size={18} style={{ flexShrink: 0 }} />
+                <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
+              </a>
+            )}
+            {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
+              <div className="bubble-media-placeholder"><MapPin size={16} /><span>Lokasi tidak bisa ditampilkan</span></div>
+            ))}
+            {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
+              <div className="bubble-media-placeholder"><User size={16} /><span>Kontak tidak bisa ditampilkan</span></div>
+            ))}
+            {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
+              <div className="bubble-media-placeholder"><BarChart3 size={16} /><span>Polling tidak bisa ditampilkan</span></div>
+            ))}
+            {hasMedia && !m.mediaUrl && !isStructured && (
+              <MediaPlaceholderCard message={m} conversationId={conversationId} />
+            )}
 
-        {text && <span className="bubble-text">{text}</span>}
+            {text && <span className="bubble-text">{text}</span>}
+          </>
+        )}
 
         <span className="bubble-meta">
           {isSending && <Clock size={11} className="bubble-status-icon" />}
+          {!!m.editedAt && !isRevoked && <span className="bubble-edited-label">diedit</span>}
           <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
           {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
         </span>

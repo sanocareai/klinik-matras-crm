@@ -2140,6 +2140,8 @@ input:focus, select:focus, textarea:focus {
 .bubble-meta { display: flex; align-items: center; gap: 3px; justify-content: flex-end; margin-top: 4px; opacity: 0.65; }
 .bubble.in .bubble-meta { justify-content: flex-start; }
 .bubble-status-icon { flex-shrink: 0; }
+.bubble-edited-label { font-size: 11px; font-style: italic; opacity: 0.85; }
+.bubble-revoked { display: flex; align-items: center; gap: 6px; font-size: 14px; font-style: italic; opacity: 0.75; }
 .ack-tick { flex-shrink: 0; color: rgba(255,255,255,0.7); }
 .ack-tick-blue { color: #93c5fd; }
 .bubble.sending, .bubble-sending { opacity: 0.6; }

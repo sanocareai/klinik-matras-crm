@@ -256,7 +256,7 @@ conversationRouter.get("/:id/messages", async (req, res) => {
     orderBy: { createdAt: "asc" },
     include: {
       replyTo: {
-        select: { id: true, content: true, direction: true, mediaType: true },
+        select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true },
       },
     },
   });

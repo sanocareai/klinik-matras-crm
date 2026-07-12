@@ -9,7 +9,7 @@ import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
-import { emitNewMessage, emitMessageAck, emitConversationUpdate } from "../socket.js";
+import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 
 export const webhookRouter = express.Router();
 
@@ -702,6 +702,66 @@ webhookRouter.post("/waha", async (req, res) => {
         });
         emitConversationUpdate(updatedConv);
         console.log("[webhook] message.ack READ (INBOUND, dibaca di HP) → unreadCount=0 untuk conv:", ackedMessage.conversationId);
+      }
+      return;
+    }
+
+    // ── message.revoked: pesan dihapus (revoke/delete-for-everyone) ──
+    // Payload WAHA (dikonfirmasi dari dokumentasi resmi WAHA, BELUM ada
+    // kejadian nyata di akun ini utk verifikasi field-by-field):
+    //   { revokedMessageId: "AAAA...", after: { id: "false_chat_AAAA..." }, before: null }
+    // revokedMessageId HANYA segmen id pesan asli TANPA chatId — BEDA
+    // format dari Message.externalId kita yang tersimpan LENGKAP (mis.
+    // "true_628xxx@c.us_AAAA..."), jadi dicari pakai `contains`, bukan
+    // exact match. Soft-delete: content dikosongkan + isRevoked=true —
+    // row TETAP ADA (bukan dihapus dari DB), bubble tampil "Pesan ini
+    // telah dihapus" (lihat MessageBubble.js/.jsx), bukan hilang/kosong.
+    if (event === "message.revoked") {
+      const revokedId = payload?.revokedMessageId;
+      if (!revokedId) return;
+      try {
+        const existing = await prisma.message.findFirst({ where: { externalId: { contains: revokedId } } });
+        if (!existing) {
+          console.warn("[webhook] message.revoked: pesan tidak ditemukan utk revokedMessageId:", revokedId);
+          return;
+        }
+        const updated = await prisma.message.update({
+          where: { id: existing.id },
+          data: { content: "", isRevoked: true },
+        });
+        emitMessageUpdate(updated.conversationId, updated);
+        console.log("[webhook] Pesan direvoke:", existing.id, "(revokedMessageId:", revokedId, ")");
+      } catch (e) {
+        console.error("[webhook] Gagal proses message.revoked:", e.message);
+      }
+      return;
+    }
+
+    // ── message.edited: konten pesan diedit ──
+    // Payload WAHA (dikonfirmasi dari dokumentasi resmi WAHA, BELUM ada
+    // kejadian nyata di akun ini utk verifikasi field-by-field):
+    //   { id: "false_chat_BBBB...", editedMessageId: "AAAA...", body: "teks baru" }
+    // editedMessageId sama seperti revokedMessageId — segmen id TANPA
+    // chatId, dicari via `contains` pada externalId. editedAt ditandai
+    // supaya bubble tampilkan label kecil "diedit" (pola WhatsApp asli).
+    if (event === "message.edited") {
+      const editedId = payload?.editedMessageId;
+      const newBody  = payload?.body;
+      if (!editedId || newBody === undefined) return;
+      try {
+        const existing = await prisma.message.findFirst({ where: { externalId: { contains: editedId } } });
+        if (!existing) {
+          console.warn("[webhook] message.edited: pesan tidak ditemukan utk editedMessageId:", editedId);
+          return;
+        }
+        const updated = await prisma.message.update({
+          where: { id: existing.id },
+          data: { content: newBody, editedAt: new Date() },
+        });
+        emitMessageUpdate(updated.conversationId, updated);
+        console.log("[webhook] Pesan diedit:", existing.id);
+      } catch (e) {
+        console.error("[webhook] Gagal proses message.edited:", e.message);
       }
       return;
     }

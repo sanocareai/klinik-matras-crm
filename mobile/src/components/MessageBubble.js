@@ -10,7 +10,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
-  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3,
+  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban,
 } from "lucide-react-native";
 import { mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -127,11 +127,12 @@ function MessageBubbleBase({
   const isOut = m.direction === "OUTBOUND";
   const isSending = m.status === "sending";
   const isFailed = m.status === "failed";
+  const isRevoked = !!m.isRevoked;
   const hasMedia = !!m.mediaType;
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = m.content && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
+  const text = m.content && !isRevoked && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
 
   function copyText() {
     setShowActions(false);
@@ -145,7 +146,7 @@ function MessageBubbleBase({
     // sama seperti pola yang sudah dipakai ConversationItem.js.
     <Animated.View entering={FadeInDown.duration(180)} style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
       <PressableScale
-        onLongPress={() => { if (!isSending && !isFailed) { lightHaptic(); setShowActions(true); } }}
+        onLongPress={() => { if (!isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
         style={[
           styles.bubble,
           isOut ? styles.bubbleOut : styles.bubbleIn,
@@ -166,7 +167,9 @@ function MessageBubbleBase({
               {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
             </Text>
             <Text style={styles.quoteText} numberOfLines={2}>
-              {STRUCTURED_TYPES.has(m.replyTo.mediaType)
+              {m.replyTo.isRevoked
+                ? "Pesan ini telah dihapus"
+                : STRUCTURED_TYPES.has(m.replyTo.mediaType)
                 ? MEDIA_LABEL[m.replyTo.mediaType]
                 : (m.replyTo.content || (m.replyTo.mediaType ? MEDIA_LABEL[m.replyTo.mediaType] : "Pesan"))}
             </Text>
@@ -180,43 +183,59 @@ function MessageBubbleBase({
           </View>
         )}
 
-        {m.mediaType === "image" && m.mediaUrl && (
-          <TouchableOpacity onPress={() => onOpenMedia?.(m)}>
-            <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.image} resizeMode="cover" />
-          </TouchableOpacity>
-        )}
-        {m.mediaType === "video" && m.mediaUrl && (
-          <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
-            <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
-            <Text style={styles.videoLabel}>Video</Text>
-          </TouchableOpacity>
-        )}
-        {m.mediaType === "sticker" && m.mediaUrl && (
-          // Stiker WhatsApp = WebP transparan kecil — TIDAK pakai TouchableOpacity/
-          // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
-          // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
-          // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
-          <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
-        )}
-        {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
-        {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
-        {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
-          <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
-        ))}
-        {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
-          <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
-        ))}
-        {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
-          <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
-        ))}
-        {hasMedia && !m.mediaUrl && !isStructured && (
-          <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
-        )}
+        {isRevoked ? (
+          // Soft-delete (WAHA message.revoked) — row TETAP ADA di DB, bubble
+          // tampilkan penanda "dihapus" (pola WhatsApp asli), BUKAN bubble
+          // kosong/hilang. Tidak render media/text asli sama sekali walau
+          // masih ada sisa data lama di kolom lain.
+          <View style={styles.revokedRow}>
+            <Ban size={13} color={isOut ? "rgba(255,255,255,0.8)" : tokens.color.textMuted} strokeWidth={2} />
+            <Text style={[styles.revokedText, isOut && styles.revokedTextOut]}>Pesan ini telah dihapus</Text>
+          </View>
+        ) : (
+          <>
+            {m.mediaType === "image" && m.mediaUrl && (
+              <TouchableOpacity onPress={() => onOpenMedia?.(m)}>
+                <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.image} resizeMode="cover" />
+              </TouchableOpacity>
+            )}
+            {m.mediaType === "video" && m.mediaUrl && (
+              <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
+                <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
+                <Text style={styles.videoLabel}>Video</Text>
+              </TouchableOpacity>
+            )}
+            {m.mediaType === "sticker" && m.mediaUrl && (
+              // Stiker WhatsApp = WebP transparan kecil — TIDAK pakai TouchableOpacity/
+              // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
+              // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
+              // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
+              <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
+            )}
+            {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
+            {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
+            {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
+              <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
+            ))}
+            {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
+              <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
+            ))}
+            {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
+              <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
+            ))}
+            {hasMedia && !m.mediaUrl && !isStructured && (
+              <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
+            )}
 
-        {!!text && <Text style={[styles.text, isOut && styles.textOut]}>{text}</Text>}
+            {!!text && <Text style={[styles.text, isOut && styles.textOut]}>{text}</Text>}
+          </>
+        )}
 
         <View style={styles.metaRow}>
           {isSending && <Clock size={10} color={tokens.color.textMuted} strokeWidth={2.2} style={styles.metaIcon} />}
+          {!!m.editedAt && !isRevoked && (
+            <Text style={[styles.editedLabel, isOut && styles.editedLabelOut]}>diedit</Text>
+          )}
           <Text style={[styles.time, isOut && styles.timeOut]}>{clockTime(m.createdAt)}</Text>
           {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
         </View>
@@ -303,8 +322,13 @@ const styles = StyleSheet.create({
   pollOptionText: { fontSize: 13, color: tokens.color.textPrimary },
   text: { fontSize: 15, color: tokens.color.textPrimary },
   textOut: { color: "#fff" },
+  revokedRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  revokedText: { fontSize: 14, fontStyle: "italic", color: tokens.color.textMuted },
+  revokedTextOut: { color: "rgba(255,255,255,0.8)" },
   metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 3 },
   metaIcon: { marginRight: 1 },
+  editedLabel: { fontSize: 10, color: tokens.color.textMuted, fontStyle: "italic" },
+  editedLabelOut: { color: "rgba(255,255,255,0.75)" },
   time: { fontSize: 10, color: tokens.color.textMuted },
   timeOut: { color: "rgba(255,255,255,0.8)" },
   ackIcon: { marginLeft: 2 },

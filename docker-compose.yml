@@ -23,7 +23,12 @@ services:
       # message.receipt ditambahkan (Task 2b) berjaga-jaga kalau GOWS pakai
       # nama event berbeda dari message.ack untuk sinkronisasi status baca
       # multi-device (baca di HP) — webhooks.js sudah handle kedua nama event.
-      WHATSAPP_HOOK_EVENTS: message,message.any,session.status,message.ack
+      # message.revoked/message.edited ditambahkan untuk dukung pesan
+      # dihapus & diedit — TANPA ini di daftar, WAHA TIDAK PERNAH kirim
+      # webhook untuk 2 event ini sama sekali walau handler-nya sudah ada
+      # di webhooks.js (lihat CLAUDE.md §12 soal --force-recreate wajib
+      # setelah edit env var docker-compose.yml).
+      WHATSAPP_HOOK_EVENTS: message,message.any,session.status,message.ack,message.revoked,message.edited
       WAHA_DASHBOARD_USERNAME: admin
       WAHA_DASHBOARD_PASSWORD: klinikmatras123
       WHATSAPP_SWAGGER_USERNAME: admin
