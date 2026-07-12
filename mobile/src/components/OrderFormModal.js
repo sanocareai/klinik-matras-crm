@@ -1,43 +1,107 @@
-// Form tambah order cepat dari HP — pilih produk dari Galeri Produk
-// (searchable, prefill nama+harga) ATAU ketik manual, qty, catatan.
-// 2 panggilan endpoint existing (SAMA dengan web, lihat
-// frontend/src/components/customer/OrderSection.jsx untuk versi lengkapnya):
-//   1. POST /customers/:id/orders  → bikin shell order (quantity, notes)
-//   2. POST /orders/:orderId/items → tambah 1 baris layanan+harga, otomatis
-//      hitung ulang Order.value (backend#syncOrderValue)
-// CATATAN: Product (Galeri Produk) TIDAK punya relasi DB ke Order/OrderItem
-// — di sini cuma dipakai sebagai pemilih cepat utk prefill nama+harga,
-// bukan referensi tersimpan (sama seperti send-product di chat).
+// Form tambah order dari HP — struktur field SAMA dengan AddOrderForm web
+// (frontend/src/components/customer/OrderSection.jsx): Kategori, Berat
+// Badan (multi-orang), Merk Kasur, Ukuran Kasur, Keluhan/Catatan, Harga
+// Total (BARU/SEWA) atau daftar Layanan add-ons (LAYANAN). Field bertumpuk
+// vertikal (bukan wizard multi-step ala web) — layar HP lebih sempit,
+// semua muat lewat 1 ScrollView; dropdown pakai bottom-sheet picker
+// (PickerSheet) konsisten dengan pola di CustomerProfileContent.js.
+//
+// Merk Kasur & Ukuran Kasur & Jenis Layanan (opsi) diambil dari
+// GET /master-data/order-options — SATU sumber sama dengan web, bukan
+// hardcode duplikat (lihat backend/src/constants/orderOptions.js).
+//
+// Endpoint dipakai (sama dengan web):
+//   1. POST /customers/:id/orders        → shell order (category, notes)
+//   2. POST /orders/:orderId/items       → baris layanan+harga (auto sync Order.value)
+//   3. POST /orders/:orderId/weight-entries → baris berat badan per orang
+// notes disimpan JSON {merkKasur, ukuranKasur, keluhanCustomer} — format
+// SAMA persis dengan buildNotes()/parseNotes() di OrderSection.jsx web,
+// supaya order dari mobile tampil benar juga di CRM web (dan sebaliknya).
 import React, { useEffect, useState } from "react";
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, Image,
+  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, Image, ScrollView,
 } from "react-native";
 import { Package, X } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
 
+const CATEGORY_OPTIONS = [
+  { value: "LAYANAN", label: "Service/Upgrade" },
+  { value: "BARU", label: "Kasur Baru" },
+  { value: "SEWA", label: "Kasur Sewa" },
+];
+
+function newItem() {
+  return { key: String(Date.now()) + Math.random(), layananName: "", harga: "" };
+}
+function newWeightEntry() {
+  return { key: String(Date.now()) + Math.random(), label: "", beratKg: "" };
+}
+function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer }) {
+  return JSON.stringify({ merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "" });
+}
+
+// Bottom-sheet pilih 1 opsi dari daftar string — dipakai Merk Kasur, Ukuran
+// Kasur, dan pilihan cepat Jenis Layanan per baris item.
+function PickerSheet({ visible, title, options, onSelect, onClose }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={styles.pickerSheet}>
+          <Text style={styles.pickerTitle}>{title}</Text>
+          <FlatList
+            data={options}
+            keyExtractor={(o) => o}
+            style={{ maxHeight: 360 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.pickerItem} onPress={() => { onSelect(item); onClose(); }}>
+                <Text style={styles.pickerItemText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 export default function OrderFormModal({ visible, customerId, onClose, onCreated }) {
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState(null);
-  const [layananName, setLayananName] = useState("");
-  const [harga, setHarga] = useState("");
-  const [qty, setQty] = useState("1");
-  const [catatan, setCatatan] = useState("");
+
+  const [orderOptions, setOrderOptions] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
+  const [category, setCategory] = useState("LAYANAN");
+  const [merkKasur, setMerkKasur] = useState("");
+  const [ukuran, setUkuran] = useState("");
+  const [keluhan, setKeluhan] = useState("");
+  const [hargaTotal, setHargaTotal] = useState("");
+  const [items, setItems] = useState([newItem()]);
+  const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving] = useState(false);
+
+  const [showMerkPicker, setShowMerkPicker] = useState(false);
+  const [showUkuranPicker, setShowUkuranPicker] = useState(false);
+  const [layananPickerTarget, setLayananPickerTarget] = useState(null); // item key sedang dipilih
+
+  const isLayanan = category === "LAYANAN";
 
   useEffect(() => {
     if (!visible) return;
     setLoadingProducts(true);
     setSearch("");
     setSelectedProductId(null);
-    setLayananName("");
-    setHarga("");
-    setQty("1");
-    setCatatan("");
+    setCategory("LAYANAN");
+    setMerkKasur("");
+    setUkuran("");
+    setKeluhan("");
+    setHargaTotal("");
+    setItems([newItem()]);
+    setWeightEntries([newWeightEntry()]);
     api.getProducts().then(setProducts).catch(() => {}).finally(() => setLoadingProducts(false));
+    api.getOrderOptions().then(setOrderOptions).catch(() => {});
   }, [visible]);
 
   const q = search.trim().toLowerCase();
@@ -45,29 +109,67 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
 
   function pickProduct(p) {
     setSelectedProductId(p.id);
-    setLayananName(p.name);
-    setHarga(p.price ? String(p.price) : "");
+    setItems((prev) => {
+      const [first, ...rest] = prev.length > 0 ? prev : [newItem()];
+      return [{ ...first, layananName: p.name, harga: p.price ? String(p.price) : "" }, ...rest];
+    });
   }
 
+  function addItem() { setItems((p) => [...p, newItem()]); }
+  function removeItem(key) { setItems((p) => (p.length > 1 ? p.filter((it) => it.key !== key) : p)); }
+  function setItemField(key, field, val) {
+    setItems((p) => p.map((it) => (it.key === key ? { ...it, [field]: val } : it)));
+  }
+
+  function addWeight() { setWeightEntries((p) => [...p, newWeightEntry()]); }
+  function removeWeight(key) { setWeightEntries((p) => (p.length > 1 ? p.filter((e) => e.key !== key) : p)); }
+  function setWeightField(key, field, val) {
+    setWeightEntries((p) => p.map((e) => (e.key === key ? { ...e, [field]: val } : e)));
+  }
+
+  const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
+
   async function handleSubmit() {
-    if (!layananName.trim()) {
-      Alert.alert("Nama layanan wajib diisi");
+    if (saving) return;
+    const validItems = items.filter((it) => it.layananName?.trim());
+    if (isLayanan && validItems.length === 0) {
+      Alert.alert("Tambahkan minimal satu layanan");
       return;
     }
-    const hargaNum = Number(harga.replace(/\D/g, "")) || 0;
-    if (saving) return;
     setSaving(true);
     try {
       const order = await api.addOrder(customerId, {
-        quantity: Number(qty) || 1,
-        category: "LAYANAN",
-        notes: catatan.trim() || undefined,
+        category,
+        notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
-      const { item, orderValue } = await api.addOrderItem(order.id, {
-        layananName: layananName.trim(),
-        harga: hargaNum,
-      });
-      onCreated?.({ ...order, value: orderValue, items: [item] });
+
+      const createdItems = [];
+      let finalOrderValue = 0;
+      if (isLayanan) {
+        for (const it of validItems) {
+          const { item, orderValue } = await api.addOrderItem(order.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+          createdItems.push(item);
+          finalOrderValue = orderValue;
+        }
+      } else {
+        const harga = Number(hargaTotal) || 0;
+        if (harga > 0) {
+          const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+          const { item, orderValue } = await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
+          createdItems.push(item);
+          finalOrderValue = orderValue;
+        }
+      }
+
+      const createdWeights = [];
+      const validWeights = weightEntries.filter((e) => e.label?.trim() && e.beratKg);
+      for (let i = 0; i < validWeights.length; i++) {
+        const e = validWeights[i];
+        const entry = await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
+        createdWeights.push(entry);
+      }
+
+      onCreated?.({ ...order, value: finalOrderValue, items: createdItems, weightEntries: createdWeights });
       onClose();
     } catch (err) {
       Alert.alert("Gagal buat order", err.message);
@@ -87,103 +189,219 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
             </TouchableOpacity>
           </View>
 
-          <FlatList
-            data={filtered}
-            keyExtractor={(p) => p.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ maxHeight: 96 }}
-            contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
-            ListHeaderComponent={
-              <TextInput
-                style={styles.productSearch}
-                placeholder="Cari produk…"
-                placeholderTextColor={tokens.color.textMuted}
-                value={search}
-                onChangeText={setSearch}
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: "100%" }}>
+            {/* Kategori */}
+            <Text style={styles.label}>Kategori</Text>
+            <View style={styles.categoryRow}>
+              {CATEGORY_OPTIONS.map((opt) => {
+                const active = category === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.categoryChip, active && styles.categoryChipActive]}
+                    onPress={() => setCategory(opt.value)}
+                  >
+                    <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Produk cepat — hanya relevan utk Service/Upgrade */}
+            {isLayanan && (
+              <FlatList
+                data={filtered}
+                keyExtractor={(p) => p.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ maxHeight: 96, marginTop: 10 }}
+                contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
+                ListHeaderComponent={
+                  <TextInput
+                    style={styles.productSearch}
+                    placeholder="Cari produk…"
+                    placeholderTextColor={tokens.color.textMuted}
+                    value={search}
+                    onChangeText={setSearch}
+                  />
+                }
+                ListEmptyComponent={loadingProducts ? <ActivityIndicator color={tokens.color.accent} /> : null}
+                renderItem={({ item: p }) => {
+                  const active = selectedProductId === p.id;
+                  const thumb = p.images?.[0]?.url;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.productCard, active && styles.productCardActive]}
+                      onPress={() => pickProduct(p)}
+                    >
+                      {thumb ? (
+                        <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} />
+                      ) : (
+                        <View style={[styles.productThumb, styles.productThumbPlaceholder]}>
+                          <Package size={16} color={tokens.color.textMuted} strokeWidth={1.8} />
+                        </View>
+                      )}
+                      <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
+                    </TouchableOpacity>
+                  );
+                }}
               />
-            }
-            ListEmptyComponent={loadingProducts ? <ActivityIndicator color={tokens.color.accent} /> : null}
-            renderItem={({ item: p }) => {
-              const active = selectedProductId === p.id;
-              const thumb = p.images?.[0]?.url;
-              return (
-                <TouchableOpacity
-                  style={[styles.productCard, active && styles.productCardActive]}
-                  onPress={() => pickProduct(p)}
-                >
-                  {thumb ? (
-                    <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} />
-                  ) : (
-                    <View style={[styles.productThumb, styles.productThumbPlaceholder]}>
-                      <Package size={16} color={tokens.color.textMuted} strokeWidth={1.8} />
+            )}
+
+            {/* Berat Badan — multi-orang */}
+            <Text style={styles.label}>Berat Badan</Text>
+            {weightEntries.map((e) => (
+              <View key={e.key} style={styles.weightRow}>
+                <TextInput
+                  style={[styles.input, { flex: 2 }]}
+                  placeholder="cth: Suami / Istri / Sendiri"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={e.label}
+                  onChangeText={(v) => setWeightField(e.key, "label", v)}
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1, marginLeft: 8 }]}
+                  placeholder="kg"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={e.beratKg}
+                  onChangeText={(v) => setWeightField(e.key, "beratKg", v)}
+                  keyboardType="numeric"
+                />
+                {weightEntries.length > 1 && (
+                  <TouchableOpacity onPress={() => removeWeight(e.key)} style={styles.removeBtn}>
+                    <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity onPress={addWeight}><Text style={styles.linkText}>+ Tambah Orang</Text></TouchableOpacity>
+
+            {/* Merk Kasur */}
+            <Text style={styles.label}>Merk Kasur</Text>
+            {isLayanan ? (
+              <TouchableOpacity style={styles.selectBox} onPress={() => setShowMerkPicker(true)}>
+                <Text style={styles.selectBoxText}>{merkKasur || "— Pilih Merk —"}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.forcedSano}>Sano ✓</Text>
+            )}
+
+            {/* Ukuran Kasur */}
+            <Text style={styles.label}>Ukuran Kasur</Text>
+            <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
+              <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
+            </TouchableOpacity>
+
+            {/* Keluhan / Catatan */}
+            <Text style={styles.label}>{isLayanan ? "Keluhan Customer" : "Catatan"}</Text>
+            <TextInput
+              style={[styles.input, styles.textarea]}
+              placeholder={isLayanan ? "Jelaskan keluhan kasur…" : "Catatan order (opsional)…"}
+              placeholderTextColor={tokens.color.textMuted}
+              value={keluhan}
+              onChangeText={setKeluhan}
+              multiline
+            />
+
+            {/* Harga Total — hanya BARU/SEWA */}
+            {!isLayanan && (
+              <>
+                <Text style={styles.label}>Harga Total (Rp)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={hargaTotal}
+                  onChangeText={setHargaTotal}
+                  keyboardType="numeric"
+                />
+                {!!hargaTotal && <Text style={styles.previewValue}>{formatRupiah(Number(hargaTotal) || 0)}</Text>}
+              </>
+            )}
+
+            {/* Layanan (add-ons) — hanya LAYANAN */}
+            {isLayanan && (
+              <>
+                <Text style={styles.label}>Layanan (add-ons)</Text>
+                {items.map((it) => (
+                  <View key={it.key} style={styles.itemBlock}>
+                    <View style={styles.itemRow}>
+                      <TextInput
+                        style={[styles.input, { flex: 1 }]}
+                        placeholder="Nama layanan…"
+                        placeholderTextColor={tokens.color.textMuted}
+                        value={it.layananName}
+                        onChangeText={(v) => setItemField(it.key, "layananName", v)}
+                      />
+                      <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
+                        <Text style={styles.pickBtnText}>Pilih</Text>
+                      </TouchableOpacity>
+                      {items.length > 1 && (
+                        <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
+                          <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                        </TouchableOpacity>
+                      )}
                     </View>
-                  )}
-                  <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
-                </TouchableOpacity>
-              );
-            }}
-          />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Harga (Rp)"
+                      placeholderTextColor={tokens.color.textMuted}
+                      value={it.harga}
+                      onChangeText={(v) => setItemField(it.key, "harga", v)}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                ))}
+                <TouchableOpacity onPress={addItem}><Text style={styles.linkText}>+ Tambah layanan lain</Text></TouchableOpacity>
+                <Text style={styles.previewValue}>Total: {formatRupiah(totalItems)}</Text>
+              </>
+            )}
 
-          <Text style={styles.label}>Nama Layanan</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Contoh: Upgrade Fondasi"
-            placeholderTextColor={tokens.color.textMuted}
-            value={layananName}
-            onChangeText={setLayananName}
-          />
-
-          <View style={styles.row}>
-            <View style={{ flex: 2 }}>
-              <Text style={styles.label}>Harga (Rp)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={tokens.color.textMuted}
-                value={harga}
-                onChangeText={setHarga}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Qty</Text>
-              <TextInput
-                style={styles.input}
-                value={qty}
-                onChangeText={setQty}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-
-          {!!harga && <Text style={styles.previewValue}>{formatRupiah(Number(harga.replace(/\D/g, "")) || 0)}</Text>}
-
-          <Text style={styles.label}>Catatan</Text>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            placeholder="Catatan tambahan (opsional)…"
-            placeholderTextColor={tokens.color.textMuted}
-            value={catatan}
-            onChangeText={setCatatan}
-            multiline
-          />
-
-          <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={handleSubmit} disabled={saving}>
-            <Text style={styles.submitText}>{saving ? "Menyimpan…" : "Simpan Order"}</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={handleSubmit} disabled={saving}>
+              <Text style={styles.submitText}>{saving ? "Menyimpan…" : "Simpan Order"}</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
+
+      <PickerSheet
+        visible={showMerkPicker}
+        title="Pilih Merk Kasur"
+        options={orderOptions.merkKasur}
+        onSelect={setMerkKasur}
+        onClose={() => setShowMerkPicker(false)}
+      />
+      <PickerSheet
+        visible={showUkuranPicker}
+        title="Pilih Ukuran Kasur"
+        options={orderOptions.ukuranKasur}
+        onSelect={setUkuran}
+        onClose={() => setShowUkuranPicker(false)}
+      />
+      <PickerSheet
+        visible={!!layananPickerTarget}
+        title="Pilih Jenis Layanan"
+        options={orderOptions.jenisLayanan}
+        onSelect={(v) => layananPickerTarget && setItemField(layananPickerTarget, "layananName", v)}
+        onClose={() => setLayananPickerTarget(null)}
+      />
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24 },
+  modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24, maxHeight: "88%" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
-  closeText: { fontSize: 16, color: tokens.color.textSecondary, padding: 4 },
+  categoryRow: { flexDirection: "row", gap: 8 },
+  categoryChip: {
+    flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: tokens.radius.control,
+    borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+  },
+  categoryChipActive: { backgroundColor: tokens.color.accentSoft, borderColor: tokens.color.accent },
+  categoryChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
+  categoryChipTextActive: { color: tokens.color.accent },
   productSearch: {
     backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
     fontSize: 13, color: tokens.color.textPrimary, width: 140, marginRight: 4,
@@ -196,17 +414,35 @@ const styles = StyleSheet.create({
   productThumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: tokens.color.subtle },
   productThumbPlaceholder: { alignItems: "center", justifyContent: "center" },
   productName: { fontSize: 10, color: tokens.color.textSecondary, marginTop: 4, textAlign: "center" },
-  label: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary, marginTop: 10, marginBottom: 4 },
+  label: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary, marginTop: 14, marginBottom: 6 },
   input: {
     backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
     fontSize: 14, color: tokens.color.textPrimary,
   },
   textarea: { minHeight: 60, textAlignVertical: "top" },
-  row: { flexDirection: "row", gap: 10 },
-  previewValue: { fontSize: 13, fontWeight: "700", color: tokens.color.success, marginTop: 6 },
+  selectBox: {
+    backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  selectBoxText: { fontSize: 14, color: tokens.color.textPrimary },
+  forcedSano: { fontSize: 14, fontWeight: "700", color: tokens.color.success, paddingVertical: 6 },
+  weightRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  itemBlock: { marginBottom: 10 },
+  itemRow: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 8 },
+  pickBtn: {
+    backgroundColor: tokens.color.accentSoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9,
+  },
+  pickBtnText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
+  removeBtn: { marginLeft: 8, padding: 4 },
+  linkText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600", marginTop: 4 },
+  previewValue: { fontSize: 13, fontWeight: "700", color: tokens.color.success, marginTop: 8 },
   submitBtn: {
     backgroundColor: tokens.color.accent, borderRadius: 14, paddingVertical: 12,
-    alignItems: "center", marginTop: 16,
+    alignItems: "center", marginTop: 20, marginBottom: 4,
   },
   submitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  pickerSheet: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "70%" },
+  pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
+  pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+  pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
 });

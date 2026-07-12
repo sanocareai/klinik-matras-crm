@@ -295,6 +295,10 @@ export const api = {
   generateDraftReply: (conversationHistory, handoverNote) =>
     request("/ai/draft-reply", { method: "POST", body: JSON.stringify({ conversationHistory, handoverNote }) }),
 
+  // Master data opsi form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) —
+  // satu sumber dipakai OrderSection.jsx web & mobile OrderFormModal.js.
+  getOrderOptions: () => request("/master-data/order-options"),
+
   // Produk (Galeri)
   getProducts: () => request("/products"),
   getAllProducts: () => request("/products/all"),

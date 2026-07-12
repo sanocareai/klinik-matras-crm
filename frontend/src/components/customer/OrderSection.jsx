@@ -1,21 +1,16 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES,
-  UKURAN_KASUR, MERK_KASUR,
 } from "../../utils/format.js";
 
-const JENIS_LAYANAN = [
-  "Upgrade Lapisan Matras Sehat",
-  "Upgrade Fondasi Matras Sehat",
-  "Full Upgrade Lapisan dan Fondasi Matras Sehat",
-  "Full Upgrade All In",
-  "Full Service",
-  "Ganti Kain",
-  "Lainnya",
-];
+// Jenis Layanan/Merk Kasur/Ukuran Kasur BUKAN lagi hardcode di sini — diambil
+// dari GET /api/master-data/order-options (satu sumber dipakai web & mobile,
+// lihat backend/src/constants/orderOptions.js) supaya rename/tambah opsi
+// (mis. nama layanan) cukup di satu tempat.
+const EMPTY_ORDER_OPTIONS = { jenisLayanan: [], merkKasur: [], ukuranKasur: [] };
 
 // Label & ikon untuk pilihan kategori order
 const CATEGORY_OPTIONS = [
@@ -76,7 +71,7 @@ function formatTanggal(d) {
 }
 
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
-function OrderDetail({ order, customerId, onRefresh, onDelete }) {
+function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
   const info = parseNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
@@ -365,7 +360,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
             {isLayanan ? (
               <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
                 <option value="">—</option>
-                {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+                {orderOptions.merkKasur.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             ) : (
               <div style={{ fontSize: 13, fontWeight: 700, padding: "5px 0", color: "#166534" }}>Sano ✓</div>
@@ -375,7 +370,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
             <span style={metaLabel}>Ukuran</span>
             <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={selStyleFull}>
               <option value="">—</option>
-              {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
+              {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
         </div>
@@ -413,7 +408,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
               </div>
             ))}
             <datalist id="layanan-suggestions">
-              {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
+              {orderOptions.jenisLayanan.map((j) => <option key={j} value={j} />)}
             </datalist>
             <button onClick={addItem}
               style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>
@@ -505,7 +500,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete }) {
 }
 
 // ─── Form tambah order baru (step 0: kategori → step 1: info → step 2: layanan) ─
-function AddOrderForm({ customerId, onDone, onCancel }) {
+function AddOrderForm({ customerId, onDone, onCancel, orderOptions }) {
   const [step, setStep]               = useState(0);
   const [category, setCategory]       = useState("");
   const [merkKasur, setMerk]          = useState("");
@@ -680,7 +675,7 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
           {isLayanan ? (
             <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
               <option value="">— Pilih Merk —</option>
-              {MERK_KASUR.map((m) => <option key={m} value={m}>{m}</option>)}
+              {orderOptions.merkKasur.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           ) : (
             <div style={{ fontSize: 13, fontWeight: 700, padding: "7px 0", color: "#166534" }}>Sano ✓</div>
@@ -691,7 +686,7 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
           <label style={formLabel}>Ukuran Kasur</label>
           <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
             <option value="">— Pilih Ukuran —</option>
-            {UKURAN_KASUR.map((u) => <option key={u} value={u}>{u}</option>)}
+            {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 14 }}>
@@ -762,7 +757,7 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
         </div>
       ))}
       <datalist id="new-layanan-suggestions">
-        {JENIS_LAYANAN.map((j) => <option key={j} value={j} />)}
+        {orderOptions.jenisLayanan.map((j) => <option key={j} value={j} />)}
       </datalist>
       <button type="button" onClick={addItem}
         style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>
@@ -786,6 +781,11 @@ function AddOrderForm({ customerId, onDone, onCancel }) {
 export default function OrderSection({ customer, onUpdate }) {
   const [showForm, setShowForm]     = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [orderOptions, setOrderOptions] = useState(EMPTY_ORDER_OPTIONS);
+
+  useEffect(() => {
+    api.getOrderOptions().then(setOrderOptions).catch(() => {});
+  }, []);
 
   async function refresh() {
     try {
@@ -820,6 +820,7 @@ export default function OrderSection({ customer, onUpdate }) {
           customerId={customer.id}
           onDone={() => { setShowForm(false); refresh(); }}
           onCancel={() => setShowForm(false)}
+          orderOptions={orderOptions}
         />
       )}
 
@@ -874,6 +875,7 @@ export default function OrderSection({ customer, onUpdate }) {
                             customerId={customer.id}
                             onRefresh={refresh}
                             onDelete={handleDelete}
+                            orderOptions={orderOptions}
                           />
                         </td>
                       </tr>

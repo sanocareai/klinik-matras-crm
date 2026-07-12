@@ -233,6 +233,15 @@ export const api = {
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
+  // Berat badan multi-orang per order (lihat backend/src/routes/orders.js
+  // #POST /:id/weight-entries) — dipakai OrderFormModal, sama seperti
+  // AddOrderForm di web (frontend/src/components/customer/OrderSection.jsx).
+  addWeightEntry: (orderId, data) =>
+    request(`/orders/${orderId}/weight-entries`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Master data opsi form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) —
+  // satu sumber dipakai OrderSection.jsx web & OrderFormModal.js mobile.
+  getOrderOptions: () => request("/master-data/order-options"),
 
   // Galeri Produk — dipakai OrderFormModal sebagai pemilih cepat nama+harga
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,

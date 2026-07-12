@@ -221,21 +221,6 @@ export const KOTA_LIST = [
   "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
 ];
 
-export const UKURAN_KASUR = [
-  "90x200 cm (Single)",
-  "120x200 cm (Single Besar)",
-  "160x200 cm (Queen)",
-  "180x200 cm (King)",
-  "200x200 cm (King Besar)",
-  "Ukuran Custom",
-];
-
-export const MERK_KASUR = [
-  "Comforta", "Spring Air", "Dunlopillo", "Therapedic",
-  "King Koil", "Sealy", "Serta", "Lady Americana",
-  "Elite", "Florence", "Guhdo", "Sano", "Lainnya",
-];
-
 // Preset date ranges untuk DateRangePicker
 export function getDatePreset(preset) {
   const now = new Date();

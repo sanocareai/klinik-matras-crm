@@ -221,7 +221,7 @@ export default function CustomerDrawer({ customerId, onClose, onUpdated }) {
               </div>
 
               <div className="drawer-field">
-                <label>Kondisi Kasur</label>
+                <label>Kondisi Pelanggan</label>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {[
                     { value: "SAKIT",       label: "Sakit",       activeColor: "#fee2e2", activeText: "#991b1b" },

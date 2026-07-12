@@ -24,7 +24,7 @@ const LEAD_SOURCE_COLORS = {
   OTHER:           { bg: "#f3f4f6", color: "#374151" },
 };
 
-// Sumber lead, Kondisi Kasur, Tipe Customer, Kota — semua inline edit lewat
+// Sumber lead, Kondisi Pelanggan, Tipe Customer, Kota — semua inline edit lewat
 // endpoint existing (PATCH /customers/:id, sama seperti CustomerPanel lama).
 export default function InfoSection({ customer, onUpdate }) {
   const [leadSourceDraft, setLeadSourceDraft] = useState(customer.leadSource || "OTHER");
@@ -121,9 +121,9 @@ export default function InfoSection({ customer, onUpdate }) {
         </div>
       </div>
 
-      {/* Kondisi Kasur */}
+      {/* Kondisi Pelanggan (nama field DB tetap healthStatus, cuma label UI) */}
       <div className="panel-section">
-        <span className="panel-section-label">Kondisi Kasur</span>
+        <span className="panel-section-label">Kondisi Pelanggan</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[
             { value: "SAKIT", label: "Sakit", activeColor: "#fee2e2", activeText: "#991b1b" },

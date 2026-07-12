@@ -293,7 +293,7 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         </TouchableOpacity>
       </Section>
 
-      <Section title="Kondisi Kasur">
+      <Section title="Kondisi Pelanggan">
         <View style={styles.pillRow}>
           {[{ v: "SAKIT", l: "Sakit" }, { v: "TIDAK_SAKIT", l: "Tidak Sakit" }].map(({ v, l }) => {
             const active = customer.healthStatus === v;
