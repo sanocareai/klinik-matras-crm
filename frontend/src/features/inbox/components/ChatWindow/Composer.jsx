@@ -1,10 +1,10 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Send, MessageSquare, X, Smile, Paperclip, Mic } from "lucide-react";
+import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2 } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
-import { useDraft, useReplyTarget, useComposerStore } from "../../stores/composerStore.js";
+import { useDraft, useReplyTarget, useEditingMessage, useComposerStore } from "../../stores/composerStore.js";
 
 // Fase G: MediaUploader & VoiceRecorder jadi chunk terpisah, di-load begitu
 // ChatWindow pertama kali dibuka — bukan ikut initial bundle app/login/Dashboard.
@@ -141,12 +141,14 @@ function EmojiMartPopup({ onSelect, onClose }) {
 export default function Composer({ conversation, mediaUploaderRef }) {
   const conversationId = conversation.id;
   const sendMutation   = useSendMessage(conversationId);
-  const draft       = useDraft(conversationId);
-  const replyTarget = useReplyTarget();
+  const draft          = useDraft(conversationId);
+  const replyTarget    = useReplyTarget();
+  const editingMessage = useEditingMessage();
 
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEmoji, setShowEmoji]         = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -182,9 +184,32 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     e?.preventDefault();
     const text = draft.trim();
     if (!text) return;
+    if (editingMessage) { handleSaveEdit(text); return; }
     sendMutation.mutate({ content: text, replyTo: replyTarget });
     setDraft("");
     useComposerStore.getState().clearReply();
+  }
+
+  // Pola WhatsApp asli: cuma teks (media tidak bisa), 15 menit sejak
+  // terkirim (ditegakkan backend, lihat MessageBubble.jsx canEdit untuk
+  // penjelasan yang sama). Tidak pakai react-query mutation terpisah
+  // (beda dari useSendMessage) karena tidak butuh optimistic-append —
+  // pesannya SUDAH ada di list, cuma perlu update in-place.
+  async function handleSaveEdit(text) {
+    setSavingEdit(true);
+    try {
+      const updated = await api.editMessage(conversationId, editingMessage.id, text);
+      useMessageStore.getState().updateMessage(editingMessage.id, updated);
+      useComposerStore.getState().finishEditingMessage(conversationId);
+    } catch (err) {
+      alert("Gagal edit pesan: " + err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    useComposerStore.getState().cancelEditingMessage(conversationId);
   }
 
   function handlePaste(e) {
@@ -228,7 +253,19 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().appendMessage(conversationId, m)); setShowProductPicker(false); }} />
       )}
 
-      {replyTarget && (
+      {editingMessage ? (
+        // Mode edit menggantikan reply-strip total — tidak masuk akal
+        // reply+edit bersamaan di composer yang sama.
+        <div className="reply-strip">
+          <div className="reply-strip-bar" style={{ background: "var(--warning, #f59e0b)" }} />
+          <Pencil size={14} style={{ flexShrink: 0, color: "var(--warning, #f59e0b)" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="reply-strip-title">Edit pesan</div>
+            <div className="reply-strip-text">{editingMessage.content}</div>
+          </div>
+          <button onClick={handleCancelEdit} className="reply-strip-close"><X size={14} /></button>
+        </div>
+      ) : replyTarget && (
         <div className="reply-strip">
           <div className="reply-strip-bar" />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -260,7 +297,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           value={draft}
           rows={1}
           className="chat-textarea"
-          placeholder="Tulis balasan..."
+          placeholder={editingMessage ? "Edit pesan..." : "Tulis balasan..."}
           onChange={(e) => { setDraft(e.target.value); autoGrowTextarea(e.target); }}
           onKeyDown={handleTextareaKeyDown}
           onPaste={handlePaste}
@@ -270,7 +307,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           <VoiceRecorder conversationId={conversationId} />
         </Suspense>
 
-        <button type="submit" className="chat-send-btn" disabled={!draft.trim()}><Send size={16} /></button>
+        <button type="submit" className="chat-send-btn" disabled={!draft.trim() || savingEdit}>
+          {editingMessage ? <CheckCircle2 size={16} /> : <Send size={16} />}
+        </button>
       </form>
     </div>
   );

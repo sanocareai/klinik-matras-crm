@@ -131,6 +131,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ messageId, targetConversationId }),
     }),
+  // Edit pesan OUTBOUND (teks saja, 15 menit sejak terkirim — sama seperti
+  // batas edit WhatsApp asli, ditegakkan di backend).
+  editMessage: (conversationId, messageId, content) =>
+    request(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Set sessionId manual — dipakai saat backend tolak kirim (409, sesi WA

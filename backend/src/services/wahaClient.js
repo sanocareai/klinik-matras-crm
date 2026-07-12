@@ -113,6 +113,36 @@ export async function sendMedia(to, file, caption, sendAs = "media", session) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+// Edit pesan OUTBOUND yang sudah terkirim — dikonfirmasi via swagger WAHA
+// (operationId ChatsController_editMessage, tag "💬 Chats") + tes manual
+// langsung ke endpoint ini (PUT berhasil, dan trigger webhook message.edited
+// yang SUDAH ada sejak lama di webhooks.js untuk menyimpan content+editedAt
+// — jadi caller di conversations.js TETAP update DB sendiri secara sinkron
+// untuk response langsung ke client, webhook yang menyusul cuma re-set nilai
+// yang sama, idempotent).
+// PUT /api/{session}/chats/{chatId}/messages/{messageId} body {text}.
+// messageId WAJIB externalId LENGKAP tersimpan di DB (format
+// "{fromMe}_{chatId}_{msgId}"), BUKAN cuma segmen terakhir — beda dari
+// getContactInfo/getProfilePicture (query-style session) ATAU getGroupInfo
+// (path-style session) — endpoint /chats/ ini path-style session SEKALIGUS
+// chatId & messageId semua sebagai path segment.
+export async function editMessage(to, messageId, text, session) {
+  if (!session) {
+    throw new Error("editMessage: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
+  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const res = await fetch(
+    `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({ text }),
+    }
+  );
+  if (!res.ok) throw new Error(`WAHA editMessage gagal (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
 // Download media dari URL langsung (dipakai saat webhook punya payload.media.url)
 export async function downloadMediaFromUrl(url) {
   try {

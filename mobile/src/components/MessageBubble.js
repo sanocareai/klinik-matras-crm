@@ -13,7 +13,7 @@ import Animated, {
   FadeInDown, useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, interpolateColor, runOnJS,
 } from "react-native-reanimated";
 import {
-  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban,
+  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil,
 } from "lucide-react-native";
 import { mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -26,6 +26,7 @@ const SWIPE_REPLY_THRESHOLD = 60; // px geser sebelum reply ter-trigger (spec)
 const SWIPE_REPLY_MAX = 84;       // batas visual geser bubble, jangan kabur terlalu jauh
 const HIGHLIGHT_HOLD_MS = 1100;   // berapa lama background kuning bertahan penuh sebelum fade
 const HIGHLIGHT_FADE_MS = 400;    // durasi fade balik ke normal (total ~1.5 detik sesuai spec)
+const EDIT_WINDOW_MS = 15 * 60 * 1000; // batas edit 15 menit — SAMA dengan backend (conversations.js), cuma dipakai di sini utk sembunyikan opsi Edit di UI, backend tetap sumber kebenaran/penegak aturan
 
 // Backend Message.ack: 0 pending, 1 sent, 2 delivered, 3 read — sama
 // dengan frontend/src/features/inbox/utils/ackLevel.js. #34B7F1 = biru
@@ -135,7 +136,7 @@ function DocumentRow({ url }) {
 }
 
 function MessageBubbleBase({
-  message: m, isGroup, onReply, onForward, onJumpToReply, onOpenMedia, onRetry, highlighted,
+  message: m, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
 }) {
   const [showActions, setShowActions] = useState(false);
 
@@ -144,6 +145,13 @@ function MessageBubbleBase({
   const isFailed = m.status === "failed";
   const isRevoked = !!m.isRevoked;
   const hasMedia = !!m.mediaType;
+  // Sama seperti WhatsApp asli: cuma pesan teks milik sendiri, belum
+  // dihapus, sudah benar-benar terkirim (bukan optimistic/gagal), dalam
+  // batas 15 menit. Ini CUMA gating tampilan tombol — backend
+  // (conversations.js PATCH /:id/messages/:messageId) yang menegakkan
+  // aturan sebenarnya, jangan pernah percaya validasi client saja.
+  const canEdit = isOut && !isRevoked && !isSending && !isFailed && !hasMedia && !!onEdit
+    && (Date.now() - new Date(m.createdAt).getTime()) < EDIT_WINDOW_MS;
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
@@ -181,6 +189,15 @@ function MessageBubbleBase({
       onForward?.(m);
     } catch {
       Alert.alert("Gagal meneruskan", "Terjadi kesalahan saat menyiapkan pesan diteruskan");
+    }
+  }
+
+  function handleEditPress() {
+    setShowActions(false);
+    try {
+      onEdit?.(m);
+    } catch {
+      Alert.alert("Gagal edit", "Terjadi kesalahan saat menyiapkan edit pesan");
     }
   }
 
@@ -398,6 +415,12 @@ function MessageBubbleBase({
               <TouchableOpacity style={styles.actionItemRow} onPress={handleForward}>
                 <Forward size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
                 <Text style={styles.actionText}>Teruskan</Text>
+              </TouchableOpacity>
+            )}
+            {canEdit && (
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleEditPress}>
+                <Pencil size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
+                <Text style={styles.actionText}>Edit</Text>
               </TouchableOpacity>
             )}
             {!!text && (

@@ -7,10 +7,10 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { sendText, sendMedia, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
+import { sendText, sendMedia, editMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
-import { emitNewMessage, emitConversationUpdate } from "../socket.js";
+import { emitNewMessage, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 
 // Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
 // Key: conversationId, Value: timestamp terakhir kirim read receipt ke WAHA.
@@ -409,6 +409,70 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   }
 
   res.status(201).json(message);
+});
+
+// Edit pesan OUTBOUND yang sudah terkirim — pola WhatsApp asli: cuma pesan
+// teks (bukan media), cuma milik sendiri, cuma dalam batas waktu tertentu
+// (15 menit, sama seperti batas edit WhatsApp resmi). Sesudah WAHA
+// mengonfirmasi, update DB SEKARANG JUGA (bukan nunggu webhook
+// message.edited yang sudah ada — itu tetap akan menyusul & idempotent,
+// cuma dobel-pastikan) supaya response ke client langsung bawa content
+// baru, bukan nunggu round-trip webhook lain.
+const EDIT_MESSAGE_WINDOW_MS = 15 * 60 * 1000;
+
+conversationRouter.patch("/:id/messages/:messageId", async (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: "Isi pesan wajib diisi" });
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== conversation.id) {
+    return res.status(404).json({ error: "Pesan tidak ditemukan" });
+  }
+  if (message.direction !== "OUTBOUND") {
+    return res.status(400).json({ error: "Hanya pesan yang Anda kirim yang bisa diedit" });
+  }
+  if (message.isRevoked) {
+    return res.status(400).json({ error: "Pesan yang sudah dihapus tidak bisa diedit" });
+  }
+  if (message.mediaType) {
+    return res.status(400).json({ error: "Hanya pesan teks yang bisa diedit, media tidak bisa" });
+  }
+  if (!message.externalId) {
+    return res.status(400).json({ error: "Pesan ini belum tersinkron dengan WhatsApp, coba lagi sebentar" });
+  }
+  const ageMs = Date.now() - new Date(message.createdAt).getTime();
+  if (ageMs > EDIT_MESSAGE_WINDOW_MS) {
+    return res.status(400).json({ error: "Batas waktu edit (15 menit sejak terkirim) sudah lewat" });
+  }
+
+  const target = resolveSendTarget(conversation);
+  if (!target) return res.status(400).json({ error: "Tujuan kirim tidak tersedia" });
+
+  const trimmed = content.trim();
+  try {
+    await sendWithSessionFallback(conversation, (session) =>
+      editMessage(target, message.externalId, trimmed, session)
+    );
+  } catch (err) {
+    if (err instanceof SessionResolutionError) {
+      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+    }
+    console.error("[edit] WAHA gagal:", err.message);
+    return res.status(502).json({ error: `Gagal edit pesan di WhatsApp: ${err.message}` });
+  }
+
+  const updated = await prisma.message.update({
+    where: { id: message.id },
+    data: { content: trimmed, editedAt: new Date() },
+  });
+  emitMessageUpdate(conversation.id, updated);
+  res.json(updated);
 });
 
 // Kirim media (foto / video / dokumen / suara)

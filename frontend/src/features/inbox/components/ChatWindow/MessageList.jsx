@@ -53,7 +53,7 @@ function buildItems(messages) {
 // pergantian hari meski tidak menempel di atas saat scroll. Kandidat
 // perbaikan di fase berikutnya kalau perlu betul-betul sticky.
 const MessageList = forwardRef(function MessageList(
-  { conversation, onReply, onForward, onRetry, loading },
+  { conversation, onReply, onForward, onEdit, onRetry, loading },
   ref,
 ) {
   const conversationId = conversation?.id;
@@ -192,6 +192,7 @@ const MessageList = forwardRef(function MessageList(
                 isGroup={isGroup}
                 onReply={onReply}
                 onForward={onForward}
+                onEdit={onEdit}
                 onJumpToReply={scrollToMessage}
                 highlighted={highlightedId === m.id}
                 onRetry={handleRetry}

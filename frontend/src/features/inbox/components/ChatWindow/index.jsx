@@ -366,6 +366,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         loading={messagesLoading}
         onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
+        onEdit={(msg) => useComposerStore.getState().startEditingMessage(conversationId, msg)}
         onRetry={handleRetry}
       />
 

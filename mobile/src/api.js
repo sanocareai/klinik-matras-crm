@@ -193,6 +193,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ messageId, targetConversationId }),
     }),
+  // Edit pesan OUTBOUND (teks saja, 15 menit sejak terkirim — sama seperti
+  // batas edit WhatsApp asli, ditegakkan di backend).
+  editMessage: (conversationId, messageId, content) =>
+    request(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
   // file = { uri, name, type } dari image/document/kamera picker.
   // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
   // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.

@@ -21,7 +21,7 @@ import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
-  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle,
+  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -93,12 +93,20 @@ export default function ChatScreen({ route, navigation }) {
   const [forwardMsg, setForwardMsg] = useState(null);
   const [mediaViewer, setMediaViewer] = useState(null); // { items, index }
   const [isOffline, setIsOffline] = useState(false);
+  const [editingMessage, setEditingMessage] = useState(null); // pesan yang sedang diedit, null = mode normal
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
   const customerSheetRef = useRef(null);
+  // Selalu ikuti `text` state terbaru TANPA bikin handleEditMessage di bawah
+  // dependen ke `text` (yang berubah tiap keystroke) — kalau dependen,
+  // handleEditMessage dapat reference baru tiap ketik, sama masalahnya
+  // dengan closure-instability yang sudah diperbaiki di renderItem dkk.
+  const textRef = useRef(text);
+  useEffect(() => { textRef.current = text; }, [text]);
+  const preEditTextRef = useRef(""); // draft yang lagi diketik sebelum masuk mode edit — dikembalikan saat Batal
 
   const isGroup = conversation ? conversation.type === "GROUP" : !!routeIsGroup;
   const customerId = conversation?.customerId ?? routeCustomerId;
@@ -248,6 +256,40 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
+  // Masuk mode edit — pola WA asli: teks pesan lama masuk ke composer,
+  // draft yang lagi diketik (kalau ada) disimpan dulu di ref, dikembalikan
+  // kalau user Batal. Reply aktif (kalau ada) dibatalkan — tidak masuk akal
+  // "membalas" SEKALIGUS "mengedit" bareng di composer yang sama.
+  const handleEditMessage = useCallback((msg) => {
+    preEditTextRef.current = textRef.current;
+    useComposerStore.getState().clearReply();
+    setEditingMessage(msg);
+    setText(msg.content || "");
+  }, []);
+
+  function handleCancelEdit() {
+    setEditingMessage(null);
+    setText(preEditTextRef.current || "");
+  }
+
+  async function handleSaveEdit() {
+    const content = text.trim();
+    if (!content || sending || !editingMessage) return;
+    const target = editingMessage;
+    setSending(true);
+    try {
+      const updated = await api.editMessage(conversationId, target.id, content);
+      useMessageStore.getState().updateMessage(target.id, updated);
+      setEditingMessage(null);
+      setText("");
+      useComposerStore.getState().setDraft(conversationId, "");
+    } catch (err) {
+      Alert.alert("Gagal edit pesan", err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
   const handleRetry = useCallback((m) => {
     const tempId = `temp-${Date.now()}`;
     useMessageStore.setState((state) => ({
@@ -331,12 +373,13 @@ export default function ChatScreen({ route, navigation }) {
         highlighted={highlightedId === m.id}
         onReply={handleReplyMessage}
         onForward={handleForwardMessage}
+        onEdit={handleEditMessage}
         onJumpToReply={scrollToMessage}
         onRetry={handleRetry}
         onOpenMedia={openMediaViewer}
       />
     );
-  }, [isGroup, highlightedId, handleReplyMessage, handleForwardMessage, scrollToMessage, handleRetry, openMediaViewer]);
+  }, [isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage, handleRetry, openMediaViewer]);
 
   return (
     // behavior="padding" di KEDUA platform (bukan "height" di Android) —
@@ -461,7 +504,21 @@ export default function ChatScreen({ route, navigation }) {
               <Text style={styles.offlineBannerText}>Menunggu koneksi… pesan akan otomatis terkirim</Text>
             </View>
           )}
-          {replyTarget && (
+          {editingMessage ? (
+            // Mode edit menggantikan reply bar total — tidak masuk akal
+            // membalas & mengedit bersamaan di composer yang sama.
+            <View style={styles.replyBar}>
+              <View style={[styles.replyBarAccent, { backgroundColor: tokens.color.warning }]} />
+              <Pencil size={16} color={tokens.color.warning} strokeWidth={2.2} style={{ marginRight: 6 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.replyBarTitle}>Edit pesan</Text>
+                <Text style={styles.replyBarText} numberOfLines={1}>{editingMessage.content}</Text>
+              </View>
+              <TouchableOpacity onPress={handleCancelEdit}>
+                <X size={18} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
+          ) : replyTarget && (
             <View style={styles.replyBar}>
               <View style={styles.replyBarAccent} />
               <View style={{ flex: 1 }}>
@@ -486,7 +543,7 @@ export default function ChatScreen({ route, navigation }) {
             />
             <TextInput
               style={styles.input}
-              placeholder="Ketik pesan…"
+              placeholder={editingMessage ? "Edit pesan…" : "Ketik pesan…"}
               placeholderTextColor={tokens.color.textMuted}
               value={text}
               onChangeText={handleChangeText}
@@ -495,10 +552,14 @@ export default function ChatScreen({ route, navigation }) {
             {text.trim() ? (
               <PressableScale
                 style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
-                onPress={handleSend}
+                onPress={editingMessage ? handleSaveEdit : handleSend}
                 disabled={sending}
               >
-                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send size={18} color="#fff" strokeWidth={2.2} />}
+                {sending ? <ActivityIndicator color="#fff" size="small" /> : (
+                  editingMessage
+                    ? <CheckCircle2 size={18} color="#fff" strokeWidth={2.2} />
+                    : <Send size={18} color="#fff" strokeWidth={2.2} />
+                )}
               </PressableScale>
             ) : (
               <VoiceRecorderBar

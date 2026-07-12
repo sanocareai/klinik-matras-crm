@@ -1,6 +1,6 @@
 import React, { memo, useRef, useState } from "react";
 import {
-  Reply, Forward, FileText, Image as ImageIcon, Video, Mic, Smile,
+  Reply, Forward, Pencil, FileText, Image as ImageIcon, Video, Mic, Smile,
   Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
@@ -205,7 +205,9 @@ function VideoThumb({ src, onClick }) {
   );
 }
 
-function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onForward, onJumpToReply, highlighted, onRetry, onOpenMedia }) {
+const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 menit — sama dengan backend (conversations.js), cuma dipakai sembunyikan tombol Edit di UI, backend tetap sumber kebenaran/penegak aturan
+
+function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia }) {
   const [hovered, setHovered] = useState(false);
   const longPressTimerRef = useRef(null);
 
@@ -214,6 +216,10 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   const isFailed  = m.status === "failed";
   const isRevoked = !!m.isRevoked;
   const hasMedia  = !!m.mediaType;
+  // Sama seperti WhatsApp asli: cuma teks milik sendiri, belum dihapus,
+  // sudah benar-benar terkirim, dalam batas 15 menit.
+  const canEdit = isOut && !isRevoked && !isSending && !isFailed && !hasMedia && !!onEdit
+    && (Date.now() - new Date(m.createdAt).getTime()) < EDIT_WINDOW_MS;
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   // Placeholder bracket ("[Foto]" dst, lihat parseHistoryMessage.js) sudah
@@ -250,6 +256,11 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           {onForward && (
             <button onClick={(e) => { e.stopPropagation(); onForward(m); setHovered(false); }} title="Teruskan">
               <Forward size={14} />
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={(e) => { e.stopPropagation(); onEdit(m); setHovered(false); }} title="Edit">
+              <Pencil size={14} />
             </button>
           )}
         </div>
