@@ -469,6 +469,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     }
   }
 
+  let waResult;
   if (conversation.channel === "WHATSAPP") {
     // Task 3 — media/VN sekarang juga bisa dikirim ke grup (composer grup
     // sudah aktif penuh). Target: groupJid untuk GROUP, nomor customer
@@ -480,7 +481,6 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
         error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
       });
     }
-    let waResult;
     try {
       console.log(`[media] Kirim ke WAHA → ${wahaFileUrl} (mime=${wahaFileMime}, sendAs=${sendAs}, filename=${wahaFileName})`);
       ({ result: waResult } = await sendWithSessionFallback(conversation, (session) =>
