@@ -178,10 +178,12 @@ export const api = {
   // dipakai saat tap percakapan unread / swipe "tandai dibaca" di Inbox.
   markConversationRead: (conversationId) =>
     request(`/conversations/${conversationId}/read`, { method: "POST" }),
-  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null) =>
+  // clientId: opsional — lihat ChatScreen.js#handleSend & messageStore.js
+  // untuk kenapa ini perlu (rekonsiliasi pesan optimistic vs echo socket).
+  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null, clientId = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, quotedMessageId, replyToId }),
+      body: JSON.stringify({ content, quotedMessageId, replyToId, clientId }),
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

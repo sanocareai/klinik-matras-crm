@@ -30,10 +30,33 @@ export const useMessageStore = create((set) => ({
     hasMoreByConvId: { ...state.hasMoreByConvId, [convId]: hasMore },
   })),
 
+  // BUG (fix) — DOUBLE-APPEND: pesan yang KITA kirim sendiri dari HP ini
+  // datang balik lewat DUA jalur yang keduanya berakhir manggil appendMessage
+  // TERPISAH: (1) response HTTP POST /messages di ChatScreen.js (lewat
+  // replaceTempMessage) dan (2) echo Socket.IO "message:new" — backend
+  // nge-broadcast ke SELURUH room percakapan itu TERMASUK pengirimnya
+  // sendiri (lihat backend/src/routes/conversations.js emitNewMessage
+  // dipanggil pakai `message` yang SAMA dengan yang di-`res.json`).
+  // Dedupe LAMA cuma cek `m.id === msg.id` — itu TIDAK PERNAH bisa nangkep
+  // race ini, karena entry optimistic-nya masih id="temp-..." sedangkan
+  // echo socket sudah bawa id ASLI dari DB, jadi dua-duanya keliatan "beda
+  // pesan" padahal sama, hasilnya 2 bubble utk 1 pesan — nyisip 1 baris
+  // BARU ke tengah list yang di-render itulah yang bikin FlashList
+  // reflow/loncat (bukan cuma soal key berubah seperti bug sebelumnya).
+  //
+  // Fix: cocokkan JUGA by `clientId` (dibuat sekali di ChatScreen.js#handleSend,
+  // ikut dikirim ke backend & di-echo balik di response DAN di payload
+  // socket — lihat conversations.js). Kalau ketemu match (baik by id exact
+  // ATAU by clientId), MERGE ke entry yang SUDAH ADA (pertahankan _key-nya),
+  // JANGAN append baris baru — apa pun jalur mana yang tiba lebih dulu.
   appendMessage: (convId, msg) => set((state) => {
     const list = state.messagesByConvId[convId] || [];
-    // Hindari duplikat — bisa terjadi kalau event socket & optimistic update tumpang tindih
-    if (list.some((m) => m.id === msg.id)) return {};
+    const existingIdx = list.findIndex((m) => m.id === msg.id || (msg.clientId && m.clientId === msg.clientId));
+    if (existingIdx !== -1) {
+      const updatedList = [...list];
+      updatedList[existingIdx] = { ...updatedList[existingIdx], ...msg, _key: updatedList[existingIdx]._key };
+      return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
+    }
     return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...list, ensureKey(msg)] } };
   }),
 
@@ -55,14 +78,20 @@ export const useMessageStore = create((set) => ({
   // keyExtractor tidak melihat ini sebagai cell baru (lihat catatan
   // ensureKey di atas). id/externalId/semua field lain tetap diganti utuh
   // ke nilai asli dari server seperti sebelumnya.
+  //
+  // Kalau echo socket (lihat appendMessage di atas) SUDAH LEBIH DULU
+  // merge entry ini ke id asli (urutan tiba bisa kebalik — socket vs
+  // response HTTP, siapa lebih cepat tidak pasti), tempId ini sudah tidak
+  // ada lagi di list → findIndex gagal → sengaja no-op (return {}), bukan
+  // fallback ke .map yang toh tidak mengubah apa pun tapi tetap bikin
+  // reference array baru (re-render sia-sia).
   replaceTempMessage: (convId, tempId, realMsg) => set((state) => {
     const list = state.messagesByConvId[convId] || [];
-    return {
-      messagesByConvId: {
-        ...state.messagesByConvId,
-        [convId]: list.map((m) => (m.id === tempId ? { ...realMsg, _key: m._key || tempId } : m)),
-      },
-    };
+    const idx = list.findIndex((m) => m.id === tempId);
+    if (idx === -1) return {};
+    const updatedList = [...list];
+    updatedList[idx] = { ...realMsg, _key: updatedList[idx]._key || tempId };
+    return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
   }),
 
   // Tandai pesan optimistic gagal terkirim (setelah outbox habis retry) —

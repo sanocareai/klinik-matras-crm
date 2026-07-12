@@ -121,10 +121,14 @@ export const api = {
   // pesan — endpoint baru Fase F, terpisah dari side-effect GET .../messages.
   markConversationRead: (conversationId) =>
     request(`/conversations/${conversationId}/read`, { method: "POST" }),
-  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null) =>
+  // clientId: opsional — dibuat sekali di useSendMessage.js#onMutate, dikirim
+  // ke backend & di-echo balik di response DAN payload socket message:new
+  // (lihat backend/src/routes/conversations.js) supaya frontend bisa
+  // rekonsiliasi entry optimistic dengan echo socket, lihat messageStore.js#upsertMessage.
+  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null, clientId = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, quotedMessageId, replyToId }),
+      body: JSON.stringify({ content, quotedMessageId, replyToId, clientId }),
     }),
   forwardMessage: (sourceConvId, messageId, targetConversationId) =>
     request(`/conversations/${sourceConvId}/forward`, {

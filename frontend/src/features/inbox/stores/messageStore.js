@@ -3,43 +3,72 @@ import { useConversationStore } from "./conversationStore.js";
 
 const EMPTY_ARR = [];
 
+// Key stabil per cell, dibuat SEKALI saat pesan pertama masuk store (baik
+// optimistic maupun dari server/socket) dan TIDAK PERNAH berubah lagi —
+// beda dari `id`/`externalId` yang boleh berganti (temp→real, atau
+// null→terisi). computeItemKey di MessageList.jsx pakai ini, BUKAN `id`
+// langsung, supaya react-virtuoso melihat "update cell yang sudah ada"
+// (bukan "hapus lama + pasang baru") saat entry optimistic direkonsiliasi.
+function ensureKey(m) {
+  return m._key ? m : { ...m, _key: m.id };
+}
+
+// upsertMessage — SATU jalur reconciliation dipakai SEMUA sumber pesan
+// (optimistic send, response HTTP, event socket message:new, refetch SSE).
+// Root cause duplikat bubble: pesan outbound yang KITA kirim sendiri
+// datang balik lewat 2-3 jalur terpisah yang dulu SEMUA manggil
+// appendMessage yang cuma cek `m.id === msg.id` — tidak pernah nangkep
+// race antara entry optimistic (id="temp-...") dan echo socket/response
+// (id asli dari DB), jadi nyisip baris baru per jalur yang datang.
+//
+// Match by (urut prioritas): id persis → externalId persis → clientId
+// (dibuat sekali saat optimistic-send, diteruskan ke backend & di-echo
+// balik di response + payload socket, lihat api.js#sendMessage &
+// backend/src/routes/conversations.js) → fallback heuristik utk pesan
+// lama tanpa clientId (OUTBOUND, status "sending", content sama persis).
+// Match → MERGE field ke entry yang SUDAH ADA (pertahankan _key), TIDAK
+// PERNAH remove+insert. Tidak match → append normal.
+function findMatchIndex(list, msg) {
+  return list.findIndex((m) => {
+    if (m.id === msg.id) return true;
+    if (msg.externalId && m.externalId === msg.externalId) return true;
+    if (msg.clientId && m.clientId === msg.clientId) return true;
+    if (!msg.clientId && !m.clientId && m.direction === "OUTBOUND" && msg.direction === "OUTBOUND"
+        && m.status === "sending" && m.content === msg.content) return true;
+    return false;
+  });
+}
+
 export const useMessageStore = create((set) => ({
   messagesByConvId: {},   // { [convId]: Message[] }
   hasMoreByConvId: {},    // { [convId]: boolean } — masih ada pesan lama untuk di-load
 
   setMessages: (convId, msgs, hasMore = false) => set((state) => ({
-    messagesByConvId: { ...state.messagesByConvId, [convId]: msgs },
+    messagesByConvId: { ...state.messagesByConvId, [convId]: msgs.map(ensureKey) },
     hasMoreByConvId: { ...state.hasMoreByConvId, [convId]: hasMore },
   })),
 
-  appendMessage: (convId, msg) => set((state) => {
+  upsertMessage: (convId, msg) => set((state) => {
     const list = state.messagesByConvId[convId] || [];
-    // Hindari duplikat — bisa terjadi kalau event socket & optimistic update tumpang tindih
-    if (list.some((m) => m.id === msg.id)) return {};
-    return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...list, msg] } };
+    const idx = findMatchIndex(list, msg);
+    if (idx !== -1) {
+      const updatedList = [...list];
+      updatedList[idx] = { ...updatedList[idx], ...msg, _key: updatedList[idx]._key };
+      return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
+    }
+    return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...list, ensureKey(msg)] } };
   }),
 
   // Load pesan lebih lama (infinite scroll ke atas) — ditaruh di depan array.
   prependMessages: (convId, olderMsgs, hasMore) => set((state) => {
     const list = state.messagesByConvId[convId] || [];
     const existingIds = new Set(list.map((m) => m.id));
-    const fresh = olderMsgs.filter((m) => !existingIds.has(m.id));
+    const fresh = olderMsgs.filter((m) => !existingIds.has(m.id)).map(ensureKey);
     return {
       messagesByConvId: { ...state.messagesByConvId, [convId]: [...fresh, ...list] },
       hasMoreByConvId: hasMore !== undefined
         ? { ...state.hasMoreByConvId, [convId]: hasMore }
         : state.hasMoreByConvId,
-    };
-  }),
-
-  // Ganti pesan sementara (optimistic, id = tempId) dengan pesan asli dari server.
-  replaceTempMessage: (convId, tempId, realMsg) => set((state) => {
-    const list = state.messagesByConvId[convId] || [];
-    return {
-      messagesByConvId: {
-        ...state.messagesByConvId,
-        [convId]: list.map((m) => (m.id === tempId ? realMsg : m)),
-      },
     };
   }),
 

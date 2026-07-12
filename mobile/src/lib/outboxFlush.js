@@ -11,11 +11,17 @@ async function flushOutbox() {
   const { queue } = useOutboxStore.getState();
   for (const item of queue) {
     try {
+      // item.clientId (kalau ada — cuma ada utk item yang di-enqueue dari
+      // ChatScreen.js sejak fix double-append, item lama dari sebelum fix
+      // ini tidak akan punya field ini, wajar) diteruskan lagi supaya echo
+      // socket dari pengiriman ulang ini TETAP di-merge ke entry optimistic
+      // yang sama, bukan nyisip baris baru — lihat messageStore.js#appendMessage.
       const msg = await api.sendMessage(
         item.convId,
         item.payload.content,
         item.payload.quotedMessageId || null,
         item.payload.replyToId || null,
+        item.clientId || null,
       );
       useMessageStore.getState().replaceTempMessage(item.convId, item.tempId, msg);
       useOutboxStore.getState().dequeue(item.tempId);

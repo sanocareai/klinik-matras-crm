@@ -331,7 +331,12 @@ conversationRouter.post("/:id/read", async (req, res) => {
 // quotedMessageId: WAHA externalId pesan yang dikutip (opsional, untuk reply/quote)
 // replyToId: DB id pesan yang dikutip (opsional, untuk simpan relasi di DB)
 conversationRouter.post("/:id/messages", async (req, res) => {
-  const { content, quotedMessageId, replyToId } = req.body;
+  // clientId: opsional, dibuat mobile/web SEKALI saat pesan optimistic
+  // dibuat (lihat ChatScreen.js#handleSend) — TIDAK disimpan ke DB (murni
+  // utk rekonsiliasi client-side antara response HTTP ini dan echo
+  // Socket.IO message:new yang sama-sama membawa objek Message ini ke
+  // client yang sama, lihat catatan panjang di messageStore.js#appendMessage).
+  const { content, quotedMessageId, replyToId, clientId } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: "Pesan kosong" });
 
   const conversation = await prisma.conversation.findUnique({
@@ -388,7 +393,10 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     where: { id: conversation.id },
     data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, null) },
   });
-  emitNewMessage(conversation.id, message);
+  // Tempel clientId ke payload (BUKAN ke row DB) sebelum di-broadcast/
+  // dikembalikan — lihat catatan di atas.
+  const messagePayload = clientId ? { ...message, clientId } : message;
+  emitNewMessage(conversation.id, messagePayload);
   emitConversationUpdate(updatedConvSend);
 
   // Auto-assign lead ke sales yang pertama kali balas — TIDAK berlaku untuk
@@ -408,7 +416,7 @@ conversationRouter.post("/:id/messages", async (req, res) => {
     }
   }
 
-  res.status(201).json(message);
+  res.status(201).json(messagePayload);
 });
 
 // Edit pesan OUTBOUND yang sudah terkirim — pola WhatsApp asli: cuma pesan

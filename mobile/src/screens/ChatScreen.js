@@ -257,8 +257,16 @@ export default function ChatScreen({ route, navigation }) {
     useComposerStore.getState().clearComposer(conversationId);
 
     const tempId = `temp-${Date.now()}`;
+    // clientId ikut dikirim ke backend & di-echo balik di response HTTP
+    // MAUPUN payload socket message:new (lihat conversations.js) — dipakai
+    // messageStore.js#appendMessage supaya echo socket dari pesan yang KITA
+    // kirim sendiri di-MERGE ke entry optimistic ini, bukan nyisip baris
+    // baru (itu penyebab "loncat" yang beda dari bug key-instability
+    // sebelumnya — lihat catatan panjang di messageStore.js).
+    const clientId = `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     useMessageStore.getState().appendMessage(conversationId, {
       id: tempId,
+      clientId,
       conversationId,
       direction: "OUTBOUND",
       content,
@@ -270,14 +278,14 @@ export default function ChatScreen({ route, navigation }) {
 
     try {
       const msg = await api.sendMessage(
-        conversationId, content, currentReply?.externalId || null, currentReply?.id || null,
+        conversationId, content, currentReply?.externalId || null, currentReply?.id || null, clientId,
       );
       useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg);
     } catch (err) {
       // Gagal (kemungkinan offline di lapangan) — antre, dicoba otomatis lagi
       // begitu koneksi kembali (lihat src/lib/outboxFlush.js).
       useOutboxStore.getState().enqueue({
-        convId: conversationId, tempId,
+        convId: conversationId, tempId, clientId,
         payload: { content, quotedMessageId: currentReply?.externalId || null, replyToId: currentReply?.id || null },
       });
     } finally {
@@ -434,19 +442,23 @@ export default function ChatScreen({ route, navigation }) {
 
   const handleRetry = useCallback((m) => {
     const tempId = `temp-${Date.now()}`;
+    // clientId baru per percobaan retry — sama alasannya dengan handleSend,
+    // supaya echo socket dari kiriman ulang ini juga di-merge, bukan nyisip
+    // baris baru (lihat messageStore.js#appendMessage).
+    const clientId = `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     useMessageStore.setState((state) => ({
       messagesByConvId: {
         ...state.messagesByConvId,
         [conversationId]: (state.messagesByConvId[conversationId] || [])
           .filter((x) => x.id !== m.id)
-          .concat([{ ...m, id: tempId, status: "sending" }]),
+          .concat([{ ...m, id: tempId, clientId, status: "sending" }]),
       },
     }));
     scrollToBottomSoon();
-    api.sendMessage(conversationId, m.content, m.replyTo?.externalId || null, m.replyTo?.id || null)
+    api.sendMessage(conversationId, m.content, m.replyTo?.externalId || null, m.replyTo?.id || null, clientId)
       .then((msg) => useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg))
       .catch(() => useOutboxStore.getState().enqueue({
-        convId: conversationId, tempId, payload: { content: m.content },
+        convId: conversationId, tempId, clientId, payload: { content: m.content },
       }));
   }, [conversationId]);
 

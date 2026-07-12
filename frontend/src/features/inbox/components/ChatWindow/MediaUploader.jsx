@@ -134,7 +134,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
         const msg = await uploadWithProgress(conversationId, fd, (pct) => {
           setProgressByUid((p) => ({ ...p, [item.uid]: pct }));
         });
-        useMessageStore.getState().appendMessage(conversationId, msg);
+        useMessageStore.getState().upsertMessage(conversationId, msg);
         setProgressByUid((p) => ({ ...p, [item.uid]: 100 }));
       } catch (err) {
         setItems((prev) => prev.map((i) => (i.uid === item.uid ? { ...i, error: err.message } : i)));

@@ -33,7 +33,11 @@ function buildItems(messages) {
       items.push({ type: "divider", key: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
       lastDateKey = dateKey;
     }
-    items.push({ type: "message", key: m.id, message: m });
+    // key: pakai _key stabil (lihat messageStore.js#ensureKey), BUKAN m.id
+    // langsung — id berubah saat entry optimistic (temp-...) direkonsiliasi
+    // jadi id asli DB, kalau computeItemKey ikut berubah Virtuoso melihatnya
+    // sebagai cell baru (remove+insert) alih-alih update in place.
+    items.push({ type: "message", key: m._key || m.id, message: m });
   }
   return items;
 }

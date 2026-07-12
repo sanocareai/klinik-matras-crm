@@ -17,7 +17,11 @@ export function useSocketEvents() {
       // conversationId sebagai field native-nya sendiri — lihat
       // backend/src/socket.js#emitNewMessage.
       if (!message?.conversationId) return;
-      useMessageStore.getState().appendMessage(message.conversationId, message);
+      // upsertMessage (bukan append) — pesan OUTBOUND yang kita kirim sendiri
+      // di-echo balik lewat room socket ini juga (broadcast ke seluruh room
+      // termasuk pengirim), dicocokkan ke entry optimistic via clientId/id,
+      // lihat messageStore.js#upsertMessage.
+      useMessageStore.getState().upsertMessage(message.conversationId, message);
       useConversationStore.getState().bumpConversation(
         message.conversationId,
         message.content || (message.mediaType ? `[${message.mediaType}]` : undefined),

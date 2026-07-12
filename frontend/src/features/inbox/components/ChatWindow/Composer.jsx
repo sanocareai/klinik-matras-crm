@@ -250,7 +250,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
 
       {showProductPicker && (
         <ProductPicker conversation={conversation} onClose={() => setShowProductPicker(false)}
-          onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().appendMessage(conversationId, m)); setShowProductPicker(false); }} />
+          onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().upsertMessage(conversationId, m)); setShowProductPicker(false); }} />
       )}
 
       {editingMessage ? (

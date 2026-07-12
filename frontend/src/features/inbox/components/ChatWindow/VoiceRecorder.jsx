@@ -126,7 +126,7 @@ export default function VoiceRecorder({ conversationId }) {
       const fd = new FormData();
       fd.append("file", preview.blob, `voice-${Date.now()}.${ext}`);
       const msg = await api.sendMedia(conversationId, fd);
-      useMessageStore.getState().appendMessage(conversationId, msg);
+      useMessageStore.getState().upsertMessage(conversationId, msg);
       discardPreview();
     } catch (err) {
       alert("Gagal kirim pesan suara: " + err.message);
