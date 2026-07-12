@@ -3,12 +3,15 @@
 // varian teks/foto/video/audio/dokumen, ack ticks, reply quote, forwarded
 // label, long-press → Reply/Forward/Salin. memo supaya list tidak
 // re-render seluruh bubble tiap ada pesan baru masuk.
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, Linking, Alert, Modal,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown, useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, interpolateColor, runOnJS,
+} from "react-native-reanimated";
 import {
   Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban,
 } from "lucide-react-native";
@@ -17,7 +20,12 @@ import { tokens } from "../constants/theme";
 import { clockTime } from "../utils/format";
 import AudioPlayer from "./AudioPlayer";
 import PressableScale from "./PressableScale";
-import { lightHaptic } from "../lib/haptics";
+import { lightHaptic, mediumHaptic } from "../lib/haptics";
+
+const SWIPE_REPLY_THRESHOLD = 60; // px geser sebelum reply ter-trigger (spec)
+const SWIPE_REPLY_MAX = 84;       // batas visual geser bubble, jangan kabur terlalu jauh
+const HIGHLIGHT_HOLD_MS = 1100;   // berapa lama background kuning bertahan penuh sebelum fade
+const HIGHLIGHT_FADE_MS = 400;    // durasi fade balik ke normal (total ~1.5 detik sesuai spec)
 
 // Backend Message.ack: 0 pending, 1 sent, 2 delivered, 3 read — sama
 // dengan frontend/src/features/inbox/utils/ackLevel.js. #34B7F1 = biru
@@ -176,113 +184,206 @@ function MessageBubbleBase({
     }
   }
 
+  // ── Swipe to reply — inbound geser KANAN, outbound geser KIRI (pola WA
+  // asli). Dibangun dari nol (belum ada gesture/swipe apapun di bubble
+  // sebelum ini, cuma long-press action sheet) pakai Gesture.Pan() UI-thread
+  // (BUKAN state React per-frame — lihat catatan lag scroll FlashList
+  // sebelumnya, hal sama berlaku di sini: banyak bubble sekaligus di layar,
+  // re-render React per gesture-update akan lag).
+  //
+  // activeOffsetX + failOffsetY: WAJIB supaya tidak rebutan gesture dengan
+  // scroll vertikal FlashList — Pan ini baru "menang"/aktif kalau user sudah
+  // geser >10px HORIZONTAL DULU; kalau gerakan vertikal (scroll) duluan yang
+  // >12px, Pan ini otomatis gagal/dilepas ke scroll (fail-offset), FlashList
+  // yang menang. Sama prinsipnya dengan Swipeable di ConversationItem.js
+  // (sudah terbukti koeksis normal dengan PressableScale/touchable di
+  // dalamnya), cuma di sini custom (translateX+reveal icon) bukan Swipeable
+  // bawaan, karena butuh reveal ikon proporsional ke jarak geser, bukan
+  // panel aksi penuh.
+  const canSwipeReply = !isSending && !isFailed && !isRevoked && !!onReply;
+  const translateX = useSharedValue(0);
+  const replyIconProgress = useSharedValue(0);
+  const hapticFired = useSharedValue(false);
+
+  function fireReply() {
+    onReply?.(m);
+  }
+
+  const panGesture = Gesture.Pan()
+    .enabled(canSwipeReply)
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-12, 12])
+    .onUpdate((e) => {
+      let dx = e.translationX;
+      if (isOut) {
+        dx = Math.min(0, dx);
+        dx = Math.max(dx, -SWIPE_REPLY_MAX);
+      } else {
+        dx = Math.max(0, dx);
+        dx = Math.min(dx, SWIPE_REPLY_MAX);
+      }
+      translateX.value = dx;
+      const progress = Math.min(1, Math.abs(dx) / SWIPE_REPLY_THRESHOLD);
+      replyIconProgress.value = progress;
+      if (progress >= 1 && !hapticFired.value) {
+        hapticFired.value = true;
+        runOnJS(mediumHaptic)();
+      } else if (progress < 1 && hapticFired.value) {
+        hapticFired.value = false;
+      }
+    })
+    .onEnd(() => {
+      const passed = Math.abs(translateX.value) >= SWIPE_REPLY_THRESHOLD;
+      translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
+      replyIconProgress.value = withTiming(0, { duration: 150 });
+      if (passed) runOnJS(fireReply)();
+    });
+
+  const swipeAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+  const replyIconAnimStyle = useAnimatedStyle(() => ({
+    opacity: replyIconProgress.value,
+    transform: [{ scale: 0.6 + replyIconProgress.value * 0.4 }],
+  }));
+
+  // ── Highlight "go to reply" — muncul instan (spec: langsung kelihatan
+  // begitu di-scroll-ke), bertahan ~1.1 detik, lalu FADE (bukan instan
+  // hilang) balik ke warna bubble asli — total ~1.5 detik sesuai spec.
+  // baseBubbleColor ikut isFailed supaya fade-back tidak "menghapus" warna
+  // pink bubbleFailed secara tidak sengaja.
+  const highlightProgress = useSharedValue(0);
+  useEffect(() => {
+    if (highlighted) {
+      highlightProgress.value = 1;
+      highlightProgress.value = withDelay(HIGHLIGHT_HOLD_MS, withTiming(0, { duration: HIGHLIGHT_FADE_MS }));
+    }
+  }, [highlighted]);
+  const baseBubbleColor = isFailed ? "#fee2e2" : (isOut ? tokens.color.accent : tokens.color.card);
+  const highlightAnimStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(highlightProgress.value, [0, 1], [baseBubbleColor, "#fef9c3"]),
+  }));
+
   return (
     // entering: fade + slide-in ringan SEKALI saat bubble ini pertama mount —
     // memo() di bawah (lihat export) mencegah remount tiap FlashList recycle
     // cell dengan pesan lain, jadi animasi ini tidak mengganggu recycling,
     // sama seperti pola yang sudah dipakai ConversationItem.js.
     <Animated.View entering={FadeInDown.duration(180)} style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
-      <PressableScale
-        onLongPress={() => { if (!isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
-        style={[
-          styles.bubble,
-          isOut ? styles.bubbleOut : styles.bubbleIn,
-          highlighted && styles.bubbleHighlight,
-          isFailed && styles.bubbleFailed,
-        ]}
+      {/* Ikon reply muncul dari sisi yang digeser — kiri utk inbound (geser
+          kanan), kanan utk outbound (geser kiri) — opacity+scale ikut jarak
+          geser (0 di posisi diam, 1 begitu lewat threshold). */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.replyIconWrap, isOut ? styles.replyIconRight : styles.replyIconLeft, replyIconAnimStyle]}
       >
-        {!isOut && isGroup && m.senderName && (
-          <Text style={styles.senderName}>{m.senderName}</Text>
-        )}
+        <Reply size={16} color={tokens.color.accent} strokeWidth={2.2} />
+      </Animated.View>
 
-        {m.replyTo && (
-          <TouchableOpacity
-            style={styles.quote}
-            onPress={() => onJumpToReply?.(m.replyTo.id)}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={swipeAnimStyle}>
+          <PressableScale
+            onLongPress={() => { if (!isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
+            style={[
+              styles.bubble,
+              isOut ? styles.bubbleOut : styles.bubbleIn,
+              highlightAnimStyle,
+            ]}
           >
-            <Text style={styles.quoteAuthor}>
-              {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
-            </Text>
-            <Text style={styles.quoteText} numberOfLines={2}>
-              {m.replyTo.isRevoked
-                ? "Pesan ini telah dihapus"
-                : STRUCTURED_TYPES.has(m.replyTo.mediaType)
-                ? MEDIA_LABEL[m.replyTo.mediaType]
-                : (m.replyTo.content || (m.replyTo.mediaType ? MEDIA_LABEL[m.replyTo.mediaType] : "Pesan"))}
-            </Text>
-          </TouchableOpacity>
-        )}
+            {!isOut && isGroup && m.senderName && (
+              <Text style={styles.senderName}>{m.senderName}</Text>
+            )}
 
-        {m.forwarded && (
-          <View style={styles.forwardedRow}>
-            <Forward size={11} color={tokens.color.textMuted} strokeWidth={2} />
-            <Text style={styles.forwarded}>Diteruskan</Text>
-          </View>
-        )}
-
-        {isRevoked ? (
-          // Soft-delete (WAHA message.revoked) — row TETAP ADA di DB, bubble
-          // tampilkan penanda "dihapus" (pola WhatsApp asli), BUKAN bubble
-          // kosong/hilang. Tidak render media/text asli sama sekali walau
-          // masih ada sisa data lama di kolom lain.
-          <View style={styles.revokedRow}>
-            <Ban size={13} color={isOut ? "rgba(255,255,255,0.8)" : tokens.color.textMuted} strokeWidth={2} />
-            <Text style={[styles.revokedText, isOut && styles.revokedTextOut]}>Pesan ini telah dihapus</Text>
-          </View>
-        ) : (
-          <>
-            {m.mediaType === "image" && m.mediaUrl && (
-              <TouchableOpacity onPress={() => onOpenMedia?.(m)}>
-                <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.image} resizeMode="cover" />
+            {m.replyTo && (
+              <TouchableOpacity
+                style={styles.quote}
+                onPress={() => onJumpToReply?.(m.replyTo.id)}
+              >
+                <Text style={styles.quoteAuthor}>
+                  {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
+                </Text>
+                <Text style={styles.quoteText} numberOfLines={2}>
+                  {m.replyTo.isRevoked
+                    ? "Pesan ini telah dihapus"
+                    : STRUCTURED_TYPES.has(m.replyTo.mediaType)
+                    ? MEDIA_LABEL[m.replyTo.mediaType]
+                    : (m.replyTo.content || (m.replyTo.mediaType ? MEDIA_LABEL[m.replyTo.mediaType] : "Pesan"))}
+                </Text>
               </TouchableOpacity>
             )}
-            {m.mediaType === "video" && m.mediaUrl && (
-              <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
-                <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
-                <Text style={styles.videoLabel}>Video</Text>
+
+            {m.forwarded && (
+              <View style={styles.forwardedRow}>
+                <Forward size={11} color={tokens.color.textMuted} strokeWidth={2} />
+                <Text style={styles.forwarded}>Diteruskan</Text>
+              </View>
+            )}
+
+            {isRevoked ? (
+              // Soft-delete (WAHA message.revoked) — row TETAP ADA di DB, bubble
+              // tampilkan penanda "dihapus" (pola WhatsApp asli), BUKAN bubble
+              // kosong/hilang. Tidak render media/text asli sama sekali walau
+              // masih ada sisa data lama di kolom lain.
+              <View style={styles.revokedRow}>
+                <Ban size={13} color={isOut ? "rgba(255,255,255,0.8)" : tokens.color.textMuted} strokeWidth={2} />
+                <Text style={[styles.revokedText, isOut && styles.revokedTextOut]}>Pesan ini telah dihapus</Text>
+              </View>
+            ) : (
+              <>
+                {m.mediaType === "image" && m.mediaUrl && (
+                  <TouchableOpacity onPress={() => onOpenMedia?.(m)}>
+                    <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.image} resizeMode="cover" />
+                  </TouchableOpacity>
+                )}
+                {m.mediaType === "video" && m.mediaUrl && (
+                  <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
+                    <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
+                    <Text style={styles.videoLabel}>Video</Text>
+                  </TouchableOpacity>
+                )}
+                {m.mediaType === "sticker" && m.mediaUrl && (
+                  // Stiker WhatsApp = WebP transparan kecil — TIDAK pakai TouchableOpacity/
+                  // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
+                  // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
+                  // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
+                  <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
+                )}
+                {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
+                {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
+                {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
+                  <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
+                ))}
+                {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
+                  <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
+                ))}
+                {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
+                  <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
+                ))}
+                {hasMedia && !m.mediaUrl && !isStructured && (
+                  <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
+                )}
+
+                {!!text && <Text style={[styles.text, isOut && styles.textOut]}>{text}</Text>}
+              </>
+            )}
+
+            <View style={styles.metaRow}>
+              {isSending && <Clock size={10} color={tokens.color.textMuted} strokeWidth={2.2} style={styles.metaIcon} />}
+              {!!m.editedAt && !isRevoked && (
+                <Text style={[styles.editedLabel, isOut && styles.editedLabelOut]}>diedit</Text>
+              )}
+              <Text style={[styles.time, isOut && styles.timeOut]}>{clockTime(m.createdAt)}</Text>
+              {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
+            </View>
+
+            {isFailed && (
+              <TouchableOpacity style={styles.retryBtn} onPress={() => onRetry?.(m)}>
+                <Text style={styles.retryText}>Gagal terkirim — Coba lagi</Text>
               </TouchableOpacity>
             )}
-            {m.mediaType === "sticker" && m.mediaUrl && (
-              // Stiker WhatsApp = WebP transparan kecil — TIDAK pakai TouchableOpacity/
-              // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
-              // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
-              // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
-              <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
-            )}
-            {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
-            {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
-            {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
-              <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
-            ))}
-            {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
-              <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
-            ))}
-            {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
-              <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
-            ))}
-            {hasMedia && !m.mediaUrl && !isStructured && (
-              <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
-            )}
-
-            {!!text && <Text style={[styles.text, isOut && styles.textOut]}>{text}</Text>}
-          </>
-        )}
-
-        <View style={styles.metaRow}>
-          {isSending && <Clock size={10} color={tokens.color.textMuted} strokeWidth={2.2} style={styles.metaIcon} />}
-          {!!m.editedAt && !isRevoked && (
-            <Text style={[styles.editedLabel, isOut && styles.editedLabelOut]}>diedit</Text>
-          )}
-          <Text style={[styles.time, isOut && styles.timeOut]}>{clockTime(m.createdAt)}</Text>
-          {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
-        </View>
-
-        {isFailed && (
-          <TouchableOpacity style={styles.retryBtn} onPress={() => onRetry?.(m)}>
-            <Text style={styles.retryText}>Gagal terkirim — Coba lagi</Text>
-          </TouchableOpacity>
-        )}
-      </PressableScale>
+          </PressableScale>
+        </Animated.View>
+      </GestureDetector>
 
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
         <TouchableOpacity style={styles.actionOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
@@ -324,8 +425,15 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.card, borderBottomLeftRadius: tokens.radius.bubbleTail,
     ...tokens.shadow.soft, shadowOpacity: 0.05, shadowRadius: 6, elevation: 1,
   },
-  bubbleHighlight: { backgroundColor: "#fef9c3" },
-  bubbleFailed: { backgroundColor: "#fee2e2" },
+  // bubbleHighlight & bubbleFailed (background kuning/pink) sekarang
+  // dihitung di highlightAnimStyle (reanimated, animated + fade) — lihat
+  // baseBubbleColor di komponen, bukan style statis lagi.
+  replyIconWrap: {
+    position: "absolute", top: "50%", marginTop: -14, width: 28, height: 28, borderRadius: 14,
+    alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.subtle, zIndex: 1,
+  },
+  replyIconLeft: { left: 4 },
+  replyIconRight: { right: 4 },
   senderName: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, marginBottom: 2 },
   quote: {
     borderLeftWidth: 3, borderLeftColor: tokens.color.accent, backgroundColor: "rgba(0,0,0,0.06)",

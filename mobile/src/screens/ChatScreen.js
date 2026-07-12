@@ -175,9 +175,18 @@ export default function ChatScreen({ route, navigation }) {
   // tiap keystroke di composer TextInput!), bikin SEMUA bubble yang lagi
   // kelihatan re-render walau pesannya sendiri tidak berubah — memo() di
   // MessageBubble jadi percuma. Ini akar masalah lag scroll MessageList.
+  // Go-to-message: backend GET /:id/messages balikin SELURUH riwayat sekali
+  // fetch (TIDAK ADA pagination server, lihat catatan file di atas) — jadi
+  // "pesan belum ter-load karena di luar batch pagination" TIDAK BISA
+  // terjadi di app ini selama `allMessages` (dari store, hasil fetch awal)
+  // sudah lengkap; findIndex === -1 di bawah cuma berarti id-nya benar-benar
+  // tidak ada (data rusak/hapus permanen), bukan "belum di-load". Yang
+  // memang perlu "dimuat lebih banyak" hanyalah WINDOW LOKAL (visibleCount,
+  // demi performa render, bukan demi data) — itu yang diperlebar di bawah,
+  // tidak perlu prependMessages/fetch jaringan tambahan.
   const scrollToMessage = useCallback((id) => {
     const rawIndex = allMessages.findIndex((m) => m.id === id);
-    if (rawIndex === -1) return; // pesan belum ke-load sama sekali di percakapan ini
+    if (rawIndex === -1) return; // id tidak ditemukan sama sekali di riwayat percakapan ini
     const needed = allMessages.length - rawIndex + 5;
     if (needed > visibleCount) {
       pendingScrollIdRef.current = id;
