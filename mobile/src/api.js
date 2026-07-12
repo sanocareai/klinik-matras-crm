@@ -58,8 +58,14 @@ async function request(path, options = {}) {
     }
     if (!res.ok) {
       const text = await res.text();
-      let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(text).error || msg; } catch {}
+      // BUG (fix): fallback lama "Terjadi kesalahan" menelan body respons
+      // asli kalau server tidak balikin JSON {error: "..."} yang rapi (mis.
+      // HTML error page dari Nginx, atau JSON tanpa field "error") — jadi
+      // user/dev sama-sama tidak tahu apa yang sebenarnya gagal. Fallback
+      // sekarang tampilkan body mentah + status code, bukan pesan generik.
+      let msg;
+      try { msg = JSON.parse(text).error; } catch {}
+      if (!msg) msg = text ? `${res.status}: ${text.slice(0, 300)}` : `Error ${res.status}`;
       throw new Error(msg);
     }
     return res.json();
@@ -109,8 +115,17 @@ async function uploadFile(path, file, fields) {
       throw new Error("Sesi berakhir, silakan login kembali");
     }
     if (result.status < 200 || result.status >= 300) {
-      let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(result.body).error || msg; } catch {}
+      // BUG (fix): File.upload() (expo-file-system) TIDAK SELALU throw untuk
+      // error HTTP — status/body error dari server balik sebagai return
+      // value biasa (result.status/result.body), harus dicek manual di sini
+      // (kalau lolos tanpa cek ini, upload yang gagal di server dianggap
+      // sukses oleh caller). Fallback pesan juga tampilkan body mentah +
+      // status kalau server tidak balikin JSON {error} yang rapi, supaya
+      // gagal upload (mis. Nginx 413 body too large, 502, dsb) kelihatan
+      // jelas — bukan "Terjadi kesalahan" generik yang tidak bisa didebug.
+      let msg;
+      try { msg = JSON.parse(result.body).error; } catch {}
+      if (!msg) msg = result.body ? `${result.status}: ${result.body.slice(0, 300)}` : `Upload gagal (status ${result.status})`;
       throw new Error(msg);
     }
     return JSON.parse(result.body);
