@@ -58,12 +58,45 @@ function mimeToMediaType(mime) {
 // Lokasi, kontak (vCard), dan poll — WhatsApp punya bentuk pesan sendiri
 // untuk ini, BUKAN "media" biasa (tidak ada mimetype/URL yang bisa
 // didownload) — makanya tidak match rawMediaType/mime di atas dan dulu
-// jatuh ke fallback generik "[Pesan tidak didukung]". Struktur field
-// berikut mengikuti skema Baileys standar (dipakai WAHA NOWEB & GOWS) —
-// KALAU ternyata field sebenarnya beda di produksi, unknownType di bawah
-// tetap log key aslinya jadi gampang disesuaikan.
+// jatuh ke fallback generik "[Pesan tidak didukung]".
 // content disimpan sebagai JSON string terstruktur (bukan cuma teks) —
 // MessageBubble.js/.jsx yang parse ulang untuk render card-nya.
+//
+// STRUKTUR FIELD DI BAWAH SUDAH DIVERIFIKASI LANGSUNG dari log webhook
+// produksi nyata (docker logs backend, bukan asumsi dokumentasi Baileys
+// umum) — dua sumber tersedia, dicoba berurutan:
+//
+// 1) TOP-LEVEL NORMALIZED (msg.location / msg.vCards) — WAHA sendiri yang
+//    normalisasi ini persis seperti msg.media, SIBLING dari field itu,
+//    SELALU ada di payload (null kalau bukan tipe ini). Contoh nyata:
+//      "location": { "live": false, "latitude": "-6.40181474",
+//                     "longitude": "106.84576435", "name": "Virgo Betta Fish",
+//                     "address": "Gg. Musholla, Depok, ...", "thumbnail": "<base64>" }
+//      "vCards": ["BEGIN:VCARD\nVERSION:3.0\n...FN:Gilang\nTEL;type=CELL;waid=...:+62 856-...\nEND:VCARD"]
+//    vCards array isinya STRING vcard MENTAH (bukan object {displayName,vcard})
+//    — nama diambil dari baris "FN:" di dalam teks vcard itu sendiri.
+//    latitude/longitude datang sebagai STRING, bukan number.
+//    Sumber ini LEBIH DIANDALKAN — satu bentuk untuk kedua engine (GOWS
+//    maupun NOWEB), tidak bergantung struktur decode raw protobuf internal
+//    yang bisa beda per versi WAHA.
+// 2) FALLBACK raw _data.Message.locationMessage/contactMessage (rawMsg,
+//    lihat di bawah) — dipakai kalau field top-level di atas kosong (mis.
+//    respons endpoint riwayat yang strukturnya beda dari live webhook).
+//    Field ini JUGA sudah diverifikasi dari log nyata:
+//      locationMessage: { degreesLatitude, degreesLongitude, name, address, JPEGThumbnail }
+//      contactMessage:  { displayName, vcard }
+//      pollCreationMessageV3: { name, options: [{ optionName }], selectableOptionsCount }
+function tryParseLocationNormalized(msg) {
+  const loc = msg.location;
+  if (!loc) return null;
+  return JSON.stringify({
+    lat: loc.latitude != null ? Number(loc.latitude) : null,
+    lng: loc.longitude != null ? Number(loc.longitude) : null,
+    name: loc.name || null,
+    address: loc.address || null,
+  });
+}
+
 function tryParseLocation(rawMsg) {
   const loc = rawMsg.locationMessage;
   if (!loc) return null;
@@ -80,6 +113,23 @@ function extractPhoneFromVcard(vcard) {
   if (!vcard) return null;
   const m = vcard.match(/TEL[^:]*:([+\d\s-]+)/i);
   return m ? m[1].trim() : null;
+}
+
+// FN (Full Name) field di vCard 3.0 — nama tampilan kontak.
+function extractNameFromVcard(vcard) {
+  if (!vcard) return null;
+  const m = vcard.match(/FN:(.*)/i);
+  return m ? m[1].trim() : null;
+}
+
+function tryParseContactNormalized(msg) {
+  const vcards = msg.vCards;
+  if (!Array.isArray(vcards) || vcards.length === 0) return null;
+  const contacts = vcards.map((vcard) => ({
+    name: extractNameFromVcard(vcard) || "Kontak",
+    phone: extractPhoneFromVcard(vcard),
+  }));
+  return JSON.stringify({ contacts });
 }
 
 function tryParseContact(rawMsg) {
@@ -214,12 +264,15 @@ export function parseHistoryMessage(msg) {
   }
 
   // 3) Lokasi / kontak (vCard) / poll — bukan media biasa, tidak ada file
-  // yang perlu didownload (mediaUrl selalu null utk 3 tipe ini).
-  const locationContent = tryParseLocation(rawMsg);
+  // yang perlu didownload (mediaUrl selalu null utk 3 tipe ini). Coba
+  // field top-level normalized WAHA dulu (lebih diandalkan, lihat komentar
+  // di tryParseLocationNormalized/tryParseContactNormalized), fallback ke
+  // raw _data.Message kalau kosong.
+  const locationContent = tryParseLocationNormalized(msg) || tryParseLocation(rawMsg);
   if (locationContent) {
     return { externalId, direction, content: locationContent, mediaType: "location", mediaUrl: null, createdAt, unsupported: false, rawType: "location" };
   }
-  const contactContent = tryParseContact(rawMsg);
+  const contactContent = tryParseContactNormalized(msg) || tryParseContact(rawMsg);
   if (contactContent) {
     return { externalId, direction, content: contactContent, mediaType: "contact", mediaUrl: null, createdAt, unsupported: false, rawType: "contact" };
   }
