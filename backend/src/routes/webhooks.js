@@ -23,6 +23,23 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 // tipe ini masuk, cuma nambah latensi tanpa hasil).
 const NON_DOWNLOADABLE_MEDIA_TYPES = new Set(["location", "contact", "poll"]);
 
+// Ambil segmen ID pesan (bagian TERAKHIR setelah "_") dari id komposit WAHA
+// "true_<chatJid>_<messageId>" — dipakai untuk cocokkan Message.externalId
+// yang JID-nya bisa beda skema (LID vs c.us/nomor) dari event yang berbeda
+// utk pesan yang SAMA persis (dikonfirmasi produksi: event message.any awal
+// simpan externalId "true_6285697620076@c.us_3EB0A717...", tapi event
+// message.ack untuk pesan yang SAMA datang dengan id
+// "true_201086224863438@lid_3EB0A717..." — JID beda, tapi segmen messageId
+// terakhir IDENTIK). Exact string match gagal diam-diam kalau prefix beda,
+// ack macet di angka lama walau WAHA sudah kirim update yang benar. Sama
+// pola dengan message.revoked/message.edited di bawah yang sudah lebih dulu
+// pakai `contains` untuk alasan yang sama.
+function messageIdSegment(fullId) {
+  if (!fullId) return null;
+  const idx = fullId.lastIndexOf("_");
+  return idx === -1 ? fullId : fullId.slice(idx + 1);
+}
+
 // Deteksi engine dari request body WAHA — field "engine" adalah yang paling reliable.
 // Fallback: periksa struktur payload (_data.Info → GOWS, _data.key → NOWEB).
 function detectEngine(reqBody) {
@@ -698,13 +715,25 @@ webhookRouter.post("/waha", async (req, res) => {
       let ackedMessage = null;
       if (externalId) {
         try {
-          ackedMessage = await prisma.message.findUnique({
-            where: { externalId },
-            select: { id: true, conversationId: true, ack: true, direction: true },
-          });
+          // Match by trailing message-id segment (lihat messageIdSegment di
+          // atas), BUKAN exact externalId — payload.id event ini bisa pakai
+          // JID beda (LID) dari yang tersimpan waktu pesan pertama disimpan.
+          const idSegment = messageIdSegment(externalId);
+          ackedMessage = idSegment
+            ? await prisma.message.findFirst({
+                where: { externalId: { endsWith: idSegment } },
+                select: { id: true, externalId: true, conversationId: true, ack: true, direction: true },
+              })
+            : null;
           if (ackedMessage && ack > ackedMessage.ack) { // jangan mundur
             await prisma.message.update({ where: { id: ackedMessage.id }, data: { ack } });
-            emitMessageAck(ackedMessage.conversationId, externalId, ack);
+            // Kirim externalId yang TERSIMPAN di DB (bukan payload.id mentah
+            // dari event ini) — client-side updateAck() cari pesan by
+            // m.externalId === externalId yang dikirim; kalau kita kirim
+            // payload.id mentah (LID) padahal client simpan versi c.us,
+            // client JUGA gagal cocokkan, ack tidak update di UI real-time
+            // walau DB sudah benar.
+            emitMessageAck(ackedMessage.conversationId, ackedMessage.externalId, ack);
           }
         } catch (e) {
           console.warn("[webhook] message.ack: gagal update Message.ack:", e.message);
