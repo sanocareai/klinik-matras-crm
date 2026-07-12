@@ -11,14 +11,31 @@ try {
   Haptics = null;
 }
 
+// BUG (fix): impactAsync/notificationAsync balikin PROMISE — kalau modulnya
+// ADA secara JS (require di atas sukses, jadi try/catch sinkron TIDAK
+// kepicu) tapi native side-nya BELUM ter-link di APK yang sedang jalan,
+// promise itu REJECT secara ASYNC, bukan throw langsung. try/catch biasa
+// di sekitar pemanggilan fungsi TIDAK menangkap rejection promise —
+// hasilnya "Uncaught (in promise)" di Android walau pemanggilnya sendiri
+// sudah dibungkus try/catch. Semua pemanggilan method Haptics WAJIB lewat
+// safeHaptic() di bawah, yang menelan KEDUA jenis kegagalan (throw sinkron
+// maupun promise reject) — swipe reply, kirim pesan, dsb tetap jalan
+// normal walau getar tidak terasa sama sekali.
+function safeHaptic(fn) {
+  try {
+    const result = fn();
+    if (result && typeof result.catch === "function") result.catch(() => {});
+  } catch {}
+}
+
 export function lightHaptic() {
-  try { Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+  safeHaptic(() => Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Light));
 }
 
 export function mediumHaptic() {
-  try { Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+  safeHaptic(() => Haptics?.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
 }
 
 export function successHaptic() {
-  try { Haptics?.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+  safeHaptic(() => Haptics?.notificationAsync(Haptics.NotificationFeedbackType.Success));
 }
