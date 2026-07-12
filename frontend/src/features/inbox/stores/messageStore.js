@@ -53,7 +53,16 @@ export const useMessageStore = create((set) => ({
     const idx = findMatchIndex(list, msg);
     if (idx !== -1) {
       const updatedList = [...list];
-      updatedList[idx] = { ...updatedList[idx], ...msg, _key: updatedList[idx]._key };
+      // BUG (fix): pesan ASLI dari server (response HTTP/echo socket) tidak
+      // punya field `status` sama sekali (cuma entry optimistic yang punya,
+      // "sending"/"failed") — spread `{...old, ...msg}` TIDAK menimpa key
+      // yang tidak ada di `msg`, jadi status "sending" nyangkut selamanya
+      // di bubble walau pesannya sudah sukses terkirim (macet nunjukin ikon
+      // jam pasir, AckTicks tidak pernah muncul karena isSending selalu
+      // true). `status: msg.status ?? null` di bawah SENGAJA menimpa penuh
+      // (bukan cuma saat msg.status ada) supaya entry yang sudah rekonsiliasi
+      // ke pesan asli selalu bersih dari status optimistic lama.
+      updatedList[idx] = { ...updatedList[idx], ...msg, status: msg.status ?? null, _key: updatedList[idx]._key };
       return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
     }
     return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...list, ensureKey(msg)] } };

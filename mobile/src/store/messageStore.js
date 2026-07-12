@@ -54,7 +54,14 @@ export const useMessageStore = create((set) => ({
     const existingIdx = list.findIndex((m) => m.id === msg.id || (msg.clientId && m.clientId === msg.clientId));
     if (existingIdx !== -1) {
       const updatedList = [...list];
-      updatedList[existingIdx] = { ...updatedList[existingIdx], ...msg, _key: updatedList[existingIdx]._key };
+      // BUG (fix): pesan asli dari server tidak punya field `status` sama
+      // sekali (cuma entry optimistic yang punya "sending"/"failed") — spread
+      // `{...old, ...msg}` TIDAK menimpa key yang absen di `msg`, jadi status
+      // "sending" nyangkut selamanya di bubble walau pesan sudah sukses
+      // terkirim (macet nunjukin ikon jam pasir). `status: msg.status ?? null`
+      // SENGAJA menimpa penuh supaya entry yang sudah direkonsiliasi ke pesan
+      // asli selalu bersih dari status optimistic lama.
+      updatedList[existingIdx] = { ...updatedList[existingIdx], ...msg, status: msg.status ?? null, _key: updatedList[existingIdx]._key };
       return { messagesByConvId: { ...state.messagesByConvId, [convId]: updatedList } };
     }
     return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...list, ensureKey(msg)] } };
