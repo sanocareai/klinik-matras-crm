@@ -7,7 +7,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
-  Check, Circle, Pin, PinOff, Image as ImageIcon, Video, Mic, FileText,
+  Check, CheckCheck, Clock, Circle, Pin, PinOff, Image as ImageIcon, Video, Mic, FileText,
 } from "lucide-react-native";
 import AvatarStack from "./AvatarStack";
 import PressableScale from "./PressableScale";
@@ -25,17 +25,30 @@ function convName(c) {
   return c.customer?.name || c.customer?.phone || "Pelanggan";
 }
 
-// Preview pesan terakhir dipecah jadi { OutboundIcon, MediaIcon, text } —
-// BUKAN string dengan emoji ditempel, supaya bisa dirender sebagai ikon
-// lucide asli (spec: emoji cuma boleh di konten pesan chat user, bukan
-// ikon UI seperti label preview ini).
+// Preview pesan terakhir dipecah jadi { OutboundIcon, outboundIconColor,
+// MediaIcon, text } — BUKAN string dengan emoji ditempel, supaya bisa
+// dirender sebagai ikon lucide asli (spec: emoji cuma boleh di konten pesan
+// chat user, bukan ikon UI seperti label preview ini).
+//
+// BUG (fix): dulu OutboundIcon SELALU Check (centang 1) untuk pesan
+// OUTBOUND apapun ack-nya — jadi walau WhatsApp asli sudah tampil centang
+// biru dibaca, list Inbox tetap kelihatan centang 1 abu-abu selamanya.
+// Sekarang ikut level ack yang sebenarnya — pola warna SAMA dengan
+// AckTicks di MessageBubble.js (bubble chat): ack 0 jam kecil, ack 1
+// centang 1, ack 2 centang 2 abu-abu, ack 3 centang 2 BIRU #34B7F1.
 function lastPreviewParts(c) {
   const msg = c.messages?.[0];
-  if (!msg) return { OutboundIcon: null, MediaIcon: null, text: "Belum ada pesan" };
-  const OutboundIcon = msg.direction === "OUTBOUND" ? Check : null;
-  if (msg.content) return { OutboundIcon, MediaIcon: null, text: msg.content };
+  if (!msg) return { OutboundIcon: null, outboundIconColor: null, MediaIcon: null, text: "Belum ada pesan" };
+  let OutboundIcon = null;
+  let outboundIconColor = null;
+  if (msg.direction === "OUTBOUND") {
+    const ack = msg.ack ?? 0;
+    OutboundIcon = ack === 0 ? Clock : ack >= 2 ? CheckCheck : Check;
+    outboundIconColor = ack === 3 ? "#34B7F1" : tokens.color.textMuted;
+  }
+  if (msg.content) return { OutboundIcon, outboundIconColor, MediaIcon: null, text: msg.content };
   const MediaIcon = MEDIA_ICON[msg.mediaType] || null;
-  return { OutboundIcon, MediaIcon, text: MediaIcon ? MEDIA_LABEL[msg.mediaType] : "" };
+  return { OutboundIcon, outboundIconColor, MediaIcon, text: MediaIcon ? MEDIA_LABEL[msg.mediaType] : "" };
 }
 
 function ConversationItemBase({ id, onPress }) {
@@ -57,7 +70,7 @@ function ConversationItemBase({ id, onPress }) {
   // Sudah dibuka tapi tidak unread lagi → dim (bukan pelanggan aktif butuh perhatian)
   const dim = isRead && !isUnread;
   const previewColor = dim ? tokens.color.textMuted : isUnread ? tokens.color.textPrimary : tokens.color.textSecondary;
-  const { OutboundIcon, MediaIcon, text: previewText } = lastPreviewParts(c);
+  const { OutboundIcon, outboundIconColor, MediaIcon, text: previewText } = lastPreviewParts(c);
 
   function toggleReadUnread() {
     lightHaptic();
@@ -153,7 +166,7 @@ function ConversationItemBase({ id, onPress }) {
             </View>
             <View style={styles.bottom}>
               <View style={styles.previewRow}>
-                {OutboundIcon && <OutboundIcon size={13} color={previewColor} strokeWidth={2.4} style={styles.previewIcon} />}
+                {OutboundIcon && <OutboundIcon size={13} color={outboundIconColor} strokeWidth={2.4} style={styles.previewIcon} />}
                 {MediaIcon && <MediaIcon size={13} color={previewColor} strokeWidth={2} style={styles.previewIcon} />}
                 <Text
                   style={[styles.preview, isUnread && styles.previewUnread, dim && styles.dimText]}

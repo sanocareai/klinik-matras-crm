@@ -831,7 +831,28 @@ webhookRouter.post("/waha", async (req, res) => {
     if (!externalId) return;
     const existing = await prisma.message.findUnique({ where: { externalId } });
     if (existing) {
-      console.log("[webhook] Duplikat dibuang (externalId sudah ada):", externalId);
+      // BUG (fix): WAHA (GOWS, dikonfirmasi dari log produksi) TIDAK SELALU
+      // kirim event "message.ack"/"message.receipt" terpisah untuk progres
+      // centang (terkirim→delivered→dibaca) pesan OUTBOUND — yang terjadi
+      // malah "message"/"message.any" yang SAMA (externalId sama) di-fire
+      // ULANG dengan field top-level `ack` yang sudah ter-update, dan kode
+      // ini buang SEMUA re-fire itu sebagai "duplikat" tanpa pernah lihat
+      // field ack-nya — akibatnya Message.ack macet di nilai awal (0/1)
+      // SELAMANYA walau WhatsApp asli sudah tampil centang biru dibaca
+      // (dikonfirmasi: 10 pesan test ke satu nomor, semua ack=0 di DB,
+      // padahal re-fire message.any-nya sendiri bawa "ack":1 dst).
+      // Ambil ack dari payload (dual-engine: NOWEB di payload.ack, GOWS
+      // kadang _data.ack) dan update kalau lebih tinggi dari yang tersimpan
+      // — guard sama seperti handler message.ack/message.receipt di bawah,
+      // supaya tidak pernah mundur.
+      const freshAck = payload.ack ?? payload._data?.ack;
+      if (typeof freshAck === "number" && freshAck > existing.ack) {
+        await prisma.message.update({ where: { id: existing.id }, data: { ack: freshAck } });
+        emitMessageAck(existing.conversationId, externalId, freshAck);
+        console.log(`[webhook] Ack ter-update dari re-fire ${event}: ${externalId} ${existing.ack} → ${freshAck}`);
+      } else {
+        console.log("[webhook] Duplikat dibuang (externalId sudah ada):", externalId);
+      }
       if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${payload.chatId || payload._data?.Info?.Chat || "?"} resolved=- action=skip-dupe`);
       return;
     }
