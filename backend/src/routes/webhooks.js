@@ -730,17 +730,31 @@ webhookRouter.post("/waha", async (req, res) => {
 
     // ── Deteksi grup WhatsApp (@g.us) — SEBELUM extract phone individual ─────
     // chatId untuk pesan grup selalu berakhiran "@g.us" di semua engine WAHA.
-    // Berlaku SAMA untuk message.any (grup gate + status@g.us drop tetap jalan).
+    // Berlaku SAMA untuk message.any (grup gate + status/broadcast drop tetap jalan).
     const chatJid = payload.chatId || payload._data?.Info?.Chat || "";
 
-    // "status@g.us" = WhatsApp Status/broadcast, BUKAN grup sungguhan —
-    // secara teknis JID-nya berakhiran "@g.us" juga jadi HARUS di-gate
-    // eksplisit SEBELUM cek endsWith umum, supaya tidak nyasar kebuat jadi
-    // Conversation type=GROUP palsu (lihat scripts/backfill-group-names.js
-    // Fase 0 untuk cleanup data lama yang sudah terlanjur nyasar).
-    if (chatJid === "status@g.us") {
-      console.log("[webhook] Pesan status@g.us (WhatsApp Status broadcast) — bukan grup, dilewati.");
-      if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${chatJid} resolved=- action=dropped-group`);
+    // WhatsApp Status/Story — DUA variasi JID ditemukan di produksi:
+    // "status@g.us" (dugaan awal, jarang/tidak pernah muncul nyata) dan
+    // "status@broadcast" (JID SEBENARNYA, terkonfirmasi dari data
+    // /chats/overview WAHA). Gate lama HANYA cek "status@g.us" — status
+    // dengan chatJid "status@broadcast" LOLOS gate ini, jatuh ke jalur
+    // pesan individual biasa, lalu ter-attribusi ke SENDER-nya (kontak
+    // yang posting status itu, mis. "Indira Utami") karena extractPhone*
+    // pakai payload.from/Sender untuk pesan bukan-fromMe — BUKAN chatJid.
+    // Itu sebabnya story/status kontak nyasar masuk sebagai chat biasa di
+    // conversation customer tsb. Cek generik endsWith("@broadcast") jaga-
+    // jaga ada variasi JID broadcast lain di masa depan. PENTING: yang
+    // dicek adalah CHAT JID (tujuan/konteks pesan), BUKAN sender — sender
+    // status selalu nomor kontak biasa, itu tidak pernah jadi sinyal valid.
+    // Jaring pengaman tambahan: sebagian versi WAHA GOWS (whatsmeow) expose
+    // flag eksplisit Info.IsStatus/broadcast pada payload status — belum
+    // terverifikasi selalu ada di semua versi, jadi TIDAK dijadikan gate
+    // utama (chatJid tetap penentu utama), cuma OR tambahan kalau tersedia.
+    const isStatusFlag = !!(payload._data?.Info?.IsStatus || payload._data?.Info?.Broadcast);
+    if (chatJid === "status@g.us" || chatJid === "status@broadcast" || chatJid.endsWith("@broadcast") || isStatusFlag) {
+      const senderPreview = payload.from || payload._data?.Info?.Sender || payload._data?.Info?.SenderAlt || "?";
+      console.log(`[webhook] drop status/broadcast dari ${senderPreview} (chat=${chatJid})`);
+      if (isAnyEvent) console.log(`[webhook][any] fromMe=${!!payload.fromMe} chat=${chatJid} resolved=- action=dropped-status`);
       return;
     }
 
@@ -815,6 +829,7 @@ async function autoSyncHistory() {
       for (const msg of messages) {
         const parsed = parseHistoryMessage(msg);
         if (!parsed.externalId) continue;
+        if (parsed.isStatus) { console.log("[auto-sync] drop status/broadcast dari", phone); continue; }
         if (parsed.unsupported) console.warn("[auto-sync] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
         try {
           await prisma.message.create({

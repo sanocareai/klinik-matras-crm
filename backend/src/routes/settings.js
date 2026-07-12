@@ -141,6 +141,7 @@ settingsRouter.post("/sync-history", requireAdmin, async (req, res) => {
           for (const msg of messages) {
             const parsed = parseHistoryMessage(msg);
             if (!parsed.externalId) continue;
+            if (parsed.isStatus) { console.log("[sync-history] drop status/broadcast dari", customer.phone); continue; }
 
             // Skip kalau sudah ada (idempotent)
             const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });

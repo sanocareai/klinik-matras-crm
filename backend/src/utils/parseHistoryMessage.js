@@ -55,14 +55,38 @@ function mimeToMediaType(mime) {
   return "document";
 }
 
+// WhatsApp Status/Story — JID broadcast-nya "status@broadcast" (BUKAN
+// "status@g.us", itu beda gate — lihat webhooks.js). Status ter-attribusi
+// ke SENDER (kontak asli), jadi kalau lolos ke sini akan nyasar masuk ke
+// riwayat chat individual kontak itu. Cek generik endsWith("@broadcast")
+// jaga-jaga kalau WAHA punya JID broadcast lain di masa depan.
+function isStatusBroadcastJid(jid) {
+  return !!jid && (jid === "status@broadcast" || jid.endsWith("@broadcast"));
+}
+
 // Parse 1 pesan history WAHA jadi bentuk siap simpan ke Message.
 // Return: {
 //   externalId, direction, content, mediaType, mediaUrl, createdAt,
-//   unsupported: boolean, rawType: string|null  // unsupported=true kalau
-//   tipe pesan sama sekali tidak dikenali (bukan cuma "media tanpa URL")
+//   unsupported: boolean, rawType: string|null, isStatus: boolean
+//   // unsupported=true kalau tipe pesan sama sekali tidak dikenali (bukan
+//   // cuma "media tanpa URL"); isStatus=true → caller WAJIB skip (jangan
+//   // simpan ke Message sama sekali, ini bukan pesan individual).
 // }
 export function parseHistoryMessage(msg) {
   const externalId = msg.id || msg.key?.id || null;
+
+  // Deteksi status/broadcast SEBELUM parsing apapun lain — chatId pesan ini
+  // (bukan chatId yang diminta caller) yang menentukan, karena WAHA kadang
+  // mencampur entry status ke riwayat kontak yang memposting-nya.
+  const msgChatJid = msg.chatId || msg._data?.Info?.Chat || msg._data?.chatId || msg.from || "";
+  if (isStatusBroadcastJid(msgChatJid)) {
+    return {
+      externalId, direction: msg.fromMe ? "OUTBOUND" : "INBOUND",
+      content: null, mediaType: null, mediaUrl: null, createdAt: new Date(),
+      unsupported: false, rawType: "status", isStatus: true,
+    };
+  }
+
   const direction   = msg.fromMe ? "OUTBOUND" : "INBOUND"; // sama seperti logic message.any (webhooks.js)
 
   const tsRaw = msg.timestamp ?? msg._data?.t ?? msg._data?.Info?.Timestamp;

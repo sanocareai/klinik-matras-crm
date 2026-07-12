@@ -110,6 +110,10 @@ export async function runReconciliation() {
 
     for (const chat of chats) {
       const rawId = chat.id || "";
+      // Skip status/broadcast ("status@broadcast") — sama seperti guard di
+      // syncReadFromWaha di atas, cegah drift check nyasar coba resolve JID
+      // broadcast sebagai nomor pelanggan.
+      if (rawId === "status@broadcast" || rawId.endsWith("@broadcast")) continue;
       const phone = await normalizePhoneNumber(rawId, WAHA_SESSION);
       if (!phone) continue;
 

@@ -826,6 +826,7 @@ conversationRouter.post("/:id/sync-history", requireAdmin, async (req, res) => {
     for (const msg of messages) {
       const parsed = parseHistoryMessage(msg);
       if (!parsed.externalId) continue;
+      if (parsed.isStatus) { console.log("[sync-history:1] drop status/broadcast dari", conversation.customer.phone); continue; }
 
       const exists = await prisma.message.findUnique({ where: { externalId: parsed.externalId } });
       if (exists) continue;
