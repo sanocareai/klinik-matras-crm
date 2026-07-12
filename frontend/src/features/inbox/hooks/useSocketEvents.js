@@ -48,16 +48,26 @@ export function useSocketEvents() {
       useMessageStore.getState().updateMessage(message.id, message);
     }
 
+    // "Hapus untuk Saya" dari sesi CRM LAIN (sales/admin lain yang buka
+    // percakapan sama) — hard remove dari store lokal juga, lihat
+    // messageStore.js#removeMessage & backend/src/socket.js#emitMessageDeleted.
+    function handleMessageDeleted(payload) {
+      if (!payload?.messageId) return;
+      useMessageStore.getState().removeMessage(payload.messageId);
+    }
+
     socket.on("message:new", handleNewMessage);
     socket.on("message:ack", handleAck);
     socket.on("conversation:update", handleConversationUpdate);
     socket.on("message:update", handleMessageUpdate);
+    socket.on("message:deleted", handleMessageDeleted);
 
     return () => {
       socket.off("message:new", handleNewMessage);
       socket.off("message:ack", handleAck);
       socket.off("conversation:update", handleConversationUpdate);
       socket.off("message:update", handleMessageUpdate);
+      socket.off("message:deleted", handleMessageDeleted);
     };
   }, []);
 

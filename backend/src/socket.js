@@ -70,6 +70,16 @@ export function emitMessageUpdate(conversationId, message) {
   io?.to(`conv:${conversationId}`).emit("message:update", message);
 }
 
+// message:deleted — "Hapus untuk Saya" (local, CRM-only, TIDAK menyentuh
+// WhatsApp) menghapus row Message dari DB SUNGGUHAN (bukan soft-delete),
+// jadi client lain yang lagi buka percakapan yang sama (CRM ini dipakai
+// bareng oleh beberapa sales/admin) perlu diberitahu untuk buang bubble itu
+// dari store lokal mereka juga — beda dari message:update (isRevoked, row
+// tetap ada) yang dipakai utk "Hapus untuk Semua" (WAHA revoke asli).
+export function emitMessageDeleted(conversationId, messageId) {
+  io?.to(`conv:${conversationId}`).emit("message:deleted", { messageId });
+}
+
 // conversation:update — SLIM payload untuk daftar percakapan (kolom kiri),
 // broadcast ke SEMUA client (bukan cuma room percakapan itu) karena daftar
 // percakapan siapa saja bisa perlu tahu urutan/preview/badge terbaru.

@@ -10,11 +10,16 @@ import { api } from "../api";
 import { tokens } from "../constants/theme";
 import Avatar from "./Avatar";
 
-export default function ForwardModal({ visible, message, onClose }) {
+// messages: array opsional — dipakai forward BULK dari mode pilih
+// (ChatScreen.js#selectionMode). Kalau tidak ada, fallback ke `message`
+// tunggal (pola lama, dipakai action-sheet "Teruskan" per-bubble).
+export default function ForwardModal({ visible, message, messages, onClose }) {
   const [convs, setConvs] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [forwarding, setForwarding] = useState(false);
+
+  const items = messages?.length ? messages : (message ? [message] : []);
 
   useEffect(() => {
     if (!visible) return;
@@ -31,15 +36,17 @@ export default function ForwardModal({ visible, message, onClose }) {
   });
 
   async function handleForward(targetConvId) {
-    if (forwarding || !message) return;
+    if (forwarding || !items.length) return;
     setForwarding(true);
-    try {
-      await api.forwardMessage(message.conversationId, message.id, targetConvId);
+    const results = await Promise.allSettled(
+      items.map((m) => api.forwardMessage(m.conversationId, m.id, targetConvId))
+    );
+    setForwarding(false);
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      Alert.alert("Sebagian gagal diteruskan", `${failed} dari ${items.length} pesan gagal diteruskan.`);
+    } else {
       onClose();
-    } catch (err) {
-      Alert.alert("Gagal teruskan pesan", err.message);
-    } finally {
-      setForwarding(false);
     }
   }
 
@@ -54,11 +61,16 @@ export default function ForwardModal({ visible, message, onClose }) {
             </View>
             <TouchableOpacity onPress={onClose}><X size={20} color={tokens.color.textSecondary} strokeWidth={2.2} /></TouchableOpacity>
           </View>
-          {message && (
+          {items.length === 1 && (
             <View style={styles.quotePreview}>
               <Text style={styles.quoteText} numberOfLines={2}>
-                {message.content || (message.mediaType ? `[${message.mediaType}]` : "Pesan")}
+                {items[0].content || (items[0].mediaType ? `[${items[0].mediaType}]` : "Pesan")}
               </Text>
+            </View>
+          )}
+          {items.length > 1 && (
+            <View style={styles.quotePreview}>
+              <Text style={styles.quoteText}>{items.length} pesan dipilih</Text>
             </View>
           )}
           <TextInput

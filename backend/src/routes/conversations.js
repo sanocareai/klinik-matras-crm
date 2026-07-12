@@ -7,10 +7,10 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { sendText, sendMedia, editMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
+import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
-import { emitNewMessage, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
+import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
 // Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
 // Key: conversationId, Value: timestamp terakhir kirim read receipt ke WAHA.
@@ -473,6 +473,85 @@ conversationRouter.patch("/:id/messages/:messageId", async (req, res) => {
   });
   emitMessageUpdate(conversation.id, updated);
   res.json(updated);
+});
+
+// "Hapus untuk Semua" — revoke pesan OUTBOUND lewat WAHA, tampil ke customer
+// sebagai "Pesan ini telah dihapus" (pola WhatsApp asli). Batas waktu 2 hari
+// 12 jam SAMA dengan kebijakan WhatsApp resmi (lewat batas ini WA sendiri
+// sudah menolak revoke, jadi kita tolak lebih dulu di sini dengan pesan
+// jelas daripada biarkan gagal generik di WAHA).
+const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 60 jam
+
+conversationRouter.delete("/:id/messages/:messageId", async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== conversation.id) {
+    return res.status(404).json({ error: "Pesan tidak ditemukan" });
+  }
+  if (message.direction !== "OUTBOUND") {
+    return res.status(400).json({ error: "Hanya pesan yang Anda kirim yang bisa dihapus untuk semua" });
+  }
+  if (message.isRevoked) {
+    return res.status(400).json({ error: "Pesan ini sudah dihapus" });
+  }
+  if (!message.externalId) {
+    return res.status(400).json({ error: "Pesan ini belum tersinkron dengan WhatsApp, coba lagi sebentar" });
+  }
+  const ageMs = Date.now() - new Date(message.createdAt).getTime();
+  if (ageMs > DELETE_EVERYONE_WINDOW_MS) {
+    return res.status(400).json({ error: "Batas waktu hapus untuk semua (2 hari 12 jam sejak terkirim) sudah lewat — coba \"Hapus untuk Saya\"" });
+  }
+
+  const target = resolveSendTarget(conversation);
+  if (!target) return res.status(400).json({ error: "Tujuan kirim tidak tersedia" });
+
+  try {
+    await sendWithSessionFallback(conversation, (session) =>
+      deleteMessage(target, message.externalId, session)
+    );
+  } catch (err) {
+    if (err instanceof SessionResolutionError) {
+      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+    }
+    console.error("[delete] WAHA gagal:", err.message);
+    return res.status(502).json({ error: `Gagal hapus pesan di WhatsApp: ${err.message}` });
+  }
+
+  const updated = await prisma.message.update({
+    where: { id: message.id },
+    data: { isRevoked: true },
+  });
+  emitMessageUpdate(conversation.id, updated);
+  res.json(updated);
+});
+
+// "Hapus untuk Saya" — hard delete dari DB CRM SAJA, TIDAK memanggil WAHA
+// sama sekali (pesan tetap ada di WhatsApp customer). Berlaku utk pesan
+// arah manapun (INBOUND/OUTBOUND) & tanpa batas waktu, karena ini murni
+// membersihkan tampilan CRM, bukan tindakan ke WhatsApp asli. CATATAN:
+// CRM ini dipakai BERSAMA oleh beberapa sales/admin (bukan akun WA pribadi
+// per-user) — "untuk saya" di sini berarti "dari tampilan CRM" (semua
+// pengguna CRM), BUKAN per-akun sales individual (itu butuh tabel
+// hidden-per-user terpisah, di luar scope sekarang). emitMessageDeleted
+// beritahu client lain yang lagi buka percakapan sama supaya bubble-nya
+// ikut hilang real-time.
+conversationRouter.delete("/:id/messages/:messageId/local", async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== conversation.id) {
+    return res.status(404).json({ error: "Pesan tidak ditemukan" });
+  }
+
+  await prisma.message.delete({ where: { id: message.id } });
+  emitMessageDeleted(conversation.id, message.id);
+  res.json({ id: message.id, deleted: true });
 });
 
 // Kirim media (foto / video / dokumen / suara)

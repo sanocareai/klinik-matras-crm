@@ -13,7 +13,7 @@ import Animated, {
   FadeInDown, useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, interpolateColor, runOnJS,
 } from "react-native-reanimated";
 import {
-  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil,
+  Check, CheckCheck, CheckSquare, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil, Trash2,
 } from "lucide-react-native";
 import { mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -27,6 +27,7 @@ const SWIPE_REPLY_MAX = 84;       // batas visual geser bubble, jangan kabur ter
 const HIGHLIGHT_HOLD_MS = 1100;   // berapa lama background kuning bertahan penuh sebelum fade
 const HIGHLIGHT_FADE_MS = 400;    // durasi fade balik ke normal (total ~1.5 detik sesuai spec)
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // batas edit 15 menit — SAMA dengan backend (conversations.js), cuma dipakai di sini utk sembunyikan opsi Edit di UI, backend tetap sumber kebenaran/penegak aturan
+const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // batas "Hapus untuk Semua" 2 hari 12 jam — SAMA dengan backend, cuma gating tampilan
 
 // Backend Message.ack: 0 pending, 1 sent, 2 delivered, 3 read — sama
 // dengan frontend/src/features/inbox/utils/ackLevel.js. #34B7F1 = biru
@@ -137,6 +138,7 @@ function DocumentRow({ url }) {
 
 function MessageBubbleBase({
   message: m, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
+  onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   const [showActions, setShowActions] = useState(false);
 
@@ -152,6 +154,11 @@ function MessageBubbleBase({
   // aturan sebenarnya, jangan pernah percaya validasi client saja.
   const canEdit = isOut && !isRevoked && !isSending && !isFailed && !hasMedia && !!onEdit
     && (Date.now() - new Date(m.createdAt).getTime()) < EDIT_WINDOW_MS;
+  // Sama seperti canEdit di atas, ditegakkan ulang di backend
+  // (DELETE /:id/messages/:messageId) — ini cuma gating tampilan tombol.
+  const canDeleteEveryone = isOut && !isRevoked && !isSending && !isFailed && !!onDeleteEveryone
+    && (Date.now() - new Date(m.createdAt).getTime()) < DELETE_EVERYONE_WINDOW_MS;
+  const canDeleteLocal = !isSending && !!onDeleteLocal;
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
@@ -201,6 +208,21 @@ function MessageBubbleBase({
     }
   }
 
+  function handleDeleteLocalPress() {
+    setShowActions(false);
+    onDeleteLocal?.(m);
+  }
+
+  function handleDeleteEveryonePress() {
+    setShowActions(false);
+    onDeleteEveryone?.(m);
+  }
+
+  function handleSelectPress() {
+    setShowActions(false);
+    onEnterSelection?.(m);
+  }
+
   // ── Swipe to reply — inbound geser KANAN, outbound geser KIRI (pola WA
   // asli). Dibangun dari nol (belum ada gesture/swipe apapun di bubble
   // sebelum ini, cuma long-press action sheet) pakai Gesture.Pan() UI-thread
@@ -217,7 +239,7 @@ function MessageBubbleBase({
   // dalamnya), cuma di sini custom (translateX+reveal icon) bukan Swipeable
   // bawaan, karena butuh reveal ikon proporsional ke jarak geser, bukan
   // panel aksi penuh.
-  const canSwipeReply = !isSending && !isFailed && !isRevoked && !!onReply;
+  const canSwipeReply = !isSending && !isFailed && !isRevoked && !!onReply && !selectionMode;
   const translateX = useSharedValue(0);
   const replyIconProgress = useSharedValue(0);
   const hapticFired = useSharedValue(false);
@@ -297,10 +319,31 @@ function MessageBubbleBase({
         <Reply size={16} color={tokens.color.accent} strokeWidth={2.2} />
       </Animated.View>
 
+      {/* Checkbox mode pilih (multi-select) — SELALU di ujung kiri layar
+          (bukan cuma "sebelah kiri bubble"), sama seperti WhatsApp asli —
+          makanya butuh wrapper flex-row terpisah (bubbleRow) supaya bubble
+          OUTBOUND (biasanya rata kanan) tetap bisa align kanan DI DALAM
+          sisa ruang setelah checkbox, bukan nempel pas di sebelah checkbox
+          begitu saja. Cuma dirender saat selectionMode aktif (lihat
+          ChatScreen.js#selectionMode). */}
+      <View style={styles.bubbleRow}>
+        {selectionMode && (
+          <TouchableOpacity
+            style={styles.selectCheckbox}
+            onPress={() => onToggleSelect?.(m)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <View style={[styles.selectCheckboxCircle, selected && styles.selectCheckboxCircleActive]}>
+              {selected && <Check size={13} color="#fff" strokeWidth={3} />}
+            </View>
+          </TouchableOpacity>
+        )}
+        <View style={{ flex: 1, alignItems: isOut ? "flex-end" : "flex-start" }}>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={swipeAnimStyle}>
           <PressableScale
-            onLongPress={() => { if (!isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
+            onPress={() => { if (selectionMode) { lightHaptic(); onToggleSelect?.(m); } }}
+            onLongPress={() => { if (!selectionMode && !isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
             style={[
               styles.bubble,
               isOut ? styles.bubbleOut : styles.bubbleIn,
@@ -401,6 +444,8 @@ function MessageBubbleBase({
           </PressableScale>
         </Animated.View>
       </GestureDetector>
+        </View>
+      </View>
 
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
         <TouchableOpacity style={styles.actionOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
@@ -427,6 +472,24 @@ function MessageBubbleBase({
               <TouchableOpacity style={styles.actionItemRow} onPress={copyText}>
                 <Copy size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
                 <Text style={styles.actionText}>Salin Teks</Text>
+              </TouchableOpacity>
+            )}
+            {onEnterSelection && (
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleSelectPress}>
+                <CheckSquare size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
+                <Text style={styles.actionText}>Pilih</Text>
+              </TouchableOpacity>
+            )}
+            {canDeleteLocal && (
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleDeleteLocalPress}>
+                <Trash2 size={16} color={tokens.color.danger} strokeWidth={2} style={styles.actionIcon} />
+                <Text style={[styles.actionText, { color: tokens.color.danger }]}>Hapus untuk Saya</Text>
+              </TouchableOpacity>
+            )}
+            {canDeleteEveryone && (
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleDeleteEveryonePress}>
+                <Trash2 size={16} color={tokens.color.danger} strokeWidth={2} style={styles.actionIcon} />
+                <Text style={[styles.actionText, { color: tokens.color.danger }]}>Hapus untuk Semua</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -457,6 +520,13 @@ const styles = StyleSheet.create({
   },
   replyIconLeft: { left: 4 },
   replyIconRight: { right: 4 },
+  bubbleRow: { flexDirection: "row", alignItems: "center", width: "100%" },
+  selectCheckbox: { justifyContent: "center", paddingRight: 8, paddingVertical: 4 },
+  selectCheckboxCircle: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: tokens.color.border,
+    alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.card,
+  },
+  selectCheckboxCircleActive: { borderColor: tokens.color.accent, backgroundColor: tokens.color.accent },
   senderName: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, marginBottom: 2 },
   quote: {
     borderLeftWidth: 3, borderLeftColor: tokens.color.accent, backgroundColor: "rgba(0,0,0,0.06)",

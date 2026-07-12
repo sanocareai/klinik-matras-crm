@@ -21,7 +21,7 @@ import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
-  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil,
+  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -91,9 +91,12 @@ export default function ChatScreen({ route, navigation }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [forwardMsg, setForwardMsg] = useState(null);
+  const [forwardBulk, setForwardBulk] = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [mediaViewer, setMediaViewer] = useState(null); // { items, index }
   const [isOffline, setIsOffline] = useState(false);
   const [editingMessage, setEditingMessage] = useState(null); // pesan yang sedang diedit, null = mode normal
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
@@ -290,6 +293,119 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
+  // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh
+  // WhatsApp. Berlaku utk 1 pesan (dari action sheet) — versi bulk (dari
+  // toolbar mode pilih) ada di handleBulkDeleteLocal di bawah.
+  const handleDeleteLocal = useCallback((msg) => {
+    Alert.alert(
+      "Hapus untuk Saya",
+      "Pesan ini akan dihapus dari CRM (tidak menghapus dari WhatsApp pelanggan). Lanjutkan?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus", style: "destructive", onPress: async () => {
+            try {
+              await api.deleteMessageLocal(conversationId, msg.id);
+              useMessageStore.getState().removeMessage(msg.id);
+            } catch (err) {
+              Alert.alert("Gagal hapus", err.message);
+            }
+          },
+        },
+      ],
+    );
+  }, [conversationId]);
+
+  // "Hapus untuk Semua" — revoke via WAHA, pesan hilang dari WhatsApp
+  // pelanggan juga (2 hari 12 jam sejak terkirim, ditegakkan backend).
+  const handleDeleteEveryone = useCallback((msg) => {
+    Alert.alert(
+      "Hapus untuk Semua",
+      "Pesan ini akan dihapus dari WhatsApp pelanggan juga. Lanjutkan?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus", style: "destructive", onPress: async () => {
+            try {
+              const updated = await api.deleteMessageEveryone(conversationId, msg.id);
+              useMessageStore.getState().updateMessage(msg.id, updated);
+            } catch (err) {
+              Alert.alert("Gagal hapus", err.message);
+            }
+          },
+        },
+      ],
+    );
+  }, [conversationId]);
+
+  // ── Mode pilih (multi-select) — masuk lewat action sheet "Pilih", lalu
+  // tap bubble lain (selama selectionMode aktif) menambah/mengurangi
+  // seleksi. Keluar otomatis begitu seleksi kosong (sama seperti WA asli),
+  // atau lewat tombol X di toolbar.
+  const handleEnterSelection = useCallback((msg) => {
+    setSelectionMode(true);
+    setSelectedIds(new Set([msg.id]));
+  }, []);
+
+  const handleToggleSelect = useCallback((msg) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }, []);
+
+  function handleCancelSelection() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  const selectedMessages = allMessages.filter((m) => selectedIds.has(m.id));
+  // "Hapus untuk Semua" bulk cuma boleh kalau SEMUA yang dipilih memenuhi
+  // syarat (outbound, belum revoked, dalam batas waktu) — sama seperti
+  // gating per-bubble di MessageBubble.js, supaya tidak ada yang diam-diam
+  // gagal di tengah proses bulk.
+  const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000;
+  const canBulkDeleteEveryone = selectedMessages.length > 0 && selectedMessages.every((m) =>
+    m.direction === "OUTBOUND" && !m.isRevoked && m.status !== "sending" && m.status !== "failed"
+    && (Date.now() - new Date(m.createdAt).getTime()) < DELETE_EVERYONE_WINDOW_MS
+  );
+
+  async function runBulkDeleteLocal(ids) {
+    const results = await Promise.allSettled(ids.map((id) => api.deleteMessageLocal(conversationId, id)));
+    results.forEach((r, i) => { if (r.status === "fulfilled") useMessageStore.getState().removeMessage(ids[i]); });
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) Alert.alert("Sebagian gagal dihapus", `${failed} dari ${ids.length} pesan gagal dihapus.`);
+    handleCancelSelection();
+  }
+
+  async function runBulkDeleteEveryone(ids) {
+    const results = await Promise.allSettled(ids.map((id) => api.deleteMessageEveryone(conversationId, id)));
+    results.forEach((r, i) => { if (r.status === "fulfilled") useMessageStore.getState().updateMessage(ids[i], r.value); });
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) Alert.alert("Sebagian gagal dihapus", `${failed} dari ${ids.length} pesan gagal dihapus.`);
+    handleCancelSelection();
+  }
+
+  // Satu tombol hapus di toolbar mode-pilih — tawarkan kedua opsi sekaligus
+  // (pola sama dengan WhatsApp asli: tombol sampah di multi-select buka
+  // pilihan "Hapus untuk Saya" / "Hapus untuk Semua"), opsi kedua cuma
+  // muncul kalau SEMUA yang dipilih memenuhi syarat (lihat canBulkDeleteEveryone).
+  function handleBulkDeletePress() {
+    const ids = [...selectedIds];
+    const buttons = [{ text: "Batal", style: "cancel" }];
+    if (canBulkDeleteEveryone) {
+      buttons.push({ text: "Hapus untuk Semua", style: "destructive", onPress: () => runBulkDeleteEveryone(ids) });
+    }
+    buttons.push({ text: "Hapus untuk Saya", style: "destructive", onPress: () => runBulkDeleteLocal(ids) });
+    Alert.alert(`Hapus ${ids.length} Pesan`, "Pilih jenis penghapusan:", buttons);
+  }
+
+  function handleBulkForward() {
+    setForwardBulk(selectedMessages);
+  }
+
   const handleRetry = useCallback((m) => {
     const tempId = `temp-${Date.now()}`;
     useMessageStore.setState((state) => ({
@@ -377,9 +493,19 @@ export default function ChatScreen({ route, navigation }) {
         onJumpToReply={scrollToMessage}
         onRetry={handleRetry}
         onOpenMedia={openMediaViewer}
+        onDeleteLocal={handleDeleteLocal}
+        onDeleteEveryone={handleDeleteEveryone}
+        onEnterSelection={handleEnterSelection}
+        selectionMode={selectionMode}
+        selected={selectedIds.has(m.id)}
+        onToggleSelect={handleToggleSelect}
       />
     );
-  }, [isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage, handleRetry, openMediaViewer]);
+  }, [
+    isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
+    handleRetry, openMediaViewer, handleDeleteLocal, handleDeleteEveryone, handleEnterSelection,
+    selectionMode, selectedIds, handleToggleSelect,
+  ]);
 
   return (
     // behavior="padding" di KEDUA platform (bukan "height" di Android) —
@@ -479,6 +605,24 @@ export default function ChatScreen({ route, navigation }) {
           murni gating UI yang dihapus di sini). Indikator "Mengirim sebagai
           [nama]" gantikan banner "hanya bisa dibaca" lama, supaya sales sadar
           pesannya keluar atas nama akun mereka sendiri ke grup bersama. */}
+      {selectionMode ? (
+        // Toolbar mode pilih GANTIKAN composer total selama aktif — tidak
+        // masuk akal mengetik pesan baru SEKALIGUS memilih pesan lama utk
+        // dihapus/diteruskan.
+        <View style={styles.selectionToolbar}>
+          <TouchableOpacity onPress={handleCancelSelection} style={styles.selectionToolbarBtn}>
+            <X size={20} color={tokens.color.textPrimary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <Text style={styles.selectionToolbarCount}>{selectedIds.size} dipilih</Text>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={handleBulkForward} style={styles.selectionToolbarBtn}>
+            <Forward size={20} color={tokens.color.textPrimary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleBulkDeletePress} style={styles.selectionToolbarBtn}>
+            <Trash2 size={20} color={tokens.color.danger} strokeWidth={2.2} />
+          </TouchableOpacity>
+        </View>
+      ) : (
       <>
           {isGroup && (
             <View style={styles.groupSenderBanner}>
@@ -569,6 +713,7 @@ export default function ChatScreen({ route, navigation }) {
             )}
           </View>
       </>
+      )}
 
       {/* Menu aksi percakapan */}
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
@@ -610,6 +755,11 @@ export default function ChatScreen({ route, navigation }) {
       />
 
       <ForwardModal visible={!!forwardMsg} message={forwardMsg} onClose={() => setForwardMsg(null)} />
+      <ForwardModal
+        visible={!!forwardBulk}
+        messages={forwardBulk}
+        onClose={() => { setForwardBulk(null); handleCancelSelection(); }}
+      />
 
       {mediaViewer && (
         <MediaViewerModal
@@ -666,6 +816,12 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
   },
   retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  selectionToolbar: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,
+  },
+  selectionToolbarBtn: { padding: 8 },
+  selectionToolbarCount: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginLeft: 4 },
   groupSenderBanner: {
     backgroundColor: tokens.color.subtle, paddingVertical: 5, paddingHorizontal: 12,
   },

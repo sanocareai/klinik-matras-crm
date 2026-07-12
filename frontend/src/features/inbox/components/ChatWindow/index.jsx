@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
-  Forward, Search, PanelRightClose, PanelRightOpen, Download,
+  Forward, Search, PanelRightClose, PanelRightOpen, Download, Trash2,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
@@ -14,7 +14,7 @@ import InChatSearch from "./InChatSearch.jsx";
 import Composer from "./Composer.jsx";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
-import { useMessageStore } from "../../stores/messageStore.js";
+import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
 import { useConversationStore } from "../../stores/conversationStore.js";
 import { useComposerStore } from "../../stores/composerStore.js";
 
@@ -25,11 +25,16 @@ const STATUS_OPTIONS = [
 ];
 
 // ── Forward Modal ────────────────────────────────────────────────────────
-function ForwardModal({ messageToForward, onClose }) {
+// messagesToForward: array opsional — dipakai forward BULK dari mode pilih
+// (selectionMode di bawah). Kalau tidak ada, fallback ke messageToForward
+// tunggal (pola lama, dipakai action-bar hover per-bubble).
+function ForwardModal({ messageToForward, messagesToForward, onClose }) {
   const [convs, setConvs]           = useState([]);
   const [search, setSearch]         = useState("");
   const [loading, setLoading]       = useState(true);
   const [forwarding, setForwarding] = useState(false);
+
+  const items = messagesToForward?.length ? messagesToForward : (messageToForward ? [messageToForward] : []);
 
   useEffect(() => {
     api.getConversations().then(({ data }) => { setConvs(data); setLoading(false); }).catch(() => setLoading(false));
@@ -42,16 +47,13 @@ function ForwardModal({ messageToForward, onClose }) {
   });
 
   async function handleForward(targetConvId) {
-    if (forwarding) return;
+    if (forwarding || !items.length) return;
     setForwarding(true);
-    try {
-      await api.forwardMessage(messageToForward.conversationId, messageToForward.id, targetConvId);
-      onClose();
-    } catch (err) {
-      alert("Gagal teruskan pesan: " + err.message);
-    } finally {
-      setForwarding(false);
-    }
+    const results = await Promise.allSettled(items.map((m) => api.forwardMessage(m.conversationId, m.id, targetConvId)));
+    setForwarding(false);
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) alert(`${failed} dari ${items.length} pesan gagal diteruskan.`);
+    else onClose();
   }
 
   return (
@@ -65,7 +67,9 @@ function ForwardModal({ messageToForward, onClose }) {
         </div>
         <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border)", fontSize: 12, color: "var(--text-muted)" }}>
           <div style={{ background: "var(--bg-page)", borderRadius: 8, padding: "8px 12px", borderLeft: "3px solid var(--color-primary)" }}>
-            {messageToForward.content || (messageToForward.mediaType ? `[${messageToForward.mediaType}]` : "Pesan")}
+            {items.length > 1
+              ? `${items.length} pesan dipilih`
+              : (items[0]?.content || (items[0]?.mediaType ? `[${items[0].mediaType}]` : "Pesan"))}
           </div>
         </div>
         <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border)" }}>
@@ -112,9 +116,14 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [resolving, setResolving]       = useState(false);
   const [showDotMenu, setShowDotMenu]   = useState(false);
   const [forwardMsg, setForwardMsg]     = useState(null);
+  const [forwardBulk, setForwardBulk]   = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [showCustomerDetail, setShowCustomerDetail] = useState(false); // bottom sheet mobile
   const [dragOver, setDragOver]         = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds]     = useState(() => new Set());
+
+  const allMessages = useMessagesForConv(conversationId);
 
   const messageListRef  = useRef(null);
   const mediaUploaderRef = useRef(null); // diisi Composer -> MediaUploader, dipakai untuk drag-drop & paste dari luar composer
@@ -123,6 +132,8 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
     setShowSearch(false);
     setShowDotMenu(false);
     setShowCustomerDetail(false);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
   }, [conversationId]);
 
   function handleRetry(m) {
@@ -200,6 +211,88 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       useConversationStore.getState().upsertConversation(updated);
     } catch (err) { alert(err.message); }
     finally { setTakingOver(false); }
+  }
+
+  // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh
+  // WhatsApp. Dipakai dari action-bar hover per-bubble.
+  async function handleDeleteLocal(msg) {
+    try {
+      await api.deleteMessageLocal(conversationId, msg.id);
+      useMessageStore.getState().removeMessage(msg.id);
+    } catch (err) {
+      alert("Gagal hapus: " + err.message);
+    }
+  }
+
+  // "Hapus untuk Semua" — revoke via WAHA (2 hari 12 jam, ditegakkan backend).
+  async function handleDeleteEveryone(msg) {
+    try {
+      const updated = await api.deleteMessageEveryone(conversationId, msg.id);
+      useMessageStore.getState().updateMessage(msg.id, updated);
+    } catch (err) {
+      alert("Gagal hapus: " + err.message);
+    }
+  }
+
+  // ── Mode pilih (multi-select) — dipicu dari action-bar hover per-bubble
+  // (lihat MessageBubble.jsx). Tap bubble lain (selama selectionMode aktif)
+  // menambah/mengurangi seleksi lewat onToggleSelect. Keluar otomatis
+  // begitu seleksi kosong (sama seperti WA asli), atau lewat tombol X.
+  function enterSelectionMode(msg) {
+    setSelectionMode(true);
+    setSelectedIds(new Set([msg.id]));
+  }
+  function toggleSelect(msg) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }
+  function cancelSelection() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  const selectedMessages = allMessages.filter((m) => selectedIds.has(m.id));
+  const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000;
+  const canBulkDeleteEveryone = selectedMessages.length > 0 && selectedMessages.every((m) =>
+    m.direction === "OUTBOUND" && !m.isRevoked && m.status !== "sending" && m.status !== "failed"
+    && (Date.now() - new Date(m.createdAt).getTime()) < DELETE_EVERYONE_WINDOW_MS
+  );
+
+  async function runBulkDeleteLocal(ids) {
+    const results = await Promise.allSettled(ids.map((id) => api.deleteMessageLocal(conversationId, id)));
+    results.forEach((r, i) => { if (r.status === "fulfilled") useMessageStore.getState().removeMessage(ids[i]); });
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) alert(`${failed} dari ${ids.length} pesan gagal dihapus.`);
+    cancelSelection();
+  }
+  async function runBulkDeleteEveryone(ids) {
+    const results = await Promise.allSettled(ids.map((id) => api.deleteMessageEveryone(conversationId, id)));
+    results.forEach((r, i) => { if (r.status === "fulfilled") useMessageStore.getState().updateMessage(ids[i], r.value); });
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) alert(`${failed} dari ${ids.length} pesan gagal dihapus.`);
+    cancelSelection();
+  }
+  // Satu tombol hapus di toolbar — tawarkan pilihan lewat confirm() 2 tahap
+  // (pola sama dengan mobile: opsi "untuk semua" cuma muncul kalau SEMUA
+  // yang dipilih memenuhi syarat, lihat canBulkDeleteEveryone).
+  function handleBulkDeleteClick() {
+    const ids = [...selectedIds];
+    if (canBulkDeleteEveryone) {
+      if (confirm(`Hapus ${ids.length} pesan untuk SEMUA (termasuk dari WhatsApp pelanggan)? Klik Batal untuk pilih "Hapus untuk Saya" saja.`)) {
+        runBulkDeleteEveryone(ids);
+        return;
+      }
+    }
+    if (confirm(`Hapus ${ids.length} pesan untuk SAYA saja (tidak menghapus dari WhatsApp pelanggan)?`)) {
+      runBulkDeleteLocal(ids);
+    }
+  }
+  function handleBulkForward() {
+    setForwardBulk(selectedMessages);
   }
 
   if (!conversation) {
@@ -368,13 +461,34 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         onForward={(msg) => setForwardMsg(msg)}
         onEdit={(msg) => useComposerStore.getState().startEditingMessage(conversationId, msg)}
         onRetry={handleRetry}
+        onDeleteLocal={handleDeleteLocal}
+        onDeleteEveryone={handleDeleteEveryone}
+        onEnterSelection={enterSelectionMode}
+        selectionMode={selectionMode}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
       />
 
-      {/* ── Composer (Fase D) ── */}
-      <Composer conversation={conversation} mediaUploaderRef={mediaUploaderRef} />
+      {/* ── Toolbar mode pilih GANTIKAN Composer total selama aktif — tidak
+          masuk akal mengetik pesan baru SEKALIGUS memilih pesan lama utk
+          dihapus/diteruskan. ── */}
+      {selectionMode ? (
+        <div className="chat-input-area" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px" }}>
+          <button onClick={cancelSelection} className="btn-icon" title="Batal"><X size={18} /></button>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{selectedIds.size} dipilih</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={handleBulkForward} className="btn-icon" title="Teruskan"><Forward size={18} /></button>
+          <button onClick={handleBulkDeleteClick} className="btn-icon" title="Hapus"><Trash2 size={18} color="var(--danger, #dc2626)" /></button>
+        </div>
+      ) : (
+        <Composer conversation={conversation} mediaUploaderRef={mediaUploaderRef} />
+      )}
 
       {/* ── Forward Modal ── */}
       {forwardMsg && <ForwardModal messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} />}
+      {forwardBulk && (
+        <ForwardModal messagesToForward={forwardBulk} onClose={() => { setForwardBulk(null); cancelSelection(); }} />
+      )}
 
       {/* ── CustomerPanel — full-screen sheet di mobile (Level 3 navigasi,
           via CSS breakpoint), modal biasa di desktop ── */}

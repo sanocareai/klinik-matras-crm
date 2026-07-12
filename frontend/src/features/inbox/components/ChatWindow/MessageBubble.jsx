@@ -1,6 +1,6 @@
 import React, { memo, useRef, useState } from "react";
 import {
-  Reply, Forward, Pencil, FileText, Image as ImageIcon, Video, Mic, Smile,
+  Reply, Forward, Pencil, Trash2, CheckSquare, FileText, Image as ImageIcon, Video, Mic, Smile,
   Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
@@ -206,8 +206,12 @@ function VideoThumb({ src, onClick }) {
 }
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 menit — sama dengan backend (conversations.js), cuma dipakai sembunyikan tombol Edit di UI, backend tetap sumber kebenaran/penegak aturan
+const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 2 hari 12 jam — SAMA dengan backend, cuma gating tampilan
 
-function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia }) {
+function MessageBubbleBase({
+  message: m, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
+  onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
+}) {
   const [hovered, setHovered] = useState(false);
   const longPressTimerRef = useRef(null);
 
@@ -220,6 +224,22 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   // sudah benar-benar terkirim, dalam batas 15 menit.
   const canEdit = isOut && !isRevoked && !isSending && !isFailed && !hasMedia && !!onEdit
     && (Date.now() - new Date(m.createdAt).getTime()) < EDIT_WINDOW_MS;
+  const canDeleteEveryone = isOut && !isRevoked && !isSending && !isFailed && !!onDeleteEveryone
+    && (Date.now() - new Date(m.createdAt).getTime()) < DELETE_EVERYONE_WINDOW_MS;
+  const canDeleteLocal = !isSending && !!onDeleteLocal;
+
+  function handleDeleteLocalClick(e) {
+    e.stopPropagation();
+    if (!confirm("Pesan ini akan dihapus dari CRM (tidak menghapus dari WhatsApp pelanggan). Lanjutkan?")) return;
+    onDeleteLocal(m);
+    setHovered(false);
+  }
+  function handleDeleteEveryoneClick(e) {
+    e.stopPropagation();
+    if (!confirm("Pesan ini akan dihapus dari WhatsApp pelanggan juga. Lanjutkan?")) return;
+    onDeleteEveryone(m);
+    setHovered(false);
+  }
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   // Placeholder bracket ("[Foto]" dst, lihat parseHistoryMessage.js) sudah
@@ -239,14 +259,32 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   return (
     <div
       className="msg-row"
-      style={{ display: "flex", flexDirection: "column", alignItems: isOut ? "flex-end" : "flex-start", width: "100%" }}
+      style={{ display: "flex", flexDirection: "row", alignItems: "center", width: "100%", gap: 8 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchMove={() => clearTimeout(longPressTimerRef.current)}
     >
-      {hovered && !isSending && !isFailed && !isRevoked && (
+      {/* Checkbox mode pilih (multi-select) — SELALU di ujung kiri layar
+          (bukan cuma "sebelah kiri bubble"), sama seperti WhatsApp asli.
+          flex:0 0 auto supaya wrapper kolom bubble di bawah tetap bisa
+          align kanan/kiri normal di sisa ruang. */}
+      {selectionMode && (
+        <button
+          type="button"
+          className={`msg-select-checkbox${selected ? " selected" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(m); }}
+        >
+          {selected && <Check size={12} color="#fff" strokeWidth={3} />}
+        </button>
+      )}
+
+      <div
+        style={{ display: "flex", flexDirection: "column", alignItems: isOut ? "flex-end" : "flex-start", flex: 1, minWidth: 0, cursor: selectionMode ? "pointer" : "default" }}
+        onClick={selectionMode ? () => onToggleSelect(m) : undefined}
+      >
+      {hovered && !selectionMode && !isSending && !isFailed && !isRevoked && (
         <div className="msg-action-bar">
           {onReply && (
             <button onClick={(e) => { e.stopPropagation(); onReply(m); setHovered(false); }} title="Balas">
@@ -261,6 +299,21 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           {canEdit && (
             <button onClick={(e) => { e.stopPropagation(); onEdit(m); setHovered(false); }} title="Edit">
               <Pencil size={14} />
+            </button>
+          )}
+          {canDeleteLocal && (
+            <button onClick={handleDeleteLocalClick} title="Hapus untuk Saya">
+              <Trash2 size={14} />
+            </button>
+          )}
+          {canDeleteEveryone && (
+            <button onClick={handleDeleteEveryoneClick} title="Hapus untuk Semua">
+              <Trash2 size={14} color="var(--danger, #dc2626)" />
+            </button>
+          )}
+          {onEnterSelection && (
+            <button onClick={(e) => { e.stopPropagation(); onEnterSelection(m); setHovered(false); }} title="Pilih">
+              <CheckSquare size={14} />
             </button>
           )}
         </div>
@@ -349,6 +402,7 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
             Gagal terkirim — Coba lagi
           </button>
         )}
+      </div>
       </div>
     </div>
   );

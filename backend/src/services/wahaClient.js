@@ -143,6 +143,27 @@ export async function editMessage(to, messageId, text, session) {
   return res.json();
 }
 
+// Hapus (revoke/"hapus untuk semua") pesan OUTBOUND yang sudah terkirim —
+// dikonfirmasi via swagger WAHA (operationId ChatsController_deleteMessage)
+// + tes manual langsung (DELETE berhasil, protocolMessage type:0 = REVOKE,
+// trigger webhook message.revoked yang SUDAH ADA sejak lama di webhooks.js
+// untuk set isRevoked=true — sama pola dengan editMessage di atas: caller
+// TETAP update DB sinkron sendiri, webhook yang menyusul idempotent).
+// DELETE /api/{session}/chats/{chatId}/messages/{messageId} — messageId
+// SAMA formatnya dengan editMessage (externalId LENGKAP tersimpan di DB).
+export async function deleteMessage(to, messageId, session) {
+  if (!session) {
+    throw new Error("deleteMessage: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
+  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const res = await fetch(
+    `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: "DELETE", headers: headers() }
+  );
+  if (!res.ok) throw new Error(`WAHA deleteMessage gagal (${res.status}): ${await res.text()}`);
+  return true;
+}
+
 // Download media dari URL langsung (dipakai saat webhook punya payload.media.url)
 export async function downloadMediaFromUrl(url) {
   try {

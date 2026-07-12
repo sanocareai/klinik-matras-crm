@@ -96,6 +96,27 @@ export const useMessageStore = create((set) => ({
     return {};
   }),
 
+  // "Hapus untuk Saya" (lokal) — hard remove dari store, dipakai untuk hasil
+  // sukses DELETE .../local (dipanggil sendiri) MAUPUN socket event
+  // message:deleted (dihapus dari sesi CRM lain, lihat useSocketEvents.js).
+  removeMessage: (messageId) => set((state) => {
+    const activeId = useConversationStore.getState().activeConversationId;
+    const searchOrder = activeId
+      ? [activeId, ...Object.keys(state.messagesByConvId).filter((id) => id !== activeId)]
+      : Object.keys(state.messagesByConvId);
+
+    for (const convId of searchOrder) {
+      const list = state.messagesByConvId[convId];
+      if (!list) continue;
+      const idx = list.findIndex((m) => m.id === messageId);
+      if (idx === -1) continue;
+      return {
+        messagesByConvId: { ...state.messagesByConvId, [convId]: list.filter((m) => m.id !== messageId) },
+      };
+    }
+    return {};
+  }),
+
   clearConversation: (convId) => set((state) => {
     const messagesByConvId = { ...state.messagesByConvId };
     delete messagesByConvId[convId];

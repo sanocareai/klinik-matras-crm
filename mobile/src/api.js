@@ -200,6 +200,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ content }),
     }),
+  // "Hapus untuk Semua" — revoke via WAHA (2 hari 12 jam, ditegakkan backend).
+  deleteMessageEveryone: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}`, { method: "DELETE" }),
+  // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh WhatsApp.
+  deleteMessageLocal: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}/local`, { method: "DELETE" }),
   // file = { uri, name, type } dari image/document/kamera picker.
   // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
   // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.

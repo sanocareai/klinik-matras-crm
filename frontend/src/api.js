@@ -138,6 +138,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ content }),
     }),
+  // "Hapus untuk Semua" — revoke via WAHA (2 hari 12 jam, ditegakkan backend).
+  deleteMessageEveryone: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}`, { method: "DELETE" }),
+  // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh WhatsApp.
+  deleteMessageLocal: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}/local`, { method: "DELETE" }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Set sessionId manual — dipakai saat backend tolak kirim (409, sesi WA
