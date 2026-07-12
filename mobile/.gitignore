@@ -25,6 +25,13 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+App.js.bak
+cloudcrash.txt
+crashlog.txt
+lognya.txt
+lognya2.txt
+uploaderr.txt
+nul
 
 # macOS
 .DS_Store

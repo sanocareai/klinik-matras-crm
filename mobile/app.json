@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 3,
+      "versionCode": 4,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

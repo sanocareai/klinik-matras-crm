@@ -1,92 +1,101 @@
-# Checklist Test Manual — Klinik Matras Sales App v2.0.0
+# Checklist Testing Sano Chat v2.0
 
 Dipakai tim (sales/admin) untuk uji coba APK sebelum dipakai di lapangan.
 Centang tiap baris ✅/❌, kalau ❌ catat detail (device, langkah reproduksi,
 screenshot kalau ada) dan laporkan ke Gilang/developer.
 
-Install APK dari link yang dibagikan (lihat pesan rilis), pastikan sudah
-uninstall versi lama dulu kalau ganti dari build development sebelumnya
-(package name sama, tapi signing key APK profile beda dari dev client —
-install bisa gagal "App not installed" kalau versi lama masih ada).
+Install APK dari link yang dibagikan, pastikan sudah uninstall versi lama
+dulu kalau sebelumnya pakai build development client (package name sama,
+tapi signing key APK profile beda dari dev client — install bisa gagal
+"App not installed" kalau versi lama masih ada).
 
 ---
 
-## 1. Login
-- [ ] Buka app, muncul splash screen lalu layar Login (tanpa nyangkut lama di splash)
-- [ ] Login dengan email+password sales — berhasil masuk ke Inbox
+## Auth & Navigasi
+- [ ] Buka app → splash screen → layar Login (tidak nyangkut lama di splash)
+- [ ] Login dengan email+password — berhasil masuk ke tab Home
 - [ ] Salah password → pesan error jelas, tidak crash
 - [ ] Tutup app total (swipe dari recent apps) lalu buka lagi — tetap login (sesi tersimpan)
+- [ ] 4 tab bar di bawah tampil dan berfungsi: **Home**, **Chats**, **Pelanggan**, **Profil**
+- [ ] Pindah antar tab tidak kehilangan state (mis. filter Inbox tetap kepilih saat balik dari tab lain)
 
-## 2. Inbox — filter, search, swipe
-- [ ] Tab "Semua" tampil semua percakapan, badge angka di tiap tab sesuai
-- [ ] Tap tab "Belum Dibaca" / "Terbuka" / "Pending" / "Selesai" / "Milik Saya" — list berubah sesuai
-- [ ] Tap ikon cari, ketik nama/nomor pelanggan — hasil muncul (ada jeda kecil, bukan instan tiap huruf)
-- [ ] Scroll ke bawah sampai banyak percakapan — scroll tetap mulus (tidak patah-patah)
-- [ ] Swipe kanan 1 percakapan → tandai dibaca/belum dibaca (badge hilang/muncul + terasa getar halus)
+## Inbox
+- [ ] Tab "Semua" tampil semua percakapan, badge angka tiap filter sesuai
+- [ ] Filter **Belum Dibaca** — hanya percakapan dengan pesan masuk belum dibaca yang tampil
+- [ ] Filter Terbuka / Pending / Selesai / Milik Saya — list berubah sesuai
+- [ ] Tap ikon cari, ketik nama/nomor pelanggan — hasil muncul (ada jeda kecil, bukan re-render tiap huruf)
+- [ ] Scroll list panjang tetap mulus (tidak patah-patah)
+- [ ] Swipe kanan 1 percakapan → tandai dibaca/belum dibaca (badge berubah + getar halus)
 - [ ] Swipe kiri 1 percakapan → sematkan/lepas sematan (percakapan pindah ke atas)
-- [ ] Pull-to-refresh di paling atas list — muncul indikator refresh lalu selesai
-- [ ] Matikan WiFi/data sebentar, buka app — muncul pesan/skeleton loading, bukan layar putih kosong; nyalakan lagi data → list otomatis termuat
+- [ ] Badge unread di ikon tab Chats sesuai jumlah total belum dibaca
+- [ ] Pull-to-refresh di paling atas list — indikator refresh muncul lalu selesai
+- [ ] Matikan koneksi sebentar, buka app — muncul skeleton loading (bukan layar putih kosong); nyalakan lagi → list otomatis termuat
 
-## 3. Buka chat
-- [ ] Tap 1 percakapan — masuk ke layar chat, riwayat pesan termuat (skeleton dulu sebentar, bukan spinner polos)
-- [ ] Scroll ke atas sampai pesan lama — pesan lebih lama ikut termuat, posisi scroll tidak lompat-lompat
-- [ ] Tap nama/avatar di header — bottom sheet info pelanggan terbuka
+## Chat
+- [ ] Kirim pesan teks — bubble langsung muncul (optimistic, status "mengirim" sebentar), getar halus saat tap kirim
+- [ ] Kirim foto (galeri & kamera) dengan caption — terkirim & tampil di bubble
+- [ ] Kirim video — terkirim, thumbnail + tombol play tampil di bubble
+- [ ] Kirim dokumen (PDF dll) — tampil sebagai bubble dokumen, tap bisa dibuka
+- [ ] Tahan tombol mic, rekam voice note, lepas — muncul preview player + tombol Kirim/Batal, kirim → tampil sebagai voice note, bisa diputar
+- [ ] Terima pesan foto/video/dokumen/voice note dari customer — tampil benar semua
+- [ ] Terima **sticker** — tampil sebagai gambar stiker (bukan bubble teks placeholder)
+- [ ] Terima **lokasi** (share location WA) — tampil sebagai card lokasi
+- [ ] Terima **kontak** (share contact WA) — tampil sebagai card kontak
+- [ ] Terima **poll** (polling WA) — tampil sebagai card dengan daftar opsi
+- [ ] Kirim 1 pesan, tunggu beberapa detik — ceklis berubah 1 (terkirim) → 2 (diterima) → 3 biru (dibaca)
+- [ ] Swipe bubble ke samping (bukan tekan lama) — muncul ikon reply, lepas → preview quote muncul di composer
+- [ ] Kirim pesan dari quote itu — bubble baru menampilkan kutipan pesan asli
+- [ ] Tap kutipan pesan itu di bubble → otomatis scroll & highlight (kuning sebentar) ke pesan aslinya
+- [ ] Tekan lama bubble → menu aksi muncul, pilih Teruskan → modal pilih percakapan tujuan → pesan terkirim ke sana
+- [ ] Edit pesan sendiri (dalam 15 menit sejak kirim) — bubble tampil isi baru + label "diedit"
+- [ ] Hapus pesan sendiri ("Hapus untuk Semua", dalam batas waktu) — bubble berubah jadi "Pesan ini telah dihapus"
+- [ ] Buka percakapan grup — bisa kirim balasan, nama pengirim tampil di atas tiap bubble inbound
+- [ ] Buka keyboard saat mengetik balasan — composer & bubble terakhir tetap terlihat di atas keyboard (tidak ketutup)
 
-## 4. Kirim teks/foto/VN/dokumen
-- [ ] Ketik pesan teks, tap kirim — bubble langsung muncul (instan, status "mengirim" sebentar) + getar halus saat tap kirim
-- [ ] Tutup WiFi, kirim pesan teks — muncul banner "Menunggu koneksi...", pesan otomatis terkirim begitu koneksi kembali
-- [ ] Tap "+" lampiran → pilih Foto dari galeri → preview muncul, isi caption, kirim — foto terkirim & tampil di bubble
-- [ ] Tap "+" → Kamera → ambil foto langsung → kirim — sama seperti di atas
-- [ ] Tap "+" → Dokumen → pilih file (PDF dll) → kirim — muncul sebagai bubble dokumen, tap bisa dibuka
-- [ ] Tahan tombol mic → rekam suara → lepas → muncul preview player + tombol Kirim/Batal — kirim → muncul sebagai voice note, bisa diputar
-- [ ] Tap foto di bubble chat — buka fullscreen, coba pinch-zoom & geser antar foto
-- [ ] Tap video di bubble chat — terbuka & bisa diputar
+## Customer & Order
+- [ ] Tap nama/avatar di header chat — bottom sheet info pelanggan terbuka
+- [ ] Tap salah satu tahap pipeline (Lead/Qualified/Quoted/Won/Lost) di bottom sheet — berubah seketika (optimistic), badge warna berubah
+- [ ] Edit nama pelanggan, Kondisi Pelanggan (Sakit/Tidak Sakit), dan Tipe Customer — tersimpan
+- [ ] Tap "+ Order" — isi form order lengkap (kategori Layanan/Sewa/Baru, merk & ukuran kasur, add-on layanan + harga, keluhan customer, berat badan per orang) — simpan — order baru muncul di list
+- [ ] Tambah catatan internal — muncul di list catatan dengan nama penulis + waktu
+- [ ] Foto profil WhatsApp pelanggan tampil di header chat & bottom sheet (kalau privasi WA pelanggan mengizinkan — kalau tidak, fallback avatar inisial berwarna, ini normal bukan bug)
 
-## 5. Reply / forward
-- [ ] Tekan lama (long-press) 1 bubble pesan — terasa getar halus + muncul menu Balas/Teruskan/Salin
-- [ ] Pilih "Balas" — muncul preview quote di atas kolom ketik, kirim — bubble baru menampilkan kutipan pesan asli
-- [ ] Tap kutipan itu di bubble baru — otomatis scroll & highlight (kuning sebentar) ke pesan aslinya
-- [ ] Pilih "Teruskan" — modal cari percakapan tujuan muncul, pilih salah satu — pesan terkirim ke sana
+## Home & Pelanggan
+- [ ] Tab Home: card "Target Tim Bulan Ini" tampil progress bar (khusus role ADMIN) atau target pribadi (role SALES)
+- [ ] Tab Home: "Progress per Sales" — tiap sales tampil nilai tercapai vs target bulanan
+- [ ] Tab Home: "Performa Sales" (chat ditangani + conversion) — SALES cuma lihat baris sendiri, ADMIN lihat semua
+- [ ] Tab Pelanggan: list pelanggan dengan chip filter pipeline stage
+- [ ] Tab Pelanggan: toggle ke tampilan "Pipeline Board" (kanban) — kolom per stage tampil
+- [ ] Di Pipeline Board, tekan lama 1 card pelanggan → pindahkan ke kolom stage lain — tersimpan
+- [ ] Filter "Sales" (dropdown/pill) — pilih sales tertentu, list/board cuma tampil pelanggan miliknya (role ADMIN saja yang bisa ganti-ganti, role SALES otomatis terkunci ke diri sendiri)
 
-## 6. Bottom sheet — edit pipeline + order
-- [ ] Di bottom sheet info pelanggan: tap salah satu tahap pipeline (Lead/Qualified/dst) — berubah seketika (optimistic), badge warna berubah
-- [ ] Edit nama pelanggan (tap ikon pensil) — simpan, nama di header ikut berubah
-- [ ] Ubah Kondisi Pelanggan (Sakit/Tidak Sakit) dan Tipe Customer — tersimpan
-- [ ] Tap "+ Order" — isi form order (pilih produk dari Galeri Produk ATAU ketik manual, qty, harga, catatan) — simpan — order baru muncul di list order
-- [ ] Tambah catatan internal baru — muncul di list catatan dengan nama+waktu
+## Tanya Sano
+- [ ] FAB "Tanya Sano" (ikon sparkle) muncul di tab Home
+- [ ] Tap FAB → sheet chat AI terbuka, bisa kirim pertanyaan
+- [ ] Jawaban Sano tampil dengan formatting markdown yang benar (bold, list bernomor/bullet, bukan tanda `**`/`-` mentah)
 
-## 7. Take over
-- [ ] Buka percakapan yang masih "milik" sales lain — muncul banner "Ditangani oleh [nama]" + tombol "Ambil Alih"
-- [ ] Tap "Ambil Alih" — muncul konfirmasi dulu, baru berpindah jadi milik kamu (banner hilang)
-- [ ] Buka menu (⋮) di header chat → "Transfer ke Sales Lain" → pilih sales lain — percakapan berpindah
+## Profil
+- [ ] Tap foto profil sendiri → pilih dari galeri → foto baru tersimpan & tampil
+- [ ] Toggle "Aktifkan notifikasi" — bisa dinyalakan/dimatikan, tersimpan
+- [ ] Menu "Cek Update" — kalau ada update OTA, muncul prompt & app restart otomatis setelah selesai; kalau tidak ada, muncul pesan "sudah versi terbaru" (tidak nyangkut loading)
+- [ ] Logout — kembali ke layar Login
+- [ ] Login lagi dengan akun berbeda di device yang sama — data/chat akun sebelumnya tidak nyampur/bocor ke akun baru
 
-## 8. Push notification
-- [ ] App di-background (tekan Home, jangan ditutup) → minta rekan kirim WA ke nomor customer test → notifikasi muncul dalam beberapa detik, tap → langsung masuk ke chat yang benar
-- [ ] App ditutup total (swipe dari recent apps / force-stop) → kirim WA lagi → notifikasi tetap muncul, tap → app kebuka & langsung ke chat yang benar (bukan ke Inbox kosong)
-- [ ] Saat app sedang dibuka di layar Inbox (bukan di chat itu) dan ada pesan masuk — muncul banner kecil di atas, tap → masuk ke chat itu
-- [ ] Saat app sedang dibuka DI DALAM chat yang sama dengan pesan masuk — TIDAK muncul notifikasi dobel (cukup bubble baru muncul langsung di chat)
-
-## 9. OTA update check
-- [ ] Buka tab Profil → cari menu "Cek Update" / info versi app
-- [ ] Kalau ada update OTA (JS-only, bukan versi native baru) — muncul prompt/proses update, app restart otomatis setelah selesai
-- [ ] Kalau tidak ada update — muncul pesan "sudah versi terbaru" (tidak nyangkut loading)
-
-## 10. Logout
-- [ ] Tab Profil (atau ikon logout di Inbox) → Logout — kembali ke layar Login
-- [ ] Login lagi dengan akun sales BERBEDA di device yang sama — data/chat sebelumnya tidak nyampur/bocor ke akun baru
-- [ ] Notifikasi push akun lama tidak lagi masuk ke device ini setelah logout
+## Push Notification (SEPARATE — test di HP fisik, bukan emulator)
+- [ ] Buka Profil, pastikan toggle notifikasi aktif — token FCM berhasil terdaftar (tidak ada error saat login/buka app)
+- [ ] App di-background (tekan Home, jangan ditutup) → rekan kirim WA ke nomor customer test → notifikasi muncul dalam beberapa detik, tap → langsung masuk ke chat yang benar
+- [ ] App ditutup total (swipe dari recent apps / force-stop) → kirim WA lagi → notifikasi tetap muncul, tap → app terbuka & langsung ke chat yang benar (bukan ke Home/Inbox kosong)
+- [ ] Saat app terbuka tapi TIDAK sedang di chat itu — pesan masuk tetap memicu notifikasi/badge
+- [ ] Saat app terbuka DAN sedang DI DALAM chat yang sama dengan pesan masuk — TIDAK muncul notifikasi dobel (cukup bubble baru langsung tampil di chat)
+- [ ] Setelah logout, notifikasi push akun lama tidak lagi masuk ke device ini
 
 ---
 
 ## Catatan known limitation (bukan bug, sudah didokumentasikan)
+- Pencarian di dalam 1 percakapan ("in-chat search") baru ada di versi web
+  CRM, belum ada di mobile — bukan bug, cuma belum dikerjakan.
 - Jumlah member grup WhatsApp TIDAK ditampilkan di info grup (backend belum
   integrasi WAHA group-participants API) — cuma nama grup + jumlah media.
-- Splash screen & app icon masih pakai asset sementara (belum final dari
-  Gilang) — lihat bagian "Branding belum final" di bawah.
-
-## Branding belum final ⚠️
-`assets/icon.png` yang dipakai sebagai app icon DAN splash screen sekarang
-masih berisi garis bantu desain (crosshair/lingkaran guide) yang kelihatan
-belum final — kemungkinan file mentah/belum di-export bersih dari tool
-desain. Perlu file icon + splash final dari Gilang sebelum rilis produksi
-sesungguhnya ke semua sales (untuk testing internal sekarang tidak masalah).
+- Preferensi notifikasi (master toggle + jam aktif) di Profil masih
+  tersimpan lokal — belum ada endpoint backend, jadi tidak sinkron lintas
+  device kalau sales pakai lebih dari 1 HP.
