@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { BedDouble } from "lucide-react";
 import { api } from "../api.js";
 import { refreshSocketAuth } from "../lib/socket.js";
 
@@ -30,7 +29,7 @@ export default function Login({ onLogin }) {
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-logo">
           <div className="login-logo-icon">
-            <BedDouble size={22} />
+            <img src="/logo-small.png" alt="Logo" style={{ width: 28, height: 28, objectFit: "contain" }} />
           </div>
           <div className="login-logo-text">
             <h1>Klinik Matras</h1>

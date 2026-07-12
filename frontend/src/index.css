@@ -85,8 +85,13 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .sidebar-brand-icon {
+  /* Logo Sano sudah full-color (biru + aksen teal) di atas dasar putih —
+     dulu ada background gradient biru di sini (dibuat utk logo lama yang
+     monokrom), tapi kalau dipertahankan logo baru jadi biru-di-atas-biru
+     (kontras jelek). Cukup kotak putih tipis + border supaya tetap kelihatan
+     sebagai "brand mark" di sidebar putih, bukan menyatu polos ke background. */
   width: 34px; height: 34px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  background: #fff; border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
   color: white; font-size: 16px;
 }
@@ -830,8 +835,12 @@ input:focus, select:focus, textarea:focus {
 }
 .login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .login-logo-icon {
+  /* Sama seperti .sidebar-brand-icon — logo Sano sudah full-color di atas
+     dasar putih, jadi kotak brand di sini cukup putih+border, bukan gradient
+     biru (kalau dipertahankan, mark biru jadi nyaris tak kelihatan di atas
+     background biru). */
   width: 44px; height: 44px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  background: #fff; border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
   color: white; font-size: 20px;
 }

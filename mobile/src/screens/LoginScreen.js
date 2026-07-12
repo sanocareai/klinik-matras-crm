@@ -2,10 +2,9 @@
 // Ada opsi "Alamat server" tersembunyi untuk testing dengan server lokal.
 import React, { useState } from "react";
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, Image, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
-import { BedDouble } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
 import { DEFAULT_SERVER } from "../api";
@@ -39,7 +38,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <BedDouble size={44} color={colors.header} strokeWidth={1.8} style={styles.logo} />
+        <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
         <Text style={styles.title}>Klinik Matras CRM</Text>
         <Text style={styles.subtitle}>Ahlinya Kasur Sehat</Text>
 
@@ -95,7 +94,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
   },
-  logo: { marginBottom: 4 },
+  logo: { width: 56, height: 56, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "700", color: colors.text },
   subtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
   input: {
