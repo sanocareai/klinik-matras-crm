@@ -26,6 +26,7 @@ import { trackingRouter, trackingRedirectRouter } from "./routes/tracking.js";
 import { internalRouter } from "./routes/internal.js";
 import { sseRouter }      from "./routes/sse.js";
 import { adminRouter }    from "./routes/admin.js";
+import { masterDataRouter } from "./routes/masterData.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,7 @@ app.use("/api/tracking",   trackingRouter);
 app.use("/api/internal",   internalRouter);
 app.use("/api/events",     sseRouter);
 app.use("/api/admin",      adminRouter);
+app.use("/api/master-data", masterDataRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
