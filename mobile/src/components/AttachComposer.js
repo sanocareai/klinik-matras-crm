@@ -19,6 +19,27 @@ import PressableScale from "./PressableScale";
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
 
+// uploadFile() (mobile/src/api.js, dipakai api.sendMedia) kadang GAGAL cuma
+// di sisi respons — file sudah ke-upload penuh, WAHA sudah kirim ke
+// WhatsApp, Message sudah tersimpan di backend, TAPI koneksi seluler lemah
+// pas balasan JSON kecil terakhir balik ke HP, jadi client tetap terima
+// error. Sebelum vonis "gagal" (yang akan bikin user tergoda pencet ulang
+// → kirim dobel ke WhatsApp beneran), cek dulu riwayat pesan: kalau memang
+// SUDAH ada pesan OUTBOUND media baru dalam beberapa detik terakhir, itu
+// bukti sudah terkirim — anggap sukses.
+async function findRecentlySentMedia(conversationId, sinceMs) {
+  try {
+    const msgs = await api.getMessages(conversationId);
+    const cutoff = sinceMs - 3000; // toleransi jam server/klien sedikit meleset
+    const candidates = msgs
+      .filter((m) => m.direction === "OUTBOUND" && m.mediaType && new Date(m.createdAt).getTime() >= cutoff)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return candidates[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 function fileNameFromUri(uri, fallbackExt) {
   const last = (uri || "").split("/").pop() || "";
   return last.includes(".") ? last : `file-${Date.now()}.${fallbackExt}`;
@@ -102,6 +123,7 @@ export default function AttachComposer({ conversationId, onSent }) {
     setSending(true);
     const remaining = [];
     for (const item of items) {
+      const startedAt = Date.now();
       try {
         let uri = item.uri;
         let type = item.type;
@@ -116,7 +138,12 @@ export default function AttachComposer({ conversationId, onSent }) {
         const msg = await api.sendMedia(conversationId, file, item.caption.trim(), sendAs);
         onSent?.(msg);
       } catch (err) {
-        remaining.push({ ...item, error: err.message });
+        const reconciled = await findRecentlySentMedia(conversationId, startedAt);
+        if (reconciled) {
+          onSent?.(reconciled); // sebenarnya sudah terkirim, cuma respons yang gagal sampai
+        } else {
+          remaining.push({ ...item, error: err.message });
+        }
       }
     }
     setItems(remaining);

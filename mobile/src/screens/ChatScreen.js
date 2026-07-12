@@ -95,6 +95,11 @@ export default function ChatScreen({ route, navigation }) {
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
   const customerSheetRef = useRef(null);
+  // Tinggi header asli (bukan hardcode) — dipakai keyboardVerticalOffset di
+  // Android supaya KeyboardAvoidingView "behavior=height" tahu berapa
+  // banyak ruang di ATAS-nya sudah terpakai (header tidak ikut di-resize
+  // oleh KeyboardAvoidingView, cuma konten di bawahnya).
+  const headerHeightRef = useRef(0);
 
   const isGroup = conversation ? conversation.type === "GROUP" : !!routeIsGroup;
   const customerId = conversation?.customerId ?? routeCustomerId;
@@ -309,9 +314,13 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "android" ? headerHeightRef.current : 0}
+    >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={styles.header} onLayout={(e) => { headerHeightRef.current = e.nativeEvent.layout.height; }}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
         </TouchableOpacity>

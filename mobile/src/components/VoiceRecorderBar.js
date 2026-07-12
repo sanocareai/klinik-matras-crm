@@ -28,6 +28,23 @@ import AudioPlayer from "./AudioPlayer";
 
 const MIN_DURATION_SEC = 1;
 
+// Sama seperti AttachComposer.js — uploadFile() kadang gagal cuma di sisi
+// respons (VN sudah terkirim ke WhatsApp, koneksi lemah pas respons balik).
+// Cek riwayat sebelum vonis gagal, supaya tidak ada dorongan kirim ulang
+// (dobel VN ke customer beneran).
+async function findRecentlySentMedia(conversationId, sinceMs) {
+  try {
+    const msgs = await api.getMessages(conversationId);
+    const cutoff = sinceMs - 3000;
+    const candidates = msgs
+      .filter((m) => m.direction === "OUTBOUND" && m.mediaType && new Date(m.createdAt).getTime() >= cutoff)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return candidates[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   const sec = s % 60;
@@ -91,13 +108,20 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
   async function sendVoiceNote() {
     if (!preview || sending) return;
     setSending(true);
+    const startedAt = Date.now();
     try {
       const file = { uri: preview.uri, name: `voice-${Date.now()}.webm`, type: "audio/webm" };
       const msg = await api.sendMedia(conversationId, file, "", "media");
       onSent?.(msg);
       setPreview(null);
     } catch (err) {
-      Alert.alert("Gagal kirim pesan suara", err.message);
+      const reconciled = await findRecentlySentMedia(conversationId, startedAt);
+      if (reconciled) {
+        onSent?.(reconciled);
+        setPreview(null);
+      } else {
+        Alert.alert("Gagal kirim pesan suara", err.message);
+      }
     } finally {
       setSending(false);
     }
@@ -135,6 +159,11 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
         onLongPress={startRecording}
         delayLongPress={150}
         onPressOut={() => { if (isRecordingRef.current) finishRecording(); }}
+        // Tap SEBENTAR (bukan tahan) tidak memicu onLongPress sama sekali —
+        // dari luar terlihat seperti tombol "tidak merespon apa-apa" (bug
+        // yang dilaporkan). onPress kasih tahu caranya, supaya user tidak
+        // mengira tombolnya rusak.
+        onPress={() => Alert.alert("Pesan Suara", "Tahan tombol mic untuk mulai merekam, lepas untuk berhenti.")}
       >
         <Mic size={20} color={recording ? "#fff" : tokens.color.textSecondary} strokeWidth={2} />
       </TouchableOpacity>
