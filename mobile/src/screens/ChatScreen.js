@@ -99,11 +99,6 @@ export default function ChatScreen({ route, navigation }) {
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
   const customerSheetRef = useRef(null);
-  // Tinggi header asli (bukan hardcode) — dipakai keyboardVerticalOffset di
-  // Android supaya KeyboardAvoidingView "behavior=height" tahu berapa
-  // banyak ruang di ATAS-nya sudah terpakai (header tidak ikut di-resize
-  // oleh KeyboardAvoidingView, cuma konten di bawahnya).
-  const headerHeightRef = useRef(0);
 
   const isGroup = conversation ? conversation.type === "GROUP" : !!routeIsGroup;
   const customerId = conversation?.customerId ?? routeCustomerId;
@@ -318,13 +313,20 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "android" ? headerHeightRef.current : 0}
-    >
+    // behavior="padding" di KEDUA platform (bukan "height" di Android) —
+    // "height" mengubah tinggi terukur KeyboardAvoidingView sendiri, yang di
+    // Android modern (edge-to-edge, default sejak Expo SDK 54+/RN 0.86)
+    // sering meleset/telat mengikuti animasi keyboard sehingga composer
+    // tetap ketutup. "padding" cuma menambah paddingBottom sebesar tinggi
+    // keyboard, lebih konsisten di kedua platform. Header ada DI DALAM
+    // (child) KeyboardAvoidingView ini, bukan di luar/sibling-nya, jadi
+    // TIDAK perlu keyboardVerticalOffset — offset itu cuma untuk elemen
+    // tetap di ATAS KeyboardAvoidingView yang bukan bagian dari view ini
+    // (mis. header react-navigation bawaan, yang di app ini headerShown:
+    // false / tidak dipakai).
+    <KeyboardAvoidingView style={styles.container} behavior="padding" keyboardVerticalOffset={0}>
       {/* Header */}
-      <View style={styles.header} onLayout={(e) => { headerHeightRef.current = e.nativeEvent.layout.height; }}>
+      <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
         </TouchableOpacity>

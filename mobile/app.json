@@ -12,6 +12,7 @@
     "android": {
       "package": "com.sanomatrassehat.salesapp",
       "versionCode": 3,
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#075E54",

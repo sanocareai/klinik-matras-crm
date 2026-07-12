@@ -134,9 +134,39 @@ function MessageBubbleBase({
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
   const text = m.content && !isRevoked && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
 
+  // BUG (fix): setStringAsync balikin Promise — kalau reject (native side
+  // clipboard gagal dsb) itu jadi "Uncaught (in promise)" walau pemanggil
+  // dibungkus try/catch biasa, sama seperti kasus Haptics (lihat
+  // src/lib/haptics.js). WAJIB .catch() + Alert supaya user tahu gagal,
+  // bukan diam-diam uncaught.
   function copyText() {
     setShowActions(false);
-    if (text) Clipboard.setStringAsync(text);
+    if (!text) return;
+    try {
+      Clipboard.setStringAsync(text).catch(() => {
+        Alert.alert("Gagal menyalin", "Tidak bisa menyalin teks ke clipboard");
+      });
+    } catch {
+      Alert.alert("Gagal menyalin", "Tidak bisa menyalin teks ke clipboard");
+    }
+  }
+
+  function handleReply() {
+    setShowActions(false);
+    try {
+      onReply?.(m);
+    } catch {
+      Alert.alert("Gagal membalas", "Terjadi kesalahan saat menyiapkan balasan");
+    }
+  }
+
+  function handleForward() {
+    setShowActions(false);
+    try {
+      onForward?.(m);
+    } catch {
+      Alert.alert("Gagal meneruskan", "Terjadi kesalahan saat menyiapkan pesan diteruskan");
+    }
   }
 
   return (
@@ -251,13 +281,13 @@ function MessageBubbleBase({
         <TouchableOpacity style={styles.actionOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
           <View style={styles.actionSheet}>
             {onReply && (
-              <TouchableOpacity style={styles.actionItemRow} onPress={() => { setShowActions(false); onReply(m); }}>
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleReply}>
                 <Reply size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
                 <Text style={styles.actionText}>Balas</Text>
               </TouchableOpacity>
             )}
             {onForward && (
-              <TouchableOpacity style={styles.actionItemRow} onPress={() => { setShowActions(false); onForward(m); }}>
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleForward}>
                 <Forward size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
                 <Text style={styles.actionText}>Teruskan</Text>
               </TouchableOpacity>
