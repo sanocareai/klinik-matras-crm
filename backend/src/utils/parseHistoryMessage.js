@@ -112,10 +112,17 @@ export function parseHistoryMessage(msg) {
 
   if (msg.hasMedia || msg.media || rawMediaType) {
     const mime = msg.media?.mimetype || msg._data?.mimetype || msg._data?.Info?.Mimetype || "";
-    // Prioritas: mimetype (paling presisi) > _data.Info.MediaType (string
-    // tipe langsung, sering satu-satunya sumber saat media.url belum
-    // ter-download) > "document" (fallback aman terakhir).
-    mediaType = mime ? mimeToMediaType(mime) : (rawMediaType || "document");
+    // Prioritas: rawMediaType "sticker" DULU — stiker WhatsApp cuma file
+    // image/webp biasa secara mimetype, jadi mimeToMediaType tidak bisa
+    // bedakan stiker dari foto asli (keduanya "image/..."), tapi
+    // _data.Info.MediaType WAHA secara eksplisit bilang "sticker" (bukan
+    // "image") untuk pesan stiker — bug produksi: stiker selalu lolos
+    // sebagai mediaType "image" karena mime dicek lebih dulu tanpa
+    // pengecualian ini. Selain sticker, mimetype (paling presisi) tetap
+    // didahulukan > _data.Info.MediaType (string tipe langsung, sering
+    // satu-satunya sumber saat media.url belum ter-download) > "document"
+    // (fallback aman terakhir).
+    mediaType = rawMediaType === "sticker" ? "sticker" : (mime ? mimeToMediaType(mime) : (rawMediaType || "document"));
     mediaUrl  = msg.media?.url || null; // URL dari WAHA sendiri — aman dipakai langsung kalau ada
     caption   = msg.caption || text || null;
   } else {

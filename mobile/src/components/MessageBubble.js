@@ -29,7 +29,7 @@ function AckTicks({ ack }) {
 // Label teks polos (TANPA emoji) — dipakai di konteks yang murni tekstual
 // (preview kutipan reply, pesan "media tidak tersedia"); rendering media
 // yang SEBENARNYA (bubble utama) sudah pakai ikon lucide asli di bawah.
-const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen" };
+const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker" };
 
 function DocumentRow({ url }) {
   const fileName = decodeURIComponent(url.split("/").pop() || "Dokumen");
@@ -116,6 +116,13 @@ function MessageBubbleBase({
             <Text style={styles.videoLabel}>Video</Text>
           </TouchableOpacity>
         )}
+        {m.mediaType === "sticker" && m.mediaUrl && (
+          // Stiker WhatsApp = WebP transparan kecil — TIDAK pakai TouchableOpacity/
+          // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
+          // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
+          // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
+          <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
+        )}
         {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
         {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
         {hasMedia && !m.mediaUrl && (
@@ -189,6 +196,7 @@ const styles = StyleSheet.create({
   forwardedRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 3 },
   forwarded: { fontSize: 11, color: tokens.color.textMuted, fontStyle: "italic" },
   image: { width: 220, height: 220, borderRadius: 10, marginBottom: 4 },
+  sticker: { width: 130, height: 130, marginBottom: 4 },
   videoThumb: {
     width: 220, height: 140, borderRadius: 10, marginBottom: 4, backgroundColor: "#0f172a",
     alignItems: "center", justifyContent: "center",

@@ -200,6 +200,13 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           <div className="bubble-forwarded"><Forward size={11} /> Diteruskan</div>
         )}
 
+        {m.mediaType === "sticker" && m.mediaUrl && (
+          // Stiker WhatsApp = WebP transparan kecil — bukan foto, tidak masuk
+          // lightbox onOpenMedia (WhatsApp asli juga tidak bisa di-zoom stiker),
+          // objectFit "contain" (bukan "cover" seperti .bubble-img) supaya
+          // transparansi & rasio aslinya tidak terpotong/di-crop.
+          <img src={m.mediaUrl} alt="Stiker" className="bubble-sticker" onError={(e) => { e.target.style.display = "none"; }} />
+        )}
         {m.mediaType === "image" && m.mediaUrl && (
           <button type="button" className="bubble-img-btn" onClick={() => onOpenMedia?.("image", m.mediaUrl)}>
             <img src={m.mediaUrl} alt="Foto" className="bubble-img" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
