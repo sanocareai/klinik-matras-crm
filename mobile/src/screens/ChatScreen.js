@@ -111,6 +111,23 @@ export default function ChatScreen({ route, navigation }) {
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
   const customerSheetRef = useRef(null);
+
+  // BUG (fix): mengirim pesan SEBELUMNYA cuma mengandalkan
+  // maintainVisibleContentPosition.autoscrollToBottomThreshold untuk
+  // otomatis scroll ke bawah — di Android, deteksi otomatis "user sedang di
+  // dekat bawah" itu KADANG telat/salah sesaat setelah cell baru masuk
+  // (estimasi tinggi cell baru belum match ukuran asli sampai layout pass
+  // berikutnya), jadi list SEMPAT render seolah masih di posisi lama
+  // (nongol pesan lama lebih atas) sebelum "melompat" balik ke bawah —
+  // persis pola "scroll naik dulu lalu snap turun" yang dilaporkan. Solusi:
+  // JANGAN andalkan auto-detect sama sekali untuk pesan yang KITA KIRIM
+  // SENDIRI (beda dari pesan MASUK dari customer, yang threshold-nya tetap
+  // dipakai supaya tidak menyentak user yang sedang baca riwayat lama) —
+  // paksa scrollToEnd deterministik tiap kali kita sendiri baru saja
+  // menambah pesan (kirim teks/media/VN/retry).
+  function scrollToBottomSoon() {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }
   // Selalu ikuti `text` state terbaru TANPA bikin handleEditMessage di bawah
   // dependen ke `text` (yang berubah tiap keystroke) — kalau dependen,
   // handleEditMessage dapat reference baru tiap ketik, sama masalahnya
@@ -249,6 +266,7 @@ export default function ChatScreen({ route, navigation }) {
       createdAt: new Date().toISOString(),
       status: "sending",
     });
+    scrollToBottomSoon();
 
     try {
       const msg = await api.sendMessage(
@@ -424,6 +442,7 @@ export default function ChatScreen({ route, navigation }) {
           .concat([{ ...m, id: tempId, status: "sending" }]),
       },
     }));
+    scrollToBottomSoon();
     api.sendMessage(conversationId, m.content, m.replyTo?.externalId || null, m.replyTo?.id || null)
       .then((msg) => useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg))
       .catch(() => useOutboxStore.getState().enqueue({
@@ -691,7 +710,7 @@ export default function ChatScreen({ route, navigation }) {
           <View style={styles.inputBar}>
             <AttachComposer
               conversationId={conversationId}
-              onSent={(msg) => useMessageStore.getState().appendMessage(conversationId, msg)}
+              onSent={(msg) => { useMessageStore.getState().appendMessage(conversationId, msg); scrollToBottomSoon(); }}
             />
             <TextInput
               style={styles.input}
@@ -716,7 +735,7 @@ export default function ChatScreen({ route, navigation }) {
             ) : (
               <VoiceRecorderBar
                 conversationId={conversationId}
-                onSent={(msg) => useMessageStore.getState().appendMessage(conversationId, msg)}
+                onSent={(msg) => { useMessageStore.getState().appendMessage(conversationId, msg); scrollToBottomSoon(); }}
               />
             )}
           </View>
