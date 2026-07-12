@@ -1,4 +1,4 @@
-import React, { memo, useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import {
   Reply, Forward, Pencil, Trash2, CheckSquare, FileText, Image as ImageIcon, Video, Mic, Smile,
   Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
@@ -214,6 +214,27 @@ function MessageBubbleBase({
 }) {
   const [hovered, setHovered] = useState(false);
   const longPressTimerRef = useRef(null);
+  const rowRef = useRef(null);
+
+  // BUG (fix): `hovered` cuma di-toggle lewat onMouseEnter/onMouseLeave —
+  // di trackpad/layar sentuh, mouseleave TIDAK SELALU terpanggil (misal
+  // scroll-drag lewat sentuhan, atau tap cepat lalu langsung geser layar),
+  // jadi msg-action-bar bisa nyangkut kelihatan terus di atas bubble padahal
+  // cursor sudah pindah. Safety net: begitu hovered=true, pasang listener
+  // level dokumen — klik/sentuh APA PUN di luar row ini langsung tutup,
+  // terlepas dari kenapa mouseleave/touchend sebelumnya gagal.
+  useEffect(() => {
+    if (!hovered) return;
+    function handleOutside(e) {
+      if (rowRef.current && !rowRef.current.contains(e.target)) setHovered(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [hovered]);
 
   const isOut     = m.direction === "OUTBOUND";
   const isSending = m.status === "sending";
@@ -258,6 +279,7 @@ function MessageBubbleBase({
 
   return (
     <div
+      ref={rowRef}
       className="msg-row"
       style={{ display: "flex", flexDirection: "row", alignItems: "center", width: "100%", gap: 8 }}
       onMouseEnter={() => setHovered(true)}

@@ -37,7 +37,6 @@ import MediaViewerModal from "../components/MediaViewerModal";
 import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
-import SanoAssistant from "../components/SanoAssistant";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
@@ -819,11 +818,13 @@ export default function ChatScreen({ route, navigation }) {
         }}
       />
 
-      {/* "Tanya Sano" FAB — bottomOffset lebih tinggi dari Home supaya tidak
-          menutupi composer/input bar di bawahnya. Konteks pelanggan
-          dititipkan (lihat catatan di SanoChatSheet.js) — grup tidak punya
-          konteks pelanggan tunggal, FAB tetap tampil tanpa context. */}
-      <SanoAssistant bottomOffset={84} context={!isGroup ? { customerName: name } : null} />
+      {/* BUG (fix, lihat CLAUDE.md §7D revisi 4): FAB "Tanya Sano" dulu
+          dipasang di sini juga, tapi Inbox sudah punya mekanisme kirim
+          pesan sendiri — FAB ini cuma menutupi bubble pesan/composer dan
+          bersaing ruang tanpa fungsi tambahan di layar ini. Coba "hide saat
+          keyboard fokus" sebelumnya TERNYATA tidak cukup (tetap menutupi
+          saat keyboard tertutup), jadi disembunyikan TOTAL dari ChatScreen
+          — tetap ada di HomeScreen.js (satu-satunya layar yang butuh). */}
     </KeyboardAvoidingView>
   );
 }
