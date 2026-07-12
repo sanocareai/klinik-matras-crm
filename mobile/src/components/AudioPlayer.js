@@ -22,7 +22,13 @@ function fmtDuration(sec) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export default function AudioPlayer({ uri, tint = tokens.color.accent }) {
+// waveform: array opsional angka 0..1 (amplitude ternormalisasi) — dikirim
+// oleh VoiceRecorderBar.js dari sample metering ASLI yang direkam saat VN
+// dibuat (bukan didekode ulang dari file, kita tidak punya tooling untuk itu
+// — lihat catatan di VoiceRecorderBar.js). Kalau tidak ada (mis. playback
+// VN lama dari riwayat chat, sebelum fitur ini ada), fallback ke progress
+// bar polos seperti sebelumnya — TIDAK di-fake.
+export default function AudioPlayer({ uri, tint = tokens.color.accent, waveform }) {
   const player = useAudioPlayer(uri);
   const status = useAudioPlayerStatus(player);
   const [finished, setFinished] = useState(false);
@@ -51,15 +57,31 @@ export default function AudioPlayer({ uri, tint = tokens.color.accent }) {
   }
 
   const progress = durationSec > 0 ? positionSec / durationSec : 0;
+  const hasWaveform = Array.isArray(waveform) && waveform.length > 0;
+  const playedCount = hasWaveform ? Math.round(progress * waveform.length) : 0;
 
   return (
     <View style={styles.wrap}>
       <TouchableOpacity style={[styles.btn, { backgroundColor: tint }]} onPress={toggle}>
         <Text style={styles.btnIcon}>{playing ? "⏸" : "▶"}</Text>
       </TouchableOpacity>
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${Math.min(100, progress * 100)}%`, backgroundColor: tint }]} />
-      </View>
+      {hasWaveform ? (
+        <View style={styles.waveformTrack}>
+          {waveform.map((v, i) => (
+            <View
+              key={i}
+              style={[
+                styles.waveformBar,
+                { height: 3 + v * 16, backgroundColor: i < playedCount ? tint : tokens.color.border },
+              ]}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={styles.track}>
+          <View style={[styles.fill, { width: `${Math.min(100, progress * 100)}%`, backgroundColor: tint }]} />
+        </View>
+      )}
       <Text style={styles.time}>{fmtDuration(playing || positionSec ? positionSec : durationSec)}</Text>
     </View>
   );
@@ -71,5 +93,7 @@ const styles = StyleSheet.create({
   btnIcon: { color: "#fff", fontSize: 13 },
   track: { flex: 1, height: 3, borderRadius: 2, backgroundColor: "rgba(0,0,0,0.15)", overflow: "hidden" },
   fill: { height: "100%" },
+  waveformTrack: { flex: 1, flexDirection: "row", alignItems: "center", gap: 2, height: 20 },
+  waveformBar: { width: 3, borderRadius: 1.5 },
   time: { fontSize: 11, color: tokens.color.textMuted, minWidth: 34 },
 });

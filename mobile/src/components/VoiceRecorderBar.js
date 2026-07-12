@@ -23,17 +23,29 @@
 // overlay position:absolute yang menutupi SELURUH baris input (termasuk
 // TextInput di baliknya), jadi dapat lebar penuh tanpa perlu ubah
 // ChatScreen.js sama sekali.
-import React, { useRef, useState } from "react";
+//
+// RESTYLE (WhatsApp look & feel): dot rekam berdenyut, teks "Geser untuk
+// batal" shimmer halus, "Kunci" + chevron memantul di atas tombol mic,
+// waveform hidup dari amplitude mic asli (expo-audio metering — BUKAN
+// data palsu, kalau metering tidak tersedia baris waveform disembunyikan
+// total). Sample amplitude yang direkam selama sesi rekam disimpan supaya
+// preview (setelah lepas jari) bisa tampil sebagai waveform statis dengan
+// bagian sudah-diputar vs belum, bukan cuma progress bar polos.
+import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, Animated, PanResponder,
 } from "react-native";
+import Reanimated, {
+  FadeIn, ZoomIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming,
+} from "react-native-reanimated";
 import {
   useAudioRecorder,
+  useAudioRecorderState,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from "expo-audio";
-import { Mic, Trash2, Send, Lock, ChevronLeft } from "lucide-react-native";
+import { Mic, Trash2, Send, ChevronUp, ChevronLeft } from "lucide-react-native";
 import { api } from "../api";
 import { tokens } from "../constants/theme";
 import { lightHaptic, mediumHaptic } from "../lib/haptics";
@@ -44,6 +56,9 @@ const HOLD_DELAY_MS = 150;   // tekan-tahan minimal sebelum dianggap "mulai reka
 const LOCK_DISTANCE = 70;    // px geser ke ATAS untuk kunci rekaman
 const CANCEL_DISTANCE = 90;  // px geser ke KIRI untuk batal rekam
 const DRAG_VISUAL_CLAMP = 26; // gerakan visual tombol mic dibatasi supaya tidak "kabur" dari layar
+const METERING_INTERVAL_MS = 100; // cadence baca amplitude mic — cukup rapat untuk waveform terasa hidup
+const LIVE_BARS_MAX = 32;   // jendela bergulir waveform SAAT merekam (bar terlama didorong keluar)
+const PREVIEW_BARS = 40;    // jumlah bar waveform statis di layar preview
 
 // Sama seperti AttachComposer.js — uploadFile() kadang gagal cuma di sisi
 // respons (VN sudah terkirim ke WhatsApp, koneksi lemah pas respons balik).
@@ -68,13 +83,76 @@ function fmtTime(s) {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+// Rata-ratakan array sample amplitude mentah (bisa ratusan untuk VN panjang)
+// jadi jumlah bar tetap (PREVIEW_BARS) untuk ditampilkan statis di preview.
+function downsampleWaveform(samples, targetCount) {
+  if (!samples.length) return [];
+  if (samples.length <= targetCount) return samples;
+  const bucket = samples.length / targetCount;
+  const out = [];
+  for (let i = 0; i < targetCount; i++) {
+    const start = Math.floor(i * bucket);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucket));
+    let sum = 0;
+    let n = 0;
+    for (let j = start; j < end && j < samples.length; j++) { sum += samples[j]; n++; }
+    out.push(n ? sum / n : 0);
+  }
+  return out;
+}
+
+// Dot merah berdenyut — dipakai di indikator rekam (belum dikunci) & di
+// tengah saat sudah dikunci.
+function PulsingDot({ size = 9 }) {
+  const scale = useSharedValue(1);
+  useEffect(() => {
+    scale.value = withRepeat(withTiming(1.4, { duration: 550 }), -1, true);
+  }, [scale]);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Reanimated.View style={[styles.recDot, { width: size, height: size, borderRadius: size / 2 }, style]} />
+  );
+}
+
+// "◀ Geser untuk batal" — shimmer halus ke kiri supaya terasa seperti
+// mengajak jari digeser, bukan teks statis.
+function CancelHintShimmer() {
+  const shift = useSharedValue(0);
+  useEffect(() => {
+    shift.value = withRepeat(withTiming(-5, { duration: 700 }), -1, true);
+  }, [shift]);
+  const style = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }));
+  return (
+    <Reanimated.View style={[styles.cancelHintRow, style]}>
+      <ChevronLeft size={14} color={tokens.color.textMuted} strokeWidth={2.4} />
+      <Text style={styles.cancelHintText}>Geser untuk batal</Text>
+    </Reanimated.View>
+  );
+}
+
+// Waveform hidup dari amplitude mic asli SAAT merekam — kalau belum ada
+// sample metering sama sekali (device/OS tidak kasih data metering), tidak
+// dirender apa-apa (jangan pura-pura ada data).
+function LiveWaveform({ bars }) {
+  if (!bars.length) return null;
+  return (
+    <View style={styles.liveWaveformRow}>
+      {bars.map((v, i) => (
+        <View key={i} style={[styles.liveWaveformBar, { height: 4 + v * 18 }]} />
+      ))}
+    </View>
+  );
+}
+
 export default function VoiceRecorderBar({ conversationId, onSent }) {
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
+  const recorderState = useAudioRecorderState(recorder, METERING_INTERVAL_MS);
   const [recording, setRecording] = useState(false);
   const [locked, setLocked] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [preview, setPreview] = useState(null); // { uri, seconds }
+  const [preview, setPreview] = useState(null); // { uri, seconds, waveform }
   const [sending, setSending] = useState(false);
+  const [liveBars, setLiveBars] = useState([]);
 
   const isRecordingRef = useRef(false);
   const lockedRef = useRef(false);
@@ -83,8 +161,24 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
   const holdTimerRef = useRef(null);
   const secondsRef = useRef(0);
   const timerRef = useRef(null);
+  const meteringSamplesRef = useRef([]); // riwayat amplitude penuh sesi rekam ini (untuk waveform statis preview)
   const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const lockProgress = useRef(new Animated.Value(0)).current; // 0..1 seberapa dekat ke kunci
+
+  // Kumpulkan sample amplitude selama BENAR-BENAR merekam (isRecordingRef,
+  // bukan state "recording" — dibaca via ref supaya tidak kena closure basi
+  // dari PanResponder yang dibuat sekali, sama alasannya dengan fungsi2 di
+  // bawah). Kalau metering tidak tersedia (undefined) di device ini, effect
+  // ini tidak pernah mengisi apa pun → LiveWaveform & waveform preview
+  // otomatis kosong/skip, bukan di-fake.
+  useEffect(() => {
+    if (!isRecordingRef.current) return;
+    if (typeof recorderState.metering !== "number") return;
+    // dBFS kira-kira -60 (lantai noise) s/d 0 (puncak) — normalisasi ke 0..1.
+    const norm = Math.max(0, Math.min(1, (recorderState.metering + 60) / 60));
+    meteringSamplesRef.current = [...meteringSamplesRef.current, norm];
+    setLiveBars(meteringSamplesRef.current.slice(-LIVE_BARS_MAX));
+  }, [recorderState.metering]);
 
   async function startRecording() {
     if (isRecordingRef.current) return;
@@ -101,6 +195,8 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
       cancelledRef.current = false;
       lockedRef.current = false;
       secondsRef.current = 0;
+      meteringSamplesRef.current = [];
+      setLiveBars([]);
       setSeconds(0);
       setLocked(false);
       setRecording(true);
@@ -130,7 +226,8 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
     setLocked(false);
     const uri = recorder.uri;
     if (finalSeconds < MIN_DURATION_SEC || !uri) { setSeconds(0); return; } // kepencet sebentar — buang diam-diam
-    setPreview({ uri, seconds: finalSeconds });
+    const waveform = downsampleWaveform(meteringSamplesRef.current, PREVIEW_BARS);
+    setPreview({ uri, seconds: finalSeconds, waveform });
   }
 
   // Geser cukup jauh ke KIRI (kapan pun, tahan ATAU locked) → batal total,
@@ -247,72 +344,81 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
   // tidak pernah kepotong oleh TextInput di baliknya (lihat catatan bug di atas). ──
   if (preview) {
     return (
-      <View style={styles.overlay}>
-        <AudioPlayer uri={preview.uri} />
+      <Reanimated.View entering={FadeIn.duration(180)} style={styles.overlay}>
+        <AudioPlayer uri={preview.uri} waveform={preview.waveform} />
         <TouchableOpacity style={styles.discardBtn} onPress={discardPreview} disabled={sending}>
-          <Trash2 size={18} color={tokens.color.danger} strokeWidth={2} />
+          <Trash2 size={18} color={tokens.color.textSecondary} strokeWidth={2} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.sendBtnBig} onPress={sendVoiceNote} disabled={sending}>
           <Send size={20} color="#fff" strokeWidth={2.4} />
         </TouchableOpacity>
-      </View>
+      </Reanimated.View>
     );
   }
 
   // ── Sedang merekam (belum dikunci ATAU sudah dikunci) — overlay lebar penuh juga. ──
   if (recording) {
     return (
-      <View style={styles.overlay}>
-        <View style={styles.recDotWrap}>
-          <View style={styles.recDot} />
-          <Text style={styles.recTime}>{fmtTime(seconds)}</Text>
-        </View>
-
+      <Reanimated.View entering={FadeIn.duration(150)} style={styles.overlay}>
         {!locked ? (
           <>
-            <Animated.View
-              style={[
-                styles.cancelHintRow,
-                { opacity: lockProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.3] }) },
-              ]}
-            >
-              <ChevronLeft size={14} color={tokens.color.textMuted} strokeWidth={2.4} />
-              <Text style={styles.cancelHintText}>Geser untuk batal</Text>
-            </Animated.View>
+            <View style={styles.recDotWrap}>
+              <PulsingDot />
+              <Text style={styles.recTime}>{fmtTime(seconds)}</Text>
+            </View>
+
+            <View style={styles.centerCol}>
+              <LiveWaveform bars={liveBars} />
+              <Animated.View
+                style={{ opacity: lockProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.3] }) }}
+              >
+                <CancelHintShimmer />
+              </Animated.View>
+            </View>
 
             <View style={styles.lockWrap} pointerEvents="none">
               <Animated.View
                 style={[
-                  styles.lockPill,
+                  styles.lockHintCol,
                   {
                     opacity: lockProgress.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }),
                     transform: [{ translateY: lockProgress.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) }],
                   },
                 ]}
               >
-                <Lock size={14} color={tokens.color.accent} strokeWidth={2.2} />
+                <BouncingChevronUp />
+                <Text style={styles.lockKunciText}>Kunci</Text>
               </Animated.View>
             </View>
 
-            <Animated.View
-              style={[styles.micBtnBig, { transform: pan.getTranslateTransform() }]}
-              {...panResponder.panHandlers}
-            >
-              <Mic size={20} color="#fff" strokeWidth={2} />
-            </Animated.View>
+            <Reanimated.View entering={ZoomIn.duration(150)}>
+              <Animated.View
+                style={[styles.micBtnBig, { transform: pan.getTranslateTransform() }]}
+                {...panResponder.panHandlers}
+              >
+                <Mic size={20} color="#fff" strokeWidth={2} />
+              </Animated.View>
+            </Reanimated.View>
           </>
         ) : (
           <>
-            <Text style={styles.lockedHint}>Rekaman terkunci</Text>
-            <TouchableOpacity style={styles.discardBtn} onPress={cancelRecording}>
-              <Trash2 size={18} color={tokens.color.danger} strokeWidth={2} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sendBtnBig} onPress={sendLocked}>
-              <Send size={20} color="#fff" strokeWidth={2.4} />
-            </TouchableOpacity>
+            <View style={styles.lockedCenterRow}>
+              <PulsingDot size={8} />
+              <Text style={styles.lockedDurationText}>{fmtTime(seconds)}</Text>
+            </View>
+            <Reanimated.View entering={ZoomIn.duration(180)}>
+              <TouchableOpacity style={styles.discardBtn} onPress={cancelRecording}>
+                <Trash2 size={18} color={tokens.color.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </Reanimated.View>
+            <Reanimated.View entering={ZoomIn.duration(180)}>
+              <TouchableOpacity style={styles.sendBtnBig} onPress={sendLocked}>
+                <Send size={20} color="#fff" strokeWidth={2.4} />
+              </TouchableOpacity>
+            </Reanimated.View>
           </>
         )}
-      </View>
+      </Reanimated.View>
     );
   }
 
@@ -324,6 +430,22 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
     >
       <Mic size={20} color={tokens.color.textSecondary} strokeWidth={2} />
     </View>
+  );
+}
+
+// Chevron "▲" yang memantul pelan di atas label "Kunci" — ajakan visual
+// terus-menerus untuk geser ke atas, independen dari progress drag (yang
+// mengatur opacity/posisi wrapper-nya lewat RN Animated di luar).
+function BouncingChevronUp() {
+  const bounce = useSharedValue(0);
+  useEffect(() => {
+    bounce.value = withRepeat(withTiming(-4, { duration: 500 }), -1, true);
+  }, [bounce]);
+  const style = useAnimatedStyle(() => ({ transform: [{ translateY: bounce.value }] }));
+  return (
+    <Reanimated.View style={style}>
+      <ChevronUp size={14} color={tokens.color.accent} strokeWidth={2.4} />
+    </Reanimated.View>
   );
 }
 
@@ -345,19 +467,20 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.card, paddingHorizontal: 8,
   },
   recDotWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  recDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: tokens.color.danger },
+  recDot: { backgroundColor: tokens.color.danger },
   recTime: { fontSize: 13, color: tokens.color.textPrimary, fontWeight: "700", minWidth: 36 },
-  cancelHintRow: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2 },
+  centerCol: { flex: 1, alignItems: "center", justifyContent: "center", gap: 2 },
+  liveWaveformRow: { flexDirection: "row", alignItems: "center", gap: 2, height: 22 },
+  liveWaveformBar: { width: 3, borderRadius: 1.5, backgroundColor: tokens.color.accent },
+  cancelHintRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2 },
   cancelHintText: { fontSize: 12, color: tokens.color.textMuted },
-  lockedHint: { flex: 1, fontSize: 12, color: tokens.color.textMuted, textAlign: "center" },
+  lockedCenterRow: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  lockedDurationText: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary },
   lockWrap: {
-    position: "absolute", right: 12, top: -6, alignItems: "center",
+    position: "absolute", right: 8, top: -36, alignItems: "center",
   },
-  lockPill: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: tokens.color.accentSoft,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: tokens.color.border,
-  },
+  lockHintCol: { alignItems: "center" },
+  lockKunciText: { fontSize: 10, fontWeight: "700", color: tokens.color.accent, marginTop: 1 },
   discardBtn: {
     width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
     backgroundColor: tokens.color.subtle,
