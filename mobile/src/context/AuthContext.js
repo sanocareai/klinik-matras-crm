@@ -65,8 +65,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
+  // Merge patch ke user yang sedang login (mis. avatarUrl baru setelah
+  // upload foto profil) — supaya langsung ke-refresh di semua tempat yang
+  // pakai useAuth() (header Home, ProfileScreen, dst) tanpa perlu logout.
+  async function updateUser(patch) {
+    setUser((prev) => {
+      const next = prev ? { ...prev, ...patch } : prev;
+      AsyncStorage.setItem("user", JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, server, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, server, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

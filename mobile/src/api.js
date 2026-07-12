@@ -135,6 +135,9 @@ export const api = {
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   getMe: () => request("/users/me"),
+  // file = { uri, name, type } dari expo-image-picker — backend kompres+
+  // resize ke ~256px pakai sharp, balikin user dengan avatarUrl terbaru.
+  uploadAvatar: (file) => uploadFile("/users/me/avatar", file, {}),
 
   // Push notification
   // extra: { userId, platform } — userId sebenarnya sudah otomatis ke-scope

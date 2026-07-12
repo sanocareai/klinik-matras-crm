@@ -223,7 +223,7 @@ conversationRouter.get("/", async (req, res) => {
     include: {
       customer: true,
       messages: { orderBy: { createdAt: "desc" }, take: 1 },
-      assignedTo: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, name: true, avatarUrl: true } },
     },
     take: limit + 1, // ambil 1 ekstra buat tahu masih ada halaman berikutnya atau tidak
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -670,7 +670,7 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
       data:  { assignedToId: req.user.id, handoverNote },
       include: {
         customer: true,
-        assignedTo: { select: { id: true, name: true } },
+        assignedTo: { select: { id: true, name: true, avatarUrl: true } },
       },
     });
     await prisma.customer.update({

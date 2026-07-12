@@ -268,6 +268,7 @@ analyticsRouter.get("/cs-performance", async (req, res) => {
         return {
           userId: u.id,
           name: u.name,
+          avatarUrl: u.avatarUrl,
           totalConversations: total,
           closingRate: total > 0 ? Math.round((resolved / total) * 100) : 0,
           avgResponseMinutes,
@@ -358,7 +359,7 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
       const target           = targetMap[u.id] ?? 0;
       const percentToTarget  = target > 0 ? Math.round((totalOrderValue / target) * 100) : null;
 
-      return { userId: u.id, name: u.name, totalOrderValue, target, percentToTarget };
+      return { userId: u.id, name: u.name, avatarUrl: u.avatarUrl, totalOrderValue, target, percentToTarget };
     }));
 
     res.json(result);

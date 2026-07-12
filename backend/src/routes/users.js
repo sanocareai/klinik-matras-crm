@@ -1,7 +1,32 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import multer from "multer";
+import sharp from "sharp";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const avatarsDir = path.join(__dirname, "../../uploads/avatars");
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+// Upload avatar disimpan sementara di memori (bukan disk) — file ASLI tidak
+// pernah ditulis ke disk, langsung dikompres+resize sharp ke ~256px lalu
+// disimpan sebagai jpg. Beda dari pola upload.diskStorage di products.js
+// karena di sini kita SELALU re-encode filenya (butuh buffer di memori utk
+// diproses sharp), tidak sekadar menyimpan file asli apa adanya.
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    }
+    cb(null, true);
+  },
+});
 
 export const userRouter = express.Router();
 userRouter.use(requireAuth);
@@ -21,6 +46,7 @@ userRouter.get("/", async (req, res) => {
         name: true,
         email: isAdmin,
         role: true,
+        avatarUrl: true,
         createdAt: true,
         _count: {
           select: {
@@ -43,7 +69,7 @@ userRouter.get("/me", async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
     });
     res.json(user);
   } catch (err) {
@@ -73,7 +99,7 @@ userRouter.post("/", adminOnly, async (req, res) => {
         passwordHash,
         role: role || "SALES",
       },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
     });
     res.status(201).json(user);
   } catch (err) {
@@ -90,8 +116,44 @@ userRouter.patch("/me", async (req, res) => {
     const updated = await prisma.user.update({
       where: { id: req.user.id },
       data: { name: name.trim() },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true },
     });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /me/avatar — upload foto profil sendiri (multipart, field "file" —
+// SAMA dengan field name yang dipakai uploadFile() di mobile/src/api.js).
+// Kompres+resize ke ~256px pakai sharp, simpan sebagai jpg di
+// backend/uploads/avatars/, hapus file avatar lama (kalau ada) supaya tidak
+// menumpuk sampah di disk tiap ganti foto.
+userRouter.post("/me/avatar", avatarUpload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "File foto wajib diisi" });
+
+    const filename = `${req.user.id}-${Date.now()}.jpg`;
+    const filePath = path.join(avatarsDir, filename);
+    await sharp(req.file.buffer)
+      .resize(256, 256, { fit: "cover" })
+      .jpeg({ quality: 80 })
+      .toFile(filePath);
+
+    const avatarUrl = `/uploads/avatars/${filename}`;
+
+    const prevUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { avatarUrl: true } });
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl },
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true },
+    });
+
+    if (prevUser?.avatarUrl) {
+      const prevPath = path.join(__dirname, "../..", prevUser.avatarUrl);
+      fs.unlink(prevPath, () => {}); // fire-and-forget, jangan gagalkan request kalau hapus lama gagal
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -166,7 +228,7 @@ userRouter.patch("/:id", adminOnly, async (req, res) => {
         ...(name?.trim() && { name: name.trim() }),
         ...(role && { role }),
       },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
     });
     res.json(updated);
   } catch (err) {

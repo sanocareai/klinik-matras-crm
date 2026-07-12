@@ -1,11 +1,29 @@
-// Avatar inisial berwarna — sama gayanya dengan versi web
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+// Avatar inisial berwarna — sama gayanya dengan versi web. Kalau avatarUrl
+// (foto profil user) tersedia, tampilkan foto asli; fallback ke inisial
+// kalau avatarUrl kosong ATAU gagal dimuat (onError) — pola sama dengan
+// Avatar.jsx web (imgError state).
+import React, { useEffect, useState } from "react";
+import { View, Text, Image, StyleSheet } from "react-native";
 import { Users } from "lucide-react-native";
 import { initials, avatarColor } from "../utils/format";
+import { mediaUrl } from "../api";
 
-export default function Avatar({ name, size = 48, isGroup = false }) {
+export default function Avatar({ name, size = 48, isGroup = false, avatarUrl = null }) {
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => { setImgError(false); }, [avatarUrl]);
   const bg = isGroup ? "#6b7280" : avatarColor(name);
+  const uri = avatarUrl && !imgError ? mediaUrl(avatarUrl) : null;
+
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+
   return (
     <View
       style={[

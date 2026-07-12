@@ -21,7 +21,7 @@ authRouter.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, role: user.role } });
+    res.json({ token, user: { id: user.id, name: user.name, role: user.role, avatarUrl: user.avatarUrl } });
   } catch (err) {
     console.error("Login error:", err.message);
     res.status(500).json({ error: "Server error: " + err.message });

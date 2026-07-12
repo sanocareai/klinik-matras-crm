@@ -328,7 +328,8 @@ export default function PelangganScreen({ navigation }) {
                   style={styles.pickerItem}
                   onPress={() => { setSalesId(item.id); setShowSalesPicker(false); }}
                 >
-                  <Text style={[styles.pickerItemText, item.id === salesId && styles.pickerItemTextActive]}>
+                  <Avatar name={item.name} avatarUrl={item.avatarUrl} size={26} />
+                  <Text style={[styles.pickerItemText, item.id === salesId && styles.pickerItemTextActive, { marginLeft: 10 }]}>
                     {item.name}
                   </Text>
                 </TouchableOpacity>
@@ -394,7 +395,10 @@ const styles = StyleSheet.create({
   pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   pickerSheet: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "70%" },
   pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
-  pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+  pickerItem: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+  },
   pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
   pickerItemTextActive: { color: tokens.color.accent, fontWeight: "700" },
 });

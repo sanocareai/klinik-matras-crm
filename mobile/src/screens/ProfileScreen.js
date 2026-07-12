@@ -9,12 +9,15 @@
 // diswap tanpa ubah UI).
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, Switch, Modal, ScrollView, Alert, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Switch, Modal, ScrollView, Alert, Platform, ActivityIndicator,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Camera } from "lucide-react-native";
 import { tokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../api";
 import Avatar from "../components/Avatar";
 
 // ⚠️ expo-updates BELUM ter-link di dev build M6 sekarang (native module
@@ -59,11 +62,47 @@ function fmtHour(h) {
 const ROLE_LABEL = { ADMIN: "Admin", SALES: "Sales" };
 
 export default function ProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [hourPicker, setHourPicker] = useState(null); // "start" | "end" | null
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Tap avatar → pilih dari galeri (expo-image-picker, sudah dipakai di
+  // AttachComposer.js) → upload lewat uploadFile() (pola sama dengan kirim
+  // media chat) → backend kompres ke ~256px, balikin avatarUrl terbaru →
+  // update AuthContext supaya langsung tampil di sini & Home tanpa reload.
+  async function handlePickAvatar() {
+    if (uploadingAvatar) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Izin diperlukan", "Aktifkan izin akses galeri untuk mengganti foto profil.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    setUploadingAvatar(true);
+    try {
+      const updated = await api.uploadAvatar({
+        uri: asset.uri,
+        name: "avatar.jpg",
+        type: asset.mimeType || "image/jpeg",
+      });
+      await updateUser({ avatarUrl: updated.avatarUrl });
+    } catch (err) {
+      Alert.alert("Gagal unggah foto", err.message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
 
   useEffect(() => {
     getNotifPrefs().then((p) => { setPrefs(p); setPrefsLoaded(true); });
@@ -149,7 +188,16 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Card user */}
         <View style={styles.card}>
-          <Avatar name={user?.name} size={64} />
+          <TouchableOpacity style={styles.avatarWrap} onPress={handlePickAvatar} disabled={uploadingAvatar}>
+            <Avatar name={user?.name} avatarUrl={user?.avatarUrl} size={64} />
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Camera size={13} color="#fff" strokeWidth={2.4} />
+              )}
+            </View>
+          </TouchableOpacity>
           <Text style={styles.userName}>{user?.name}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           <View style={styles.roleBadge}>
@@ -277,6 +325,12 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 18,
     borderWidth: 1, borderColor: tokens.color.border, alignItems: "center",
+  },
+  avatarWrap: { width: 64, height: 64 },
+  avatarBadge: {
+    position: "absolute", right: -2, bottom: -2, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: tokens.color.card,
   },
   userName: { marginTop: 10, fontSize: 17, fontWeight: "700", color: tokens.color.textPrimary },
   userEmail: { marginTop: 2, fontSize: 13, color: tokens.color.textSecondary },

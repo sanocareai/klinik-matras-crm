@@ -61,7 +61,7 @@ export default function TransferModal({ visible, conversationId, currentAssigned
                   disabled={transferring || u.id === currentAssignedId}
                   onPress={() => handleTransfer(u.id)}
                 >
-                  <Avatar name={u.name} size={36} />
+                  <Avatar name={u.name} avatarUrl={u.avatarUrl} size={36} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={styles.rowName}>{u.name}</Text>
                     <Text style={styles.rowRole}>{u.role === "ADMIN" ? "Admin" : "Sales"}</Text>

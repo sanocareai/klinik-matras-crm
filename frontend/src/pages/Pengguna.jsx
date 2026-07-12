@@ -212,7 +212,7 @@ export default function Pengguna({ user: currentUser }) {
                   <tr key={u.id}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <Avatar name={u.name || u.email} size="sm" />
+                        <Avatar name={u.name || u.email} src={u.avatarUrl} size="sm" />
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>
                             {u.name}
@@ -282,7 +282,7 @@ export default function Pengguna({ user: currentUser }) {
             return (
               <div key={u.id} className="user-card">
                 <div className="user-card-header">
-                  <Avatar name={u.name || u.email} size="sm" />
+                  <Avatar name={u.name || u.email} src={u.avatarUrl} size="sm" />
                   <div className="user-card-info">
                     <div className="user-card-name">
                       {u.name}

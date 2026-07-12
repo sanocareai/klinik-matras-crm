@@ -367,6 +367,7 @@ export default function ChatScreen({ route, navigation }) {
         <>
           {assignedTo && !isMine && (
             <View style={styles.assignedBanner}>
+              <Avatar name={assignedTo.name} avatarUrl={assignedTo.avatarUrl} size={20} />
               <Text style={styles.assignedBannerText} numberOfLines={1}>
                 Ditangani oleh {assignedTo.name}
               </Text>
@@ -529,7 +530,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: tokens.color.accentSoft, paddingVertical: 8, paddingHorizontal: 12,
   },
-  assignedBannerText: { color: tokens.color.accent, fontSize: 12, fontWeight: "600", flex: 1, marginRight: 8 },
+  assignedBannerText: { color: tokens.color.accent, fontSize: 12, fontWeight: "600", flex: 1, marginLeft: 8, marginRight: 8 },
   assignedBannerBtn: { color: tokens.color.accent, fontSize: 12, fontWeight: "700", textDecorationLine: "underline" },
   replyBar: {
     flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.subtle,

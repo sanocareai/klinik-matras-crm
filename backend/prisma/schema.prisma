@@ -103,6 +103,7 @@ model User {
   email         String         @unique
   passwordHash  String
   role          Role           @default(SALES)
+  avatarUrl     String?        // foto profil, path relatif "/uploads/avatars/xxx.jpg"
   createdAt     DateTime       @default(now())
 
   assignedCustomers     Customer[]     @relation("AssignedSales")

@@ -152,7 +152,7 @@ export default function HomeScreen({ navigation }) {
       >
       {/* Header */}
       <View style={styles.header}>
-        <Avatar name={user?.name} size={44} />
+        <Avatar name={user?.name} avatarUrl={user?.avatarUrl} size={44} />
         <Text style={styles.greeting} numberOfLines={1}>Halo, {user?.name?.split(" ")[0] || "Sales"}</Text>
         <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate("Chats")}>
           <Bell size={22} color={tokens.color.textPrimary} strokeWidth={2} />
@@ -199,7 +199,7 @@ export default function HomeScreen({ navigation }) {
                 const pct = r.target > 0 ? Math.max(0, Math.min(100, Math.round((r.totalOrderValue / r.target) * 100))) : 0;
                 return (
                   <View key={r.userId} style={styles.personRow}>
-                    <Avatar name={r.name} size={28} />
+                    <Avatar name={r.name} avatarUrl={r.avatarUrl} size={28} />
                     <View style={styles.personBody}>
                       <Text style={styles.personName} numberOfLines={1}>{r.name}</Text>
                       {r.target > 0 ? (
@@ -272,7 +272,7 @@ export default function HomeScreen({ navigation }) {
         ) : (
           csRowsToShow.map((r) => (
             <View key={r.userId} style={styles.perfRow}>
-              <Avatar name={r.name} size={32} />
+              <Avatar name={r.name} avatarUrl={r.avatarUrl} size={32} />
               <View style={styles.perfBody}>
                 <Text style={styles.perfName} numberOfLines={1}>{r.name}</Text>
                 <Text style={styles.perfMeta}>{r.totalConversations} chat ditangani</Text>
