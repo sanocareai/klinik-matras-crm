@@ -9,7 +9,9 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy } from "lucide-react-native";
+import {
+  Check, CheckCheck, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3,
+} from "lucide-react-native";
 import { mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
 import { clockTime } from "../utils/format";
@@ -29,7 +31,76 @@ function AckTicks({ ack }) {
 // Label teks polos (TANPA emoji) — dipakai di konteks yang murni tekstual
 // (preview kutipan reply, pesan "media tidak tersedia"); rendering media
 // yang SEBENARNYA (bubble utama) sudah pakai ikon lucide asli di bawah.
-const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker" };
+const MEDIA_LABEL = {
+  image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker",
+  location: "Lokasi", contact: "Kontak", poll: "Polling",
+};
+
+// Lokasi/kontak/poll BUKAN media asli (tidak pernah punya mediaUrl) —
+// content-nya JSON string (lihat backend/src/utils/parseHistoryMessage.js),
+// perlu di-parse ulang di sini untuk dirender jadi card, bukan teks mentah.
+const STRUCTURED_TYPES = new Set(["location", "contact", "poll"]);
+function parseStructuredContent(mediaType, content) {
+  if (!STRUCTURED_TYPES.has(mediaType)) return null;
+  try { return JSON.parse(content); } catch { return null; }
+}
+
+function LocationCard({ data }) {
+  const { lat, lng, name, address } = data;
+  const canOpen = lat != null && lng != null;
+  function open() {
+    if (!canOpen) return;
+    Linking.openURL(`https://www.google.com/maps?q=${lat},${lng}`).catch(() => {});
+  }
+  return (
+    <View style={styles.structCard}>
+      <View style={styles.structHeaderRow}>
+        <MapPin size={16} color={tokens.color.accent} strokeWidth={2} />
+        <Text style={styles.structTitle} numberOfLines={1}>{name || "Lokasi"}</Text>
+      </View>
+      {!!address && <Text style={styles.structSub} numberOfLines={2}>{address}</Text>}
+      {canOpen && (
+        <TouchableOpacity onPress={open}>
+          <Text style={styles.structLink}>Buka di Maps</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+function ContactCard({ data }) {
+  const contacts = data.contacts || [];
+  return (
+    <View style={styles.structCard}>
+      {contacts.map((c, i) => (
+        <View key={i} style={[styles.structHeaderRow, i > 0 && { marginTop: 6 }]}>
+          <User size={16} color={tokens.color.accent} strokeWidth={2} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.structTitle} numberOfLines={1}>{c.name || "Kontak"}</Text>
+            {!!c.phone && <Text style={styles.structSub}>{c.phone}</Text>}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function PollCard({ data }) {
+  const options = data.options || [];
+  return (
+    <View style={styles.structCard}>
+      <View style={styles.structHeaderRow}>
+        <BarChart3 size={16} color={tokens.color.accent} strokeWidth={2} />
+        <Text style={styles.structTitle} numberOfLines={2}>{data.question || "Polling"}</Text>
+      </View>
+      {options.map((opt, i) => (
+        <View key={i} style={styles.pollOption}>
+          <Text style={styles.pollOptionText} numberOfLines={2}>{opt}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function DocumentRow({ url }) {
   const fileName = decodeURIComponent(url.split("/").pop() || "Dokumen");
@@ -57,8 +128,10 @@ function MessageBubbleBase({
   const isSending = m.status === "sending";
   const isFailed = m.status === "failed";
   const hasMedia = !!m.mediaType;
+  const isStructured = STRUCTURED_TYPES.has(m.mediaType);
+  const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
+  const text = m.content && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
 
   function copyText() {
     setShowActions(false);
@@ -93,7 +166,9 @@ function MessageBubbleBase({
               {m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}
             </Text>
             <Text style={styles.quoteText} numberOfLines={2}>
-              {m.replyTo.content || (m.replyTo.mediaType ? MEDIA_LABEL[m.replyTo.mediaType] : "Pesan")}
+              {STRUCTURED_TYPES.has(m.replyTo.mediaType)
+                ? MEDIA_LABEL[m.replyTo.mediaType]
+                : (m.replyTo.content || (m.replyTo.mediaType ? MEDIA_LABEL[m.replyTo.mediaType] : "Pesan"))}
             </Text>
           </TouchableOpacity>
         )}
@@ -125,7 +200,16 @@ function MessageBubbleBase({
         )}
         {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
         {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
-        {hasMedia && !m.mediaUrl && (
+        {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
+          <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
+        ))}
+        {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
+          <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
+        ))}
+        {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
+          <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
+        ))}
+        {hasMedia && !m.mediaUrl && !isStructured && (
           <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
         )}
 
@@ -205,6 +289,18 @@ const styles = StyleSheet.create({
   docRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4, maxWidth: 220 },
   docName: { fontSize: 13, color: tokens.color.textPrimary, flex: 1 },
   mediaMissing: { fontSize: 12, color: tokens.color.textMuted, fontStyle: "italic", marginBottom: 4 },
+  structCard: {
+    backgroundColor: tokens.color.subtle, borderRadius: 10, padding: 10, marginBottom: 4, minWidth: 180,
+  },
+  structHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  structTitle: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, flex: 1 },
+  structSub: { fontSize: 12, color: tokens.color.textSecondary, marginTop: 2 },
+  structLink: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, marginTop: 6 },
+  pollOption: {
+    marginTop: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8,
+    backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+  },
+  pollOptionText: { fontSize: 13, color: tokens.color.textPrimary },
   text: { fontSize: 15, color: tokens.color.textPrimary },
   textOut: { color: "#fff" },
   metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 3 },

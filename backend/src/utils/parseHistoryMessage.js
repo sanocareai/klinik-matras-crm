@@ -55,6 +55,59 @@ function mimeToMediaType(mime) {
   return "document";
 }
 
+// Lokasi, kontak (vCard), dan poll — WhatsApp punya bentuk pesan sendiri
+// untuk ini, BUKAN "media" biasa (tidak ada mimetype/URL yang bisa
+// didownload) — makanya tidak match rawMediaType/mime di atas dan dulu
+// jatuh ke fallback generik "[Pesan tidak didukung]". Struktur field
+// berikut mengikuti skema Baileys standar (dipakai WAHA NOWEB & GOWS) —
+// KALAU ternyata field sebenarnya beda di produksi, unknownType di bawah
+// tetap log key aslinya jadi gampang disesuaikan.
+// content disimpan sebagai JSON string terstruktur (bukan cuma teks) —
+// MessageBubble.js/.jsx yang parse ulang untuk render card-nya.
+function tryParseLocation(rawMsg) {
+  const loc = rawMsg.locationMessage;
+  if (!loc) return null;
+  return JSON.stringify({
+    lat: loc.degreesLatitude ?? null,
+    lng: loc.degreesLongitude ?? null,
+    name: loc.name || null,
+    address: loc.address || null,
+  });
+}
+
+// TEL field di vCard 3.0, mis. "TEL;type=CELL;waid=628123456789:+62 812-3456-789"
+function extractPhoneFromVcard(vcard) {
+  if (!vcard) return null;
+  const m = vcard.match(/TEL[^:]*:([+\d\s-]+)/i);
+  return m ? m[1].trim() : null;
+}
+
+function tryParseContact(rawMsg) {
+  const single = rawMsg.contactMessage;
+  const multi  = rawMsg.contactsArrayMessage;
+  if (single) {
+    return JSON.stringify({
+      contacts: [{ name: single.displayName || "Kontak", phone: extractPhoneFromVcard(single.vcard) }],
+    });
+  }
+  if (multi) {
+    const contacts = (multi.contacts || []).map((c) => ({
+      name: c.displayName || "Kontak", phone: extractPhoneFromVcard(c.vcard),
+    }));
+    return JSON.stringify({ contacts });
+  }
+  return null;
+}
+
+function tryParsePoll(rawMsg) {
+  // Baileys sudah beberapa kali ganti versi key seiring update format poll
+  // WhatsApp (V2/V3) — cek semua varian yang pernah ada.
+  const poll = rawMsg.pollCreationMessage || rawMsg.pollCreationMessageV2 || rawMsg.pollCreationMessageV3;
+  if (!poll) return null;
+  const options = (poll.options || []).map((o) => o.optionName || o.name || "").filter(Boolean);
+  return JSON.stringify({ question: poll.name || "Polling", options });
+}
+
 // WhatsApp Status/Story — JID broadcast-nya "status@broadcast" (BUKAN
 // "status@g.us", itu beda gate — lihat webhooks.js). Status ter-attribusi
 // ke SENDER (kontak asli), jadi kalau lolos ke sini akan nyasar masuk ke
@@ -147,9 +200,27 @@ export function parseHistoryMessage(msg) {
     return { externalId, direction, content: text, mediaType: null, mediaUrl: null, createdAt, unsupported: false, rawType: "text" };
   }
 
+  // 3) Lokasi / kontak (vCard) / poll — bukan media biasa, tidak ada file
+  // yang perlu didownload (mediaUrl selalu null utk 3 tipe ini).
+  const locationContent = tryParseLocation(rawMsg);
+  if (locationContent) {
+    return { externalId, direction, content: locationContent, mediaType: "location", mediaUrl: null, createdAt, unsupported: false, rawType: "location" };
+  }
+  const contactContent = tryParseContact(rawMsg);
+  if (contactContent) {
+    return { externalId, direction, content: contactContent, mediaType: "contact", mediaUrl: null, createdAt, unsupported: false, rawType: "contact" };
+  }
+  const pollContent = tryParsePoll(rawMsg);
+  if (pollContent) {
+    return { externalId, direction, content: pollContent, mediaType: "poll", mediaUrl: null, createdAt, unsupported: false, rawType: "poll" };
+  }
+
   // Tipe pesan sama sekali tidak dikenali (bukan teks, bukan media yang
-  // dikenali) — mis. pollCreationMessage, reactionMessage, dll. Log tipe
-  // aslinya (key pertama di rawMsg) supaya bisa ditambah dukungannya nanti.
+  // dikenali) — mis. reactionMessage, dll. Log tipe aslinya (key pertama
+  // di rawMsg) supaya bisa ditambah dukungannya nanti — kalau field
+  // location/contact/poll di atas ternyata beda nama di produksi, rawType
+  // di sini akan menampilkan nama key sebenarnya (mis. "pollCreationMessageV3"),
+  // pakai itu untuk perbaiki tryParsePoll dkk di atas.
   const unknownType = Object.keys(rawMsg)[0] || msg.type || "unknown";
   return {
     externalId, direction,

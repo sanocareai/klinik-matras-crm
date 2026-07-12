@@ -17,6 +17,12 @@ const __dirname   = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir  = path.join(__dirname, "../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+// Lokasi/kontak/poll (parseHistoryMessage.js) bukan file media — tidak ada
+// apapun untuk didownload, jadi jangan masuk jalur downloadAndSaveMedia
+// (kalau tetap dicoba, downloadWithRetry akan retry 3x sia-sia tiap pesan
+// tipe ini masuk, cuma nambah latensi tanpa hasil).
+const NON_DOWNLOADABLE_MEDIA_TYPES = new Set(["location", "contact", "poll"]);
+
 // Deteksi engine dari request body WAHA — field "engine" adalah yang paling reliable.
 // Fallback: periksa struktur payload (_data.Info → GOWS, _data.key → NOWEB).
 function detectEngine(reqBody) {
@@ -267,7 +273,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     let mediaUrl = null;
     let content = parsedMedia.content;
 
-    if (mediaType) {
+    if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
       const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
       mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
       if (!mediaUrl) console.warn("[webhook] Grup: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
@@ -427,7 +433,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   let mediaUrl = null;
   const content = parsedMedia.content;
 
-  if (mediaType) {
+  if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = mediaInfo?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
     console.log("[webhook] Ada media, tipe:", mediaType, "mime:", fallbackMime, "url:", mediaInfo?.url?.slice(0, 80));
     mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime);
@@ -556,7 +562,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
   let mediaUrl = null;
   const content = parsedMedia.content;
 
-  if (mediaType) {
+  if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
     mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
     if (!mediaUrl) console.warn("[webhook] fromMe: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);

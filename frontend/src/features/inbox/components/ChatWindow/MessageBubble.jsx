@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState } from "react";
 import {
   Reply, Forward, FileText, Image as ImageIcon, Video, Mic, Smile,
-  Play, Pause, Check, CheckCheck, Clock, Download, Loader2,
+  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
@@ -84,8 +84,78 @@ function AudioPlayer({ src }) {
   );
 }
 
-const MEDIA_TYPE_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText, sticker: Smile };
-const MEDIA_TYPE_LABEL = { image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker" };
+const MEDIA_TYPE_ICON = {
+  image: ImageIcon, video: Video, audio: Mic, document: FileText, sticker: Smile,
+  location: MapPin, contact: User, poll: BarChart3,
+};
+const MEDIA_TYPE_LABEL = {
+  image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker",
+  location: "Lokasi", contact: "Kontak", poll: "Polling",
+};
+
+// Lokasi/kontak/poll BUKAN media asli (tidak pernah punya mediaUrl) —
+// content-nya JSON string (lihat backend/src/utils/parseHistoryMessage.js),
+// perlu di-parse ulang di sini untuk dirender jadi card, bukan teks mentah.
+const STRUCTURED_TYPES = new Set(["location", "contact", "poll"]);
+function parseStructuredContent(mediaType, content) {
+  if (!STRUCTURED_TYPES.has(mediaType)) return null;
+  try { return JSON.parse(content); } catch { return null; }
+}
+
+function LocationCard({ data }) {
+  const { lat, lng, name, address } = data;
+  const canOpen = lat != null && lng != null;
+  return (
+    <div className="bubble-struct-card">
+      <div className="bubble-struct-header">
+        <MapPin size={16} />
+        <span className="bubble-struct-title">{name || "Lokasi"}</span>
+      </div>
+      {address && <div className="bubble-struct-sub">{address}</div>}
+      {canOpen && (
+        <a
+          href={`https://www.google.com/maps?q=${lat},${lng}`}
+          target="_blank" rel="noreferrer" className="bubble-struct-link"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Buka di Maps
+        </a>
+      )}
+    </div>
+  );
+}
+
+function ContactCard({ data }) {
+  const contacts = data.contacts || [];
+  return (
+    <div className="bubble-struct-card">
+      {contacts.map((c, i) => (
+        <div key={i} className="bubble-struct-header" style={{ marginTop: i > 0 ? 6 : 0 }}>
+          <User size={16} />
+          <div>
+            <div className="bubble-struct-title">{c.name || "Kontak"}</div>
+            {c.phone && <div className="bubble-struct-sub">{c.phone}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PollCard({ data }) {
+  const options = data.options || [];
+  return (
+    <div className="bubble-struct-card">
+      <div className="bubble-struct-header">
+        <BarChart3 size={16} />
+        <span className="bubble-struct-title">{data.question || "Polling"}</span>
+      </div>
+      {options.map((opt, i) => (
+        <div key={i} className="bubble-poll-option">{opt}</div>
+      ))}
+    </div>
+  );
+}
 
 // Kartu placeholder untuk media yang mediaType-nya diketahui tapi mediaUrl
 // belum tersedia (Fix 4 — WAHA gagal auto-download saat webhook masuk, atau
@@ -143,11 +213,13 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
   const isSending = m.status === "sending";
   const isFailed  = m.status === "failed";
   const hasMedia  = !!m.mediaType;
+  const isStructured = STRUCTURED_TYPES.has(m.mediaType);
+  const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   // Placeholder bracket ("[Foto]" dst, lihat parseHistoryMessage.js) sudah
   // ditampilkan via MediaPlaceholderCard di bawah — JANGAN dobel-render
   // sebagai bubble-text terpisah juga.
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = (!isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
+  const text = (!isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
 
   function handleTouchStart() {
     longPressTimerRef.current = setTimeout(() => {
@@ -191,7 +263,9 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
           <div className="bubble-quote" onClick={(e) => { e.stopPropagation(); onJumpToReply?.(m.replyTo.id); }}>
             <div className="bubble-quote-author">{m.replyTo.direction === "OUTBOUND" ? "Kamu" : "Pelanggan"}</div>
             <div className="bubble-quote-text">
-              {m.replyTo.content || (m.replyTo.mediaType ? `[${m.replyTo.mediaType}]` : "Pesan")}
+              {STRUCTURED_TYPES.has(m.replyTo.mediaType)
+                ? MEDIA_TYPE_LABEL[m.replyTo.mediaType]
+                : (m.replyTo.content || (m.replyTo.mediaType ? `[${m.replyTo.mediaType}]` : "Pesan"))}
             </div>
           </div>
         )}
@@ -222,7 +296,16 @@ function MessageBubbleBase({ message: m, conversationId, isGroup, onReply, onFor
             <span className="bubble-doc-name">{m.mediaUrl.split("/").pop()}</span>
           </a>
         )}
-        {hasMedia && !m.mediaUrl && (
+        {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
+          <div className="bubble-media-placeholder"><MapPin size={16} /><span>Lokasi tidak bisa ditampilkan</span></div>
+        ))}
+        {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
+          <div className="bubble-media-placeholder"><User size={16} /><span>Kontak tidak bisa ditampilkan</span></div>
+        ))}
+        {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
+          <div className="bubble-media-placeholder"><BarChart3 size={16} /><span>Polling tidak bisa ditampilkan</span></div>
+        ))}
+        {hasMedia && !m.mediaUrl && !isStructured && (
           <MediaPlaceholderCard message={m} conversationId={conversationId} />
         )}
 

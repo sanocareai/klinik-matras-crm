@@ -47,6 +47,10 @@ import { useOutboxStore } from "../store/outboxStore";
 const POLL_MS = 5000;
 const PAGE_SIZE = 50;
 
+// Lokasi/kontak/poll simpan JSON mentah di content (lihat MessageBubble.js)
+// — jangan ditampilkan apa adanya di preview reply-bar, tampilkan label saja.
+const STRUCTURED_MEDIA_LABEL = { location: "Lokasi", contact: "Kontak", poll: "Polling" };
+
 const STATUS_OPTIONS = [
   { key: "OPEN", label: "Tandai Terbuka", Icon: CircleDot, color: tokens.color.accent },
   { key: "PENDING", label: "Tandai Pending", Icon: Circle, color: tokens.color.warning },
@@ -380,15 +384,20 @@ export default function ChatScreen({ route, navigation }) {
         />
       )}
 
-      {/* Input kirim pesan */}
-      {isGroup ? (
-        <View style={styles.groupNotice}>
-          <Text style={styles.groupNoticeText}>
-            Percakapan grup hanya bisa dibaca — balas lewat HP WhatsApp langsung
-          </Text>
-        </View>
-      ) : (
-        <>
+      {/* Input kirim pesan — grup DULU cuma bisa dibaca (composer di-disable
+          total), sekarang bisa balas juga (backend sudah handle groupJid
+          sebagai target kirim, lihat resolveSendTarget di conversations.js —
+          murni gating UI yang dihapus di sini). Indikator "Mengirim sebagai
+          [nama]" gantikan banner "hanya bisa dibaca" lama, supaya sales sadar
+          pesannya keluar atas nama akun mereka sendiri ke grup bersama. */}
+      <>
+          {isGroup && (
+            <View style={styles.groupSenderBanner}>
+              <Text style={styles.groupSenderBannerText} numberOfLines={1}>
+                Mengirim sebagai {user?.name || "kamu"}
+              </Text>
+            </View>
+          )}
           {assignedTo && !isMine && (
             <View style={styles.assignedBanner}>
               <Avatar name={assignedTo.name} avatarUrl={assignedTo.avatarUrl} size={20} />
@@ -414,7 +423,9 @@ export default function ChatScreen({ route, navigation }) {
                   Membalas {replyTarget.direction === "OUTBOUND" ? "pesan kamu" : "pelanggan"}
                 </Text>
                 <Text style={styles.replyBarText} numberOfLines={1}>
-                  {replyTarget.content || (replyTarget.mediaType ? `[${replyTarget.mediaType}]` : "Pesan")}
+                  {STRUCTURED_MEDIA_LABEL[replyTarget.mediaType]
+                    || replyTarget.content
+                    || (replyTarget.mediaType ? `[${replyTarget.mediaType}]` : "Pesan")}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => useComposerStore.getState().clearReply()}>
@@ -450,8 +461,7 @@ export default function ChatScreen({ route, navigation }) {
               />
             )}
           </View>
-        </>
-      )}
+      </>
 
       {/* Menu aksi percakapan */}
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
@@ -549,8 +559,10 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
   },
   retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  groupNotice: { backgroundColor: "#fef3c7", padding: 12 },
-  groupNoticeText: { color: "#92400e", fontSize: 13, textAlign: "center" },
+  groupSenderBanner: {
+    backgroundColor: tokens.color.subtle, paddingVertical: 5, paddingHorizontal: 12,
+  },
+  groupSenderBannerText: { color: tokens.color.textMuted, fontSize: 11, textAlign: "center" },
   offlineBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     backgroundColor: "#fef3c7", paddingVertical: 6, paddingHorizontal: 12,
