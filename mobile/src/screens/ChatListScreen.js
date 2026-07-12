@@ -70,6 +70,14 @@ export default function ChatListScreen({ navigation }) {
   const filter = useFilter();
   const search = useConvSearchQuery();
   const orderedIds = useOrderedIds();
+  // Subscribe ke SELURUH conversationsById (bukan granular) memang tidak
+  // terhindarkan di sini — visibleIds di bawah butuh filter/search lintas
+  // SEMUA percakapan (nama/nomor/status), jadi ChatListScreen wajib tahu
+  // begitu ada perubahan di mana pun. Ini AMAN untuk perf list selama
+  // renderItem/openChat stabil (lihat useCallback di bawah) — re-render
+  // ChatListScreen sendiri (header/tab) murah, yang mahal adalah kalau ikut
+  // memaksa render ulang SEMUA ConversationItem yang kelihatan, itu yang
+  // dicegah lewat stabilitas closure, bukan lewat selector granular di sini.
   const conversationsById = useConversationStore((s) => s.conversationsById);
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -114,7 +122,14 @@ export default function ChatListScreen({ navigation }) {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }
 
-  function openChat(c) {
+  // useCallback (bukan function declaration biasa) — ChatListScreen re-render
+  // SERING (tiap keystroke search, tiap tab count refresh, dst). Kalau
+  // openChat dibuat ulang tiap render, renderItem di bawah (yang menutup
+  // openChat) juga berubah reference tiap render, lalu SETIAP ConversationItem
+  // yang lagi kelihatan di layar ikut re-render (memo() jadi percuma karena
+  // prop onPress-nya selalu "baru") walau data conversation-nya sendiri tidak
+  // berubah — ini penyebab utama lag scroll Inbox.
+  const openChat = useCallback((c) => {
     const isGroup = c.type === "GROUP";
     navigation.navigate("ChatRoom", {
       conversationId: c.id,
@@ -123,7 +138,15 @@ export default function ChatListScreen({ navigation }) {
       customerId: c.customerId,
       assignedTo: c.assignedTo?.name || null,
     });
-  }
+  }, [navigation]);
+
+  // renderItem JUGA harus stabil untuk alasan yang sama — FlashList
+  // memanggil ulang fungsi ini setiap kali komponen induk re-render, jadi
+  // kalau bukan useCallback, closure baru dibuat tiap kali walau openChat
+  // sendiri sudah stabil.
+  const renderItem = useCallback(({ item }) => (
+    <ConversationItem id={item} onPress={openChat} />
+  ), [openChat]);
 
   const empty = EMPTY_STATE[filter] || EMPTY_STATE.ALL;
 
@@ -221,8 +244,14 @@ export default function ChatListScreen({ navigation }) {
         <FlashList
           data={visibleIds}
           keyExtractor={(id) => id}
-          renderItem={({ item }) => <ConversationItem id={item} onPress={openChat} />}
-          estimatedItemSize={90}
+          renderItem={renderItem}
+          // Diukur dari styles ConversationItem.js, bukan tebakan: card
+          // paddingVertical 13*2=26 + avatar 48 (elemen tertinggi tanpa badge
+          // session) = 74, ATAU (kalau ada badgesRow CS-1/CS-2 — sessionLabel
+          // terisi untuk mayoritas percakapan aktif di setup multi-session
+          // ini) body text ~62 + padding 26 = 88, + hairline border ~1.
+          // 86 = titik tengah realistis antara kedua kasus itu.
+          estimatedItemSize={86}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={

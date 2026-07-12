@@ -169,7 +169,13 @@ export default function ChatScreen({ route, navigation }) {
     });
   }, [items]);
 
-  function scrollToMessage(id) {
+  // useCallback — dipakai sebagai prop MessageBubble (onJumpToReply) lewat
+  // renderItem di bawah. Kalau bukan useCallback, fungsi ini (dan renderItem
+  // yang menutupnya) dapat reference baru SETIAP render ChatScreen (termasuk
+  // tiap keystroke di composer TextInput!), bikin SEMUA bubble yang lagi
+  // kelihatan re-render walau pesannya sendiri tidak berubah — memo() di
+  // MessageBubble jadi percuma. Ini akar masalah lag scroll MessageList.
+  const scrollToMessage = useCallback((id) => {
     const rawIndex = allMessages.findIndex((m) => m.id === id);
     if (rawIndex === -1) return; // pesan belum ke-load sama sekali di percakapan ini
     const needed = allMessages.length - rawIndex + 5;
@@ -184,12 +190,12 @@ export default function ChatScreen({ route, navigation }) {
     setHighlightedId(id);
     clearTimeout(highlightTimerRef.current);
     highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
-  }
+  }, [allMessages, visibleCount, items]);
 
-  function handleStartReached() {
+  const handleStartReached = useCallback(() => {
     if (visibleCount >= allMessages.length) return;
     setVisibleCount((v) => Math.min(v + PAGE_SIZE, allMessages.length));
-  }
+  }, [visibleCount, allMessages.length]);
 
   function handleChangeText(t) {
     setText(t);
@@ -233,7 +239,7 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
-  function handleRetry(m) {
+  const handleRetry = useCallback((m) => {
     const tempId = `temp-${Date.now()}`;
     useMessageStore.setState((state) => ({
       messagesByConvId: {
@@ -248,7 +254,7 @@ export default function ChatScreen({ route, navigation }) {
       .catch(() => useOutboxStore.getState().enqueue({
         convId: conversationId, tempId, payload: { content: m.content },
       }));
-  }
+  }, [conversationId]);
 
   async function changeStatus(status) {
     setShowMenu(false);
@@ -284,12 +290,23 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
-  function openMediaViewer(msg) {
+  const openMediaViewer = useCallback((msg) => {
     const idx = galleryItems.findIndex((x) => x.id === msg.id);
     setMediaViewer({ items: galleryItems, index: idx === -1 ? 0 : idx });
-  }
+  }, [galleryItems]);
 
-  function renderItem({ item }) {
+  // Stabil (tanpa dependency berubah-ubah) — dulu dibuat inline di dalam
+  // renderItem (`onReply={(msg) => ...}`), jadi closure baru tiap render
+  // walau isinya sama persis tiap kali. Sama seperti scrollToMessage dkk di
+  // atas, ini yang bikin MessageBubble.memo() tidak pernah bisa bail-out.
+  const handleReplyMessage = useCallback((msg) => {
+    useComposerStore.getState().setReplyTarget(msg);
+  }, []);
+  const handleForwardMessage = useCallback((msg) => {
+    setForwardMsg(msg);
+  }, []);
+
+  const renderItem = useCallback(({ item }) => {
     if (item._type === "divider") {
       return (
         <View style={styles.dividerWrap}>
@@ -303,14 +320,14 @@ export default function ChatScreen({ route, navigation }) {
         message={m}
         isGroup={isGroup}
         highlighted={highlightedId === m.id}
-        onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
-        onForward={(msg) => setForwardMsg(msg)}
+        onReply={handleReplyMessage}
+        onForward={handleForwardMessage}
         onJumpToReply={scrollToMessage}
         onRetry={handleRetry}
         onOpenMedia={openMediaViewer}
       />
     );
-  }
+  }, [isGroup, highlightedId, handleReplyMessage, handleForwardMessage, scrollToMessage, handleRetry, openMediaViewer]);
 
   return (
     // behavior="padding" di KEDUA platform (bukan "height" di Android) —
@@ -372,8 +389,20 @@ export default function ChatScreen({ route, navigation }) {
           style={styles.list}
           data={items}
           keyExtractor={(item) => item.id}
-          getItemType={(item) => item._type}
-          estimatedItemSize={70}
+          // Sebelumnya cuma dibedakan "divider" vs "message" — semua tipe
+          // media (teks pendek ~57px, foto ~260px, audio ~75px, kartu
+          // lokasi/kontak/poll ~110px) dipaksa masuk SATU pool recycling yang
+          // sama. FlashList merecycle cell dalam 1 tipe yang sama, jadi kalau
+          // ukurannya beda jauh, cell bekas foto dipakai ulang utk teks (atau
+          // sebaliknya) → guncang/reflow tiap recycle, ini penyebab lag utama
+          // di FlashList (bukan estimatedItemSize semata). Pisah per
+          // mediaType supaya tiap pool isinya seragam.
+          getItemType={(item) => (item._type === "divider" ? "divider" : (item.message.mediaType || "text"))}
+          // Diukur dari styles MessageBubble.js untuk bubble TEKS (kasus
+          // mayoritas): paddingVertical 8*2=16 + text ~20 + metaRow ~14+3 +
+          // row marginVertical 2*2=4 ≈ 57. getItemType di atas yang menangani
+          // tipe lain (foto/video/audio/dst) yang jauh lebih tinggi.
+          estimatedItemSize={57}
           maintainVisibleContentPosition={{
             startRenderingFromBottom: true,
             autoscrollToBottomThreshold: 0.2,

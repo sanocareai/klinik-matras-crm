@@ -15,6 +15,17 @@ export default function Avatar({ name, size = 48, isGroup = false, avatarUrl = n
   const uri = avatarUrl && !imgError ? mediaUrl(avatarUrl) : null;
 
   if (uri) {
+    // width/height DI SINI sudah proporsional ke `size` (26-72px tergantung
+    // caller, bukan angka besar tetap) — RN Image sendiri men-decode ke
+    // ukuran render ini, TIDAK menyimpan bitmap penuh di memori.
+    // KETERBATASAN YANG BELUM BISA DIPERBAIKI TANPA DEPENDENCY BARU: profil
+    // foto WA (profilePictureUrl) datang dari CDN WhatsApp (pps.whatsapp.net)
+    // yang TIDAK punya parameter resize publik — file ASLI (bisa >100KB)
+    // tetap ke-download penuh lewat network walau tampil kecil di sini,
+    // RN Image core tidak bisa cegah itu (beda dari expo-image yang punya
+    // downsampling+cache native lebih baik, TAPI itu native module baru →
+    // butuh EAS rebuild, sengaja di-hold dulu sampai rebuild berikutnya
+    // yang sudah direncanakan bareng Gilang).
     return (
       <Image
         source={{ uri }}

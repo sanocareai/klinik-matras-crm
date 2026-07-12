@@ -20,12 +20,19 @@ import PressableScale from "./PressableScale";
 import { lightHaptic } from "../lib/haptics";
 
 // Backend Message.ack: 0 pending, 1 sent, 2 delivered, 3 read — sama
-// dengan frontend/src/features/inbox/utils/ackLevel.js.
+// dengan frontend/src/features/inbox/utils/ackLevel.js. #34B7F1 = biru
+// centang-biru asli WhatsApp (bukan warna accent tema kita, sengaja
+// hardcode — ini identitas visual WA, bukan bagian design system app ini).
 function AckTicks({ ack }) {
-  if (ack === 3) return <CheckCheck size={13} color="#3b82f6" strokeWidth={2.4} style={styles.ackIcon} />;
+  if (ack === 3) return <CheckCheck size={13} color="#34B7F1" strokeWidth={2.4} style={styles.ackIcon} />;
   if (ack === 2) return <CheckCheck size={13} color={tokens.color.textMuted} strokeWidth={2.4} style={styles.ackIcon} />;
   if (ack === 1) return <Check size={13} color={tokens.color.textMuted} strokeWidth={2.4} style={styles.ackIcon} />;
-  return null;
+  // ack 0 (atau belum ada field-nya sama sekali di data lama) — pesan sudah
+  // tersimpan di server TAPI WAHA belum konfirmasi sent sama sekali. Dulu
+  // bagian ini return null (kosong, tidak ada indikator apa-apa) — beda dari
+  // status "sending" lokal (yang punya Clock sendiri di metaRow, lihat
+  // isSending di bawah), jadi butuh indikator sendiri juga: jam kecil abu-abu.
+  return <Clock size={11} color={tokens.color.textMuted} strokeWidth={2.2} style={styles.ackIcon} />;
 }
 
 // Label teks polos (TANPA emoji) — dipakai di konteks yang murni tekstual
