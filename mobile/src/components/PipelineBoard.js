@@ -32,7 +32,7 @@ function PipelineCard({ customer, onPress, onLongPress }) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}>
       <View style={styles.cardTop}>
-        <Avatar name={customer.name || customer.phone} size={36} />
+        <Avatar name={customer.name || customer.phone} size={36} avatarUrl={customer.profilePictureUrl} />
         <View style={styles.cardBody}>
           <Text style={styles.cardName} numberOfLines={1}>{customer.name || "Tanpa nama"}</Text>
           <Text style={styles.cardPhone} numberOfLines={1}>{customer.phone ? "+" + customer.phone : "-"}</Text>

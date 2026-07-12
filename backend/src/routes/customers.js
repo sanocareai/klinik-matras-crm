@@ -27,14 +27,18 @@ customerRouter.post("/", async (req, res) => {
     if (exists) return res.status(409).json({ error: "Username Instagram sudah terdaftar" });
   }
 
+  const cleanName = name?.trim() || null;
   const customer = await prisma.customer.create({
     data: {
-      name: name?.trim() || null,
+      name: cleanName,
       phone: cleanPhone,
       instagramHandle: cleanHandle,
       city: city?.trim() || null,
       email: email?.trim() || null,
       leadSource: leadSource || "OTHER",
+      // Sama seperti PATCH /:id — kalau sales isi nama sekarang (bukan
+      // dikosongkan), webhook (resolveCustomerName) tidak boleh timpa lagi.
+      ...(cleanName && { nameManuallyEdited: true }),
     },
   });
   res.status(201).json(customer);
@@ -193,7 +197,9 @@ customerRouter.patch("/:id", async (req, res) => {
   }
 
   const data = {
-    ...(name !== undefined && { name }),
+    // nameManuallyEdited=true — webhook (resolveCustomerName di webhooks.js)
+    // TIDAK BOLEH timpa lagi nama yang sales sudah koreksi manual di CRM.
+    ...(name !== undefined && { name, nameManuallyEdited: true }),
     ...(phone !== undefined && { phone: phone ? phone.replace(/\D/g, "").replace(/^0/, "62") || null : null }),
     ...(tags !== undefined && { tags }),
     ...(pipelineStage !== undefined && { pipelineStage }),

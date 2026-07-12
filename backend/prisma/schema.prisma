@@ -141,7 +141,9 @@ model Customer {
   leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
   customerType        CustomerType  @default(END_USER)
   healthStatus        HealthStatus?
-  profilePictureUrl   String?       // foto profil WA — diambil sekali saat customer baru, nullable
+  profilePictureUrl   String?       // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
+  profilePictureFetchedAt DateTime? // kapan terakhir dicoba fetch dari WAHA — dipakai cek "expired >7 hari" di webhooks.js, JUGA distempel saat fetch GAGAL (privasi dibatasi dsb) supaya tidak coba lagi tiap pesan masuk sampai TTL lewat
+  nameManuallyEdited  Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 

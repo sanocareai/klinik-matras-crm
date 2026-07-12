@@ -223,17 +223,56 @@ export async function getGroupInfo(groupJid, session = WAHA_SESSION) {
 }
 
 // Ambil URL foto profil kontak — return null kalau privasi dibatasi atau gagal (itu WAJAR)
-export async function getProfilePicture(phone) {
+//
+// BUG LAMA (fix): endpoint ini SEBELUMNYA dipanggil dengan pola path-style
+// `/api/{session}/contacts/profile-picture?contactId=...` (menyamakan pola
+// dengan getGroupInfo di atas) — TERNYATA salah untuk resource /contacts:
+// dikonfirmasi via curl manual, pola itu kena-parse WAHA sebagai
+// `GET /api/{session}/contacts/{id}` dengan id harfiah "profile-picture",
+// balikin `{"id":"profile-picture@c.us","name":"","pushname":""}` (bukan 404,
+// makanya lolos !res.ok tanpa ketahuan) — `data.profilePictureURL` SELALU
+// undefined, foto profil customer TIDAK PERNAH tersimpan sejak fitur ini ada.
+// Pola yang BENAR (query-style, session sebagai query param bukan path
+// segment): `/api/contacts/profile-picture?session=X&contactId=...` — beda
+// dari /groups yang justru path-style. Session WAJIB diisi caller (bukan
+// fallback WAHA_SESSION global) — sama seperti sendText/sendMedia, supaya
+// selalu query session yang benar-benar menangani percakapan itu (CS-1/CS-2).
+export async function getProfilePicture(phone, session) {
   try {
     const chatId = `${phone}@c.us`;
     const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/contacts/profile-picture?contactId=${encodeURIComponent(chatId)}`,
+      `${WAHA_BASE_URL}/api/contacts/profile-picture?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
       { headers: headers() }
     );
     if (!res.ok) return null;
     const data = await res.json();
     return data.profilePictureURL || null;
   } catch {
+    return null;
+  }
+}
+
+// Ambil info kontak tersimpan dari WAHA — dipakai resolveCustomerName di
+// webhooks.js untuk prioritaskan nama TERSIMPAN di HP CS (paling otoritatif)
+// di atas pushName (nama yang customer set sendiri di profil WA-nya).
+// WAHA (GOWS, dikonfirmasi via curl manual) balikin:
+//   { id, name, pushname } — "name" STRING KOSONG kalau kontak belum
+//   tersimpan di HP (BUKAN null/absent), "pushname" selalu ada kalau
+//   customer sudah pernah set nama profil WA.
+// Return null kalau gagal/tidak ada respons sama sekali (WAJAR, caller
+// fallback ke pushName dari payload pesan).
+export async function getContactInfo(phone, session) {
+  try {
+    const chatId = `${phone}@c.us`;
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/contacts?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
+      { headers: headers() }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { name: data.name || null, pushname: data.pushname || null };
+  } catch (e) {
+    console.warn("[getContactInfo] Error:", e.message);
     return null;
   }
 }

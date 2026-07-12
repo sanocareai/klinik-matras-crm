@@ -50,7 +50,7 @@ function CustomerRow({ customer, onPress }) {
   const stageColor = stageColors[stage] || tokens.color.textMuted;
   return (
     <PressableScale style={styles.row} onPress={onPress}>
-      <Avatar name={customer.name || customer.phone} size={44} />
+      <Avatar name={customer.name || customer.phone} size={44} avatarUrl={customer.profilePictureUrl} />
       <View style={styles.rowBody}>
         <Text style={styles.name} numberOfLines={1}>{customer.name || "Tanpa nama"}</Text>
         <Text style={styles.phone} numberOfLines={1}>{customer.phone ? "+" + customer.phone : "-"}</Text>

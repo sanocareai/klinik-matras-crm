@@ -334,7 +334,7 @@ export default function ChatScreen({ route, navigation }) {
           style={styles.headerInfo}
           onPress={() => customerSheetRef.current?.open()}
         >
-          <Avatar name={name} size={38} isGroup={isGroup} />
+          <Avatar name={name} size={38} isGroup={isGroup} avatarUrl={conversation?.customer?.profilePictureUrl} />
           <View style={{ marginLeft: 10, flex: 1 }}>
             <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
             <Text style={styles.headerSub} numberOfLines={1}>

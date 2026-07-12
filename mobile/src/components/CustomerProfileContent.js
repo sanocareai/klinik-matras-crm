@@ -239,7 +239,7 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
     <>
       {/* Header profil */}
       <View style={styles.profile}>
-        <Avatar name={customer.name || customer.phone} size={72} />
+        <Avatar name={customer.name || customer.phone} size={72} avatarUrl={customer.profilePictureUrl} />
         {nameEditing ? (
           <View style={styles.nameEditRow}>
             <TextInput

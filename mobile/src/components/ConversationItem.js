@@ -138,7 +138,7 @@ function ConversationItemBase({ id, onPress }) {
           onPressIn={() => setPressed(true)}
           onPressOut={() => setPressed(false)}
         >
-          <AvatarStack avatars={[{ name }]} size={48} isGroup={isGroup} />
+          <AvatarStack avatars={[{ name, avatarUrl: c.customer?.profilePictureUrl }]} size={48} isGroup={isGroup} />
           <View style={styles.body}>
             <View style={styles.top}>
               <View style={styles.nameRow}>

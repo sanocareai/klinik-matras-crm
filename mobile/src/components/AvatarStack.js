@@ -29,7 +29,7 @@ export default function AvatarStack({ avatars = [], size = 48, extraCount = 0, i
             { left: i * size * (1 - OVERLAP), zIndex: shown.length - i, borderRadius: size / 2 },
           ]}
         >
-          <Avatar name={a.name} size={size} />
+          <Avatar name={a.name} size={size} avatarUrl={a.avatarUrl} />
         </View>
       ))}
       {isGroup && (

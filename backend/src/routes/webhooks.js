@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, fetchChatHistory, markChatAsRead, getGroupInfo } from "../services/wahaClient.js";
+import { normalizePhoneNumber, downloadMediaMessage, downloadMediaFromUrl, getProfilePicture, getContactInfo, fetchChatHistory, markChatAsRead, getGroupInfo } from "../services/wahaClient.js";
 import { syncReadFromWaha } from "../services/reconciliation.js";
 import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
@@ -185,6 +185,45 @@ async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime) {
   return `/uploads/${filename}`;
 }
 
+// Resolusi nama customer — prioritas: kontak TERSIMPAN di HP CS (paling
+// otoritatif, WAHA balikin field "name") > pushName (nama yang customer set
+// sendiri di profil WA-nya, dari payload pesan) > null (UI fallback ke nomor,
+// lihat Customers.jsx/PelangganScreen.js `name || phone` — TIDAK menyimpan
+// literal nomor ke kolom name, biar tetap bisa dibedakan "belum ada nama"
+// vs "nama memang berupa angka").
+// DIPAKAI SEKALI di titik pembuatan/update Customer (handleInboundMessage +
+// handleOutboundFromPhone) — satu sumber untuk web & mobile karena keduanya
+// baca Customer.name dari API yang sama.
+async function resolveCustomerName(phone, pushName, session) {
+  const contact = await getContactInfo(phone, session);
+  if (contact?.name) return contact.name;
+  return pushName || null;
+}
+
+// Foto profil WA — fire-and-forget, gagal itu WAJAR (privasi kontak
+// dibatasi). TTL 7 hari: customer lama akhirnya ganti foto profil, atau foto
+// pertama gagal fetch karena WAHA/koneksi bermasalah sesaat — re-check
+// berkala tanpa membebani WAHA API tiap pesan masuk (skip kalau baru
+// dicoba/berhasil dalam 7 hari terakhir). fetchedAt DISTEMPEL WALAU GAGAL —
+// itu yang bikin retry tidak terjadi tiap pesan untuk kontak yang privasinya
+// memang dibatasi permanen.
+const PROFILE_PIC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function needsProfilePictureFetch(existingCustomer) {
+  if (!existingCustomer) return true;
+  if (!existingCustomer.profilePictureFetchedAt) return true;
+  return Date.now() - existingCustomer.profilePictureFetchedAt.getTime() > PROFILE_PIC_TTL_MS;
+}
+function maybeFetchProfilePicture(phone, session, existingCustomer) {
+  if (!needsProfilePictureFetch(existingCustomer)) return;
+  getProfilePicture(phone, session).then((url) => {
+    const data = { profilePictureFetchedAt: new Date() };
+    if (url) data.profilePictureUrl = url; // jangan timpa foto lama kalau percobaan refresh ini gagal
+    prisma.customer.update({ where: { phone }, data }).catch(() => {});
+  }).catch(() => {
+    prisma.customer.update({ where: { phone }, data: { profilePictureFetchedAt: new Date() } }).catch(() => {});
+  });
+}
+
 // ── Handler pesan grup WhatsApp ──────────────────────────────────────────────
 // Grup (@g.us) disimpan sebagai Conversation terpisah tanpa Customer record.
 // Tidak ada lead attribution, tidak ada customer upsert, tidak muncul di CRM Pelanggan.
@@ -358,16 +397,23 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     // Lapis 3: default WHATSAPP_DIRECT sudah diset di atas
   }
 
+  // Resolusi nama — cuma kalau customer BARU, atau customer lama tapi
+  // name-nya masih kosong DAN belum pernah diedit manual sales (lihat
+  // resolveCustomerName di atas). Sekali name terisi, cek ini otomatis
+  // berhenti trigger call WAHA lagi di pesan-pesan berikutnya (self-limiting).
+  const needsNameResolution = !existingCustomer || (!existingCustomer.name && !existingCustomer.nameManuallyEdited);
+  const resolvedName = needsNameResolution ? await resolveCustomerName(phone, pushName, sessionName) : null;
+
   // Upsert customer — bungkus P2002 untuk handle race condition:
   // dua webhook identik bisa tiba bersamaan sebelum salah satu selesai INSERT
   let customer;
   try {
     customer = await prisma.customer.upsert({
       where:  { phone },
-      update: {},
+      update: resolvedName ? { name: resolvedName } : {},
       create: {
         phone,
-        name:                pushName || null,
+        name:                resolvedName,
         leadSource:          detectedSource,
         leadSourceDetail:    detectedDetail,
         leadSourceConfirmed: false,
@@ -379,14 +425,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     if (!customer) throw e;
   }
 
-  // Untuk customer BARU: fetch foto profil WA sekali (fire-and-forget, gagal = wajar)
-  if (!existingCustomer) {
-    getProfilePicture(phone).then((url) => {
-      if (url) {
-        prisma.customer.update({ where: { phone }, data: { profilePictureUrl: url } }).catch(() => {});
-      }
-    }).catch(() => {});
-  }
+  maybeFetchProfilePicture(phone, sessionName, existingCustomer);
 
   // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan ke customer ini
   if (pendingClickId) {
@@ -516,17 +555,25 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     // Tidak ikut lead-attribution 3-lapis (itu murni utk pesan MASUK dari
     // customer baru) — leadSource default WHATSAPP_DIRECT sudah representatif
     // untuk kontak yang diinisiasi internal.
+    //
+    // Nama & foto profil sama-sama dicoba resolve di sini juga (bukan cuma
+    // handleInboundMessage) — kontak yang sales chat duluan biasanya SUDAH
+    // tersimpan namanya di HP CS itu sendiri (itu kenapa sales tahu mau
+    // chat siapa), jadi resolveCustomerName punya peluang bagus kena.
+    // Tidak ada pushName di sini (pesan fromMe, bukan dari lawan bicara).
+    const resolvedName = await resolveCustomerName(phone, null, sessionName);
     try {
       customer = await prisma.customer.upsert({
         where:  { phone },
         update: {},
-        create: { phone, leadSource: "WHATSAPP_DIRECT", leadSourceConfirmed: false },
+        create: { phone, name: resolvedName, leadSource: "WHATSAPP_DIRECT", leadSourceConfirmed: false },
       });
     } catch (e) {
       if (e.code !== "P2002") throw e;
       customer = await prisma.customer.findUnique({ where: { phone } });
       if (!customer) throw e;
     }
+    maybeFetchProfilePicture(phone, sessionName, null); // null = customer baru dibuat barusan, pasti belum pernah fetch
   }
 
   // RACE CONDITION FIX: sama seperti handleInboundMessage — event "message"
