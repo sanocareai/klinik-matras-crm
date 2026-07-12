@@ -8,6 +8,7 @@ import ChartWidget from "../features/dashboard/components/ChartWidget.jsx";
 import PipelineWidget from "../features/dashboard/components/PipelineWidget.jsx";
 import RecentOrdersTable from "../features/dashboard/components/RecentOrdersTable.jsx";
 import TargetSalesWidget from "../features/dashboard/components/TargetSalesWidget.jsx";
+import SessionDistributionWidget from "../features/dashboard/components/SessionDistributionWidget.jsx";
 import { formatTanggalIndo, getDatePreset } from "../utils/format.js";
 
 // Widget gagal fetch sendiri-sendiri — 1 widget error TIDAK memblokir seluruh
@@ -90,6 +91,9 @@ export default function Dashboard({ user }) {
 
       {/* Target Sales Tim — endpoint sales-performance yang sama dipakai Laporan */}
       <TargetSalesWidget />
+
+      {/* Distribusi Chat CS-1 vs CS-2 — dekat funnel pipeline di bawah */}
+      <SessionDistributionWidget />
 
       {/* Chart + Pipeline + Recent Orders */}
       <div className="dash-charts-grid">

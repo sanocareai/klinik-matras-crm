@@ -3077,6 +3077,33 @@ input:focus, select:focus, textarea:focus {
   .target-sales-grid { grid-template-columns: 1fr; }
   .target-sales-people-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Distribusi Chat CS-1 vs CS-2 widget ── */
+.dash-session-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; margin-bottom: 12px;
+}
+.dash-session-period-toggle { display: flex; gap: 4px; background: var(--bg-subtle); border-radius: 99px; padding: 3px; }
+.dash-session-period-btn {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 500; color: var(--text-secondary);
+  padding: 5px 12px; border-radius: 99px; transition: background 0.15s, color 0.15s;
+}
+.dash-session-period-btn.active { background: var(--bg-card); color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
+
+.dash-session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dash-session-card {
+  background: var(--accent-soft); border: 1px solid #DBEAFE; border-radius: 12px;
+  padding: 18px 20px; display: flex; flex-direction: column;
+}
+.dash-session-label { font-size: 12.5px; font-weight: 600; color: var(--accent); letter-spacing: 0.3px; }
+.dash-session-value { font-size: 30px; font-weight: 600; color: var(--text-primary); line-height: 1.2; margin-top: 8px; letter-spacing: -0.3px; }
+.dash-session-value-caption { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.dash-session-sub { font-size: 12px; color: var(--text-muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid #DBEAFE; }
+
+@media (max-width: 900px) {
+  .dash-session-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 640px) {
   .target-sales-people-grid { grid-template-columns: 1fr; }
 }

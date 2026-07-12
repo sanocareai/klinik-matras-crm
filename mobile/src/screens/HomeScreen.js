@@ -60,6 +60,7 @@ export default function HomeScreen({ navigation }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [myConvCount, setMyConvCount] = useState(0);
   const [needsAction, setNeedsAction] = useState([]);
+  const [sessionDist, setSessionDist] = useState([]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -67,17 +68,19 @@ export default function HomeScreen({ navigation }) {
     try {
       const now = new Date();
       const { from, to } = monthRangeStrings();
-      const [perfRows, csRows, unread, counts, convRes] = await Promise.all([
+      const [perfRows, csRows, unread, counts, convRes, sessionRows] = await Promise.all([
         api.getSalesPerformance(now.getFullYear(), now.getMonth() + 1).catch(() => []),
         api.getCsPerformance(from, to).catch(() => []),
         api.getUnreadCount().catch(() => ({ count: 0 })),
         api.getConversationCounts().catch(() => ({})),
         api.getConversations({}).catch(() => ({ data: [] })),
+        api.getSessionDistribution("today").catch(() => []),
       ]);
       setPerf(perfRows || []);
       setCsPerf(csRows || []);
       setUnreadCount(unread?.count || 0);
       setMyConvCount(counts?.milikSaya || 0);
+      setSessionDist(sessionRows || []);
 
       const top = (convRes?.data || [])
         .filter((c) => c.isUnanswered)
@@ -256,6 +259,23 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
+      {/* Distribusi Chat CS-1 vs CS-2 — read-only, sama endpoint dashboard web */}
+      {sessionDist.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Distribusi Chat CS-1 vs CS-2</Text>
+          <View style={styles.sessionRow}>
+            {sessionDist.map((s) => (
+              <View key={s.session} style={styles.sessionCard}>
+                <Text style={styles.sessionLabel}>{s.session}</Text>
+                <Text style={styles.sessionValue}>{s.newLeads}</Text>
+                <Text style={styles.sessionValueCaption}>Lead Baru</Text>
+                <Text style={styles.sessionSub}>{s.totalActive} percakapan aktif</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Performa Sales — chat ditangani + conversion (closingRate) */}
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
@@ -387,4 +407,16 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.accentSoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
   },
   perfBadgeText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
+  sessionRow: { flexDirection: "row", gap: 10 },
+  sessionCard: {
+    flex: 1, backgroundColor: tokens.color.accentSoft, borderRadius: 12,
+    padding: 14, borderWidth: 1, borderColor: "#DBEAFE",
+  },
+  sessionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, letterSpacing: 0.3 },
+  sessionValue: { fontSize: 24, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 6 },
+  sessionValueCaption: { fontSize: 11, color: tokens.color.textSecondary, marginTop: 1 },
+  sessionSub: {
+    fontSize: 11, color: tokens.color.textMuted, marginTop: 8, paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#DBEAFE",
+  },
 });

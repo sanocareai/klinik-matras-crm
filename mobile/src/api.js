@@ -258,6 +258,12 @@ export const api = {
   getCsPerformance: (from, to) =>
     request("/analytics/cs-performance" + buildQuery({ from, to })),
 
+  // Distribusi lead baru & percakapan aktif per sesi WA (CS-1/CS-2) —
+  // endpoint SAMA yang dipakai widget Dashboard web (backend/src/routes/
+  // dashboard.js#session-distribution), read-only. period: "today"|"week"|"month".
+  getSessionDistribution: (period) =>
+    request("/dashboard/session-distribution" + buildQuery({ period })),
+
   // Order — dua langkah sama seperti web (addOrder bikin shell order kosong,
   // addOrderItem nambah baris layanan+harga yang otomatis hitung ulang
   // Order.value). Lihat backend/src/routes/customers.js #POST /:id/orders
