@@ -17,12 +17,19 @@ function sortOrder(conversationsById, order) {
 
 export const useConversationStore = create((set) => ({
   activeConversationId: null,
+  // Counter naik tiap kali setActive dipanggil, TERMASUK kalau id-nya SAMA
+  // dengan yang sebelumnya (mis. user balik ke daftar di mobile lalu tap
+  // percakapan yang sama lagi) — activeConversationId sendiri tidak berubah
+  // di kasus itu jadi tidak cukup dipakai sebagai dependency effect. Dipakai
+  // Inbox.jsx untuk trigger pindah ke tampilan chat di mobile (lihat
+  // useActiveSelectionSeq di bawah).
+  activeSelectionSeq: 0,
   filter: "ALL", // 'ALL' | 'OPEN' | 'PENDING' | 'CLOSED' | 'MINE'
   searchQuery: "",
   conversationsById: {},
   conversationOrder: [], // array of ids, sudah terurut
 
-  setActive: (id) => set({ activeConversationId: id }),
+  setActive: (id) => set((state) => ({ activeConversationId: id, activeSelectionSeq: state.activeSelectionSeq + 1 })),
   setFilter: (filter) => set({ filter }),
   setSearch: (searchQuery) => set({ searchQuery }),
 
@@ -74,6 +81,7 @@ export const useConversationStore = create((set) => ({
 
 // ── Selectors granular — komponen subscribe hanya ke bagian yang dipakai ────
 export const useActiveId     = () => useConversationStore((s) => s.activeConversationId);
+export const useActiveSelectionSeq = () => useConversationStore((s) => s.activeSelectionSeq);
 export const useConversation = (id) => useConversationStore((s) => (id ? s.conversationsById[id] : undefined));
 export const useOrderedIds   = () => useConversationStore((s) => s.conversationOrder);
 export const useFilter       = () => useConversationStore((s) => s.filter);

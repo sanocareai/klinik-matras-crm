@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
@@ -104,6 +105,8 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
 export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel }) {
   const conversationId = conversation?.id;
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Fetch + realtime + windowing pesan (lihat useMessages.js)
   const { isLoading: messagesLoading } = useMessages(conversationId);
@@ -118,7 +121,6 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [showDotMenu, setShowDotMenu]   = useState(false);
   const [forwardMsg, setForwardMsg]     = useState(null);
   const [forwardBulk, setForwardBulk]   = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
-  const [showCustomerDetail, setShowCustomerDetail] = useState(false); // bottom sheet mobile
   const [dragOver, setDragOver]         = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -132,10 +134,28 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   useEffect(() => {
     setShowSearch(false);
     setShowDotMenu(false);
-    setShowCustomerDetail(false);
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, [conversationId]);
+
+  // BUG FIX (swipe-back di PWA/Android salah navigasi) — sama seperti
+  // mobileView di Inbox.jsx: bottom sheet Customer Panel ini dulu cuma
+  // local state (showCustomerDetail), tidak terhubung ke browser history.
+  // Buka sheet TIDAK push history entry baru, jadi gesture "swipe back"
+  // malah langsung pop keluar dari tampilan chat (bahkan sampai ke
+  // Dashboard), bukan menutup sheet dulu. Sekarang derive dari
+  // location.state (pola sama dengan Inbox.jsx) — swipe-back maupun tombol
+  // X di sheet sama-sama cuma nutup sheet ini dulu, chat di baliknya tetap
+  // utuh.
+  const showCustomerDetail = !!location.state?.customerSheetOpen;
+
+  function openCustomerDetail() {
+    if (location.state?.customerSheetOpen) return;
+    navigate(`${location.pathname}${location.search}`, { state: { ...location.state, customerSheetOpen: true } });
+  }
+  function closeCustomerDetail() {
+    if (location.state?.customerSheetOpen) navigate(-1);
+  }
 
   function handleRetry(m) {
     // Buang bubble gagal yang lama dulu, baru kirim ulang lewat mutation
@@ -356,7 +376,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         </div>
 
         {/* Tombol info — dipakai mobile untuk buka bottom sheet Customer Panel */}
-        <button className="chat-info-btn" onClick={() => setShowCustomerDetail(true)} title="Info Pelanggan">
+        <button className="chat-info-btn" onClick={openCustomerDetail} title="Info Pelanggan">
           <Info size={18} />
         </button>
 
@@ -410,7 +430,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
               <div className="chat-dots-backdrop" onClick={() => setShowDotMenu(false)} />
               <div className="chat-dots-dropdown">
                 <button onClick={() => { setShowSearch(true); setShowDotMenu(false); }}><Search size={14} /> Cari Pesan</button>
-                <button onClick={() => { setShowCustomerDetail(true); setShowDotMenu(false); }}><Info size={14} /> Info Pelanggan</button>
+                <button onClick={() => { openCustomerDetail(); setShowDotMenu(false); }}><Info size={14} /> Info Pelanggan</button>
                 {!isGroup && conversation.status !== "RESOLVED" && (
                   <button onClick={() => { handleResolve(); setShowDotMenu(false); }}><CheckCircle size={14} /> Tandai Selesai</button>
                 )}
@@ -496,21 +516,21 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       {/* ── CustomerPanel — full-screen sheet di mobile (Level 3 navigasi,
           via CSS breakpoint), modal biasa di desktop ── */}
       {showCustomerDetail && (
-        <div className="mobile-bottom-sheet-overlay" onClick={() => setShowCustomerDetail(false)}>
+        <div className="mobile-bottom-sheet-overlay" onClick={closeCustomerDetail}>
           <div className="mobile-bottom-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="bottom-sheet-header">
               <div className="bottom-sheet-handle" />
               <button
                 type="button"
                 className="bottom-sheet-close-btn"
-                onClick={() => setShowCustomerDetail(false)}
+                onClick={closeCustomerDetail}
                 title="Tutup"
                 aria-label="Tutup"
               >
                 <X size={18} />
               </button>
             </div>
-            <CustomerPanel conversation={conversation} onClose={() => setShowCustomerDetail(false)} />
+            <CustomerPanel conversation={conversation} onClose={closeCustomerDetail} />
           </div>
         </div>
       )}

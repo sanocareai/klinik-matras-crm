@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
 import ConversationList from "../features/inbox/components/ConversationList/index.jsx";
@@ -9,7 +9,7 @@ import ColumnErrorBoundary from "../features/inbox/components/ColumnErrorBoundar
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
 import { useIsMobile } from "../features/inbox/hooks/useIsMobile.js";
-import { useActiveId, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
+import { useActiveId, useActiveSelectionSeq, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
 // conversationStore (Zustand).
@@ -23,13 +23,15 @@ import { useActiveId, useConversation, useConversationStore, useTotalUnreadCount
 const PANEL_COLLAPSED_KEY = "inbox-panel-collapsed";
 
 export default function Inbox({ user }) {
-  const [mobileView, setMobileView] = useState("list"); // 'list' | 'chat' (mobile)
   const [panelCollapsed, setPanelCollapsedState] = useState(
     () => localStorage.getItem(PANEL_COLLAPSED_KEY) === "true",
   );
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const activeId = useActiveId();
+  const activeSelectionSeq = useActiveSelectionSeq();
   const active   = useConversation(activeId);
   const socketConnected = useSocketStatus();
   const totalUnread = useTotalUnreadCount();
@@ -70,11 +72,39 @@ export default function Inbox({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Percakapan dipilih (dari ConversationItem, self-contained via store) →
-  // di mobile pindah ke tampilan chat.
+  // BUG FIX (swipe-back di PWA/Android salah navigasi ke Dashboard) —
+  // mobileView dulu local state polos, sama sekali tidak terhubung ke
+  // browser history. Buka chat TIDAK pernah push history entry baru, jadi
+  // gesture "swipe back" (native history.back() dari browser/PWA, beda dari
+  // tombol back manual yang cuma panggil callback) malah pop keluar dari
+  // /inbox sepenuhnya (balik ke Dashboard) alih-alih balik ke daftar
+  // percakapan. Tombol back di header ChatWindow "kelihatan benar" karena
+  // dulu cuma set state langsung tanpa sentuh history — makanya bug ini
+  // gampang lolos manual testing lewat tombol, cuma kelihatan lewat gesture
+  // asli/tombol back OS.
+  // Fix: derive mobileView dari location.state, bukan local state lagi.
+  // Buka chat = push 1 history entry baru bertanda chatOpen:true. Baik
+  // swipe-back (popstate asli, ditangkap otomatis oleh react-router lewat
+  // useLocation) MAUPUN tombol back (navigate(-1)) sama-sama cuma pop 1
+  // level (balik ke daftar) — history /inbox itu sendiri tetap utuh,
+  // Dashboard baru ke-pop kalau user tekan back SEKALI LAGI dari daftar.
+  const mobileView = location.state?.chatOpen ? "chat" : "list";
+
+  // Percakapan dipilih (dari ConversationItem, self-contained via store,
+  // atau dari deep link ?conv=ID) → di mobile pindah ke tampilan chat.
+  // Depend ke activeSelectionSeq (bukan activeId) — tap ulang percakapan
+  // yang SAMA setelah balik ke daftar tetap harus buka lagi tampilan chat,
+  // padahal activeId-nya tidak berubah nilai (lihat conversationStore.js).
   useEffect(() => {
-    if (activeId) setMobileView("chat");
-  }, [activeId]);
+    if (activeId && isMobile && !location.state?.chatOpen) {
+      navigate(`${location.pathname}${location.search}`, { state: { chatOpen: true } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSelectionSeq, isMobile]);
+
+  function backToMobileList() {
+    if (location.state?.chatOpen) navigate(-1);
+  }
 
   // Judul tab browser mencerminkan total unread — supaya kelihatan dari
   // tab lain tanpa perlu buka CRM. Dikembalikan ke judul default saat
@@ -108,7 +138,7 @@ export default function Inbox({ user }) {
             <ChatWindow
               conversation={active}
               user={user}
-              onBack={() => setMobileView("list")}
+              onBack={backToMobileList}
               panelCollapsed={panelCollapsed}
               onTogglePanel={() => setPanelCollapsed((v) => !v)}
             />
@@ -136,7 +166,7 @@ export default function Inbox({ user }) {
         <ChatWindow
           conversation={active}
           user={user}
-          onBack={() => setMobileView("list")}
+          onBack={backToMobileList}
           panelCollapsed={panelCollapsed}
           onTogglePanel={() => setPanelCollapsed((v) => !v)}
         />
