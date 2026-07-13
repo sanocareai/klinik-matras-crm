@@ -20,6 +20,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, Image, ScrollView,
+  KeyboardAvoidingView, Platform,
 } from "react-native";
 import { Package, X } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
@@ -187,7 +188,21 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => !saving && onClose()}>
-      <View style={styles.overlay}>
+      {/* BUG (fix): form ini banyak TextInput (Berat Badan, Keluhan, Harga
+          Total, Layanan) di dalam RN <Modal> polos — beda dari layar biasa,
+          Modal render di window/Dialog terpisah di Android yang TIDAK ikut
+          resize otomatis walau app.json sudah set windowSoftInputMode=
+          adjustResize di level Activity (lihat catatan di ChatScreen.js).
+          Tanpa KeyboardAvoidingView di sini, keyboard nutup field yang lagi
+          diisi kalau posisinya di bawah, penggunanya tidak lihat apa yang
+          diketik. behavior="height" (bukan "padding") dipakai khusus di
+          Android karena ini konten DI DALAM Modal — "height" measure ulang
+          tinggi container-nya sendiri lewat event keyboardDidShow, tidak
+          bergantung ke window resize activity yang tidak nyampur ke Modal. */}
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
         <View style={styles.modal}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Order Baru</Text>
@@ -369,7 +384,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       <PickerSheet
         visible={showMerkPicker}

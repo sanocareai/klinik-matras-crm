@@ -82,6 +82,17 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
   }
 
   return (
+    // BUG (fix): CustomerProfileContent di dalam sini punya banyak TextInput
+    // (nama, catatan, dan sekarang field edit OrderCard.js — merk/ukuran/
+    // keluhan/harga) — default gorhom bottom-sheet android_keyboardInputMode
+    // = "adjustPan" (BUKAN "adjustResize"), yang cuma GESER seluruh sheet
+    // ke atas sedikit alih-alih benar-benar resize area kontennya, jadi
+    // field yang posisinya dekat bawah sheet (mis. Order, yang ada di
+    // bagian bawah profil) tetap ketutup keyboard. android_keyboardInputMode
+    // "adjustResize" + keyboardBehavior "interactive" bikin sheet ikut
+    // resize proporsional sama seperti native adjustResize biasa;
+    // keyboardBlurBehavior "restore" balikin sheet ke snap point semula
+    // begitu keyboard ditutup (bukan nyangkut di posisi sempit).
     <BottomSheetModal
       ref={sheetRef}
       snapPoints={snapPoints}
@@ -89,6 +100,9 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: tokens.color.card }}
       handleIndicatorStyle={{ backgroundColor: tokens.color.border }}
+      android_keyboardInputMode="adjustResize"
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
     >
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <CustomerProfileContent customerId={customerId} reloadKey={reloadKey} />
