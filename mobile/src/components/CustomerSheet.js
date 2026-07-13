@@ -11,12 +11,14 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
 import CustomerProfileContent from "./CustomerProfileContent";
 import { useMessagesForConv } from "../store/messageStore";
 
 function Section({ title, children }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{title}</Text>
@@ -26,6 +28,8 @@ function Section({ title, children }) {
 }
 
 const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const sheetRef = useRef(null);
   const snapPoints = useMemo(() => ["60%", "95%"], []);
 
@@ -113,11 +117,13 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
 
 export default CustomerSheet;
 
-const styles = StyleSheet.create({
-  profile: { alignItems: "center", padding: 20 },
-  name: { fontSize: 19, fontWeight: "700", color: tokens.color.textPrimary },
-  phone: { fontSize: 14, color: tokens.color.textSecondary },
-  section: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: tokens.color.border },
-  sectionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textMuted, marginBottom: 8, textTransform: "uppercase" },
-  detailValue: { fontSize: 13, color: tokens.color.textPrimary },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    profile: { alignItems: "center", padding: 20 },
+    name: { fontSize: 19, fontWeight: "700", color: tokens.color.textPrimary },
+    phone: { fontSize: 14, color: tokens.color.textSecondary },
+    section: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: tokens.color.border },
+    sectionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textMuted, marginBottom: 8, textTransform: "uppercase" },
+    detailValue: { fontSize: 13, color: tokens.color.textPrimary },
+  });
+}

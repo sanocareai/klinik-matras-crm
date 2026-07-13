@@ -11,14 +11,14 @@
 // saja — tidak di-extract ke sini, karena tab Pelanggan/CustomerDetail
 // tidak pernah berurusan dengan grup (grup tidak punya Customer record,
 // lihat CLAUDE.md "Conversation type GROUP").
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, FlatList,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Pencil, Copy, Check, MessageCircle, AlertTriangle, RefreshCw } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { stageLabels } from "../theme";
 import { formatRupiah, shortDate } from "../utils/format";
 import Avatar from "./Avatar";
@@ -38,8 +38,12 @@ const KOTA_LIST = [
 ];
 
 // Sheet pilih 1 opsi dari daftar (dipakai Sumber Lead & Kota) — kecil,
-// tidak perlu file terpisah.
+// tidak perlu file terpisah. Komponen TERPISAH dari CustomerProfileContent
+// (bukan nested closure), jadi butuh useTokens()+styles sendiri, tidak bisa
+// pinjam punya parent.
 function PickerSheet({ visible, title, options, onSelect, onClose }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
@@ -62,6 +66,8 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
 }
 
 function Section({ title, children }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{title}</Text>
@@ -81,6 +87,8 @@ function Section({ title, children }) {
 // parent ingin data dipaksa fresh lagi (CustomerSheet: tiap open(); belum
 // dipakai CustomerDetailScreen karena screen baru selalu instance baru).
 export default function CustomerProfileContent({ customerId, onOpenChat, onCustomerLoaded, reloadKey }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -436,7 +444,8 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
   retryBtn: {
     flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.accent,
@@ -505,4 +514,5 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
   pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
-});
+  });
+}

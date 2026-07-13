@@ -4,14 +4,14 @@
 // Kolom horizontal snap-scroll (85% lebar layar), isi tiap kolom FlashList
 // vertikal sendiri (windowing client-side, konsisten dengan pola windowing
 // lain di app ini — GET /customers tidak paginated di backend).
-import React, { useState } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, ActivityIndicator, Modal,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Check } from "lucide-react-native";
 import Avatar from "./Avatar";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
 import { lightHaptic } from "../lib/haptics";
 
@@ -28,7 +28,13 @@ function daysSinceChat(lastMessageAt) {
   return `${days} hari sejak chat terakhir`;
 }
 
-function PipelineCard({ customer, onPress, onLongPress }) {
+// memo — FlashList recycle sel bisa lewat prop yang reference-nya beda tapi
+// isinya sama (mis. customer object baru dari fetch ulang tapi field-field-
+// nya identik); tanpa memo, tiap recycle/scroll tetap re-render walau tidak
+// perlu.
+const PipelineCard = memo(function PipelineCard({ customer, onPress, onLongPress }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}>
       <View style={styles.cardTop}>
@@ -44,11 +50,29 @@ function PipelineCard({ customer, onPress, onLongPress }) {
       <Text style={styles.cardMeta} numberOfLines={1}>{daysSinceChat(customer.lastMessageAt)}</Text>
     </TouchableOpacity>
   );
-}
+});
 
 function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPressCard }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const visible = customers.slice(0, visibleCount);
+
+  // useCallback — tanpa ini, renderItem jadi closure baru tiap StageColumn
+  // re-render (mis. tiap onEndReached menaikkan visibleCount), yang bikin
+  // SEMUA PipelineCard yang lagi kelihatan ikut re-render walau memo() sudah
+  // dipasang (prop onPress/onLongPress-nya selalu "baru").
+  const renderItem = useCallback(({ item }) => (
+    <PipelineCard
+      customer={item}
+      onPress={() => onCardPress(item)}
+      onLongPress={() => onLongPressCard(item, stageKey)}
+    />
+  ), [onCardPress, onLongPressCard, stageKey]);
+
+  const handleEndReached = useCallback(() => {
+    setVisibleCount((v) => Math.min(v + PAGE_SIZE, customers.length));
+  }, [customers.length]);
 
   return (
     <View style={[styles.column, { width: COLUMN_WIDTH, marginRight: COLUMN_GAP }]}>
@@ -65,15 +89,9 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
         <FlashList
           data={visible}
           keyExtractor={(c) => c.id}
-          renderItem={({ item }) => (
-            <PipelineCard
-              customer={item}
-              onPress={() => onCardPress(item)}
-              onLongPress={() => onLongPressCard(item, stageKey)}
-            />
-          )}
+          renderItem={renderItem}
           estimatedItemSize={92}
-          onEndReached={() => setVisibleCount((v) => Math.min(v + PAGE_SIZE, customers.length))}
+          onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           ListFooterComponent={
             visibleCount < customers.length ? (
@@ -93,13 +111,17 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
 export default function PipelineBoard({
   customersByStage, stageOrder, pipelineLabels, pipelineColors, onCardPress, onMoveStage,
 }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [moveTarget, setMoveTarget] = useState(null); // { customer, fromStage } | null
   const [moving, setMoving] = useState(false);
 
-  function handleLongPressCard(customer, fromStage) {
+  // useCallback — diteruskan sampai ke renderItem tiap StageColumn (lewat
+  // prop onLongPressCard), harus stabil supaya PipelineCard.memo() efektif.
+  const handleLongPressCard = useCallback((customer, fromStage) => {
     lightHaptic();
     setMoveTarget({ customer, fromStage });
-  }
+  }, []);
 
   async function handleMoveTo(newStage) {
     if (!moveTarget || moving) return;
@@ -167,7 +189,8 @@ export default function PipelineBoard({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   boardContent: { paddingHorizontal: 16, paddingBottom: 16 },
   column: { backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, overflow: "hidden", ...tokens.shadow.soft },
   columnHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, gap: 6 },
@@ -194,4 +217,5 @@ const styles = StyleSheet.create({
   },
   sheetDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
   sheetItemText: { fontSize: 14, color: tokens.color.textPrimary },
-});
+  });
+}

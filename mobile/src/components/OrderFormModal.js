@@ -17,14 +17,15 @@
 // notes disimpan JSON {merkKasur, ukuranKasur, keluhanCustomer} — format
 // SAMA persis dengan buildNotes()/parseNotes() di OrderSection.jsx web,
 // supaya order dari mobile tampil benar juga di CRM web (dan sebaliknya).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, Image, ScrollView,
+  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, ScrollView,
   KeyboardAvoidingView, Platform,
 } from "react-native";
+import { Image } from "expo-image";
 import { Package, X } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
 
 const CATEGORY_OPTIONS = [
@@ -46,6 +47,8 @@ function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer }) {
 // Bottom-sheet pilih 1 opsi dari daftar string — dipakai Merk Kasur, Ukuran
 // Kasur, dan pilihan cepat Jenis Layanan per baris item.
 function PickerSheet({ visible, title, options, onSelect, onClose }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
@@ -68,6 +71,8 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
 }
 
 export default function OrderFormModal({ visible, customerId, onClose, onCreated, orderOptions: orderOptionsProp }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
@@ -257,7 +262,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
                       onPress={() => pickProduct(p)}
                     >
                       {thumb ? (
-                        <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} />
+                        <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} contentFit="cover" cachePolicy="memory-disk" />
                       ) : (
                         <View style={[styles.productThumb, styles.productThumbPlaceholder]}>
                           <Package size={16} color={tokens.color.textMuted} strokeWidth={1.8} />
@@ -411,7 +416,8 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24, maxHeight: "88%" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
@@ -467,4 +473,5 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
   pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
-});
+  });
+}

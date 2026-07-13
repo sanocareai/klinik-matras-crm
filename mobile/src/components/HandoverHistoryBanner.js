@@ -2,11 +2,11 @@
 // mobile dari frontend/src/features/inbox/components/ChatWindow/
 // HandoverHistoryBanner.jsx, sumber data & endpoint SAMA PERSIS
 // (GET /conversations/:id/handover-history).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { ChevronDown, ChevronUp, History } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 
 function formatEventTime(iso) {
   const d = new Date(iso);
@@ -15,6 +15,8 @@ function formatEventTime(iso) {
 }
 
 export default function HandoverHistoryBanner({ conversationId }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [events, setEvents] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -53,13 +55,15 @@ export default function HandoverHistoryBanner({ conversationId }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { backgroundColor: tokens.color.subtle, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
-  toggle: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
-  toggleText: { flex: 1, fontSize: 12, fontWeight: "500", color: tokens.color.textMuted },
-  list: { paddingHorizontal: 16, paddingBottom: 10, gap: 6 },
-  item: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  itemText: { flex: 1, fontSize: 12, color: tokens.color.textSecondary },
-  bold: { fontWeight: "700", color: tokens.color.textPrimary },
-  itemTime: { fontSize: 11, color: tokens.color.textMuted, flexShrink: 0 },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    wrap: { backgroundColor: tokens.color.subtle, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
+    toggle: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
+    toggleText: { flex: 1, fontSize: 12, fontWeight: "500", color: tokens.color.textMuted },
+    list: { paddingHorizontal: 16, paddingBottom: 10, gap: 6 },
+    item: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    itemText: { flex: 1, fontSize: 12, color: tokens.color.textSecondary },
+    bold: { fontWeight: "700", color: tokens.color.textPrimary },
+    itemTime: { fontSize: 11, color: tokens.color.textMuted, flexShrink: 0 },
+  });
+}

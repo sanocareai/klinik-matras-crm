@@ -12,11 +12,11 @@
 // frontend/src/features/inbox/components/ChatWindow/Composer.jsx#TemplatePicker
 // — {nama_customer}/{nomor_wa}/{kota} diganti data pelanggan aktif sebelum
 // disisipkan ke composer, supaya hasilnya identik dgn yang dilihat di web.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import { X, MessageSquare } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 
 const KATEGORI_LABELS = {
   pembukaan: "Pembukaan", follow_up: "Follow Up", penawaran: "Penawaran",
@@ -39,6 +39,8 @@ function applyVariables(text, customer) {
 }
 
 export default function TemplatePickerSheet({ visible, customer, onSelect, onClose }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -122,24 +124,26 @@ export default function TemplatePickerSheet({ visible, customer, onSelect, onClo
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24, maxHeight: "80%" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
-  search: {
-    backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
-    fontSize: 14, color: tokens.color.textPrimary, marginBottom: 8,
-  },
-  catLabel: {
-    fontSize: 10, fontWeight: "700", color: tokens.color.textMuted, textTransform: "uppercase",
-    letterSpacing: 0.4, marginTop: 12, marginBottom: 6,
-  },
-  item: { backgroundColor: tokens.color.subtle, borderRadius: 10, padding: 10, marginBottom: 6 },
-  itemHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 },
-  badge: { fontSize: 10, fontWeight: "700", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: "hidden" },
-  itemName: { fontSize: 12.5, fontWeight: "600", color: tokens.color.textPrimary },
-  itemPreview: { fontSize: 12, color: tokens.color.textSecondary },
-  emptyWrap: { alignItems: "center", paddingVertical: 32, gap: 8 },
-  emptyText: { fontSize: 12.5, color: tokens.color.textMuted, textAlign: "center", paddingHorizontal: 24 },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+    sheet: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24, maxHeight: "80%" },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+    headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
+    search: {
+      backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
+      fontSize: 14, color: tokens.color.textPrimary, marginBottom: 8,
+    },
+    catLabel: {
+      fontSize: 10, fontWeight: "700", color: tokens.color.textMuted, textTransform: "uppercase",
+      letterSpacing: 0.4, marginTop: 12, marginBottom: 6,
+    },
+    item: { backgroundColor: tokens.color.subtle, borderRadius: 10, padding: 10, marginBottom: 6 },
+    itemHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 },
+    badge: { fontSize: 10, fontWeight: "700", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: "hidden" },
+    itemName: { fontSize: 12.5, fontWeight: "600", color: tokens.color.textPrimary },
+    itemPreview: { fontSize: 12, color: tokens.color.textSecondary },
+    emptyWrap: { alignItems: "center", paddingVertical: 32, gap: 8 },
+    emptyText: { fontSize: 12.5, color: tokens.color.textMuted, textAlign: "center", paddingHorizontal: 24 },
+  });
+}

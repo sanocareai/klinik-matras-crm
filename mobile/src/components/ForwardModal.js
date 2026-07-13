@@ -1,19 +1,21 @@
 // Modal teruskan pesan — cari percakapan tujuan, kirim via endpoint existing
 // (POST /conversations/:id/forward). Pola SAMA dengan ForwardModal di
 // frontend/src/features/inbox/components/ChatWindow/index.jsx.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert,
 } from "react-native";
 import { Forward, X } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
 
 // messages: array opsional — dipakai forward BULK dari mode pilih
 // (ChatScreen.js#selectionMode). Kalau tidak ada, fallback ke `message`
 // tunggal (pola lama, dipakai action-sheet "Teruskan" per-bubble).
 export default function ForwardModal({ visible, message, messages, onClose }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [convs, setConvs] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -109,7 +111,8 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "80%" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
@@ -132,4 +135,5 @@ const styles = StyleSheet.create({
   },
   rowName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
   rowPhone: { fontSize: 11, color: tokens.color.textMuted },
-});
+  });
+}

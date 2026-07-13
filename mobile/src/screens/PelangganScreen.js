@@ -6,7 +6,7 @@
 // — semua difilter/dikelompokkan CLIENT-SIDE dari array yang sudah LENGKAP
 // (bukan dari subset ter-paginate, jadi count-nya akurat), baru di-WINDOWING
 // per tampilan (list: visibleCount, board: per-kolom) demi performa render.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, FlatList, ScrollView,
 } from "react-native";
@@ -14,7 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlashList } from "@shopify/flash-list";
 import { Search, MapPin, Users as UsersIcon, ChevronDown, LayoutGrid, List as ListIcon } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { stageColors } from "../theme";
 import { formatRupiah } from "../utils/format";
 import { useAuth } from "../context/AuthContext";
@@ -45,7 +45,11 @@ function daysSinceChat(lastMessageAt) {
   return `${days} hari sejak chat terakhir`;
 }
 
-function CustomerRow({ customer, onPress }) {
+// memo — FlashList recycle sel lain dengan prop baru terus-menerus saat
+// scroll; tanpa memo tiap recycle re-render walau data customer sama.
+const CustomerRow = memo(function CustomerRow({ customer, onPress }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const stage = customer.pipelineStage;
   const stageColor = stageColors[stage] || tokens.color.textMuted;
   return (
@@ -72,9 +76,11 @@ function CustomerRow({ customer, onPress }) {
       ) : null}
     </PressableScale>
   );
-}
+});
 
 function SkeletonRow() {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.row}>
       <View style={styles.skeletonAvatar} />
@@ -87,6 +93,8 @@ function SkeletonRow() {
 }
 
 export default function PelangganScreen({ navigation }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user } = useAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -163,9 +171,12 @@ export default function PelangganScreen({ navigation }) {
     setVisibleCount((v) => Math.min(v + PAGE_SIZE, filteredByStage.length));
   }
 
-  function openDetail(c) {
+  // useCallback — dipakai closure renderItem (list) & PipelineBoard (board),
+  // harus stabil supaya CustomerRow/PipelineCard.memo() efektif (lihat
+  // catatan sama di PipelineBoard.js).
+  const openDetail = useCallback((c) => {
     navigation.navigate("CustomerDetail", { customerId: c.id, name: c.name, phone: c.phone });
-  }
+  }, [navigation]);
 
   // Count per stage — DARI ARRAY PENUH hasil search+salesId (bukan dari
   // subset ter-windowing/ter-paginate), jadi selalu akurat & independen
@@ -199,7 +210,7 @@ export default function PelangganScreen({ navigation }) {
   // Pindahkan pelanggan ke stage lain dari Pipeline Board (long-press card)
   // — optimistic update ke state lokal, revert + alert kalau gagal. Endpoint
   // SAMA yang dipakai CustomerProfileContent.js (PATCH /customers/:id).
-  async function handleMoveStage(customer, newStage) {
+  const handleMoveStage = useCallback(async (customer, newStage) => {
     const prevStage = customer.pipelineStage;
     setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: newStage } : c)));
     try {
@@ -208,7 +219,13 @@ export default function PelangganScreen({ navigation }) {
       setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: prevStage } : c)));
       throw err;
     }
-  }
+  }, []);
+
+  // useCallback — renderItem list utama, closure atas openDetail (sudah
+  // stabil di atas) supaya CustomerRow.memo() efektif saat scroll panjang.
+  const renderCustomerRow = useCallback(({ item }) => (
+    <CustomerRow customer={item} onPress={() => openDetail(item)} />
+  ), [openDetail]);
 
   const visible = filteredByStage.slice(0, visibleCount);
   const selectedSalesName = salesId ? (salesUsers.find((u) => u.id === salesId)?.name || "…") : "Semua";
@@ -299,7 +316,7 @@ export default function PelangganScreen({ navigation }) {
         <FlashList
           data={visible}
           keyExtractor={(c) => c.id}
-          renderItem={({ item }) => <CustomerRow customer={item} onPress={() => openDetail(item)} />}
+          renderItem={renderCustomerRow}
           estimatedItemSize={82}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
@@ -342,7 +359,8 @@ export default function PelangganScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -401,4 +419,5 @@ const styles = StyleSheet.create({
   },
   pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
   pickerItemTextActive: { color: tokens.color.accent, fontWeight: "700" },
-});
+  });
+}

@@ -24,7 +24,7 @@ import {
   Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
 import { lightHaptic } from "../lib/haptics";
 import Avatar from "../components/Avatar";
@@ -52,11 +52,13 @@ const PAGE_SIZE = 50;
 // — jangan ditampilkan apa adanya di preview reply-bar, tampilkan label saja.
 const STRUCTURED_MEDIA_LABEL = { location: "Lokasi", contact: "Kontak", poll: "Polling" };
 
-const STATUS_OPTIONS = [
-  { key: "OPEN", label: "Tandai Terbuka", Icon: CircleDot, color: tokens.color.accent },
-  { key: "PENDING", label: "Tandai Pending", Icon: Circle, color: tokens.color.warning },
-  { key: "RESOLVED", label: "Tandai Selesai", Icon: CheckCircle2, color: tokens.color.success },
-];
+function getStatusOptions(tokens) {
+  return [
+    { key: "OPEN", label: "Tandai Terbuka", Icon: CircleDot, color: tokens.color.accent },
+    { key: "PENDING", label: "Tandai Pending", Icon: Circle, color: tokens.color.warning },
+    { key: "RESOLVED", label: "Tandai Selesai", Icon: CheckCircle2, color: tokens.color.success },
+  ];
+}
 
 // Susun array flat [divider, message, message, divider, ...] dari window
 // pesan yang sedang ditampilkan.
@@ -83,6 +85,9 @@ function buildItems(messages) {
 }
 
 export default function ChatScreen({ route, navigation }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const STATUS_OPTIONS = useMemo(() => getStatusOptions(tokens), [tokens]);
   const { conversationId, name: routeName, isGroup: routeIsGroup, customerId: routeCustomerId } = route.params;
   const { user } = useAuth();
 
@@ -859,7 +864,8 @@ export default function ChatScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
     backgroundColor: tokens.color.card, flexDirection: "row", alignItems: "center",
@@ -942,4 +948,5 @@ const styles = StyleSheet.create({
   },
   sheetItemIcon: { marginRight: 10 },
   sheetItemText: { fontSize: 15, color: tokens.color.textPrimary },
-});
+  });
+}

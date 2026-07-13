@@ -7,7 +7,7 @@
 // endpoint sudah ada di masa depan, ganti persistensinya ke situ (interface
 // getNotifPrefs/saveNotifPrefs di bawah sengaja dipisah supaya gampang
 // diswap tanpa ubah UI).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch, Modal, ScrollView, Alert, Platform, ActivityIndicator,
 } from "react-native";
@@ -15,7 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Camera } from "lucide-react-native";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import Avatar from "../components/Avatar";
@@ -62,6 +62,8 @@ function fmtHour(h) {
 const ROLE_LABEL = { ADMIN: "Admin", SALES: "Sales" };
 
 export default function ProfileScreen({ navigation }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user, logout, updateUser } = useAuth();
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
@@ -323,7 +325,8 @@ function isDevBuild() {
   return __DEV__;
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -390,4 +393,5 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   hourOption: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
   hourOptionText: { fontSize: 14, color: tokens.color.textPrimary, textAlign: "center" },
-});
+  });
+}

@@ -13,7 +13,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import { Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
@@ -66,6 +66,8 @@ function matches(c, filter, userId, query) {
 }
 
 export default function ChatListScreen({ navigation }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user, logout } = useAuth();
   const filter = useFilter();
   const search = useConvSearchQuery();
@@ -269,7 +271,8 @@ export default function ChatListScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
   header: {
     flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.bg,
@@ -311,4 +314,5 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,
   },
   retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-});
+  });
+}

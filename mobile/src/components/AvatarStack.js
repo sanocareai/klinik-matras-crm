@@ -6,15 +6,17 @@
 // Users kecil di pojok menandakan ini grup. Komponen sengaja generic
 // (avatars: [{name}], extraCount) supaya begitu backend expose member list
 // asli, tinggal diisi tanpa ubah komponen ini.
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Users } from "lucide-react-native";
 import Avatar from "./Avatar";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 
 const OVERLAP = 0.42; // seberapa besar avatar berikutnya menutup yang sebelumnya
 
 export default function AvatarStack({ avatars = [], size = 48, extraCount = 0, isGroup = false }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const shown = avatars.slice(0, 3);
   const stackWidth = size + Math.max(0, shown.length - 1) * size * (1 - OVERLAP);
   const badgeSize = size * 0.42;
@@ -56,11 +58,16 @@ export default function AvatarStack({ avatars = [], size = 48, extraCount = 0, i
   );
 }
 
-const styles = StyleSheet.create({
-  avatarWrap: { position: "absolute", top: 0, borderWidth: 2, borderColor: "#fff" },
-  badge: {
-    position: "absolute", right: -2, bottom: -2,
-    alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff",
-  },
-  countText: { color: "#fff", fontSize: 10, fontWeight: "700" },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    // borderColor dulu hardcode putih (asumsi selalu di atas background
+    // putih) — sekarang ikut tokens.color.card supaya "cincin pemisah" ini
+    // tetap masuk akal di dark mode (card gelap), bukan garis putih ganjil.
+    avatarWrap: { position: "absolute", top: 0, borderWidth: 2, borderColor: tokens.color.card },
+    badge: {
+      position: "absolute", right: -2, bottom: -2,
+      alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: tokens.color.card,
+    },
+    countText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  });
+}

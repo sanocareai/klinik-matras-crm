@@ -7,14 +7,17 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Scr
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import Markdown from "react-native-markdown-display";
 import { Sparkles, Send } from "lucide-react-native";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { api } from "../api";
 import PressableScale from "./PressableScale";
 
 // Style markdown jawaban Sano — ikuti design system (font Inter, warna
 // tokens.color.*), BUKAN default react-native-markdown-display. Cuma
 // dipakai untuk bubble assistant (inbound) — bubble user tetap plain Text.
-const markdownStyles = StyleSheet.create({
+// Dibungkus function (dipanggil dgn useMemo di komponen) supaya reaktif
+// ikut tema, sama seperti createStyles(tokens) di komponen lain.
+function createMarkdownStyles(tokens) {
+  return StyleSheet.create({
   body: { color: tokens.color.textPrimary, fontSize: 14, lineHeight: 20, fontFamily: tokens.font.regular },
   paragraph: { marginTop: 0, marginBottom: 6 },
   heading1: { fontFamily: tokens.font.semiBold, fontSize: 18, color: tokens.color.textPrimary, marginTop: 4, marginBottom: 6 },
@@ -55,11 +58,12 @@ const markdownStyles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
   },
   tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: tokens.color.border },
-  td: {
-    padding: 6, fontSize: 12, color: tokens.color.textPrimary,
-    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.color.border,
-  },
-});
+    td: {
+      padding: 6, fontSize: 12, color: tokens.color.textPrimary,
+      borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.color.border,
+    },
+  });
+}
 
 // Tabel bisa lebih lebar dari bubble (85% layar) — bungkus dengan
 // ScrollView horizontal supaya kolom tetap rapi (tidak terpotong/menumpuk),
@@ -88,6 +92,9 @@ function buildContextSeed(context) {
 }
 
 const SanoChatSheet = forwardRef(function SanoChatSheet({ context }, ref) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const markdownStyles = useMemo(() => createMarkdownStyles(tokens), [tokens]);
   const sheetRef = useRef(null);
   const scrollRef = useRef(null);
   const snapPoints = useMemo(() => ["70%", "95%"], []);
@@ -209,7 +216,8 @@ const SanoChatSheet = forwardRef(function SanoChatSheet({ context }, ref) {
 
 export default SanoChatSheet;
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 10 },
   headerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, flex: 1 },
   contextChip: {
@@ -246,4 +254,5 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   sendBtnDisabled: { opacity: 0.5 },
-});
+  });
+}

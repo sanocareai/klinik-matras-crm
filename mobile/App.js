@@ -1,6 +1,6 @@
 // Entry point aplikasi mobile Klinik Matras CRM.
 // Navigasi: Login → Daftar Percakapan → Chat → Info Pelanggan
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -23,8 +23,8 @@ import PelangganScreen from "./src/screens/PelangganScreen";
 import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
 import InAppBanner from "./src/components/InAppBanner";
 import SocketStatusBanner from "./src/components/SocketStatusBanner";
-import { colors } from "./src/theme";
-import { tokens } from "./src/constants/theme";
+import { useColors } from "./src/theme";
+import { useTokens, useIsDarkMode } from "./src/constants/theme";
 import { queryClient } from "./src/lib/queryClient";
 import { useSocketEvents } from "./src/hooks/useSocketEvents";
 import { useBadgeSync } from "./src/hooks/useBadgeSync";
@@ -47,6 +47,7 @@ const TAB_BAR_CONTENT_HEIGHT = 56;
 const TAB_ICON_SIZE = 24;
 
 function TabIcon({ routeName, focused }) {
+  const tokens = useTokens();
   const Icon = TAB_ICONS[routeName];
   // Flat — cuma warna & ketebalan stroke yang beda, TANPA lingkaran/pill
   // background, TANPA animasi (Instagram-style, polos).
@@ -76,6 +77,8 @@ function TabBarButton({ children, style, ...rest }) {
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
+  const tokens = useTokens();
+  const tabBarBase = useMemo(() => createTabBarStyle(tokens), [tokens]);
   // SATU sumber kebenaran untuk padding bawah — dipakai PERSIS SEKALI di
   // total height DAN di paddingBottom (bukan dua nilai/dua tempat berbeda
   // yang keduanya menambahkan insets.bottom secara terpisah — itu penyebab
@@ -90,7 +93,7 @@ function MainTabs() {
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
         tabBarButton: (props) => <TabBarButton {...props} />,
         // Total tinggi bar = TAB_BAR_CONTENT_HEIGHT + bottomPad, TIDAK LEBIH.
-        tabBarStyle: [tabStyles.bar, { height: TAB_BAR_CONTENT_HEIGHT + bottomPad, paddingBottom: bottomPad }],
+        tabBarStyle: [tabBarBase, { height: TAB_BAR_CONTENT_HEIGHT + bottomPad, paddingBottom: bottomPad }],
         tabBarActiveTintColor: tokens.color.accent,
         tabBarInactiveTintColor: tokens.color.textMuted,
       })}
@@ -103,19 +106,12 @@ function MainTabs() {
   );
 }
 
+// Bar butuh warna reaktif (createTabBarStyle di bawah, dipanggil dari
+// MainTabs) — item/itemPressed TIDAK bergantung warna sama sekali (murni
+// layout+opacity), jadi TETAP statis di sini & dipakai lintas komponen
+// (TabBarButton, didefinisikan terpisah dari MainTabs, tidak bisa akses
+// tokens reaktif punya MainTabs).
 const tabStyles = StyleSheet.create({
-  // Flat full-width — TANPA margin, TANPA border radius, TANPA shadow
-  // container. Pemisah dari konten cuma border-top hairline tipis.
-  bar: {
-    position: "relative",
-    left: 0, right: 0, bottom: 0,
-    borderRadius: 0,
-    backgroundColor: tokens.color.card,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: tokens.color.border,
-    // Nol-kan eksplisit — jangan sampai warisan shadow token lain nempel lagi.
-    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
-  },
   // 4 ikon terdistribusi merata — flex:1 per item (default bottom-tabs)
   // sudah otomatis space-evenly di dalam row penuh lebar bar.
   item: {
@@ -124,6 +120,21 @@ const tabStyles = StyleSheet.create({
   },
   itemPressed: { opacity: 0.6 },
 });
+
+function createTabBarStyle(tokens) {
+  // Flat full-width — TANPA margin, TANPA border radius, TANPA shadow
+  // container. Pemisah dari konten cuma border-top hairline tipis.
+  return {
+    position: "relative",
+    left: 0, right: 0, bottom: 0,
+    borderRadius: 0,
+    backgroundColor: tokens.color.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: tokens.color.border,
+    // Nol-kan eksplisit — jangan sampai warisan shadow token lain nempel lagi.
+    shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0,
+  };
+}
 
 // InboxScreen (M-B) pakai desain light-blue baru — beda dari Login/Chat yang
 // masih gaya header biru tua lama. Warna strip status bar/notch ikut
@@ -141,11 +152,21 @@ const tabStyles = StyleSheet.create({
 // teruskan sebagai prop ke sini.
 const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Profil", "CustomerDetail"];
 function SafeAreaTopBg({ routeName, children }) {
-  const isLight = LIGHT_SCREENS.includes(routeName);
-  const bg = isLight ? tokens.color.bg : colors.header;
+  const tokens = useTokens();
+  const colors = useColors();
+  const isDark = useIsDarkMode();
+  const isLightScreen = LIGHT_SCREENS.includes(routeName);
+  const bg = isLightScreen ? tokens.color.bg : colors.header;
+  // Screen kategori "light-blue" (Home/Chats/dst) ikut scheme sistem: teks
+  // status bar gelap di atas bg terang (light mode), putih di atas bg gelap
+  // (dark mode). Screen kategori lama (header biru tua/navy, colors.header)
+  // TETAP gelap di KEDUA varian tema (lihat DARK_COLOR di theme.js — header
+  // dark-nya masih cukup gelap utk teks putih), jadi status bar-nya SELALU
+  // "light" (teks putih) apa pun scheme-nya.
+  const statusBarStyle = isLightScreen ? (isDark ? "light" : "dark") : "light";
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={["top"]}>
-      <StatusBar style={isLight ? "dark" : "light"} />
+      <StatusBar style={statusBarStyle} />
       {children}
     </SafeAreaView>
   );
@@ -159,6 +180,7 @@ function respondToNotification(response) {
 
 function Root() {
   const { user, loading } = useAuth();
+  const colors = useColors();
 
   // Socket.IO event → store, dan flush antrean outbox — aktif selama user
   // login, tidak peduli sedang di layar mana (Inbox/Chat/Customer).
@@ -239,6 +261,7 @@ function applyInterGlobally() {
 export default function App() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   const [routeName, setRouteName] = useState();
+  const colors = useColors();
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.header }} />;

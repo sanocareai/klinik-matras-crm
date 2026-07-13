@@ -2,16 +2,18 @@
 // app foreground (bukan chat yang sedang dibuka — itu disupresi total di
 // push.js, lihat catatan di sana). Tap → buka chat terkait, auto-hilang
 // setelah beberapa detik.
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, StyleSheet, Text, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { useNotificationBannerStore } from "../store/notificationBannerStore";
 import { navigateToChat } from "../lib/navigationRef";
 
 const AUTO_HIDE_MS = 4000;
 
 export default function InAppBanner() {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const banner = useNotificationBannerStore((s) => s.banner);
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(-120)).current;
@@ -55,16 +57,18 @@ export default function InAppBanner() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    position: "absolute", top: 0, left: 0, right: 0, zIndex: 999, paddingHorizontal: 12,
-  },
-  card: {
-    backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 14,
-    borderWidth: 1, borderColor: tokens.color.border,
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  title: { fontSize: 14, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 2 },
-  body: { fontSize: 13, color: tokens.color.textSecondary },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    wrap: {
+      position: "absolute", top: 0, left: 0, right: 0, zIndex: 999, paddingHorizontal: 12,
+    },
+    card: {
+      backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 14,
+      borderWidth: 1, borderColor: tokens.color.border,
+      shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+      elevation: 6,
+    },
+    title: { fontSize: 14, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 2 },
+    body: { fontSize: 13, color: tokens.color.textSecondary },
+  });
+}

@@ -27,7 +27,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Bell, CheckCircle2, ArrowUpDown } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
 import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
@@ -50,6 +50,8 @@ function monthRangeStrings() {
 }
 
 export default function HomeScreen({ navigation }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [loading, setLoading] = useState(true);
@@ -220,9 +222,17 @@ export default function HomeScreen({ navigation }) {
                     <View style={styles.personBody}>
                       <Text style={styles.personName} numberOfLines={1}>{r.name}</Text>
                       {r.target > 0 ? (
-                        <View style={styles.personTrack}>
-                          <View style={[styles.personFill, { width: `${pct}%` }]} />
-                        </View>
+                        <>
+                          <View style={styles.personTrack}>
+                            <View style={[styles.personFill, { width: `${pct}%` }]} />
+                          </View>
+                          {/* Indikator progress total: nominal tercapai vs target,
+                              melengkapi badge % di kanan (persis pola
+                              target-sales-person-numbers di TargetSalesWidget.jsx web). */}
+                          <Text style={styles.personNumbers}>
+                            {formatRupiah(r.totalOrderValue)} / {formatRupiah(r.target)}
+                          </Text>
+                        </>
                       ) : (
                         <Text style={styles.personNoTarget}>Belum ada target</Text>
                       )}
@@ -267,7 +277,14 @@ export default function HomeScreen({ navigation }) {
         </PressableScale>
         <View style={styles.statCard}>
           <Text style={styles.statValue} numberOfLines={1}>
-            {hasMyTarget ? formatRupiah(myTarget.totalOrderValue) : "-"}
+            {/* BUG (fix): dulu digate oleh hasMyTarget (butuh target>0),
+                jadi sales yang sudah closing order tapi belum di-set target
+                bulan ini (default target=0 di /analytics/sales-performance)
+                tampil "-" walau totalOrderValue-nya sudah benar dari
+                backend. Order Bulan Ini seharusnya cuma butuh entry
+                myTarget ADA (selalu ada untuk role SALES, lihat
+                sales-performance endpoint), bukan target-nya sudah diatur. */}
+            {myTarget ? formatRupiah(myTarget.totalOrderValue) : "-"}
           </Text>
           <Text style={styles.statLabel}>Order Bulan Ini</Text>
         </View>
@@ -351,7 +368,8 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: tokens.color.bg },
   scrollContent: { padding: 16, paddingBottom: 40, gap: 14 },
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -408,6 +426,7 @@ const styles = StyleSheet.create({
   personName: { fontSize: 13, fontWeight: "600", color: tokens.color.textPrimary, marginBottom: 4 },
   personTrack: { height: 5, borderRadius: 3, backgroundColor: tokens.color.subtle, overflow: "hidden" },
   personFill: { height: "100%", borderRadius: 3, backgroundColor: tokens.color.accent },
+  personNumbers: { fontSize: 11, color: tokens.color.textMuted, marginTop: 4 },
   personNoTarget: { fontSize: 11, color: tokens.color.textMuted },
   personPct: { fontSize: 12, fontWeight: "700", color: tokens.color.textPrimary, marginLeft: 10 },
   perfRow: {
@@ -433,4 +452,5 @@ const styles = StyleSheet.create({
     fontSize: 11, color: tokens.color.textMuted, marginTop: 8, paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#DBEAFE",
   },
-});
+  });
+}

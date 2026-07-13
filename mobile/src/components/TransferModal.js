@@ -2,16 +2,18 @@
 // + PATCH /conversations/:id { assignedToId } (endpoint existing, sama
 // dengan yang dipakai fitur "Ambil Alih" di web, cuma target user beda-beda
 // bukan diri sendiri).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert,
 } from "react-native";
 import { UserCog, X } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
 
 export default function TransferModal({ visible, conversationId, currentAssignedId, onClose, onTransferred }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [transferring, setTransferring] = useState(false);
@@ -77,22 +79,24 @@ export default function TransferModal({ visible, conversationId, currentAssigned
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "80%" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  headerTitleRow: { flexDirection: "row", alignItems: "center" },
-  headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
-  closeText: { fontSize: 16, color: tokens.color.textSecondary, padding: 4 },
-  empty: { textAlign: "center", color: tokens.color.textMuted, marginTop: 24 },
-  row: {
-    flexDirection: "row", alignItems: "center", paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
-  },
-  rowName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
-  rowRole: { fontSize: 11, color: tokens.color.textMuted },
-  currentBadge: {
-    fontSize: 10, fontWeight: "700", color: tokens.color.accent, backgroundColor: tokens.color.accentSoft,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
-  },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+    modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "80%" },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+    headerTitleRow: { flexDirection: "row", alignItems: "center" },
+    headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
+    closeText: { fontSize: 16, color: tokens.color.textSecondary, padding: 4 },
+    empty: { textAlign: "center", color: tokens.color.textMuted, marginTop: 24 },
+    row: {
+      flexDirection: "row", alignItems: "center", paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+    },
+    rowName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
+    rowRole: { fontSize: 11, color: tokens.color.textMuted },
+    currentBadge: {
+      fontSize: 10, fontWeight: "700", color: tokens.color.accent, backgroundColor: tokens.color.accentSoft,
+      paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    },
+  });
+}

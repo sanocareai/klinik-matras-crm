@@ -1,15 +1,18 @@
 // Layar Login — email + password, sama dengan akun CRM web.
 // Ada opsi "Alamat server" tersembunyi untuk testing dengan server lokal.
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  View, Text, Image, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
+import { Image } from "expo-image";
 import { useAuth } from "../context/AuthContext";
-import { colors } from "../theme";
+import { useColors } from "../theme";
 import { DEFAULT_SERVER } from "../api";
 
 export default function LoginScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { login, server } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,7 +41,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
+        <Image source={require("../../assets/icon.png")} style={styles.logo} contentFit="contain" />
         <Text style={styles.title}>Klinik Matras CRM</Text>
         <Text style={styles.subtitle}>Ahlinya Kasur Sehat</Text>
 
@@ -89,23 +92,25 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.header, justifyContent: "center", padding: 24 },
-  card: {
-    backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
-  },
-  logo: { width: 56, height: 56, marginBottom: 4 },
-  title: { fontSize: 22, fontWeight: "700", color: colors.text },
-  subtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
-  input: {
-    width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 12,
-    color: colors.text, backgroundColor: colors.bg,
-  },
-  button: {
-    width: "100%", backgroundColor: colors.header, borderRadius: 10,
-    paddingVertical: 14, alignItems: "center", marginTop: 4,
-  },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  serverToggle: { marginTop: 16, fontSize: 12, color: colors.textMuted },
-});
+function createStyles(colors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.header, justifyContent: "center", padding: 24 },
+    card: {
+      backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
+    },
+    logo: { width: 56, height: 56, marginBottom: 4 },
+    title: { fontSize: 22, fontWeight: "700", color: colors.text },
+    subtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
+    input: {
+      width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+      paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 12,
+      color: colors.text, backgroundColor: colors.bg,
+    },
+    button: {
+      width: "100%", backgroundColor: colors.header, borderRadius: 10,
+      paddingVertical: 14, alignItems: "center", marginTop: 4,
+    },
+    buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+    serverToggle: { marginTop: 16, fontSize: 12, color: colors.textMuted },
+  });
+}

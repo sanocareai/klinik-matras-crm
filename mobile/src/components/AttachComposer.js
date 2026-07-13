@@ -4,16 +4,17 @@
 // frontend/src/features/inbox/components/ChatWindow/MediaUploader.jsx,
 // kompresi "Standar" pakai expo-image-manipulator (API kontekstual baru
 // SDK 57 — manipulateAsync versi lama sudah deprecated, lihat AGENTS.md).
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, Image, TextInput, Alert, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, ScrollView,
 } from "react-native";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { Plus, Image as ImageIcon, Camera, FileText, X, Video } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import PressableScale from "./PressableScale";
 
 let uidCounter = 0;
@@ -58,6 +59,8 @@ async function compressImage(uri) {
 }
 
 export default function AttachComposer({ conversationId, onSent }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems] = useState([]);
   const [hd, setHd] = useState(false);
@@ -192,7 +195,7 @@ export default function AttachComposer({ conversationId, onSent }) {
                 <View key={item.uid} style={styles.previewItem}>
                   <View style={styles.previewThumbWrap}>
                     {item.mediaType === "image" ? (
-                      <Image source={{ uri: item.uri }} style={styles.previewThumb} />
+                      <Image source={{ uri: item.uri }} style={styles.previewThumb} contentFit="cover" />
                     ) : (
                       <View style={[styles.previewThumb, styles.previewThumbIcon]}>
                         {item.mediaType === "video" ? (
@@ -239,7 +242,8 @@ export default function AttachComposer({ conversationId, onSent }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   attachBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   attachIcon: { fontSize: 22, color: tokens.color.textSecondary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
@@ -281,4 +285,5 @@ const styles = StyleSheet.create({
   hdToggleTextActive: { color: tokens.color.accent },
   sendAllBtn: { marginLeft: "auto", backgroundColor: tokens.color.accent, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10 },
   sendAllText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-});
+  });
+}

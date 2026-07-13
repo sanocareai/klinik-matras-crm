@@ -10,11 +10,11 @@
 // PATCH/DELETE /orders/items/:itemId, POST /orders/:id/items,
 // PATCH/DELETE/POST /orders/weight-entries & /orders/:id/weight-entries,
 // PATCH /orders/:id/complaint.
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, FlatList } from "react-native";
 import { ChevronDown, ChevronUp, Trash2, AlertTriangle, X } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import {
   formatRupiah, shortDate,
   ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, ORDER_STATUSES,
@@ -41,6 +41,8 @@ function newWeightEntry() { return { key: String(Date.now()) + Math.random(), la
 // CustomerProfileContent.js (tidak diekstrak ke shared component, konvensi
 // yang sudah dipakai berulang di codebase ini).
 function PickerSheet({ visible, title, options, onSelect, onClose }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
@@ -65,6 +67,8 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
 // Chip row kecil (≤6 opsi) — dipakai status/paymentStatus, tidak perlu
 // bottom sheet terpisah kayak merk/ukuran/layanan yang opsinya lebih panjang.
 function ChipPicker({ options, labels, value, onChange }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.chipRow}>
       {options.map((v) => {
@@ -84,6 +88,8 @@ function ChipPicker({ options, labels, value, onChange }) {
 }
 
 export default function OrderCard({ order, orderOptions, onRefresh, onDeleted }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const info = parseNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
@@ -503,7 +509,8 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   card: { backgroundColor: tokens.color.subtle, borderRadius: 12, marginBottom: 8, overflow: "hidden" },
   summaryRow: { flexDirection: "row", alignItems: "center", padding: 12, gap: 8 },
   summaryTop: { flexDirection: "row", alignItems: "center" },
@@ -564,4 +571,5 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
   pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
-});
+  });
+}

@@ -3,10 +3,11 @@
 // varian teks/foto/video/audio/dokumen, ack ticks, reply quote, forwarded
 // label, long-press → Reply/Forward/Salin. memo supaya list tidak
 // re-render seluruh bubble tiap ada pesan baru masuk.
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, Linking, Alert, Modal,
+  View, Text, StyleSheet, TouchableOpacity, Linking, Alert, Modal,
 } from "react-native";
+import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
 import Animated, {
@@ -16,7 +17,7 @@ import {
   Check, CheckCheck, CheckSquare, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil, Trash2,
 } from "lucide-react-native";
 import { mediaUrl } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { clockTime } from "../utils/format";
 import AudioPlayer from "./AudioPlayer";
 import PressableScale from "./PressableScale";
@@ -34,6 +35,8 @@ const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // batas "Hapu
 // centang-biru asli WhatsApp (bukan warna accent tema kita, sengaja
 // hardcode — ini identitas visual WA, bukan bagian design system app ini).
 function AckTicks({ ack }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   if (ack === 3) return <CheckCheck size={13} color="#34B7F1" strokeWidth={2.4} style={styles.ackIcon} />;
   if (ack === 2) return <CheckCheck size={13} color={tokens.color.textMuted} strokeWidth={2.4} style={styles.ackIcon} />;
   if (ack === 1) return <Check size={13} color={tokens.color.textMuted} strokeWidth={2.4} style={styles.ackIcon} />;
@@ -63,6 +66,8 @@ function parseStructuredContent(mediaType, content) {
 }
 
 function LocationCard({ data }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { lat, lng, name, address } = data;
   const canOpen = lat != null && lng != null;
   function open() {
@@ -86,6 +91,8 @@ function LocationCard({ data }) {
 }
 
 function ContactCard({ data }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const contacts = data.contacts || [];
   return (
     <View style={styles.structCard}>
@@ -103,6 +110,8 @@ function ContactCard({ data }) {
 }
 
 function PollCard({ data }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const options = data.options || [];
   return (
     <View style={styles.structCard}>
@@ -120,6 +129,8 @@ function PollCard({ data }) {
 }
 
 function DocumentRow({ url }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const fileName = decodeURIComponent(url.split("/").pop() || "Dokumen");
   async function open() {
     try {
@@ -140,6 +151,8 @@ function MessageBubbleBase({
   message: m, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [showActions, setShowActions] = useState(false);
 
   const isOut = m.direction === "OUTBOUND";
@@ -392,7 +405,13 @@ function MessageBubbleBase({
               <>
                 {m.mediaType === "image" && m.mediaUrl && (
                   <TouchableOpacity onPress={() => onOpenMedia?.(m)}>
-                    <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.image} resizeMode="cover" />
+                    <Image
+                      source={{ uri: mediaUrl(m.mediaUrl) }}
+                      style={styles.image}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      transition={120}
+                    />
                   </TouchableOpacity>
                 )}
                 {m.mediaType === "video" && m.mediaUrl && (
@@ -406,7 +425,12 @@ function MessageBubbleBase({
                   // onOpenMedia (bukan foto, tidak masuk galeri swipe, tidak perlu di-zoom,
                   // sama seperti perilaku asli WhatsApp) dan TIDAK ada background bubble
                   // di baliknya (resizeMode "contain" jaga transparansi apa adanya).
-                  <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.sticker} resizeMode="contain" />
+                  <Image
+                    source={{ uri: mediaUrl(m.mediaUrl) }}
+                    style={styles.sticker}
+                    contentFit="contain"
+                    cachePolicy="memory-disk"
+                  />
                 )}
                 {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
                 {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
@@ -499,7 +523,8 @@ function MessageBubbleBase({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   row: { width: "100%", marginVertical: 2, position: "relative" },
   rowOut: { alignItems: "flex-end" },
   rowIn: { alignItems: "flex-start" },
@@ -583,6 +608,7 @@ const styles = StyleSheet.create({
   actionItemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 16 },
   actionIcon: { marginRight: 10 },
   actionText: { fontSize: 14, color: tokens.color.textPrimary },
-});
+  });
+}
 
 export default memo(MessageBubbleBase);

@@ -31,7 +31,7 @@
 // total). Sample amplitude yang direkam selama sesi rekam disimpan supaya
 // preview (setelah lepas jari) bisa tampil sebagai waveform statis dengan
 // bagian sudah-diputar vs belum, bukan cuma progress bar polos.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, Animated, PanResponder,
 } from "react-native";
@@ -47,7 +47,7 @@ import {
 } from "expo-audio";
 import { Mic, Trash2, Send, ChevronUp, ChevronLeft } from "lucide-react-native";
 import { api } from "../api";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { lightHaptic, mediumHaptic } from "../lib/haptics";
 import AudioPlayer from "./AudioPlayer";
 
@@ -104,6 +104,8 @@ function downsampleWaveform(samples, targetCount) {
 // Dot merah berdenyut — dipakai di indikator rekam (belum dikunci) & di
 // tengah saat sudah dikunci.
 function PulsingDot({ size = 9 }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const scale = useSharedValue(1);
   useEffect(() => {
     scale.value = withRepeat(withTiming(1.4, { duration: 550 }), -1, true);
@@ -117,6 +119,8 @@ function PulsingDot({ size = 9 }) {
 // "◀ Geser untuk batal" — shimmer halus ke kiri supaya terasa seperti
 // mengajak jari digeser, bukan teks statis.
 function CancelHintShimmer() {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const shift = useSharedValue(0);
   useEffect(() => {
     shift.value = withRepeat(withTiming(-5, { duration: 700 }), -1, true);
@@ -134,6 +138,8 @@ function CancelHintShimmer() {
 // sample metering sama sekali (device/OS tidak kasih data metering), tidak
 // dirender apa-apa (jangan pura-pura ada data).
 function LiveWaveform({ bars }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   if (!bars.length) return null;
   return (
     <View style={styles.liveWaveformRow}>
@@ -145,6 +151,8 @@ function LiveWaveform({ bars }) {
 }
 
 export default function VoiceRecorderBar({ conversationId, onSent }) {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
   const recorderState = useAudioRecorderState(recorder, METERING_INTERVAL_MS);
   const [recording, setRecording] = useState(false);
@@ -437,6 +445,7 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
 // terus-menerus untuk geser ke atas, independen dari progress drag (yang
 // mengatur opacity/posisi wrapper-nya lewat RN Animated di luar).
 function BouncingChevronUp() {
+  const tokens = useTokens();
   const bounce = useSharedValue(0);
   useEffect(() => {
     bounce.value = withRepeat(withTiming(-4, { duration: 500 }), -1, true);
@@ -449,7 +458,8 @@ function BouncingChevronUp() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   micBtn: {
     width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
   },
@@ -489,4 +499,5 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center",
     backgroundColor: tokens.color.accent,
   },
-});
+  });
+}

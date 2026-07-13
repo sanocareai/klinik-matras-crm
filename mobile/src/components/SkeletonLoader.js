@@ -3,11 +3,12 @@
 // opacity (Animated bawaan RN, BUKAN reanimated — ini dipakai di dalam list
 // yang juga di-virtualized FlashList, plain Animated.loop lebih ringan &
 // tidak perlu worklet per instance).
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { View, Animated, StyleSheet } from "react-native";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 
 function Bone({ width, height, radius = 8, style }) {
+  const tokens = useTokens();
   const opacity = useRef(new Animated.Value(0.35)).current;
 
   useEffect(() => {
@@ -33,6 +34,8 @@ function Bone({ width, height, radius = 8, style }) {
 
 // 1 baris skeleton Inbox — bentuk mirip ConversationItem (avatar + 2 baris teks)
 export function InboxRowSkeleton() {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.inboxRow}>
       <Bone width={48} height={48} radius={24} />
@@ -101,12 +104,14 @@ export function ProfileSkeleton() {
 
 export default Bone;
 
-const styles = StyleSheet.create({
-  inboxRow: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.subtle,
-  },
-});
+function createStyles(tokens) {
+  return StyleSheet.create({
+    inboxRow: {
+      flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 13,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.subtle,
+    },
+  });
+}
 
 const chatStyles = StyleSheet.create({
   row: { marginVertical: 6 },

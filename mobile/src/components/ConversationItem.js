@@ -2,7 +2,7 @@
 // kalau conversation dengan id ini berubah, bukan seluruh list). Pola SAMA
 // dengan frontend/src/features/inbox/components/ConversationList/ConversationItem.jsx.
 // Swipe kanan → toggle dibaca/belum, swipe kiri → sematkan/lepas sematan.
-import React, { memo, useRef, useState } from "react";
+import React, { memo, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -12,7 +12,7 @@ import {
 import AvatarStack from "./AvatarStack";
 import PressableScale from "./PressableScale";
 import TransferModal from "./TransferModal";
-import { tokens } from "../constants/theme";
+import { useTokens } from "../constants/theme";
 import { smartTimestamp } from "../utils/format";
 import { useConversation, useConversationStore } from "../store/conversationStore";
 import { useAuth } from "../context/AuthContext";
@@ -26,11 +26,13 @@ const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan suara", docum
 // frontend/src/features/inbox/components/ConversationList/ConversationItem.jsx
 // (warna badge-open/pending/resolved di index.css) — parity visual web↔app.
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
-const STATUS_COLORS = {
-  OPEN:     { bg: tokens.color.accentSoft, color: tokens.color.accent },
-  PENDING:  { bg: "#FFFBEB", color: "#D97706" },
-  RESOLVED: { bg: "#ECFDF5", color: "#059669" },
-};
+function getStatusColors(tokens) {
+  return {
+    OPEN:     { bg: tokens.color.accentSoft, color: tokens.color.accent },
+    PENDING:  { bg: "#FFFBEB", color: "#D97706" },
+    RESOLVED: { bg: "#ECFDF5", color: "#059669" },
+  };
+}
 
 function convName(c) {
   if (c.type === "GROUP") return c.groupName || "Grup WhatsApp";
@@ -48,7 +50,7 @@ function convName(c) {
 // Sekarang ikut level ack yang sebenarnya — pola warna SAMA dengan
 // AckTicks di MessageBubble.js (bubble chat): ack 0 jam kecil, ack 1
 // centang 1, ack 2 centang 2 abu-abu, ack 3 centang 2 BIRU #34B7F1.
-function lastPreviewParts(c) {
+function lastPreviewParts(c, tokens) {
   const msg = c.messages?.[0];
   if (!msg) return { OutboundIcon: null, outboundIconColor: null, MediaIcon: null, text: "Belum ada pesan" };
   let OutboundIcon = null;
@@ -66,6 +68,9 @@ function lastPreviewParts(c) {
 function ConversationItemBase({ id, onPress }) {
   const c = useConversation(id);
   const { user } = useAuth();
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const STATUS_COLORS = useMemo(() => getStatusColors(tokens), [tokens]);
   const swipeableRef = useRef(null);
   const [pressed, setPressed] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
@@ -85,7 +90,7 @@ function ConversationItemBase({ id, onPress }) {
   // Sudah dibuka tapi tidak unread lagi → dim (bukan pelanggan aktif butuh perhatian)
   const dim = isRead && !isUnread;
   const previewColor = dim ? tokens.color.textMuted : isUnread ? tokens.color.textPrimary : tokens.color.textSecondary;
-  const { OutboundIcon, outboundIconColor, MediaIcon, text: previewText } = lastPreviewParts(c);
+  const { OutboundIcon, outboundIconColor, MediaIcon, text: previewText } = lastPreviewParts(c, tokens);
 
   function toggleReadUnread() {
     lightHaptic();
@@ -237,7 +242,8 @@ function ConversationItemBase({ id, onPress }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(tokens) {
+  return StyleSheet.create({
   // List flat gaya WhatsApp/Telegram — TANPA card per item (tanpa radius,
   // shadow, gap antar item). Pemisah cuma hairline tipis (slate-100) di
   // bawah tiap item, background menyatu putih polos dengan list.
@@ -287,6 +293,7 @@ const styles = StyleSheet.create({
   },
   actionRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   actionText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-});
+  });
+}
 
 export default memo(ConversationItemBase);
