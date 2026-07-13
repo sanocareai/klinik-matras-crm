@@ -1,24 +1,24 @@
-// Order card — expandable, dengan edit/hapus/status/komplain penuh, PARITY
-// dengan OrderDetail di frontend/src/components/customer/OrderSection.jsx.
-// Sebelumnya CustomerProfileContent.js render order READ-ONLY saja (cuma
-// list + "+ Order" utk bikin baru) — tidak bisa edit/hapus/ubah status/
-// tandai komplain sama sekali, padahal endpoint backend-nya sudah ada dan
-// sudah dipakai versi web sejak lama. Komponen ini menutup gap itu.
+// Order card — expandable, VIEW mode + quick-status + hapus + komplain.
+// Full edit (semua field termasuk status) sekarang dibuka lewat
+// OrderFormModal.js yang SAMA dengan form "+ Order" (mode edit, lihat
+// CustomerProfileContent.js#editingOrder) — komponen ini TIDAK LAGI punya
+// implementasi form edit sendiri (sebelumnya ada, dobel dengan
+// OrderFormModal, berisiko saling drift kalau salah satu diubah tapi yang
+// lain lupa — sama persis masalah yang sudah dicatat CLAUDE.md soal AddOrder
+// web vs drawer).
 //
-// Struktur field & endpoint SAMA PERSIS dengan web (lihat OrderSection.jsx):
-// PATCH /orders/:id (status, paymentStatus, notes), DELETE /orders/:id,
-// PATCH/DELETE /orders/items/:itemId, POST /orders/:id/items,
-// PATCH/DELETE/POST /orders/weight-entries & /orders/:id/weight-entries,
+// Endpoint dipakai (sama dengan web, lihat OrderSection.jsx):
+// PATCH /orders/:id (quick status change), DELETE /orders/:id,
 // PATCH /orders/:id/complaint.
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, FlatList } from "react-native";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle, X } from "lucide-react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput } from "react-native";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import {
   formatRupiah, shortDate,
   ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, ORDER_STATUSES,
-  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES,
+  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE,
   CATEGORY_LABELS, CATEGORY_BADGE,
 } from "../utils/format";
 
@@ -31,41 +31,9 @@ function parseNotes(notes) {
     return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
   }
 }
-function buildNotes(info) {
-  return JSON.stringify({ merkKasur: info.merkKasur || "", ukuranKasur: info.ukuranKasur || "", keluhanCustomer: info.keluhanCustomer || "" });
-}
-function newItem() { return { key: String(Date.now()) + Math.random(), layananName: "", harga: "" }; }
-function newWeightEntry() { return { key: String(Date.now()) + Math.random(), label: "", beratKg: "" }; }
 
-// Bottom-sheet pilih 1 opsi — pola SAMA dengan OrderFormModal.js/
-// CustomerProfileContent.js (tidak diekstrak ke shared component, konvensi
-// yang sudah dipakai berulang di codebase ini).
-function PickerSheet({ visible, title, options, onSelect, onClose }) {
-  const tokens = useTokens();
-  const styles = useMemo(() => createStyles(tokens), [tokens]);
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.pickerSheet}>
-          <Text style={styles.pickerTitle}>{title}</Text>
-          <FlatList
-            data={options}
-            keyExtractor={(o) => o}
-            style={{ maxHeight: 360 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.pickerItem} onPress={() => { onSelect(item); onClose(); }}>
-                <Text style={styles.pickerItemText}>{item}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-// Chip row kecil (≤6 opsi) — dipakai status/paymentStatus, tidak perlu
-// bottom sheet terpisah kayak merk/ukuran/layanan yang opsinya lebih panjang.
+// Chip row kecil — dipakai quick status change tanpa masuk form edit penuh,
+// sama seperti dropdown cepat di web (OrderSection.jsx, di luar blok editing).
 function ChipPicker({ options, labels, value, onChange }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -87,110 +55,18 @@ function ChipPicker({ options, labels, value, onChange }) {
   );
 }
 
-export default function OrderCard({ order, orderOptions, onRefresh, onDeleted }) {
+export default function OrderCard({ order, onRefresh, onDeleted, onEdit }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const info = parseNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
   const [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [status, setStatus] = useState(order.status);
-  const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
-  const [merkKasur, setMerkKasur] = useState(info.merkKasur);
-  const [ukuran, setUkuran] = useState(info.ukuranKasur);
-  const [keluhan, setKeluhan] = useState(info.keluhanCustomer);
-  const [items, setItems] = useState((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
-  const [weightEntries, setWeightEntries] = useState(
-    (order.weightEntries && order.weightEntries.length > 0)
-      ? order.weightEntries.map((e) => ({ ...e, key: e.id, beratKg: String(e.beratKg) }))
-      : [newWeightEntry()]
-  );
-  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [complaintDetail, setComplaintDetail] = useState("");
   const [savingComplaint, setSavingComplaint] = useState(false);
-
-  const [showMerkPicker, setShowMerkPicker] = useState(false);
-  const [showUkuranPicker, setShowUkuranPicker] = useState(false);
-  const [layananPickerTarget, setLayananPickerTarget] = useState(null);
-
-  const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
-
-  function addItem() { setItems((p) => [...p, newItem()]); }
-  function removeItem(key) { setItems((p) => (p.length > 1 ? p.filter((it) => it.key !== key) : p)); }
-  function setItemField(key, field, val) { setItems((p) => p.map((it) => (it.key === key ? { ...it, [field]: val } : it))); }
-
-  function addWeight() { setWeightEntries((p) => [...p, newWeightEntry()]); }
-  function removeWeight(key) { setWeightEntries((p) => (p.length > 1 ? p.filter((e) => e.key !== key) : p)); }
-  function setWeightField(key, field, val) { setWeightEntries((p) => p.map((e) => (e.key === key ? { ...e, [field]: val } : e))); }
-
-  function startEdit() {
-    const inf = parseNotes(order.notes);
-    setStatus(order.status);
-    setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
-    setMerkKasur(inf.merkKasur);
-    setUkuran(inf.ukuranKasur);
-    setKeluhan(inf.keluhanCustomer);
-    setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
-    setWeightEntries(
-      (order.weightEntries && order.weightEntries.length > 0)
-        ? order.weightEntries.map((e) => ({ ...e, key: e.id, beratKg: String(e.beratKg) }))
-        : [newWeightEntry()]
-    );
-    setEditing(true);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const finalMerk = isLayanan ? merkKasur : "Sano";
-      await api.updateOrder(order.id, {
-        status, paymentStatus,
-        notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
-      });
-
-      // Berat badan — hapus yang dihilangkan, update yang ada, tambah yang baru
-      const existingIds = (order.weightEntries || []).map((e) => e.id);
-      const currentIds = weightEntries.filter((e) => e.id).map((e) => e.id);
-      for (const id of existingIds) {
-        if (!currentIds.includes(id)) await api.deleteWeightEntry(id);
-      }
-      for (const e of weightEntries.filter((e) => e.id)) {
-        if (e.label?.trim() && e.beratKg) await api.updateWeightEntry(e.id, { label: e.label.trim(), beratKg: Number(e.beratKg) });
-      }
-      for (let i = 0; i < weightEntries.length; i++) {
-        const e = weightEntries[i];
-        if (!e.id && e.label?.trim() && e.beratKg) await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
-      }
-
-      // Layanan add-ons — hanya utk LAYANAN
-      if (isLayanan) {
-        const existingItemIds = (order.items || []).map((it) => it.id);
-        const currentItemIds = items.filter((it) => it.id).map((it) => it.id);
-        for (const id of existingItemIds) {
-          if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
-        }
-        for (const it of items.filter((it) => it.id)) {
-          if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
-        }
-        for (const it of items.filter((it) => !it.id)) {
-          if (it.layananName?.trim()) await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
-        }
-      }
-
-      setEditing(false);
-      onRefresh();
-    } catch (err) {
-      Alert.alert("Gagal simpan order", err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleCancel() { setEditing(false); }
 
   function handleDelete() {
     Alert.alert("Hapus order ini?", "Semua item & data terkait juga akan dihapus.", [
@@ -260,26 +136,13 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
         <View style={styles.detail}>
           {/* Tombol aksi */}
           <View style={styles.actionRow}>
-            {!editing ? (
-              <>
-                <TouchableOpacity style={styles.editBtn} onPress={startEdit}>
-                  <Text style={styles.editBtnText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
-                  <Trash2 size={12} color={tokens.color.danger} strokeWidth={2.2} />
-                  <Text style={styles.deleteBtnText}>{deleting ? "..." : "Hapus"}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-                  <Text style={styles.saveBtnText}>{saving ? "..." : "Simpan"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.editBtn} onPress={handleCancel} disabled={saving}>
-                  <Text style={styles.editBtnText}>Batal</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <TouchableOpacity style={styles.editBtn} onPress={() => onEdit(order)}>
+              <Text style={styles.editBtnText}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
+              <Trash2 size={12} color={tokens.color.danger} strokeWidth={2.2} />
+              <Text style={styles.deleteBtnText}>{deleting ? "..." : "Hapus"}</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Badge komplain */}
@@ -294,27 +157,17 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
             </View>
           )}
 
-          {/* Status + Pembayaran */}
+          {/* Status + Pembayaran (read-only) + quick status change */}
           <Text style={styles.metaLabel}>Status</Text>
-          {editing ? (
-            <>
-              <ChipPicker options={ORDER_STATUSES} labels={ORDER_STATUS_LABELS} value={status} onChange={setStatus} />
-              <ChipPicker options={PAYMENT_STATUSES} labels={PAYMENT_STATUS_LABELS} value={paymentStatus} onChange={setPaymentStatus} />
-            </>
-          ) : (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
-              <Text style={[styles.pillBadge, ORDER_STATUS_BADGE[order.status]]}>{ORDER_STATUS_LABELS[order.status] || order.status}</Text>
-              <Text style={[styles.pillBadge, PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"]]}>
-                {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
-              </Text>
-            </View>
-          )}
-          {/* Quick status change — tanpa masuk mode edit penuh, sama seperti dropdown di web */}
-          {!editing && (
-            <View style={{ marginBottom: 8 }}>
-              <ChipPicker options={ORDER_STATUSES} labels={ORDER_STATUS_LABELS} value={order.status} onChange={handleQuickStatusChange} />
-            </View>
-          )}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
+            <Text style={[styles.pillBadge, ORDER_STATUS_BADGE[order.status]]}>{ORDER_STATUS_LABELS[order.status] || order.status}</Text>
+            <Text style={[styles.pillBadge, PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"]]}>
+              {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
+            </Text>
+          </View>
+          <View style={{ marginBottom: 8 }}>
+            <ChipPicker options={ORDER_STATUSES} labels={ORDER_STATUS_LABELS} value={order.status} onChange={handleQuickStatusChange} />
+          </View>
 
           {/* ID Order */}
           <Text style={styles.metaLabel}>ID Order</Text>
@@ -327,98 +180,18 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
 
           {/* Berat Badan */}
           <Text style={styles.metaLabel}>Berat Badan</Text>
-          {editing ? (
-            <View style={{ marginBottom: 8 }}>
-              {weightEntries.map((e) => (
-                <View key={e.key} style={styles.inputRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 2 }]}
-                    placeholder="cth: Suami / Istri / Sendiri"
-                    placeholderTextColor={tokens.color.textMuted}
-                    value={e.label}
-                    onChangeText={(v) => setWeightField(e.key, "label", v)}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginLeft: 8 }]}
-                    placeholder="kg"
-                    placeholderTextColor={tokens.color.textMuted}
-                    value={e.beratKg}
-                    onChangeText={(v) => setWeightField(e.key, "beratKg", v)}
-                    keyboardType="numeric"
-                  />
-                  {weightEntries.length > 1 && (
-                    <TouchableOpacity onPress={() => removeWeight(e.key)} style={styles.removeBtn}>
-                      <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-              <TouchableOpacity onPress={addWeight}><Text style={styles.linkText}>+ Tambah Orang</Text></TouchableOpacity>
-            </View>
-          ) : (
-            <Text style={[styles.plainText, { marginBottom: 8 }]}>{weightDisplay || "—"}</Text>
-          )}
+          <Text style={[styles.plainText, { marginBottom: 8 }]}>{weightDisplay || "—"}</Text>
 
           {/* Merk + Ukuran */}
-          {editing ? (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={styles.metaLabel}>Merk Kasur</Text>
-              {isLayanan ? (
-                <TouchableOpacity style={styles.selectBox} onPress={() => setShowMerkPicker(true)}>
-                  <Text style={styles.selectBoxText}>{merkKasur || "— Pilih Merk —"}</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.forcedSano}>Sano ✓</Text>
-              )}
-              <Text style={styles.metaLabel}>Ukuran</Text>
-              <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
-                <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (info.merkKasur || info.ukuranKasur || !isLayanan) ? (
+          {(info.merkKasur || info.ukuranKasur || !isLayanan) ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
               <Text style={styles.chipStatic}>{isLayanan ? (info.merkKasur || "—") : "Sano"}</Text>
-              {(info.ukuranKasur || ukuran) ? <Text style={styles.chipStatic}>{info.ukuranKasur || ukuran}</Text> : null}
+              {info.ukuranKasur ? <Text style={styles.chipStatic}>{info.ukuranKasur}</Text> : null}
             </View>
           ) : null}
 
           {/* Layanan add-ons — hanya LAYANAN */}
-          {isLayanan && (editing ? (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={styles.metaLabel}>Layanan (add-ons)</Text>
-              {items.map((it) => (
-                <View key={it.key} style={styles.itemBlock}>
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Nama layanan…"
-                      placeholderTextColor={tokens.color.textMuted}
-                      value={it.layananName}
-                      onChangeText={(v) => setItemField(it.key, "layananName", v)}
-                    />
-                    <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
-                      <Text style={styles.pickBtnText}>Pilih</Text>
-                    </TouchableOpacity>
-                    {items.length > 1 && (
-                      <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
-                        <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Harga (Rp)"
-                    placeholderTextColor={tokens.color.textMuted}
-                    value={it.harga}
-                    onChangeText={(v) => setItemField(it.key, "harga", v)}
-                    keyboardType="numeric"
-                  />
-                </View>
-              ))}
-              <TouchableOpacity onPress={addItem}><Text style={styles.linkText}>+ Tambah layanan lain</Text></TouchableOpacity>
-              <Text style={styles.previewValue}>Total: {formatRupiah(totalItems)}</Text>
-            </View>
-          ) : (order.items && order.items.length > 0) ? (
+          {isLayanan && (order.items && order.items.length > 0) ? (
             <View style={{ marginBottom: 8 }}>
               <Text style={styles.metaLabel}>Layanan</Text>
               {order.items.map((it) => (
@@ -432,7 +205,7 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
                 <Text style={styles.itemTotalValue}>{formatRupiah(order.value)}</Text>
               </View>
             </View>
-          ) : null)}
+          ) : null}
 
           {/* Nilai untuk BARU/SEWA */}
           {!isLayanan && order.value > 0 && (
@@ -443,19 +216,7 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
           )}
 
           {/* Keluhan/Catatan */}
-          {editing ? (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={styles.metaLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</Text>
-              <TextInput
-                style={[styles.input, styles.textarea]}
-                placeholder={isLayanan ? "Keluhan kasur customer…" : "Catatan order…"}
-                placeholderTextColor={tokens.color.textMuted}
-                value={keluhan}
-                onChangeText={setKeluhan}
-                multiline
-              />
-            </View>
-          ) : info.keluhanCustomer ? (
+          {info.keluhanCustomer ? (
             <View style={{ marginBottom: 8 }}>
               <Text style={styles.metaLabel}>{isLayanan ? "Keluhan" : "Catatan"}</Text>
               <Text style={styles.plainText}>{info.keluhanCustomer}</Text>
@@ -463,7 +224,7 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
           ) : null}
 
           {/* Tandai komplain — hanya order DELIVERED yang belum ada komplain */}
-          {!editing && order.status === "DELIVERED" && !order.hasComplaint && (
+          {order.status === "DELIVERED" && !order.hasComplaint && (
             <View style={{ marginTop: 4 }}>
               {!showComplaintForm ? (
                 <TouchableOpacity style={styles.complaintToggleBtn} onPress={() => setShowComplaintForm(true)}>
@@ -495,16 +256,6 @@ export default function OrderCard({ order, orderOptions, onRefresh, onDeleted })
           )}
         </View>
       )}
-
-      <PickerSheet visible={showMerkPicker} title="Pilih Merk Kasur" options={orderOptions.merkKasur} onSelect={setMerkKasur} onClose={() => setShowMerkPicker(false)} />
-      <PickerSheet visible={showUkuranPicker} title="Pilih Ukuran Kasur" options={orderOptions.ukuranKasur} onSelect={setUkuran} onClose={() => setShowUkuranPicker(false)} />
-      <PickerSheet
-        visible={!!layananPickerTarget}
-        title="Pilih Jenis Layanan"
-        options={orderOptions.jenisLayanan}
-        onSelect={(v) => layananPickerTarget && setItemField(layananPickerTarget, "layananName", v)}
-        onClose={() => setLayananPickerTarget(null)}
-      />
     </View>
   );
 }
@@ -526,8 +277,6 @@ function createStyles(tokens) {
   editBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   deleteBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fee2e2", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   deleteBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.danger },
-  saveBtn: { backgroundColor: tokens.color.accent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
-  saveBtnText: { fontSize: 12, fontWeight: "700", color: "#fff" },
   complaintBadge: { marginBottom: 10, padding: 10, backgroundColor: "#fee2e2", borderRadius: 8, borderWidth: 1, borderColor: "#fca5a5" },
   complaintBadgeTitle: { fontSize: 12, fontWeight: "700", color: "#991b1b", marginLeft: 6 },
   complaintBadgeDate: { fontSize: 11, color: "#b91c1c", marginLeft: "auto" },
@@ -543,14 +292,6 @@ function createStyles(tokens) {
   chipText: { fontSize: 11, fontWeight: "600", color: tokens.color.textSecondary },
   input: { backgroundColor: tokens.color.card, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: tokens.color.textPrimary },
   textarea: { minHeight: 56, textAlignVertical: "top" },
-  inputRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  selectBox: { backgroundColor: tokens.color.card, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, marginBottom: 8 },
-  selectBoxText: { fontSize: 13, color: tokens.color.textPrimary },
-  forcedSano: { fontSize: 13, fontWeight: "700", color: tokens.color.success, paddingVertical: 6, marginBottom: 8 },
-  removeBtn: { marginLeft: 8, padding: 4 },
-  linkText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600", marginTop: 2 },
-  previewValue: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 6 },
-  itemBlock: { marginBottom: 8 },
   itemLine: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 },
   itemLineName: { fontSize: 12, color: tokens.color.textSecondary },
   itemLinePrice: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
@@ -558,18 +299,11 @@ function createStyles(tokens) {
   itemTotalLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textPrimary },
   itemTotalValue: { fontSize: 12, fontWeight: "700", color: tokens.color.textPrimary },
   nilaiValue: { fontSize: 14, fontWeight: "700", color: tokens.color.accent },
-  pickBtn: { backgroundColor: tokens.color.accentSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginLeft: 8 },
-  pickBtnText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
   complaintToggleBtn: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", borderWidth: 1, borderColor: "#fca5a5", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   complaintToggleText: { fontSize: 12, color: tokens.color.danger, fontWeight: "600" },
   complaintForm: { padding: 10, backgroundColor: "#fff7f7", borderWidth: 1, borderColor: "#fca5a5", borderRadius: 8 },
   complaintFormLabel: { fontSize: 12, fontWeight: "700", color: "#991b1b", marginBottom: 6 },
   complaintSaveBtn: { flex: 1, backgroundColor: tokens.color.danger, borderRadius: 8, paddingVertical: 8, alignItems: "center" },
   complaintSaveBtnText: { fontSize: 12, fontWeight: "700", color: "#fff" },
-  pickerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  pickerSheet: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, maxHeight: "70%" },
-  pickerTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
-  pickerItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
-  pickerItemText: { fontSize: 14, color: tokens.color.textPrimary },
   });
 }

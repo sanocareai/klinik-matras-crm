@@ -98,6 +98,11 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [showOrderForm, setShowOrderForm] = useState(false);
+  // Order yang sedang di-edit (tap kartu order -> buka OrderFormModal yang
+  // SAMA persis dengan form "+ Order" tapi mode edit, bukan implementasi
+  // form terpisah lagi di OrderCard.js — lihat catatan panjang di
+  // OrderFormModal.js kenapa ini disatukan.
+  const [editingOrder, setEditingOrder] = useState(null);
   const [showLeadSourcePicker, setShowLeadSourcePicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
   // Merk Kasur/Ukuran Kasur/Jenis Layanan — satu sumber dipakai OrderFormModal
@@ -238,6 +243,17 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
 
   function handleOrderDeleted(orderId) {
     setCustomer((c) => (c ? { ...c, orders: (c.orders || []).filter((o) => o.id !== orderId) } : c));
+    setEditingOrder(null);
+  }
+
+  function closeOrderForm() {
+    setShowOrderForm(false);
+    setEditingOrder(null);
+  }
+
+  function handleOrderUpdated() {
+    setEditingOrder(null);
+    refreshOrders();
   }
 
   if (loading) {
@@ -377,13 +393,20 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         </TouchableOpacity>
       </Section>
 
-      {/* Order — OrderCard urus sendiri expand/edit/hapus/status/komplain,
-          lihat catatan panjang di OrderCard.js kenapa ini dipisah dari versi
-          read-only lama. */}
+      {/* Order — OrderCard urus expand/quick-status/hapus/komplain (view
+          mode); tap "Edit" buka OrderFormModal yang SAMA dengan form
+          "+ Order" tapi mode edit (lihat editingOrder + OrderFormModal di
+          bawah), bukan implementasi form terpisah lagi. */}
       <Section title={`Order (${orders.length}) · Total ${formatRupiah(totalValue)}`}>
         {orders.length === 0 && <Text style={styles.hint}>Belum ada order</Text>}
         {orders.map((o) => (
-          <OrderCard key={o.id} order={o} orderOptions={orderOptions} onRefresh={refreshOrders} onDeleted={handleOrderDeleted} />
+          <OrderCard
+            key={o.id}
+            order={o}
+            onRefresh={refreshOrders}
+            onDeleted={handleOrderDeleted}
+            onEdit={setEditingOrder}
+          />
         ))}
         <TouchableOpacity style={styles.addOrderBtn} onPress={() => setShowOrderForm(true)}>
           <Text style={styles.addOrderBtnText}>+ Order</Text>
@@ -433,11 +456,14 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
       />
       {customer && (
         <OrderFormModal
-          visible={showOrderForm}
+          visible={showOrderForm || !!editingOrder}
+          order={editingOrder}
           customerId={customerId}
           orderOptions={orderOptions}
-          onClose={() => setShowOrderForm(false)}
+          onClose={closeOrderForm}
           onCreated={handleOrderCreated}
+          onUpdated={handleOrderUpdated}
+          onDeleted={handleOrderDeleted}
         />
       )}
     </>

@@ -1,19 +1,32 @@
-// Form tambah order dari HP — struktur field SAMA dengan AddOrderForm web
-// (frontend/src/components/customer/OrderSection.jsx): Kategori, Berat
-// Badan (multi-orang), Merk Kasur, Ukuran Kasur, Keluhan/Catatan, Harga
-// Total (BARU/SEWA) atau daftar Layanan add-ons (LAYANAN). Field bertumpuk
-// vertikal (bukan wizard multi-step ala web) — layar HP lebih sempit,
-// semua muat lewat 1 ScrollView; dropdown pakai bottom-sheet picker
-// (PickerSheet) konsisten dengan pola di CustomerProfileContent.js.
+// Form order dari HP — dipakai untuk BIKIN order baru MAUPUN EDIT order yang
+// sudah ada (prop `order` diisi -> mode edit), struktur field SAMA dengan
+// AddOrderForm/OrderDetail web (frontend/src/components/customer/
+// OrderSection.jsx): Kategori, Berat Badan (multi-orang), Merk Kasur, Ukuran
+// Kasur, Keluhan/Catatan, Harga Total (BARU/SEWA) atau daftar Layanan
+// add-ons (LAYANAN), + Status (HANYA muncul di mode edit — dicek langsung ke
+// AddOrderForm web, form CREATE juga TIDAK punya field status di sana, order
+// baru selalu mulai dari default backend PENDING; status baru relevan
+// setelah order ada, sama seperti OrderDetail edit mode). Field bertumpuk
+// vertikal (bukan wizard multi-step ala web) — layar HP lebih sempit, semua
+// muat lewat 1 ScrollView; dropdown pakai bottom-sheet picker (PickerSheet)
+// konsisten dengan pola di CustomerProfileContent.js.
 //
 // Merk Kasur & Ukuran Kasur & Jenis Layanan (opsi) diambil dari
 // GET /master-data/order-options — SATU sumber sama dengan web, bukan
 // hardcode duplikat (lihat backend/src/constants/orderOptions.js).
 //
-// Endpoint dipakai (sama dengan web):
-//   1. POST /customers/:id/orders        → shell order (category, notes)
-//   2. POST /orders/:orderId/items       → baris layanan+harga (auto sync Order.value)
-//   3. POST /orders/:orderId/weight-entries → baris berat badan per orang
+// Endpoint dipakai (sama persis dengan web, lihat OrderSection.jsx):
+//   CREATE: POST /customers/:id/orders, POST /orders/:orderId/items,
+//           POST /orders/:orderId/weight-entries
+//   EDIT:   PATCH /orders/:id (status+notes), lalu diff items/weightEntries
+//           (POST baris baru, PATCH yang berubah, DELETE yang dihapus) —
+//           pola diff SAMA dengan OrderCard.js#handleSave (sebelum ini form
+//           edit terpisah ada di sana, sekarang disatukan ke sini supaya
+//           cuma ADA SATU implementasi form order, bukan 2 yang bisa saling
+//           drift — lihat CustomerProfileContent.js#editingOrder).
+//   DELETE: DELETE /orders/:id — dipanggil dari tombol trash di header form
+//           edit, ATAU dari OrderCard.js langsung tanpa buka form (dua-duanya
+//           tetap didukung, task eksplisit izinkan salah satu).
 // notes disimpan JSON {merkKasur, ukuranKasur, keluhanCustomer} — format
 // SAMA persis dengan buildNotes()/parseNotes() di OrderSection.jsx web,
 // supaya order dari mobile tampil benar juga di CRM web (dan sebaliknya).
@@ -23,10 +36,10 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
-import { Package, X } from "lucide-react-native";
+import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
-import { formatRupiah } from "../utils/format";
+import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES } from "../utils/format";
 import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 
 const CATEGORY_OPTIONS = [
@@ -43,6 +56,15 @@ function newWeightEntry() {
 }
 function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer }) {
   return JSON.stringify({ merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "" });
+}
+function parseNotes(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  try {
+    const p = JSON.parse(notes);
+    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "" };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+  }
 }
 
 // Bottom-sheet pilih 1 opsi dari daftar string — dipakai Merk Kasur, Ukuran
@@ -71,7 +93,9 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
   );
 }
 
-export default function OrderFormModal({ visible, customerId, onClose, onCreated, orderOptions: orderOptionsProp }) {
+export default function OrderFormModal({
+  visible, order, customerId, onClose, onCreated, onUpdated, onDeleted, orderOptions: orderOptionsProp,
+}) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { height: screenHeight } = useWindowDimensions();
@@ -89,6 +113,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
   const [orderOptionsState, setOrderOptionsState] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
   const orderOptions = orderOptionsProp || orderOptionsState;
   const [category, setCategory] = useState("LAYANAN");
+  const [status, setStatus] = useState("PENDING");
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [keluhan, setKeluhan] = useState("");
@@ -96,29 +121,56 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
   const [items, setItems] = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [showMerkPicker, setShowMerkPicker] = useState(false);
   const [showUkuranPicker, setShowUkuranPicker] = useState(false);
   const [layananPickerTarget, setLayananPickerTarget] = useState(null); // item key sedang dipilih
 
+  const isEdit = !!order;
   const isLayanan = category === "LAYANAN";
 
+  // Reset (create) ATAU prefill (edit) tiap kali modal dibuka — bukan cuma
+  // sekali di mount, karena instance modal ini dipakai ULANG bergantian utk
+  // order yang beda-beda (lihat CustomerProfileContent.js#editingOrder).
   useEffect(() => {
     if (!visible) return;
     setLoadingProducts(true);
     setSearch("");
     setSelectedProductId(null);
-    setCategory("LAYANAN");
-    setMerkKasur("");
-    setUkuran("");
-    setKeluhan("");
-    setHargaTotal("");
-    setItems([newItem()]);
-    setWeightEntries([newWeightEntry()]);
     api.getProducts().then(setProducts).catch(() => {}).finally(() => setLoadingProducts(false));
     if (!orderOptionsProp) api.getOrderOptions().then(setOrderOptionsState).catch(() => {});
+
+    if (order) {
+      const info = parseNotes(order.notes);
+      setCategory(order.category || "LAYANAN");
+      setStatus(order.status || "PENDING");
+      setMerkKasur(info.merkKasur);
+      setUkuran(info.ukuranKasur);
+      setKeluhan(info.keluhanCustomer);
+      setHargaTotal(order.value ? String(order.value) : "");
+      setItems(
+        (order.items && order.items.length > 0)
+          ? order.items.map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
+          : [newItem()]
+      );
+      setWeightEntries(
+        (order.weightEntries && order.weightEntries.length > 0)
+          ? order.weightEntries.map((e) => ({ ...e, key: e.id, beratKg: String(e.beratKg) }))
+          : [newWeightEntry()]
+      );
+    } else {
+      setCategory("LAYANAN");
+      setStatus("PENDING");
+      setMerkKasur("");
+      setUkuran("");
+      setKeluhan("");
+      setHargaTotal("");
+      setItems([newItem()]);
+      setWeightEntries([newWeightEntry()]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, order]);
 
   const q = search.trim().toLowerCase();
   const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
@@ -145,53 +197,137 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
 
   const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
-  async function handleSubmit() {
-    if (saving) return;
+  async function handleCreate() {
     const validItems = items.filter((it) => it.layananName?.trim());
     if (isLayanan && validItems.length === 0) {
       Alert.alert("Tambahkan minimal satu layanan");
       return;
     }
+    const created = await api.addOrder(customerId, {
+      category,
+      notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+    });
+
+    const createdItems = [];
+    let finalOrderValue = 0;
+    if (isLayanan) {
+      for (const it of validItems) {
+        const { item, orderValue } = await api.addOrderItem(created.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+        createdItems.push(item);
+        finalOrderValue = orderValue;
+      }
+    } else {
+      const harga = Number(hargaTotal) || 0;
+      if (harga > 0) {
+        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        const { item, orderValue } = await api.addOrderItem(created.id, { layananName: namaLayanan, harga });
+        createdItems.push(item);
+        finalOrderValue = orderValue;
+      }
+    }
+
+    const createdWeights = [];
+    const validWeights = weightEntries.filter((e) => e.label?.trim() && e.beratKg);
+    for (let i = 0; i < validWeights.length; i++) {
+      const e = validWeights[i];
+      const entry = await api.addWeightEntry(created.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
+      createdWeights.push(entry);
+    }
+
+    onCreated?.({ ...created, value: finalOrderValue, items: createdItems, weightEntries: createdWeights });
+  }
+
+  // Edit — PATCH status+notes, lalu diff items/weightEntries terhadap
+  // koleksi ASLI order (bukan terhadap apa yang ada di state saat ini),
+  // pola SAMA persis dengan OrderCard.js#handleSave (yang lama) supaya baris
+  // yang dihapus di form beneran ke-DELETE di server, bukan cuma hilang dari
+  // tampilan lokal.
+  async function handleEditSave() {
+    const finalMerk = isLayanan ? merkKasur : "Sano";
+    await api.updateOrder(order.id, {
+      status,
+      notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+    });
+
+    const existingWeightIds = (order.weightEntries || []).map((e) => e.id);
+    const currentWeightIds = weightEntries.filter((e) => e.id).map((e) => e.id);
+    for (const id of existingWeightIds) {
+      if (!currentWeightIds.includes(id)) await api.deleteWeightEntry(id);
+    }
+    for (const e of weightEntries.filter((e) => e.id)) {
+      if (e.label?.trim() && e.beratKg) await api.updateWeightEntry(e.id, { label: e.label.trim(), beratKg: Number(e.beratKg) });
+    }
+    for (let i = 0; i < weightEntries.length; i++) {
+      const e = weightEntries[i];
+      if (!e.id && e.label?.trim() && e.beratKg) await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
+    }
+
+    if (isLayanan) {
+      const existingItemIds = (order.items || []).map((it) => it.id);
+      const currentItemIds = items.filter((it) => it.id).map((it) => it.id);
+      for (const id of existingItemIds) {
+        if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
+      }
+      for (const it of items.filter((it) => it.id)) {
+        if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+      }
+      for (const it of items.filter((it) => !it.id)) {
+        if (it.layananName?.trim()) await api.addOrderItem(order.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+      }
+    } else {
+      // BARU/SEWA: "harga" order = 1 OrderItem tunggal tersembunyi (lihat
+      // handleCreate) — bukan array items yang di-render, jadi diff-nya beda
+      // sendiri: update item yang sudah ada, atau bikin baru kalau order ini
+      // sebelumnya dibuat tanpa harga sama sekali (hargaTotal 0 saat create).
+      const harga = Number(hargaTotal) || 0;
+      const existingItem = (order.items || [])[0];
+      if (existingItem) {
+        await api.updateOrderItem(existingItem.id, { layananName: existingItem.layananName, harga });
+      } else if (harga > 0) {
+        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
+      }
+    }
+
+    onUpdated?.();
+  }
+
+  async function handleSubmit() {
+    if (saving) return;
     setSaving(true);
     try {
-      const order = await api.addOrder(customerId, {
-        category,
-        notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
-      });
-
-      const createdItems = [];
-      let finalOrderValue = 0;
-      if (isLayanan) {
-        for (const it of validItems) {
-          const { item, orderValue } = await api.addOrderItem(order.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
-          createdItems.push(item);
-          finalOrderValue = orderValue;
-        }
+      if (isEdit) {
+        await handleEditSave();
       } else {
-        const harga = Number(hargaTotal) || 0;
-        if (harga > 0) {
-          const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
-          const { item, orderValue } = await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
-          createdItems.push(item);
-          finalOrderValue = orderValue;
-        }
+        await handleCreate();
       }
-
-      const createdWeights = [];
-      const validWeights = weightEntries.filter((e) => e.label?.trim() && e.beratKg);
-      for (let i = 0; i < validWeights.length; i++) {
-        const e = validWeights[i];
-        const entry = await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
-        createdWeights.push(entry);
-      }
-
-      onCreated?.({ ...order, value: finalOrderValue, items: createdItems, weightEntries: createdWeights });
       onClose();
     } catch (err) {
-      Alert.alert("Gagal buat order", err.message);
+      Alert.alert(isEdit ? "Gagal simpan order" : "Gagal buat order", err.message);
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleDelete() {
+    if (!order) return;
+    Alert.alert("Hapus order ini?", "Semua item & data terkait juga akan dihapus.", [
+      { text: "Batal", style: "cancel" },
+      {
+        text: "Hapus", style: "destructive",
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await api.deleteOrder(order.id);
+            onDeleted?.(order.id);
+            onClose();
+          } catch (err) {
+            Alert.alert("Gagal hapus order", err.message);
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
   }
 
   return (
@@ -214,14 +350,51 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
       <View style={styles.overlay}>
         <View style={[styles.modal, { maxHeight: screenHeight * 0.88 - keyboardHeight }]}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Order Baru</Text>
-            <TouchableOpacity onPress={onClose} disabled={saving}>
-              <X size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
-            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{isEdit ? "Edit Order" : "Order Baru"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              {isEdit && (
+                <TouchableOpacity onPress={handleDelete} disabled={saving || deleting}>
+                  <Trash2 size={19} color={tokens.color.danger} strokeWidth={2.2} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={onClose} disabled={saving || deleting}>
+                <X size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: "100%" }}>
-            {/* Kategori */}
+            {/* Status — HANYA di mode edit (cek AddOrderForm web: form create
+                juga tidak punya field status, order baru selalu PENDING dari
+                backend; status baru relevan setelah order ada, sama seperti
+                OrderDetail edit mode web). */}
+            {isEdit && (
+              <>
+                <Text style={styles.label}>Status</Text>
+                <View style={styles.statusRow}>
+                  {ORDER_STATUSES.map((s) => {
+                    const active = status === s;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        style={[styles.statusChip, active && styles.categoryChipActive]}
+                        onPress={() => setStatus(s)}
+                      >
+                        <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
+                          {ORDER_STATUS_LABELS[s] || s}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* Kategori — TIDAK BISA diubah setelah order dibuat (sama
+                seperti web: AddOrderForm cuma tanya kategori di step 0,
+                OrderDetail edit mode tidak punya kontrol ubah kategori sama
+                sekali), jadi di-disable saat edit, cuma ditampilkan sebagai
+                info. */}
             <Text style={styles.label}>Kategori</Text>
             <View style={styles.categoryRow}>
               {CATEGORY_OPTIONS.map((opt) => {
@@ -229,8 +402,9 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.categoryChip, active && styles.categoryChipActive]}
-                    onPress={() => setCategory(opt.value)}
+                    style={[styles.categoryChip, active && styles.categoryChipActive, isEdit && styles.categoryChipDisabled]}
+                    onPress={() => !isEdit && setCategory(opt.value)}
+                    disabled={isEdit}
                   >
                     <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{opt.label}</Text>
                   </TouchableOpacity>
@@ -388,7 +562,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
               </>
             )}
 
-            <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={handleSubmit} disabled={saving}>
+            <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={handleSubmit} disabled={saving || deleting}>
               <Text style={styles.submitText}>{saving ? "Menyimpan…" : "Simpan Order"}</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -436,8 +610,17 @@ function createStyles(tokens) {
     borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
   },
   categoryChipActive: { backgroundColor: tokens.color.accentSoft, borderColor: tokens.color.accent },
+  categoryChipDisabled: { opacity: 0.55 },
   categoryChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   categoryChipTextActive: { color: tokens.color.accent },
+  // Status punya 6 opsi (vs 3 kategori) — beda dari categoryRow (3 chip
+  // flex:1 rata kolom), di sini wrap ke baris baru supaya tidak kepotong di
+  // layar sempit.
+  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  statusChip: {
+    alignItems: "center", paddingVertical: 8, paddingHorizontal: 10, borderRadius: tokens.radius.control,
+    borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+  },
   productSearch: {
     backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
     fontSize: 13, color: tokens.color.textPrimary, width: 140, marginRight: 4,
