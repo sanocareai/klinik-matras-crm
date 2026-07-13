@@ -221,6 +221,7 @@ export const api = {
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   getSessionDistribution: (params) => request("/dashboard/session-distribution" + buildQuery(params)),
+  getLeadsDetail: (params) => request("/dashboard/leads-detail" + buildQuery(params)),
 
   // Tracking Links
   getTrackingLinks: () => request("/tracking/links"),

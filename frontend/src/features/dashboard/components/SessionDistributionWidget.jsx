@@ -15,7 +15,9 @@ const PERIOD_OPTIONS = [
 
 // GET /dashboard/session-distribution — read-only, tidak menyentuh
 // logic pembuatan/update Customer atau Conversation manapun.
-export default function SessionDistributionWidget() {
+// onCardClick(session) opsional — dipanggil saat card CS-1/CS-2 diklik,
+// dipakai Dashboard.jsx untuk buka LeadsDetailModal terfilter sesi itu.
+export default function SessionDistributionWidget({ onCardClick }) {
   const [period, setPeriod] = useState("today");
   const [rows, setRows]     = useState(null);
   const [error, setError]   = useState(null);
@@ -63,7 +65,14 @@ export default function SessionDistributionWidget() {
           animate="show"
         >
           {rows.map((r) => (
-            <motion.div key={r.session} variants={itemVariants} className="dash-session-card">
+            <motion.div
+              key={r.session}
+              variants={itemVariants}
+              className={`dash-session-card${onCardClick ? " dash-session-card-clickable" : ""}`}
+              onClick={onCardClick ? () => onCardClick(r.session) : undefined}
+              role={onCardClick ? "button" : undefined}
+              tabIndex={onCardClick ? 0 : undefined}
+            >
               <span className="dash-session-label">{r.session}</span>
               <span className="dash-session-value">{r.newLeads}</span>
               <span className="dash-session-value-caption">Lead Baru</span>

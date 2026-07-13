@@ -9,7 +9,13 @@ import PipelineWidget from "../features/dashboard/components/PipelineWidget.jsx"
 import RecentOrdersTable from "../features/dashboard/components/RecentOrdersTable.jsx";
 import TargetSalesWidget from "../features/dashboard/components/TargetSalesWidget.jsx";
 import SessionDistributionWidget from "../features/dashboard/components/SessionDistributionWidget.jsx";
+import LeadsDetailModal from "../features/dashboard/components/LeadsDetailModal.jsx";
 import { formatTanggalIndo, getDatePreset } from "../utils/format.js";
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // Widget gagal fetch sendiri-sendiri — 1 widget error TIDAK memblokir seluruh
 // dashboard (beda dari versi lama yang 1 error global bikin halaman kosong).
@@ -31,6 +37,11 @@ export default function Dashboard({ user }) {
   const [recentOrders, setRecentOrders] = useState(null);
   const [loading, setLoading]     = useState(true);
   const [errors, setErrors]       = useState({});
+  const [leadsModal, setLeadsModal] = useState(null); // { date, session } | null
+
+  function openLeadsModal(session = "all") {
+    setLeadsModal({ date: todayStr(), session });
+  }
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -82,7 +93,13 @@ export default function Dashboard({ user }) {
         </div>
       ) : (
         <DashboardLayout>
-          <MetricCard label="Total Leads" value={overview?.totalCustomers || 0} icon={Users} trend={overview?.growthCustomers} />
+          <MetricCard
+            label="Total Leads"
+            value={overview?.totalCustomers || 0}
+            icon={Users}
+            trend={overview?.growthCustomers}
+            onClick={() => openLeadsModal()}
+          />
           <MetricCard label="Total Order" value={overview?.totalOrders || 0} icon={ShoppingCart} trend={overview?.growthOrders} />
           <MetricCard label="Conversion Rate" value={conversionRate} format="percent" icon={Percent} />
           <MetricCard label="Revenue" value={overview?.totalOrderValue || 0} format="money" icon={Wallet} trend={overview?.growthOrderValue} />
@@ -93,7 +110,7 @@ export default function Dashboard({ user }) {
       <TargetSalesWidget />
 
       {/* Distribusi Chat CS-1 vs CS-2 — dekat funnel pipeline di bawah */}
-      <SessionDistributionWidget />
+      <SessionDistributionWidget onCardClick={openLeadsModal} />
 
       {/* Chart + Pipeline + Recent Orders */}
       <div className="dash-charts-grid">
@@ -115,6 +132,13 @@ export default function Dashboard({ user }) {
           <RecentOrdersTable orders={recentOrders} loading={loading} />
         )}
       </div>
+
+      <LeadsDetailModal
+        open={!!leadsModal}
+        initialDate={leadsModal?.date}
+        initialSession={leadsModal?.session}
+        onClose={() => setLeadsModal(null)}
+      />
     </div>
   );
 }

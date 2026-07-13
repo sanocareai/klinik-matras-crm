@@ -154,6 +154,8 @@ model Customer {
   conversations Conversation[]
   notes         Note[]
   orders        Order[]
+
+  @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
 }
 
 model Conversation {

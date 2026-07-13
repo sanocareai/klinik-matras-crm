@@ -10,7 +10,9 @@ const cardVariants = {
 };
 
 // format: 'number' | 'money' | 'percent'
-export default function MetricCard({ label, value, format = "number", icon: Icon, trend }) {
+// onClick opsional — kalau ada, card jadi clickable (dipakai "Total Leads"
+// untuk buka LeadsDetailModal, lihat Dashboard.jsx).
+export default function MetricCard({ label, value, format = "number", icon: Icon, trend, onClick }) {
   const numericValue = typeof value === "number" ? value : 0;
   const animated = useCountUp(numericValue);
 
@@ -27,7 +29,11 @@ export default function MetricCard({ label, value, format = "number", icon: Icon
       variants={cardVariants}
       whileHover={{ scale: 1.01 }}
       transition={{ duration: 0.15 }}
-      className="dash-metric-card"
+      className={`dash-metric-card${onClick ? " dash-metric-card-clickable" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
     >
       <div className="dash-metric-top">
         <span className="dash-metric-label">{label}</span>

@@ -88,3 +88,51 @@ dashboardRouter.get("/session-distribution", async (req, res) => {
 
   res.json(result);
 });
+
+// Drill-down widget "Distribusi Lead per Sesi" — daftar lead 1 tanggal
+// tertentu, klik dari card newLeads (session-distribution) atau card
+// "Total Lead" existing. READ ONLY, sessionId sama seperti di atas
+// (dari Conversation individual pertama milik customer).
+dashboardRouter.get("/leads-detail", async (req, res) => {
+  const dateParam = req.query.date;
+  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00`) : new Date();
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  const sessionFilter = ["CS-1", "CS-2"].includes(req.query.session) ? req.query.session : "all";
+
+  const customers = await prisma.customer.findMany({
+    where: { createdAt: { gte: start, lt: end } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      createdAt: true,
+      conversations: {
+        where: { type: "INDIVIDUAL" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { id: true, sessionId: true },
+      },
+    },
+  });
+
+  const result = customers
+    .map((c) => {
+      const firstConv = c.conversations[0] || null;
+      return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        createdAt: c.createdAt,
+        sessionId: firstConv?.sessionId || null,
+        conversationId: firstConv?.id || null,
+      };
+    })
+    .filter((c) => sessionFilter === "all" || c.sessionId === sessionFilter);
+
+  res.json(result);
+});
