@@ -19,10 +19,11 @@
 // - Perlu Ditindak: GET /conversations (list biasa) sudah balikin
 //   isUnanswered + unansweredMinutes per item — difilter/diurutkan
 //   client-side (tidak ada endpoint khusus "top unanswered" di backend).
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Bell, CheckCircle2, ArrowUpDown } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
@@ -95,7 +96,20 @@ export default function HomeScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // BUG (fix): dulu cuma useEffect biasa (load() sekali pas mount) — tab
+  // Home di bottom-tabs TIDAK unmount saat pindah ke tab lain (perilaku
+  // baku React Navigation), jadi begitu tab ini pertama dibuka, data
+  // (termasuk Target Bulanan dari SalesTarget) MACET di nilai lama sampai
+  // app di-restart total — pindah tab lalu balik lagi TIDAK cukup. Kalau
+  // Gilang ubah target sales di CRM web, sales yang app-nya sudah kebuka
+  // dari tadi tidak pernah lihat angka barunya tanpa restart app, kelihatan
+  // seperti "tidak sinkron" padahal datanya SAMA-SAMA dari GET
+  // /analytics/sales-performance (endpoint tunggal, sudah benar). useFocusEffect
+  // (pola sama dengan ChatListScreen.js) bikin load() jalan ulang tiap kali
+  // tab Home ini di-fokus (termasuk balik dari tab lain), bukan cuma sekali.
+  useFocusEffect(
+    useCallback(() => { load(); }, [load])
+  );
 
   function handleRefresh() {
     setRefreshing(true);
