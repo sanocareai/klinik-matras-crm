@@ -224,6 +224,9 @@ conversationRouter.get("/", async (req, res) => {
       customer: true,
       messages: { orderBy: { createdAt: "desc" }, take: 1 },
       assignedTo: { select: { id: true, name: true, avatarUrl: true } },
+      // Sales yang PERTAMA kirim balasan — badge terpisah dari assignedTo
+      // (yang SEDANG menangani), lihat catatan panjang di schema.prisma.
+      firstResponder: { select: { id: true, name: true } },
     },
     take: limit + 1, // ambil 1 ekstra buat tahu masih ada halaman berikutnya atau tidak
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -383,15 +386,21 @@ conversationRouter.post("/:id/messages", async (req, res) => {
         content,
         replyToId: replyToId || null,
         externalId: wahaMsg?.id || null,
+        sentById: req.user.id,
       },
     });
   } catch (e) {
     if (e.code !== "P2002") throw e;
     message = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id } });
   }
+  // firstResponderId diisi SEKALI (pesan outbound pertama di percakapan ini)
+  // dan tidak pernah berubah lagi walau assignedToId pindah tangan lewat
+  // takeover/transfer — lihat catatan panjang di schema.prisma.
+  const convUpdateData = { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, null) };
+  if (!conversation.firstResponderId) convUpdateData.firstResponderId = req.user.id;
   const updatedConvSend = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, null) },
+    data:  convUpdateData,
   });
   // Tempel clientId ke payload (BUKAN ke row DB) sebelum di-broadcast/
   // dikembalikan — lihat catatan di atas.
@@ -659,11 +668,15 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
 
   const message = await prisma.message.create({
     data: { conversationId: conversation.id, direction: "OUTBOUND",
-            content: caption, mediaType, mediaUrl, externalId: waResult?.id || null },
+            content: caption, mediaType, mediaUrl, externalId: waResult?.id || null,
+            sentById: req.user.id },
   });
+  // Sama seperti POST /:id/messages — firstResponderId diisi sekali saja.
+  const convUpdateDataMedia = { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, mediaType) };
+  if (!conversation.firstResponderId) convUpdateDataMedia.firstResponderId = req.user.id;
   const updatedConvMedia = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, mediaType) },
+    data:  convUpdateDataMedia,
   });
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConvMedia);
@@ -829,6 +842,13 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
       data:  { assignedSalesId: req.user.id },
     });
 
+    // Riwayat penanganan LENGKAP (beda dari handoverNote di atas yang cuma
+    // simpan 1 catatan terakhir, ketimpa tiap kali pindah tangan lagi) —
+    // dipakai tampilkan timeline "Riwayat Penanganan" penuh di chat window.
+    await prisma.handoverEvent.create({
+      data: { conversationId: conv.id, fromUserId: oldAssignedId || null, toUserId: req.user.id, reason: "takeover" },
+    });
+
     // Catat di notes siapa yang ambil alih
     let noteContent;
     if (prevName) {
@@ -842,6 +862,25 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
 
     emitConversationUpdate(updated);
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini (takeover
+// & transfer manual) — dipanggil on-demand saat chat window dibuka (bukan
+// ikut di GET / list, supaya list tetap ringan untuk ratusan percakapan).
+conversationRouter.get("/:id/handover-history", async (req, res) => {
+  try {
+    const events = await prisma.handoverEvent.findMany({
+      where: { conversationId: req.params.id },
+      orderBy: { createdAt: "asc" },
+      include: {
+        fromUser: { select: { id: true, name: true } },
+        toUser:   { select: { id: true, name: true } },
+      },
+    });
+    res.json(events);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -928,10 +967,29 @@ conversationRouter.patch("/:id", async (req, res) => {
   if (isRead !== undefined)       { data.isRead = isRead; if (isRead) data.readAt = new Date(); }
   if (handoverNote !== undefined) data.handoverNote = handoverNote;
   if (pinned !== undefined)       { data.pinned = pinned; data.pinnedAt = pinned ? new Date() : null; }
+
+  // Transfer manual (assignedToId berubah lewat sini, BEDA dari ambil-alih
+  // sendiri via POST /:id/takeover) — dicatat juga ke HandoverEvent supaya
+  // timeline "Riwayat Penanganan" lengkap, tidak cuma dari takeover.
+  let prevAssignedToId = null;
+  if (assignedToId !== undefined) {
+    const before = await prisma.conversation.findUnique({
+      where: { id: req.params.id }, select: { assignedToId: true },
+    });
+    prevAssignedToId = before?.assignedToId ?? null;
+  }
+
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
     data,
   });
+
+  if (assignedToId !== undefined && assignedToId && assignedToId !== prevAssignedToId) {
+    await prisma.handoverEvent.create({
+      data: { conversationId: conversation.id, fromUserId: prevAssignedToId, toUserId: assignedToId, reason: "transfer" },
+    }).catch(() => {}); // jangan gagalkan response utama kalau ini gagal
+  }
+
   emitConversationUpdate(conversation);
   res.json(conversation);
 });

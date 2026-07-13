@@ -189,6 +189,12 @@ export const api = {
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   takeoverConversation: (id) =>
     request(`/conversations/${id}/takeover`, { method: "POST" }),
+  // Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini
+  // (takeover & transfer manual) — dipakai banner "Riwayat Penanganan" di
+  // ChatScreen, beda dari handoverNote (cuma catatan TERAKHIR). Sama dengan
+  // frontend/src/api.js#getHandoverHistory.
+  getHandoverHistory: (id) =>
+    request(`/conversations/${id}/handover-history`),
   // Teruskan pesan ke percakapan lain (dipakai modal Forward di ChatScreen)
   forwardMessage: (sourceConvId, messageId, targetConversationId) =>
     request(`/conversations/${sourceConvId}/forward`, {

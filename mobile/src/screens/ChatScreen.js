@@ -38,6 +38,7 @@ import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
 import TemplatePickerSheet from "../components/TemplatePickerSheet";
+import HandoverHistoryBanner from "../components/HandoverHistoryBanner";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
@@ -590,6 +591,8 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         )}
       </View>
+
+      {!isGroup && <HandoverHistoryBanner conversationId={conversationId} />}
 
       {/* Daftar pesan */}
       {loading ? (

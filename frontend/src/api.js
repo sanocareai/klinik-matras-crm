@@ -166,6 +166,11 @@ export const api = {
     requestFormData(`/conversations/${conversationId}/media`, formData),
   takeoverConversation: (id) =>
     request(`/conversations/${id}/takeover`, { method: "POST" }),
+  // Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini
+  // (takeover & transfer manual) — dipakai banner "Riwayat Penanganan" di
+  // ChatWindow, beda dari handoverNote (cuma catatan TERAKHIR).
+  getHandoverHistory: (id) =>
+    request(`/conversations/${id}/handover-history`),
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),

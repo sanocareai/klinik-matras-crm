@@ -12,6 +12,7 @@ import CustomerPanel from "../CustomerPanel/index.jsx";
 import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
 import Composer from "./Composer.jsx";
+import HandoverHistoryBanner from "./HandoverHistoryBanner.jsx";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
@@ -442,6 +443,8 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
           </select>
         </div>
       )}
+
+      {!isGroup && <HandoverHistoryBanner conversationId={conversationId} />}
 
       {/* ── Search dalam percakapan ── */}
       {showSearch && (

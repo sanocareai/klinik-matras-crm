@@ -22,10 +22,10 @@ enum Channel {
 
 // Sumber marketing pelanggan (beda dengan Channel -- itu medium chat-nya)
 enum LeadSource {
-  META_ADS        // iklan Instagram/Facebook — menggantikan ADS
-  GOOGLE_ADS      // iklan Google
+  META_ADS // iklan Instagram/Facebook — menggantikan ADS
+  GOOGLE_ADS // iklan Google
   WEBSITE_ORGANIC // klik organik dari website — menggantikan WEBSITE
-  INSTAGRAM       // DM organik Instagram (bukan iklan)
+  INSTAGRAM // DM organik Instagram (bukan iklan)
   WHATSAPP_DIRECT // chat organik langsung ke WA
   REFERRAL
   OTHER
@@ -43,24 +43,24 @@ enum LinkCategory {
 }
 
 enum OrderStatus {
-  PENDING      // baru order, belum diproses
-  PICKUP       // sedang diambil dari lokasi customer
-  PROCESSING   // sedang dikerjakan/produksi
-  READY        // siap kirim
-  DELIVERED    // sudah terkirim/selesai
+  PENDING // baru order, belum diproses
+  PICKUP // sedang diambil dari lokasi customer
+  PROCESSING // sedang dikerjakan/produksi
+  READY // siap kirim
+  DELIVERED // sudah terkirim/selesai
   CANCELLED
 }
 
 enum PaymentStatus {
-  BELUM_BAYAR  // belum ada pembayaran
-  DP           // sudah bayar uang muka
-  LUNAS        // sudah lunas
+  BELUM_BAYAR // belum ada pembayaran
+  DP // sudah bayar uang muka
+  LUNAS // sudah lunas
 }
 
 enum OrderCategory {
-  LAYANAN  // Upgrade/Service/Ganti Kain
-  SEWA     // Kasur Sewa
-  BARU     // Kasur Baru
+  LAYANAN // Upgrade/Service/Ganti Kain
+  SEWA // Kasur Sewa
+  BARU // Kasur Baru
 }
 
 enum ConversationStatus {
@@ -70,8 +70,8 @@ enum ConversationStatus {
 }
 
 enum ConversationType {
-  INDIVIDUAL  // percakapan 1-on-1 dengan customer
-  GROUP       // percakapan grup WhatsApp internal (tidak ada customer)
+  INDIVIDUAL // percakapan 1-on-1 dengan customer
+  GROUP // percakapan grup WhatsApp internal (tidak ada customer)
 }
 
 enum PipelineStage {
@@ -98,19 +98,23 @@ enum HealthStatus {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  name          String
-  email         String         @unique
-  passwordHash  String
-  role          Role           @default(SALES)
-  avatarUrl     String?        // foto profil, path relatif "/uploads/avatars/xxx.jpg"
-  createdAt     DateTime       @default(now())
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(SALES)
+  avatarUrl    String? // foto profil, path relatif "/uploads/avatars/xxx.jpg"
+  createdAt    DateTime @default(now())
 
-  assignedCustomers     Customer[]     @relation("AssignedSales")
-  assignedConversations Conversation[] @relation("AssignedAgent")
+  assignedCustomers     Customer[]      @relation("AssignedSales")
+  assignedConversations Conversation[]  @relation("AssignedAgent")
   notes                 Note[]
   salesTargets          SalesTarget[]
   pushTokens            PushToken[]
+  sentMessages          Message[]       @relation("MessageSender")
+  firstResponderFor     Conversation[]  @relation("FirstResponder")
+  handoverEventsFrom    HandoverEvent[] @relation("HandoverFrom")
+  handoverEventsTo      HandoverEvent[] @relation("HandoverTo")
 }
 
 // Token push notification aplikasi mobile (Expo Push Token) — 1 user bisa
@@ -126,26 +130,26 @@ model PushToken {
 }
 
 model Customer {
-  id              String        @id @default(cuid())
-  name            String?
-  phone           String?       @unique // format: 628xxxx (tanpa @c.us)
-  instagramHandle String?       @unique
-  email           String?
-  city            String?
-  tags            String[]      @default([])
-  pipelineStage   PipelineStage @default(LEAD)
-  leadSource      LeadSource?
-  assignedSalesId     String?
-  assignedSales       User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
-  leadSourceDetail    String?       // detail tambahan: nama link/campaign/ad headline
-  leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
-  customerType        CustomerType  @default(END_USER)
-  healthStatus        HealthStatus?
-  profilePictureUrl   String?       // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
+  id                      String        @id @default(cuid())
+  name                    String?
+  phone                   String?       @unique // format: 628xxxx (tanpa @c.us)
+  instagramHandle         String?       @unique
+  email                   String?
+  city                    String?
+  tags                    String[]      @default([])
+  pipelineStage           PipelineStage @default(LEAD)
+  leadSource              LeadSource?
+  assignedSalesId         String?
+  assignedSales           User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
+  leadSourceDetail        String? // detail tambahan: nama link/campaign/ad headline
+  leadSourceConfirmed     Boolean       @default(false) // true = dikoreksi manual oleh sales
+  customerType            CustomerType  @default(END_USER)
+  healthStatus            HealthStatus?
+  profilePictureUrl       String? // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
   profilePictureFetchedAt DateTime? // kapan terakhir dicoba fetch dari WAHA — dipakai cek "expired >7 hari" di webhooks.js, JUGA distempel saat fetch GAGAL (privasi dibatasi dsb) supaya tidak coba lagi tiap pesan masuk sampai TTL lewat
-  nameManuallyEdited  Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  nameManuallyEdited      Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
   conversations Conversation[]
   notes         Note[]
@@ -153,28 +157,40 @@ model Customer {
 }
 
 model Conversation {
-  id            String              @id @default(cuid())
-  type          ConversationType    @default(INDIVIDUAL) // INDIVIDUAL = customer, GROUP = grup WA internal
-  customerId    String?             // nullable — GROUP tidak punya customer
-  customer      Customer?           @relation(fields: [customerId], references: [id])
-  groupJid      String?             // JID grup e.g. "120363376@g.us" (hanya untuk type=GROUP)
-  groupName     String?             // nama grup (hanya untuk type=GROUP)
+  id            String             @id @default(cuid())
+  type          ConversationType   @default(INDIVIDUAL) // INDIVIDUAL = customer, GROUP = grup WA internal
+  customerId    String? // nullable — GROUP tidak punya customer
+  customer      Customer?          @relation(fields: [customerId], references: [id])
+  groupJid      String? // JID grup e.g. "120363376@g.us" (hanya untuk type=GROUP)
+  groupName     String? // nama grup (hanya untuk type=GROUP)
   channel       Channel
-  status        ConversationStatus  @default(OPEN)
+  status        ConversationStatus @default(OPEN)
   assignedToId  String?
-  assignedTo    User?               @relation("AssignedAgent", fields: [assignedToId], references: [id])
-  lastMessageAt DateTime            @default(now())
-  unread        Boolean             @default(false)  // RENCANA: dihapus setelah unreadCount stabil, lihat CLAUDE.md
-  isRead        Boolean             @default(false)  // sudah dibuka (di CRM atau di HP)
-  readAt        DateTime?                             // kapan terakhir dibaca
+  assignedTo    User?              @relation("AssignedAgent", fields: [assignedToId], references: [id])
+  lastMessageAt DateTime           @default(now())
+  unread        Boolean            @default(false) // RENCANA: dihapus setelah unreadCount stabil, lihat CLAUDE.md
+  isRead        Boolean            @default(false) // sudah dibuka (di CRM atau di HP)
+  readAt        DateTime? // kapan terakhir dibaca
   handoverNote  String?
-  pinned        Boolean             @default(false)   // disematkan di atas daftar
-  pinnedAt      DateTime?                             // kapan terakhir disematkan
-  createdAt     DateTime            @default(now())
+  pinned        Boolean            @default(false) // disematkan di atas daftar
+  pinnedAt      DateTime? // kapan terakhir disematkan
+  createdAt     DateTime           @default(now())
 
-  sessionId          String?   // nama session WAHA pengirim, "CS-1"/"CS-2" (multi-nomor)
-  lastMessagePreview String?   // denormalized: potongan teks pesan terakhir, untuk list tanpa join Message
-  unreadCount         Int      @default(0)  // pengganti `unread` (boolean) — jumlah pesan INBOUND belum dibuka
+  // Sales yang PERTAMA KALI kirim balasan outbound dari CRM di percakapan
+  // ini — diisi SEKALI (tidak pernah berubah lagi walau assignedToId
+  // berpindah-pindah lewat takeover/transfer), lihat routes/conversations.js
+  // #POST /:id/messages & #POST /:id/media. Beda dari assignedToId (sales
+  // yang SEDANG menangani sekarang) — badge "first responder" di daftar
+  // Inbox pakai field ini, BUKAN assignedToId, supaya tetap kelihatan siapa
+  // yang pertama merespons meski sudah di-takeover berkali-kali.
+  firstResponderId String?
+  firstResponder   User?   @relation("FirstResponder", fields: [firstResponderId], references: [id])
+
+  handoverEvents HandoverEvent[]
+
+  sessionId          String? // nama session WAHA pengirim, "CS-1"/"CS-2" (multi-nomor)
+  lastMessagePreview String? // denormalized: potongan teks pesan terakhir, untuk list tanpa join Message
+  unreadCount        Int     @default(0) // pengganti `unread` (boolean) — jumlah pesan INBOUND belum dibuka
 
   messages Message[]
 
@@ -205,25 +221,52 @@ model Conversation {
 }
 
 model Message {
-  id              String           @id @default(cuid())
-  conversationId  String
-  conversation    Conversation     @relation(fields: [conversationId], references: [id])
-  direction       MessageDirection
-  content         String           @default("")  // teks / caption (bisa kosong untuk media)
-  mediaType       String?          // "image" | "video" | "audio" | "document"
-  mediaUrl        String?          // path lokal: /uploads/xxx atau URL WAHA
-  externalId      String?          @unique
-  replyToId       String?          // ID pesan yang dibalas (untuk fitur quote/reply)
-  replyTo         Message?         @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  replies         Message[]        @relation("MessageReply")
-  forwarded       Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
-  senderName      String?          // nama pengirim (untuk pesan grup — beda-beda per pesan)
-  ack             Int              @default(0) // 0 pending, 1 sent, 2 delivered, 3 read (WAHA message.ack)
-  editedAt        DateTime?        // diisi saat WAHA message.edited masuk — bubble tampilkan label "diedit"
-  isRevoked       Boolean          @default(false) // soft-delete (WAHA message.revoked) — content dikosongkan, bubble tetap ada ("Pesan ini telah dihapus")
-  createdAt       DateTime         @default(now())
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
+  direction      MessageDirection
+  content        String           @default("") // teks / caption (bisa kosong untuk media)
+  mediaType      String? // "image" | "video" | "audio" | "document"
+  mediaUrl       String? // path lokal: /uploads/xxx atau URL WAHA
+  externalId     String?          @unique
+  replyToId      String? // ID pesan yang dibalas (untuk fitur quote/reply)
+  replyTo        Message?         @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  replies        Message[]        @relation("MessageReply")
+  forwarded      Boolean          @default(false) // true = pesan diteruskan dari percakapan lain
+  senderName     String? // nama pengirim (untuk pesan grup — beda-beda per pesan)
+  ack            Int              @default(0) // 0 pending, 1 sent, 2 delivered, 3 read (WAHA message.ack)
+  editedAt       DateTime? // diisi saat WAHA message.edited masuk — bubble tampilkan label "diedit"
+  isRevoked      Boolean          @default(false) // soft-delete (WAHA message.revoked) — content dikosongkan, bubble tetap ada ("Pesan ini telah dihapus")
+  createdAt      DateTime         @default(now())
+
+  // Sales yang kirim pesan OUTBOUND ini dari CRM (web/app) — null untuk
+  // pesan INBOUND (dari customer) dan pesan lama sebelum field ini ada.
+  // Dipakai buat set Conversation.firstResponderId sekali di
+  // routes/conversations.js saat pesan outbound PERTAMA di percakapan itu
+  // tersimpan.
+  sentById String?
+  sentBy   User?   @relation("MessageSender", fields: [sentById], references: [id])
 
   @@index([conversationId])
+}
+
+// Log SETIAP kali percakapan berpindah tangan (takeover ATAU transfer manual
+// admin) — beda dari Conversation.handoverNote (cuma simpan 1 catatan
+// TERAKHIR, ketimpa tiap kali pindah tangan lagi). Dipakai utk tampilkan
+// riwayat penanganan LENGKAP di chat window ("Riwayat Penanganan"), bukan
+// cuma handover paling baru.
+model HandoverEvent {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  fromUserId     String? // null = belum pernah ada yang pegang sebelumnya (klaim pertama)
+  fromUser       User?        @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUserId       String
+  toUser         User         @relation("HandoverTo", fields: [toUserId], references: [id])
+  reason         String? // "takeover" | "transfer" — dibedakan biar riwayat jelas siapa yang inisiasi
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 model Note {
@@ -240,9 +283,9 @@ model Product {
   id          String         @id @default(cuid())
   name        String
   description String?
-  category    String?        // "Upgrade" | "Garansi" | "Servis" | "Info"
+  category    String? // "Upgrade" | "Garansi" | "Servis" | "Info"
   price       Int?
-  priceUnit   String?        // "per unit" | "mulai dari" | null
+  priceUnit   String? // "per unit" | "mulai dari" | null
   images      ProductImage[]
   active      Boolean        @default(true)
   sortOrder   Int            @default(0)
@@ -254,7 +297,7 @@ model ProductImage {
   id        String  @id @default(cuid())
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url       String  // "/media/products/xxx.jpg"
+  url       String // "/media/products/xxx.jpg"
   label     String? // "Before" | "After" | "Detail" | null
   sortOrder Int     @default(0)
 }
@@ -265,7 +308,7 @@ model TrackedLink {
   name             String
   category         LinkCategory
   prefilledMessage String       @default("Halo Sano, saya mau konsultasi")
-  targetPhone      String?      // null = pakai WAHA_BUSINESS_NUMBER dari .env
+  targetPhone      String? // null = pakai WAHA_BUSINESS_NUMBER dari .env
   active           Boolean      @default(true)
   createdAt        DateTime     @default(now())
   clicks           ClickEvent[]
@@ -275,29 +318,29 @@ model ClickEvent {
   id                String      @id @default(cuid())
   trackedLinkId     String
   trackedLink       TrackedLink @relation(fields: [trackedLinkId], references: [id])
-  matchedCustomerId String?     // diisi setelah berhasil dicocokkan ke customer
+  matchedCustomerId String? // diisi setelah berhasil dicocokkan ke customer
   createdAt         DateTime    @default(now())
 
   @@index([createdAt])
 }
 
 model Order {
-  id          String      @id @default(cuid())
-  customerId  String
-  customer    Customer    @relation(fields: [customerId], references: [id])
-  status        OrderStatus   @default(PENDING)
-  paymentStatus PaymentStatus @default(BELUM_BAYAR)
-  category      OrderCategory @default(LAYANAN)
-  value         Int           // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
-  quantity      Int           @default(1)
-  beratBadan    Int?          // berat badan customer dalam kg, nullable
-  orderNumber   String?       @unique // di-generate otomatis saat order dibuat
-  notes         String?
-  hasComplaint    Boolean   @default(false)
+  id              String        @id @default(cuid())
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(BELUM_BAYAR)
+  category        OrderCategory @default(LAYANAN)
+  value           Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
+  quantity        Int           @default(1)
+  beratBadan      Int? // berat badan customer dalam kg, nullable
+  orderNumber     String?       @unique // di-generate otomatis saat order dibuat
+  notes           String?
+  hasComplaint    Boolean       @default(false)
   complaintDate   DateTime?
   complaintDetail String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   items         OrderItem[]
   weightEntries OrderWeightEntry[]
@@ -343,8 +386,8 @@ model SalesTarget {
   userId      String
   user        User     @relation(fields: [userId], references: [id])
   year        Int
-  month       Int      // 1-12
-  targetValue Int      // Rupiah
+  month       Int // 1-12
+  targetValue Int // Rupiah
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -354,13 +397,13 @@ model SalesTarget {
 // Pesan masuk yang tidak bisa diselesaikan nomornya (LID tidak dikenal, JID tidak valid).
 // Disimpan untuk review manual — JANGAN buat Customer dengan nomor sampah.
 model UnresolvedMessage {
-  id          String   @id @default(cuid())
-  rawJid      String             // JID mentah yang gagal di-resolve
-  session     String             // session WAHA yang mengirim
-  reason      String             // "LID_UNRESOLVABLE" | "INVALID_JID"
-  payloadJson String   @db.Text  // JSON payload lengkap untuk diagnostik / retry manual
-  createdAt   DateTime @default(now())
-  resolved    Boolean  @default(false)
+  id          String    @id @default(cuid())
+  rawJid      String // JID mentah yang gagal di-resolve
+  session     String // session WAHA yang mengirim
+  reason      String // "LID_UNRESOLVABLE" | "INVALID_JID"
+  payloadJson String    @db.Text // JSON payload lengkap untuk diagnostik / retry manual
+  createdAt   DateTime  @default(now())
+  resolved    Boolean   @default(false)
   resolvedAt  DateTime?
 
   @@index([createdAt])
@@ -385,9 +428,9 @@ model SyncDiscrepancy {
 // tidak perlu panggil API berulang untuk nomor yang sama.
 model LidMapping {
   id          String   @id @default(cuid())
-  lid         String   @unique  // angka LID saja, tanpa suffix @lid
-  phoneNumber String            // nomor asli format 628xxx
-  session     String            // session WAHA yang berhasil resolve
+  lid         String   @unique // angka LID saja, tanpa suffix @lid
+  phoneNumber String // nomor asli format 628xxx
+  session     String // session WAHA yang berhasil resolve
   resolvedAt  DateTime @default(now())
 }
 
@@ -395,11 +438,11 @@ model LidMapping {
 model PlaygroundMessage {
   id            String   @id @default(cuid())
   modelConfigId String
-  role          String   // "user" | "assistant"
+  role          String // "user" | "assistant"
   content       String
-  modelName     String?  // nama display model, denormalized untuk badge di UI
-  modelProvider String?  // "anthropic" | "openai" | "gemini"
-  modelStr      String?  // model string e.g. "claude-sonnet-4-6"
+  modelName     String? // nama display model, denormalized untuk badge di UI
+  modelProvider String? // "anthropic" | "openai" | "gemini"
+  modelStr      String? // model string e.g. "claude-sonnet-4-6"
   createdAt     DateTime @default(now())
 
   @@index([modelConfigId])

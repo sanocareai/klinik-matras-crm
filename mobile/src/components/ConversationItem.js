@@ -11,14 +11,26 @@ import {
 } from "lucide-react-native";
 import AvatarStack from "./AvatarStack";
 import PressableScale from "./PressableScale";
+import TransferModal from "./TransferModal";
 import { tokens } from "../constants/theme";
 import { smartTimestamp } from "../utils/format";
 import { useConversation, useConversationStore } from "../store/conversationStore";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import { lightHaptic } from "../lib/haptics";
 
 const MEDIA_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText };
 const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan suara", document: "Dokumen" };
+
+// SAMA PERSIS dengan STATUS_LABEL/STATUS_CLASS di
+// frontend/src/features/inbox/components/ConversationList/ConversationItem.jsx
+// (warna badge-open/pending/resolved di index.css) — parity visual web↔app.
+const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
+const STATUS_COLORS = {
+  OPEN:     { bg: tokens.color.accentSoft, color: tokens.color.accent },
+  PENDING:  { bg: "#FFFBEB", color: "#D97706" },
+  RESOLVED: { bg: "#ECFDF5", color: "#059669" },
+};
 
 function convName(c) {
   if (c.type === "GROUP") return c.groupName || "Grup WhatsApp";
@@ -53,12 +65,15 @@ function lastPreviewParts(c) {
 
 function ConversationItemBase({ id, onPress }) {
   const c = useConversation(id);
+  const { user } = useAuth();
   const swipeableRef = useRef(null);
   const [pressed, setPressed] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
 
   if (!c) return null;
 
   const isGroup = c.type === "GROUP";
+  const isAdmin = user?.role === "ADMIN";
   const name = convName(c);
   const isUnread = !!c.unread;
   const isRead = !!c.isRead;
@@ -181,14 +196,43 @@ function ConversationItemBase({ id, onPress }) {
                 </View>
               )}
             </View>
-            {sessionLabel && (
+            {(sessionLabel || c.firstResponder || c.status) && (
               <View style={styles.badgesRow}>
-                <Text style={styles.sessionBadge}>{sessionLabel}</Text>
+                {c.status && (
+                  <PressableScale
+                    disabled={!isAdmin}
+                    onPress={() => { lightHaptic(); setShowTransfer(true); }}
+                    style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[c.status] || STATUS_COLORS.OPEN).bg }]}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: (STATUS_COLORS[c.status] || STATUS_COLORS.OPEN).color }}>
+                      {STATUS_LABEL[c.status] || c.status}
+                    </Text>
+                  </PressableScale>
+                )}
+                {sessionLabel && <Text style={styles.sessionBadge}>{sessionLabel}</Text>}
+                {/* Sales yang PERTAMA balas — beda dari assignedTo (siapa yang
+                    SEDANG pegang sekarang), tetap tampil walau sudah
+                    di-takeover berkali-kali, lihat schema.prisma. */}
+                {c.firstResponder && <Text style={styles.firstResponderBadge}>{c.firstResponder.name}</Text>}
               </View>
             )}
           </View>
         </PressableScale>
       </Swipeable>
+
+      {/* Transfer lead ke sales tertentu — ADMIN ONLY, dipicu tap badge
+          status di atas (sama seperti web ConversationItem.jsx), TANPA
+          perlu buka chat dulu (beda dari tombol "Transfer" yang sudah ada
+          di menu ⋮ ChatScreen.js, itu tetap ada, ini entry point baru). */}
+      {isAdmin && (
+        <TransferModal
+          visible={showTransfer}
+          conversationId={id}
+          currentAssignedId={c.assignedToId}
+          onClose={() => setShowTransfer(false)}
+          onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
+        />
+      )}
     </Animated.View>
   );
 }
@@ -228,9 +272,14 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", paddingHorizontal: 5, marginLeft: 8,
   },
   unreadBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  badgesRow: { flexDirection: "row", marginTop: 4 },
+  badgesRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   sessionBadge: {
     fontSize: 10, fontWeight: "700", color: tokens.color.accent, backgroundColor: tokens.color.accentSoft,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: "hidden",
+  },
+  firstResponderBadge: {
+    fontSize: 10, fontWeight: "500", color: tokens.color.textSecondary, backgroundColor: tokens.color.subtle,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: "hidden",
   },
   actionBox: {

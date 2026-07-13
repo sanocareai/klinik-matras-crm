@@ -5,9 +5,21 @@ import { formatPhoneDisplay } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
 import { useConversation, useActiveId, useConversationStore } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
+import TransferPickerPopover from "./TransferPickerPopover.jsx";
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
+
+// Baca role langsung dari localStorage (pola sama dgn api.js#authHeaders) —
+// item ini ada RATUSAN di list, tidak masuk akal prop-drill `user` dari
+// App.jsx → Inbox.jsx → ConversationList.jsx cuma utk 1 flag admin-only.
+function isCurrentUserAdmin() {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null")?.role === "ADMIN";
+  } catch {
+    return false;
+  }
+}
 
 function ConversationItemBase({ id }) {
   // Subscribe GRANULAR — hanya re-render item ini kalau conversation dengan
@@ -15,8 +27,10 @@ function ConversationItemBase({ id }) {
   const c = useConversation(id);
   const activeId = useActiveId();
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
+  const [transferPicker, setTransferPicker] = useState(null); // { x, y }
   const longPressTimerRef = useRef(null);
   const longPressAt = useRef(0);
+  const isAdmin = isCurrentUserAdmin();
 
   if (!c) return null;
 
@@ -120,10 +134,21 @@ function ConversationItemBase({ id }) {
         </div>
 
         <div className="conv-badges">
-          <span className={`badge ${STATUS_CLASS[c.status] || "badge-open"}`}>
+          <span
+            className={`badge ${STATUS_CLASS[c.status] || "badge-open"}${isAdmin ? " badge-clickable" : ""}`}
+            title={isAdmin ? "Klik untuk transfer lead ke sales lain" : undefined}
+            onClick={isAdmin ? (e) => { e.stopPropagation(); setTransferPicker({ x: e.clientX, y: e.clientY }); } : undefined}
+          >
             {STATUS_LABEL[c.status] || c.status}
           </span>
           {sessionLabel && <span className="session-badge">{sessionLabel}</span>}
+          {/* Sales yang PERTAMA balas — beda dari assignedTo (siapa yang
+              SEDANG pegang), tetap tampil walau sudah di-takeover berkali-kali. */}
+          {c.firstResponder && (
+            <span className="first-responder-badge" title="Pertama kali membalas">
+              {c.firstResponder.name}
+            </span>
+          )}
           {isRead && !isReplied && (
             <span title="Sudah dibuka tapi belum dibalas" className="conv-flag-badge conv-flag-opened">
               <Eye size={10} /> Dibuka
@@ -150,6 +175,17 @@ function ConversationItemBase({ id }) {
             </button>
           </div>
         </>
+      )}
+
+      {transferPicker && (
+        <TransferPickerPopover
+          x={transferPicker.x}
+          y={transferPicker.y}
+          conversationId={id}
+          currentAssignedId={c.assignedToId}
+          onClose={() => setTransferPicker(null)}
+          onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
+        />
       )}
     </button>
   );
