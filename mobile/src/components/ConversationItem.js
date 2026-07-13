@@ -12,6 +12,7 @@ import {
 import AvatarStack from "./AvatarStack";
 import PressableScale from "./PressableScale";
 import TransferModal from "./TransferModal";
+import PeekPreviewModal from "./PeekPreviewModal";
 import { useTokens } from "../constants/theme";
 import { smartTimestamp } from "../utils/format";
 import { useConversation, useConversationStore } from "../store/conversationStore";
@@ -74,6 +75,8 @@ function ConversationItemBase({ id, onPress }) {
   const swipeableRef = useRef(null);
   const [pressed, setPressed] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showPeek, setShowPeek] = useState(false);
+  const [peekAnchorY, setPeekAnchorY] = useState(0);
 
   if (!c) return null;
 
@@ -118,6 +121,20 @@ function ConversationItemBase({ id, onPress }) {
     api.updateConversation(id, { pinned: nextPinned }).catch(() => {
       useConversationStore.getState().upsertConversation({ id, pinned: isPinned, pinnedAt: prevPinnedAt });
     });
+  }
+
+  // Peek Preview (ala WhatsApp) — long-press item ini (BUKAN buka ChatRoom
+  // penuh) → popup ringan tampilkan beberapa pesan terakhir, TANPA menandai
+  // conversation sudah dibaca (lihat PeekPreviewModal.js — fetch lewat
+  // api.peekConversation(), endpoint terpisah TANPA efek samping mark-read).
+  // Gesture ini AMAN berdampingan dengan Swipeable di atas: long-press
+  // adalah gesture tap-tahan-diam (tidak ada gerakan horizontal), sementara
+  // Swipeable cuma aktif kalau ada drag horizontal — keduanya tidak
+  // rebutan responder yang sama.
+  function handleLongPress(e) {
+    lightHaptic();
+    setPeekAnchorY(e.nativeEvent.pageY);
+    setShowPeek(true);
   }
 
   function renderLeftActions() {
@@ -170,6 +187,8 @@ function ConversationItemBase({ id, onPress }) {
           onPress={() => onPress(c)}
           onPressIn={() => setPressed(true)}
           onPressOut={() => setPressed(false)}
+          onLongPress={handleLongPress}
+          delayLongPress={350}
         >
           <AvatarStack avatars={[{ name, avatarUrl: c.customer?.profilePictureUrl }]} size={48} isGroup={isGroup} />
           <View style={styles.body}>
@@ -238,6 +257,14 @@ function ConversationItemBase({ id, onPress }) {
           onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
         />
       )}
+
+      <PeekPreviewModal
+        visible={showPeek}
+        conversation={c}
+        anchorY={peekAnchorY}
+        onClose={() => setShowPeek(false)}
+        onOpenChat={() => { setShowPeek(false); onPress(c); }}
+      />
     </Animated.View>
   );
 }

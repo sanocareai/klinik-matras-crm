@@ -3,7 +3,8 @@
 // kalau avatarUrl kosong ATAU gagal dimuat (onError) — pola sama dengan
 // Avatar.jsx web (imgError state).
 import React, { useEffect, useState } from "react";
-import { View, Text, Image, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import { Users } from "lucide-react-native";
 import { initials, avatarColor } from "../utils/format";
 import { mediaUrl } from "../api";
@@ -15,21 +16,19 @@ export default function Avatar({ name, size = 48, isGroup = false, avatarUrl = n
   const uri = avatarUrl && !imgError ? mediaUrl(avatarUrl) : null;
 
   if (uri) {
-    // width/height DI SINI sudah proporsional ke `size` (26-72px tergantung
-    // caller, bukan angka besar tetap) — RN Image sendiri men-decode ke
-    // ukuran render ini, TIDAK menyimpan bitmap penuh di memori.
-    // KETERBATASAN YANG BELUM BISA DIPERBAIKI TANPA DEPENDENCY BARU: profil
-    // foto WA (profilePictureUrl) datang dari CDN WhatsApp (pps.whatsapp.net)
-    // yang TIDAK punya parameter resize publik — file ASLI (bisa >100KB)
-    // tetap ke-download penuh lewat network walau tampil kecil di sini,
-    // RN Image core tidak bisa cegah itu (beda dari expo-image yang punya
-    // downsampling+cache native lebih baik, TAPI itu native module baru →
-    // butuh EAS rebuild, sengaja di-hold dulu sampai rebuild berikutnya
-    // yang sudah direncanakan bareng Gilang).
+    // expo-image: downsampling + cache native (memory+disk) — jauh lebih
+    // ringan dari RN Image core buat list avatar yang di-scroll terus-
+    // terusan (Inbox, Pipeline Board), dan tetap membantu kasus foto profil
+    // WA (profilePictureUrl dari CDN pps.whatsapp.net, tidak ada parameter
+    // resize publik, file asli tetap ke-download penuh sekali lewat network
+    // — tapi cache disk di sini cegah re-download tiap kali avatar yang
+    // sama muncul lagi di list/scroll berikutnya).
     return (
       <Image
         source={{ uri }}
         style={{ width: size, height: size, borderRadius: size / 2 }}
+        cachePolicy="memory-disk"
+        transition={150}
         onError={() => setImgError(true)}
       />
     );

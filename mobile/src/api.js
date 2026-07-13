@@ -174,6 +174,11 @@ export const api = {
   getUnreadCount: () => request("/conversations/unread-count"),
   getMessages: (conversationId) =>
     request(`/conversations/${conversationId}/messages`),
+  // Preview N pesan terakhir TANPA efek samping — BEDA dari getMessages di
+  // atas (yang mark-as-read sebagai side-effect). Dipakai fitur Peek Preview
+  // (long-press percakapan di Inbox), lihat backend/src/routes/conversations.js.
+  peekConversation: (conversationId, limit = 5) =>
+    request(`/conversations/${conversationId}/peek?limit=${limit}`),
   // Tandai sudah dibaca (unreadCount=0) tanpa fetch seluruh riwayat pesan —
   // dipakai saat tap percakapan unread / swipe "tandai dibaca" di Inbox.
   markConversationRead: (conversationId) =>

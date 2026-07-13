@@ -4,8 +4,9 @@
 // dibangun manual pakai react-native-gesture-handler (sudah ada sejak M-B).
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Modal, View, Image, StyleSheet, Dimensions, TouchableOpacity, Text, FlatList,
+  Modal, View, StyleSheet, Dimensions, TouchableOpacity, Text, FlatList,
 } from "react-native";
+import { Image } from "expo-image";
 // Ganti dari expo-av (deprecated, crash New Architecture — lihat
 // mobile/CLAUDE.md) ke expo-video, API resmi pengganti sejak SDK 54+.
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -64,7 +65,8 @@ function ZoomableImage({ uri, onZoomChange }) {
       <GestureDetector gesture={composed}>
         <Image
           source={{ uri }}
-          resizeMode="contain"
+          contentFit="contain"
+          cachePolicy="memory-disk"
           style={[
             styles.fullImage,
             { transform: [{ translateX: translate.x }, { translateY: translate.y }, { scale }] },

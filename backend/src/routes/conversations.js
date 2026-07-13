@@ -301,6 +301,31 @@ conversationRouter.get("/:id/messages", async (req, res) => {
   });
 });
 
+// Preview N pesan terakhir TANPA efek samping apa pun — BEDA dari
+// GET /:id/messages di atas, yang punya side-effect mark-as-read (isRead/
+// unread/unreadCount + read receipt WAHA). Dipakai fitur "Peek Preview"
+// (long-press percakapan di Inbox mobile, ala WhatsApp): sales bisa intip
+// isi chat tanpa percakapan itu ke-mark-as-read/badge unread hilang duluan
+// sebelum benar-benar dibuka. Taruh SEBELUM "/:id/messages" secara logis
+// tidak masalah di Express (literal suffix beda, bukan pola tumpang tindih).
+conversationRouter.get("/:id/peek", async (req, res) => {
+  const convId = req.params.id;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
+  const messages = await prisma.message.findMany({
+    where:   { conversationId: convId },
+    orderBy: { createdAt: "desc" },
+    take:    limit,
+    include: {
+      replyTo: {
+        select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true },
+      },
+    },
+  });
+  // Balik ke urutan kronologis (lama → baru) — sama konvensi dengan
+  // GET /:id/messages, biar renderer pesan di mobile tidak perlu tahu beda.
+  res.json(messages.reverse());
+});
+
 // Tandai percakapan sudah dibaca secara eksplisit (dipanggil frontend saat
 // buka chat) — beda dari side-effect di atas: endpoint ini TIDAK ikut fetch
 // seluruh riwayat pesan, cuma update status baca. Reuse logic/debounce yang
