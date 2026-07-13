@@ -9,7 +9,10 @@ import {
   PIPELINE_STAGES, tagClass, isVIP, daysSinceLastChat, KOTA_LIST,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
 } from "../utils/format.js";
-import { exportToExcel } from "../utils/export.js";
+// Lazy — xlsx + file-saver di balik exportToExcel() cukup besar (~285KB),
+// dynamic import() di titik pakai (bukan static import di atas) supaya
+// hanya diunduh saat tombol Export BENAR-BENAR diklik, bukan ikut terbawa
+// tiap kali halaman ini dibuka.
 
 // Pelanggan "Korporat" = berdasarkan field customerType (bukan tag)
 const isKorporat = (c) => c.customerType === "CORPORATE";
@@ -151,7 +154,8 @@ export default function Customers() {
     }
   }
 
-  function handleExport() {
+  async function handleExport() {
+    const { exportToExcel } = await import("../utils/export.js");
     const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     const data = filtered.map((c) => ({
       /* Urutan kolom cocok dengan urutan tabel di halaman */

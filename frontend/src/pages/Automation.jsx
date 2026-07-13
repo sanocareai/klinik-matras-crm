@@ -1,7 +1,12 @@
-import React, { useEffect, useLayoutEffect, useState, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useState, useRef, Suspense, lazy } from "react";
 import { Plus, Trash2, Upload, Search, Send, X, Pencil, ChevronDown, Check } from "lucide-react";
 import { api } from "../api.js";
-import MarkdownEditor from "../components/knowledge/MarkdownEditor.jsx";
+// Lazy — MarkdownEditor bungkus CodeMirror (~600KB), tapi cuma dipakai saat
+// user benar-benar buka 1 dokumen KB untuk edit (`{selected && <MarkdownEditor/>}`
+// di bawah). Import statis sebelumnya menarik CodeMirror ke chunk Automation
+// SETIAP kali halaman ini dibuka, walau user cuma lihat tab Workflow/AI
+// Playground dan tidak pernah sentuh Knowledge Base sama sekali.
+const MarkdownEditor = lazy(() => import("../components/knowledge/MarkdownEditor.jsx"));
 
 // ─── Workflow Tab ─────────────────────────────────────────────────────────────
 
@@ -1294,14 +1299,16 @@ function KnowledgeBaseTab() {
         {selected && (
           <div style={{ marginBottom: 24 }}>
             <h4 style={{ margin: "0 0 10px", fontSize: 14, wordBreak: "break-all" }}>{selected.name}</h4>
-            <MarkdownEditor
-              value={content}
-              onChange={setContent}
-              onSave={handleSaveDocContent}
-              isAdmin={currentUserRole === "ADMIN"}
-              saving={savingDoc}
-              hasChanges={content !== savedContent}
-            />
+            <Suspense fallback={<div style={{ padding: 20, color: "var(--text-muted)", fontSize: 13 }}>Memuat editor…</div>}>
+              <MarkdownEditor
+                value={content}
+                onChange={setContent}
+                onSave={handleSaveDocContent}
+                isAdmin={currentUserRole === "ADMIN"}
+                saving={savingDoc}
+                hasChanges={content !== savedContent}
+              />
+            </Suspense>
           </div>
         )}
 

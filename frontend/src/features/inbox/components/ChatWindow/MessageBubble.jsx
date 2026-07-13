@@ -378,11 +378,11 @@ function MessageBubbleBase({
               // lightbox onOpenMedia (WhatsApp asli juga tidak bisa di-zoom stiker),
               // objectFit "contain" (bukan "cover" seperti .bubble-img) supaya
               // transparansi & rasio aslinya tidak terpotong/di-crop.
-              <img src={m.mediaUrl} alt="Stiker" className="bubble-sticker" onError={(e) => { e.target.style.display = "none"; }} />
+              <img src={m.mediaUrl} alt="Stiker" className="bubble-sticker" loading="lazy" decoding="async" onError={(e) => { e.target.style.display = "none"; }} />
             )}
             {m.mediaType === "image" && m.mediaUrl && (
               <button type="button" className="bubble-img-btn" onClick={() => onOpenMedia?.("image", m.mediaUrl)}>
-                <img src={m.mediaUrl} alt="Foto" className="bubble-img" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
+                <img src={m.mediaUrl} alt="Foto" className="bubble-img" loading="lazy" decoding="async" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
               </button>
             )}
             {m.mediaType === "video" && m.mediaUrl && (

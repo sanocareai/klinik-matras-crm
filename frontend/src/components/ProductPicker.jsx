@@ -141,7 +141,7 @@ export function ProductPicker({ conversation, onClose, onSent }) {
                   <button key={p.id} className="picker-product-item" onClick={() => selectProduct(p)}>
                     <div className="picker-product-thumb">
                       {thumb
-                        ? <img src={thumb.url} alt={p.name} />
+                        ? <img src={thumb.url} alt={p.name} loading="lazy" decoding="async" />
                         : <Package size={20} style={{ opacity: 0.3 }} />
                       }
                     </div>
@@ -188,7 +188,7 @@ export function ProductPicker({ conversation, onClose, onSent }) {
                         className={`picker-image-item ${checked ? "checked" : ""}`}
                         onClick={() => toggleImage(img.id)}
                       >
-                        <img src={img.url} alt={img.label || "Foto"} />
+                        <img src={img.url} alt={img.label || "Foto"} loading="lazy" decoding="async" />
                         <div className="picker-image-check">
                           {checked && <Check size={12} />}
                         </div>

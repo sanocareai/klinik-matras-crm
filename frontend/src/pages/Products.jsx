@@ -240,7 +240,7 @@ function ProductEditor({ product, onSaved, onDeleted }) {
           <div className="product-image-grid">
             {images.map((img, idx) => (
               <div key={img.id} className="product-image-item">
-                <img src={img.url} alt={img.label || "Foto"} />
+                <img src={img.url} alt={img.label || "Foto"} loading="lazy" decoding="async" />
                 <div className="product-image-controls">
                   <input
                     key={img.id}
@@ -280,7 +280,7 @@ function ProductCard({ product, isActive, onClick }) {
     <button className={`product-card ${isActive ? "active" : ""}`} onClick={onClick}>
       <div className="product-card-thumb">
         {thumb
-          ? <img src={thumb.url} alt={product.name} />
+          ? <img src={thumb.url} alt={product.name} loading="lazy" decoding="async" />
           : <Package size={24} style={{ opacity: 0.3 }} />
         }
       </div>

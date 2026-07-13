@@ -3,7 +3,8 @@ import { Download, RefreshCw, MoreVertical } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import { formatRupiah, STAGE_LABELS } from "../utils/format.js";
-import { exportToExcel } from "../utils/export.js";
+// Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
+// file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
 const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
 const DOT_CLASS = { LEAD: "dot-lead", QUALIFIED: "dot-qualified", QUOTED: "dot-quoted", WON: "dot-won", LOST: "dot-lost" };
@@ -80,7 +81,8 @@ export default function Pipeline() {
     await moveCardToStage(card, fromStage, toStage);
   }
 
-  function handleExport() {
+  async function handleExport() {
+    const { exportToExcel } = await import("../utils/export.js");
     const rows = [];
     STAGES.forEach((stage) => {
       getCards(stage).forEach((c) => {

@@ -7,7 +7,8 @@ import { TrendingUp, TrendingDown, Minus, Download, RefreshCw } from "lucide-rea
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { formatRupiah, formatDuration, labelBulan, getDatePreset, STAGE_LABELS } from "../utils/format.js";
-import { exportToExcel } from "../utils/export.js";
+// Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
+// file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
 const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Performa CS"];
 
@@ -79,7 +80,8 @@ export default function Laporan() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  function handleExportRingkasan() {
+  async function handleExportRingkasan() {
+    const { exportToExcel } = await import("../utils/export.js");
     exportToExcel([
       { Metrik: "Pelanggan Baru",    Nilai: overview?.newCustomers || 0 },
       { Metrik: "Total Order",       Nilai: overview?.totalOrders || 0 },
@@ -90,7 +92,8 @@ export default function Laporan() {
     ], `laporan-ringkasan-${range.from}-${range.to}`);
   }
 
-  function handleExportCS() {
+  async function handleExportCS() {
+    const { exportToExcel } = await import("../utils/export.js");
     const tMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
     exportToExcel(
       csPerf.map((r) => {

@@ -13,6 +13,8 @@ export default function Avatar({ name, src, size = "sm" }) {
         alt={initials}
         className={`avatar avatar-${size}`}
         style={{ objectFit: "cover" }}
+        loading="lazy"
+        decoding="async"
         onError={() => setImgError(true)}
       />
     );

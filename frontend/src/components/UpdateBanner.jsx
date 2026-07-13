@@ -16,11 +16,27 @@ import React from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { RefreshCw, X } from "lucide-react";
 
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 jam
+
 export default function UpdateBanner() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    // Tanpa ini, SW cuma dicek ulang browser saat navigasi/reload halaman —
+    // sales/admin yang biasa buka CRM ini di 1 tab terus-menerus SEHARIAN
+    // tanpa pernah reload manual TIDAK AKAN pernah lihat banner update
+    // sampai mereka kebetulan reload sendiri, padahal tujuan autoUpdate
+    // justru supaya tidak perlu itu. Polling registration.update() tiap
+    // jam selama tab terbuka memastikan SW baru terdeteksi & banner ini
+    // muncul walau tab tidak pernah ditutup/direfresh.
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) return;
+      setInterval(() => {
+        registration.update().catch(() => {});
+      }, UPDATE_CHECK_INTERVAL_MS);
+    },
+  });
 
   // Tidak perlu tampilkan apapun kalau tidak ada update
   if (!needRefresh) return null;

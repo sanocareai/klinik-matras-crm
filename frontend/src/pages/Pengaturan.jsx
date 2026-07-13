@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
-import { exportToExcel } from "../utils/export.js";
+// Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
+// file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
 
 // Polling fallback (Fix UX sync-history) kalau socket putus/belum sempat
@@ -573,6 +574,7 @@ export default function Pengaturan({ user }) {
   }
 
   async function handleExportCustomers() {
+    const { exportToExcel } = await import("../utils/export.js");
     const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     setExporting(true);
     try {
@@ -871,7 +873,7 @@ export default function Pengaturan({ user }) {
                   </div>
                   <button className="btn btn-ghost" onClick={async () => {
                     try {
-                      const faq = await api.getFaq();
+                      const [{ exportToExcel }, faq] = await Promise.all([import("../utils/export.js"), api.getFaq()]);
                       exportToExcel(faq.map((q) => ({ Pertanyaan: q.question, Jawaban: q.answer })), "faq-knowledge-base");
                     } catch (e) { alert("Gagal export FAQ: " + e.message); }
                   }}>

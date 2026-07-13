@@ -260,6 +260,16 @@ export default function Layout({ user, onLogout, children }) {
             <LogOut size={16} />
           </button>
         </div>
+
+        {/* Versi app kecil — supaya gampang verifikasi device tertentu sudah
+            pegang bundle terbaru (bukan basi dari service worker lama) tanpa
+            perlu buka DevTools, tersedia untuk semua role (bukan cuma admin
+            lewat Pengaturan, yang tidak bisa diakses SALES). */}
+        {!collapsed && (
+          <div className="sidebar-version" title={typeof __BUILD_TIME__ !== "undefined" ? new Date(__BUILD_TIME__).toLocaleString("id-ID") : undefined}>
+            v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
+          </div>
+        )}
       </aside>
 
       <main className="app-content">
