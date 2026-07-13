@@ -20,13 +20,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, ScrollView,
-  KeyboardAvoidingView, Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import { Package, X } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { formatRupiah } from "../utils/format";
+import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 
 const CATEGORY_OPTIONS = [
   { value: "LAYANAN", label: "Service/Upgrade" },
@@ -73,6 +74,8 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
 export default function OrderFormModal({ visible, customerId, onClose, onCreated, orderOptions: orderOptionsProp }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const { height: screenHeight } = useWindowDimensions();
+  const keyboardHeight = useKeyboardHeight();
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
@@ -194,21 +197,22 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => !saving && onClose()}>
       {/* BUG (fix): form ini banyak TextInput (Berat Badan, Keluhan, Harga
-          Total, Layanan) di dalam RN <Modal> polos — beda dari layar biasa,
-          Modal render di window/Dialog terpisah di Android yang TIDAK ikut
-          resize otomatis walau app.json sudah set windowSoftInputMode=
-          adjustResize di level Activity (lihat catatan di ChatScreen.js).
-          Tanpa KeyboardAvoidingView di sini, keyboard nutup field yang lagi
-          diisi kalau posisinya di bawah, penggunanya tidak lihat apa yang
-          diketik. behavior="height" (bukan "padding") dipakai khusus di
-          Android karena ini konten DI DALAM Modal — "height" measure ulang
-          tinggi container-nya sendiri lewat event keyboardDidShow, tidak
-          bergantung ke window resize activity yang tidak nyampur ke Modal. */}
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.modal}>
+          Total, Layanan) di dalam RN <Modal> — Modal Android SELALU bikin
+          native Dialog/Window terpisah dari Activity, TIDAK PERNAH ikut
+          windowSoftInputMode=adjustResize Activity-nya sama sekali (limitasi
+          RN, bukan hal baru). Percobaan sebelumnya (KeyboardAvoidingView
+          behavior="height") masih tidak reliable dalam praktik — "height"
+          tetap bergantung ke pengukuran layout yang bisa meleset di dalam
+          Dialog window terpisah ini. Fix: hitung LANGSUNG maxHeight modal =
+          88% tinggi layar DIKURANGI tinggi keyboard asli (dari
+          useKeyboardHeight(), berbasis event Keyboard core RN yang tidak
+          bergantung ke adjustResize sama sekali) — modal dipaksa mengecil
+          proporsional deterministik tiap keyboard muncul, header (judul+X)
+          selalu tetap kelihatan, ScrollView di dalamnya jadi lebih pendek
+          jadi field yang lagi diisi (termasuk Catatan di bagian bawah form)
+          bisa di-scroll ke atas keyboard alih-alih ketutup total. */}
+      <View style={styles.overlay}>
+        <View style={[styles.modal, { maxHeight: screenHeight * 0.88 - keyboardHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Order Baru</Text>
             <TouchableOpacity onPress={onClose} disabled={saving}>
@@ -389,7 +393,7 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <PickerSheet
         visible={showMerkPicker}
@@ -419,7 +423,11 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
 function createStyles(tokens) {
   return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24, maxHeight: "88%" },
+  // maxHeight SENGAJA tidak diset statis di sini — selalu di-override lewat
+  // inline style di render (screenHeight * 0.88 - keyboardHeight, lihat
+  // useKeyboardHeight() di atas) supaya modal mengecil proporsional tiap
+  // keyboard muncul.
+  modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
   categoryRow: { flexDirection: "row", gap: 8 },

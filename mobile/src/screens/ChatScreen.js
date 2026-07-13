@@ -15,7 +15,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Modal,
+  Alert, ActivityIndicator, Modal,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
@@ -27,6 +27,7 @@ import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
 import { lightHaptic } from "../lib/haptics";
+import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
 import { ChatListSkeleton } from "../components/SkeletonLoader";
@@ -90,6 +91,7 @@ export default function ChatScreen({ route, navigation }) {
   const STATUS_OPTIONS = useMemo(() => getStatusOptions(tokens), [tokens]);
   const { conversationId, name: routeName, isGroup: routeIsGroup, customerId: routeCustomerId } = route.params;
   const { user } = useAuth();
+  const keyboardHeight = useKeyboardHeight();
 
   const conversation = useConversationStore((s) => s.conversationsById[conversationId]);
   const allMessages = useMessagesForConv(conversationId);
@@ -554,25 +556,22 @@ export default function ChatScreen({ route, navigation }) {
   ]);
 
   return (
-    // BUG (fix): behavior="padding" di KEDUA platform dulunya dikira paling
-    // konsisten, tapi ternyata DOBEL KOMPENSASI di Android — app.json sudah
-    // set android.softwareKeyboardLayoutMode: "resize" (compile ke
-    // android:windowSoftInputMode="adjustResize" di AndroidManifest.xml),
-    // yang bikin Android RESIZE SELURUH WINDOW activity begitu keyboard
-    // muncul (native, bukan lewat RN). Kalau KeyboardAvoidingView effect
-    // "padding" TETAP jalan di atas window yang sudah mengecil itu, hasilnya
-    // paddingBottom ekstra ditambahkan LAGI sebesar tinggi keyboard — window
-    // sudah kepotong native, lalu dipotong lagi oleh RN, header+pesan+composer
-    // keremas jadi setipis garis nempel ke keyboard (nyaris tidak kelihatan
-    // sedang ngetik apa). Fix: di Android, biarkan adjustResize kerja SENDIRI
-    // (behavior=undefined, KeyboardAvoidingView tidak nambahin apa-apa) — di
-    // iOS TETAP pakai "padding" karena iOS tidak resize window native sama
-    // sekali, KeyboardAvoidingView satu-satunya mekanisme di sana.
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
-    >
+    // BUG (fix): pendekatan lama (KeyboardAvoidingView behavior=undefined di
+    // Android, mengandalkan native windowSoftInputMode=adjustResize dari
+    // app.json) TERNYATA sudah tidak reliable lagi — Expo SDK 57/RN 0.86
+    // (lihat AGENTS.md: "Expo HAS CHANGED") menegakkan edge-to-edge default
+    // di Android, dan di bawah edge-to-edge, resize Activity native yang
+    // biasa dipakai adjustResize tidak lagi konsisten memicu relayout ke
+    // screen yang dirender lewat react-native-screens/native-stack — hasilnya
+    // composer di bawah tetap ketutup keyboard total, bukan cuma dobel
+    // kompensasi seperti bug lama. Fix: paddingBottom manual dari
+    // useKeyboardHeight() (lib/useKeyboardHeight.js) — deteksi tinggi
+    // keyboard lewat event Keyboard core RN yang berbasis diff
+    // getWindowVisibleDisplayFrame (TIDAK bergantung ke adjustResize/
+    // edge-to-edge sama sekali), jadi header+list+composer digeser naik
+    // secara DETERMINISTIK sebesar tinggi keyboard asli, bukan berharap ke
+    // mekanisme native yang sudah terbukti tidak konsisten.
+    <View style={[styles.container, { paddingBottom: keyboardHeight }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -859,7 +858,7 @@ export default function ChatScreen({ route, navigation }) {
           keyboard fokus" sebelumnya TERNYATA tidak cukup (tetap menutupi
           saat keyboard tertutup), jadi disembunyikan TOTAL dari ChatScreen
           — tetap ada di HomeScreen.js (satu-satunya layar yang butuh). */}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
