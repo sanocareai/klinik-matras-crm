@@ -80,10 +80,21 @@ export default function ProfileScreen({ navigation }) {
       Alert.alert("Izin diperlukan", "Aktifkan izin akses galeri untuk mengganti foto profil.");
       return;
     }
+    // BUG (fix): allowsEditing:true dulu memanggil native crop Activity
+    // Android terpisah — Activity itu berat (load bitmap resolusi penuh),
+    // cukup sering bikin OS mematikan proses app ini di background karena
+    // tekanan memori. Begitu proses mati, seluruh JS runtime (termasuk
+    // Promise yang sedang nge-await launchImageLibraryAsync di bawah ini)
+    // ikut hilang — app "cold start" ulang begitu user selesai crop &
+    // kembali, mendarat di tab default (Home), upload TIDAK PERNAH jalan
+    // sama sekali (bukan gagal, cuma tidak sempat mulai). Aman dihapus:
+    // backend/src/routes/users.js #POST /me/avatar SUDAH crop persegi
+    // sendiri (sharp .resize(256,256,{fit:"cover"})) apa pun aspect rasio
+    // sumbernya — cropping di klien murni redundant. AttachComposer.js
+    // (picker foto chat) juga TIDAK pernah pakai allowsEditing, ini
+    // satu-satunya tempat yang beda sendiri.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
       quality: 0.9,
     });
     if (result.canceled || !result.assets?.[0]) return;
