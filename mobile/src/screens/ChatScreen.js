@@ -546,18 +546,25 @@ export default function ChatScreen({ route, navigation }) {
   ]);
 
   return (
-    // behavior="padding" di KEDUA platform (bukan "height" di Android) —
-    // "height" mengubah tinggi terukur KeyboardAvoidingView sendiri, yang di
-    // Android modern (edge-to-edge, default sejak Expo SDK 54+/RN 0.86)
-    // sering meleset/telat mengikuti animasi keyboard sehingga composer
-    // tetap ketutup. "padding" cuma menambah paddingBottom sebesar tinggi
-    // keyboard, lebih konsisten di kedua platform. Header ada DI DALAM
-    // (child) KeyboardAvoidingView ini, bukan di luar/sibling-nya, jadi
-    // TIDAK perlu keyboardVerticalOffset — offset itu cuma untuk elemen
-    // tetap di ATAS KeyboardAvoidingView yang bukan bagian dari view ini
-    // (mis. header react-navigation bawaan, yang di app ini headerShown:
-    // false / tidak dipakai).
-    <KeyboardAvoidingView style={styles.container} behavior="padding" keyboardVerticalOffset={0}>
+    // BUG (fix): behavior="padding" di KEDUA platform dulunya dikira paling
+    // konsisten, tapi ternyata DOBEL KOMPENSASI di Android — app.json sudah
+    // set android.softwareKeyboardLayoutMode: "resize" (compile ke
+    // android:windowSoftInputMode="adjustResize" di AndroidManifest.xml),
+    // yang bikin Android RESIZE SELURUH WINDOW activity begitu keyboard
+    // muncul (native, bukan lewat RN). Kalau KeyboardAvoidingView effect
+    // "padding" TETAP jalan di atas window yang sudah mengecil itu, hasilnya
+    // paddingBottom ekstra ditambahkan LAGI sebesar tinggi keyboard — window
+    // sudah kepotong native, lalu dipotong lagi oleh RN, header+pesan+composer
+    // keremas jadi setipis garis nempel ke keyboard (nyaris tidak kelihatan
+    // sedang ngetik apa). Fix: di Android, biarkan adjustResize kerja SENDIRI
+    // (behavior=undefined, KeyboardAvoidingView tidak nambahin apa-apa) — di
+    // iOS TETAP pakai "padding" karena iOS tidak resize window native sama
+    // sekali, KeyboardAvoidingView satu-satunya mekanisme di sana.
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
+    >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
