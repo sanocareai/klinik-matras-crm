@@ -10,6 +10,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable } from "react-native";
@@ -30,6 +31,16 @@ import { useSocketEvents } from "./src/hooks/useSocketEvents";
 import { useBadgeSync } from "./src/hooks/useBadgeSync";
 import { initOutboxFlush } from "./src/lib/outboxFlush";
 import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
+
+// BUG (fix, audit startup): sebelum ini TIDAK ADA preventAutoHideAsync() sama
+// sekali — splash native otomatis hilang begitu frame JS pertama di-render
+// (perilaku default Expo), padahal `if (!fontsLoaded) return <View .../>`
+// di App() di bawah masih menampilkan PERSEGI POLOS berwarna (bukan splash,
+// bukan UI asli) selama useFonts() memuat 3 berat font Inter — jadi user
+// melihat splash -> KEDIP ke kotak polos -> baru UI asli, bukan transisi
+// mulus. Fix: tahan splash TETAP tampil (bukan konten pengganti apa pun)
+// sampai font selesai dimuat, baru disembunyikan (lihat useEffect di App()).
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -262,6 +273,13 @@ export default function App() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   const [routeName, setRouteName] = useState();
   const colors = useColors();
+
+  // Baru sembunyikan splash SETELAH font siap — lihat preventAutoHideAsync()
+  // di atas kenapa ini penting (splash native tetap tampil menutupi jeda
+  // ini, bukan kotak polos di bawahnya).
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: colors.header }} />;

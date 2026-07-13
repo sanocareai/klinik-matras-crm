@@ -12,7 +12,7 @@
 // SUDAH DIHAPUS dari FlashList v2 — API resminya sekarang
 // maintainVisibleContentPosition.startRenderingFromBottom untuk chat UI
 // (lihat dokumen paket), jadi list di bawah pakai itu, bukan inverted.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, ActivityIndicator, Modal,
@@ -34,7 +34,15 @@ import { ChatListSkeleton } from "../components/SkeletonLoader";
 import MessageBubble from "../components/MessageBubble";
 import AttachComposer from "../components/AttachComposer";
 import VoiceRecorderBar from "../components/VoiceRecorderBar";
-import MediaViewerModal from "../components/MediaViewerModal";
+// Lazy (fix, audit startup): MediaViewerModal import expo-video (dipakai
+// swipe gallery foto/video) — ChatScreen.js sendiri sudah diimport statis di
+// App.js (dibutuhkan React Navigation utk registrasi Stack.Screen "ChatRoom"
+// terlepas dari chat mana yang lagi dibuka), jadi TANPA lazy, cost require()
+// expo-video ikut kebawa startup app walau sales belum tentu buka galeri
+// media di sesi itu. Sudah conditionally rendered (mediaViewer && ...) —
+// Suspense fallback={null} aman, tidak ada apa pun kelihatan sebelum modal
+// benar-benar dibuka.
+const MediaViewerModal = lazy(() => import("../components/MediaViewerModal"));
 import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
@@ -833,12 +841,14 @@ export default function ChatScreen({ route, navigation }) {
       />
 
       {mediaViewer && (
-        <MediaViewerModal
-          visible={!!mediaViewer}
-          items={mediaViewer.items}
-          initialIndex={mediaViewer.index}
-          onClose={() => setMediaViewer(null)}
-        />
+        <Suspense fallback={null}>
+          <MediaViewerModal
+            visible={!!mediaViewer}
+            items={mediaViewer.items}
+            initialIndex={mediaViewer.index}
+            onClose={() => setMediaViewer(null)}
+          />
+        </Suspense>
       )}
 
       <CustomerSheet

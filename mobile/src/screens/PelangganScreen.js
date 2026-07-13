@@ -47,13 +47,24 @@ function daysSinceChat(lastMessageAt) {
 
 // memo — FlashList recycle sel lain dengan prop baru terus-menerus saat
 // scroll; tanpa memo tiap recycle re-render walau data customer sama.
+// BUG (fix): renderCustomerRow di bawah SEBELUMNYA bungkus onPress jadi
+// closure inline (`onPress={() => openDetail(item)}`) — closure itu SELALU
+// reference baru tiap kali FlashList memanggil renderItem, walau
+// openDetail-nya sendiri sudah stabil lewat useCallback. Props CustomerRow
+// jadi tidak pernah shallow-equal antar render, memo() di sini jadi PERCUMA
+// (persis kontradiksi sama komentar "harus stabil" yang sudah ada di
+// renderCustomerRow). Fix: terima `onPress` MENTAH (openDetail langsung,
+// tanpa dibungkus), closure `() => onPress(customer)` dipindah ke DALAM
+// komponen memo ini — closure baru di sini tidak masalah karena cuma
+// dibuat ulang kalau CustomerRow SENDIRI re-render (yang berarti memo sudah
+// memutuskan render ulang memang perlu).
 const CustomerRow = memo(function CustomerRow({ customer, onPress }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const stage = customer.pipelineStage;
   const stageColor = stageColors[stage] || tokens.color.textMuted;
   return (
-    <PressableScale style={styles.row} onPress={onPress}>
+    <PressableScale style={styles.row} onPress={() => onPress(customer)}>
       <Avatar name={customer.name || customer.phone} size={44} avatarUrl={customer.profilePictureUrl} />
       <View style={styles.rowBody}>
         <Text style={styles.name} numberOfLines={1}>{customer.name || "Tanpa nama"}</Text>
@@ -223,11 +234,20 @@ export default function PelangganScreen({ navigation }) {
 
   // useCallback — renderItem list utama, closure atas openDetail (sudah
   // stabil di atas) supaya CustomerRow.memo() efektif saat scroll panjang.
+  // onPress dioper MENTAH (bukan dibungkus arrow di sini) — lihat catatan
+  // panjang di CustomerRow di atas kenapa itu penting.
   const renderCustomerRow = useCallback(({ item }) => (
-    <CustomerRow customer={item} onPress={() => openDetail(item)} />
+    <CustomerRow customer={item} onPress={openDetail} />
   ), [openDetail]);
 
-  const visible = filteredByStage.slice(0, visibleCount);
+  // useMemo — slice() SEBELUMNYA dihitung ulang tiap render PelangganScreen
+  // (termasuk render yang tidak ada hubungannya sama sekali dengan list,
+  // mis. buka picker sales, ketik di search box sebelum debounce nembak),
+  // bikin FlashList terima prop `data` dengan reference baru terus-menerus.
+  const visible = useMemo(
+    () => filteredByStage.slice(0, visibleCount),
+    [filteredByStage, visibleCount]
+  );
   const selectedSalesName = salesId ? (salesUsers.find((u) => u.id === salesId)?.name || "…") : "Semua";
 
   return (
@@ -317,7 +337,6 @@ export default function PelangganScreen({ navigation }) {
           data={visible}
           keyExtractor={(c) => c.id}
           renderItem={renderCustomerRow}
-          estimatedItemSize={82}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={

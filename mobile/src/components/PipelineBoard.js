@@ -32,11 +32,22 @@ function daysSinceChat(lastMessageAt) {
 // isinya sama (mis. customer object baru dari fetch ulang tapi field-field-
 // nya identik); tanpa memo, tiap recycle/scroll tetap re-render walau tidak
 // perlu.
-const PipelineCard = memo(function PipelineCard({ customer, onPress, onLongPress }) {
+// BUG (fix): renderItem di StageColumn SEBELUMNYA bungkus onPress/onLongPress
+// jadi closure inline (`onPress={() => onCardPress(item)}`) — reference baru
+// tiap renderItem dipanggil walau onCardPress/onLongPressCard sendiri sudah
+// stabil, jadi memo() di sini PERCUMA (sama persis bug yang sudah diperbaiki
+// di PelangganScreen.js#CustomerRow). Fix: terima callback MENTAH + stageKey
+// (primitif, stabil) sebagai prop terpisah, closure dibuat DI DALAM memo ini.
+const PipelineCard = memo(function PipelineCard({ customer, stageKey, onPress, onLongPress }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => onPress(customer)}
+      onLongPress={() => onLongPress(customer, stageKey)}
+      delayLongPress={350}
+    >
       <View style={styles.cardTop}>
         <Avatar name={customer.name || customer.phone} size={36} avatarUrl={customer.profilePictureUrl} />
         <View style={styles.cardBody}>
@@ -61,13 +72,10 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
   // useCallback — tanpa ini, renderItem jadi closure baru tiap StageColumn
   // re-render (mis. tiap onEndReached menaikkan visibleCount), yang bikin
   // SEMUA PipelineCard yang lagi kelihatan ikut re-render walau memo() sudah
-  // dipasang (prop onPress/onLongPress-nya selalu "baru").
+  // dipasang. onPress/onLongPress dioper MENTAH (bukan dibungkus arrow di
+  // sini) — lihat catatan panjang di PipelineCard kenapa itu penting.
   const renderItem = useCallback(({ item }) => (
-    <PipelineCard
-      customer={item}
-      onPress={() => onCardPress(item)}
-      onLongPress={() => onLongPressCard(item, stageKey)}
-    />
+    <PipelineCard customer={item} stageKey={stageKey} onPress={onCardPress} onLongPress={onLongPressCard} />
   ), [onCardPress, onLongPressCard, stageKey]);
 
   const handleEndReached = useCallback(() => {
@@ -90,7 +98,6 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
           data={visible}
           keyExtractor={(c) => c.id}
           renderItem={renderItem}
-          estimatedItemSize={92}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           ListFooterComponent={

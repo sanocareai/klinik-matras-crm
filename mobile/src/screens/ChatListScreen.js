@@ -247,13 +247,11 @@ export default function ChatListScreen({ navigation }) {
           data={visibleIds}
           keyExtractor={(id) => id}
           renderItem={renderItem}
-          // Diukur dari styles ConversationItem.js, bukan tebakan: card
-          // paddingVertical 13*2=26 + avatar 48 (elemen tertinggi tanpa badge
-          // session) = 74, ATAU (kalau ada badgesRow CS-1/CS-2 — sessionLabel
-          // terisi untuk mayoritas percakapan aktif di setup multi-session
-          // ini) body text ~62 + padding 26 = 88, + hairline border ~1.
-          // 86 = titik tengah realistis antara kedua kasus itu.
-          estimatedItemSize={86}
+          // BUG (fix): estimatedItemSize dulu diset di sini — prop ini SUDAH
+          // TIDAK ADA di @shopify/flash-list v2 API sama sekali (v2 pakai
+          // RecyclerView baru arsitektur yang mengukur cell otomatis/real,
+          // lihat audit yang sama di ChatScreen.js), jadi selama ini
+          // diam-diam diabaikan, dihapus supaya tidak menyesatkan pembaca.
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={
