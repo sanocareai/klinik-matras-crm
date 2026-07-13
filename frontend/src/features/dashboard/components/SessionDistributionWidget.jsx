@@ -20,14 +20,21 @@ const PERIOD_OPTIONS = [
 export default function SessionDistributionWidget({ onCardClick }) {
   const [period, setPeriod] = useState("today");
   const [rows, setRows]     = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError]   = useState(null);
 
+  // BUG (fix, glitch): setRows(null) dulu langsung dipanggil tiap ganti
+  // period (Hari Ini/7 Hari/Bulan Ini) — card CS-1/CS-2 hilang total ganti
+  // skeleton, lalu motion.div re-mount dari nol (stagger animation replay
+  // dari awal) begitu data baru datang. Kelihatan seperti "patah" tiap klik
+  // toggle padahal cuma ganti filter. Sekarang card LAMA tetap tampil
+  // (redup, lihat className loading di JSX) selama fetch baru berjalan.
   useEffect(() => {
-    setRows(null);
+    setLoading(true);
     setError(null);
     api.getSessionDistribution({ period })
-      .then(setRows)
-      .catch((e) => setError(e.message));
+      .then((data) => { setRows(data); setLoading(false); })
+      .catch((e) => { setError(e.message); setLoading(false); });
   }, [period]);
 
   return (
@@ -59,7 +66,7 @@ export default function SessionDistributionWidget({ onCardClick }) {
         </div>
       ) : (
         <motion.div
-          className="dash-session-grid"
+          className={`dash-session-grid${loading ? " dash-session-grid-loading" : ""}`}
           variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
           initial="hidden"
           animate="show"

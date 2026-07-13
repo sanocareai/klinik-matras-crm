@@ -3147,7 +3147,11 @@ input:focus, select:focus, textarea:focus {
 }
 .dash-session-period-btn.active { background: var(--bg-card); color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
 
-.dash-session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dash-session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; transition: opacity 0.15s ease; }
+/* Ganti period Hari Ini/7 Hari/Bulan Ini: card lama tetap tampil (redup)
+   selama fetch baru, bukan di-wipe ke skeleton (lihat komentar fix glitch
+   di SessionDistributionWidget.jsx). */
+.dash-session-grid-loading { opacity: 0.45; pointer-events: none; }
 .dash-session-card {
   background: var(--accent-soft); border: 1px solid #DBEAFE; border-radius: 12px;
   padding: 18px 20px; display: flex; flex-direction: column;
@@ -3174,7 +3178,11 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
   font-size: 13px; color: var(--text-primary); background: var(--bg-card);
 }
-.leads-detail-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.leads-detail-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; transition: opacity 0.15s ease; }
+/* Ganti tab Semua/CS-1/CS-2 atau tanggal: list lama tetap tampil (redup)
+   selama fetch baru berjalan, bukan di-wipe ke skeleton (lihat komentar
+   fix glitch di LeadsDetailModal.jsx). */
+.leads-detail-list-loading { opacity: 0.45; pointer-events: none; }
 .leads-detail-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   width: 100%; text-align: left; background: var(--bg-subtle); border: 1px solid transparent;

@@ -24,6 +24,7 @@ export default function LeadsDetailModal({ open, initialDate, initialSession = "
   const [date, setDate]       = useState(initialDate || todayStr());
   const [session, setSession] = useState(initialSession);
   const [rows, setRows]       = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
 
   useEffect(() => {
@@ -33,13 +34,21 @@ export default function LeadsDetailModal({ open, initialDate, initialSession = "
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // BUG (fix, glitch): dulu setRows(null) langsung dipanggil di sini setiap
+  // ganti tanggal/tab Semua-CS1-CS2 — itu WIPE seluruh list ke skeleton,
+  // lalu balik lagi ke konten begitu fetch selesai. Gonta-ganti tab dengan
+  // cepat jadi terasa "kedip"/patah (skeleton -> konten -> skeleton -> ...)
+  // walau datanya sebenarnya cuma beda filter, bukan reload dari nol.
+  // Sekarang rows LAMA tetap tampil (redup lewat className loading di JSX)
+  // selama fetch baru berjalan — skeleton PENUH cuma muncul saat rows masih
+  // null (pertama kali modal ini dibuka), transisi antar tab jadi mulus.
   useEffect(() => {
     if (!open) return;
-    setRows(null);
+    setLoading(true);
     setError(null);
     api.getLeadsDetail({ date, session })
-      .then(setRows)
-      .catch((e) => setError(e.message));
+      .then((data) => { setRows(data); setLoading(false); })
+      .catch((e) => { setError(e.message); setLoading(false); });
   }, [open, date, session]);
 
   if (!open) return null;
@@ -88,10 +97,10 @@ export default function LeadsDetailModal({ open, initialDate, initialSession = "
                 <div key={i} className="skeleton" style={{ height: 52, borderRadius: 10, marginBottom: 8 }} />
               ))}
             </div>
-          ) : rows.length === 0 ? (
+          ) : rows.length === 0 && !loading ? (
             <p className="dash-chart-empty">Tidak ada lead baru di tanggal ini.</p>
           ) : (
-            <div className="leads-detail-list">
+            <div className={`leads-detail-list${loading ? " leads-detail-list-loading" : ""}`}>
               {rows.map((r) => (
                 <button
                   key={r.id}
