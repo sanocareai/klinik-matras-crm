@@ -30,6 +30,46 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// Order/Payment status — SAMA PERSIS dengan frontend/src/utils/format.js
+// (dan backend/prisma/schema.prisma enum OrderStatus/PaymentStatus, sumber
+// kebenaran). BUG (fix): versi lama CustomerProfileContent.js punya mapping
+// SALAH (WAITING_LIST/PENGAMBILAN/PENGERJAAN/FINISH — enum yang sudah tidak
+// dipakai), jadi status order tampil mentah ("PENDING" dst, bukan
+// "Menunggu") — dipindah ke sini supaya satu sumber dipakai OrderCard.js
+// juga, tidak dobel-definisi lagi.
+export const ORDER_STATUS_LABELS = {
+  PENDING: "Menunggu",
+  PICKUP: "Pengambilan",
+  PROCESSING: "Diproses",
+  READY: "Siap Kirim",
+  DELIVERED: "Terkirim",
+  CANCELLED: "Dibatalkan",
+};
+export const ORDER_STATUS_BADGE = {
+  PENDING:    { backgroundColor: "#fef3c7", color: "#92400e" },
+  PICKUP:     { backgroundColor: "#dbeafe", color: "#1e40af" },
+  PROCESSING: { backgroundColor: "#ede9fe", color: "#5b21b6" },
+  READY:      { backgroundColor: "#ccfbf1", color: "#065f46" },
+  DELIVERED:  { backgroundColor: "#dcfce7", color: "#166534" },
+  CANCELLED:  { backgroundColor: "#fee2e2", color: "#991b1b" },
+};
+export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+
+export const PAYMENT_STATUS_LABELS = { BELUM_BAYAR: "Belum Bayar", DP: "DP", LUNAS: "Lunas" };
+export const PAYMENT_STATUS_BADGE = {
+  BELUM_BAYAR: { backgroundColor: "#fef2f2", color: "#dc2626" },
+  DP:          { backgroundColor: "#fff7ed", color: "#f97316" },
+  LUNAS:       { backgroundColor: "#f0fdf4", color: "#16a34a" },
+};
+export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
+
+export const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
+export const CATEGORY_BADGE = {
+  LAYANAN: { backgroundColor: "#ede9fe", color: "#5b21b6" },
+  BARU:    { backgroundColor: "#dcfce7", color: "#166534" },
+  SEWA:    { backgroundColor: "#dbeafe", color: "#1e40af" },
+};
+
 // "5 mnt", "2 jam", "3 hari", atau tanggal pendek kalau sudah lama
 export function timeAgo(dateStr) {
   if (!dateStr) return "";

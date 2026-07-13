@@ -22,12 +22,12 @@ import { tokens } from "../constants/theme";
 import { stageLabels } from "../theme";
 import { formatRupiah, shortDate } from "../utils/format";
 import Avatar from "./Avatar";
+import OrderCard from "./OrderCard";
 import OrderFormModal from "./OrderFormModal";
 import { ProfileSkeleton } from "./SkeletonLoader";
 import PressableScale from "./PressableScale";
 
 const STAGE_ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
-const ORDER_STATUS_LABELS = { WAITING_LIST: "Waiting List", PENGAMBILAN: "Pengambilan", PENGERJAAN: "Pengerjaan", FINISH: "Finish" };
 const LEAD_SOURCE_LABELS = {
   META_ADS: "Iklan Meta", GOOGLE_ADS: "Google Ads", WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM: "Instagram", WHATSAPP_DIRECT: "WA Langsung", REFERRAL: "Referral", OTHER: "Lainnya",
@@ -36,10 +36,6 @@ const KOTA_LIST = [
   "Jakarta Selatan", "Jakarta Barat", "Jakarta Utara", "Jakarta Pusat", "Jakarta Timur",
   "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
 ];
-
-function parseOrderNotes(order) {
-  try { return JSON.parse(order.notes) || {}; } catch { return null; }
-}
 
 // Sheet pilih 1 opsi dari daftar (dipakai Sumber Lead & Kota) — kecil,
 // tidak perlu file terpisah.
@@ -96,6 +92,14 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [showLeadSourcePicker, setShowLeadSourcePicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  // Merk Kasur/Ukuran Kasur/Jenis Layanan — satu sumber dipakai OrderFormModal
+  // (bikin order baru) DAN OrderCard (edit order) di bawah, fetch sekali di
+  // sini supaya tidak dobel-request tiap kartu order render.
+  const [orderOptions, setOrderOptions] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
+
+  useEffect(() => {
+    api.getOrderOptions().then(setOrderOptions).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     if (!customerId) return;
@@ -211,6 +215,21 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
 
   function handleOrderCreated(order) {
     setCustomer((c) => (c ? { ...c, orders: [order, ...(c.orders || [])] } : c));
+  }
+
+  // Dipanggil OrderCard setelah edit/ubah status/tandai komplain berhasil —
+  // order.value & relasi (items/weightEntries) bisa berubah dari sisi
+  // server (mis. auto-hitung ulang value), jadi refetch penuh lebih aman
+  // daripada coba merge manual di client seperti handleOrderCreated di atas.
+  async function refreshOrders() {
+    try {
+      const fresh = await api.getCustomer(customerId);
+      setCustomer(fresh);
+    } catch {}
+  }
+
+  function handleOrderDeleted(orderId) {
+    setCustomer((c) => (c ? { ...c, orders: (c.orders || []).filter((o) => o.id !== orderId) } : c));
   }
 
   if (loading) {
@@ -350,28 +369,14 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         </TouchableOpacity>
       </Section>
 
-      {/* Order */}
+      {/* Order — OrderCard urus sendiri expand/edit/hapus/status/komplain,
+          lihat catatan panjang di OrderCard.js kenapa ini dipisah dari versi
+          read-only lama. */}
       <Section title={`Order (${orders.length}) · Total ${formatRupiah(totalValue)}`}>
         {orders.length === 0 && <Text style={styles.hint}>Belum ada order</Text>}
-        {orders.map((o) => {
-          const detail = parseOrderNotes(o);
-          const layanan = (o.items || []).map((it) => it.layananName).filter(Boolean).join(", ");
-          return (
-            <View key={o.id} style={styles.orderCard}>
-              <View style={styles.orderTop}>
-                <Text style={styles.orderTitle} numberOfLines={1}>
-                  {o.orderNumber || layanan || "Order"}
-                </Text>
-                <Text style={styles.orderStatus}>{ORDER_STATUS_LABELS[o.status] || o.status}</Text>
-              </View>
-              <Text style={styles.orderValue}>{formatRupiah(o.value)}</Text>
-              {layanan ? <Text style={styles.orderNote}>Layanan: {layanan}</Text> : null}
-              {detail?.keluhanCustomer ? <Text style={styles.orderNote}>Keluhan: {detail.keluhanCustomer}</Text> : null}
-              {!detail && o.notes ? <Text style={styles.orderNote}>{o.notes}</Text> : null}
-              <Text style={styles.orderDate}>{shortDate(o.createdAt)}</Text>
-            </View>
-          );
-        })}
+        {orders.map((o) => (
+          <OrderCard key={o.id} order={o} orderOptions={orderOptions} onRefresh={refreshOrders} onDeleted={handleOrderDeleted} />
+        ))}
         <TouchableOpacity style={styles.addOrderBtn} onPress={() => setShowOrderForm(true)}>
           <Text style={styles.addOrderBtnText}>+ Order</Text>
         </TouchableOpacity>
@@ -422,6 +427,7 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         <OrderFormModal
           visible={showOrderForm}
           customerId={customerId}
+          orderOptions={orderOptions}
           onClose={() => setShowOrderForm(false)}
           onCreated={handleOrderCreated}
         />
@@ -479,18 +485,6 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
   },
   selectBoxText: { fontSize: 13, color: tokens.color.textPrimary },
-  orderCard: {
-    backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 12, marginBottom: 8,
-  },
-  orderTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  orderTitle: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, flex: 1, marginRight: 8 },
-  orderStatus: {
-    fontSize: 10, fontWeight: "700", color: tokens.color.accent, backgroundColor: tokens.color.accentSoft,
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
-  },
-  orderValue: { fontSize: 14, fontWeight: "700", color: tokens.color.success, marginTop: 4 },
-  orderNote: { fontSize: 12, color: tokens.color.textSecondary, marginTop: 2 },
-  orderDate: { fontSize: 11, color: tokens.color.textMuted, marginTop: 4 },
   addOrderBtn: {
     alignSelf: "flex-start", backgroundColor: tokens.color.accentSoft, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 8, marginTop: 4,

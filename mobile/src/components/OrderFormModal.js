@@ -66,13 +66,19 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
   );
 }
 
-export default function OrderFormModal({ visible, customerId, onClose, onCreated }) {
+export default function OrderFormModal({ visible, customerId, onClose, onCreated, orderOptions: orderOptionsProp }) {
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState(null);
 
-  const [orderOptions, setOrderOptions] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
+  // orderOptions: opsional — kalau parent (CustomerProfileContent.js) sudah
+  // fetch sekali & pakai ulang buat OrderCard.js juga, cukup dioper lewat
+  // prop di sini supaya tidak dobel GET /master-data/order-options tiap
+  // modal ini dibuka. Caller lama (belum dikasih prop ini) tetap jalan —
+  // fallback fetch sendiri seperti sebelumnya.
+  const [orderOptionsState, setOrderOptionsState] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
+  const orderOptions = orderOptionsProp || orderOptionsState;
   const [category, setCategory] = useState("LAYANAN");
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
@@ -101,7 +107,8 @@ export default function OrderFormModal({ visible, customerId, onClose, onCreated
     setItems([newItem()]);
     setWeightEntries([newWeightEntry()]);
     api.getProducts().then(setProducts).catch(() => {}).finally(() => setLoadingProducts(false));
-    api.getOrderOptions().then(setOrderOptions).catch(() => {});
+    if (!orderOptionsProp) api.getOrderOptions().then(setOrderOptionsState).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const q = search.trim().toLowerCase();

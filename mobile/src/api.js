@@ -272,11 +272,30 @@ export const api = {
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
+  // Edit/hapus order (status, paymentStatus, notes) & item layanan individual
+  // — endpoint SAMA yang dipakai OrderSection.jsx web, dipakai OrderCard.js
+  // mobile utk edit mode + quick status change + hapus.
+  updateOrder: (orderId, data) =>
+    request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteOrder: (orderId) =>
+    request(`/orders/${orderId}`, { method: "DELETE" }),
+  updateOrderItem: (itemId, data) =>
+    request(`/orders/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteOrderItem: (itemId) =>
+    request(`/orders/items/${itemId}`, { method: "DELETE" }),
+  // Tandai komplain — cuma relevan utk order yang statusnya sudah DELIVERED
+  // (lihat OrderCard.js), backend/src/routes/orders.js #PATCH /:id/complaint.
+  markOrderComplaint: (orderId, data) =>
+    request(`/orders/${orderId}/complaint`, { method: "PATCH", body: JSON.stringify(data) }),
   // Berat badan multi-orang per order (lihat backend/src/routes/orders.js
   // #POST /:id/weight-entries) — dipakai OrderFormModal, sama seperti
   // AddOrderForm di web (frontend/src/components/customer/OrderSection.jsx).
   addWeightEntry: (orderId, data) =>
     request(`/orders/${orderId}/weight-entries`, { method: "POST", body: JSON.stringify(data) }),
+  updateWeightEntry: (entryId, data) =>
+    request(`/orders/weight-entries/${entryId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteWeightEntry: (entryId) =>
+    request(`/orders/weight-entries/${entryId}`, { method: "DELETE" }),
 
   // Master data opsi form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) —
   // satu sumber dipakai OrderSection.jsx web & OrderFormModal.js mobile.
