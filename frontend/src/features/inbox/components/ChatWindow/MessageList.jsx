@@ -78,6 +78,7 @@ const MessageList = forwardRef(function MessageList(
   const prevItemCountRef = useRef(0);
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
+  const rangeChangeTimerRef = useRef(null);
 
   const windowed = useMemo(() => allMessages.slice(-visibleCount), [allMessages, visibleCount]);
   const items = useMemo(() => buildItems(windowed), [windowed]);
@@ -86,6 +87,12 @@ const MessageList = forwardRef(function MessageList(
   useEffect(() => {
     isNewConvRef.current = true;
     setVisibleCount(PAGE_SIZE);
+    // Batalkan snapshot rangeChanged yang masih tertunda dari conversation
+    // SEBELUMNYA — kalau dibiarkan jalan, closure-nya membawa conversationId
+    // lama tapi virtuosoRef.current sudah menunjuk instance Virtuoso conv
+    // BARU (key={conversationId} cuma remount <Virtuoso>, bukan MessageList
+    // ini), jadi snapshot conv baru bisa salah tersimpan di slot conv lama.
+    return () => clearTimeout(rangeChangeTimerRef.current);
   }, [conversationId]);
 
   // Jaga posisi scroll: firstItemIndex cuma di-mundurkan saat window
@@ -175,10 +182,27 @@ const MessageList = forwardRef(function MessageList(
           {...(scrollStateByConvId.has(conversationId)
             ? { restoreStateFrom: scrollStateByConvId.get(conversationId) }
             : { initialTopMostItemIndex: items.length - 1 })}
+          // BUG (fix): rangeChanged terpanggil pada SETIAP pergeseran window
+          // render Virtuoso akibat scroll — bisa puluhan kali per gesture
+          // scroll manual, TERLEPAS dari ada/tidaknya pesan baru (lihat
+          // react-virtuoso type docs: "each time the list items are
+          // rendered due to scrolling"). getState() sebelumnya dipanggil
+          // sinkron pada SETIAP event itu (snapshot ukuran+posisi seluruh
+          // list) — kerja berat berulang di main thread persis saat user
+          // sedang scroll, inilah penyebab glitch/patah yang dilaporkan
+          // (muncul sama saja baik chat diam maupun aktif terima pesan,
+          // karena akar masalahnya bukan soal data, tapi frekuensi panggilan
+          // ini). Snapshot cuma dipakai utk restore posisi scroll saat
+          // BALIK ke percakapan ini nanti (bukan sesuatu yang perlu presisi
+          // real-time) — debounce ke 1x per jeda scroll sudah lebih dari
+          // cukup, dan menghapus kerja berulang itu dari tengah gesture scroll.
           rangeChanged={() => {
-            virtuosoRef.current?.getState((state) => {
-              scrollStateByConvId.set(conversationId, state);
-            });
+            clearTimeout(rangeChangeTimerRef.current);
+            rangeChangeTimerRef.current = setTimeout(() => {
+              virtuosoRef.current?.getState((state) => {
+                scrollStateByConvId.set(conversationId, state);
+              });
+            }, 200);
           }}
           startReached={handleStartReached}
           followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
