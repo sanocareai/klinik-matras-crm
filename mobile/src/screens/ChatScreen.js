@@ -21,7 +21,7 @@ import { FlashList } from "@shopify/flash-list";
 import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
-  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2,
+  Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { tokens } from "../constants/theme";
@@ -37,6 +37,7 @@ import MediaViewerModal from "../components/MediaViewerModal";
 import ForwardModal from "../components/ForwardModal";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
+import TemplatePickerSheet from "../components/TemplatePickerSheet";
 import { useAuth } from "../context/AuthContext";
 import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
@@ -97,6 +98,7 @@ export default function ChatScreen({ route, navigation }) {
   const [highlightedId, setHighlightedId] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [forwardMsg, setForwardMsg] = useState(null);
   const [forwardBulk, setForwardBulk] = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [mediaViewer, setMediaViewer] = useState(null); // { items, index }
@@ -726,6 +728,17 @@ export default function ChatScreen({ route, navigation }) {
             </View>
           )}
           <View style={styles.inputBar}>
+            {/* Template Pesan (quick reply) — GAP (fix): mobile sudah punya
+                api.getTemplates() lama tapi tidak pernah dipakai di UI mana
+                pun, sales cuma bisa pakai template dari CRM web. Read+insert
+                saja (sama seperti TemplatePicker di Composer.jsx web) — kelola
+                template (buat/edit/hapus) TETAP cuma di web Pengaturan >
+                Template Pesan (adminOnly), tidak diport ke sini. */}
+            {!editingMessage && (
+              <PressableScale style={styles.attachBtn} onPress={() => setShowTemplatePicker(true)}>
+                <MessageSquare size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </PressableScale>
+            )}
             <AttachComposer
               conversationId={conversationId}
               onSent={(msg) => { useMessageStore.getState().appendMessage(conversationId, msg); scrollToBottomSoon(); }}
@@ -804,6 +817,13 @@ export default function ChatScreen({ route, navigation }) {
         visible={!!forwardBulk}
         messages={forwardBulk}
         onClose={() => { setForwardBulk(null); handleCancelSelection(); }}
+      />
+
+      <TemplatePickerSheet
+        visible={showTemplatePicker}
+        customer={conversation?.customer}
+        onSelect={handleChangeText}
+        onClose={() => setShowTemplatePicker(false)}
       />
 
       {mediaViewer && (
@@ -904,6 +924,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent,
     alignItems: "center", justifyContent: "center",
   },
+  attachBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   sendBtnDisabled: { opacity: 0.6 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
