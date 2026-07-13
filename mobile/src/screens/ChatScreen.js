@@ -548,7 +548,7 @@ export default function ChatScreen({ route, navigation }) {
       />
     );
   }, [
-    isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
+    styles, isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
     handleRetry, openMediaViewer, handleDeleteLocal, handleDeleteEveryone, handleEnterSelection,
     selectionMode, selectedIds, handleToggleSelect,
   ]);
