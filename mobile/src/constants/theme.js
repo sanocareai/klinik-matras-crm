@@ -19,6 +19,7 @@
 //   function createStyles(tokens) { return StyleSheet.create({ ... }); }
 // `tokens.radius`/`tokens.spacing`/`tokens.font`/`tokens.shadow` TIDAK
 // berubah antara light/dark, tetap sama persis di kedua varian di bawah.
+import { useMemo } from "react";
 import { useColorScheme } from "react-native";
 
 const LIGHT_COLOR = {
@@ -103,10 +104,28 @@ export const tokens = { color: LIGHT_COLOR, ...SHARED };
 // otomatis (useColorScheme dari react-native sudah subscribe ke perubahan
 // sistem bawaan, termasuk saat user ganti tema HP SAAT app sedang dibuka
 // — tidak perlu restart app).
+// BUG (fix, akar masalah scroll patah di MessageList/FlashList): sebelum ini,
+// tiap panggilan useTokens() balikin OBJEK LITERAL BARU (`{ color, ...SHARED }`)
+// walau scheme-nya sama persis — tidak pernah di-memo. Ini mematahkan SEMUA
+// pola `useMemo(() => createStyles(tokens), [tokens])` yang dipakai di 54
+// pemanggilan useTokens() di 29 file (termasuk MessageBubble.js DAN
+// ChatScreen.js) — dependency `tokens` selalu dianggap "berubah" tiap render,
+// jadi `styles` ikut dihitung ulang tiap render, yang menjalar ke
+// `renderItem` (dependency `styles` di ChatScreen.js) dapat reference BARU
+// tiap kali ChatScreen re-render (ketik di composer, scroll memicu
+// onStartReached/setVisibleCount, dsb) — FlashList menerima `renderItem` yang
+// identitasnya terus berubah, memo() di MessageBubble jadi PERCUMA untuk
+// SELURUH cell yang lagi tampil, bukan cuma 1 pesan yang berubah. Ini akar
+// masalah scroll "patah" di SEMUA chat (bukan cuma soal kirim pesan). Fix:
+// memo berdasar `scheme` (string primitif, stabil via Object.is selama tema
+// tidak benar-benar berganti) — sekarang objek tokens SAMA reference-nya
+// selama scheme tidak berubah, seluruh rantai memo di atas berfungsi lagi.
 export function useTokens() {
   const scheme = useColorScheme();
-  const color = scheme === "dark" ? DARK_COLOR : LIGHT_COLOR;
-  return { color, ...SHARED };
+  return useMemo(() => {
+    const color = scheme === "dark" ? DARK_COLOR : LIGHT_COLOR;
+    return { color, ...SHARED };
+  }, [scheme]);
 }
 
 // Dipakai tempat yang cuma butuh tahu light/dark (mis. pilih icon/status bar

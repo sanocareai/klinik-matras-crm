@@ -631,17 +631,16 @@ export default function ChatScreen({ route, navigation }) {
           // di FlashList (bukan estimatedItemSize semata). Pisah per
           // mediaType supaya tiap pool isinya seragam.
           getItemType={(item) => (item._type === "divider" ? "divider" : (item.message.mediaType || "text"))}
-          // BUG (fix): estimasi 57 SEBELUMNYA cuma pas untuk teks SATU
-          // baris — pesan nyata mayoritas 1-2 baris (fontSize15 line-height
-          // ~19-20px tiap baris), jadi estimasi yang representatif adalah
-          // ~2 baris: paddingVertical 8*2=16 + text 2×~19=38 + metaRow
-          // ~14+3 + row marginVertical 2*2=4 ≈ 75. Estimasi yang KETAT ke
-          // kasus minimum (1 baris) justru bikin FlashList SERING salah
-          // tebak ukuran pesan yang baru saja dikirim (kebanyakan >1 baris)
-          // → tampak "glitch" scroll naik dikit tiap kirim pesan, saat
-          // FlashList mengoreksi posisi setelah ukuran asli terukur.
-          // getItemType di atas yang menangani tipe lain (foto/video/audio/dst).
-          estimatedItemSize={75}
+          // BUG (fix): `estimatedItemSize` (yang dulu diset di sini) SUDAH
+          // TIDAK ADA di @shopify/flash-list v2 API (cek node_modules/
+          // @shopify/flash-list/dist/FlashListProps.d.ts — tidak disebut
+          // sama sekali). FlashList v2 pakai RecyclerView baru arsitektur
+          // yang mengukur ukuran cell OTOMATIS/real — prop ini dulu
+          // di-pass tapi diam-diam diabaikan sepenuhnya, tidak berpengaruh
+          // apa pun ke layout. Akar masalah scroll "patah" BUKAN di sini —
+          // lihat fix di constants/theme.js#useTokens (tokens object tidak
+          // pernah di-memo, mematahkan seluruh rantai useMemo/useCallback
+          // sampai ke `renderItem`, itu penyebab sebenarnya).
           maintainVisibleContentPosition={{
             startRenderingFromBottom: true,
             autoscrollToBottomThreshold: 0.2,
