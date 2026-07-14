@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, ChevronRight, Menu } from "lucide-react";
+import { Bell, ChevronRight, Menu, Search } from "lucide-react";
 import { formatTanggalIndo } from "../utils/format.js";
+import { CommandPalette } from "@/components/ui/command-palette.jsx";
 
 const ROUTE_LABELS = {
   "/dashboard":   ["Dashboard"],
@@ -16,46 +17,84 @@ const ROUTE_LABELS = {
   "/pengguna":    ["Pengaturan", "Pengguna & Peran"],
 };
 
+// Wave 1: reskin visual + entry ⌘K (persiapan UI). Aliran unreadCount (prop dari
+// Layout), navigasi bell → /inbox, dan onToggleMobileMenu TIDAK diubah.
 export default function Topbar({ onToggleMobileMenu, unreadCount = 0 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const crumbs = ROUTE_LABELS[pathname] || [pathname.replace("/", "")];
 
   return (
-    <div className="topbar">
-      <div className="topbar-left">
-        {/* Hamburger hanya tampil di mobile */}
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:px-6">
+      {/* Kiri: hamburger (mobile) + breadcrumb */}
+      <div className="flex min-w-0 items-center gap-2">
         <button
-          className="topbar-hamburger"
           onClick={onToggleMobileMenu}
           title="Buka menu"
+          aria-label="Buka menu"
+          className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 md:hidden"
         >
           <Menu size={20} />
         </button>
-        <div className="topbar-breadcrumb">
+        <nav className="flex min-w-0 items-center gap-1 text-[13.5px]">
           {crumbs.map((c, i) => (
             <React.Fragment key={i}>
-              {i > 0 && <ChevronRight size={13} style={{ color: "#d1d5db" }} />}
-              <span className={i === crumbs.length - 1 ? "current" : ""}>{c}</span>
+              {i > 0 && <ChevronRight size={13} className="shrink-0 text-slate-300" />}
+              <span
+                className={
+                  i === crumbs.length - 1
+                    ? "truncate font-semibold text-slate-900"
+                    : "hidden truncate text-slate-400 sm:inline"
+                }
+              >
+                {c}
+              </span>
             </React.Fragment>
           ))}
-        </div>
+        </nav>
       </div>
-      <div className="topbar-right">
-        <span className="topbar-date">{formatTanggalIndo()}</span>
+
+      {/* Kanan: search ⌘K + tanggal + notifikasi */}
+      <div className="flex items-center gap-2">
+        {/* Entry ⌘K — pill di layar lebar */}
         <button
-          className="topbar-notif"
-          title={unreadCount > 0 ? `${unreadCount} pesan belum dibaca` : "Notifikasi"}
-          onClick={() => navigate("/inbox")}
+          onClick={() => setPaletteOpen(true)}
+          className="hidden h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-500 sm:flex"
         >
-          <Bell size={16} />
+          <Search size={15} />
+          <span>Cari…</span>
+          <kbd className="ml-2 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+            ⌘K
+          </kbd>
+        </button>
+        {/* Entry ⌘K — ikon saja di mobile */}
+        <button
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Cari"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 sm:hidden"
+        >
+          <Search size={18} />
+        </button>
+
+        <span className="hidden text-[13px] text-slate-400 lg:block">{formatTanggalIndo()}</span>
+
+        <button
+          onClick={() => navigate("/inbox")}
+          title={unreadCount > 0 ? `${unreadCount} pesan belum dibaca` : "Notifikasi"}
+          aria-label="Notifikasi"
+          className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+        >
+          <Bell size={17} />
           {unreadCount > 0 && (
-            <span className="topbar-notif-badge">
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-chart-rose px-1 text-[10px] font-bold text-white">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
         </button>
       </div>
-    </div>
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+    </header>
   );
 }

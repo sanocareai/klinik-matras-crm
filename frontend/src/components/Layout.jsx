@@ -217,6 +217,10 @@ export default function Layout({ user, onLogout, children }) {
                 )}
                 {items.map(({ to, label, Icon, badge, adminOnly: itemAdmin }) => {
                   if (itemAdmin && !isAdmin) return null;
+                  // Affordance AI HALUS untuk "Tanya Sano" — ikon di-tint violet +
+                  // dot gradient kecil (bukan seluruh item jadi gradient). Murni
+                  // visual, tidak menyentuh logika/route.
+                  const isAI = to === "/copilot";
                   return (
                     <NavLink
                       key={to}
@@ -225,8 +229,11 @@ export default function Layout({ user, onLogout, children }) {
                       className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}
                       onClick={closeMobileMenu}
                     >
-                      <Icon size={17} className="nav-icon" />
+                      <Icon size={17} className={"nav-icon" + (isAI ? " nav-icon-ai" : "")} />
                       {!collapsed && <span className="nav-label">{label}</span>}
+                      {isAI && !collapsed && !(badge && unreadCount > 0) && (
+                        <span className="nav-ai-dot" aria-hidden="true" />
+                      )}
                       {badge && unreadCount > 0 && (
                         <span className="nav-badge">
                           {unreadCount > 99 ? "99+" : unreadCount}

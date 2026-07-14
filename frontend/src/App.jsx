@@ -5,6 +5,8 @@ import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
 import CoPilotFloat from "./components/CoPilotFloat.jsx";
+import { Modal } from "@/components/ui/modal.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
 
 // Fase G — code splitting: tiap halaman jadi chunk terpisah, cuma di-load
@@ -116,34 +118,25 @@ export default function App() {
     return (
       <>
         <Login onLogin={handleLogin} />
-        {sessionExpired && (
-          <div style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 9999,
-          }}>
-            <div style={{
-              background: "var(--card-bg)", borderRadius: 12, padding: "32px 28px",
-              maxWidth: 340, width: "90%", textAlign: "center",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-            }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>⏰</div>
-              <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>
-                Sesi Berakhir
-              </h3>
-              <p style={{ margin: "0 0 20px", color: "var(--text-secondary)", fontSize: 14 }}>
-                Login Anda sudah kadaluarsa. Silakan login kembali untuk melanjutkan.
-              </p>
-              <button
-                className="btn btn-primary"
-                style={{ width: "100%" }}
-                onClick={handleForceRelogin}
-              >
-                Login Kembali
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Modal sesi berakhir — sekarang lewat primitive Modal (aksesibel).
+            Tidak bisa ditutup selain lewat "Login Kembali" (onOpenChange no-op,
+            showClose false), sama seperti perilaku sebelumnya. Aksi tetap
+            handleForceRelogin (unregister SW + clear cache + hard reload). */}
+        <Modal
+          open={sessionExpired}
+          onOpenChange={() => {}}
+          showClose={false}
+          className="w-[340px] text-center"
+        >
+          <div className="mb-3 text-[40px]">⏰</div>
+          <h3 className="mb-2 text-[17px] font-bold text-slate-900">Sesi Berakhir</h3>
+          <p className="mb-5 text-sm text-slate-500">
+            Login Anda sudah kadaluarsa. Silakan login kembali untuk melanjutkan.
+          </p>
+          <Button className="w-full" onClick={handleForceRelogin}>
+            Login Kembali
+          </Button>
+        </Modal>
       </>
     );
   }

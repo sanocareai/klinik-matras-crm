@@ -132,9 +132,30 @@ body {
 .sidebar-link.active {
   background: var(--sidebar-active-bg);
   color: var(--sidebar-active-text);
+  font-weight: 600;
+}
+/* Wave 1: aksen bar kiri pada item aktif (gaya Linear/Attio) — penanda aktif
+   yang lebih premium daripada sekadar background. */
+.sidebar-link.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--color-brand-600);
 }
 .sidebar-link .nav-icon { flex-shrink: 0; opacity: 0.8; }
 .sidebar-link.active .nav-icon { opacity: 1; }
+
+/* Affordance AI "Tanya Sano" — ikon violet + dot gradient kecil dengan glow.
+   HALUS: item-nya tetap netral, hanya ikon & dot yang menandai ini fitur AI. */
+.sidebar-link .nav-icon-ai { color: var(--color-ai-violet); opacity: 1; }
+.sidebar-link.active .nav-icon-ai { color: var(--color-ai-violet); }
+.nav-ai-dot {
+  margin-left: auto;
+  width: 7px; height: 7px; border-radius: 50%;
+  background-image: var(--gradient-ai);
+  box-shadow: 0 0 0 3px var(--ai-glow);
+}
 
 .sidebar-link-disabled {
   display: flex; align-items: center; gap: 10px;
@@ -880,42 +901,9 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* ─── LOGIN ──────────────────────────────────────────────── */
-.login-page {
-  min-height: 100vh; min-height: 100dvh; /* fallback lalu override — browser lama abaikan baris dvh */
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 50%, #EFF6FF 100%);
-  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-}
-.login-version {
-  margin: 14px 0 0; font-size: 11px; color: var(--text-muted);
-  text-align: center; letter-spacing: 0.2px;
-}
-.login-card {
-  background: var(--bg-card); padding: 40px; border-radius: 20px;
-  width: 380px; max-width: 92vw;
-  display: flex; flex-direction: column; gap: 14px;
-  box-shadow: 0 20px 60px rgba(15,23,42,0.12);
-  border: 1px solid var(--border);
-}
-.login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-.login-logo-icon {
-  /* Sama seperti .sidebar-brand-icon — logo Sano sudah full-color di atas
-     dasar putih, jadi kotak brand di sini cukup putih+border, bukan gradient
-     biru (kalau dipertahankan, mark biru jadi nyaris tak kelihatan di atas
-     background biru). */
-  width: 44px; height: 44px; border-radius: 12px;
-  background: #fff; border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-size: 20px;
-}
-.login-logo-text h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--text-main); }
-.login-logo-text p  { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
-.login-card input {
-  padding: 11px 14px; border: 1px solid var(--border);
-  border-radius: var(--radius-input); font-size: 14px; width: 100%;
-}
-.login-card .btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
-.login-error { color: var(--color-danger); font-size: 13px; margin: 0; }
+/* Wave 1: halaman Login sudah migrasi penuh ke Tailwind (pages/Login.jsx).
+   Section CSS lama dihapus — grep memastikan kelas .login-* tidak lagi dipakai
+   di JSX manapun. Logika autentikasi TIDAK diubah, hanya visual. */
 
 /* ─── MISC UTILITIES ─────────────────────────────────────── */
 .text-muted   { color: var(--text-muted); }
@@ -932,35 +920,12 @@ input:focus, select:focus, textarea:focus {
 .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
 /* ─── TOPBAR ─────────────────────────────────────────────── */
-.topbar {
-  height: 56px; background: white; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 28px; flex-shrink: 0; position: sticky; top: 0; z-index: 10;
-}
-.topbar-breadcrumb { display: flex; align-items: center; gap: 6px; }
-.topbar-breadcrumb span { font-size: 13px; color: var(--text-muted); }
-.topbar-breadcrumb .current { font-weight: 700; color: var(--text-main); font-size: 14px; }
-.topbar-right { display: flex; align-items: center; gap: 12px; }
-.topbar-date { font-size: 12.5px; color: var(--text-muted); }
-.topbar-notif {
-  position: relative;
-  width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: var(--text-muted);
-  transition: background 0.12s;
-}
-.topbar-notif:hover { background: #f3f4f6; color: var(--text-main); }
-.topbar-notif-badge {
-  position: absolute; top: -5px; right: -5px;
-  min-width: 17px; height: 17px; padding: 0 4px;
-  background: var(--color-danger); color: white;
-  border-radius: 99px; font-size: 10px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  border: 2px solid var(--bg-card);
-  line-height: 1;
-}
+/* Wave 1: Topbar migrasi penuh ke Tailwind (components/Topbar.jsx) — kelas
+   .topbar* lama dihapus (grep memastikan tidak dipakai di JSX manapun).
+   Aliran unreadCount & navigasi bell → /inbox TIDAK diubah. */
 
-/* app-content must be flex column now (topbar + page) */
+/* Struktur shell — TETAP (dipakai Layout.jsx: <main class="app-content"> +
+   <div class="page-body">). JANGAN hapus. */
 .app-content { flex: 1; overflow-y: auto; background: var(--bg-page); display: flex; flex-direction: column; }
 .page-body { flex: 1; overflow-y: auto; }
 
