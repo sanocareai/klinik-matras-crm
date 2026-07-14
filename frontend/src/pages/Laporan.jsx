@@ -1,15 +1,15 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
-import { formatRupiah, formatDuration, getDatePreset, STAGE_LABELS } from "../utils/format.js";
+import { formatRupiah, getDatePreset, STAGE_LABELS } from "../utils/format.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
 import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
 import PercakapanTab from "@/features/laporan/components/PercakapanTab.jsx";
 import PenjualanTab from "@/features/laporan/components/PenjualanTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
+import PerformaCsTab from "@/features/laporan/components/PerformaCsTab.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -161,114 +161,8 @@ export default function Laporan() {
                 <PipelineTab funnel={funnel} />
               </TabsContent>
 
-              {/* ── PERFORMA CS — SENGAJA TIDAK disentuh (sesi terpisah),
-                  markup & styling lama dipertahankan apa adanya. ── */}
               <TabsContent value="Performa CS">
-                <div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-                    <button className="btn btn-ghost btn-sm" onClick={handleExportCS}>
-                      <Download size={14} /> Export Excel
-                    </button>
-                  </div>
-
-                  {csPerf.length > 0 && (
-                    <div className="stat-row" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 24 }}>
-                      <div className="stat-card" style={{ borderTop: "3px solid #6366f1" }}>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Anggota Tim Aktif</p>
-                        <p style={{ fontSize: 26, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{csPerf.length}</p>
-                      </div>
-                      <div className="stat-card" style={{ borderTop: "3px solid #3b82f6" }}>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Percakapan</p>
-                        <p style={{ fontSize: 26, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{csPerf.reduce((s, r) => s + (r.totalConversations || 0), 0)}</p>
-                      </div>
-                      <div className="stat-card" style={{ borderTop: "3px solid #22c55e" }}>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Nilai Order</p>
-                        <p style={{ fontSize: 26, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>{formatRupiah(csPerf.reduce((s, r) => s + (r.totalOrderValue || 0), 0))}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="settings-card laporan-performa-table-wrap" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
-                    <table className="user-table" style={{ width: "100%" }}>
-                      <thead>
-                        <tr>
-                          {["Nama", "Total Percakapan", "Avg Response", "Closing Rate", "Progress Target"].map((h) => (
-                            <th key={h}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {csPerf.map((row) => (
-                          <tr key={row.userId}>
-                            <td style={{ fontWeight: 700 }}>{row.name}</td>
-                            <td style={{ textAlign: "center" }}>{row.totalConversations || 0}</td>
-                            <td>{formatDuration(row.avgResponseMinutes)}</td>
-                            <td>
-                              <span style={{ fontWeight: 700, color: (row.closingRate || 0) >= 50 ? "#22c55e" : "#f59e0b" }}>
-                                {row.closingRate != null ? `${row.closingRate}%` : "—"}
-                              </span>
-                            </td>
-                            <td style={{ minWidth: 180 }}>
-                              {(() => {
-                                const sp = targetMap[row.userId];
-                                const target = sp?.target ?? 0;
-                                const pct    = sp?.percentToTarget ?? null;
-                                const barColor = !pct ? "#d1d5db"
-                                               : pct >= 100 ? "#16a34a"
-                                               : pct >= 50  ? "#2563eb"
-                                               : "#f59e0b";
-                                return (
-                                  <div>
-                                    <div style={{ fontSize: 12, marginBottom: 4 }}>
-                                      <span style={{ fontWeight: 700 }}>{formatRupiah(row.totalOrderValue || 0)}</span>
-                                      {target > 0 && (
-                                        <span style={{ color: "var(--text-muted)" }}>{" / "}{formatRupiah(target)}</span>
-                                      )}
-                                    </div>
-                                    <div style={{ height: 7, background: "#f3f4f6", borderRadius: 99, overflow: "hidden" }}>
-                                      <div style={{
-                                        height: "100%",
-                                        width: `${Math.min(pct ?? 0, 100)}%`,
-                                        background: barColor,
-                                        borderRadius: 99,
-                                        transition: "width 0.4s ease",
-                                      }} />
-                                    </div>
-                                    <div style={{ fontSize: 11, marginTop: 3, fontWeight: 600, color: pct != null ? barColor : "var(--text-muted)" }}>
-                                      {pct != null ? `${pct}%` : "Target belum diset"}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                          </tr>
-                        ))}
-                        {csPerf.length === 0 && (
-                          <tr>
-                            <td colSpan={5} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)" }}>
-                              Belum ada data performa CS pada periode ini.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {csPerf.length > 0 && (
-                    <div className="settings-card">
-                      <h3 style={{ marginTop: 0, fontSize: 15, fontWeight: 700 }}>Percakapan per CS</h3>
-                      <ResponsiveContainer width="100%" height={Math.max(180, csPerf.length * 44)}>
-                        <BarChart data={csPerf} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                          <XAxis type="number" style={{ fontSize: 11 }} />
-                          <YAxis type="category" dataKey="name" style={{ fontSize: 12 }} width={100} />
-                          <Tooltip />
-                          <Bar dataKey="totalConversations" fill="#6366f1" name="Percakapan" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
+                <PerformaCsTab csPerf={csPerf} targetMap={targetMap} onExport={handleExportCS} />
               </TabsContent>
             </>
           )}
