@@ -6,22 +6,26 @@
 
 ---
 
-## 1. Font recommendation
+## 1. Font recommendation — Geist (updated Wave 2B)
 
-- **Primary UI font: Inter** (already loaded). Rationale: it's the de-facto SaaS
-  standard (Linear, Vercel, Attio-adjacent), free, self-hostable (matches the
-  cost/privacy constraints in `CLAUDE.md §2`), and excellent at small sizes and for
-  tabular numbers. No change required.
-  Stack: `'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif`.
-- **Numbers / statistics:** Inter with `font-feature-settings: "tnum" 1, "cv01" 1;`
-  (tabular figures) so digits align in columns and don't jitter during count-up
-  animations. Apply via a `.num` / `tabular-nums` utility class on every metric,
-  table figure, and currency value.
-- **Optional display alternative (not required for v1):** if the brand later wants more
-  personality on the biggest hero numbers, a geometric like *Söhne*/*Geist* could be
-  introduced — but only self-hosted, and only for display. **Do not add a second
-  webfont in Phase 2** unless there's a clear need; it costs load time for little gain.
+- **Primary UI font: Geist Sans** (Vercel). Self-hosted via Fontsource
+  (`@fontsource-variable/geist`), so it stays offline/PWA-friendly with no CDN —
+  matching the cost/privacy constraints in `CLAUDE.md §2`. Geist is the archetypal modern
+  SaaS face (Vercel/Linear-adjacent), crisp at small sizes, with excellent tabular figures.
+  Stack (fallback to Inter → system so nothing breaks if the font hasn't loaded):
+  `'Geist Variable', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif`.
+  Wired at `main.jsx` (import) + `index.css` `body` + `tailwind.css` `@theme --font-sans`.
+- **Numbers / statistics: Geist Sans with `font-variant-numeric: tabular-nums`** so digits
+  align in columns and don't jitter during count-up. Applied via the `tabular-nums` / `.num`
+  utility on every metric, table figure, and currency value. KPI values additionally use a
+  heavier weight (700) and tighter tracking (`-0.02em`) to read as a SaaS metric, not a label.
+- **Geist Mono** (`@fontsource-variable/geist-mono`) available for data-heavy/monospace
+  contexts (`--font-mono` / `.font-mono-data`) — e.g. dense tabular data, IDs, code. Use
+  sparingly; default numeric treatment is Geist Sans + tabular.
 - **Never** use a decorative/serif/handwritten font anywhere. Clinical warmth = clean sans.
+
+> Migration note: this supersedes the earlier Inter recommendation. Inter remains only as a
+> fallback in the stack. No layout/component changes accompanied the swap — font + tokens only.
 
 ---
 

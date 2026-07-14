@@ -59,12 +59,21 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Geist (Vercel) sebagai font UI utama — fallback Inter lalu sistem supaya
+     tetap aman kalau file font belum termuat. Angka pakai tabular via util
+     tabular-nums / .num, BUKAN global (tabular bikin teks biasa terlihat aneh). */
+  font-family: 'Geist Variable', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg-page);
   color: var(--text-main);
   font-size: 14px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Helper angka gaya SaaS — tabular + fitur tnum, dipakai metrik/tabel. */
+.num, .tabular-nums { font-variant-numeric: tabular-nums; }
+.font-mono-data { font-family: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace; }
 
 /* ─── APP SHELL ─────────────────────────────────────────── */
 /* 100vh di mobile browser (Chrome/Safari) dihitung dari viewport PENUH
@@ -3010,7 +3019,7 @@ input:focus, select:focus, textarea:focus {
 
 .dash-page { padding: 28px 32px; }
 .dash-page-header { margin-bottom: 24px; }
-.dash-page-title { font-size: 22px; font-weight: 600; color: var(--text-primary); margin: 0; }
+.dash-page-title { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.01em; }
 .dash-page-sub { font-size: 13px; color: var(--text-secondary); margin: 4px 0 0; }
 
 /* ── KPI metric cards ── */
@@ -3034,7 +3043,11 @@ input:focus, select:focus, textarea:focus {
   width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.dash-metric-value { font-size: 26px; font-weight: 500; color: var(--text-primary); line-height: 1.2; letter-spacing: -0.3px; }
+.dash-metric-value {
+  /* Angka KPI gaya SaaS: Geist, weight tebal, tracking rapat, tabular. */
+  font-size: 26px; font-weight: 700; color: var(--text-primary); line-height: 1.1;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
 .dash-metric-trend { display: flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 12px; font-weight: 500; }
 .dash-metric-trend.up   { color: var(--success); }
 .dash-metric-trend.down { color: var(--danger); }

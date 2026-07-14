@@ -15,6 +15,12 @@
    disamakan dgn --success/--warning/--purple yang sudah ada di index.css,
    bukan palet baru — supaya konsisten dengan badge/status di halaman lain. */
 @theme {
+  /* Font UI — Geist (Vercel), self-hosted via Fontsource (lihat main.jsx).
+     Menghasilkan util `font-sans` / `font-mono`; body juga di-set ke Geist di
+     index.css. Fallback Inter→sistem supaya aman kalau font belum termuat. */
+  --font-sans: 'Geist Variable', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
   --color-brand-50:  #EAF2FC;
   --color-brand-100: #D3E5F8;
   --color-brand-200: #A7CBF1;
