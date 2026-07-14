@@ -5,14 +5,20 @@ import { formatRupiah } from "../../../utils/format.js";
 
 // Strip tipis "Performa Tim" — pencapaian target tim bulan ini (agregat dari
 // sales-performance). Detail per-orang ada di widget Team Health (Band 2).
-export default function SalesPerformanceStrip({ data = [], loading }) {
+export default function SalesPerformanceStrip({ data, loading, error }) {
   const rows = Array.isArray(data) ? data : [];
-  const totalTarget = rows.reduce((s, r) => s + (r.target || 0), 0);
-  const totalAchieved = rows.reduce((s, r) => s + (r.totalOrderValue || r.achieved || 0), 0);
+  const totalTarget = rows.reduce((s, r) => s + (r?.target || 0), 0);
+  const totalAchieved = rows.reduce((s, r) => s + (r?.totalOrderValue || r?.achieved || 0), 0);
   const pct = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : null;
   const variant = pct == null ? "brand" : pct >= 100 ? "success" : pct >= 60 ? "brand" : "warning";
 
   if (loading) return <div className="skeleton skeleton-card" style={{ height: 64, marginBottom: 0 }} />;
+  // API failure → strip tetap render tapi netral (tidak crash / tidak angka palsu).
+  if (error) return (
+    <Card className="flex items-center gap-2 p-4 text-[13px] text-slate-400">
+      <span className="text-sm font-semibold text-slate-600">Performa Tim</span> · gagal memuat data
+    </Card>
+  );
 
   return (
     <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5">

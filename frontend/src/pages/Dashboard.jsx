@@ -67,7 +67,7 @@ export default function Dashboard({ user }) {
           <MetricCard label="Total Order" value={ov?.totalOrders || 0} icon={ShoppingCart} trend={ov?.growthOrders} />
           <MetricCard label="Conversion Rate" value={conversion} format="percent" icon={Percent} />
         </section>
-        <SalesPerformanceStrip data={sales} loading={d.salesPerf.isLoading} />
+        <SalesPerformanceStrip data={sales} loading={d.salesPerf.isLoading} error={d.salesPerf.isError} />
 
         {/* ── BAND 2 — ACT: Sano Intelligence (unggulan, zona pembeda produk) ── */}
         <section className="rounded-3xl border border-ai-violet/15 bg-gradient-to-b from-ai-violet-soft/50 to-transparent p-4 sm:p-5">
@@ -86,12 +86,13 @@ export default function Dashboard({ user }) {
             <AIRecommendations
               items={d.recommendations.data?.items || []}
               loading={d.recommendations.isLoading}
+              error={d.recommendations.isError}
               isMock={BAND2_IS_MOCK}
             />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <HotLeads items={d.hotLeads.data?.items || []} loading={d.hotLeads.isLoading} isMock={BAND2_IS_MOCK} />
-              <FollowUpTasks items={d.followUps.data?.items || []} loading={d.followUps.isLoading} isMock={BAND2_IS_MOCK} />
-              <TeamHealth data={sales} loading={d.salesPerf.isLoading} user={user} />
+              <HotLeads items={d.hotLeads.data?.items || []} loading={d.hotLeads.isLoading} error={d.hotLeads.isError} isMock={BAND2_IS_MOCK} />
+              <FollowUpTasks items={d.followUps.data?.items || []} loading={d.followUps.isLoading} error={d.followUps.isError} isMock={BAND2_IS_MOCK} />
+              <TeamHealth data={sales} loading={d.salesPerf.isLoading} error={d.salesPerf.isError} user={user} />
             </div>
           </div>
         </section>
@@ -100,8 +101,8 @@ export default function Dashboard({ user }) {
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <PipelineWidget funnel={d.funnel.data} loading={d.funnel.isLoading} />
           <ChartWidget data={ov?.leadSourceBreakdown} loading={d.overview.isLoading} />
-          <ConversationAnalytics data={d.performance.data} loading={d.performance.isLoading} />
-          <RevenueTrend data={ov?.monthlyRevenue || []} loading={d.overview.isLoading} />
+          <ConversationAnalytics data={d.performance.data} loading={d.performance.isLoading} error={d.performance.isError} />
+          <RevenueTrend data={ov?.monthlyRevenue || []} loading={d.overview.isLoading} error={d.overview.isError} />
         </section>
       </PageBody>
 

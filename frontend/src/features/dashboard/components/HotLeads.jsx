@@ -1,30 +1,33 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Flame, ArrowRight } from "lucide-react";
+import { Flame, ArrowRight, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { STAGE_LABELS, stageVariant, formatRupiahShort } from "../../../utils/format.js";
 
 // Cincin skor 0–100 (EXPLAINABLE — sinyal & alasan tampil di bawah). Warna=urgensi.
-function ScoreRing({ score }) {
-  const color = score >= 85 ? "#dc2626" : score >= 70 ? "#f59e0b" : "#2064b7";
-  const dash = (score / 100) * 94.2;
+function ScoreRing({ score = 0 }) {
+  const s = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0;
+  const color = s >= 85 ? "#dc2626" : s >= 70 ? "#f59e0b" : "#2064b7";
+  const dash = (s / 100) * 94.2;
   return (
     <span className="relative flex h-10 w-10 shrink-0 items-center justify-center">
       <svg className="absolute inset-0 -rotate-90" viewBox="0 0 36 36">
         <circle cx="18" cy="18" r="15" fill="none" stroke="#eef2f7" strokeWidth="3.5" />
         <circle cx="18" cy="18" r="15" fill="none" stroke={color} strokeWidth="3.5" strokeDasharray={`${dash} 94.2`} strokeLinecap="round" />
       </svg>
-      <span className="text-[11px] font-bold tabular-nums" style={{ color }}>{score}</span>
+      <span className="text-[11px] font-bold tabular-nums" style={{ color }}>{s}</span>
     </span>
   );
 }
 
 // 🔥 Lead Panas — worklist terurut by skor, dengan EXPLAINABILITY: sinyal yang
 // membentuk skor + rekomendasi langkah berikutnya. Wave 2B: /analytics/hot-leads.
-export default function HotLeads({ items = [], loading, isMock }) {
+// Defensive: tahan empty response, API failure (error), & field hilang.
+export default function HotLeads({ items, loading, error, isMock }) {
   const navigate = useNavigate();
+  const list = Array.isArray(items) ? items : [];
 
   return (
     <Card className="flex flex-col">
@@ -37,10 +40,12 @@ export default function HotLeads({ items = [], loading, isMock }) {
       <CardContent className="flex flex-col gap-2">
         {loading ? (
           [...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 96, borderRadius: 14 }} />)
-        ) : items.length === 0 ? (
+        ) : error ? (
+          <EmptyState icon={AlertTriangle} title="Gagal memuat" description="Tidak bisa memuat lead panas. Coba muat ulang." />
+        ) : list.length === 0 ? (
           <EmptyState icon={Flame} title="Belum ada lead panas" description="Lead dengan sinyal beli akan muncul di sini." />
         ) : (
-          items.map((l) => (
+          list.map((l) => (
             <div
               key={l.id}
               role="button"

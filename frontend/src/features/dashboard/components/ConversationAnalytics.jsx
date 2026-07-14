@@ -1,6 +1,7 @@
 import React from "react";
-import { MessageSquare, Clock, CheckCircle2, Inbox } from "lucide-react";
+import { MessageSquare, Clock, CheckCircle2, Inbox, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card.jsx";
+import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { formatDuration } from "../../../utils/format.js";
 
 function Stat({ icon: Icon, label, value, tint }) {
@@ -18,8 +19,8 @@ function Stat({ icon: Icon, label, value, tint }) {
 }
 
 // Analitik Percakapan — ringkasan operasional WhatsApp (dari /analytics/performance).
-export default function ConversationAnalytics({ data, loading }) {
-  const p = data || {};
+export default function ConversationAnalytics({ data, loading, error }) {
+  const p = data && typeof data === "object" ? data : {};
   return (
     <Card>
       <CardHeader>
@@ -28,6 +29,10 @@ export default function ConversationAnalytics({ data, loading }) {
       <CardContent className="grid grid-cols-2 gap-3">
         {loading ? (
           [...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 62, borderRadius: 12 }} />)
+        ) : error ? (
+          <div className="col-span-2">
+            <EmptyState icon={AlertTriangle} title="Gagal memuat" description="Tidak bisa memuat analitik percakapan." />
+          </div>
         ) : (
           <>
             <Stat icon={MessageSquare} label="Total percakapan" value={p.totalConversations ?? 0} tint="bg-brand-50 text-brand-600" />

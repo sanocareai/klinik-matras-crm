@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, ArrowRight, X, CheckCircle2, Zap } from "lucide-react";
+import { Sparkles, ArrowRight, X, CheckCircle2, Zap, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -14,10 +14,11 @@ const SEV = {
 // ✨ Rekomendasi Sano — PANEL AKSI AI UNGGULAN. Rekomendasi teratas ditonjolkan
 // (hierarki kuat + alasan explainable + dampak + CTA solid); sisanya ringkas.
 // Wave 2A: data CONTOH (mock). Wave 2B: /analytics/recommendations (rule-based).
-export default function AIRecommendations({ items = [], loading, isMock }) {
+export default function AIRecommendations({ items, loading, error, isMock }) {
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState([]);
-  const visible = items.filter((i) => !dismissed.includes(i.id));
+  const list = Array.isArray(items) ? items : [];
+  const visible = list.filter((i) => i && !dismissed.includes(i.id));
   const [primary, ...rest] = visible;
 
   return (
@@ -42,6 +43,10 @@ export default function AIRecommendations({ items = [], loading, isMock }) {
             <div className="ai-shimmer h-[92px] rounded-xl" />
             <div className="ai-shimmer h-12 rounded-xl" />
             <div className="ai-shimmer h-12 rounded-xl" />
+          </div>
+        ) : error ? (
+          <div className="flex items-center gap-2 py-5 text-[13px] font-medium text-slate-500">
+            <AlertTriangle size={16} className="text-chart-orange" /> Gagal memuat rekomendasi. Coba muat ulang.
           </div>
         ) : !primary ? (
           <div className="flex items-center gap-2 py-6 text-[13px] font-medium text-ai-ink">

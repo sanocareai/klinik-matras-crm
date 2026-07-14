@@ -466,10 +466,15 @@ analyticsRouter.get("/follow-ups", async (req, res) => {
       ? {}
       : { OR: [{ assignedToId: userId }, { assignedToId: null }] };
 
+    // SCALABILITY: fetch dibatasi 100 conv OPEN + filter "pesan terakhir INBOUND"
+    // di JS. Aman di skala saat ini (≤ratusan conv open). Kalau volume tumbuh
+    // besar, ganti dengan denormalisasi (mis. Conversation.lastMessageDirection)
+    // atau raw SQL DISTINCT ON + WHERE direction='INBOUND' supaya filter terjadi
+    // di DB, bukan mem-fetch semua lalu buang sebagian.
     const convos = await prisma.conversation.findMany({
       where: { status: "OPEN", type: "INDIVIDUAL", ...scope },
       select: {
-        id: true, assignedToId: true, lastMessageAt: true, sessionId: true,
+        id: true, customerId: true, assignedToId: true, lastMessageAt: true, sessionId: true,
         customer: { select: { name: true } },
         assignedTo: { select: { name: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
@@ -478,29 +483,43 @@ analyticsRouter.get("/follow-ups", async (req, res) => {
       take: 100,
     });
 
+    // ── VERIFIKASI LOGIKA FOLLOW-UP (refinement Wave 2B) ──────────────────────
+    // "Menunggu balasan kita" HANYA bila pesan TERAKHIR di percakapan itu dari
+    // customer (direction=INBOUND). Kalau sales SUDAH membalas, pesan terakhir
+    // pasti OUTBOUND → OTOMATIS TIDAK lolos filter ini (tidak di-flag). Jadi
+    // "sales sudah balas, customer diam" TIDAK muncul; hanya "customer sudah
+    // kirim, sales belum balas" yang muncul.
     const now = Date.now();
-    const items = convos
-      .filter((c) => c.messages[0]?.direction === "INBOUND") // customer menunggu kita
-      .map((c) => {
-        const waitingMinutes = Math.floor((now - new Date(c.lastMessageAt).getTime()) / 60000);
-        const severity =
-          waitingMinutes >= 1440 ? "critical" :
-          waitingMinutes >= 180  ? "high" :
-          waitingMinutes >= 60   ? "medium" : "low";
-        return {
-          id: c.id,
-          customerName: c.customer?.name || "Tanpa nama",
-          preview: c.messages[0]?.content || "",
-          waitingMinutes,
-          severity,
-          nextAction: c.assignedToId ? "Balas" : "Ambil & balas",
-          assignedTo: c.assignedTo?.name || null,
-          unassigned: !c.assignedToId,
-          sessionLabel: c.sessionId || "CS-1",
-        };
-      })
-      .sort((a, b) => b.waitingMinutes - a.waitingMinutes)
-      .slice(0, 20);
+    const waiting = convos
+      .filter((c) => c.messages[0]?.direction === "INBOUND")
+      .map((c) => ({ c, waitingMinutes: Math.floor((now - new Date(c.lastMessageAt).getTime()) / 60000) }))
+      .sort((a, b) => b.waitingMinutes - a.waitingMinutes);
+
+    // DEDUP per customer: 1 customer bisa punya >1 conversation OPEN — tampilkan
+    // sekali saja (yang paling lama menunggu). Lihat catatan dedup lintas-widget
+    // di header hot-leads.
+    const seen = new Set();
+    const items = [];
+    for (const { c, waitingMinutes } of waiting) {
+      if (c.customerId && seen.has(c.customerId)) continue;
+      if (c.customerId) seen.add(c.customerId);
+      const severity =
+        waitingMinutes >= 1440 ? "critical" :
+        waitingMinutes >= 180  ? "high" :
+        waitingMinutes >= 60   ? "medium" : "low";
+      items.push({
+        id: c.id,
+        customerName: c.customer?.name || "Tanpa nama",
+        preview: c.messages[0]?.content || "",
+        waitingMinutes,
+        severity,
+        nextAction: c.assignedToId ? "Balas" : "Ambil & balas",
+        assignedTo: c.assignedTo?.name || null,
+        unassigned: !c.assignedToId,
+        sessionLabel: c.sessionId || "CS-1",
+      });
+      if (items.length >= 20) break;
+    }
 
     res.json({ items });
   } catch (err) {
@@ -512,6 +531,18 @@ analyticsRouter.get("/follow-ups", async (req, res) => {
 // ── GET /analytics/hot-leads ───────────────────────────────────────────────
 // Skoring TRANSPARAN & bisa diatur — bobot di satu const. Kembalikan score +
 // signals + reason + nextAction (bukan skor buram).
+//
+// PEMISAHAN SKOR (refinement Wave 2B): `signalScore` = skor rule-based sinyal
+// (yang sekarang). `aiConfidence` disiapkan NULL untuk keyakinan model AI di
+// masa depan (Phase 4) — supaya dua konsep tidak tercampur. `score` = signalScore
+// untuk kompatibilitas UI sekarang.
+//
+// DEDUP LINTAS-WIDGET: hot-leads sudah 1 baris per customer (findMany Customer),
+// follow-ups sudah dedup per customer. Overlap ANTAR widget (customer panas yang
+// JUGA menunggu balasan) DISENGAJA — dua lensa berbeda dari aksi yang sama.
+// Recommendations hanya menampilkan HITUNGAN agregat (bukan daftar customer),
+// jadi tidak menduplikasi nama. Kalau nanti ingin saling-eksklusif, koordinasikan
+// via customerId lintas endpoint (belum diperlukan sekarang).
 const HOT_WEIGHTS = {
   stage:   { QUOTED: 35, QUALIFIED: 20 },
   recency: [[30, 25], [120, 18], [360, 10], [1440, 5]], // [maxMenit, poin]
@@ -532,6 +563,11 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
       : { OR: [{ assignedSalesId: userId }, { assignedSalesId: null }] };
     const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
 
+    // SCALABILITY: kandidat dibatasi (stage QUALIFIED/QUOTED + aktif 7 hari +
+    // take 80), skoring di JS. Aman di skala saat ini. Kalau customer aktif
+    // membengkak: pindahkan penyaringan kandidat & pra-agregasi (mis. MAX order
+    // value, recency) ke SQL/prisma.aggregate atau materialized view, dan simpan
+    // signalScore terhitung (cron) daripada menghitung tiap request.
     const customers = await prisma.customer.findMany({
       where: {
         pipelineStage: { in: ["QUALIFIED", "QUOTED"] },
@@ -586,7 +622,11 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
 
       return {
         id: c.id, name: c.name || "Tanpa nama", phone: c.phone || "",
-        stage: c.pipelineStage, score, reason, signals, nextAction,
+        stage: c.pipelineStage,
+        score,                 // = signalScore (kompat UI sekarang)
+        signalScore: score,    // skor rule-based sinyal (eksplisit)
+        aiConfidence: null,    // RESERVED: keyakinan model AI (Phase 4)
+        reason, signals, nextAction,
         valueEstimate,
         assignedTo: c.assignedSales?.name || null,
         lastMessageAt: conv?.lastMessageAt || null,
@@ -662,6 +702,10 @@ analyticsRouter.get("/recommendations", async (req, res) => {
         where: { year, month, targetValue: { gt: 0 }, ...(isAdmin ? {} : { userId }) },
         include: { user: { select: { name: true } } },
       });
+      // SCALABILITY: 1 aggregate per target (≤7 sales sekarang → ≤7 query kecil).
+      // Kalau jumlah sales tumbuh banyak, ganti loop N-query ini dengan SATU
+      // groupBy (butuh salesId di Order, atau raw SQL join Customer→Order
+      // GROUP BY assignedSalesId) supaya cukup 1 query.
       for (const t of targets) {
         const agg = await prisma.order.aggregate({
           _sum: { value: true },

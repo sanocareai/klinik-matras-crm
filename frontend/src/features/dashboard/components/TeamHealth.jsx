@@ -1,9 +1,13 @@
 import React from "react";
-import { Users, Target } from "lucide-react";
+import { Users, Target, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { formatRupiah, formatRupiahShort } from "../../../utils/format.js";
+
+const ErrState = () => (
+  <EmptyState icon={AlertTriangle} title="Gagal memuat" description="Tidak bisa memuat data performa. Coba muat ulang." />
+);
 
 function pctOf(r) {
   return r.percentToTarget ?? (r.target > 0 ? Math.round(((r.totalOrderValue || 0) / r.target) * 100) : 0);
@@ -16,7 +20,7 @@ function variantOf(pct) {
 //  • ADMIN/OWNER → daftar seluruh tim (progress per-orang vs target).
 //  • SALES → tampilan personal (target saya bulan ini + sisa).
 // Wave 2A: data dari sales-performance (nyata); scoping final per-role di Wave 2B.
-export default function TeamHealth({ data = [], loading, user }) {
+export default function TeamHealth({ data, loading, error, user }) {
   const rows = Array.isArray(data) ? data : [];
   const isSales = user?.role === "SALES";
 
@@ -35,6 +39,8 @@ export default function TeamHealth({ data = [], loading, user }) {
         <CardContent>
           {loading ? (
             <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />
+          ) : error ? (
+            <ErrState />
           ) : !me || !me.target ? (
             <EmptyState icon={Target} title="Target belum diset" description="Minta admin menetapkan target bulanan Anda di Pengaturan." />
           ) : (
@@ -66,6 +72,8 @@ export default function TeamHealth({ data = [], loading, user }) {
       <CardContent className="flex flex-col gap-3.5">
         {loading ? (
           [...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 44, borderRadius: 10 }} />)
+        ) : error ? (
+          <ErrState />
         ) : rows.length === 0 ? (
           <EmptyState icon={Users} title="Belum ada target" description="Set target bulanan sales di Pengaturan untuk memantau pencapaian tim." />
         ) : (

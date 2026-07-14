@@ -27,7 +27,9 @@
  * @property {string} name
  * @property {string} phone
  * @property {"LEAD"|"QUALIFIED"|"QUOTED"|"WON"|"LOST"} stage
- * @property {number} score          0–100 (skor prioritas, EXPLAINABLE)
+ * @property {number} score          0–100 = signalScore saat ini (kompat UI)
+ * @property {number} signalScore    skor rule-based sinyal (eksplisit)
+ * @property {number|null} aiConfidence RESERVED — keyakinan model AI (Phase 4), null utk sekarang
  * @property {string} reason         ringkas kenapa "panas" (bahasa awam)
  * @property {string[]} signals      sinyal yang membentuk skor (chip pendek)
  * @property {string} nextAction     rekomendasi langkah berikutnya

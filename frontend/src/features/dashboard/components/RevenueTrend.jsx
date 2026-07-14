@@ -1,13 +1,13 @@
 import React from "react";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, AlertTriangle } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { labelBulan, formatRupiahShort } from "../../../utils/format.js";
 
 // Tren Revenue — area chart bulanan (brand blue, isian gradient lembut).
-export default function RevenueTrend({ data = [], loading }) {
-  const rows = (Array.isArray(data) ? data : []).map((d) => ({ label: labelBulan(d.month), value: d.value || 0 }));
+export default function RevenueTrend({ data, loading, error }) {
+  const rows = (Array.isArray(data) ? data : []).map((d) => ({ label: labelBulan(d?.month), value: d?.value || 0 }));
 
   return (
     <Card>
@@ -17,6 +17,8 @@ export default function RevenueTrend({ data = [], loading }) {
       <CardContent>
         {loading ? (
           <div className="skeleton" style={{ height: 220, borderRadius: 12 }} />
+        ) : error ? (
+          <EmptyState icon={AlertTriangle} title="Gagal memuat" description="Tidak bisa memuat tren revenue." />
         ) : rows.length === 0 ? (
           <EmptyState icon={TrendingUp} title="Belum ada data" description="Belum ada penjualan pada periode ini." />
         ) : (
