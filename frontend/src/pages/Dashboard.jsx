@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Users, ShoppingCart, Percent } from "lucide-react";
+import { Users, ShoppingCart, Percent, Sparkles } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { getDatePreset, formatTanggalIndo } from "../utils/format.js";
@@ -69,17 +69,30 @@ export default function Dashboard({ user }) {
         </section>
         <SalesPerformanceStrip data={sales} loading={d.salesPerf.isLoading} />
 
-        {/* ── BAND 2 — ACT: "Apa yang harus saya lakukan?" (unggulan) ── */}
-        <section className="flex flex-col gap-4">
-          <AIRecommendations
-            items={d.recommendations.data?.items || []}
-            loading={d.recommendations.isLoading}
-            isMock={BAND2_IS_MOCK}
-          />
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <HotLeads items={d.hotLeads.data?.items || []} loading={d.hotLeads.isLoading} isMock={BAND2_IS_MOCK} />
-            <FollowUpTasks items={d.followUps.data?.items || []} loading={d.followUps.isLoading} isMock={BAND2_IS_MOCK} />
-            <TeamHealth data={sales} loading={d.salesPerf.isLoading} />
+        {/* ── BAND 2 — ACT: Sano Intelligence (unggulan, zona pembeda produk) ── */}
+        <section className="rounded-3xl border border-ai-violet/15 bg-gradient-to-b from-ai-violet-soft/50 to-transparent p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ai-gradient text-white shadow-[0_6px_16px_-4px_rgba(124,58,237,0.5)]">
+              <Sparkles size={17} />
+            </span>
+            <div>
+              <div className="text-[15px] font-bold tracking-[-0.01em] text-slate-900">Sano Intelligence</div>
+              <div className="text-[12px] text-ai-ink/70">Apa yang harus dilakukan sekarang</div>
+            </div>
+            <span className="ml-auto hidden text-[11px] font-medium text-ai-ink/60 sm:block">Ditenagai AI</span>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <AIRecommendations
+              items={d.recommendations.data?.items || []}
+              loading={d.recommendations.isLoading}
+              isMock={BAND2_IS_MOCK}
+            />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <HotLeads items={d.hotLeads.data?.items || []} loading={d.hotLeads.isLoading} isMock={BAND2_IS_MOCK} />
+              <FollowUpTasks items={d.followUps.data?.items || []} loading={d.followUps.isLoading} isMock={BAND2_IS_MOCK} />
+              <TeamHealth data={sales} loading={d.salesPerf.isLoading} user={user} />
+            </div>
           </div>
         </section>
 

@@ -1,13 +1,15 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, ArrowRight } from "lucide-react";
+import { Clock } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { formatDuration } from "../../../utils/format.js";
 
-// ⏱ Perlu Follow-up — antrean percakapan yang menunggu balasan (pesan terakhir
-// dari customer). Wave 2A: data contoh (mock). Wave 2B: /analytics/follow-ups.
+// ⏱ Perlu Follow-up — antrean action-oriented: waktu tunggu menonjol (overdue
+// merah) + CTA kontekstual ("Ambil & balas" utk unassigned, "Balas" utk yg
+// sudah dipegang). Wave 2B: /analytics/follow-ups.
 export default function FollowUpTasks({ items = [], loading, isMock }) {
   const navigate = useNavigate();
 
@@ -19,30 +21,35 @@ export default function FollowUpTasks({ items = [], loading, isMock }) {
         </CardTitle>
         {isMock && <Badge variant="ai">Contoh</Badge>}
       </CardHeader>
-      <CardContent className="flex flex-col gap-0.5">
+      <CardContent className="flex flex-col gap-2">
         {loading ? (
-          [...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 52, borderRadius: 10 }} />)
+          [...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 66, borderRadius: 14 }} />)
         ) : items.length === 0 ? (
           <EmptyState icon={Clock} title="Semua sudah dibalas" description="Tidak ada percakapan yang menunggu balasan." />
         ) : (
           items.map((t) => {
             const overdue = t.waitingMinutes >= 60;
             return (
-              <button
-                key={t.id}
-                onClick={() => navigate("/inbox")}
-                className="group flex items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-slate-50"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-semibold text-slate-900">{t.customerName}</span>
-                    {t.unassigned && <Badge variant="warning">Belum diambil</Badge>}
-                  </div>
-                  <div className="truncate text-[12px] text-slate-500">{t.preview}</div>
+              <div key={t.id} className="rounded-2xl border border-slate-100 p-3 transition-colors hover:border-brand-200 hover:bg-brand-50/30">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-semibold text-slate-900">{t.customerName}</span>
+                  {t.unassigned && <Badge variant="warning">Belum diambil</Badge>}
+                  <span className={`ml-auto inline-flex items-center gap-1 text-[11px] font-bold tabular-nums ${overdue ? "text-chart-rose" : "text-slate-400"}`}>
+                    <Clock size={11} /> {formatDuration(t.waitingMinutes)}
+                  </span>
                 </div>
-                <Badge variant={overdue ? "danger" : "neutral"}>{formatDuration(t.waitingMinutes)}</Badge>
-                <ArrowRight size={14} className="shrink-0 text-slate-300 transition-colors group-hover:text-brand-600" />
-              </button>
+                <div className="mt-1 truncate text-[12px] text-slate-500">“{t.preview}”</div>
+                <div className="mt-2.5 flex items-center justify-between">
+                  <span className="text-[10.5px] font-medium text-slate-400">{t.sessionLabel}</span>
+                  <Button
+                    size="sm"
+                    variant={t.unassigned ? "default" : "outline"}
+                    onClick={() => navigate("/inbox")}
+                  >
+                    {t.nextAction || "Balas"}
+                  </Button>
+                </div>
+              </div>
             );
           })
         )}

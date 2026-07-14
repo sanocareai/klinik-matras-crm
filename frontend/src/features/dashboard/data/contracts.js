@@ -14,9 +14,10 @@
  * @property {"followup"|"unassigned"|"order"|"target"|"complaint"} type
  * @property {"high"|"med"|"low"} severity
  * @property {string} title          teks aksi ringkas (Bahasa Indonesia)
- * @property {string} detail         alasan singkat / konteks
+ * @property {string} detail         alasan singkat / konteks (EXPLAINABLE — "kenapa")
+ * @property {string} [impact]       dampak/risiko terukur (mis. "Rp8,5jt berisiko")
  * @property {number} [count]        jumlah entitas terkait (mis. 5 lead)
- * @property {string} actionLabel    label tombol ("Buka", "Lihat lead")
+ * @property {string} actionLabel    label tombol CTA ("Buka lead")
  * @property {string} href           rute tujuan (mis. "/inbox?filter=unassigned")
  */
 
@@ -26,8 +27,10 @@
  * @property {string} name
  * @property {string} phone
  * @property {"LEAD"|"QUALIFIED"|"QUOTED"|"WON"|"LOST"} stage
- * @property {number} score          0–100 (skor prioritas, EXPLAINABLE — lihat reason)
- * @property {string} reason         kenapa "panas" (bahasa awam)
+ * @property {number} score          0–100 (skor prioritas, EXPLAINABLE)
+ * @property {string} reason         ringkas kenapa "panas" (bahasa awam)
+ * @property {string[]} signals      sinyal yang membentuk skor (chip pendek)
+ * @property {string} nextAction     rekomendasi langkah berikutnya
  * @property {number} valueEstimate  perkiraan nilai (Rupiah) — 0 kalau belum ada order
  * @property {string|null} assignedTo nama sales, null = belum ditugaskan
  * @property {string} lastMessageAt  ISO datetime
@@ -40,6 +43,7 @@
  * @property {string} customerName
  * @property {string} preview        cuplikan pesan terakhir (inbound)
  * @property {number} waitingMinutes menit sejak pesan customer belum dibalas
+ * @property {string} nextAction     CTA kontekstual ("Ambil & balas" / "Balas")
  * @property {string|null} assignedTo null = di antrean "belum diambil"
  * @property {boolean} unassigned
  * @property {"CS-1"|"CS-2"} sessionLabel
@@ -52,27 +56,27 @@ const iso = (minAgo) => new Date(Date.now() - minAgo * 60000).toISOString();
 
 export const MOCK_RECOMMENDATIONS = {
   items: [
-    { id: "r1", type: "followup",   severity: "high", count: 5, title: "5 lead panas belum di-follow up", detail: "Pesan terakhir dari customer >2 jam lalu, belum dibalas.", actionLabel: "Buka lead", href: "/inbox" },
-    { id: "r2", type: "unassigned", severity: "high", count: 3, title: "3 percakapan belum diambil", detail: "Masuk antrean, belum ada sales yang klaim.", actionLabel: "Ambil sekarang", href: "/inbox" },
+    { id: "r1", type: "followup",   severity: "high", count: 5, title: "5 lead panas belum di-follow up", detail: "Pesan terakhir dari customer >2 jam lalu, belum dibalas — trust menurun makin lama.", impact: "Rp32jt potensi berisiko", actionLabel: "Buka lead", href: "/inbox" },
+    { id: "r2", type: "unassigned", severity: "high", count: 3, title: "3 percakapan belum diambil", detail: "Masuk antrean, belum ada sales yang klaim.", impact: "3 lead baru menunggu", actionLabel: "Ambil sekarang", href: "/inbox" },
     { id: "r3", type: "order",      severity: "med",  count: 2, title: "2 order siap dikonfirmasi", detail: "Status siap ambil — hubungi customer untuk penjadwalan.", actionLabel: "Lihat order", href: "/customers" },
-    { id: "r4", type: "target",     severity: "med",  title: "Target Risel 40% · 8 hari tersisa", detail: "Perlu dorongan agar mengejar target bulan ini.", actionLabel: "Lihat performa", href: "/laporan" },
+    { id: "r4", type: "target",     severity: "med",  title: "Target Risel 40% · 8 hari tersisa", detail: "Perlu dorongan agar mengejar target bulan ini.", impact: "Rp30jt di bawah target", actionLabel: "Lihat performa", href: "/laporan" },
   ],
 };
 
 export const MOCK_HOT_LEADS = {
   items: [
-    { id: "c1", name: "Bapak Andi",   phone: "6281234567890", stage: "QUOTED",    score: 92, reason: "Tanya harga nominal, belum di-follow up 3 jam", valueEstimate: 8500000, assignedTo: null,     lastMessageAt: iso(185), sessionLabel: "CS-1" },
-    { id: "c2", name: "Ibu Sari",     phone: "6285698765432", stage: "QUALIFIED", score: 84, reason: "Sudah kirim berat badan & keluhan, minat tinggi", valueEstimate: 6200000, assignedTo: "Farhan", lastMessageAt: iso(52),  sessionLabel: "CS-2" },
-    { id: "c3", name: "Bapak Joko",   phone: "6281199887766", stage: "QUOTED",    score: 78, reason: "Minta foto katalog, sinyal beli",              valueEstimate: 5000000, assignedTo: "Mila",   lastMessageAt: iso(240), sessionLabel: "CS-1" },
-    { id: "c4", name: "Ibu Rina",     phone: "6285611223344", stage: "QUALIFIED", score: 71, reason: "Balasan cepat, tanya cara order",              valueEstimate: 0,       assignedTo: null,     lastMessageAt: iso(18),  sessionLabel: "CS-1" },
+    { id: "c1", name: "Bapak Andi", phone: "6281234567890", stage: "QUOTED",    score: 92, reason: "Sinyal beli kuat, belum di-follow up 3 jam", signals: ["Tanya harga", "Sudah dikirim penawaran", "Belum dibalas 3j"], nextAction: "Follow up sekarang — kirim rincian harga", valueEstimate: 8500000, assignedTo: null,     lastMessageAt: iso(185), sessionLabel: "CS-1" },
+    { id: "c2", name: "Ibu Sari",   phone: "6285698765432", stage: "QUALIFIED", score: 84, reason: "Data lengkap, minat tinggi",                  signals: ["Berat badan terkirim", "Keluhan jelas", "Balas cepat"], nextAction: "Tawarkan rekomendasi kasur + jadwalkan", valueEstimate: 6200000, assignedTo: "Farhan", lastMessageAt: iso(52),  sessionLabel: "CS-2" },
+    { id: "c3", name: "Bapak Joko", phone: "6281199887766", stage: "QUOTED",    score: 78, reason: "Minta katalog, sinyal beli",                  signals: ["Minta foto katalog", "Sudah dikirim penawaran"], nextAction: "Kirim katalog + tanyakan ukuran", valueEstimate: 5000000, assignedTo: "Mila",   lastMessageAt: iso(240), sessionLabel: "CS-1" },
+    { id: "c4", name: "Ibu Rina",   phone: "6285611223344", stage: "QUALIFIED", score: 71, reason: "Responsif, tanya cara order",                 signals: ["Tanya cara order", "Balas cepat"], nextAction: "Bantu proses order & konfirmasi alamat", valueEstimate: 0, assignedTo: null, lastMessageAt: iso(18), sessionLabel: "CS-1" },
   ],
 };
 
 export const MOCK_FOLLOW_UPS = {
   items: [
-    { id: "cv1", customerName: "Bapak Andi", preview: "Kalau yang ukuran 160x200 harganya berapa ya?", waitingMinutes: 185, assignedTo: null,     unassigned: true,  sessionLabel: "CS-1" },
-    { id: "cv2", customerName: "Ibu Dewi",   preview: "Baik saya pikir dulu ya, nanti kabari",         waitingMinutes: 96,  assignedTo: "Kiki",   unassigned: false, sessionLabel: "CS-2" },
-    { id: "cv3", customerName: "Bapak Hadi",  preview: "Bisa COD daerah Bekasi?",                        waitingMinutes: 74,  assignedTo: null,     unassigned: true,  sessionLabel: "CS-1" },
+    { id: "cv1", customerName: "Bapak Andi", preview: "Kalau yang ukuran 160x200 harganya berapa ya?", waitingMinutes: 185, nextAction: "Ambil & balas", assignedTo: null,   unassigned: true,  sessionLabel: "CS-1" },
+    { id: "cv2", customerName: "Ibu Dewi",   preview: "Baik saya pikir dulu ya, nanti kabari",         waitingMinutes: 96,  nextAction: "Balas",         assignedTo: "Kiki", unassigned: false, sessionLabel: "CS-2" },
+    { id: "cv3", customerName: "Bapak Hadi", preview: "Bisa COD daerah Bekasi?",                        waitingMinutes: 74,  nextAction: "Ambil & balas", assignedTo: null,   unassigned: true,  sessionLabel: "CS-1" },
   ],
 };
 
