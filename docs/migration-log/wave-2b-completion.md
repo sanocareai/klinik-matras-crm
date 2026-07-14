@@ -4,16 +4,15 @@
 read-only analytics endpoints. Additive only — no WAHA/SSE/webhook/inbox/existing-API/
 schema changes.
 
-**Status gate:** code + security review **approved**. **Runtime verification is the final
-step** — Wave 3 may begin **only after** all four checks below pass on an environment with
-the database reachable (VPS or dev):
-1. ✅/⏳ ADMIN verification (team-wide access, contract shapes)
-2. ✅/⏳ SALES verification (scoped access)
-3. ✅/⏳ Field-leak guard (no out-of-contract fields)
-4. ✅/⏳ Empty-data test (`{ items: [] }` graceful)
+**Status:** ✅ **COMPLETE.** Runtime verification **PASSED** on 2026-07-15 via
+`verify-wave2b.mjs` (DB-reachable environment):
+1. ✅ ADMIN analytics — PASS (team-wide access, contract shapes)
+2. ✅ SALES security isolation — PASS (scoped: own + unassigned claimable only; no other
+   rep's data)
+3. ✅ Field-leak guard — PASS (no out-of-contract fields returned)
+4. ✅ Empty-state handling — PASS (`{ items: [] }` graceful)
 
-> Fill the checkmarks after running `verify-wave2b.mjs` (see §5). Commits are **pushed only
-> after** these pass.
+All commits pushed after this pass. Wave 3 unblocked (pending its own architecture approval).
 
 ---
 
@@ -109,6 +108,8 @@ Asserts, exiting non-zero on any failure:
 | `bd846a3` | **2B backend routes (Band 2 live)** |
 | `b188666` | 2B verification refinements (dedup, confidence prep, scalability, defensive UI) + verify script |
 | `cd7e9f5` | Security assertions in verify script |
-| _(this)_  | Wave 2B completion record |
+| `631eb17` | Wave 2B completion record |
+| _(this)_  | Mark runtime verification PASSED (2026-07-15) |
 
-**Next:** run the verification → record results here → push all commits → begin Wave 3.
+**Runtime verification: PASSED 2026-07-15.** All commits pushed. Next: Wave 3 (Customer 360)
+— architecture approval required before coding.
