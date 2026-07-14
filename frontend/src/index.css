@@ -9,14 +9,25 @@
   --text-primary:   #0F172A;  /* slate-900 */
   --text-secondary: #64748B;  /* slate-500 */
   --text-muted:     #94A3B8;  /* slate-400 */
-  --accent:         #2563EB;  /* blue-600 — tombol primer, link, active state */
-  --accent-hover:   #1D4ED8;  /* blue-700 */
-  --accent-soft:    #EFF6FF;  /* blue-50 — bg badge/selected item */
-  --success:        #10B981;  /* emerald-500 */
-  --danger:         #F43F5E;  /* rose-500 */
-  --warning:        #F59E0B;  /* amber-500 */
-  --color-purple:   #7c3aed;
-  --color-pink:     #ec4899;
+  /* ── REKONSILIASI TOKEN (Sano Design System v1, Wave 0) ────────────────
+     Sebelumnya index.css punya nilai warna SENDIRI yang sedikit beda dari
+     skala @theme di styles/tailwind.css (mis. accent #2563EB vs brand-600
+     #2064B7, success #10B981 vs chart-green #16A34A, danger #F43F5E vs
+     chart-rose #DC2626). Dua sumber warna = badge/chart Tailwind tidak match
+     dengan tombol/link CSS lama. Sekarang alias legacy MENUNJUK ke token
+     kanonik @theme (var(--color-*)) — satu sumber kebenaran, seluruh halaman
+     lama otomatis ikut palet final tanpa ganti ratusan referensi.
+     Custom property resolve saat dipakai (bukan saat di-parse), jadi aman
+     walau index.css di-import sebelum tailwind.css. Perubahan warnanya halus
+     & disengaja — lihat docs/design-system/sano-color-system.md. */
+  --accent:         var(--color-brand-600);  /* was #2563EB → #2064B7 */
+  --accent-hover:   var(--color-brand-700);  /* was #1D4ED8 → #1A5296 */
+  --accent-soft:    var(--color-brand-50);   /* was #EFF6FF → #EAF2FC */
+  --success:        var(--color-chart-green); /* was #10B981 → #16A34A */
+  --danger:         var(--color-chart-rose);  /* was #F43F5E → #DC2626 */
+  --warning:        var(--color-chart-orange);/* #F59E0B (sama, kini 1 sumber) */
+  --color-purple:   var(--color-chart-violet);/* #7c3aed (sama, kini 1 sumber) */
+  --color-pink:     #ec4899;  /* belum ada padanan kanonik — biarkan literal */
 
   /* ── Alias nama lama → token baru ──────────────────────────────────────
      Dipakai di ratusan tempat di file ini (var(--color-primary), var(--bg-page),

@@ -35,11 +35,30 @@
   --color-chart-rose:   #dc2626;
   --color-chart-rose-soft: #fee2e2;
 
+  /* ── AI LAYER (Sano Design System v1) ──────────────────────────────────
+     Satu-satunya palet BARU. Dipakai HANYA di permukaan AI (Tanya Sano,
+     kartu insight/rekomendasi, ringkasan pelanggan, badge "Draf oleh Sano").
+     ai-blue disamakan dengan brand-500 supaya gradient AI tetap "keluarga"
+     brand. Lihat docs/design-system/sano-color-system.md §3. */
+  --color-ai-violet:      #7c3aed;
+  --color-ai-blue:        #2e7dda; /* = brand-500 */
+  --color-ai-violet-soft: #ede9fe; /* = chart-violet-soft */
+  --color-ai-ink:         #5b21b6; /* teks di atas ai-violet-soft (kontras AA) */
+
   --animate-fade-rise: fade-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  /* Easing entrance standar sistem (soft ease-out-expo) — dipakai fade-rise
+     & preset motion framer-motion. Menghasilkan util `ease-entrance`. */
+  --ease-entrance: cubic-bezier(0.16, 1, 0.3, 1);
 
   @keyframes fade-rise {
     from { opacity: 0; transform: translateY(10px); }
     to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes ai-shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
 }
 
@@ -64,6 +83,50 @@
   --radius: 1rem;
 }
 
+/* ── TOKEN NON-@theme (dipakai raw CSS legacy DAN utility) ────────────────
+   Gradient & glow AI tidak masuk namespace warna @theme (bukan warna tunggal),
+   jadi didefinisikan sebagai custom property biasa di :root supaya bisa dipakai
+   di index.css lama MAUPUN class utility di bawah. Token durasi motion juga di
+   sini sebagai SATU sumber kebenaran (dipakai preset framer-motion + raw CSS).
+   Lihat docs/design-system/sano-animation-guidelines.md §2. */
+:root {
+  --gradient-ai: linear-gradient(135deg, #7c3aed 0%, #2e7dda 100%);
+  --ai-glow: rgba(124, 58, 237, 0.18);
+
+  /* Motion tokens (ms) — felt, not seen. */
+  --motion-instant: 110ms;
+  --motion-base:    180ms;
+  --motion-entrance: 300ms;
+  --motion-count:   750ms;
+  --motion-draw:    600ms;
+}
+
+/* Permukaan AI — satu-satunya tempat gradient ini boleh dipakai. */
+.bg-ai-gradient { background-image: var(--gradient-ai); }
+
+/* Teks dengan isian gradient AI (mis. angka/heading di kartu AI). */
+.text-ai-gradient {
+  background-image: var(--gradient-ai);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* State "Sano sedang berpikir" — shimmer tenang, BUKAN spinner. Satu-satunya
+   animasi ambient yang diizinkan, dan hanya selagi request berlangsung. */
+.ai-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-ai-violet-soft) 0%,
+    rgba(124, 58, 237, 0.28) 50%,
+    var(--color-ai-violet-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: ai-shimmer 1.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  /* Shimmer AI: hentikan animasi tapi biarkan warna soft-nya sebagai placeholder statis */
+  .ai-shimmer { animation: none; background: var(--color-ai-violet-soft); }
 }

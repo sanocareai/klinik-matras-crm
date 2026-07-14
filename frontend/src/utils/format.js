@@ -171,6 +171,67 @@ export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ v
 
 export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
 
+// ── WARNA STATUS DOMAIN — SATU SUMBER KEBENARAN (Sano Design System v1) ──────
+// Sebelumnya warna badge status di-hardcode tersebar di banyak halaman (rawan
+// drift, mis. label "Penawaran" nyangkut di satu tempat). Sekarang setiap
+// domain memetakan nilai enum → NAMA VARIANT komponen <Badge> (lihat
+// components/ui/badge.jsx). Halaman yang sudah migrasi cukup:
+//   <Badge variant={stageVariant(stage)}>{STAGE_LABELS[stage]}</Badge>
+// Pemetaan warna mengikuti sano-color-system.md §4 & CLAUDE.md §10.
+// PENTING: kunci ORDER_STATUS_VARIANT mengikuti enum NYATA di kode
+// (PENDING/PICKUP/... dari ORDER_STATUS_LABELS), bukan daftar lama di CLAUDE.md.
+export const STAGE_VARIANT = {
+  LEAD:      "warning", // kuning — baru masuk
+  QUALIFIED: "info",    // biru brand — prospek
+  QUOTED:    "violet",  // ungu — offers/negosiasi
+  WON:       "success", // hijau — berhasil
+  LOST:      "danger",  // merah — gagal
+};
+
+export const CONV_STATUS_LABELS = {
+  OPEN:     "Terbuka",
+  PENDING:  "Pending",
+  RESOLVED: "Selesai",
+};
+export const CONV_STATUS_VARIANT = {
+  OPEN:     "info",
+  PENDING:  "warning",
+  RESOLVED: "neutral",
+};
+
+export const HEALTH_LABELS = {
+  SAKIT:       "Sakit",
+  TIDAK_SAKIT: "Tidak Sakit",
+};
+export const HEALTH_VARIANT = {
+  SAKIT:       "danger",
+  TIDAK_SAKIT: "success",
+};
+
+export const ORDER_STATUS_VARIANT = {
+  PENDING:   "warning",
+  PICKUP:    "violet",
+  PROCESSING:"info",
+  READY:     "info",
+  DELIVERED: "success",
+  CANCELLED: "neutral",
+};
+
+export const PAYMENT_STATUS_VARIANT = {
+  BELUM_BAYAR: "danger",
+  DP:          "warning",
+  LUNAS:       "success",
+};
+
+// Helper aman — kembalikan variant "neutral" kalau enum tak dikenal, jadi UI
+// tidak pernah blank/crash untuk data lama/tak terduga.
+const pick = (map, key) => map[key] || "neutral";
+export const stageVariant      = (s) => pick(STAGE_VARIANT, s);
+export const convStatusVariant = (s) => pick(CONV_STATUS_VARIANT, s);
+export const healthVariant     = (s) => pick(HEALTH_VARIANT, s);
+export const orderStatusVariant = (s) => pick(ORDER_STATUS_VARIANT, s);
+export const paymentStatusVariant = (s) => pick(PAYMENT_STATUS_VARIANT, s);
+
 // Format range tanggal untuk label di UI (e.g. "1 Jun – 30 Jun 2026")
 export function formatDateRange(from, to) {
   if (!from || !to) return "";
