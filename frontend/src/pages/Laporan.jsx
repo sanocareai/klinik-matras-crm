@@ -99,7 +99,11 @@ export default function Laporan() {
   const targetMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
 
   return (
-    <div style={{ padding: "0 0 40px" }}>
+    <div className="dash-page" style={{ paddingBottom: 40 }}>
+      {/* BUG (fix): wrapper sebelumnya cuma punya paddingBottom (0 kiri/
+          kanan/atas) — konten nempel rata ke tepi sidebar/browser, beda
+          dari halaman lain (Dashboard dst pakai .dash-page, 28px/32px
+          desktop, 16px mobile). Reuse class yang sama di sini. */}
       {/* Header — TETAP CSS lama (belum migrasi Tailwind), konsisten dgn
           header halaman lain yang belum di-redesign. */}
       <div className="page-header">
