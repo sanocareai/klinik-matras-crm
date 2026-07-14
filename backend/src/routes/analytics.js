@@ -439,3 +439,249 @@ analyticsRouter.get("/recent-orders", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WAVE 2B — DASHBOARD BAND 2 ("Sano Intelligence"), 3 endpoint READ-ONLY.
+   Semua di bawah requireAuth (router-level, lihat atas). SCOPING per-role:
+     ADMIN → seluruh tim; SALES → miliknya + yang belum diambil (claimable).
+   TIDAK menyentuh WAHA/SSE/webhook/inbox/schema. Bentuk respons = kontrak di
+   frontend features/dashboard/data/contracts.js.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Rupiah singkat untuk field `impact` (server tak punya util frontend).
+function rpShort(n) {
+  const v = n || 0;
+  if (v >= 1_000_000) return "Rp" + (v / 1_000_000).toFixed(1).replace(/\.0$/, "") + "jt";
+  if (v >= 1_000) return "Rp" + Math.round(v / 1_000) + "rb";
+  return "Rp" + v;
+}
+
+// ── GET /analytics/follow-ups ──────────────────────────────────────────────
+// Percakapan OPEN yang pesan TERAKHIRNYA dari customer (INBOUND) = menunggu
+// balasan. Semua ditampilkan, diberi severity tier (>1j/>3j/>24j).
+analyticsRouter.get("/follow-ups", async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+    const scope = role === "ADMIN"
+      ? {}
+      : { OR: [{ assignedToId: userId }, { assignedToId: null }] };
+
+    const convos = await prisma.conversation.findMany({
+      where: { status: "OPEN", type: "INDIVIDUAL", ...scope },
+      select: {
+        id: true, assignedToId: true, lastMessageAt: true, sessionId: true,
+        customer: { select: { name: true } },
+        assignedTo: { select: { name: true } },
+        messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
+      },
+      orderBy: { lastMessageAt: "asc" },
+      take: 100,
+    });
+
+    const now = Date.now();
+    const items = convos
+      .filter((c) => c.messages[0]?.direction === "INBOUND") // customer menunggu kita
+      .map((c) => {
+        const waitingMinutes = Math.floor((now - new Date(c.lastMessageAt).getTime()) / 60000);
+        const severity =
+          waitingMinutes >= 1440 ? "critical" :
+          waitingMinutes >= 180  ? "high" :
+          waitingMinutes >= 60   ? "medium" : "low";
+        return {
+          id: c.id,
+          customerName: c.customer?.name || "Tanpa nama",
+          preview: c.messages[0]?.content || "",
+          waitingMinutes,
+          severity,
+          nextAction: c.assignedToId ? "Balas" : "Ambil & balas",
+          assignedTo: c.assignedTo?.name || null,
+          unassigned: !c.assignedToId,
+          sessionLabel: c.sessionId || "CS-1",
+        };
+      })
+      .sort((a, b) => b.waitingMinutes - a.waitingMinutes)
+      .slice(0, 20);
+
+    res.json({ items });
+  } catch (err) {
+    console.error("follow-ups error:", err);
+    res.status(500).json({ error: "Gagal memuat follow-up" });
+  }
+});
+
+// ── GET /analytics/hot-leads ───────────────────────────────────────────────
+// Skoring TRANSPARAN & bisa diatur — bobot di satu const. Kembalikan score +
+// signals + reason + nextAction (bukan skor buram).
+const HOT_WEIGHTS = {
+  stage:   { QUOTED: 35, QUALIFIED: 20 },
+  recency: [[30, 25], [120, 18], [360, 10], [1440, 5]], // [maxMenit, poin]
+  intent:  { price: 15, catalog: 10, order: 12 },        // cap total 25
+  unansweredBonus: 10,                                    // pesan terakhir INBOUND & nunggu >2j
+};
+const INTENT_RE = {
+  price:   /harga|berapa|price|nego/i,
+  catalog: /katalog|foto|gambar|brosur/i,
+  order:   /order|beli|pesan|\bdp\b|bayar|checkout/i,
+};
+
+analyticsRouter.get("/hot-leads", async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+    const scope = role === "ADMIN"
+      ? {}
+      : { OR: [{ assignedSalesId: userId }, { assignedSalesId: null }] };
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+
+    const customers = await prisma.customer.findMany({
+      where: {
+        pipelineStage: { in: ["QUALIFIED", "QUOTED"] },
+        ...scope,
+        conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: sevenDaysAgo } } },
+      },
+      select: {
+        id: true, name: true, phone: true, pipelineStage: true,
+        assignedSales: { select: { name: true } },
+        orders: { select: { value: true } },
+        conversations: {
+          where: { type: "INDIVIDUAL" },
+          orderBy: { lastMessageAt: "desc" }, take: 1,
+          select: {
+            lastMessageAt: true, sessionId: true,
+            messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
+          },
+        },
+      },
+      take: 80,
+    });
+
+    const now = Date.now();
+    const items = customers.map((c) => {
+      const conv = c.conversations[0];
+      const lastMsg = conv?.messages[0];
+      const minsSince = conv ? Math.floor((now - new Date(conv.lastMessageAt).getTime()) / 60000) : 99999;
+      const valueEstimate = c.orders.reduce((m, o) => Math.max(m, o.value || 0), 0);
+      const text = lastMsg?.content || "";
+      const signals = [];
+
+      // — skoring transparan —
+      let score = HOT_WEIGHTS.stage[c.pipelineStage] || 0;
+      if (c.pipelineStage === "QUOTED") signals.push("Sudah dikirim penawaran");
+      for (const [maxMin, pts] of HOT_WEIGHTS.recency) { if (minsSince <= maxMin) { score += pts; break; } }
+
+      let intentPts = 0;
+      if (INTENT_RE.price.test(text))   { intentPts += HOT_WEIGHTS.intent.price;   signals.push("Tanya harga"); }
+      if (INTENT_RE.catalog.test(text)) { intentPts += HOT_WEIGHTS.intent.catalog; signals.push("Minta katalog/foto"); }
+      if (INTENT_RE.order.test(text))   { intentPts += HOT_WEIGHTS.intent.order;   signals.push("Sinyal order"); }
+      score += Math.min(intentPts, 25);
+
+      const unanswered = lastMsg?.direction === "INBOUND" && minsSince > 120;
+      if (unanswered) { score += HOT_WEIGHTS.unansweredBonus; signals.push(`Belum dibalas ${Math.floor(minsSince / 60)}j`); }
+
+      score = Math.max(0, Math.min(100, Math.round(score)));
+      const reason = unanswered ? "Sinyal beli, belum di-follow up"
+        : c.pipelineStage === "QUOTED" ? "Sudah ditawari, minat tinggi" : "Prospek aktif, minat tinggi";
+      const nextAction = INTENT_RE.price.test(text) ? "Follow up — kirim rincian harga"
+        : INTENT_RE.catalog.test(text) ? "Kirim katalog + tanyakan ukuran"
+        : c.pipelineStage === "QUOTED" ? "Tindak lanjuti penawaran" : "Tawarkan rekomendasi + jadwalkan";
+
+      return {
+        id: c.id, name: c.name || "Tanpa nama", phone: c.phone || "",
+        stage: c.pipelineStage, score, reason, signals, nextAction,
+        valueEstimate,
+        assignedTo: c.assignedSales?.name || null,
+        lastMessageAt: conv?.lastMessageAt || null,
+        sessionLabel: conv?.sessionId || "CS-1",
+      };
+    })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    res.json({ items });
+  } catch (err) {
+    console.error("hot-leads error:", err);
+    res.status(500).json({ error: "Gagal memuat hot leads" });
+  }
+});
+
+// ── GET /analytics/recommendations ─────────────────────────────────────────
+// Sintesis rule-based (BUKAN LLM) atas sinyal nyata → aksi terurut.
+const SEV_RANK = { high: 0, med: 1, low: 2 };
+
+analyticsRouter.get("/recommendations", async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+    const isAdmin = role === "ADMIN";
+    const custScopeRel = isAdmin ? {} : { customer: { assignedSalesId: userId } };
+    const convScope = isAdmin ? {} : { OR: [{ assignedToId: userId }, { assignedToId: null }] };
+    const now = Date.now();
+
+    // Kumpulkan sinyal (query kecil, paralel).
+    const [openConvos, unassignedCount, readyOrders, complaintCount] = await Promise.all([
+      prisma.conversation.findMany({
+        where: { status: "OPEN", type: "INDIVIDUAL", ...convScope },
+        select: { lastMessageAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true } } },
+        take: 300,
+      }),
+      prisma.conversation.count({ where: { status: "OPEN", type: "INDIVIDUAL", assignedToId: null } }),
+      prisma.order.findMany({ where: { status: "READY", ...custScopeRel }, select: { value: true } }),
+      prisma.order.count({ where: { hasComplaint: true, ...custScopeRel } }),
+    ]);
+
+    const unansweredOver2h = openConvos.filter(
+      (c) => c.messages[0]?.direction === "INBOUND" && (now - new Date(c.lastMessageAt).getTime()) > 2 * 3_600_000
+    ).length;
+
+    const items = [];
+    if (unansweredOver2h > 0)
+      items.push({ id: "followup", type: "followup", severity: "high", count: unansweredOver2h,
+        title: `${unansweredOver2h} lead belum di-follow up`, detail: "Pesan terakhir dari customer >2 jam lalu, belum dibalas.",
+        actionLabel: "Buka lead", href: "/inbox" });
+    if (complaintCount > 0)
+      items.push({ id: "complaint", type: "complaint", severity: "high", count: complaintCount,
+        title: `${complaintCount} komplain perlu ditangani`, detail: "Komplain butuh telepon langsung — jangan biarkan menunggu.",
+        actionLabel: "Lihat", href: "/customers" });
+    if (isAdmin && unassignedCount > 0)
+      items.push({ id: "unassigned", type: "unassigned", severity: "high", count: unassignedCount,
+        title: `${unassignedCount} percakapan belum diambil`, detail: "Masuk antrean, belum ada sales yang klaim.",
+        actionLabel: "Ambil sekarang", href: "/inbox" });
+    if (readyOrders.length > 0) {
+      const sum = readyOrders.reduce((s, o) => s + (o.value || 0), 0);
+      items.push({ id: "order", type: "order", severity: "med", count: readyOrders.length,
+        title: `${readyOrders.length} order siap dikonfirmasi`, detail: "Status siap kirim — hubungi customer untuk penjadwalan.",
+        impact: sum > 0 ? `${rpShort(sum)} menunggu` : undefined, actionLabel: "Lihat order", href: "/customers" });
+    }
+
+    // Rule target: rep < 50% dengan sisa hari <= 12 (bulan berjalan).
+    const d = new Date();
+    const year = d.getFullYear(), month = d.getMonth() + 1;
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 1);
+    const daysLeft = Math.ceil((monthEnd - d) / 86_400_000);
+    if (daysLeft <= 12) {
+      const targets = await prisma.salesTarget.findMany({
+        where: { year, month, targetValue: { gt: 0 }, ...(isAdmin ? {} : { userId }) },
+        include: { user: { select: { name: true } } },
+      });
+      for (const t of targets) {
+        const agg = await prisma.order.aggregate({
+          _sum: { value: true },
+          where: { createdAt: { gte: monthStart, lt: monthEnd }, customer: { assignedSalesId: t.userId } },
+        });
+        const achieved = agg._sum.value || 0;
+        const pct = Math.round((achieved / t.targetValue) * 100);
+        if (pct < 50)
+          items.push({ id: `target-${t.userId}`, type: "target", severity: "med",
+            title: `Target ${t.user?.name || "sales"} ${pct}% · ${daysLeft} hari tersisa`,
+            detail: "Perlu dorongan untuk mengejar target bulan ini.",
+            impact: `${rpShort(t.targetValue - achieved)} di bawah target`,
+            actionLabel: "Lihat performa", href: "/laporan" });
+      }
+    }
+
+    items.sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9));
+    res.json({ items: items.slice(0, 6) });
+  } catch (err) {
+    console.error("recommendations error:", err);
+    res.status(500).json({ error: "Gagal memuat rekomendasi" });
+  }
+});

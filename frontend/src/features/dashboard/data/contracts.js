@@ -81,5 +81,6 @@ export const MOCK_FOLLOW_UPS = {
 };
 
 // Penanda global: apakah dashboard sedang memakai data contoh untuk Band 2.
-// Wave 2B set ke false setelah endpoint nyata siap.
-export const BAND2_IS_MOCK = true;
+// Wave 2B: endpoint nyata sudah siap → false. Set ke true = ROLLBACK instan ke
+// mock (useDashboardData otomatis fallback + badge "Contoh" muncul lagi).
+export const BAND2_IS_MOCK = false;

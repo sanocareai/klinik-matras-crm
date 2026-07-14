@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api.js";
-import { MOCK_RECOMMENDATIONS, MOCK_HOT_LEADS, MOCK_FOLLOW_UPS } from "../data/contracts.js";
+import { BAND2_IS_MOCK, MOCK_RECOMMENDATIONS, MOCK_HOT_LEADS, MOCK_FOLLOW_UPS } from "../data/contracts.js";
 
 // Assembler data dashboard (Wave 2A). Band 1 & 3 = endpoint NYATA (api.js),
 // Band 2 = kontrak MOCK (contracts.js) sampai Wave 2B. Tiap dataset punya
@@ -35,23 +35,17 @@ export function useDashboardData(range) {
     staleTime: 60_000,
   });
 
-  // — Data Band 2 (MOCK — kontrak untuk Wave 2B). Delay kecil supaya skeleton
-  //   sempat terlihat, meniru latensi jaringan. —
-  const recommendations = useQuery({
-    queryKey: ["dash", "recommendations-mock"],
-    queryFn: () => new Promise((r) => setTimeout(() => r(MOCK_RECOMMENDATIONS), 350)),
-    staleTime: Infinity,
+  // — Data Band 2. Wave 2B: endpoint NYATA (role-scoped di server). Bila
+  //   BAND2_IS_MOCK=true → fallback ke kontrak mock (ROLLBACK 1 baris, tanpa
+  //   ubah query). Endpoint global (bukan per-range); staleTime 45s. —
+  const band2 = (key, real, mock) => useQuery({
+    queryKey: ["dash", key, BAND2_IS_MOCK ? "mock" : "live"],
+    queryFn: () => (BAND2_IS_MOCK ? Promise.resolve(mock) : real()),
+    staleTime: BAND2_IS_MOCK ? Infinity : 45_000,
   });
-  const hotLeads = useQuery({
-    queryKey: ["dash", "hot-leads-mock"],
-    queryFn: () => new Promise((r) => setTimeout(() => r(MOCK_HOT_LEADS), 350)),
-    staleTime: Infinity,
-  });
-  const followUps = useQuery({
-    queryKey: ["dash", "follow-ups-mock"],
-    queryFn: () => new Promise((r) => setTimeout(() => r(MOCK_FOLLOW_UPS), 350)),
-    staleTime: Infinity,
-  });
+  const recommendations = band2("recommendations", api.getRecommendations, MOCK_RECOMMENDATIONS);
+  const hotLeads        = band2("hot-leads",        api.getHotLeads,        MOCK_HOT_LEADS);
+  const followUps       = band2("follow-ups",       api.getFollowUps,       MOCK_FOLLOW_UPS);
 
   return { overview, funnel, performance, salesPerf, recommendations, hotLeads, followUps };
 }

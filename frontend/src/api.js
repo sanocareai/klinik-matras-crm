@@ -220,6 +220,10 @@ export const api = {
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
+  // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
+  getRecommendations: () => request("/analytics/recommendations"),
+  getHotLeads:        () => request("/analytics/hot-leads"),
+  getFollowUps:       () => request("/analytics/follow-ups"),
   getSessionDistribution: (params) => request("/dashboard/session-distribution" + buildQuery(params)),
   getLeadsDetail: (params) => request("/dashboard/leads-detail" + buildQuery(params)),
 
