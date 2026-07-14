@@ -1,14 +1,17 @@
 import React, { useEffect, useState, useRef } from "react";
-import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles,
+  LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles, MoreVertical,
 } from "lucide-react";
+import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
+import SidebarLink from "./SidebarLink.jsx";
+import { BRAND } from "@/lib/brand.js";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 
 // Seksi sidebar — adminOnly di level section = sembunyikan seluruh seksi untuk SALES
 const NAV_SECTIONS = [
@@ -184,12 +187,14 @@ export default function Layout({ user, onLogout, children }) {
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
-            <img src="/logo-small.png" alt="Logo" style={{ width: 22, height: 22, objectFit: "contain" }} />
+            <span className="sidebar-brand-inner">
+              <img src="/logo-small.png" alt="Logo" style={{ width: 20, height: 20, objectFit: "contain" }} />
+            </span>
           </div>
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="sidebar-brand-name">Klinik Matras</div>
-              <div className="sidebar-brand-sub">Omnichannel CRM</div>
+              <div className="sidebar-brand-name">{BRAND.name}</div>
+              <div className="sidebar-brand-sub">{BRAND.subtitle}</div>
             </div>
           )}
           {/* Tombol tutup di mobile */}
@@ -208,6 +213,9 @@ export default function Layout({ user, onLogout, children }) {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
+          {/* LayoutGroup: pill aktif geser mulus antar item (layoutId). Data nav,
+              role gating, dan kondisi badge unread TIDAK berubah. */}
+          <LayoutGroup>
           {NAV_SECTIONS.map(({ section, adminOnly, items }) => {
             if (adminOnly && !isAdmin) return null;
             return (
@@ -217,55 +225,54 @@ export default function Layout({ user, onLogout, children }) {
                 )}
                 {items.map(({ to, label, Icon, badge, adminOnly: itemAdmin }) => {
                   if (itemAdmin && !isAdmin) return null;
-                  // Affordance AI HALUS untuk "Tanya Sano" — ikon di-tint violet +
-                  // dot gradient kecil (bukan seluruh item jadi gradient). Murni
-                  // visual, tidak menyentuh logika/route.
+                  // Affordance AI HALUS untuk "Tanya Sano" (ikon violet + dot).
                   const isAI = to === "/copilot";
+                  const showBadge = !!(badge && unreadCount > 0);
                   return (
-                    <NavLink
+                    <SidebarLink
                       key={to}
                       to={to}
-                      title={collapsed ? label : undefined}
-                      className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}
-                      onClick={closeMobileMenu}
-                    >
-                      <Icon size={17} className={"nav-icon" + (isAI ? " nav-icon-ai" : "")} />
-                      {!collapsed && <span className="nav-label">{label}</span>}
-                      {isAI && !collapsed && !(badge && unreadCount > 0) && (
-                        <span className="nav-ai-dot" aria-hidden="true" />
-                      )}
-                      {badge && unreadCount > 0 && (
-                        <span className="nav-badge">
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      )}
-                    </NavLink>
+                      label={label}
+                      Icon={Icon}
+                      isAI={isAI}
+                      showBadge={showBadge}
+                      badgeCount={unreadCount}
+                      collapsed={collapsed}
+                      onNavigate={closeMobileMenu}
+                    />
                   );
                 })}
               </div>
             );
           })}
+          </LayoutGroup>
         </nav>
 
-        {/* User footer */}
+        {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
+            onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
+            dari item "Keluar". Tidak menyentuh state/flow autentikasi. */}
         <div className="sidebar-footer">
-          <div style={{ flexShrink: 0 }}>
-            <div
-              className="avatar avatar-sm"
-              style={{ background: "rgba(37,99,235,0.25)", color: "#60a5fa", fontWeight: 700 }}
-            >
-              {(user.name || "?")[0].toUpperCase()}
-            </div>
-          </div>
-          {!collapsed && (
-            <div className="sidebar-user-info">
-              <div className="sidebar-user-name">{user.name}</div>
-              <span className={`role-badge ${roleLower}`}>{user.role}</span>
-            </div>
-          )}
-          <button className="sidebar-logout-btn" onClick={onLogout} title="Keluar">
-            <LogOut size={16} />
-          </button>
+          <Menu
+            align="start"
+            trigger={
+              <button className="sidebar-profile" type="button" title="Menu akun">
+                <div className="avatar avatar-sm sidebar-avatar">
+                  {(user.name || "?")[0].toUpperCase()}
+                </div>
+                {!collapsed && (
+                  <div className="sidebar-user-info">
+                    <div className="sidebar-user-name">{user.name}</div>
+                    <span className={`role-badge ${roleLower}`}>{user.role}</span>
+                  </div>
+                )}
+                {!collapsed && <MoreVertical size={15} className="sidebar-kebab-ic" />}
+              </button>
+            }
+          >
+            <MenuLabel>{user.name}</MenuLabel>
+            <MenuSeparator />
+            <MenuItem icon={LogOut} destructive onSelect={onLogout}>Keluar</MenuItem>
+          </Menu>
         </div>
 
         {/* Versi app kecil — supaya gampang verifikasi device tertentu sudah
@@ -280,7 +287,7 @@ export default function Layout({ user, onLogout, children }) {
       </aside>
 
       <main className="app-content">
-        <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} unreadCount={unreadCount} />
+        <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} unreadCount={unreadCount} user={user} onLogout={onLogout} />
         <div className="page-body">
           {children}
         </div>

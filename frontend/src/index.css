@@ -78,76 +78,88 @@ body {
 .app-shell { height: 100vh; height: 100dvh; display: flex; overflow: hidden; }
 .app-content { flex: 1; overflow-y: auto; background: var(--bg-page); }
 
-/* ─── SIDEBAR ────────────────────────────────────────────── */
+/* ─── SIDEBAR (Wave 1.1 — Elevated Light) ────────────────────
+   Panel bertekstur (cool-tint + depth) supaya shell terasa "produk", bukan
+   div putih. Mekanik collapse/mobile-drawer TIDAK diubah (kelas dipertahankan,
+   diatur di section lain). Logika nav tetap di Layout.jsx. */
 .sidebar {
-  width: 240px;
-  background: var(--sidebar-bg);
+  width: 244px;
+  background: linear-gradient(180deg, #FAFBFD 0%, #F4F7FC 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid #E6EBF3;
+  box-shadow: 1px 0 0 rgba(15,23,42,0.02), 4px 0 24px -18px rgba(15,23,42,0.20);
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 20px 20px 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 11px;
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid #EAEEF4;
 }
+/* Tile brand ber-ring gradient AI — identitas Sano lebih kuat. */
 .sidebar-brand-icon {
-  /* Logo Sano sudah full-color (biru + aksen teal) di atas dasar putih —
-     dulu ada background gradient biru di sini (dibuat utk logo lama yang
-     monokrom), tapi kalau dipertahankan logo baru jadi biru-di-atas-biru
-     (kontras jelek). Cukup kotak putih tipis + border supaya tetap kelihatan
-     sebagai "brand mark" di sidebar putih, bukan menyatu polos ke background. */
-  width: 34px; height: 34px; border-radius: 8px;
-  background: #fff; border: 1px solid var(--border);
+  width: 36px; height: 36px; border-radius: 11px; padding: 2px; flex-shrink: 0;
+  background-image: var(--gradient-ai);
+  box-shadow: 0 4px 12px -3px rgba(124,58,237,0.42);
+  display: flex;
+}
+.sidebar-brand-inner {
+  flex: 1; border-radius: 9px; background: #fff;
   display: flex; align-items: center; justify-content: center;
-  color: white; font-size: 16px;
 }
 .sidebar-brand-name {
-  font-weight: 700; font-size: 15px; color: var(--text-primary); letter-spacing: -0.2px;
+  font-weight: 800; font-size: 17px; color: var(--text-primary);
+  letter-spacing: -0.02em; line-height: 1.1;
 }
 .sidebar-brand-sub {
-  font-size: 11px; color: var(--sidebar-text); margin-top: 1px;
+  font-size: 11px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.01em;
 }
 
 .sidebar-section { padding: 12px 12px 4px; }
 .sidebar-section-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.8px; color: var(--text-muted); padding: 0 8px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: #a9b4c4; padding: 14px 10px 5px;
 }
 
-.sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 8px 12px; gap: 2px; }
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 6px 12px; gap: 1px; overflow-y: auto; }
 
 .sidebar-link {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px; border-radius: 8px;
-  color: var(--sidebar-text); text-decoration: none; font-size: 13.5px; font-weight: 500;
-  transition: background 0.15s, color 0.15s;
-  position: relative;
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 11px; border-radius: 10px;
+  color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500;
+  transition: background 0.16s ease, color 0.16s ease;
+  position: relative; z-index: 0;
 }
-.sidebar-link:hover { background: var(--sidebar-hover-bg); color: var(--text-primary); }
-.sidebar-link.active {
-  background: var(--sidebar-active-bg);
-  color: var(--sidebar-active-text);
-  font-weight: 600;
-}
-/* Wave 1: aksen bar kiri pada item aktif (gaya Linear/Attio) — penanda aktif
-   yang lebih premium daripada sekadar background. */
-.sidebar-link.active::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 7px; bottom: 7px;
-  width: 3px; border-radius: 0 3px 3px 0;
-  background: var(--color-brand-600);
-}
-.sidebar-link .nav-icon { flex-shrink: 0; opacity: 0.8; }
-.sidebar-link.active .nav-icon { opacity: 1; }
+/* Konten item di atas pill (pill = z-index 0). */
+.sidebar-link > .nav-icon,
+.sidebar-link > .nav-label,
+.sidebar-link > .nav-badge,
+.sidebar-link > .nav-ai-dot { position: relative; z-index: 1; }
 
-/* Affordance AI "Tanya Sano" — ikon violet + dot gradient kecil dengan glow.
-   HALUS: item-nya tetap netral, hanya ikon & dot yang menandai ini fitur AI. */
+.sidebar-link:hover { background: rgba(255,255,255,0.7); color: var(--text-primary); }
+.sidebar-link.active { color: var(--color-brand-700); font-weight: 600; }
+.sidebar-link.active:hover { background: transparent; }
+
+.sidebar-link .nav-icon { flex-shrink: 0; opacity: 0.75; transition: opacity 0.16s, color 0.16s; }
+.sidebar-link.active .nav-icon { opacity: 1; color: var(--color-brand-600); }
+
+/* Pill aktif "terangkat" (kartu putih + shadow), digeser oleh framer-motion
+   (layoutId) antar item. Aksen gradient kiri ikut di dalam pill. */
+.nav-pill {
+  position: absolute; inset: 0; z-index: 0;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.06), 0 4px 14px -6px rgba(15,23,42,0.16);
+}
+.nav-pill::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background-image: linear-gradient(180deg, var(--color-brand-600), var(--color-brand-700));
+}
+
+/* Affordance AI "Tanya Sano" — ikon violet + dot gradient kecil dengan glow. */
 .sidebar-link .nav-icon-ai { color: var(--color-ai-violet); opacity: 1; }
 .sidebar-link.active .nav-icon-ai { color: var(--color-ai-violet); }
 .nav-ai-dot {
@@ -159,8 +171,8 @@ body {
 
 .sidebar-link-disabled {
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px; border-radius: 8px;
-  color: var(--text-muted); font-size: 13.5px; font-weight: 500;
+  padding: 9px 12px; border-radius: 10px;
+  color: var(--text-muted); font-size: 13px; font-weight: 500;
   cursor: not-allowed; user-select: none;
 }
 .badge-soon {
@@ -170,27 +182,30 @@ body {
 }
 
 .nav-badge {
-  margin-left: auto; min-width: 20px; height: 20px; border-radius: 99px;
+  margin-left: auto; min-width: 19px; height: 19px; border-radius: 99px;
   background: var(--color-danger); color: white;
-  font-size: 11px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center; padding: 0 6px;
+  font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; padding: 0 5px;
+  box-shadow: 0 2px 5px -1px rgba(220,38,38,0.5);
 }
 
-.sidebar-footer {
-  padding: 14px 16px;
-  border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px;
+/* Footer — blok profil (trigger Radix Menu). */
+.sidebar-footer { padding: 10px; border-top: 1px solid #EAEEF4; }
+.sidebar-profile {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px; border: none; background: none; border-radius: 12px;
+  cursor: pointer; text-align: left; font: inherit;
+  transition: background 0.16s ease;
+}
+.sidebar-profile:hover { background: rgba(255,255,255,0.7); }
+.sidebar-profile .sidebar-avatar {
+  background-image: linear-gradient(135deg, var(--color-brand-500), var(--color-brand-800));
+  color: #fff; font-weight: 700; flex-shrink: 0;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(32,100,183,0.22);
 }
 .sidebar-user-info { flex: 1; min-width: 0; }
-.sidebar-user-name { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-user-role { font-size: 11px; color: var(--sidebar-text); }
-.sidebar-logout-btn {
-  background: none; border: none; padding: 6px; cursor: pointer;
-  color: var(--sidebar-text); border-radius: 6px;
-  display: flex; align-items: center;
-  transition: background 0.15s, color 0.15s;
-}
-.sidebar-logout-btn:hover { background: var(--bg-subtle); color: var(--danger); }
+.sidebar-user-name { font-size: 13px; font-weight: 650; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-kebab-ic { margin-left: auto; color: var(--text-muted); flex-shrink: 0; }
 .sidebar-version {
   padding: 6px 16px 12px; font-size: 10.5px; color: var(--text-muted);
   text-align: center; cursor: default; user-select: none;

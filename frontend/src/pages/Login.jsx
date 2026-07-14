@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api } from "../api.js";
 import { refreshSocketAuth } from "../lib/socket.js";
 import { Button } from "@/components/ui/button.jsx";
+import { BRAND } from "@/lib/brand.js";
 
 export default function Login({ onLogin }) {
   const [email, setEmail]       = useState("");
@@ -40,8 +41,8 @@ export default function Login({ onLogin }) {
             <img src="/logo-small.png" alt="Logo" className="h-7 w-7 object-contain" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-[-0.01em] text-slate-900">Klinik Matras</h1>
-            <p className="mt-0.5 text-[13px] text-slate-500">Omnichannel &amp; CRM</p>
+            <h1 className="text-xl font-bold tracking-[-0.01em] text-slate-900">{BRAND.name}</h1>
+            <p className="mt-0.5 text-[13px] text-slate-500">{BRAND.subtitle}</p>
           </div>
         </div>
 
