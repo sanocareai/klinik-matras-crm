@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import tailwindcss from "@tailwindcss/vite";
 import { readFileSync } from "fs";
+import { fileURLToPath, URL } from "url";
 
 // Versi + waktu build di-cetak kecil di halaman Login (Bug 1c) — supaya
 // bisa verifikasi user benar-benar pegang bundle TERBARU (bukan basi dari
@@ -13,8 +15,18 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  resolve: {
+    alias: {
+      // Alias @/ khusus dipakai komponen shadcn/ui (konvensi resmi mereka) —
+      // halaman/komponen LAMA tetap pakai relative import seperti biasa,
+      // ini TIDAK mengganti pola import di seluruh app, cuma tersedia untuk
+      // kode baru yang mengadopsi Tailwind+shadcn (mulai dari Laporan).
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
       manifest: {

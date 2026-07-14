@@ -1,0 +1,69 @@
+/* Tailwind v4 — DISENGAJA cuma import theme + utilities, BUKAN preflight
+   (reset base). Preflight menimpa margin/border/font default banyak elemen
+   HTML secara global (h1-h6, button, ul, dst) — kalau ikut di-import, akan
+   mengubah tampilan SEMUA halaman lama yang masih pakai index.css murni,
+   bukan cuma Laporan (satu-satunya halaman yang sudah migrasi ke Tailwind
+   sejauh ini). Skip preflight = Tailwind cuma nambah utility class baru
+   yang bisa dipakai, tanpa mengganggu apa pun yang sudah ada. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/* Skala warna brand blue (#2064B7 — token DESAIN existing, lihat CLAUDE.md
+   §10) — 600 adalah nilai brand asli, shade lain diturunkan utk gradient
+   & hover state. Warna semantik chart (green/orange/violet) SENGAJA
+   disamakan dgn --success/--warning/--purple yang sudah ada di index.css,
+   bukan palet baru — supaya konsisten dengan badge/status di halaman lain. */
+@theme {
+  --color-brand-50:  #EAF2FC;
+  --color-brand-100: #D3E5F8;
+  --color-brand-200: #A7CBF1;
+  --color-brand-300: #7BB1EA;
+  --color-brand-400: #4F97E3;
+  --color-brand-500: #2E7DDA;
+  --color-brand-600: #2064B7;
+  --color-brand-700: #1A5296;
+  --color-brand-800: #164476;
+  --color-brand-900: #123655;
+
+  --color-chart-green:  #16a34a;
+  --color-chart-green-soft: #dcfce7;
+  --color-chart-orange: #f59e0b;
+  --color-chart-orange-soft: #fef3c7;
+  --color-chart-violet: #7c3aed;
+  --color-chart-violet-soft: #ede9fe;
+  --color-chart-rose:   #dc2626;
+  --color-chart-rose-soft: #fee2e2;
+
+  --animate-fade-rise: fade-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes fade-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* shadcn/ui butuh token semantik standar (background/foreground/card/dst)
+   — dipetakan ke variable warna yang SUDAH ADA di index.css (var(--bg),
+   var(--card-bg), dst) supaya shadcn otomatis konsisten dgn tema app,
+   bukan warna baru yang lepas dari design system. */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--card-bg);
+  --color-card-foreground: var(--text-primary);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--color-brand-600);
+  --color-muted: var(--bg-subtle, #f1f5f9);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--color-brand-50);
+  --color-accent-foreground: var(--color-brand-700);
+  --color-primary: var(--color-brand-600);
+  --color-primary-foreground: #ffffff;
+  --radius: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
