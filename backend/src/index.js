@@ -20,6 +20,7 @@ import { pipelineRouter }   from "./routes/pipeline.js";
 import { broadcastRouter }  from "./routes/broadcast.js";
 import { automationRouter } from "./routes/automation.js";
 import { aiRouter }         from "./routes/ai.js";
+import { replyAssistantRouter } from "./routes/replyAssistant.js";
 import { knowledgeRouter }  from "./routes/knowledge.js";
 import { settingsRouter }  from "./routes/settings.js";
 import { templateRouter }  from "./routes/templates.js";
@@ -60,6 +61,7 @@ app.use("/api/pipeline",     pipelineRouter);
 app.use("/api/broadcast",    broadcastRouter);
 app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
+app.use("/api/ai",           replyAssistantRouter); // Wave 4B.0 — additive, tidak mengubah aiRouter
 app.use("/api/knowledge",    knowledgeRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);

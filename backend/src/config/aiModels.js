@@ -8,4 +8,8 @@ export const AI_MODELS = {
   // Internal: Sano Co-pilot untuk sales
   // Haiku cukup akurat untuk pertanyaan internal + 3x lebih murah dari Sonnet
   SANO_COPILOT: "claude-haiku-4-5-20251001",
+
+  // Wave 4B: Reply Assistant (draf balasan internal). Haiku — murah, cukup akurat,
+  // Bahasa Indonesia bagus. Single-model (belum ada routing).
+  SANO_REPLY_ASSISTANT: "claude-haiku-4-5-20251001",
 };

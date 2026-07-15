@@ -449,3 +449,45 @@ model PlaygroundMessage {
 
   @@index([modelConfigId])
 }
+
+// ─── WAVE 4B — AI SALES ASSISTANT (draft-only, human-in-the-loop) ────────────
+// Log AUDIT append-only untuk setiap permintaan draf balasan AI. ADDITIVE:
+// TIDAK ada FK ke tabel lain (userId/conversationId/customerId = string biasa)
+// supaya benar-benar terisolasi & reversible (rollback = DROP TABLE + DROP TYPE).
+// Bukan jalur kirim — status SENT hanya menandai sales mengirim MANUAL lewat
+// compose WhatsApp yang sudah ada; TIDAK PERNAH berarti AI mengirim pesan.
+enum ReplySuggestionStatus {
+  GENERATED // AI membuat draf
+  COPIED // sales menyalin draf manual (UI 4B.1)
+  EDITED // sales mengubah draf (UI 4B.1)
+  SENT // sales mengirim MANUAL via compose WA yang sudah ada — BUKAN AI yang kirim
+  DISMISSED // sales mengabaikan draf (UI 4B.1)
+  BLOCKED // AI mencegah generate (komplain/handover/aturan keamanan)
+}
+
+enum ReplySuggestionFeedback {
+  POSITIVE // "berguna"
+  NEGATIVE // "tidak berguna"
+}
+
+model ReplySuggestionLog {
+  id              String                   @id @default(cuid())
+  conversationId  String? // string biasa (tanpa FK) — isolasi
+  customerId      String? // string biasa (tanpa FK) — isolasi
+  userId          String // peminta (req.user.id)
+  intent          String? // intent utama yang terdeteksi
+  status          ReplySuggestionStatus    @default(GENERATED)
+  blocked         Boolean                  @default(false)
+  blockedReason   String? // COMPLAINT | HANDOVER_REQUEST | ASSISTANT_DISABLED | ...
+  source          String? // "llm" | "template"
+  model           String?
+  inputTokens     Int                      @default(0)
+  outputTokens    Int                      @default(0)
+  costUsd         Float                    @default(0)
+  suggestionCount Int                      @default(0)
+  feedback        ReplySuggestionFeedback? // NULL sampai diberi (UI 4B.1)
+  createdAt       DateTime                 @default(now())
+
+  @@index([userId, createdAt]) // penghitung kuota harian per-user
+  @@index([createdAt]) // rollup biaya bulanan
+}
