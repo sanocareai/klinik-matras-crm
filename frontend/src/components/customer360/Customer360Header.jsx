@@ -1,14 +1,18 @@
 import React from "react";
-import { X, MessageSquare, MapPin, ShoppingBag } from "lucide-react";
+import { X, MessageSquare, MapPin, ShoppingBag, Clock } from "lucide-react";
 import Avatar from "../Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { STAGE_LABELS, stageVariant, healthVariant, HEALTH_LABELS, formatRupiahShort } from "../../utils/format.js";
+import { STAGE_LABELS, stageVariant, healthVariant, HEALTH_LABELS, formatRupiahShort, formatTanggalWaktu } from "../../utils/format.js";
 
 // Header 360 — hierarki identitas: NAMA → lokasi · kontak → order (jumlah·nilai) ·
-// stage · owner. CTA utama "Lanjutkan WhatsApp" (bahasa aksi sales).
-export default function Customer360Header({ customer, orderCount = 0, orderValue = 0, onOpenChat, onClose }) {
+// stage · owner → konteks (interaksi terakhir · pelanggan sejak). CTA utama
+// "Lanjutkan WhatsApp" (bahasa aksi sales).
+export default function Customer360Header({ customer, orderCount = 0, orderValue = 0, lastMessageAt, onOpenChat, onClose }) {
   const name = customer.name || customer.phone || customer.instagramHandle || "Pelanggan";
+  const sejak = customer.createdAt
+    ? new Date(customer.createdAt).toLocaleDateString("id-ID", { month: "short", year: "numeric" })
+    : null;
   return (
     <div className="flex items-start gap-3 border-b border-slate-200 bg-white p-4">
       <Avatar name={name} src={customer.profilePictureUrl} size="md" />
@@ -41,6 +45,17 @@ export default function Customer360Header({ customer, orderCount = 0, orderValue
             <span className="text-[11.5px] text-slate-400">Sales: <span className="font-medium text-slate-500">{customer.assignedSales.name}</span></span>
           )}
         </div>
+
+        {/* Konteks halus — identitas tetap didahulukan */}
+        {(lastMessageAt || sejak) && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-400">
+            {lastMessageAt && (
+              <span className="inline-flex items-center gap-1"><Clock size={11} /> Interaksi terakhir {formatTanggalWaktu(lastMessageAt)}</span>
+            )}
+            {lastMessageAt && sejak && <span className="text-slate-300">·</span>}
+            {sejak && <span>Pelanggan sejak {sejak}</span>}
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">

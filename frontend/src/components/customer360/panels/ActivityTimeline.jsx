@@ -1,5 +1,5 @@
 import React from "react";
-import { ShoppingCart, StickyNote, MessageSquare, AlertTriangle, RefreshCw, History } from "lucide-react";
+import { ShoppingCart, StickyNote, MessageSquare, AlertTriangle, RefreshCw, History, ArrowRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { buildTimeline, groupByDay } from "../lib/timelineAdapter.js";
@@ -13,7 +13,7 @@ const TYPE = {
 };
 
 // Timeline gabungan (order/catatan/komplain/pesan-capped). loading/empty/error+retry.
-export default function ActivityTimeline({ orders = [], notes = [], conversations = [], loading, error, onRetry }) {
+export default function ActivityTimeline({ orders = [], notes = [], conversations = [], loading, error, onRetry, onSeeAll }) {
   if (loading) {
     return <div className="flex flex-col gap-2">{[...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 44, borderRadius: 10 }} />)}</div>;
   }
@@ -63,6 +63,14 @@ export default function ActivityTimeline({ orders = [], notes = [], conversation
           </div>
         </div>
       ))}
+      {onSeeAll && (
+        <button
+          onClick={onSeeAll}
+          className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg py-2 text-[12px] font-semibold text-brand-600 transition-colors hover:bg-brand-50"
+        >
+          Lihat semua aktivitas <ArrowRight size={13} />
+        </button>
+      )}
     </div>
   );
 }

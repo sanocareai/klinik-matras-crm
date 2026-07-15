@@ -62,6 +62,7 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
         customer={c}
         orderCount={ctx?.orderCount || 0}
         orderValue={ctx?.orderValue || 0}
+        lastMessageAt={ctx?.lastMessageAt}
         onOpenChat={openChat}
         onClose={onClose}
       />
@@ -103,7 +104,7 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
                   <ActivityTimeline
                     orders={c.orders} notes={c.notes} conversations={convos}
                     loading={conversations.isLoading} error={conversations.isError}
-                    onRetry={() => conversations.refetch()}
+                    onRetry={() => conversations.refetch()} onSeeAll={openChat}
                   />
                 </TabsContent>
                 <TabsContent value="Order"><OrderSection customer={c} onUpdate={handleUpdated} /></TabsContent>

@@ -36,7 +36,7 @@ export default function HealthScoreCard({ health }) {
       <div className="h-1" style={{ background: color }} />
       <div className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
-          <span className="text-[13px] font-bold text-slate-900">Customer Health Score</span>
+          <span className="text-[13px] font-bold text-slate-900">Customer Score</span>
           {tr && (
             <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${tr.cls}`}>
               <tr.Icon size={13} /> {health.trendLabel}
