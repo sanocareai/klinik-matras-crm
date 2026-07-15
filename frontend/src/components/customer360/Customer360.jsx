@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw, ChevronDown } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Customer360Header from "./Customer360Header.jsx";
+import Customer360Skeleton from "./Customer360Skeleton.jsx";
 import CustomerOverview from "./panels/CustomerOverview.jsx";
 import HealthScoreCard from "./panels/HealthScoreCard.jsx";
 import NextActionCard from "./panels/NextActionCard.jsx";
@@ -25,6 +26,7 @@ const TABS = ["Aktivitas", "Order", "Catatan", "Riwayat Chat"];
 export default function Customer360({ customerId, onClose, onUpdated }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState("Aktivitas");
+  const [profileOpen, setProfileOpen] = useState(false); // Profil di-collapse (prioritas rendah)
   const { customer, conversations, invalidate } = useCustomer360(customerId);
 
   const c = customer.data;
@@ -37,15 +39,8 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
   const overview = ctx && health ? buildOverviewText(ctx, health.category) : "";
   const action = ctx ? deriveNextAction(ctx) : null;
 
-  // ── Top-level: loading ──
-  if (customer.isLoading) {
-    return (
-      <div className="flex flex-col gap-3 p-5">
-        <div className="skeleton" style={{ height: 72, borderRadius: 12 }} />
-        <div className="skeleton" style={{ height: 220, borderRadius: 12 }} />
-      </div>
-    );
-  }
+  // ── Top-level: loading (skeleton premium meniru layout) ──
+  if (customer.isLoading) return <Customer360Skeleton />;
   // ── Top-level: error + retry ──
   if (customer.isError || !c) {
     return (
@@ -63,16 +58,40 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
 
   return (
     <div className="flex h-full flex-col">
-      <Customer360Header customer={c} onOpenChat={openChat} onClose={onClose} />
+      <Customer360Header
+        customer={c}
+        orderCount={ctx?.orderCount || 0}
+        orderValue={ctx?.orderValue || 0}
+        onOpenChat={openChat}
+        onClose={onClose}
+      />
 
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start">
-          {/* LEFT — identity + intelligence (rule-based) */}
+          {/* LEFT — identity + intelligence. Prioritas AKSI dulu:
+              Insight → Next Action → Health Score → Profile. */}
           <div className="flex w-full flex-col gap-3 lg:w-[300px] lg:shrink-0">
             <CustomerOverview text={overview} />
-            <HealthScoreCard health={health} />
             <NextActionCard action={action} onOpenChat={openChat} />
-            <ProfileFields customer={c} onUpdated={handleUpdated} />
+            <HealthScoreCard health={health} />
+            {/* Profil — prioritas rendah, collapsible (default tertutup) supaya
+                360 terasa "intelligence drawer", bukan form edit. */}
+            <div className="rounded-2xl border border-black/5 bg-card shadow-sm">
+              <button
+                type="button"
+                onClick={() => setProfileOpen((o) => !o)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+                aria-expanded={profileOpen}
+              >
+                <span className="text-[13px] font-semibold text-slate-700">Profil &amp; Detail</span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+              </button>
+              {profileOpen && (
+                <div className="border-t border-slate-100 px-4 py-4">
+                  <ProfileFields customer={c} onUpdated={handleUpdated} />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* RIGHT — activity + records */}

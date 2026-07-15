@@ -35,5 +35,16 @@ export function computeHealthScore(ctx) {
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   const key = score >= 80 ? "Healthy" : score >= 50 ? "Needs Attention" : "At Risk";
-  return { score, categoryKey: key, category: CATEGORY[key].label, variant: CATEGORY[key].variant, signals };
+
+  // Arah tren — HANYA kalau ada data aktivitas (daysSince != null). Ini indikator
+  // ringan (rule-based), bukan delta skor historis (kita belum simpan histori).
+  let trend = null, trendLabel = null;
+  if (ctx.daysSince != null) {
+    if (ctx.complaintsCount > 0) { trend = "down"; trendLabel = "Menurun — ada komplain"; }
+    else if (ctx.daysSince > 30) { trend = "down"; trendLabel = "Menurun — makin pasif"; }
+    else if (ctx.daysSince <= 3 && (ctx.orderCount > 0 || ctx.stage === "QUOTED" || ctx.stage === "WON")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
+    else { trend = "flat"; trendLabel = "Stabil"; }
+  }
+
+  return { score, categoryKey: key, category: CATEGORY[key].label, variant: CATEGORY[key].variant, signals, trend, trendLabel };
 }

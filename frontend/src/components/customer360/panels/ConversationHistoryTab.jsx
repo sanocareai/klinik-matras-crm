@@ -24,7 +24,7 @@ export default function ConversationHistoryTab({ conversations, loading, error, 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
-        <Button size="sm" variant="outline" onClick={onOpenChat}>Buka Chat penuh</Button>
+        <Button size="sm" variant="outline" onClick={onOpenChat}>Lanjutkan WhatsApp</Button>
       </div>
       {convos.map((conv) => (
         <div key={conv.id} className="rounded-xl border border-slate-100 p-3">

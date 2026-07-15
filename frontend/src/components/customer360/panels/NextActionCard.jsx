@@ -18,7 +18,7 @@ export default function NextActionCard({ action, onOpenChat }) {
         <div className={`mt-0.5 text-[13.5px] font-semibold ${TONE[action.tone] || TONE.neutral}`}>{action.label}</div>
       </div>
       <Button size="sm" onClick={onOpenChat} className="shrink-0">
-        Buka chat <ArrowRight size={13} />
+        Lanjutkan WhatsApp <ArrowRight size={13} />
       </Button>
     </Card>
   );
