@@ -41,3 +41,10 @@ export function getAnthropicKey() {
     return null;
   }
 }
+
+// Wave 4B.0.4 — OpenAI key dari ENV (bukan store BYOK). null bila kosong →
+// pemanggil fallback ke template (perilaku sama dengan provider unavailable).
+export function getOpenAIKey() {
+  const k = process.env.OPENAI_API_KEY;
+  return k && k.trim() ? { apiKey: k.trim() } : null;
+}

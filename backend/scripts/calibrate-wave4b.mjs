@@ -20,8 +20,8 @@
 // Redirect ke file lalu commit ke docs/migration-log/ :
 //   node scripts/calibrate-wave4b.mjs > wave-4b03-calibration-results.md
 import { generateSuggestions } from "../src/services/replyAssistant/index.js";
-import { getActiveProvider } from "../src/services/replyAssistant/providers/index.js";
-import { loadConfig } from "../src/services/replyAssistant/config.js";
+import { getActiveProvider, buildProvider } from "../src/services/replyAssistant/providers/index.js";
+import { loadConfig, resolveProviderModel, calibrationProviderName, replyProviderName } from "../src/services/replyAssistant/config.js";
 import { violations } from "../src/services/replyAssistant/validator.js";
 import { buildCustomerIntelligence, loadCustomerContext } from "../src/services/intelligence/index.js";
 import { buildConversationContext } from "../src/services/intelligence/replyReadiness.js";
@@ -41,8 +41,10 @@ const baseCfg = loadConfig();
 const CONFIG = { isEnabled: () => true, maxMonthlyCostUsd: () => 1e12, dailyLimit: () => 1e9, model: baseCfg.model };
 
 // ── deps: TIDAK ada tulisan produksi ──
-const makeDeps = (provider) => ({
-  config: CONFIG,
+// model opsional → override CONFIG.model supaya biaya/trace akurat per-provider
+// (mode perbandingan menjalankan Claude & OpenAI dengan model masing-masing).
+const makeDeps = (provider, model) => ({
+  config: model ? { ...CONFIG, model } : CONFIG,
   getProvider: () => provider,
   countToday: async () => 0,
   monthCostUsd: async () => 0,
@@ -217,7 +219,49 @@ async function runReplay(provider) {
   await prisma.$disconnect();
 }
 
+// ── WAVE 4B.0.4 — MODE PERBANDINGAN PROVIDER (kalibrasi, TERISOLASI) ──────────
+// Jalankan A1–A14 lewat provider PRODUKSI (A) dan provider KALIBRASI (B) side-by-side.
+// TIDAK mengubah pemilihan produksi (AI_REPLY_PROVIDER) — B dibangun eksplisit.
+async function runComparison(prodName, calName) {
+  const prodRes = resolveProviderModel(prodName);
+  const calRes = resolveProviderModel(calName);
+  const prodProvider = buildProvider(prodName);
+  const calProvider = buildProvider(calName);
+  const missing = [];
+  if (!prodProvider) missing.push(`${prodName} (${prodRes.provider}) — key tidak ada`);
+  if (!calProvider) missing.push(`${calName} (${calRes.provider}) — key tidak ada`);
+  if (missing.length) { console.error("❌ Perbandingan butuh KEDUA provider aktif. Hilang: " + missing.join("; ")); process.exit(1); }
+
+  console.log(`# Wave 4B.0.4 — Provider Comparison (kalibrasi)\n`);
+  console.log(`- Tanggal: ${new Date().toISOString()}`);
+  console.log(`- **A (produksi):** ${prodName} \`${prodRes.model}\``);
+  console.log(`- **B (kalibrasi):** ${calName} \`${calRes.model}\``);
+  console.log(`- Run per skenario per provider: ${RUNS}`);
+  console.log(`- Evaluator: Gilang (domain, final) + 1 sales (usefulness)\n---\n`);
+
+  for (const s of A) {
+    const ctx0 = buildSyntheticContext(s);
+    console.log(`## ${s.id} — ${s.label} · intent: \`${(ctx0.detectedIntents || []).join(", ") || "-"}\``);
+    console.log(`**Customer:** "${s.msgs[s.msgs.length - 1].content}"`);
+    console.log(`**Expected:** ${s.expect}\n`);
+    for (const [tag, prov, res] of [[`A · ${prodName}`, prodProvider, prodRes], [`B · ${calName}`, calProvider, calRes]]) {
+      console.log(`### ${tag} (\`${res.model}\`)`);
+      for (let i = 1; i <= RUNS; i++) {
+        const r = await generateSuggestions({ conversationId: "cal", customerId: "cal", user: { id: "calibrator", role: "ADMIN" }, context: buildSyntheticContext(s) }, makeDeps(prov, res.model));
+        const p = prescreen(r);
+        totalSafetyViolations += p.violCount;
+        console.log(`  Run ${i} — source: \`${p.source}\` · safety: ${p.safety} · contract: ${p.contract}${p.source === "template" ? " ⚠️ template" : ""}`);
+        printDrafts(r);
+      }
+      console.log("");
+    }
+    console.log(`**Perbandingan manusia** (isi Good/Weak/Bad + pemenang): Relevansi __ · Konsultatif __ · Tone __ · Aksi __ · **Dampak komersial** __ · **Menang: A / B / seri** __\n---\n`);
+  }
+  console.log(`**Safety violations (auto, semua run): ${totalSafetyViolations}** — WAJIB **0**. ${totalSafetyViolations === 0 ? "✓" : "✗ STOP & perbaiki"}`);
+}
+
 async function main() {
+  const calName = calibrationProviderName();
   const provider = DRY ? dryProvider() : getActiveProvider();
   if (!DRY && !provider) {
     console.error("❌ Tidak ada API key Anthropic aktif (BYOK). Kalibrasi butuh jalur Claude Haiku ASLI, bukan template.");
@@ -228,6 +272,7 @@ async function main() {
 
   if (REPLAY) { await runReplay(provider); }
   else if (SANITY) { await runSanity(provider); }
+  else if (calName && !DRY) { await runComparison(replyProviderName(), calName); }
   else { await runGroupA(provider); }
 }
 
