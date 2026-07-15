@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { generateOrderNumber } from "../services/orderNumberGenerator.js";
+import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -250,6 +251,23 @@ customerRouter.get("/:id/conversations", async (req, res) => {
     },
   });
   res.json(conversations);
+});
+
+// Wave 4A — intelligence per-customer (ADDITIVE, read-only). Health + Priority +
+// Opportunity + Next Best Action + Insight dari engine kanonik. Role scope:
+// SALES hanya boleh yang miliknya / belum diambil, selain itu 403.
+customerRouter.get("/:id/intelligence", async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+    const ctx = await loadCustomerContext(prisma, req.params.id);
+    if (!ctx) return res.status(404).json({ error: "Pelanggan tidak ditemukan" });
+    if (role !== "ADMIN" && ctx.customer.assignedSalesId && ctx.customer.assignedSalesId !== userId)
+      return res.status(403).json({ error: "Tidak boleh mengakses pelanggan ini" });
+    res.json(buildCustomerIntelligence(ctx));
+  } catch (err) {
+    console.error("customer intelligence error:", err);
+    res.status(500).json({ error: "Gagal memuat intelligence" });
+  }
 });
 
 // Catat order baru — value mulai 0, akan dihitung otomatis dari items
