@@ -29,14 +29,24 @@ function isLidPhone(phone) {
   return isLidLikePhone(phone);
 }
 
+// PRATINJAU adalah DEFAULT. Script ini MENGHAPUS record Customer di jalur
+// merge — di production itu tidak bisa dibatalkan tanpa restore backup. Jadi
+// tanpa flag apa pun script hanya MELAPORKAN rencananya; harus eksplisit
+// `--apply` untuk benar-benar mengubah data.
+const APPLY = process.argv.includes("--apply");
+
 async function main() {
-  console.log("=== Fix LID Customers ===\n");
+  console.log("=== Fix LID Customers ===");
+  console.log(APPLY
+    ? "MODE: --apply → DATA AKAN DIUBAH\n"
+    : "MODE: PRATINJAU (dry-run) → tidak ada data yang diubah.\n       Jalankan ulang dengan --apply untuk menerapkan.\n");
 
   const all = await prisma.customer.findMany({
     include: {
       conversations: true,
-      orders:        { select: { id: true } },
-      notes:         { select: { id: true } },
+      orders:              { select: { id: true } },
+      notes:               { select: { id: true } },
+      pipelineTransitions: { select: { id: true } },
     },
   });
 
@@ -55,7 +65,7 @@ async function main() {
 
   for (const lid of lidCustomers) {
     console.log(`Customer  : ${lid.name || "(tanpa nama)"} | phone LID: ${lid.phone}`);
-    console.log(`Data      : ${lid.conversations.length} percakapan | ${lid.orders.length} order | ${lid.notes.length} catatan`);
+    console.log(`Data      : ${lid.conversations.length} percakapan | ${lid.orders.length} order | ${lid.notes.length} catatan | ${lid.pipelineTransitions.length} riwayat stage`);
 
     // Cari customer dengan nomor valid yang namanya sama persis (case-insensitive)
     const nameLower = (lid.name || "").toLowerCase().trim();
@@ -69,33 +79,6 @@ async function main() {
     if (match) {
       console.log(`→ Pasangan ditemukan: ${match.name} | phone: ${match.phone} — merge...`);
 
-      // Pindahkan semua conversation ke customer yang valid
-      if (lid.conversations.length > 0) {
-        await prisma.conversation.updateMany({
-          where: { customerId: lid.id },
-          data:  { customerId: match.id },
-        });
-        console.log(`  ✓ ${lid.conversations.length} percakapan dipindahkan`);
-      }
-
-      // Pindahkan semua order
-      if (lid.orders.length > 0) {
-        await prisma.order.updateMany({
-          where: { customerId: lid.id },
-          data:  { customerId: match.id },
-        });
-        console.log(`  ✓ ${lid.orders.length} order dipindahkan`);
-      }
-
-      // Pindahkan semua catatan
-      if (lid.notes.length > 0) {
-        await prisma.note.updateMany({
-          where: { customerId: lid.id },
-          data:  { customerId: match.id },
-        });
-        console.log(`  ✓ ${lid.notes.length} catatan dipindahkan`);
-      }
-
       // Salin field data penting yang masih kosong di customer valid
       const patch = {};
       if (!match.city           && lid.city)           patch.city           = lid.city;
@@ -106,19 +89,57 @@ async function main() {
         patch.pipelineStage = lid.pipelineStage;
       }
 
-      if (Object.keys(patch).length > 0) {
-        await prisma.customer.update({ where: { id: match.id }, data: patch });
-        console.log(`  ✓ Data customer diperbarui: ${Object.keys(patch).join(", ")}`);
-      }
+      const rencana = [
+        lid.conversations.length       ? `${lid.conversations.length} percakapan`       : null,
+        lid.orders.length              ? `${lid.orders.length} order`                   : null,
+        lid.notes.length               ? `${lid.notes.length} catatan`                  : null,
+        lid.pipelineTransitions.length ? `${lid.pipelineTransitions.length} riwayat stage` : null,
+      ].filter(Boolean);
+      console.log(`  · pindahkan: ${rencana.length ? rencana.join(", ") : "(tidak ada relasi)"}`);
+      if (Object.keys(patch).length) console.log(`  · isi field kosong: ${Object.keys(patch).join(", ")}`);
+      console.log(`  · HAPUS customer LID ${lid.id}`);
 
-      // Hapus customer LID
-      await prisma.customer.delete({ where: { id: lid.id } });
-      console.log(`  ✓ Customer LID dihapus`);
+      if (APPLY) {
+        // SATU TRANSAKSI. Sebelumnya ini 5 write terpisah — kalau proses mati
+        // di tengah, data setengah pindah dan customer LID masih ada (atau
+        // lebih buruk: relasi sudah pindah tapi delete gagal).
+        await prisma.$transaction(async (tx) => {
+          // ⚠️ pipeline_transitions WAJIB dipindahkan SEBELUM delete.
+          // FK-nya onDelete: CASCADE (beda dari Order/Note yang RESTRICT),
+          // jadi customer.delete() akan MENGHAPUS riwayat stage tanpa error
+          // dan tanpa peringatan — data hilang diam-diam. Order/Note aman
+          // karena RESTRICT (delete-nya akan gagal keras kalau terlewat),
+          // tabel ini TIDAK punya jaring itu.
+          if (lid.pipelineTransitions.length > 0) {
+            await tx.pipelineTransition.updateMany({
+              where: { customerId: lid.id },
+              data:  { customerId: match.id },
+            });
+          }
+          if (lid.conversations.length > 0) {
+            await tx.conversation.updateMany({ where: { customerId: lid.id }, data: { customerId: match.id } });
+          }
+          if (lid.orders.length > 0) {
+            await tx.order.updateMany({ where: { customerId: lid.id }, data: { customerId: match.id } });
+          }
+          if (lid.notes.length > 0) {
+            await tx.note.updateMany({ where: { customerId: lid.id }, data: { customerId: match.id } });
+          }
+          if (Object.keys(patch).length > 0) {
+            await tx.customer.update({ where: { id: match.id }, data: patch });
+          }
+          await tx.customer.delete({ where: { id: lid.id } });
+        });
+        console.log(`  ✓ merge selesai (1 transaksi)`);
+      }
       merged++;
 
     } else {
       // Tidak ada pasangan — null-kan phone supaya tidak kirim ke LID ID yang salah
-      await prisma.customer.update({ where: { id: lid.id }, data: { phone: null } });
+      console.log(`  · set phone = null (order/catatan/percakapan TETAP)`);
+      if (APPLY) {
+        await prisma.customer.update({ where: { id: lid.id }, data: { phone: null } });
+      }
       console.log(`→ Tidak ada pasangan — phone di-reset ke null (data tetap ada)`);
       console.log(`  Perbarui nomor manual di CRM setelah customer kirim pesan lagi`);
       nulled++;
@@ -128,13 +149,28 @@ async function main() {
   }
 
   console.log("=== RINGKASAN ===");
-  console.log(`✅ Merge berhasil  : ${merged} customer`);
-  console.log(`⚠️  Phone di-null  : ${nulled} customer`);
+  console.log(APPLY ? `✅ Merge selesai   : ${merged} customer` : `• Akan di-merge   : ${merged} customer (customer LID DIHAPUS)`);
+  console.log(APPLY ? `⚠️  Phone di-null  : ${nulled} customer` : `• Phone akan null : ${nulled} customer`);
 
   if (nulled > 0) {
-    console.log("\nUntuk customer yang di-null:");
-    console.log("  Saat customer kirim pesan lagi dari WA, sistem akan otomatis buat customer baru.");
-    console.log("  Kalau customer punya riwayat order/catatan penting, merge manual via Prisma Studio.");
+    console.log("\nDampak customer yang phone-nya di-null:");
+    console.log("  Order/catatan/percakapan TETAP ADA — tidak ada yang dihapus.");
+    console.log("  TAPI sales TIDAK BISA membalas chat mereka sampai nomornya terisi lagi");
+    console.log("  (UI akan bilang \"Nomor WA pelanggan tidak tersedia\"). Nomor terisi");
+    console.log("  otomatis begitu customer kirim pesan lagi dan WAHA berhasil resolve.");
+  }
+
+  if (!APPLY) {
+    console.log("\n──────────────────────────────────────────────────────────────");
+    console.log("PRATINJAU — TIDAK ADA DATA YANG DIUBAH.");
+    console.log("Kalau rencana di atas sudah benar, jalankan:");
+    console.log("  docker compose exec backend node scripts/fix-lid-customers.js --apply");
+    if (merged > 0) {
+      console.log("\n⚠️  BACKUP DULU sebelum --apply: jalur merge MENGHAPUS record");
+      console.log("   Customer dan itu tidak bisa dibatalkan tanpa restore.");
+      console.log("   ./backend/scripts/backup-database.sh");
+    }
+    console.log("──────────────────────────────────────────────────────────────");
   }
 }
 

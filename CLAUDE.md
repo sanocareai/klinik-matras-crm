@@ -132,10 +132,33 @@ tidak mulai 62 = LID".** JID GRUP juga berbentuk begitu (mis.
 `120363376@g.us`) dan grup dikirim lewat `sendText`/`sendMedia` yang SAMA —
 tanpa pengecualian `@g.us`, SELURUH fitur pesan grup mati.
 
-**Cleanup data lama:** `docker compose exec backend node scripts/fix-lid-customers.js`
-— merge ke customer bernomor valid kalau namanya sama, kalau tidak `phone`
-di-null-kan (lebih baik kosong daripada LID salah; order/catatan/percakapan
-TIDAK dihapus). Idempotent, aman dijalankan berkali-kali.
+**Cleanup data lama — PRATINJAU dulu, JANGAN langsung apply:**
+```bash
+# 1. Lihat rencananya (DEFAULT = dry-run, tidak mengubah apa pun)
+docker compose exec backend node scripts/fix-lid-customers.js
+# 2. Backup — jalur merge MENGHAPUS record Customer, tidak bisa dibatalkan
+./backend/scripts/backup-database.sh
+# 3. Baru terapkan
+docker compose exec backend node scripts/fix-lid-customers.js --apply
+```
+Perilakunya: kalau ada customer bernomor valid dengan nama SAMA → merge
+(relasi dipindahkan, customer LID DIHAPUS). Kalau tidak ada pasangan →
+`phone` di-null-kan saja (order/catatan/percakapan TIDAK dihapus).
+Idempotent, aman dijalankan berkali-kali.
+
+⚠️ **Dampak yang harus diantisipasi:** customer yang `phone`-nya di-null-kan
+TIDAK BISA dibalas sales sampai nomornya terisi lagi (UI: "Nomor WA pelanggan
+tidak tersedia"). Nomor terisi otomatis begitu customer chat lagi dan WAHA
+berhasil resolve. Karena itu pratinjau penting — supaya tahu DULU berapa
+banyak yang akan terdampak.
+
+⚠️ **KALAU MENAMBAH TABEL BARU YANG FK-nya `onDelete: Cascade` KE Customer,
+WAJIB tambahkan pemindahannya ke jalur merge script ini.** `Order`/`Note`
+pakai RESTRICT jadi kalau terlewat delete-nya GAGAL KERAS (aman ketahuan).
+Tabel Cascade TIDAK punya jaring itu — datanya hilang DIAM-DIAM tanpa error.
+Ini pernah kejadian nyata: `pipeline_transitions` (Cascade) ditambahkan tanpa
+memperbarui script ini, jadi tiap merge menghapus seluruh riwayat stage
+customer yang di-merge. Sekarang sudah dipindahkan di dalam satu transaksi.
 
 **Cara cek cepat apakah masih ada data LID:**
 ```sql
