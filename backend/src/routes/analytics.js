@@ -1,24 +1,39 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import {
+  startOfDayWIB, endOfDayExclusiveWIB,
+  startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB,
+} from "../utils/wib.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
 
-// Bangun where clause dari query params ?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Bangun where clause dari query params ?from=YYYY-MM-DD&to=YYYY-MM-DD.
+//
+// ?from/?to adalah tanggal KALENDER WIB (user memilih "25 Juli" di
+// DateRangePicker, maksudnya 25 Juli menurut jam Jakarta). Sebelumnya
+// tanggal ini dibaca sebagai UTC ("...T00:00:00.000Z") — akibatnya seluruh
+// jendela laporan bergeser 7 jam: order jam 00:00-07:00 WIB terhitung di
+// HARI SEBELUMNYA. Sekarang batasnya diturunkan dari WIB (lihat utils/wib.js).
+//
+// Batas atas EKSKLUSIF (`lt` = awal hari berikutnya), bukan `lte` 23:59:59.999
+// — tidak ada celah 1ms di ujung hari.
 function buildDateWhere(from, to, field = "createdAt") {
   if (!from || !to) return {};
-  return { [field]: { gte: new Date(from + "T00:00:00.000Z"), lte: new Date(to + "T23:59:59.999Z") } };
+  return { [field]: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } };
 }
 
+// Periode sebelumnya dengan PANJANG SAMA, tepat bersambung sebelum `from`.
+// Contoh: 1-30 Juni (30 hari) → periode sebelumnya 2-31 Mei (30 hari).
 function buildPrevRange(from, to) {
   if (!from || !to) return null;
-  const f = new Date(from + "T00:00:00.000Z");
-  const t = new Date(to + "T23:59:59.999Z");
-  const diffMs = t - f;
+  const mulai   = startOfDayWIB(from);
+  const selesai = endOfDayExclusiveWIB(to);
+  const panjangMs = selesai - mulai;
   return {
-    gte: new Date(f.getTime() - diffMs - 1),
-    lte: new Date(f.getTime() - 1),
+    gte: new Date(mulai.getTime() - panjangMs),
+    lt:  mulai,
   };
 }
 
@@ -65,21 +80,33 @@ analyticsRouter.get("/overview", async (req, res) => {
             _sum: { value: true },
           })
         : (async () => {
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
+            // "Bulan ini" menurut kalender WIB. setHours(0,0,0,0) yang lama
+            // memakai jam container (UTC) → tanggal 1 jam 00:00-07:00 WIB
+            // tidak terhitung sebagai bulan berjalan.
+            const { year, month } = nowPartsWIB();
             return prisma.order.aggregate({
-              where: { createdAt: { gte: startOfMonth }, status: { not: "CANCELLED" } },
+              where: {
+                createdAt: { gte: startOfMonthWIB(year, month) },
+                status: { not: "CANCELLED" },
+              },
               _sum: { value: true },
             });
           })(),
 
       prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhere }),
 
+      // ⚠️ BUCKET BULANAN WAJIB WIB, BUKAN UTC.
+      // Kolom "createdAt" adalah timestamp UTC, jadi date_trunc('month', ...)
+      // polos mengelompokkan menurut kalender UTC — order tanggal 1 jam
+      // 00:00-07:00 WIB nyasar ke bucket BULAN SEBELUMNYA. Digeser dulu ke
+      // wall-clock WIB (`AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'`)
+      // supaya bucket-nya cocok dengan bulan yang dilihat user.
+      // Lihat backend/src/utils/wib.js.
+      //
       // type = 'INDIVIDUAL' — grup WA internal (Grup Sales/Driver/Produksi)
       // BUKAN lead/customer, tidak boleh ikut hitungan traffic.
       prisma.$queryRaw`
-        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
                COUNT(*)::int as count
         FROM "Conversation"
         WHERE "createdAt" >= NOW() - INTERVAL '6 months'
@@ -90,7 +117,7 @@ analyticsRouter.get("/overview", async (req, res) => {
 
       // Pendapatan bulanan 6 bulan terakhir
       prisma.$queryRaw`
-        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
                COALESCE(SUM(value), 0)::bigint as value
         FROM "Order"
         WHERE status != 'CANCELLED'
@@ -101,7 +128,7 @@ analyticsRouter.get("/overview", async (req, res) => {
 
       // Pelanggan baru per bulan 6 bulan terakhir
       prisma.$queryRaw`
-        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
                COUNT(*)::int as count
         FROM "Customer"
         WHERE "createdAt" >= NOW() - INTERVAL '6 months'
@@ -208,7 +235,46 @@ analyticsRouter.get("/performance", async (req, res) => {
         : null;
     } catch (_) {}
 
-    res.json({ totalConversations, openCount, resolvedCount, closingRate, avgResponseMinutes });
+    // Tren bulanan avg response time (6 bulan terakhir) — dipakai sparkline
+    // di MetricCard "Avg Response Time" (features/laporan/components/MetricCard.jsx).
+    // Sebelumnya endpoint ini cuma mengembalikan SATU angka, jadi tidak ada
+    // cara menampilkan apakah kecepatan respons tim membaik atau memburuk.
+    //
+    // Di-bucket menurut bulan pesan INBOUND-nya (kapan customer bertanya) —
+    // itu cohort yang natural untuk "seberapa cepat kami menjawab bulan itu".
+    // Bucket WIB, bukan UTC — lihat catatan di /overview.
+    let monthlyResponseTime = [];
+    try {
+      const rows = await prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', i."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
+               AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
+        FROM (
+          SELECT "conversationId", MIN("createdAt") as "createdAt"
+          FROM "Message" WHERE direction = 'INBOUND'
+          GROUP BY "conversationId"
+        ) i
+        JOIN (
+          SELECT "conversationId", MIN("createdAt") as "createdAt"
+          FROM "Message" WHERE direction = 'OUTBOUND'
+          GROUP BY "conversationId"
+        ) o ON i."conversationId" = o."conversationId"
+        JOIN "Conversation" c ON c.id = i."conversationId"
+        WHERE o."createdAt" > i."createdAt"
+          AND c."type" = 'INDIVIDUAL'
+          AND i."createdAt" >= NOW() - INTERVAL '6 months'
+        GROUP BY 1
+        ORDER BY 1
+      `;
+      monthlyResponseTime = rows.map((r) => ({
+        month: r.month,
+        value: r.avg_minutes != null ? Math.round(Number(r.avg_minutes)) : 0,
+      }));
+    } catch (_) {}
+
+    res.json({
+      totalConversations, openCount, resolvedCount, closingRate,
+      avgResponseMinutes, monthlyResponseTime,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -230,9 +296,16 @@ analyticsRouter.get("/cs-performance", async (req, res) => {
         const [total, resolved, orderAgg] = await Promise.all([
           prisma.conversation.count({ where }),
           prisma.conversation.count({ where: { ...where, status: "RESOLVED" } }),
+          // BUG (fix): sebelumnya `{ gte: new Date(from), lte: new Date(to) }`
+          // — `new Date("2026-07-25")` = 25 Juli 00:00 UTC, jadi batas ATAS
+          // jatuh di AWAL hari terakhir. Seluruh order di hari terakhir
+          // rentang HILANG dari kolom "Total Nilai Order" per sales (dan
+          // 7 jam pertama tiap hari WIB ikut bergeser). Sekarang pakai
+          // buildDateWhere() yang sama dengan metrik lain — satu sumber
+          // kebenaran batas periode.
           prisma.order.aggregate({
             where: {
-              ...(from && to ? { createdAt: { gte: new Date(from), lte: new Date(to) } } : {}),
+              ...buildDateWhere(from, to),
               customer: { assignedSalesId: u.id },
               status: { not: "CANCELLED" },
             },
@@ -330,12 +403,16 @@ analyticsRouter.get("/source-performance", async (req, res) => {
 // Per-sales: totalOrderValue bulan itu, target dari SalesTarget, persentase pencapaian
 analyticsRouter.get("/sales-performance", async (req, res) => {
   try {
-    const year  = Number(req.query.year  || new Date().getFullYear());
-    const month = Number(req.query.month || new Date().getMonth() + 1);
+    // Default = bulan berjalan menurut WIB (bukan menurut jam container UTC).
+    const sekarang = nowPartsWIB();
+    const year  = Number(req.query.year  || sekarang.year);
+    const month = Number(req.query.month || sekarang.month);
 
-    // Rentang tanggal bulan yang diminta (timezone lokal server)
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth   = new Date(year, month, 1);    // exclusive
+    // Rentang bulan menurut kalender WIB. `new Date(year, month-1, 1)` yang
+    // lama memakai timezone server — di container (UTC) batasnya bergeser
+    // 7 jam, jadi order awal/akhir bulan bisa masuk bulan yang salah.
+    const startOfMonth = startOfMonthWIB(year, month);
+    const endOfMonth   = endOfMonthExclusiveWIB(year, month); // exclusive
 
     const salesUsers = await prisma.user.findMany({
       where: { role: "SALES" },
@@ -692,11 +769,13 @@ analyticsRouter.get("/recommendations", async (req, res) => {
     }
 
     // Rule target: rep < 50% dengan sisa hari <= 12 (bulan berjalan).
-    const d = new Date();
-    const year = d.getFullYear(), month = d.getMonth() + 1;
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 1);
-    const daysLeft = Math.ceil((monthEnd - d) / 86_400_000);
+    // Bulan & sisa hari dihitung menurut kalender WIB — kalau pakai jam
+    // container (UTC), tanggal 1 jam 00:00-07:00 WIB masih dianggap bulan
+    // lalu sehingga "sisa hari" salah ~30 hari.
+    const { year, month } = nowPartsWIB();
+    const monthStart = startOfMonthWIB(year, month);
+    const monthEnd = endOfMonthExclusiveWIB(year, month);
+    const daysLeft = Math.ceil((monthEnd - Date.now()) / 86_400_000);
     if (daysLeft <= 12) {
       const targets = await prisma.salesTarget.findMany({
         where: { year, month, targetValue: { gt: 0 }, ...(isAdmin ? {} : { userId }) },

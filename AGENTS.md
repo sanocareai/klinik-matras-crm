@@ -1,4 +1,4 @@
-# CLAUDE.md — Klinik Matras CRM Platform
+# AGENTS.md — Klinik Matras CRM Platform
 # Baca file ini SEPENUHNYA sebelum mengerjakan apapun di project ini.
 # Update terakhir: 1 Juli 2026
 
@@ -391,7 +391,7 @@ diperbaiki permanen).
 
 
 
-Status: 🔨 sedang dikerjakan Claude Code, bertahap per gelombang (lihat
+Status: 🔨 sedang dikerjakan Codex, bertahap per gelombang (lihat
 prompt kerja untuk detail lengkap tiap poin). Ringkasan:
 
 1. Fix status order kepotong di UI (WAITING_LIST/PENGAMBILAN/PENGERJAAN/FINISH)
@@ -516,7 +516,7 @@ prompt kerja untuk detail lengkap tiap poin). Ringkasan:
 
 ### ✅ Otomasi & AI (UI sudah ada, logic sebagian)
 - Workflow builder: trigger → kondisi → aksi (visual flow cards)
-- AI Playground: multi-model BYOK (Claude, GPT, Gemini), chat interface
+- AI Playground: multi-model BYOK (Codex, GPT, Gemini), chat interface
 - Knowledge Base: upload dokumen + FAQ manual + keyword search
 
 ### ✅ Mobile Responsiveness
@@ -591,7 +591,7 @@ ulang dari nol, customer tidak merasa diulang-ulang.
 - Diskon/promo yang tidak ada di Knowledge Base
 - Closing/deal final — AI membuka jalan, bukan menutup deal
 
-**Model AI:** Claude untuk percakapan bernuansa (customer ragu, edukasi konsep),
+**Model AI:** Codex untuk percakapan bernuansa (customer ragu, edukasi konsep),
 Gemini untuk FAQ volume tinggi/sederhana (harga, jadwal). Router otomatis baru
 dibangun di Fase G setelah tahu pola pemakaian nyata — awal mulai 1 model dulu.
 
@@ -600,12 +600,12 @@ dibangun di Fase G setelah tahu pola pemakaian nyata — awal mulai 1 model dulu
 | Fase | Isi | Status |
 |---|---|---|
 | A | Isi Knowledge Base lengkap: semua harga layanan, FAQ, dokumen konsep "kasur sehat by Sano" (filosofi fondasi+lapisan, siapa cocok apa) | 🔨 Gilang sedang siapkan konten |
-| B | Rancang persona & alur percakapan AI (prompt engineering) — dikerjakan bareng Claude, ditest di AI Playground yang sudah ada di CRM | ⏳ Berikutnya, dikerjakan bareng |
+| B | Rancang persona & alur percakapan AI (prompt engineering) — dikerjakan bareng Codex, ditest di AI Playground yang sudah ada di CRM | ⏳ Berikutnya, dikerjakan bareng |
 | C | Logika deteksi buying-signal + generator ringkasan otomatis untuk sales | ⏳ Belum |
 | D | AI Co-pilot untuk SALES dulu (internal, risiko rendah) | ⏳ Belum |
 | E | Red team / stress test — coba jebak AI dengan pertanyaan aneh/provokatif sebelum sentuh customer asli | ⏳ Belum |
 | F | Pilot terbatas — nyalakan AI Warming ke sebagian kecil traffic, sales pantau penuh, bisa override kapan saja | ⏳ Belum |
-| G | Live penuh + router multi-model (Claude vs Gemini otomatis berdasarkan jenis pertanyaan) | ⏳ Belum |
+| G | Live penuh + router multi-model (Codex vs Gemini otomatis berdasarkan jenis pertanyaan) | ⏳ Belum |
 
 Catatan: seluruh Fase 4 BELUM live ke customer asli manapun sampai lolos Fase E.
 Prioritas: AI Co-pilot sales (D) sebelum AI Warming customer (F) — risiko lebih

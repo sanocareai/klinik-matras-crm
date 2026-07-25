@@ -3,6 +3,9 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import { formatRupiah, ORDER_STATUS_LABELS } from "../../../utils/format.js";
+// Tanggal SELALU lewat utils/formatDate.js — WIB di-pin di sana, bukan ikut
+// timezone device. Lihat catatan arsitektur di file itu.
+import { formatTanggal } from "../../../utils/formatDate.js";
 
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
@@ -13,11 +16,6 @@ function statusBadgeClass(status) {
   if (status === "DELIVERED") return "dash-badge-success";
   if (status === "CANCELLED") return "dash-badge-failed";
   return "dash-badge-processing";
-}
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 }
 
 export default function RecentOrdersTable({ orders, loading }) {
@@ -56,7 +54,7 @@ export default function RecentOrdersTable({ orders, loading }) {
                 <tr key={o.id}>
                   <td>{o.product}</td>
                   <td>{o.customerName}</td>
-                  <td>{formatDate(o.createdAt)}</td>
+                  <td>{formatTanggal(o.createdAt)}</td>
                   <td>{formatRupiah(o.value)}</td>
                   <td>
                     <span className={`dash-badge ${statusBadgeClass(o.status)}`}>

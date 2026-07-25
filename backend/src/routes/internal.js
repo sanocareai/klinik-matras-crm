@@ -2,6 +2,7 @@ import fs from "fs";
 import express from "express";
 import { sendText, getDefaultOpsSession } from "../services/wahaClient.js";
 import { sendEmailAlert } from "../services/emailAlert.js";
+import { formatWIB } from "../utils/wib.js";
 
 export const internalRouter = express.Router();
 
@@ -41,7 +42,9 @@ internalRouter.post("/backup-alert", async (req, res) => {
   const pesan = [
     "⚠️ *BACKUP DATABASE GAGAL*",
     "",
-    `Waktu: ${timestamp || new Date().toLocaleString("id-ID")}`,
+    // formatWIB() — container jalan di UTC, jadi toLocaleString("id-ID")
+    // polos memberi jam 7 jam lebih awal di alert yang dibaca manusia.
+    `Waktu: ${timestamp || formatWIB()}`,
     `File : ${file || "-"}`,
     "",
     "Segera cek VPS dan jalankan backup manual:",
@@ -69,7 +72,7 @@ internalRouter.post("/waha-alert", async (req, res) => {
 
   const { status } = req.body || {};
   const statusDisplay = status || "TIDAK DIKETAHUI";
-  const waktu = new Date().toLocaleString("id-ID");
+  const waktu = formatWIB();
 
   // Selalu tulis ke log file (bisa dicek manual)
   try {

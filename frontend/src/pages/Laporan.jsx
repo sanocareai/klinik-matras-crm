@@ -162,7 +162,10 @@ export default function Laporan() {
               </TabsContent>
 
               <TabsContent value="Performa CS">
-                <PerformaCsTab csPerf={csPerf} targetMap={targetMap} onExport={handleExportCS} />
+                <PerformaCsTab
+                  csPerf={csPerf} targetMap={targetMap} onExport={handleExportCS}
+                  monthlyRevenue={monthlyRevenue}
+                />
               </TabsContent>
             </>
           )}

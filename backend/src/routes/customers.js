@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
+import { dispatchLeadWon } from "../services/automationWebhook.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -220,13 +221,69 @@ customerRouter.patch("/:id", async (req, res) => {
   }
 
   try {
-    const customer = await prisma.customer.update({
-      where: { id: req.params.id },
-      data,
+    // Stage LAMA dibaca di dalam transaksi yang sama dengan update-nya, supaya
+    // baris pipeline_transitions tidak pernah tercatat tanpa perubahan
+    // Customer-nya ikut berhasil (dan sebaliknya).
+    //
+    // CATATAN RACE: isolation level default (read committed) berarti 2 PATCH
+    // bersamaan pada customer yang SAMA secara teori bisa mencatat 2 transisi
+    // dari stage-lama yang sama. Dengan 7 user dan stage dipindah manual lewat
+    // drag & drop, ini tidak realistis — dan dampaknya cuma 1 baris riwayat
+    // berlebih, bukan data Customer yang rusak. Kalau nanti stage bisa diubah
+    // otomatis (workflow/AI), naikkan ke SELECT ... FOR UPDATE.
+    const { customer, transisi } = await prisma.$transaction(async (tx) => {
+      const sebelum = await tx.customer.findUnique({
+        where: { id: req.params.id },
+        select: { pipelineStage: true },
+      });
+      if (!sebelum) {
+        throw Object.assign(new Error("Pelanggan tidak ditemukan"), { statusCode: 404 });
+      }
+
+      const customer = await tx.customer.update({ where: { id: req.params.id }, data });
+
+      // Dicatat HANYA kalau stage BENAR-BENAR berpindah. Form CRM sering
+      // mengirim seluruh field termasuk pipelineStage yang tidak berubah —
+      // tanpa cek ini riwayat akan penuh baris "LEAD → LEAD" dan analisa
+      // kecepatan pipeline jadi tidak berguna.
+      let transisi = null;
+      if (pipelineStage !== undefined && pipelineStage !== sebelum.pipelineStage) {
+        transisi = await tx.pipelineTransition.create({
+          data: {
+            customerId:  customer.id,
+            fromStage:   sebelum.pipelineStage,
+            toStage:     pipelineStage,
+            changedById: req.user?.id || null,
+          },
+        });
+      }
+
+      return { customer, transisi };
     });
+
     res.json(customer);
+
+    // ── SETELAH respons: webhook keluar ke n8n (fire-and-forget) ─────────────
+    // Sengaja TIDAK di-await dan TIDAK di dalam transaksi — sales tidak boleh
+    // menunggu n8n, dan n8n yang mati tidak boleh membatalkan perubahan stage.
+    // dispatchLeadWon() sudah menangkap semua error di dalam; .catch() di sini
+    // hanya jaring terakhir supaya tidak ada unhandled rejection.
+    if (transisi?.toStage === "WON") {
+      dispatchLeadWon(prisma, {
+        customerId:  customer.id,
+        fromStage:   transisi.fromStage,
+        changedById: transisi.changedById,
+      }).catch((err) => console.error("[automation-webhook] lead.won tak tertangkap:", err));
+    }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Blok try ini sekarang MELEWATI res.json() (webhook dijalankan setelah
+    // respons terkirim) — tanpa cek ini, error apa pun sesudahnya akan memicu
+    // "Cannot set headers after they are sent" yang menutupi error aslinya.
+    if (res.headersSent) {
+      console.error("PATCH /customers/:id error setelah respons terkirim:", err);
+      return;
+    }
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

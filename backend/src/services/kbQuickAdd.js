@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { WIB_TZ } from "../utils/wib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KB_DIR = path.join(__dirname, "../../data/knowledge");
@@ -40,7 +41,10 @@ export function appendToKbCategory({ category, title, content, authorName }) {
     throw new Error(`Kategori tidak valid: ${category}`);
   }
   const fp = ensureFile(category);
+  // timeZone WIB eksplisit — tanpa ini container (UTC) menstempel tanggal
+  // KEMARIN untuk entri yang ditambahkan antara 00:00-07:00 WIB.
   const dateStr = new Date().toLocaleDateString("id-ID", {
+    timeZone: WIB_TZ,
     day: "2-digit", month: "long", year: "numeric",
   });
   const entry = `\n## ${title}\n*Ditambahkan ${dateStr} oleh ${authorName}*\n\n${content}\n\n---\n`;

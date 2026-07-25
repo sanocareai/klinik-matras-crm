@@ -1,3 +1,14 @@
+// ─── TANGGAL: SEMUA DIDELEGASIKAN KE utils/formatDate.js ─────────────────────
+// Helper tanggal di file ini dulunya memakai `toLocaleDateString()` langsung,
+// artinya hasilnya mengikuti timezone DEVICE. Sekarang semuanya tipis saja —
+// meneruskan ke formatDate.js yang men-pin Asia/Jakarta. Nama lama
+// DIPERTAHANKAN supaya ~20 pemanggil yang sudah ada tidak perlu diubah dan
+// langsung ikut benar. Untuk komponen BARU, impor langsung dari formatDate.js.
+import {
+  formatTanggalLengkap, formatJam, formatRelatif, formatTanggalPendek,
+  formatRentangTanggal, formatLabelBulan, hariSejak, toWIB,
+} from "./formatDate.js";
+
 export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
@@ -25,51 +36,30 @@ export function formatPhoneDisplay(phone) {
 }
 
 export function formatTanggalIndo(date = new Date()) {
-  return date.toLocaleDateString("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return formatTanggalLengkap(date);
 }
 
 export function formatWaktu(dateString) {
-  if (!dateString) return "";
-  const d = new Date(dateString);
-  return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  return dateString ? formatJam(dateString) : "";
 }
 
 export function formatTanggalWaktu(dateString) {
-  if (!dateString) return "";
-  const d = new Date(dateString);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffMnt = Math.floor(diffMs / 60000);
-  const diffJam = Math.floor(diffMnt / 60);
-  const diffHari = Math.floor(diffJam / 24);
-
-  if (diffMnt < 1) return "Baru saja";
-  if (diffMnt < 60) return `${diffMnt} mnt lalu`;
-  if (diffHari === 0) return formatWaktu(dateString);
-  if (diffHari === 1) return "Kemarin";
-  if (diffHari < 7) return `${diffHari} hari lalu`;
-  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  return dateString ? formatRelatif(dateString) : "";
 }
 
 // Timestamp pintar untuk item daftar percakapan (gaya WhatsApp):
-// hari ini → jam, minggu ini → nama hari, lebih lama → tanggal pendek
+// hari ini → jam, minggu ini → nama hari, lebih lama → tanggal pendek.
+// Semua perbandingan hari memakai kalender WIB, bukan kalender device.
 const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 export function formatConvTimestamp(dateString) {
   if (!dateString) return "";
-  const d = new Date(dateString);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffHari = Math.floor((startOfToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86_400_000);
+  const d = toWIB(dateString);
+  const diffHari = hariSejak(dateString);
 
-  if (diffHari <= 0) return formatWaktu(dateString);
+  if (diffHari <= 0) return formatJam(dateString);
   if (diffHari === 1) return "Kemarin";
-  if (diffHari < 7) return HARI_ID[d.getDay()];
-  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  if (diffHari < 7) return HARI_ID[d.day()];
+  return formatTanggalPendek(dateString);
 }
 
 // Map "YYYY-MM" → nama bulan Indonesia singkat
@@ -77,10 +67,7 @@ export const MONTH_LABELS_ID = [
   "", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
   "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
 ];
-export function labelBulan(ymStr) {
-  const m = parseInt(ymStr?.split("-")[1] || "0", 10);
-  return MONTH_LABELS_ID[m] || ymStr;
-}
+export const labelBulan = formatLabelBulan;
 
 export function getInitials(name) {
   if (!name) return "?";
@@ -233,23 +220,17 @@ export const orderStatusVariant = (s) => pick(ORDER_STATUS_VARIANT, s);
 export const paymentStatusVariant = (s) => pick(PAYMENT_STATUS_VARIANT, s);
 
 // Format range tanggal untuk label di UI (e.g. "1 Jun – 30 Jun 2026")
-export function formatDateRange(from, to) {
-  if (!from || !to) return "";
-  const opts = { day: "numeric", month: "short", year: "numeric" };
-  return `${new Date(from).toLocaleDateString("id-ID", opts)} – ${new Date(to).toLocaleDateString("id-ID", opts)}`;
-}
+export const formatDateRange = formatRentangTanggal;
 
 // Helper cepat: apakah pelanggan VIP (total nilai order >= Rp5jt)
 export function isVIP(customer) {
   return (customer.orderValue || 0) >= 5_000_000;
 }
 
-// Hitung hari sejak last message (butuh field lastMessageAt dari backend)
-export function daysSinceLastChat(dateString) {
-  if (!dateString) return Infinity;
-  const diff = Date.now() - new Date(dateString).getTime();
-  return Math.floor(diff / 86_400_000);
-}
+// Hitung hari sejak last message (butuh field lastMessageAt dari backend).
+// Sekarang selisih HARI KALENDER WIB, bukan selisih 24 jam — "tidak aktif 30
+// hari" jadi cocok dengan yang dilihat user di kolom tanggal.
+export const daysSinceLastChat = hariSejak;
 
 // Format durasi menit ke "X jam Y mnt" atau "X mnt"
 export function formatDuration(minutes) {
@@ -282,30 +263,28 @@ export const KOTA_LIST = [
   "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
 ];
 
-// Preset date ranges untuk DateRangePicker
+// Preset date ranges untuk DateRangePicker.
+//
+// Menghasilkan tanggal KALENDER WIB "YYYY-MM-DD" — inilah kontrak dengan
+// backend: buildDateWhere() di backend/src/routes/analytics.js menafsirkan
+// ?from/?to sebagai tanggal WIB lalu menerjemahkannya ke batas instant UTC.
+// Sebelumnya preset dihitung dari kalender DEVICE; kalau device tidak di WIB,
+// "Hari Ini" bisa meminta tanggal yang salah.
 export function getDatePreset(preset) {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // toWIB(now) sudah berada di zona WIB, jadi startOf("day") = 00:00 WIB.
+  const hariIni = toWIB(Date.now()).startOf("day");
+  const fmt = (d) => d.format("YYYY-MM-DD");
+  const ini = fmt(hariIni);
 
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   switch (preset) {
-    case "today": {
-      const f = fmt(today);
-      return { from: f, to: f };
-    }
-    case "7d": {
-      const from = new Date(today); from.setDate(today.getDate() - 6);
-      return { from: fmt(from), to: fmt(today) };
-    }
-    case "30d": {
-      const from = new Date(today); from.setDate(today.getDate() - 29);
-      return { from: fmt(from), to: fmt(today) };
-    }
-    case "3m": {
-      const from = new Date(today); from.setMonth(today.getMonth() - 3);
-      return { from: fmt(from), to: fmt(today) };
-    }
+    case "today":
+      return { from: ini, to: ini };
+    case "7d":
+      return { from: fmt(hariIni.subtract(6, "day")), to: ini };
+    case "30d":
+      return { from: fmt(hariIni.subtract(29, "day")), to: ini };
+    case "3m":
+      return { from: fmt(hariIni.subtract(3, "month")), to: ini };
     default:
       return { from: "", to: "" };
   }

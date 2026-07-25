@@ -115,6 +115,7 @@ model User {
   firstResponderFor     Conversation[]  @relation("FirstResponder")
   handoverEventsFrom    HandoverEvent[] @relation("HandoverFrom")
   handoverEventsTo      HandoverEvent[] @relation("HandoverTo")
+  pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
 }
 
 // Token push notification aplikasi mobile (Expo Push Token) — 1 user bisa
@@ -155,7 +156,43 @@ model Customer {
   notes         Note[]
   orders        Order[]
 
+  pipelineTransitions PipelineTransition[]
+
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
+}
+
+// Log SETIAP perpindahan pipeline stage seorang customer (LEAD → QUALIFIED →
+// ...). Customer.pipelineStage hanya menyimpan posisi SEKARANG — tabel ini
+// menyimpan RIWAYAT-nya, supaya laporan bisa bergeser dari sekadar "berapa
+// banyak di stage X sekarang" ke data time-series: kecepatan pipeline (berapa
+// lama rata-rata LEAD→WON), analisa cohort, dan tren konversi per periode.
+//
+// APPEND-ONLY: baris di sini tidak pernah di-update/dihapus (kecuali ikut
+// terhapus bersama customer-nya). Ditulis dalam transaksi yang sama dengan
+// update Customer.pipelineStage — lihat routes/customers.js PATCH /:id.
+//
+// PENAMAAN FISIK: tabel & kolom sengaja snake_case (`pipeline_transitions`,
+// `customer_id`, ...) via @@map/@map sesuai permintaan, sementara nama field
+// di Prisma tetap camelCase mengikuti gaya model lain di file ini.
+model PipelineTransition {
+  id         String        @id @default(uuid()) @db.Uuid
+  customerId String        @map("customer_id")
+  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fromStage  PipelineStage @map("from_stage")
+  toStage    PipelineStage @map("to_stage")
+
+  // Siapa yang memindahkan. Nullable + SetNull: kalau user dihapus, riwayat
+  // pipeline TETAP ada (data laporan historis tidak boleh hilang karena
+  // pegawai resign).
+  changedById String? @map("changed_by")
+  changedBy   User?   @relation("PipelineTransitionActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at") // UTC — lihat src/utils/wib.js
+
+  @@index([customerId, createdAt]) // timeline per customer
+  @@index([createdAt]) // agregasi time-series lintas customer (tren harian/bulanan)
+  @@index([toStage, createdAt]) // "berapa yang masuk WON per periode" — velocity & funnel
+  @@map("pipeline_transitions")
 }
 
 model Conversation {

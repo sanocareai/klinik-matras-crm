@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import { formatRupiah, formatDuration } from "@/utils/format.js";
 import KpiCard from "./KpiCard.jsx";
+import MetricCard from "./MetricCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import ChartTooltip from "./ChartTooltip.jsx";
 
@@ -23,7 +24,10 @@ function progressTextClass(pct) {
   return "bg-chart-orange-soft text-chart-orange";
 }
 
-export default function PerformaCsTab({ csPerf, targetMap, onExport }) {
+// monthlyRevenue — deret pendapatan bulanan dari /analytics/overview, dipakai
+// sparkline "Total Nilai Order". Sengaja MEMAKAI ULANG deret yang sudah
+// di-fetch Laporan.jsx, bukan endpoint baru.
+export default function PerformaCsTab({ csPerf, targetMap, onExport, monthlyRevenue = [] }) {
   const totals = useMemo(() => ({
     conversations: csPerf.reduce((s, r) => s + (r.totalConversations || 0), 0),
     orderValue: csPerf.reduce((s, r) => s + (r.totalOrderValue || 0), 0),
@@ -44,10 +48,12 @@ export default function PerformaCsTab({ csPerf, targetMap, onExport }) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard index={0} label="Anggota Tim Aktif" numericValue={csPerf.length} />
           <KpiCard index={1} label="Total Percakapan" numericValue={totals.conversations} />
-          <KpiCard
-            index={2} hero label="Total Nilai Order"
-            numericValue={totals.orderValue}
+          <MetricCard
+            index={2} hero title="Total Nilai Order"
+            value={totals.orderValue}
             format={(v) => formatRupiah(Math.round(v))}
+            history={monthlyRevenue}
+            sub="seluruh tim · tren 6 bulan"
           />
           <KpiCard
             index={3} label="Rata-rata Closing Rate"

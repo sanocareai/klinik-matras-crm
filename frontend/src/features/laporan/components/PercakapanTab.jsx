@@ -1,6 +1,7 @@
 import React from "react";
 import { formatDuration } from "@/utils/format.js";
 import KpiCard from "./KpiCard.jsx";
+import MetricCard from "./MetricCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 
 const CHANNEL_LABEL = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram" };
@@ -20,11 +21,15 @@ export default function PercakapanTab({ perf, channelBreakdown }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard index={0} label="Total Percakapan" numericValue={perf?.totalConversations || 0} />
         <KpiCard index={1} label="Terbuka" numericValue={perf?.openCount || 0} />
-        <KpiCard
-          index={2} hero label="Avg Response Time"
-          numericValue={perf?.avgResponseMinutes || 0}
+        {/* lowerIsBetter — respons yang makin CEPAT itu membaik, jadi tren
+            menurun harus tampil hijau (bukan merah seperti metrik lain). */}
+        <MetricCard
+          index={2} hero title="Avg Response Time"
+          value={perf?.avgResponseMinutes || 0}
           format={() => formatDuration(perf?.avgResponseMinutes)}
-          sub="waktu respons rata-rata"
+          history={perf?.monthlyResponseTime || []}
+          lowerIsBetter
+          sub="waktu respons rata-rata · tren 6 bulan"
         />
         <KpiCard index={3} label="Selesai" numericValue={perf?.resolvedCount || 0} sub="percakapan selesai" />
       </div>
