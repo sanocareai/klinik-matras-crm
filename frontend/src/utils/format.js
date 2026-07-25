@@ -8,6 +8,7 @@ import {
   formatTanggalLengkap, formatJam, formatRelatif, formatTanggalPendek,
   formatRentangTanggal, formatLabelBulan, hariSejak, toWIB,
 } from "./formatDate.js";
+import { makeRange } from "../lib/dateRange.js";
 
 export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
@@ -263,29 +264,22 @@ export const KOTA_LIST = [
   "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
 ];
 
-// Preset date ranges untuk DateRangePicker.
+// Preset date range — KOMPATIBILITAS. Definisi kanonik seluruh preset sekarang
+// ada di lib/dateRange.js (skema tanggal, dipakai DateRangePicker gaya Google
+// Ads). Fungsi ini cuma memetakan key lama ("7d"/"30d"/"3m") ke id preset baru
+// supaya pemanggil lama tidak perlu diubah dan tidak ada DUA definisi "30 hari
+// terakhir" yang bisa saling drift.
 //
-// Menghasilkan tanggal KALENDER WIB "YYYY-MM-DD" — inilah kontrak dengan
-// backend: buildDateWhere() di backend/src/routes/analytics.js menafsirkan
-// ?from/?to sebagai tanggal WIB lalu menerjemahkannya ke batas instant UTC.
-// Sebelumnya preset dihitung dari kalender DEVICE; kalau device tidak di WIB,
-// "Hari Ini" bisa meminta tanggal yang salah.
+// Kode BARU sebaiknya langsung pakai makeRange() dari lib/dateRange.js.
+const KEY_LAMA_KE_PRESET = {
+  today: "today",
+  "7d":  "last_7_days",
+  "30d": "last_30_days",
+  "3m":  "last_3_months",
+};
 export function getDatePreset(preset) {
-  // toWIB(now) sudah berada di zona WIB, jadi startOf("day") = 00:00 WIB.
-  const hariIni = toWIB(Date.now()).startOf("day");
-  const fmt = (d) => d.format("YYYY-MM-DD");
-  const ini = fmt(hariIni);
-
-  switch (preset) {
-    case "today":
-      return { from: ini, to: ini };
-    case "7d":
-      return { from: fmt(hariIni.subtract(6, "day")), to: ini };
-    case "30d":
-      return { from: fmt(hariIni.subtract(29, "day")), to: ini };
-    case "3m":
-      return { from: fmt(hariIni.subtract(3, "month")), to: ini };
-    default:
-      return { from: "", to: "" };
-  }
+  const id = KEY_LAMA_KE_PRESET[preset];
+  if (!id) return { from: "", to: "" };
+  const { from, to } = makeRange(id);
+  return { from, to };
 }

@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
-import { formatRupiah, getDatePreset, STAGE_LABELS } from "../utils/format.js";
+import { formatRupiah, STAGE_LABELS } from "../utils/format.js";
+import { makeRange, toApiParams, formatRangeText } from "../lib/dateRange.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
 import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
@@ -15,9 +16,13 @@ import PerformaCsTab from "@/features/laporan/components/PerformaCsTab.jsx";
 
 const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Performa CS"];
 
+// Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
+// sampai jadi "laporan-null-null.xlsx".
+const namaFile = (r) => (r?.from && r?.to ? `${r.from}-${r.to}` : "semua");
+
 export default function Laporan() {
   const [tab, setTab] = useState("Ringkasan");
-  const [range, setRange] = useState(getDatePreset("30d"));
+  const [range, setRange] = useState(() => makeRange("last_30_days"));
 
   const [overview, setOverview] = useState(null);
   const [perf, setPerf]         = useState(null);
@@ -28,21 +33,27 @@ export default function Laporan() {
   const [loading, setLoading]   = useState(false);
 
   const loadData = useCallback(async () => {
-    if (!range.from || !range.to) return;
+    // Preset "Semua" sengaja mengirim from/to kosong (= tanpa filter tanggal),
+    // jadi JANGAN pakai `if (!range.from) return` seperti dulu — itu membuat
+    // "Semua" tidak pernah memuat apa pun. Yang ditolak hanya rentang
+    // setengah jadi (satu sisi terisi, sisi lain kosong).
+    const params = toApiParams(range);
+    const setengahJadi = (!!range.from) !== (!!range.to);
+    if (setengahJadi) return;
     setLoading(true);
     try {
       // Target selalu pakai bulan saat ini (sama seperti Dashboard)
       const now = new Date();
       const [ov, pf, cs, fn, sp, vl] = await Promise.all([
-        api.getAnalyticsOverview(range),
-        api.getAnalyticsPerformance(range),
-        api.getAnalyticsCsPerformance(range),
+        api.getAnalyticsOverview(params),
+        api.getAnalyticsPerformance(params),
+        api.getAnalyticsCsPerformance(params),
         api.getAnalyticsPipelineFunnel(),
         api.getSalesPerformance({ year: now.getFullYear(), month: now.getMonth() + 1 }).catch(() => []),
         // .catch(null) — endpoint ini baru; kalau backend belum ter-deploy,
         // tab Pipeline tetap tampil (funnel jalan) dan widget kecepatan
         // jatuh ke empty state, bukan menggagalkan seluruh halaman Laporan.
-        api.getAnalyticsPipelineVelocity(range).catch(() => null),
+        api.getAnalyticsPipelineVelocity(params).catch(() => null),
       ]);
       setOverview(ov);
       setPerf(pf);
@@ -76,7 +87,7 @@ export default function Laporan() {
       { Metrik: "Total Percakapan",  Nilai: perf?.totalConversations || 0 },
       { Metrik: "Avg Response",      Nilai: Math.round(perf?.avgResponseMinutes || 0) + " mnt" },
       { Metrik: "Closing Rate",      Nilai: perf?.closingRate ? (perf.closingRate * 100).toFixed(1) + "%" : "0%" },
-    ], `laporan-ringkasan-${range.from}-${range.to}`);
+    ], `laporan-ringkasan-${namaFile(range)}`);
   }
 
   async function handleExportCS() {
@@ -95,7 +106,7 @@ export default function Laporan() {
           "% Pencapaian":       sp?.percentToTarget != null ? `${sp.percentToTarget}%` : "—",
         };
       }),
-      `laporan-cs-${range.from}-${range.to}`
+      `laporan-cs-${namaFile(range)}`
     );
   }
 
@@ -116,7 +127,7 @@ export default function Laporan() {
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Laporan Analitik</h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
-            Data dinamis berdasarkan periode yang dipilih
+            Periode: {formatRangeText(range)}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

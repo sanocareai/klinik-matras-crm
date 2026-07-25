@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Users, ShoppingCart, Percent, Sparkles } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { getDatePreset, formatTanggalIndo } from "../utils/format.js";
+import { formatTanggalIndo } from "../utils/format.js";
+import { makeRange } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
 import { BAND2_IS_MOCK } from "../features/dashboard/data/contracts.js";
 // Band 1
@@ -30,7 +31,7 @@ function todayStr() {
 // Band 1 & 3 pakai data NYATA (/analytics/*), Band 2 pakai kontrak MOCK sampai
 // Wave 2B. Tidak menyentuh WAHA/SSE/inbox.
 export default function Dashboard({ user }) {
-  const [range, setRange] = useState(getDatePreset("30d"));
+  const [range, setRange] = useState(() => makeRange("last_30_days"));
   const [leadsModal, setLeadsModal] = useState(null);
   const d = useDashboardData(range);
 
