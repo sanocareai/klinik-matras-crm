@@ -1,13 +1,30 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Download, RefreshCw, MoreVertical } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
-import Avatar from "../components/Avatar.jsx";
 import { formatRupiah, STAGE_LABELS } from "../utils/format.js";
+import { useCountUp } from "../hooks/useCountUp.js";
+import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { Button } from "@/components/ui/button.jsx";
+import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { cn } from "@/lib/utils.js";
+import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
 const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
-const DOT_CLASS = { LEAD: "dot-lead", QUALIFIED: "dot-qualified", QUOTED: "dot-quoted", WON: "dot-won", LOST: "dot-lost" };
+
+// Total nilai per kolom, dengan count-up saat berubah. Dipisah jadi komponen
+// sendiri karena useCountUp adalah hook — tidak boleh dipanggil di dalam
+// loop .map() di komponen induk. Count-up ini yang membuat "dampak uang"
+// dari memindahkan deal terlihat (sano-animation-guidelines.md §3.6).
+function ColumnTotal({ value }) {
+  const animated = useCountUp(value);
+  return (
+    <span className="text-[13px] font-bold tabular-nums text-slate-700">
+      {formatRupiah(Math.round(animated))}
+    </span>
+  );
+}
 
 export default function Pipeline() {
   const [board, setBoard]     = useState({});
@@ -17,6 +34,10 @@ export default function Pipeline() {
   const [moveMenu, setMoveMenu] = useState(null); // ID card yang menu-nya terbuka
   const dragState = useRef(null);
   const [dragOver, setDragOver] = useState(null);
+  // ID card yang SEDANG digeser — hanya untuk visual "lift" (state `dragging`
+  // di KanbanCard). Sengaja state terpisah dari dragState (yang tetap ref
+  // supaya tidak memicu re-render tiap dragover).
+  const [draggingId, setDraggingId] = useState(null);
 
   async function loadBoard() {
     setLoading(true);
@@ -43,7 +64,8 @@ export default function Pipeline() {
     return getCards(stage).reduce((s, c) => s + (c.totalValue || 0), 0);
   }
 
-  // Pindah card ke stage baru — dipakai oleh drag-and-drop maupun tombol mobile
+  // Pindah card ke stage baru — dipakai oleh drag-and-drop maupun tombol mobile.
+  // Optimistic update, rollback lewat loadBoard() kalau API gagal.
   async function moveCardToStage(card, fromStage, toStage) {
     if (fromStage === toStage) return;
     setBoard((prev) => {
@@ -53,6 +75,9 @@ export default function Pipeline() {
       return next;
     });
     try {
+      // Ini juga yang mencatat baris pipeline_transitions di backend (satu
+      // transaksi) dan memicu webhook lead.won kalau toStage = WON —
+      // lihat routes/customers.js PATCH /:id.
       await api.updateCustomer(card.id, { pipelineStage: toStage });
     } catch (err) {
       alert("Gagal memindah pelanggan: " + err.message);
@@ -60,10 +85,19 @@ export default function Pipeline() {
     }
   }
 
-  // Drag & drop handlers (desktop)
+  // Drag & drop handlers (desktop) — HTML5 native, logika TIDAK diubah di
+  // Wave 5A, hanya ditambah set/clear draggingId untuk efek visual.
   function onDragStart(e, card, fromStage) {
     dragState.current = { card, fromStage };
     e.dataTransfer.effectAllowed = "move";
+    setDraggingId(card.id);
+  }
+
+  // Selalu jalan di akhir drag, termasuk kalau dilepas di luar kolom / ditekan
+  // Esc — jadi ini titik pembersihan yang bisa diandalkan untuk state visual.
+  function onDragEnd() {
+    setDraggingId(null);
+    setDragOver(null);
   }
 
   function onDragOver(e, stage) {
@@ -75,6 +109,7 @@ export default function Pipeline() {
   async function onDrop(e, toStage) {
     e.preventDefault();
     setDragOver(null);
+    setDraggingId(null);
     if (!dragState.current) return;
     const { card, fromStage } = dragState.current;
     dragState.current = null;
@@ -92,6 +127,7 @@ export default function Pipeline() {
           Stage: STAGE_LABELS[stage] || stage,
           "Total Nilai Order": formatRupiah(c.totalValue || 0),
           "Hari di Stage": c.daysSince || 0,
+          Mandek: isStale(c, stage) ? "Ya" : "",
           "Sales Person": c.assignedSales?.name || "",
         });
       });
@@ -99,114 +135,112 @@ export default function Pipeline() {
     exportToExcel(rows, "pipeline-" + new Date().toISOString().slice(0, 10));
   }
 
-  if (loading) return <div className="page-loading">Memuat pipeline...</div>;
+  const totalMandek = STAGES.reduce(
+    (n, s) => n + getCards(s).filter((c) => isStale(c, s)).length, 0
+  );
 
   return (
-    <div className="page kanban-page">
-      {/* Toolbar */}
-      <div className="kanban-toolbar">
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, flex: 1 }}>Pipeline</h1>
-        <select
-          className="filter-select"
-          value={filterSales}
-          onChange={(e) => setFilterSales(e.target.value)}
-          style={{ minWidth: 160 }}
-        >
-          <option value="">Semua Sales</option>
-          {users.filter((u) => u.role === "SALES" || u.role === "ADMIN").map((u) => (
-            <option key={u.id} value={u.id}>{u.name}</option>
-          ))}
-        </select>
-        <button className="btn btn-ghost btn-sm" onClick={loadBoard}>
-          <RefreshCw size={14} /> Refresh
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={handleExport}>
-          <Download size={14} /> Export
-        </button>
-      </div>
-
-      {/* Kanban Board */}
-      <div className="kanban-board">
-        {STAGES.map((stage) => {
-          const cards = getCards(stage);
-          return (
-            <div
-              key={stage}
-              className={`kanban-col ${dragOver === stage ? "drag-over" : ""}`}
-              onDragOver={(e) => onDragOver(e, stage)}
-              onDragLeave={() => setDragOver(null)}
-              onDrop={(e) => onDrop(e, stage)}
+    <PageContainer>
+      <PageHeader
+        title="Pipeline"
+        subtitle={
+          totalMandek > 0
+            ? `${totalMandek} deal mandek ${"≥"}14 hari — perlu ditindak`
+            : "Geser kartu antar stage untuk memperbarui status"
+        }
+        actions={
+          <>
+            <select
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[13px] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              value={filterSales}
+              onChange={(e) => setFilterSales(e.target.value)}
+              aria-label="Filter sales person"
             >
-              <div className="kanban-col-header">
-                <div className={`kanban-col-dot ${DOT_CLASS[stage]}`} />
-                <span className="kanban-col-name">{STAGE_LABELS[stage] || stage}</span>
-                <span className="kanban-col-count">{cards.length}</span>
-              </div>
-              <div className="kanban-col-value">{formatRupiah(stageTotal(stage))}</div>
+              <option value="">Semua Sales</option>
+              {users.filter((u) => u.role === "SALES" || u.role === "ADMIN").map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <Button variant="ghost" size="sm" onClick={loadBoard} disabled={loading}>
+              <RefreshCw size={14} /> Refresh
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleExport}>
+              <Download size={14} /> Export
+            </Button>
+          </>
+        }
+      />
 
-              <div className="kanban-cards">
-                {cards.map((card) => (
-                  <div
-                    key={card.id}
-                    className="kanban-card"
-                    draggable
-                    onDragStart={(e) => onDragStart(e, card, stage)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <Avatar name={card.name || card.phone || "?"} size="sm" />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="kanban-card-name">
-                          {card.name || card.phone || "—"}
-                        </div>
-                        {card.phone && <div className="kanban-card-phone">{card.phone}</div>}
-                      </div>
-                      {/* Tombol pindah stage — sangat berguna di mobile karena drag-and-drop tidak bekerja di touch */}
-                      <div style={{ position: "relative", flexShrink: 0 }}>
-                        <button
-                          className="kanban-card-menu-btn"
-                          title="Pindah stage"
-                          onClick={(e) => { e.stopPropagation(); setMoveMenu(moveMenu === card.id ? null : card.id); }}
-                        >
-                          <MoreVertical size={14} />
-                        </button>
-                        {moveMenu === card.id && (
-                          <>
-                            <div className="kanban-menu-backdrop" onClick={() => setMoveMenu(null)} />
-                            <div className="kanban-stage-picker">
-                              <div className="kanban-stage-picker-title">Pindah ke:</div>
-                              {STAGES.filter(s => s !== stage).map(s => (
-                                <button key={s} className="kanban-stage-option"
-                                  onClick={() => { setMoveMenu(null); moveCardToStage(card, stage, s); }}>
-                                  <div className={`kanban-col-dot ${DOT_CLASS[s]}`} />
-                                  {STAGE_LABELS[s] || s}
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="kanban-card-meta">
-                      <span className="kanban-card-value">{formatRupiah(card.totalValue)}</span>
-                      <span className="kanban-card-days">{card.daysSince}h lalu</span>
-                    </div>
-                    {card.assignedSales && (
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                        👤 {card.assignedSales.name}
+      <PageBody>
+        {loading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {STAGES.map((s) => (
+              <div key={s} className="flex flex-col gap-2 rounded-2xl bg-slate-50/80 p-2.5">
+                <Skeleton className="h-5 w-24" />
+                {[0, 1].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          // Mobile: kolom menumpuk (1 kolom) — sengaja BUKAN scroll horizontal,
+          // karena drag & drop tidak jalan di touch dan tombol "Pindah ke" di
+          // kartu sudah menangani perpindahan di HP.
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {STAGES.map((stage) => {
+              const cards = getCards(stage);
+              return (
+                <div
+                  key={stage}
+                  onDragOver={(e) => onDragOver(e, stage)}
+                  onDragLeave={() => setDragOver(null)}
+                  onDrop={(e) => onDrop(e, stage)}
+                  className={cn(
+                    "flex flex-col rounded-2xl border p-2.5 transition-colors duration-150",
+                    dragOver === stage
+                      ? "border-brand-300 bg-brand-50/70"
+                      : "border-transparent bg-slate-50/80"
+                  )}
+                >
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage] || "bg-slate-400")} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-600">
+                      {STAGE_LABELS[stage] || stage}
+                    </span>
+                    <span className="rounded-full bg-white px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-slate-500">
+                      {cards.length}
+                    </span>
+                  </div>
+                  <div className="mb-2 mt-1 px-0.5">
+                    <ColumnTotal value={stageTotal(stage)} />
+                  </div>
+
+                  <div className="flex flex-1 flex-col gap-2">
+                    {cards.map((card) => (
+                      <KanbanCard
+                        key={card.id}
+                        card={card}
+                        stage={stage}
+                        stages={STAGES}
+                        dragging={draggingId === card.id}
+                        menuOpen={moveMenu === card.id}
+                        onDragStart={(e) => onDragStart(e, card, stage)}
+                        onDragEnd={onDragEnd}
+                        onToggleMenu={() => setMoveMenu(moveMenu === card.id ? null : card.id)}
+                        onMoveToStage={(s) => { setMoveMenu(null); moveCardToStage(card, stage, s); }}
+                      />
+                    ))}
+                    {cards.length === 0 && (
+                      <div className="flex min-h-16 items-center justify-center rounded-xl border border-dashed border-slate-200 px-2 py-3 text-center text-[11px] text-slate-400">
+                        Kosong
                       </div>
                     )}
                   </div>
-                ))}
-                {cards.length === 0 && (
-                  <div style={{ padding: "12px 8px", color: "var(--text-muted)", fontSize: 12.5, textAlign: "center" }}>
-                    Drag card ke sini
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PageBody>
+    </PageContainer>
   );
 }

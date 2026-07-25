@@ -971,18 +971,6 @@ input:focus, select:focus, textarea:focus {
 .toast-info    { background: var(--accent); color: white; }
 .toast-warning { background: var(--warning); color: white; }
 
-/* ─── DATE RANGE PICKER ──────────────────────────────────── */
-.date-range-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.drp-btn {
-  padding: 6px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 600;
-  border: 1.5px solid var(--border); background: white; color: var(--text-muted);
-  cursor: pointer; transition: all 0.12s; white-space: nowrap;
-}
-.drp-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.drp-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
-.drp-custom { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
-.drp-custom input { font-size: 12px; padding: 5px 8px; border-radius: 6px; width: 130px; }
-
 /* ─── SKELETON LOADING ───────────────────────────────────── */
 .skeleton {
   background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border) 50%, var(--bg-subtle) 75%);
@@ -993,20 +981,6 @@ input:focus, select:focus, textarea:focus {
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .skeleton-text { height: 14px; margin-bottom: 8px; }
 .skeleton-card { height: 80px; border-radius: 12px; margin-bottom: 16px; }
-
-/* ─── PAGINATION ─────────────────────────────────────────── */
-.pagination { display: flex; align-items: center; gap: 6px; justify-content: flex-end; padding: 16px; }
-.pagination-btn {
-  min-width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
-  background: white; font-size: 13px; cursor: pointer; display: flex; align-items: center;
-  justify-content: center; font-weight: 500; color: var(--text-main);
-  transition: all 0.12s;
-}
-.pagination-btn:hover:not(:disabled) { background: #f3f4f6; }
-.pagination-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
-.pagination-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.pagination-info { font-size: 12.5px; color: var(--text-muted); margin: 0 8px; }
-.pagination-size select { font-size: 12.5px; padding: 5px 8px; border-radius: 6px; }
 
 /* ─── QUICK FILTER CHIPS ─────────────────────────────────── */
 .quick-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -1034,91 +1008,6 @@ input:focus, select:focus, textarea:focus {
 .stage-btn.active-won       { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
 .stage-btn.active-lost      { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 .stage-btn:not([class*="active"]):hover { background: #e2e8f0; color: var(--text-main); }
-
-/* ─── KANBAN BOARD ───────────────────────────────────────── */
-.kanban-page { padding: 0; display: flex; flex-direction: column; height: 100%; }
-.kanban-toolbar {
-  padding: 16px 28px 0; display: flex; align-items: center; gap: 10px;
-  background: var(--bg-page); flex-shrink: 0;
-}
-.kanban-board {
-  display: flex; gap: 14px; padding: 16px 28px 24px;
-  overflow-x: auto; flex: 1; align-items: flex-start;
-}
-.kanban-col {
-  min-width: 260px; width: 260px; flex-shrink: 0;
-  background: #f1f5f9; border-radius: 14px;
-  display: flex; flex-direction: column;
-  max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px);
-}
-.kanban-col-header {
-  padding: 14px 16px 10px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
-}
-.kanban-col-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.kanban-col-name { font-size: 13px; font-weight: 700; color: var(--text-main); flex: 1; }
-.kanban-col-count { font-size: 12px; color: var(--text-muted); font-weight: 600; }
-.kanban-col-value { font-size: 11px; color: var(--text-muted); padding: 0 16px 10px; }
-.kanban-cards { padding: 0 10px 10px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
-.kanban-card {
-  background: white; border-radius: 10px; padding: 12px 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: grab;
-  border: 1px solid #e8ecf0; transition: box-shadow 0.15s, transform 0.1s;
-}
-.kanban-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
-.kanban-card.dragging { opacity: 0.4; }
-.kanban-col.drag-over .kanban-cards { background: rgba(37,99,235,0.05); border-radius: 8px; }
-.kanban-card-name {
-  font-weight: 700; font-size: 13px; color: var(--text-main); margin-bottom: 4px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.kanban-card-phone { font-size: 12px; color: var(--text-muted); }
-.kanban-card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-.kanban-card-value { font-size: 12px; font-weight: 600; color: var(--color-primary); }
-.kanban-card-days  { font-size: 11px; color: var(--text-small); }
-.kanban-add-btn {
-  margin: 0 10px 10px; padding: 8px; border-radius: 8px; border: 1.5px dashed #cbd5e1;
-  background: transparent; color: var(--text-muted); font-size: 13px; cursor: pointer; width: calc(100% - 20px);
-  transition: all 0.12s;
-}
-.kanban-add-btn:hover { background: white; border-color: var(--color-primary); color: var(--color-primary); }
-
-/* Stage dot colors */
-.dot-lead      { background: #f59e0b; }
-.dot-qualified { background: #2563eb; }
-.dot-quoted    { background: #7c3aed; }
-.dot-won       { background: #16a34a; }
-.dot-lost      { background: #dc2626; }
-
-/* ── Kanban card — tombol "Pindah ke..." (mobile & desktop) ── */
-.kanban-card-menu-btn {
-  width: 26px; height: 26px; border-radius: 6px; border: none;
-  background: transparent; color: var(--text-muted); cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.12s;
-}
-.kanban-card-menu-btn:hover { background: #f1f5f9; color: var(--text-main); }
-.kanban-menu-backdrop {
-  position: fixed; inset: 0; z-index: 600;
-}
-.kanban-stage-picker {
-  position: absolute; top: 28px; right: 0;
-  background: white; border-radius: 10px;
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  min-width: 160px; z-index: 601;
-  padding: 6px 0;
-}
-.kanban-stage-picker-title {
-  font-size: 11px; font-weight: 700; color: var(--text-muted);
-  padding: 4px 12px 6px; text-transform: uppercase; letter-spacing: 0.05em;
-}
-.kanban-stage-option {
-  width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 7px 12px; border: none; background: transparent;
-  font-size: 13px; color: var(--text-main); cursor: pointer; text-align: left;
-  transition: background 0.1s;
-}
-.kanban-stage-option:hover { background: #f8fafc; }
 
 /* ─── FUNNEL CHART ───────────────────────────────────────── */
 .funnel-section { margin-bottom: 24px; }
@@ -2624,25 +2513,6 @@ input:focus, select:focus, textarea:focus {
   .drawer-tabs { overflow-x: auto; flex-wrap: nowrap; }
   .drawer-tab { flex-shrink: 0; }
 
-  /* ── Pipeline — horizontal scroll snap ── */
-  .kanban-page { padding: 0; }
-  .kanban-toolbar { padding: 10px 12px; overflow-x: auto; }
-  .kanban-board {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    padding: 12px;
-    gap: 12px;
-    scrollbar-width: none;
-  }
-  .kanban-board::-webkit-scrollbar { display: none; }
-  .kanban-col {
-    min-width: 82vw;
-    scroll-snap-align: start;
-    flex-shrink: 0;
-  }
-
   /* ── Broadcast — wizard stacked ── */
   .wizard-layout { flex-direction: column; height: auto; overflow: auto; }
   .wizard-sidebar {
@@ -2726,8 +2596,6 @@ input:focus, select:focus, textarea:focus {
   .settings-section-title { font-size: 15px; }
   .wa-session-grid { grid-template-columns: 1fr; }
 
-  /* ── Pipeline — card overflow ── */
-  .kanban-card-value { font-size: 11px; }
   /* Toast di mobile: atas layar, lebar penuh */
   .toast-notif {
     bottom: auto; top: 70px; right: 12px; left: 12px;
@@ -2766,8 +2634,6 @@ input:focus, select:focus, textarea:focus {
   .customer-table th, .customer-table td { padding: 8px 10px; }
   /* Kolom tabel banyak: beri scroll horizontal */
   .table-wrap { overflow-x: auto; }
-  /* Pipeline: kolom lebih ramping */
-  .kanban-col { min-width: 220px; }
   /* Drawer lebih lebar di tablet */
   .drawer-panel { width: 460px; }
   /* Chat: kecilkan header actions biar tidak overflow */
