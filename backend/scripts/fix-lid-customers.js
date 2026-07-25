@@ -6,17 +6,27 @@
 // Jalankan: docker compose exec backend node scripts/fix-lid-customers.js
 
 import { prisma } from "../src/db.js";
+import { isLidLikePhone } from "../src/services/wahaClient.js";
 
 // Nomor valid Indonesia: 62 + 8-11 digit
 function isValidPhone(phone) {
   return phone && /^62\d{8,11}$/.test(phone);
 }
 
+// Deteksi LID memakai predikat KANONIK dari wahaClient.js — jangan bikin versi
+// sendiri di sini. Dulu script ini punya salinannya dengan ambang BEDA
+// (>=10 digit) dari yang dipakai jalur kirim (>13 digit), jadi "bersih menurut
+// script" belum tentu "aman menurut jalur kirim".
+//
+// Tambahan khusus script ini: kolom Customer.phone seharusnya nomor POLOS
+// (tanpa @domain). Kalau masih ada "@" apa pun, itu data kotor yang perlu
+// dibereskan — jadi di sini "@" apa saja dihitung mencurigakan, sementara
+// isLidLikePhone() sengaja mempercayai domain non-@lid (karena di jalur kirim
+// @g.us grup itu sah).
 function isLidPhone(phone) {
   if (!phone) return false;
-  if (phone.includes("@")) return true;               // masih ada suffix @lid
-  if (!phone.startsWith("62") && phone.length >= 10) return true; // angka LID panjang
-  return false;
+  if (phone.includes("@")) return true;
+  return isLidLikePhone(phone);
 }
 
 async function main() {

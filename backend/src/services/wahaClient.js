@@ -54,11 +54,10 @@ export async function sendText(to, text, quotedMessageId = null, session) {
   if (!session) {
     throw new Error("sendText: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
   }
-  const rawDigits = to.split("@")[0];
-  if (rawDigits.length > 13 && !rawDigits.startsWith("62")) {
-    console.warn("[sendText] Input terlihat seperti LID bukan nomor WA:", to);
-  }
-  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  // buildChatId MENOLAK (throw) kalau tujuan masih LID. Sebelumnya di sini
+  // cuma console.warn lalu pesan tetap dikirim ke "<LID>@c.us" — alamat yang
+  // tidak ada, jadi pesan hilang tanpa error dan sales tidak pernah tahu.
+  const chatId = buildChatId(to, "sendText");
   const body = { session, chatId, text };
   if (quotedMessageId) body.quotedMessageId = quotedMessageId;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
@@ -79,7 +78,7 @@ export async function sendMedia(to, file, caption, sendAs = "media", session) {
   if (!session) {
     throw new Error("sendMedia: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
   }
-  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const chatId = buildChatId(to, "sendMedia");
   const mime   = file.mimetype || "";
 
   let endpoint = "/api/sendFile"; // default: dokumen
@@ -130,7 +129,7 @@ export async function editMessage(to, messageId, text, session) {
   if (!session) {
     throw new Error("editMessage: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
   }
-  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const chatId = buildChatId(to, "editMessage");
   const res = await fetch(
     `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
     {
@@ -155,7 +154,7 @@ export async function deleteMessage(to, messageId, session) {
   if (!session) {
     throw new Error("deleteMessage: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
   }
-  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  const chatId = buildChatId(to, "deleteMessage");
   const res = await fetch(
     `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
     { method: "DELETE", headers: headers() }
@@ -338,6 +337,52 @@ export async function getSessionStatus(session = WAHA_SESSION) {
   });
   if (!res.ok) throw new Error(`Gagal cek status sesi WAHA (${res.status})`);
   return res.json();
+}
+
+// ─── DETEKSI LID — SATU SUMBER KEBENARAN ─────────────────────────────────────
+// LID (Local ID WhatsApp) adalah angka ~15 digit yang BUKAN nomor telepon.
+// Kalau LID lolos ke chatId kirim, pesan masuk ke alamat yang tidak ada:
+// sales merasa sudah membalas, customer tidak pernah menerima apa pun
+// (gejala "balasan nyasar" di CLAUDE.md §5).
+//
+// ⚠️ JANGAN pernah menganggap "angka panjang yang tidak mulai 62" = LID tanpa
+// mengecualikan @g.us DULU. JID GRUP juga angka panjang non-62 (mis.
+// "120363376@g.us") dan grup dikirim lewat sendText/sendMedia yang SAMA
+// (lihat resolveSendTarget di routes/conversations.js) — tanpa pengecualian
+// ini, seluruh fitur pesan grup akan mati.
+//
+// Sengaja KONSERVATIF (ambang 14 digit): tugasnya mencegah LID lolos, bukan
+// memvalidasi nomor secara umum. Nomor internasional wajar ≤13 digit, jadi
+// 14+ digit polos praktis hanya LID.
+export function isLidLikePhone(value) {
+  const raw = String(value || "");
+  if (!raw) return false;
+  if (raw.includes("@lid")) return true;
+  // Ada domain lain (@c.us / @s.whatsapp.net / @g.us / @broadcast) → percaya,
+  // WAHA yang menentukan validitasnya. Termasuk JID grup.
+  if (raw.includes("@")) return false;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return false;
+  return !digits.startsWith("62") && digits.length >= 14;
+}
+
+// Bangun chatId untuk WAHA + TOLAK LID sebelum request terkirim.
+// Dipakai semua fungsi kirim/ubah pesan supaya aturannya tidak bisa drift
+// (sebelumnya hanya sendText yang punya cek, dan cuma console.warn — jadi
+// pesan tetap dikirim ke alamat LID yang salah tanpa ada yang tahu).
+function buildChatId(to, fnName) {
+  const raw = String(to || "").trim();
+  if (!raw) throw new Error(`${fnName}: nomor/JID tujuan kosong`);
+  if (isLidLikePhone(raw)) {
+    // Pesan error dalam Bahasa Indonesia — ini muncul ke sales di UI lewat
+    // response 502 di routes/conversations.js, jadi harus bisa ditindaklanjuti.
+    throw new Error(
+      `Nomor tujuan masih berupa LID (${raw}), bukan nomor WhatsApp asli — ` +
+      `pesan TIDAK dikirim supaya tidak hilang tanpa jejak. ` +
+      `Perbaiki nomor pelanggan di CRM, atau jalankan scripts/fix-lid-customers.js`
+    );
+  }
+  return raw.includes("@") ? raw : `${raw}@c.us`;
 }
 
 // Bersihkan nomor WhatsApp dari suffix @c.us / @s.whatsapp.net / @lid

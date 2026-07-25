@@ -93,36 +93,71 @@ Express Backend (port 4000)
 
 ## 5. ⚠️ MASALAH KRITIS YANG SEDANG BERLANGSUNG
 
-### BUG LID (PRIORITAS TERTINGGI — BELUM SELESAI)
+### BUG LID (sudah ditangani — status diperbarui 25 Juli 2026)
 
-WAHA NOWEB mengirim `from: "201086224863438@lid"` (LID/Local ID) 
-bukan nomor telepon asli. Nomor asli ada di:
-`payload._data.key.remoteJidAlt = "6285697620076@s.whatsapp.net"`
+⚠️ **Bagian ini SEBELUMNYA menyatakan bug LID "BELUM SELESAI" dan meminta
+menambahkan `extractPhoneNumber()` ke webhooks.js. Itu SUDAH TIDAK AKURAT** —
+penanganan LID di kode jauh lebih lengkap dari contoh yang dulu ditulis di
+sini. Jangan menambah parser LID baru; pakai yang sudah ada.
 
-**Dampak:**
-- Customer tersimpan dengan nomor LID (angka 15 digit bukan format 62xxx)
-- Balasan dari CRM nyasar (dikirim ke LID, bukan ke nomor asli)
-- Tab Pelanggan kemungkinan crash/blank karena data LID tidak valid
-- Percakapan dobel di WAHA (satu dari nomor asli, satu dari LID)
+**Masalah aslinya:** WAHA mengirim `from: "201086224863438@lid"` (LID/Local ID),
+bukan nomor telepon. Nomor asli ada di `_data.key.remoteJidAlt` (NOWEB) atau
+`_data.Info.SenderAlt`/`RecipientAlt` (GOWS).
 
-**Fix yang harus ada di backend/src/routes/webhooks.js:**
-```javascript
-function extractPhoneNumber(payload) {
-  // NOWEB pakai @lid — nomor asli ada di remoteJidAlt
-  if (payload._data?.key?.addressingMode === "lid" && 
-      payload._data?.key?.remoteJidAlt) {
-    return payload._data.key.remoteJidAlt.split("@")[0];
-  }
-  // Format normal @c.us
-  return (payload.from || "").split("@")[0];
-}
+**Yang SUDAH ada di kode (jalur MASUK) — `routes/webhooks.js`:**
+- `extractPhoneNoweb()` — pakai `remoteJidAlt` dulu, fallback resolve via API
+- `extractPhoneGows()` — pakai `SenderAlt`/`RecipientAlt`, sadar `fromMe`
+  (saat `fromMe` nomor customer ada di `Chat`, bukan `Sender`)
+- Gagal total → pesan **DIKARANTINA** ke tabel `UnresolvedMessage`
+  (`reason: "LID_UNRESOLVABLE"`), **BUKAN** membuat Customer bernomor sampah
+
+**`services/wahaClient.js`:**
+- `normalizePhoneNumber()` — SATU pintu masuk normalisasi, wajib dipakai semua
+  kode yang menerima JID dari WAHA
+- `resolvePhoneFromLid()` — berlapis: cache tabel `LidMapping` → WAHA API
+  `GET /api/{session}/lids/{lid}` → fallback Customer lama → null
+
+**Yang SUDAH ada di kode (jalur KELUAR):**
+- `isLidLikePhone()` — predikat KANONIK deteksi LID, satu-satunya sumber
+  kebenaran (dipakai juga oleh `scripts/fix-lid-customers.js`)
+- `buildChatId()` — dipakai `sendText` / `sendMedia` / `editMessage` /
+  `deleteMessage`. **MENOLAK (throw)** kalau tujuan masih LID, jadi sales
+  melihat error jelas di UI (502) alih-alih pesan hilang tanpa jejak.
+  Sebelum 25 Juli 2026 cek ini cuma `console.warn` DI SATU fungsi saja
+  (`sendText`) lalu pesan tetap dikirim ke `<LID>@c.us` — alamat yang tidak
+  ada. Itu penyebab sebenarnya gejala "balasan nyasar".
+
+⚠️ **JANGAN "menyederhanakan" `isLidLikePhone()` menjadi "angka panjang yang
+tidak mulai 62 = LID".** JID GRUP juga berbentuk begitu (mis.
+`120363376@g.us`) dan grup dikirim lewat `sendText`/`sendMedia` yang SAMA —
+tanpa pengecualian `@g.us`, SELURUH fitur pesan grup mati.
+
+**Cleanup data lama:** `docker compose exec backend node scripts/fix-lid-customers.js`
+— merge ke customer bernomor valid kalau namanya sama, kalau tidak `phone`
+di-null-kan (lebih baik kosong daripada LID salah; order/catatan/percakapan
+TIDAK dihapus). Idempotent, aman dijalankan berkali-kali.
+
+**Cara cek cepat apakah masih ada data LID:**
+```sql
+SELECT id, name, phone FROM "Customer"
+WHERE phone IS NOT NULL
+  AND (phone NOT LIKE '62%' OR length(phone) > 13 OR phone LIKE '%@%');
+-- HARUS 0 baris
+SELECT reason, COUNT(*) FROM "UnresolvedMessage" GROUP BY reason;
+-- LID_UNRESOLVABLE naik terus = WAHA tidak bisa resolve, perlu diperiksa
 ```
 
-**Setelah fix kode:** jalankan `node scripts/fix-lid-customers.js` untuk 
-cleanup data customer lama yang tersimpan dengan LID.
-
-**Saat kirim balasan (wahaClient.js):** chatId HARUS pakai format 
-`${phone}@c.us` — JANGAN @lid.
+**Sisa risiko yang masih terbuka:**
+- `resolvePhoneFromLid()` langkah 4 sengaja mengembalikan LID apa adanya kalau
+  ada Customer lama bernomor LID — supaya pesan masuk tetap menempel ke
+  riwayat yang benar. Jaring pengamannya adalah guard jalur keluar di atas.
+  Setelah cleanup dijalankan, langkah ini tidak akan pernah cocok lagi.
+- Webhook KELUAR `lead.won` (`services/automationWebhook.js`) mengirim
+  `customer.phone` ke n8n. Untuk customer yang nomornya sudah di-null-kan,
+  field ini `null` — otomasi eksternal harus menanganinya.
+- Percakapan dobel di WAHA (satu dari nomor asli, satu dari LID) dicegah
+  partial unique index di `Conversation`; kalau masih muncul, jalankan
+  `scripts/dedup-conversations.js`.
 
 ---
 
