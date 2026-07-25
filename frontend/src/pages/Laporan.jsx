@@ -24,6 +24,7 @@ export default function Laporan() {
   const [csPerf, setCsPerf]     = useState([]);
   const [salesPerf, setSalesPerf] = useState([]);
   const [funnel, setFunnel]     = useState([]);
+  const [velocity, setVelocity] = useState(null);
   const [loading, setLoading]   = useState(false);
 
   const loadData = useCallback(async () => {
@@ -32,17 +33,22 @@ export default function Laporan() {
     try {
       // Target selalu pakai bulan saat ini (sama seperti Dashboard)
       const now = new Date();
-      const [ov, pf, cs, fn, sp] = await Promise.all([
+      const [ov, pf, cs, fn, sp, vl] = await Promise.all([
         api.getAnalyticsOverview(range),
         api.getAnalyticsPerformance(range),
         api.getAnalyticsCsPerformance(range),
         api.getAnalyticsPipelineFunnel(),
         api.getSalesPerformance({ year: now.getFullYear(), month: now.getMonth() + 1 }).catch(() => []),
+        // .catch(null) — endpoint ini baru; kalau backend belum ter-deploy,
+        // tab Pipeline tetap tampil (funnel jalan) dan widget kecepatan
+        // jatuh ke empty state, bukan menggagalkan seluruh halaman Laporan.
+        api.getAnalyticsPipelineVelocity(range).catch(() => null),
       ]);
       setOverview(ov);
       setPerf(pf);
       setCsPerf(cs || []);
       setSalesPerf(sp || []);
+      setVelocity(vl);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
         (fn || []).map((item) => ({
@@ -158,7 +164,7 @@ export default function Laporan() {
               </TabsContent>
 
               <TabsContent value="Pipeline">
-                <PipelineTab funnel={funnel} />
+                <PipelineTab funnel={funnel} velocity={velocity} />
               </TabsContent>
 
               <TabsContent value="Performa CS">

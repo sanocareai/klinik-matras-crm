@@ -480,6 +480,101 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   }
 });
 
+// ── GET /analytics/pipeline-velocity?from=&to= ─────────────────────────────
+// Sisi WAKTU dari pipeline — pembaca pertama tabel pipeline_transitions.
+// /pipeline-funnel menjawab "berapa banyak di stage X SEKARANG"; endpoint ini
+// menjawab "berapa LAMA mereka tertahan di sana" dan "berapa yang BERGERAK".
+//
+// CARA HITUNG "lama di stage": untuk setiap transisi, waktu yang dihabiskan di
+// `from_stage` = created_at transisi ini − created_at transisi SEBELUMNYA
+// (customer yang sama, via LAG). Untuk transisi PERTAMA seorang customer kita
+// tidak punya catatan kapan dia masuk stage itu, jadi fallback ke
+// Customer.createdAt.
+//
+// ⚠️ KETERBATASAN YANG HARUS DIKOMUNIKASIKAN KE UI: tabel ini baru mulai
+// merekam 25 Juli 2026 dan TIDAK BISA di-backfill (perpindahan stage sebelum
+// itu tidak pernah dicatat di mana pun — Customer.updatedAt hanya tahu KAPAN
+// terakhir berubah, bukan DARI stage apa). Jadi `dataStartedAt` +
+// `totalTransitions` ikut dikirim supaya UI bisa jujur bilang "data baru
+// terkumpul sejak ..." alih-alih terlihat seperti fitur rusak.
+//
+// Scoping: mengikuti /pipeline-funnel (requireAuth level router, tanpa role
+// scoping tambahan) — halaman Laporan sendiri sudah adminOnly di sidebar.
+analyticsRouter.get("/pipeline-velocity", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    // Default 90 hari terakhir kalau tidak ada filter — cukup panjang supaya
+    // rata-rata tidak liar saat data masih sedikit.
+    const mulai   = from ? startOfDayWIB(from) : new Date(Date.now() - 90 * 86_400_000);
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
+
+    const [durasiRaw, masukStageRaw, bulananRaw, metaRaw] = await Promise.all([
+      // Rata-rata hari tertahan di tiap stage
+      prisma.$queryRaw`
+        WITH t AS (
+          SELECT pt.customer_id, pt.from_stage, pt.created_at,
+                 LAG(pt.created_at) OVER (PARTITION BY pt.customer_id ORDER BY pt.created_at) AS prev_at,
+                 c."createdAt" AS cust_created
+          FROM pipeline_transitions pt
+          JOIN "Customer" c ON c.id = pt.customer_id
+        )
+        SELECT from_stage AS stage,
+               AVG(EXTRACT(EPOCH FROM (created_at - COALESCE(prev_at, cust_created))) / 86400.0) AS avg_days,
+               COUNT(*)::int AS sample
+        FROM t
+        WHERE created_at >= ${mulai} AND created_at < ${selesai}
+          -- buang durasi negatif (data aneh: Customer.createdAt > transisi)
+          AND COALESCE(prev_at, cust_created) <= created_at
+        GROUP BY 1
+      `,
+
+      // Berapa customer BERGERAK masuk ke tiap stage dalam periode
+      prisma.$queryRaw`
+        SELECT to_stage AS stage, COUNT(*)::int AS count
+        FROM pipeline_transitions
+        WHERE created_at >= ${mulai} AND created_at < ${selesai}
+        GROUP BY 1
+      `,
+
+      // Tren bulanan masuk WON — bucket WIB (lihat catatan di /overview)
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS month,
+               COUNT(*)::int AS value
+        FROM pipeline_transitions
+        WHERE to_stage = 'WON'
+          AND created_at >= NOW() - INTERVAL '6 months'
+        GROUP BY 1 ORDER BY 1
+      `,
+
+      // Meta: sejak kapan data ada + total baris (untuk empty state jujur)
+      prisma.$queryRaw`
+        SELECT MIN(created_at) AS started_at, COUNT(*)::int AS total
+        FROM pipeline_transitions
+      `,
+    ]);
+
+    const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+    const durasiMap = Object.fromEntries(durasiRaw.map((r) => [r.stage, r]));
+    const masukMap  = Object.fromEntries(masukStageRaw.map((r) => [r.stage, r.count]));
+
+    res.json({
+      // Selalu 5 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
+      avgDaysInStage: STAGES.map((s) => ({
+        stage:   s,
+        avgDays: durasiMap[s]?.avg_days != null ? Number(Number(durasiMap[s].avg_days).toFixed(1)) : null,
+        sample:  durasiMap[s]?.sample || 0,
+      })),
+      movedToStage: STAGES.map((s) => ({ stage: s, count: masukMap[s] || 0 })),
+      monthlyWon: bulananRaw.map((r) => ({ month: r.month, value: Number(r.value) })),
+      dataStartedAt: metaRaw[0]?.started_at || null,
+      totalTransitions: metaRaw[0]?.total || 0,
+    });
+  } catch (err) {
+    console.error("pipeline-velocity error:", err);
+    res.status(500).json({ error: "Gagal memuat kecepatan pipeline" });
+  }
+});
+
 // Order terbaru (untuk widget "Recent Orders" di Dashboard) — dibuat karena
 // belum ada endpoint listing Order langsung, cuma agregat per-customer di
 // GET /api/customers (lihat CLAUDE.md/riset dashboard redesign).

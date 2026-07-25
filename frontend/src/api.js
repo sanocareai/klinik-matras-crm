@@ -217,6 +217,10 @@ export const api = {
   getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
   getAnalyticsCsPerformance: (params) => request("/analytics/cs-performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: () => request("/analytics/pipeline-funnel"),
+  // Sisi WAKTU pipeline (lama di stage + pergerakan) — pembaca tabel
+  // pipeline_transitions. Data baru terkumpul sejak 25 Juli 2026, tidak
+  // bisa di-backfill; respons menyertakan dataStartedAt untuk empty state.
+  getAnalyticsPipelineVelocity: (params) => request("/analytics/pipeline-velocity" + buildQuery(params)),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
