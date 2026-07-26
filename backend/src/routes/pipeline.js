@@ -35,12 +35,17 @@ pipelineRouter.get("/board", async (req, res) => {
     customers.forEach(({ orders, conversations, ...c }) => {
       const stage = c.pipelineStage || "NEW";
       const daysSince = Math.floor((now - new Date(c.updatedAt).getTime()) / 86_400_000);
-      const totalValue = orders.reduce((sum, o) => sum + o.value, 0);
+      // CANCELLED dikecualikan dari nilai — konsisten dengan seluruh endpoint
+      // lain (analytics, sales-report, GET /customers). Tanpa ini, total per
+      // kolom Kanban (dan nilai di tiap kartu) bisa menghitung uang dari deal
+      // yang sudah batal seolah masih berjalan.
+      const ordersAktif = orders.filter((o) => o.status !== "CANCELLED");
+      const totalValue = ordersAktif.reduce((sum, o) => sum + o.value, 0);
       const conv = conversations?.[0] || null;
       if (!board[stage]) board[stage] = [];
       board[stage].push({
         ...c,
-        orderCount: orders.length,
+        orderCount: ordersAktif.length,
         totalValue,
         daysSince,
         conversationId: conv?.id || null,

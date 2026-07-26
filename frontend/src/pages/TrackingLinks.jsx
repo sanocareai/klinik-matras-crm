@@ -94,9 +94,14 @@ export default function TrackingLinks() {
 
   return (
     <div style={{ padding: "24px", maxWidth: 960, margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div>
+      {/* Header — dulu flex row TANPA flexWrap, pasangan judul+subjudul
+          panjang dengan tombol jadi bisa saling meremas di lebar ~500-750px
+          (kelas bug yang sama seperti PageHeader, lihat perbaikannya di
+          components/ui/page.jsx). min-width mencegah kolom kiri diperas
+          sampai teks pecah kata-per-baris; flexWrap membiarkan tombol pindah
+          ke baris baru kalau memang tidak muat. */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+        <div style={{ minWidth: 200, flex: "1 1 auto" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Link Pelacakan</h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
             Buat link khusus per channel iklan untuk melacak sumber lead secara otomatis
@@ -186,8 +191,16 @@ export default function TrackingLinks() {
           <p style={{ margin: 0 }}>Belum ada link pelacakan. Klik "+ Buat Link Baru" untuk mulai.</p>
         </div>
       ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        // BUG YANG DIPERBAIKI: dulu `overflow: "hidden"` — tabel 8 kolom
+        // (Nama/Kategori/Klik/Jadi Lead/Conv Rate/Link/Aktif/aksi) TERPOTONG
+        // begitu saja di layar sempit, bukan bisa di-scroll. CSS
+        // `.tracking-links-table-wrap { overflow-x: auto }` sudah ADA di
+        // index.css tapi tidak pernah dipasang ke elemen manapun — perbaikan
+        // sebelumnya ditulis tapi tidak disambungkan. Sekarang benar-benar
+        // dipakai, dan tabel diberi lebar minimum supaya kolom tidak
+        // saling berebut ruang dulu sebelum scroll aktif.
+        <div className="card tracking-links-table-wrap" style={{ padding: 0 }}>
+          <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle, #f9fafb)" }}>
                 {["Nama", "Kategori", "Klik", "Jadi Lead", "Conv Rate", "Link", "Aktif", ""].map((h) => (

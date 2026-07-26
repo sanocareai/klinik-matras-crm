@@ -119,10 +119,22 @@ customerRouter.get("/", async (req, res) => {
         complaintDetail: o.complaintDetail,
       }));
 
+    // BUG YANG DIPERBAIKI: `orders` di sini TIDAK difilter status, jadi
+    // order CANCELLED ikut menaikkan orderCount/orderValue — beda dari
+    // SELURUH endpoint lain di codebase (analytics, sales-report, dst) yang
+    // konsisten mengecualikan CANCELLED. Akibatnya nyata: badge VIP (>=Rp5jt)
+    // bisa menyala dari nilai order yang sudah dibatalkan, dan quick filter
+    // "Belum Order" (orderCount === 0) tidak akan menangkap customer yang
+    // SEMUA order-nya batal — padahal secara bisnis mereka belum pernah
+    // benar-benar bertransaksi. `latest`/`sorted` di atas SENGAJA tetap
+    // memakai seluruh order (termasuk CANCELLED) — drawer profil memang
+    // harus menampilkan riwayat order apa adanya, termasuk yang batal.
+    const ordersAktif = orders.filter((o) => o.status !== "CANCELLED");
+
     return {
       ...c,
-      orderCount: orders.length,
-      orderValue: orders.reduce((sum, o) => sum + o.value, 0),
+      orderCount: ordersAktif.length,
+      orderValue: ordersAktif.reduce((sum, o) => sum + o.value, 0),
       lastMessageAt: conversations[0]?.lastMessageAt || null,
       latestOrderStatus:   latest?.status        || null,
       latestOrderNumber:   latest?.orderNumber   || null,

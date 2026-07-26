@@ -215,7 +215,11 @@ export default function PipelineTab({ funnel, velocity }) {
         description="Berapa pelanggan MASUK ke tiap stage pada periode ini (beda dari tabel di atas yang menghitung posisi saat ini)"
         empty={adaData ? null : pesanKosong}
       >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {/* grid-cols-5 dulu dipakai untuk 5 stage lama; sekarang 8 stage jadi
+            baris kedua cuma terisi 3 dari 5 kolom (rapat kiri, sisa ruang
+            kanan kosong tak rata). 2 → 4 → 8 kolom membagi 8 item rata di
+            tiap breakpoint (4+4, atau 1 baris penuh di layar lebar). */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
           {movedTo.map((row) => (
             <div key={row.stage} className="rounded-xl bg-inset/60 p-3">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ink2">

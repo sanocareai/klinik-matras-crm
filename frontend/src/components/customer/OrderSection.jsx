@@ -826,8 +826,10 @@ export default function OrderSection({ customer, onUpdate }) {
 
       {/* Tabel ringkasan semua order */}
       {customer.orders.length > 0 && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        // overflow-x auto (bukan hidden) — kolom tidak akan pernah dipotong
+        // diam-diam kalau drawer/panel dibuka di layar sempit.
+        <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+          <table style={{ width: "100%", minWidth: 360, borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--bg-secondary)" }}>
                 <th style={thStyle}>ID Order</th>

@@ -1237,7 +1237,7 @@ input:focus, select:focus, textarea:focus {
 .user-table tr:hover td { background: #fafbfc; }
 .user-name-cell { display: flex; align-items: center; gap: 10px; }
 .role-select { font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: white; font-weight: 600; }
-.user-stats { display: flex; gap: 14px; }
+.user-stats { display: flex; flex-wrap: wrap; gap: 14px; }
 .user-stat  { font-size: 12px; color: var(--text-muted); }
 .user-stat strong { color: var(--text-main); font-weight: 700; }
 
