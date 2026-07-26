@@ -1,2 +1,41 @@
+# ⚠️ FILE INI MENCEGAH DEPLOY GAGAL "no space left on device".
+#
+# Dockerfile memakai `COPY . .`, jadi APA PUN yang tidak dikecualikan di sini
+# ikut masuk ke layer image. Sebelum perbaikan ini image backend membengkak
+# jadi ~18GB dan setiap `docker compose up --build` MENGISI DISK VPS sampai
+# 0 byte free — deploy gagal berulang, dan itu berbahaya (Postgres bisa gagal
+# menulis kalau disk penuh).
+#
+# Penyebab utamanya: backend/uploads = 5,9GB media WhatsApp.
+#
+# uploads/ & data/ AMAN dikecualikan karena keduanya BIND MOUNT di
+# docker-compose.yml:
+#     ./backend/uploads:/app/uploads
+#     ./backend/data:/app/data
+# Artinya isi dari image DITIMPA oleh mount saat container jalan — menyalinnya
+# ke dalam image 100% sia-sia. Kalau suatu hari mount itu dihapus dari
+# docker-compose, baris di bawah WAJIB ditinjau ulang.
 node_modules
 .env
+.env.*
+
+# Media & data runtime — bind mount, lihat catatan di atas.
+uploads
+data
+
+# Backup DB (bisa ratusan MB) — tidak pernah dibutuhkan di dalam image.
+backups
+*.sql
+*.sql.gz
+
+# Log & artefak lokal
+*.log
+npm-debug.log*
+
+# Berkas dev yang tidak dipakai runtime container.
+# ⚠️ prisma/ , src/ , package*.json , dan scripts/ JANGAN dikecualikan —
+# prisma/migrations dipakai `prisma migrate deploy` saat container start (lihat
+# CMD di Dockerfile), dan scripts/ dijalankan lewat `docker compose exec`.
+*.test.mjs
+.git
+.gitignore
