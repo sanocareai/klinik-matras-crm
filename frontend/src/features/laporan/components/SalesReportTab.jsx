@@ -44,10 +44,10 @@ const KOLOM = [
   { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
   { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
   { k: "slaBreach",  label: "SLA >1j",    title: "Jumlah percakapan yang balasan pertamanya lebih dari 60 menit" },
-  { k: "qualified",  label: "Qualified",  title: "Pelanggan di tahap Qualified" },
-  { k: "quoted",     label: "Quoted",     title: "Pelanggan yang sudah diberi harga/rekomendasi" },
-  { k: "paidCustomers", label: "Bayar",   title: "Pelanggan yang sampai tahap Paid / Already Reviewed" },
-  { k: "conversionRate", label: "Konversi", title: "Pelanggan bayar / percakapan ditangani" },
+  { k: "qualified",  label: "Qualified*", title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Qualified (tidak mengikuti rentang tanggal)" },
+  { k: "quoted",     label: "Quoted*",    title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Quoted (tidak mengikuti rentang tanggal)" },
+  { k: "orderingCustomers", label: "Order-in", title: "Pelanggan yang membuat order DI DALAM periode terpilih" },
+  { k: "orderConversionRate", label: "Konversi", title: "Pelanggan yang order di periode ini / percakapan yang ditangani di periode ini" },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
   { k: "grossValue", label: "Nilai",      title: "Nilai order masuk — belum tentu sudah terbayar" },
   { k: "aov",        label: "AOV",        title: "Rata-rata nilai per order" },
@@ -59,7 +59,11 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
   const total = report?.total;
 
   const aktif = rows.filter((r) => r.handled > 0);
-  const konversiList = aktif.map((r) => r.conversionRate).filter((v) => v != null).sort((a, b) => a - b);
+  // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,
+  // bukan ambang absolut yang dikarang — 5% bisa bagus atau buruk tergantung
+  // jenis lead. Memakai konversi berbasis ORDER karena datanya sudah ada
+  // sekarang (konversi berbasis transisi stage baru terkumpul sejak 25 Jul).
+  const konversiList = aktif.map((r) => r.orderConversionRate).filter((v) => v != null).sort((a, b) => a - b);
   const median = konversiList.length > 0 ? konversiList[Math.floor(konversiList.length / 2)] : null;
 
   const maxHandled = Math.max(1, ...rows.map((r) => r.handled));
@@ -94,10 +98,10 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
           sub={`${aktif.length} sales aktif dari ${rows.length}`}
         />
         <KpiCard
-          index={1} label="Konversi Tim"
-          numericValue={total?.conversionRate || 0}
-          format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
-          sub={`${total?.paidCustomers || 0} pelanggan sampai tahap bayar`}
+          index={1} label="Konversi Tim (order)"
+          numericValue={total?.orderConversionRate || 0}
+          format={(v) => (total?.orderConversionRate != null ? `${v.toFixed(1)}%` : "—")}
+          sub={`${total?.orderingCustomers || 0} pelanggan order di periode ini`}
         />
         <KpiCard
           index={2} hero label="Nilai Penjualan Tim"
@@ -106,24 +110,30 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
           sub={`${total?.orders || 0} order · AOV ${formatRupiahShort(total?.aov || 0)}`}
         />
         <KpiCard
-          index={3} label="Percakapan Menggantung"
-          numericValue={total?.stalled || 0}
-          sub="belum dibalas >60 menit — perlu tindakan"
+          index={3} label="Menggantung Sekarang"
+          numericValue={report?.stalledNow || 0}
+          sub="lintas semua periode — belum dibalas >60 menit"
         />
       </div>
 
       {/* Menggantung = beban nyata yang masih menempel sekarang, bukan
           statistik historis. Kalau ada, ini hal PERTAMA yang harus dikerjakan
           tim hari ini — jadi ditaruh sebagai peringatan, bukan sekadar kolom. */}
-      {total?.stalled > 0 && (
+      {(report?.stalledNow > 0 || total?.slaBreach > 0) && (
         <div className="flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
           <AlertTriangle className="mt-0.5 shrink-0 text-orange" size={16} />
           <p className="text-xs leading-relaxed text-ink">
-            <strong>{total.stalled} percakapan</strong> sedang menggantung — pesan
-            terakhir dari customer dan sudah lebih dari 60 menit tanpa balasan.
-            Sepanjang periode ini ada <strong>{total.slaBreach} percakapan</strong> yang
-            balasan pertamanya lewat 60 menit. Ini kebocoran lead yang paling
-            murah untuk diperbaiki.
+            {report?.stalledNow > 0 && (
+              <><strong>{report.stalledNow} percakapan</strong> sedang menggantung
+              SEKARANG — pesan terakhir dari customer dan sudah lebih dari 60 menit
+              tanpa balasan (dihitung lintas semua periode, karena beban ini tetap
+              ada berapa pun rentang yang dipilih). </>
+            )}
+            {total?.slaBreach > 0 && (
+              <>Pada periode terpilih ada <strong>{total.slaBreach} percakapan</strong> yang
+              balasan pertamanya lewat 60 menit. </>
+            )}
+            Ini kebocoran lead yang paling murah untuk diperbaiki.
           </p>
         </div>
       )}
@@ -151,14 +161,17 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                 </div>
               </div>
 
-              <div className={cn(
-                "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
-                r.conversionRate == null ? "bg-inset text-ink3"
-                : median != null && r.conversionRate >= median * 1.2 ? "bg-greenbg text-green"
-                : median != null && r.conversionRate <= median * 0.6 ? "bg-redbg text-red"
-                : "bg-accentbg text-accent"
-              )}>
-                {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi
+              <div
+                className={cn(
+                  "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
+                  r.orderConversionRate == null ? "bg-inset text-ink3"
+                  : median != null && r.orderConversionRate >= median * 1.2 ? "bg-greenbg text-green"
+                  : median != null && r.orderConversionRate <= median * 0.6 ? "bg-redbg text-red"
+                  : "bg-accentbg text-accent"
+                )}
+                title="Pelanggan yang order pada periode ini / percakapan yang ditangani pada periode ini"
+              >
+                {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"} konversi
               </div>
 
               <div className="w-full sm:w-56">
@@ -287,11 +300,11 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                     <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
                       {r.slaBreach}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.funnel?.QUALIFIED ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.funnel?.QUOTED ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.conversionRate, median))}>
-                      {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.QUALIFIED ?? 0}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.QUOTED ?? 0}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.orderingCustomers}</td>
+                    <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.orderConversionRate, median))}>
+                      {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
@@ -319,9 +332,9 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                     <td className="px-3 py-2.5 text-right tabular-nums text-red">{total.slaBreach}</td>
                     <td className="px-3 py-2.5 text-right text-ink3">—</td>
                     <td className="px-3 py-2.5 text-right text-ink3">—</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-green">{total.paidCustomers}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-green">{total.orderingCustomers}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">
-                      {total.conversionRate != null ? `${total.conversionRate}%` : "—"}
+                      {total.orderConversionRate != null ? `${total.orderConversionRate}%` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.orders}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
@@ -339,9 +352,13 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
             </table>
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-ink3">
-            Kolom target memakai target <strong>bulan berjalan</strong>
+            Kolom bertanda <strong>*</strong> (Qualified, Quoted) adalah <strong>posisi
+            saat ini</strong> dan TIDAK mengikuti rentang tanggal — “stage sekarang”
+            adalah keadaan, bukan kejadian di dalam periode. Semua kolom lain
+            mengikuti rentang yang dipilih di atas.
+            {" "}Kolom target memakai target <strong>bulan berjalan</strong>
             {report?.periodeTarget ? ` (${report.periodeTarget.month}/${report.periodeTarget.year})` : ""},
-            bukan periode yang dipilih di atas — target disimpan per bulan di Pengaturan.
+            karena target disimpan per bulan di Pengaturan.
           </p>
         </ChartCard>
       )}

@@ -280,7 +280,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       orderAgg, lunasAgg, dpAgg,
       statusGroups, categoryGroups,
       cityGroups, complaintCount,
-      paidCustomers, totalCustomers, customersWithOrders,
+      paidCustomers, totalCustomers, customersWithOrders, paidTanpaOrder,
       revenueRaw, customerRaw,
     ] = await Promise.all([
       prisma.order.aggregate({ where: orderWhere, _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
@@ -296,6 +296,21 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["PAID", "REVIEWED"] } } }),
       prisma.customer.count({ where: custWhere }),
       prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
+
+      // PEMERIKSAAN INTEGRITAS: customer ditandai Paid/Already Reviewed TAPI
+      // tidak punya satu pun order. Ini mustahil secara bisnis — kalau sudah
+      // bayar, harus ada order yang dibayar. Penyebabnya stage digeser manual
+      // di Kanban tanpa membuat order, jadi PENDAPATANNYA TIDAK PERNAH
+      // TERCATAT. Ini yang membuat angka seperti "1 pelanggan bayar tapi Rp0"
+      // muncul di Laporan Sales — bukan salah hitung, tapi data yang memang
+      // tidak lengkap. TIDAK difilter tanggal: ini utang data yang harus
+      // dibereskan, kapan pun terjadinya.
+      prisma.customer.count({
+        where: {
+          pipelineStage: { in: ["PAID", "REVIEWED"] },
+          NOT: { orders: { some: { status: { not: "CANCELLED" } } } },
+        },
+      }),
 
       // Deret pendapatan & pelanggan baru — granularitas mengikuti panjang
       // rentang (lihat seriesWindow), jadi rentang 30 hari = 30 titik HARIAN.
@@ -378,6 +393,13 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       komplain: {
         count: complaintCount,
         rate: totalOrders > 0 ? Math.round((complaintCount / totalOrders) * 1000) / 10 : null,
+      },
+
+      // Masalah data yang HARUS kelihatan, bukan disembunyikan — laporan tidak
+      // bisa "100% akurat" kalau sumber datanya sendiri tidak konsisten; yang
+      // bisa dilakukan sistem adalah mendeteksi & menunjukkannya.
+      integritas: {
+        paidTanpaOrder,
       },
 
       revenueSeries:  fillBuckets(win, Object.fromEntries(revenueRaw.map((r) => [r.bucket, Number(r.value)]))),

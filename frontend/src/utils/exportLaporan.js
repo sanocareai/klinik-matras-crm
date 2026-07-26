@@ -109,6 +109,15 @@ function sheetRingkasan({ periode, summary, perf }) {
     ["Jumlah komplain",      num(summary?.komplain?.count), ""],
     ["% komplain",           pct(summary?.komplain?.rate), "Dari jumlah order"],
   ]);
+  sb.blank();
+
+  sb.row(["INTEGRITAS DATA", "", ""]);
+  sb.row(["Pemeriksaan", "Jumlah", "Artinya"]);
+  sb.row([
+    "Pelanggan Paid tanpa order",
+    num(summary?.integritas?.paidTanpaOrder),
+    "Ditandai sudah bayar tapi tidak ada order — pendapatannya belum tercatat",
+  ]);
 
   return sb.build([34, 18, 62]);
 }
@@ -198,8 +207,8 @@ function sheetSales({ periode, report }) {
 
   const HEAD = [
     "Sales", "Percakapan Ditangani", "Dibalas", "Menggantung", "Avg Respons (mnt)",
-    "SLA >60mnt", "Qualified", "Quoted", "Pelanggan Bayar", "Konversi %",
-    "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
+    "SLA >60mnt", "Qualified (kini)", "Quoted (kini)", "Pelanggan Order", "Konversi %",
+    "Pindah ke Paid", "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
     "Komplain", "% Komplain",
   ];
   sb.row(HEAD);
@@ -209,7 +218,8 @@ function sheetSales({ periode, report }) {
     num(r.handled), num(r.replied), num(r.stalled),
     num(r.avgResponseMinutes), num(r.slaBreach),
     num(r.funnel?.QUALIFIED), num(r.funnel?.QUOTED),
-    num(r.paidCustomers), pct(r.conversionRate),
+    num(r.orderingCustomers), pct(r.orderConversionRate),
+    num(r.paidCustomers),
     num(r.orders), rp(r.grossValue), rp(r.collectedValue), rp(r.aov),
     rp(r.target), num(r.percentToTarget, FMT.pct0),
     num(r.complaints), pct(r.complaintRate),
@@ -221,7 +231,8 @@ function sheetSales({ periode, report }) {
       "TOTAL TIM",
       num(t.handled), num(t.replied), num(t.stalled),
       "—", num(t.slaBreach), "—", "—",
-      num(t.paidCustomers), pct(t.conversionRate),
+      num(t.orderingCustomers), pct(t.orderConversionRate),
+      num(t.paidCustomers),
       num(t.orders), rp(t.grossValue), rp(t.collectedValue), rp(t.aov),
       rp(t.target), num(t.percentToTarget, FMT.pct0),
       num(t.complaints), "—",
@@ -231,7 +242,7 @@ function sheetSales({ periode, report }) {
     // menghasilkan angka yang salah. Sengaja "—".
   }
 
-  const ws = sb.build([16, 20, 10, 13, 17, 12, 11, 10, 16, 11, 8, 18, 16, 14, 16, 10, 10, 12]);
+  const ws = sb.build([16, 20, 10, 13, 17, 12, 16, 15, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
   // Autofilter di baris header tabel — ini SATU-SATUNYA bantuan navigasi yang
   // benar-benar bertahan di community edition (freeze pane tidak).
   const headRow = sb.aoa.findIndex((r) => r[0] === "Sales");

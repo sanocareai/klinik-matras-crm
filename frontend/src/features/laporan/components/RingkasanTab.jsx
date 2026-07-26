@@ -133,6 +133,25 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         </div>
       )}
 
+      {/* Integritas data: pelanggan bertanda sudah bayar TAPI tidak punya order
+          sama sekali. Ini mustahil secara bisnis dan artinya pendapatannya
+          TIDAK PERNAH tercatat — penyebab langsung angka aneh seperti "1
+          pelanggan bayar tapi Rp0" di Laporan Sales. Ditampilkan sebagai tugas
+          yang bisa dikerjakan, bukan disembunyikan. */}
+      {summary?.integritas?.paidTanpaOrder > 0 && (
+        <div className="flex items-start gap-2.5 rounded-xl bg-redbg px-3.5 py-3">
+          <AlertTriangle className="mt-0.5 shrink-0 text-red" size={16} />
+          <p className="text-xs leading-relaxed text-ink">
+            <strong>{summary.integritas.paidTanpaOrder} pelanggan</strong> berstatus
+            “Paid”/“Already Reviewed” tapi <strong>tidak punya order sama sekali</strong>.
+            Kalau sudah bayar, harusnya ada order yang dibayar — jadi pendapatan
+            mereka belum tercatat di sistem dan tidak masuk hitungan Nilai
+            Penjualan mana pun. Biasanya karena stage digeser di Kanban tanpa
+            membuat order. Perbaiki di Pelanggan → buka profil → tambah order.
+          </p>
+        </div>
+      )}
+
       {/* ── 2. TREN PENDAPATAN + KONVERSI ─────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
         <ChartCard

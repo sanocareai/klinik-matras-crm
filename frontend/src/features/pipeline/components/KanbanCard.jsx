@@ -1,8 +1,20 @@
 import React from "react";
 import { MoreVertical, AlertTriangle } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
-import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
+import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
+
+// Nada warna status order — hijau hanya untuk yang benar-benar selesai
+// (DELIVERED), oranye untuk yang masih menunggu tindakan, merah untuk batal.
+// Sisanya accent (sedang berjalan) mengikuti aturan satu accent DS v2.
+const ORDER_STATUS_TONE = {
+  PENDING:    "bg-orangebg text-orange",
+  PICKUP:     "bg-accentbg text-accent",
+  PROCESSING: "bg-accentbg text-accent",
+  READY:      "bg-accentbg text-accent",
+  DELIVERED:  "bg-greenbg text-green",
+  CANCELLED:  "bg-redbg text-red",
+};
 
 // Titik warna per stage — mengikuti STAGE_VARIANT di utils/format.js
 // (sano-color-system.md §4). Sengaja class statis, bukan dibangun runtime,
@@ -36,10 +48,22 @@ export function isStale(card, stage) {
 // Yang berubah hanya tampilan + state `dragging`.
 export default function KanbanCard({
   card, stage, stages, dragging, menuOpen,
-  onDragStart, onDragEnd, onToggleMenu, onMoveToStage,
+  onDragStart, onDragEnd, onToggleMenu, onMoveToStage, onOpenChat,
 }) {
   const stale = isStale(card, stage);
   const nama  = card.name || card.phone || "—";
+
+  // Klik kartu → buka chat customer. Sebelumnya kartu sama sekali tidak bisa
+  // diklik: sales harus pindah ke Inbox lalu mencari nama customer manual.
+  // Dibuat role="button" + keyboard-accessible, TAPI tetap `draggable` — klik
+  // dan drag hidup bersama karena browser hanya memicu click kalau pointer
+  // tidak bergeser (drag membatalkan click secara alami).
+  function handleClick(e) {
+    // Jangan buka chat kalau yang diklik kontrol di dalam kartu (menu pindah
+    // stage) — tanpa ini menu tidak bisa dipakai lagi.
+    if (e.target.closest("[data-no-chat]")) return;
+    onOpenChat?.();
+  }
 
   return (
     <div
@@ -49,12 +73,20 @@ export default function KanbanCard({
       // tidak pernah jalan — tanpa ini state "lift" tidak pernah dibersihkan
       // dan kartu tampak terangkat/transparan selamanya sampai reload.
       onDragEnd={onDragEnd}
+      onClick={onOpenChat ? handleClick : undefined}
+      onKeyDown={onOpenChat ? (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(e); }
+      } : undefined}
+      role={onOpenChat ? "button" : undefined}
+      tabIndex={onOpenChat ? 0 : undefined}
+      aria-label={onOpenChat ? `Buka chat ${nama}` : undefined}
       className={cn(
         "group relative rounded-xl  bg-surface p-2.5 shadow-card",
         // Lift saat digeser: shadow-popover + scale ~1.02 dalam 150ms, dan slot asal
         // diredam (opacity) — sano-animation-guidelines.md §3.6.
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",
         "hover:shadow-popover active:cursor-grabbing",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
         dragging
           ? "scale-[1.02] opacity-40 shadow-popover"
           : "cursor-grab",
@@ -72,8 +104,9 @@ export default function KanbanCard({
         </div>
 
         {/* Tombol pindah stage — WAJIB ADA: drag & drop tidak bekerja di touch,
-            jadi ini satu-satunya cara memindah deal dari HP. */}
-        <div className="relative shrink-0">
+            jadi ini satu-satunya cara memindah deal dari HP.
+            data-no-chat: klik di area ini tidak boleh ikut membuka chat. */}
+        <div className="relative shrink-0" data-no-chat>
           <button
             className="rounded-md p-1 text-ink3 transition-colors duration-150 hover:bg-hovertint hover:text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             title="Pindah stage"
@@ -125,10 +158,40 @@ export default function KanbanCard({
         </p>
       )}
 
-      {card.assignedSales && (
-        <p className="mt-1.5 truncate border-t border-line pt-1.5 text-[11px] text-ink3">
-          {card.assignedSales.name}
-        </p>
+      {/* Status order TERBARU. Stage penjualan dan tahap PENGERJAAN adalah dua
+          hal berbeda: customer bisa sudah "Paid" sementara kasurnya masih
+          "Diproses". Tanpa ini board hanya bercerita separuh, dan sales harus
+          buka profil satu per satu untuk tahu pekerjaannya sampai mana. */}
+      {(card.latestOrderStatus || card.orderCount > 0) && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          {card.latestOrderStatus && (
+            <span className={cn(
+              "rounded-chip px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+              ORDER_STATUS_TONE[card.latestOrderStatus] || "bg-inset text-ink2"
+            )}>
+              {ORDER_STATUS_LABELS[card.latestOrderStatus] || card.latestOrderStatus}
+            </span>
+          )}
+          {card.orderCount > 1 && (
+            <span className="text-[10px] text-ink3">{card.orderCount} order</span>
+          )}
+        </div>
+      )}
+
+      {(card.assignedSales || card.unreadCount > 0) && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-line pt-1.5">
+          <span className="min-w-0 truncate text-[11px] text-ink3">
+            {card.assignedSales?.name || "Belum ada sales"}
+          </span>
+          {card.unreadCount > 0 && (
+            <span
+              className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white"
+              title={`${card.unreadCount} pesan belum dibaca`}
+            >
+              {card.unreadCount}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
