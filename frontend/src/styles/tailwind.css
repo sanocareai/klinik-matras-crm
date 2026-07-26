@@ -156,7 +156,28 @@
 /* shadcn/ui butuh token semantik standar (background/foreground/card/dst)
    — dipetakan ke variable warna yang SUDAH ADA di index.css (var(--bg),
    var(--card-bg), dst) supaya shadcn otomatis konsisten dgn tema app,
-   bukan warna baru yang lepas dari design system. */
+   bukan warna baru yang lepas dari design system.
+
+   ⚠️ BUG NYATA YANG PERNAH TERJADI DI SINI — SEVERITAS TINGGI:
+   Blok ini dulu JUGA mendefinisikan `--color-accent` dan `--color-primary`.
+   DS v2 (di atas, sekitar baris 114) SUDAH mendefinisikan `--color-accent`
+   sendiri (= var(--accent), biru solid #0071E3). Custom property yang
+   didefinisikan DUA KALI di dalam @theme — sama seperti :root biasa — nilai
+   yang MENANG adalah yang muncul TERAKHIR secara tekstual. Karena blok ini
+   ada SETELAH blok DS v2, `--color-accent` DIAM-DIAM TERTIMPA jadi
+   `var(--color-brand-50)` (tint pucat, via jembatan brand→blue di
+   tokens.css — nyaris putih). AKIBATNYA: SETIAP pemakaian utility
+   `text-accent`/`bg-accent`/`border-accent` di SELURUH APP — termasuk
+   variant "primary" di ui/button.jsx sendiri (`bg-accent text-white`) —
+   diam-diam merender warna pucat nyaris tak terlihat, bukan biru solid.
+   Ini akar dari keluhan "teks putih tak terbaca di atas kartu putih" DAN
+   badge stage di Hot Leads yang tampak kosong/pudar.
+   Perbaikan: `--color-accent`/`--color-accent-foreground`/`--color-primary`/
+   `--color-primary-foreground` DIHAPUS dari sini (dicek dulu: tidak ada satu
+   pun pemakaian literal `.bg-primary`/`.text-accent-foreground` shadcn asli
+   di JSX manapun — grep bersih). JANGAN tambahkan nama token yang sudah
+   dipakai DS v2 (accent, ink, line, surface, base, inset, red, orange, green,
+   blue-*) ke blok kompatibilitas shadcn ini lagi. */
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text-primary);
@@ -167,10 +188,6 @@
   --color-ring: var(--color-brand-600);
   --color-muted: var(--bg-subtle, #f1f5f9);
   --color-muted-foreground: var(--text-muted);
-  --color-accent: var(--color-brand-50);
-  --color-accent-foreground: var(--color-brand-700);
-  --color-primary: var(--color-brand-600);
-  --color-primary-foreground: #ffffff;
   --radius: 1rem;
 }
 

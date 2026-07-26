@@ -1,29 +1,22 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import SectionCard, { ViewAllLink } from "@/components/ui/section-card.jsx";
-import PeriodMenu from "@/components/ui/period-menu.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import RankBadge from "@/components/ui/rank-badge.jsx";
 import { api } from "@/api.js";
 import { formatRupiah } from "@/utils/format.js";
-import { makeRange, toApiParams } from "@/lib/dateRange.js";
+import { toApiParams } from "@/lib/dateRange.js";
 
 // ─── TOP PERFORMING REPS ─────────────────────────────────────────────────────
-// SEKARANG SELF-FETCH dengan periode sendiri — sebelumnya menerima `data`
-// (selalu bulan berjalan, dari /sales-performance) sebagai prop statis, dan
-// tombol periode (FilterPill) tidak melakukan apa pun.
-//
-// Sumber data DIGANTI ke /analytics/cs-performance (sudah mendukung from/to
-// arbitrer). Konsekuensinya: kolom "% target" DIHAPUS — target bulanan adalah
-// konsep KALENDER (SalesTarget per year+month), tidak ada artinya untuk
-// rentang "7 hari terakhir" atau "Semua waktu". Diganti Closing Rate, yang
-// valid untuk periode apa pun dan sudah tersedia di endpoint yang sama.
-export default function TopRepsCard() {
+// DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — mengikuti SATU date picker
+// di header Dashboard lewat prop `range` (sama seperti Sales Overview & Deal
+// Pipeline). Sumber data tetap /analytics/cs-performance (mendukung from/to
+// arbitrer, termasuk "Semua waktu"); kolom "% target" tetap tidak ada karena
+// target bulanan tidak bermakna untuk rentang sembarang — diganti Closing Rate.
+export default function TopRepsCard({ range }) {
   const navigate = useNavigate();
-  const [presetId, setPresetId] = useState("this_month");
-  const range = useMemo(() => makeRange(presetId), [presetId]);
   const params = useMemo(() => toApiParams(range), [range]);
 
   const q = useQuery({
@@ -39,7 +32,6 @@ export default function TopRepsCard() {
   return (
     <SectionCard
       title="Top Performing Reps"
-      action={<PeriodMenu value={presetId} onChange={setPresetId} options={REP_PERIODS} />}
       footer={<ViewAllLink onClick={() => navigate("/laporan")}>Lihat semua sales</ViewAllLink>}
     >
       {q.isLoading ? (
@@ -70,14 +62,3 @@ export default function TopRepsCard() {
     </SectionCard>
   );
 }
-
-// "Bulan ini" ditambahkan (bukan cuma 4 preset default PeriodMenu) supaya
-// makna "target bulanan" lama masih bisa direplikasi kalau perlu — meski
-// kolom % target sendiri sudah dihapus (lihat catatan di atas).
-const REP_PERIODS = [
-  { id: "this_month",    label: "Bulan ini" },
-  { id: "last_7_days",   label: "7 hari terakhir" },
-  { id: "last_30_days",  label: "30 hari terakhir" },
-  { id: "last_3_months", label: "3 bulan terakhir" },
-  { id: "all_time",      label: "Semua waktu" },
-];

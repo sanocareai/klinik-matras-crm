@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -9,17 +9,9 @@ import SectionCard from "@/components/ui/section-card.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { api } from "@/api.js";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
-import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
+import { toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
-
-// Pilihan periode KHUSUS kartu ini — independen dari date picker halaman,
-// supaya bisa melihat tren 7/30/90 hari tanpa mengubah seluruh dashboard.
-const PILIHAN = [
-  { id: "last_7_days",   label: "7 hari" },
-  { id: "last_30_days",  label: "30 hari" },
-  { id: "last_3_months", label: "3 bulan" },
-];
 
 function ChartTip({ active, payload, label, granularity }) {
   if (!active || !payload?.length) return null;
@@ -37,14 +29,17 @@ function ChartTip({ active, payload, label, granularity }) {
 }
 
 // ─── SALES OVERVIEW ──────────────────────────────────────────────────────────
-// BUG YANG DIPERBAIKI: kartu ini dulu memakai `monthlyRevenue` dari /overview —
-// selalu 6 bulan terakhir, mengabaikan rentang, dan di produksi hanya berisi
-// SATU titik (data order baru 1 bulan). Recharts tidak bisa menggambar garis
-// dari satu titik, jadi grafiknya tampil KOSONG.
-// Sekarang memakai /analytics/revenue-series yang memberi titik HARIAN.
-export default function RevenueOverview({ className }) {
-  const [presetId, setPresetId] = useState("last_30_days");
-  const range = useMemo(() => makeRange(presetId), [presetId]);
+// BUG LAMA YANG DIPERBAIKI (masih relevan): kartu ini dulu memakai
+// `monthlyRevenue` dari /overview — selalu 6 bulan terakhir, mengabaikan
+// rentang, dan di produksi hanya berisi SATU titik. Sekarang memakai
+// /analytics/revenue-series yang memberi titik HARIAN.
+//
+// DS v2.4: pemilih periode SENDIRI (segmented "7 hari/30 hari/3 bulan")
+// DIHAPUS. Kartu ini sekarang mengikuti SATU date picker di header Dashboard
+// lewat prop `range` — sama seperti Deal Pipeline & Top Performing Reps.
+// Sebelumnya memilih tanggal di satu kartu TIDAK mengubah kartu lain, padahal
+// ketiganya menampilkan data tentang "periode yang sama" di mata pengguna.
+export default function RevenueOverview({ range, className }) {
   const params = useMemo(() => toApiParams(range), [range]);
 
   const q = useQuery({
@@ -76,31 +71,7 @@ export default function RevenueOverview({ className }) {
   const tickX = (v) => (granularity === "day" ? dayjs(v).format("D MMM") : v);
 
   return (
-    <SectionCard
-      title="Sales Overview"
-      className={className}
-      action={
-        // Segmented control kecil — pilihan periode yang diminta ada DI kartu ini.
-        <div className="flex items-center gap-0.5 rounded-chip bg-inset p-0.5">
-          {PILIHAN.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPresetId(p.id)}
-              aria-pressed={presetId === p.id}
-              className={cn(
-                "rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                presetId === p.id
-                  ? "bg-surface text-ink shadow-card"
-                  : "text-ink2 hover:text-ink"
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      }
-    >
+    <SectionCard title="Sales Overview" className={className}>
       {q.isLoading ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-9 w-48" />

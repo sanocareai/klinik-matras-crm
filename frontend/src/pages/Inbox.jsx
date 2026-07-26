@@ -59,14 +59,25 @@ export default function Inbox({ user }) {
     }).catch(() => {});
   });
 
-  // Fetch awal + buka otomatis dari ?conv=ID (deep link dari toast notifikasi)
+  // Fetch awal + buka otomatis dari ?conv=ID (deep link dari toast notifikasi,
+  // Hot Leads, Needs Action). List awal cuma 100 percakapan teraktif — kalau
+  // convId targetnya sudah lama tidak ada aktivitas (stale, di luar jendela
+  // itu), fallback fetch langsung by-id supaya klik tetap membuka chat-nya,
+  // bukan diam saja karena `data.some(...)` gagal cocok.
   useEffect(() => {
     api.getConversations().then(({ data }) => {
       useConversationStore.getState().upsertConversations(data);
       const convId = searchParams.get("conv");
-      if (convId && data.some((c) => c.id === convId)) {
+      if (!convId) return;
+      if (data.some((c) => c.id === convId)) {
         useConversationStore.getState().setActive(convId);
         setSearchParams({}, { replace: true });
+      } else {
+        api.getConversation(convId).then((conv) => {
+          useConversationStore.getState().upsertConversation(conv);
+          useConversationStore.getState().setActive(convId);
+          setSearchParams({}, { replace: true });
+        }).catch(() => {});
       }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -26,10 +26,14 @@ export function useDashboardData(range) {
   // Band 2. Wave 2B: endpoint NYATA (role-scoped di server). Bila
   // BAND2_IS_MOCK=true → fallback ke kontrak mock (ROLLBACK 1 baris, tanpa
   // ubah query). Endpoint global (bukan per-range); staleTime 45s.
+  // refetchInterval 45s: item 4 revisi — "Needs Action"/"Hot Leads" harus
+  // SELALU mengikuti rekomendasi AI terbaru tanpa perlu reload manual
+  // Dashboard (mis. lead baru masuk WA saat Dashboard sudah terbuka lama).
   const band2 = (key, real, mock) => useQuery({
     queryKey: ["dash", key, BAND2_IS_MOCK ? "mock" : "live"],
     queryFn: () => (BAND2_IS_MOCK ? Promise.resolve(mock) : real()),
     staleTime: BAND2_IS_MOCK ? Infinity : 45_000,
+    refetchInterval: BAND2_IS_MOCK ? false : 45_000,
   });
   const hotLeads  = band2("hot-leads",  api.getHotLeads,  MOCK_HOT_LEADS);
   const followUps = band2("follow-ups", api.getFollowUps, MOCK_FOLLOW_UPS);

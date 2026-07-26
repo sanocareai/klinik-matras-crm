@@ -2,9 +2,48 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <meta name="theme-color" content="#2563EB" />
+    <!-- viewport-fit=cover WAJIB utk env(safe-area-inset-*) di CSS berfungsi
+         di iPhone X+ (notch/home indicator) — sebelumnya tidak ada, jadi
+         padding safe-area yang sudah ditulis di index.css diam-diam TIDAK
+         PERNAH aktif di iOS. -->
+    <!-- interactive-widget=resizes-content (Chrome/Android 108+) — saat
+         keyboard on-screen dibuka, visual viewport benar-benar MENGECIL
+         (bukan cuma di-overlay keyboard), supaya Composer di Inbox tetap
+         kelihatan DI ATAS keyboard, bukan ketutup. Browser yang belum kenal
+         token ini mengabaikannya (aman, tidak invalid). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    <!-- Default terang (#F5F5F7 = --bg-base). Diganti runtime oleh
+         ThemeProvider kalau tema gelap aktif. -->
+    <meta name="theme-color" content="#F5F5F7" />
+    <!-- ⚠️ ANTI-KEDIP TEMA — script ini WAJIB blocking (tanpa defer/async) dan
+         WAJIB berada SEBELUM <body> dirender. Kalau data-theme baru di-set
+         setelah React mount, user dark-mode akan melihat kilatan putih dulu.
+         Logika di sini HARUS sama dengan src/lib/ThemeProvider.jsx (key
+         "sano-theme", default "light", data-theme hanya di-set saat gelap). -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("sano-theme");
+          if (p !== "light" && p !== "dark" && p !== "system") p = "light";
+          var gelap = p === "dark" || (p === "system"
+            && window.matchMedia
+            && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (gelap) {
+            document.documentElement.setAttribute("data-theme", "dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#000000");
+          }
+        } catch (e) { /* localStorage diblokir → biarkan terang */ }
+      })();
+    </script>
+    <!-- mobile-web-app-capable = standar (Chrome/Android/Brave/Opera, semua
+         Chromium). apple-mobile-web-app-capable = WAJIB TERPISAH utk Safari
+         iOS — tanpa ini, "Add to Home Screen" tetap buka di dalam Safari
+         (address bar dsb kelihatan), bukan mode standalone layar penuh. -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Klinik Matras" />
     <script>
       // Capture beforeinstallprompt sebelum React mount supaya tidak terlewat
       window.addEventListener('beforeinstallprompt', function(e) {
@@ -19,11 +58,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-DfO6NC13.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vendor-query-CQwPk_Wp.js">
-    <link rel="modulepreload" crossorigin href="/assets/vendor-react-BK3QgVac.js">
+    <script type="module" crossorigin src="/assets/index-CMEzAEaP.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-query-lt1T2TzN.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-BobNSfI3.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-socket-dm1FmSOd.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BXQwsv8v.css">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-charts-B63opUAH.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-e_NUjxXw.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-NfOPuu92.css">
   <link rel="manifest" href="/manifest.webmanifest"></head>
   <body>
     <div id="root"></div>

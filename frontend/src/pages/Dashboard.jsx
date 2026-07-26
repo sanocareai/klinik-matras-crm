@@ -75,16 +75,15 @@ export default function Dashboard({ user }) {
         </section>
 
         {/* ── Ringkasan penjualan (lebar penuh) ── */}
-        {/* RevenueOverview mengambil deretnya SENDIRI (harian) + punya
-            pemilih periode sendiri — lihat komponennya. */}
-        <RevenueOverview />
+        {/* DS v2.4: Sales Overview, Deal Pipeline, Top Performing Reps
+            SATU periode — semuanya menerima `range` yang sama dari date
+            picker di header. Pilih satu tanggal, ketiganya ikut berubah. */}
+        <RevenueOverview range={range} />
 
         {/* ── Dua kolom: corong + leaderboard ── */}
-        {/* Keduanya SELF-FETCH dengan periode sendiri (PeriodMenu) —
-            lihat komponennya. Tidak lagi menerima data/loading dari sini. */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PipelineFunnelCard />
-          <TopRepsCard />
+          <PipelineFunnelCard range={range} />
+          <TopRepsCard range={range} />
         </section>
 
         {/* ── Dua kolom: antrean tindakan + lead panas ── */}

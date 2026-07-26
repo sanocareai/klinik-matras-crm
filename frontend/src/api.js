@@ -113,6 +113,7 @@ export const api = {
     }
     return request("/conversations" + qs);
   },
+  getConversation: (id) => request(`/conversations/${id}`),
   getUnreadCount: () => request("/conversations/unread-count"),
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>

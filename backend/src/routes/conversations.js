@@ -249,6 +249,41 @@ conversationRouter.get("/", async (req, res) => {
   res.json({ data: result, nextCursor: hasMore ? page[page.length - 1].id : null });
 });
 
+// GET /:id — SATU percakapan, bentuk PERSIS sama dengan item di GET "/" list
+// (customer, pesan terakhir, assignedTo, firstResponder, + field turunan
+// isUnanswered/unansweredMinutes/canTakeOver).
+//
+// KENAPA INI PERLU: deep-link "?conv=<id>" dari Dashboard (Needs Action / Hot
+// Leads) hanya bisa membuka percakapan yang KEBETULAN ada di 100 percakapan
+// TERBARU (GET "/" defaultnya diurutkan by lastMessageAt desc, limit 100).
+// Follow-up yang sudah menunggu berhari-hari (mis. "25 hari" di Needs Action)
+// nyaris pasti SUDAH TERGESER keluar dari 100 teratas begitu ada aktivitas
+// chat lain — deep-link-nya diam-diam gagal, terlihat seperti "klik tidak
+// melakukan apa-apa". Endpoint ini jadi fallback: frontend cek dulu apakah
+// percakapan ada di daftar yang sudah di-fetch, kalau tidak baru panggil ini.
+conversationRouter.get("/:id", async (req, res) => {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: true,
+      messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      assignedTo: { select: { id: true, name: true, avatarUrl: true } },
+      firstResponder: { select: { id: true, name: true } },
+    },
+  });
+  if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const { messages, ...rest } = conv;
+  const lastMsg = messages[0] || null;
+  const isUnanswered = lastMsg?.direction === "INBOUND";
+  const unansweredMinutes = isUnanswered
+    ? Math.floor((Date.now() - new Date(lastMsg.createdAt).getTime()) / 60000)
+    : null;
+  const canTakeOver = !rest.assignedToId || (isUnanswered && (unansweredMinutes ?? 0) >= 60);
+
+  res.json({ ...rest, messages, isUnanswered, unansweredMinutes, canTakeOver });
+});
+
 // Riwayat pesan dalam satu percakapan
 // Side effect: tandai percakapan sebagai "sudah dibuka" (isRead=true, unread=false)
 // + kirim read receipt ke WhatsApp dengan debounce 30 detik
