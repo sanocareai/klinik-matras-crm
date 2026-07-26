@@ -32,7 +32,13 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
   const c = customer.data;
   const convos = conversations.data || [];
   const openChat = () => { onClose?.(); navigate("/inbox"); };
-  const handleUpdated = () => { invalidate(); onUpdated?.(); };
+  // BUG YANG DIPERBAIKI: dulu onUpdated?.() dipanggil tanpa argumen — parent
+  // (mis. Customers.jsx handleDrawerUpdated) butuh objek customer yang
+  // sudah diperbarui untuk menambal baris list-nya sendiri; invalidate() di
+  // sini cuma menyegarkan data DI DALAM drawer ini, tidak menyentuh state
+  // list di parent, jadi label (sales/stage/dll) di tabel Pelanggan tetap
+  // basi sampai reload manual. Sekarang payload diteruskan apa adanya.
+  const handleUpdated = (updated) => { invalidate(); onUpdated?.(updated); };
 
   const ctx = useMemo(() => (c ? deriveCustomerSignals(c, convos) : null), [c, convos]);
   const health = useMemo(() => (ctx ? computeHealthScore(ctx) : null), [ctx]);

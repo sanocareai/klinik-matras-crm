@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
-  Forward, Search, PanelRightClose, PanelRightOpen, Download, Trash2,
+  Forward, Search, PanelRightClose, PanelRightOpen, Download, Trash2, Megaphone,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
@@ -370,6 +370,15 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
                 ) : assignedTo ? (
                   <span className="lead-badge other"><Users size={11} /> {assignedTo.name}</span>
                 ) : null}
+                {/* Penanda asal dari iklan Meta (CTWA) — dicatat sekali di
+                    Customer.leadSource saat pelanggan baru dibuat (webhooks.js
+                    "Lapis 1"), ditampilkan di sini karena WhatsApp asli juga
+                    menandai pesan pertama dari iklan klik-ke-WhatsApp. */}
+                {conversation.customer?.leadSource === "META_ADS" && (
+                  <span className="lead-badge ads" title={conversation.customer?.leadSourceDetail || undefined}>
+                    <Megaphone size={11} /> Dari Iklan
+                  </span>
+                )}
               </span>
             )}
           </div>

@@ -3,7 +3,7 @@
 // dengan frontend/src/features/inbox/components/ConversationList/ConversationItem.jsx.
 // Swipe kanan → toggle dibaca/belum, swipe kiri → sematkan/lepas sematan.
 import React, { memo, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
@@ -137,16 +137,26 @@ function ConversationItemBase({ id, onPress }) {
     setShowPeek(true);
   }
 
+  // BUG YANG DIPERBAIKI: sebelumnya aksi (toggleReadUnread/togglePin) dipicu
+  // langsung dari `onSwipeableOpen` Swipeable — jadi begitu geser melewati
+  // threshold, aksi LANGSUNG jalan, walau user cuma sedang scroll list dan
+  // tidak sengaja menggeser sedikit ke samping. Sekarang: menggeser HANYA
+  // membuka panel aksi (tetap terbuka menampilkan tombol), aksi baru benar-
+  // benar jalan saat tombol yang terbuka itu DI-TAP — persis pola WhatsApp
+  // asli (geser untuk munculkan tombol, tap tombolnya untuk eksekusi).
   function renderLeftActions() {
     // Muncul saat swipe KANAN (drag ke kanan) → toggle dibaca/belum dibaca
     const ReadIcon = isUnread ? Check : Circle;
     return (
-      <View style={[styles.actionBox, { backgroundColor: tokens.color.success }]}>
+      <Pressable
+        onPress={toggleReadUnread}
+        style={[styles.actionBox, { backgroundColor: tokens.color.success }]}
+      >
         <View style={styles.actionRow}>
           <ReadIcon size={16} color="#fff" strokeWidth={2.5} />
           <Text style={styles.actionText}>{isUnread ? "Tandai Dibaca" : "Tandai Belum Dibaca"}</Text>
         </View>
-      </View>
+      </Pressable>
     );
   }
 
@@ -154,12 +164,15 @@ function ConversationItemBase({ id, onPress }) {
     // Muncul saat swipe KIRI (drag ke kiri) → sematkan/lepas sematan
     const PinIcon = isPinned ? PinOff : Pin;
     return (
-      <View style={[styles.actionBox, { backgroundColor: tokens.color.accent, alignItems: "flex-end" }]}>
+      <Pressable
+        onPress={togglePin}
+        style={[styles.actionBox, { backgroundColor: tokens.color.accent, alignItems: "flex-end" }]}
+      >
         <View style={styles.actionRow}>
           <PinIcon size={16} color="#fff" strokeWidth={2.5} />
           <Text style={styles.actionText}>{isPinned ? "Lepas Sematan" : "Sematkan"}</Text>
         </View>
-      </View>
+      </Pressable>
     );
   }
 

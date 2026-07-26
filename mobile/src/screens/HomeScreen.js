@@ -64,6 +64,7 @@ export default function HomeScreen({ navigation }) {
   const [myConvCount, setMyConvCount] = useState(0);
   const [needsAction, setNeedsAction] = useState([]);
   const [sessionDist, setSessionDist] = useState([]);
+  const [overviewTotal, setOverviewTotal] = useState(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -71,19 +72,25 @@ export default function HomeScreen({ navigation }) {
     try {
       const now = new Date();
       const { from, to } = monthRangeStrings();
-      const [perfRows, csRows, unread, counts, convRes, sessionRows] = await Promise.all([
+      const [perfRows, csRows, unread, counts, convRes, sessionRows, overview] = await Promise.all([
         api.getSalesPerformance(now.getFullYear(), now.getMonth() + 1).catch(() => []),
         api.getCsPerformance(from, to).catch(() => []),
         api.getUnreadCount().catch(() => ({ count: 0 })),
         api.getConversationCounts().catch(() => ({})),
         api.getConversations({}).catch(() => ({ data: [] })),
         api.getSessionDistribution("today").catch(() => []),
+        // Total SEMUA order bulan ini (endpoint yang sama dengan kartu
+        // "Total Nilai" Dashboard.jsx web) — dipakai supaya "Target Tim" di
+        // bawah (yang sengaja cuma menghitung order ber-sales) tidak
+        // disalahartikan sebagai total omzet, lihat komentar di api.js.
+        api.getAnalyticsOverview({ from, to }).catch(() => null),
       ]);
       setPerf(perfRows || []);
       setCsPerf(csRows || []);
       setUnreadCount(unread?.count || 0);
       setMyConvCount(counts?.milikSaya || 0);
       setSessionDist(sessionRows || []);
+      setOverviewTotal(overview?.totalOrderValue ?? null);
 
       const top = (convRes?.data || [])
         .filter((c) => c.isUnanswered)
@@ -210,6 +217,22 @@ export default function HomeScreen({ navigation }) {
               </Text>
             )}
           </View>
+
+          {/* BUG (fix): sebelumnya HANYA angka "Target Tim" tampil di app —
+              itu cuma menghitung order dari customer yang SUDAH ada sales-
+              nya (demi akurasi target per-orang), jadi angkanya lebih
+              rendah dari kartu "Total Nilai" di Dashboard web (yang
+              menghitung SEMUA order). Terlihat seperti data "tidak sinkron"
+              padahal keduanya benar untuk tujuan masing-masing — baris ini
+              menampilkan angka yang SAMA persis dengan Dashboard web
+              (endpoint & rentang tanggal yang sama), supaya ada 1 angka
+              yang benar-benar bisa dibandingkan apples-to-apples. */}
+          {overviewTotal != null && (
+            <View style={styles.overviewNote}>
+              <Text style={styles.overviewNoteLabel}>Total Nilai Order Bulan Ini (semua, termasuk belum ada sales)</Text>
+              <Text style={styles.overviewNoteValue}>{formatRupiah(overviewTotal)}</Text>
+            </View>
+          )}
 
           {perf.length > 0 && (
             <View style={styles.section}>
@@ -392,6 +415,11 @@ function createStyles(tokens) {
   },
   progressFill: { height: "100%", borderRadius: 4, backgroundColor: "#fff" },
   heroSub: { color: "rgba(255,255,255,0.9)", fontSize: 13, marginTop: 10 },
+  overviewNote: {
+    backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 14, ...tokens.shadow.soft,
+  },
+  overviewNoteLabel: { fontSize: 11, color: tokens.color.textSecondary, lineHeight: 15 },
+  overviewNoteValue: { fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 4 },
   statsRow: { flexDirection: "row", gap: 10 },
   statCard: {
     flex: 1, backgroundColor: tokens.color.card, borderRadius: tokens.radius.card,

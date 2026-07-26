@@ -1020,6 +1020,17 @@ conversationRouter.post("/:id/forward", async (req, res) => {
 // Update status / unread / isRead / pinned percakapan
 conversationRouter.patch("/:id", async (req, res) => {
   const { status, assignedToId, unread, isRead, handoverNote, pinned } = req.body;
+
+  // BUG YANG DIPERBAIKI: transfer lead (ubah assignedToId lewat endpoint ini)
+  // sebelumnya TIDAK ADA penegakan role di server — UI menyembunyikan
+  // tombolnya untuk non-ADMIN (isCurrentUserAdmin() di frontend), tapi
+  // endpoint sendiri menerima assignedToId dari SIAPA PUN yang login. Fitur
+  // transfer sengaja admin-only (lihat POST /:id/takeover yang punya aturan
+  // beda — SALES boleh ambil alih sendiri) — sekarang ditegakkan di sini juga.
+  if (assignedToId !== undefined && req.user.role !== "ADMIN") {
+    return res.status(403).json({ error: "Hanya admin yang bisa transfer lead ke sales lain" });
+  }
+
   const data = {};
   if (status)                     data.status       = status;
   if (assignedToId !== undefined) data.assignedToId = assignedToId;
@@ -1032,11 +1043,13 @@ conversationRouter.patch("/:id", async (req, res) => {
   // sendiri via POST /:id/takeover) — dicatat juga ke HandoverEvent supaya
   // timeline "Riwayat Penanganan" lengkap, tidak cuma dari takeover.
   let prevAssignedToId = null;
+  let customerId = null;
   if (assignedToId !== undefined) {
     const before = await prisma.conversation.findUnique({
-      where: { id: req.params.id }, select: { assignedToId: true },
+      where: { id: req.params.id }, select: { assignedToId: true, customerId: true },
     });
     prevAssignedToId = before?.assignedToId ?? null;
+    customerId = before?.customerId ?? null;
   }
 
   const conversation = await prisma.conversation.update({
@@ -1048,6 +1061,19 @@ conversationRouter.patch("/:id", async (req, res) => {
     await prisma.handoverEvent.create({
       data: { conversationId: conversation.id, fromUserId: prevAssignedToId, toUserId: assignedToId, reason: "transfer" },
     }).catch(() => {}); // jangan gagalkan response utama kalau ini gagal
+
+    // BUG YANG DIPERBAIKI: label "Sales Person" di tabel Pelanggan/Pipeline/
+    // Customer 360 dibaca dari Customer.assignedSalesId, BUKAN dari
+    // Conversation.assignedToId — endpoint ini dulu cuma mengubah field
+    // Conversation-nya, jadi label sales tidak pernah berubah sama sekali
+    // setelah transfer (beda dari takeover & auto-assign balasan pertama,
+    // yang keduanya SUDAH menyinkronkan Customer.assignedSalesId).
+    if (customerId) {
+      await prisma.customer.update({
+        where: { id: customerId },
+        data:  { assignedSalesId: assignedToId },
+      }).catch(() => {});
+    }
   }
 
   emitConversationUpdate(conversation);

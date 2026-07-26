@@ -29,13 +29,22 @@ export default function ProfileFields({ customer, onUpdated }) {
       const updated = await api.updateCustomer(customer.id, { name: form.name || null, city: form.city || null, email: form.email || null, tags });
       flash(updated.whatsappSyncStatus === "failed" ? "warning" : "success",
         updated.whatsappSyncStatus === "failed" ? "Tersimpan di CRM, gagal sync ke WhatsApp" : "Perubahan tersimpan");
-      onUpdated?.();
+      onUpdated?.(updated);
     } catch (err) { flash("error", err.message); } finally { setSaving(false); }
   }
 
+  // BUG YANG DIPERBAIKI: onUpdated dulu dipanggil TANPA argumen — pemanggil
+  // di Customers.jsx (handleDrawerUpdated) mengharapkan objek customer yang
+  // sudah diperbarui untuk menambal baris tabel Pelanggan (`updated.id`),
+  // jadi tabel tetap menampilkan data lama (stage/kesehatan/tipe pelanggan)
+  // sampai halaman di-refresh manual. Sekarang hasil api.updateCustomer
+  // (row Customer yang sudah ter-update) diteruskan ke onUpdated.
   async function patch(data) {
     setBusy(true);
-    try { await api.updateCustomer(customer.id, data); onUpdated?.(); }
+    try {
+      const updated = await api.updateCustomer(customer.id, data);
+      onUpdated?.(updated);
+    }
     catch (err) { flash("error", err.message); }
     finally { setBusy(false); }
   }

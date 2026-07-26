@@ -1,10 +1,10 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import {
   Reply, Forward, Pencil, Trash2, CheckSquare, FileText, Image as ImageIcon, Video, Mic, Smile,
-  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
+  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban, HelpCircle,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
-import { parseWaFormatting } from "../../../../utils/waFormat.jsx";
+import { parseWaFormatting, extractMapsLocation } from "../../../../utils/waFormat.jsx";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
 import { api } from "../../../../api.js";
 import { useMessageStore } from "../../stores/messageStore.js";
@@ -14,6 +14,14 @@ function isJsonError(str) {
   if (!str) return false;
   try { const p = JSON.parse(str); return !!p.message || !!p.error; } catch { return false; }
 }
+
+// Placeholder literal yang ditulis backend/src/utils/parseHistoryMessage.js
+// untuk tipe pesan WhatsApp yang sama sekali tidak dikenali (reaksi emoji,
+// dll — lihat komentar "unsupported" di sana). BUG YANG DIPERBAIKI:
+// sebelumnya string ini dirender apa adanya lewat <span className="bubble-text">
+// biasa — tampak seperti teks pesan sungguhan yang aneh/rusak, bukan
+// pemberitahuan yang jelas bahwa jenis pesan ini memang belum didukung.
+const UNSUPPORTED_PLACEHOLDER = "[Pesan tidak didukung]";
 
 // Backend sekarang punya Message.ack (Fase F) — 0 pending, 1 sent, 2
 // delivered, 3 read, diupdate dari webhook message.ack via Socket.IO
@@ -269,6 +277,11 @@ function MessageBubbleBase({
   // sebagai bubble-text terpisah juga.
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
   const text = (!isRevoked && !isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
+  // Link lokasi tempel-manual (bukan share-lokasi native WhatsApp, lihat
+  // catatan di utils/waFormat.jsx) — kalau terdeteksi, render kartu lokasi
+  // yang sama seperti mediaType:"location" asli, bukan teks link polos.
+  const pastedMapsLocation = text && !hasMedia ? extractMapsLocation(text) : null;
+  const isUnsupportedType = text === UNSUPPORTED_PLACEHOLDER;
 
   function handleTouchStart() {
     longPressTimerRef.current = setTimeout(() => {
@@ -414,7 +427,16 @@ function MessageBubbleBase({
                 diketik sales ATAU dikirim customer tampil sebagai tanda baca
                 literal di CRM, padahal WhatsApp asli merendernya jadi teks
                 bergaya. Lihat utils/waFormat.jsx. */}
-            {text && <span className="bubble-text">{parseWaFormatting(text)}</span>}
+            {text && (isUnsupportedType ? (
+              <div className="bubble-unsupported">
+                <HelpCircle size={14} />
+                <span>Jenis pesan ini belum didukung di CRM (mis. reaksi emoji/stiker balasan)</span>
+              </div>
+            ) : pastedMapsLocation ? (
+              <LocationCard data={{ lat: pastedMapsLocation.lat, lng: pastedMapsLocation.lng, name: null, address: null }} />
+            ) : (
+              <span className="bubble-text">{parseWaFormatting(text)}</span>
+            ))}
           </>
         )}
 
