@@ -150,6 +150,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
   const [showEmoji, setShowEmoji]         = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -241,6 +242,21 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     }, 0);
   }
 
+  // BUG YANG DIPERBAIKI: sebelumnya 3 tombol format (Bold/Italic/Strikethrough)
+  // permanen di baris toolbar — di layar sempit itu mendorong kotak ketik +
+  // tombol kirim KELUAR LAYAR (tidak wrap), jadi disembunyikan total di
+  // mobile lewat CSS (`.chat-format-btn { display:none }` @768px). Solusinya
+  // BUKAN memuat ulang tombolnya, tapi meniru pola asli WhatsApp: tombol
+  // format cuma muncul SEMENTARA sebagai popup mengambang begitu ada teks
+  // yang diblok (selection non-kosong) di kotak ketik, lalu hilang lagi
+  // begitu seleksi dilepas — tidak pernah merebut ruang permanen di toolbar,
+  // jadi tidak ada lagi risiko mendorong elemen lain keluar layar di HP.
+  function handleSelectionChange() {
+    const el = textareaRef.current;
+    if (!el) return;
+    setShowSelectionToolbar(el.selectionStart !== el.selectionEnd);
+  }
+
   function insertEmoji(emoji) {
     const el = textareaRef.current;
     if (!el) { setDraft(draft + emoji); return; }
@@ -312,41 +328,43 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           {showEmoji && <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
         </div>
 
-        {/* Format WhatsApp — pilih teks di kotak ketik dulu, lalu klik salah
-            satu tombol ini untuk membungkusnya (sama seperti WhatsApp Web).
-            TIDAK ADA tombol underline — WhatsApp sendiri tidak punya format
-            itu, menambahkannya cuma akan mengirim simbol yang tidak
-            dikenali WhatsApp customer.
-            ⚠️ `chat-format-btn` DISEMBUNYIKAN di layar sempit (index.css,
-            @media max-width:768px) — BUG YANG DIPERBAIKI: baris ikon
-            (template+lampiran+emoji+3 tombol format+mic+kirim) tidak muat
-            dalam satu baris di HP, `.chat-input` tidak wrap, jadi kotak
-            ketik & tombol kirim TERDORONG KELUAR LAYAR (bukan cuma sempit —
-            hilang total dari tampilan). Di mobile, format TETAP bisa
-            dipakai dengan mengetik simbol *_~ langsung (parser di
-            MessageBubble tidak peduli lewat tombol atau ketik manual) —
-            sama seperti WhatsApp asli yang juga tidak punya tombol format
-            permanen di toolbar mobile-nya. */}
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.bold)} className="chat-action-btn chat-format-btn" title="Tebal (*teks*)">
-          <Bold size={15} />
-        </button>
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.italic)} className="chat-action-btn chat-format-btn" title="Miring (_teks_)">
-          <Italic size={15} />
-        </button>
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.strike)} className="chat-action-btn chat-format-btn" title="Coret (~teks~)">
-          <Strikethrough size={15} />
-        </button>
-
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          rows={1}
-          className="chat-textarea"
-          placeholder={editingMessage ? "Edit pesan..." : "Tulis balasan..."}
-          onChange={(e) => { setDraft(e.target.value); autoGrowTextarea(e.target); }}
-          onKeyDown={handleTextareaKeyDown}
-          onPaste={handlePaste}
-        />
+        {/* Popup format mengambang — gaya WhatsApp: muncul HANYA saat ada
+            teks diblok di kotak ketik, mengambang di atas textarea, hilang
+            lagi begitu seleksi dilepas. Tidak ada tombol underline — bukan
+            fitur WhatsApp asli. onMouseDown+preventDefault di tiap tombol
+            supaya textarea TIDAK kehilangan fokus/seleksi saat tombol
+            diklik (kalau tidak, seleksi keburu collapse sebelum applyFormat
+            sempat baca selectionStart/End-nya). */}
+        <div className="chat-textarea-wrap">
+          {showSelectionToolbar && (
+            <div className="chat-selection-toolbar">
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat(WA_MARKERS.bold)} title="Tebal (*teks*)">
+                <Bold size={14} />
+              </button>
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat(WA_MARKERS.italic)} title="Miring (_teks_)">
+                <Italic size={14} />
+              </button>
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat(WA_MARKERS.strike)} title="Coret (~teks~)">
+                <Strikethrough size={14} />
+              </button>
+            </div>
+          )}
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            rows={1}
+            className="chat-textarea"
+            placeholder={editingMessage ? "Edit pesan..." : "Tulis balasan..."}
+            onChange={(e) => { setDraft(e.target.value); autoGrowTextarea(e.target); }}
+            onKeyDown={handleTextareaKeyDown}
+            onPaste={handlePaste}
+            onSelect={handleSelectionChange}
+            onKeyUp={handleSelectionChange}
+            onMouseUp={handleSelectionChange}
+            onTouchEnd={handleSelectionChange}
+            onBlur={() => setShowSelectionToolbar(false)}
+          />
+        </div>
 
         <Suspense fallback={<ActionBtnFallback icon={Mic} />}>
           <VoiceRecorder conversationId={conversationId} />

@@ -10,9 +10,20 @@ import { PIPELINE_STAGES, LEAD_SOURCES } from "@/utils/format.js";
 // SEMUA state tetap dipegang induk — komponen ini murni presentasional
 // (controlled), jadi tidak ada sumber kebenaran kedua.
 
-const SELECT_CLS =
-  "h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+// Select filter: netral (belum dipilih apa-apa) vs aktif (accent — satu-
+// satunya warna dekoratif di design system ini, lihat styles/tailwind.css
+// "SATU-SATUNYA warna dekoratif"). Border ditambah supaya kotaknya
+// kelihatan jelas batasnya di background gelap (sebelumnya bg-surface
+// polos nyaris menyatu dengan latar, jadi terasa "datar"/kurang hidup).
+function selectCls(active) {
+  return cn(
+    "h-8 rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
+    "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+    active
+      ? "border-accent/40 bg-accentbg text-accent"
+      : "border-line bg-surface text-ink2 hover:border-accent/30"
+  );
+}
 
 // Quick chip: warna aktif berbeda per chip supaya cepat dikenali (VIP ungu,
 // belum order oranye, tidak aktif abu) — dipertahankan dari versi CSS lama.
@@ -89,32 +100,35 @@ export default function CustomerFilters({
         ))}
       </div>
 
-      {/* Search + filter */}
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+      {/* Search + filter — flex-wrap (BUKAN nowrap seperti sebelumnya) supaya
+          kalau tidak muat di 1 baris, dropdown filter turun ke baris baru,
+          bukan memaksa search box menyusut sampai placeholder-nya kepotong.
+          min-w di search memastikan lebar minimum yang tetap nyaman dibaca. */}
+      <div className="flex flex-wrap items-center gap-2">
         <SearchInput
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Cari nama, nomor, email, atau Instagram…"
-          className="lg:max-w-xs"
+          className="w-full min-w-[240px] flex-1 sm:w-auto sm:flex-none sm:basis-72"
         />
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <select className={SELECT_CLS} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
+          <select className={selectCls(!!filterStage)} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
             <option value="">Semua Stage</option>
             {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
           </select>
 
-          <select className={SELECT_CLS} value={filterSource} onChange={(e) => onFilterSource(e.target.value)} aria-label="Filter sumber lead">
+          <select className={selectCls(!!filterSource)} value={filterSource} onChange={(e) => onFilterSource(e.target.value)} aria-label="Filter sumber lead">
             <option value="">Semua Sumber</option>
             {LEAD_SOURCES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
           </select>
 
-          <select className={SELECT_CLS} value={filterCity} onChange={(e) => onFilterCity(e.target.value)} aria-label="Filter kota">
+          <select className={selectCls(!!filterCity)} value={filterCity} onChange={(e) => onFilterCity(e.target.value)} aria-label="Filter kota">
             <option value="">Semua Kota</option>
             {cities.map((city) => <option key={city} value={city}>{city}</option>)}
           </select>
 
-          <select className={SELECT_CLS} value={filterSales} onChange={(e) => onFilterSales(e.target.value)} aria-label="Filter sales person">
+          <select className={selectCls(!!filterSales)} value={filterSales} onChange={(e) => onFilterSales(e.target.value)} aria-label="Filter sales person">
             <option value="">Semua Sales Person</option>
             {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>

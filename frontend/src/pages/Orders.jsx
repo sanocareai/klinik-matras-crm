@@ -53,7 +53,33 @@ const MANDEK_HARI = 7;
 const isMandek = (o) =>
   !["DELIVERED", "CANCELLED"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
 
-function OrderCard({ order, onOpenChat, onOpenTimeline }) {
+// Dropdown status berwarna sesuai STATUS_TONE — dipakai di board (OrderCard)
+// & tabel, supaya status BISA diubah langsung di halaman Order, tanpa harus
+// buka percakapan customer dulu (sebelumnya satu-satunya jalur ubah status
+// ada di drawer profil pelanggan / chat). stopPropagation supaya klik select
+// tidak ikut memicu aksi lain di kartu/baris (mis. buka timeline).
+function StatusSelect({ order, onChange, className }) {
+  const tone = STATUS_TONE[order.status] || { chip: "bg-inset text-ink2" };
+  return (
+    <select
+      value={order.status}
+      onChange={(e) => onChange(order, e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Ubah status order ${order.orderNumber || ""}`}
+      className={cn(
+        "cursor-pointer appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold uppercase",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+        tone.chip, className
+      )}
+    >
+      {SEMUA_STATUS.map((s) => (
+        <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+      ))}
+    </select>
+  );
+}
+
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   return (
@@ -69,6 +95,10 @@ function OrderCard({ order, onOpenChat, onOpenTimeline }) {
         <span className={cn("shrink-0 rounded-chip px-1.5 py-0.5 text-[10px] font-semibold", PAYMENT_TONE[order.paymentStatus])}>
           {PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus}
         </span>
+      </div>
+
+      <div className="mt-2">
+        <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -183,6 +213,20 @@ export default function Orders() {
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
+  }
+
+  // Ubah status LANGSUNG dari halaman Order (board & tabel) — sebelumnya
+  // harus lewat drawer profil pelanggan/percakapan dulu. Refetch penuh
+  // (bukan patch optimis di state lokal) supaya kolom board pindah dengan
+  // benar dan daysInStatus/mandek/perStatus ikut dihitung ulang server.
+  async function handleStatusChange(order, newStatus) {
+    if (newStatus === order.status) return;
+    try {
+      await api.updateOrder(order.id, { status: newStatus });
+      load();
+    } catch (err) {
+      alert("Gagal ubah status: " + err.message);
+    }
   }
 
   async function handleExport() {
@@ -362,7 +406,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -409,9 +453,7 @@ export default function Orders() {
                         {KATEGORI_LABELS[o.category] || o.category}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <span className={cn("rounded-chip px-2 py-0.5 text-[10px] font-semibold uppercase", STATUS_TONE[o.status]?.chip)}>
-                          {ORDER_STATUS_LABELS[o.status] || o.status}
-                        </span>
+                        <StatusSelect order={o} onChange={handleStatusChange} />
                       </td>
                       <td className={cn("whitespace-nowrap px-3 py-2.5 tabular-nums", mandek ? "font-semibold text-orange" : "text-ink2")}>
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
