@@ -5,6 +5,20 @@
    bukan cuma Laporan (satu-satunya halaman yang sudah migrasi ke Tailwind
    sejauh ini). Skip preflight = Tailwind cuma nambah utility class baru
    yang bisa dipakai, tanpa mengganggu apa pun yang sudah ada. */
+/* ⚠️ URUTAN LAYER — WAJIB dideklarasikan SEBELUM apa pun lain menyentuh layer.
+   Per spesifikasi CSS, layer yang disebut LEBIH DULU otomatis punya prioritas
+   LEBIH RENDAH — dan CSS yang TIDAK di dalam layer apa pun SELALU menang atas
+   CSS yang di dalam layer, berapa pun spesifisitasnya. Itu sumber bug nyata
+   yang pernah terjadi: reset kontrol (`button{...}`) di tokens.css ditulis
+   TANPA @layer, jadi dia mengalahkan SEMUA utility Tailwind (bg-*, p-*,
+   rounded-*, shadow-*) yang dipasang di elemen <button> di SELURUH app —
+   tombol/pill DS v2 (FilterPill, segmented control, dsb) tampil polos tanpa
+   latar/padding/radius sama sekali, padahal class-nya benar.
+   Perbaikan: reset tsb sekarang dibungkus `@layer base` di tokens.css, dan
+   urutan di bawah ini MENJAMIN base < utilities (utility SELALU menang).
+   JANGAN hapus baris ini, dan JANGAN tulis CSS reset baru di luar @layer. */
+@layer theme, base, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "tw-animate-css";

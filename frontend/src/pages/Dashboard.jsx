@@ -3,7 +3,7 @@ import { Users, ShoppingCart, Wallet, Target } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { formatTanggalIndo, formatRupiahShort } from "../utils/format.js";
-import { makeRange, presetLabel } from "../lib/dateRange.js";
+import { makeRange } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
 import StatCard from "@/components/ui/stat-card.jsx";
 import RevenueOverview from "../features/dashboard/components/RevenueOverview.jsx";
@@ -35,12 +35,10 @@ export default function Dashboard({ user }) {
   const d = useDashboardData(range);
 
   const ov = d.overview.data;
-  const sales = Array.isArray(d.salesPerf.data) ? d.salesPerf.data : [];
   const konversi = ov && ov.totalCustomers > 0
     ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
     : 0;
   const userName = user?.name?.split(" ")[0] || "Anda";
-  const label = presetLabel(range);
 
   return (
     <PageContainer>
@@ -82,17 +80,11 @@ export default function Dashboard({ user }) {
         <RevenueOverview />
 
         {/* ── Dua kolom: corong + leaderboard ── */}
+        {/* Keduanya SELF-FETCH dengan periode sendiri (PeriodMenu) —
+            lihat komponennya. Tidak lagi menerima data/loading dari sini. */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PipelineFunnelCard
-            funnel={d.funnel.data}
-            loading={d.funnel.isLoading}
-            periodLabel={label}
-          />
-          <TopRepsCard
-            data={sales}
-            loading={d.salesPerf.isLoading}
-            error={d.salesPerf.isError}
-          />
+          <PipelineFunnelCard />
+          <TopRepsCard />
         </section>
 
         {/* ── Dua kolom: antrean tindakan + lead panas ── */}

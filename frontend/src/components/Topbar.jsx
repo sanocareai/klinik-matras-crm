@@ -58,28 +58,35 @@ export default function Topbar({ onToggleMobileMenu, unreadCount = 0, user, onLo
         </nav>
       </div>
 
-      {/* Tengah: search ⌘K dominan (buka command palette) */}
+      {/* Tengah: SATU tombol cari, ikon-saja secara default, MELEBAR jadi pil
+          teks penuh saat hover/fokus (bukan dua elemen terpisah per breakpoint
+          seperti sebelumnya — di sana ada pil desktop `sm:flex` + ikon mobile
+          `sm:hidden`; kalau breakpoint-nya tumpang-tindih di lebar tertentu,
+          dua-duanya kelihatan sekaligus, persis yang dilaporkan di tangkapan
+          layar produksi). Klik selalu membuka CommandPalette — modal itu
+          SENDIRI sudah "search bar yang muncul saat ikon diklik" yang diminta.
+          `group` + transisi width/opacity CSS murni, tanpa JS animasi tambahan. */}
       <button
         onClick={() => setPaletteOpen(true)}
-        className="ml-1 hidden h-10 max-w-[380px] flex-1 items-center gap-2.5 rounded-xl bg-inset px-3.5 text-[13px] text-ink3 transition-colors hover:bg-surface sm:flex"
+        aria-label="Cari pelanggan, percakapan, halaman"
+        // w-10 tetap (ikon saja) SAMPAI hover/fokus — sengaja BUKAN "flex-1",
+        // karena flex-1 (flex-basis:0%) akan membuatnya selalu melebar penuh
+        // di layar ≥sm terlepas dari hover, meniadakan efek "expand on click"
+        // yang diminta. Target lebar FIXED (320px), bukan w-full, supaya
+        // tidak butuh flex-basis dari parent untuk resolve.
+        className="group ml-1 flex h-10 w-10 shrink-0 items-center gap-2.5 overflow-hidden rounded-xl bg-inset px-2.5 text-ink3 transition-[width,background-color] duration-200 ease-out hover:w-[320px] hover:bg-surface hover:px-3.5 focus-visible:w-[320px] focus-visible:bg-surface focus-visible:px-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       >
         <Search size={16} className="shrink-0" />
-        <span className="flex-1 truncate text-left">Cari pelanggan, percakapan, halaman…</span>
-        <kbd className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-ink3">
+        <span className="min-w-0 flex-1 truncate text-left text-[13px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+          Cari pelanggan, percakapan, halaman…
+        </span>
+        <kbd className="hidden shrink-0 rounded bg-inset px-1.5 py-0.5 text-[10px] font-semibold text-ink3 group-hover:inline-block group-focus-visible:inline-block">
           ⌘K
         </kbd>
       </button>
 
-      {/* Kanan: search mobile + tanggal + notif + profil */}
+      {/* Kanan: tanggal + notif + profil */}
       <div className="ml-auto flex items-center gap-1.5">
-        <button
-          onClick={() => setPaletteOpen(true)}
-          aria-label="Cari"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint sm:hidden"
-        >
-          <Search size={18} />
-        </button>
-
         <span className="hidden text-[13px] text-ink3 lg:block">{formatTanggalIndo()}</span>
 
         <button

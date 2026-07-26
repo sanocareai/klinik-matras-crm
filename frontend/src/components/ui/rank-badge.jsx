@@ -14,15 +14,25 @@ const GAYA = {
   2: "bg-blue-300 text-blue-900",
   3: "bg-blue-100 text-blue-700",
 };
+// 4 & 5 tetap dapat lingkaran (tint paling redup) — bukan angka telanjang.
+// Sebelumnya hanya 3 besar yang bulat & 4/5 polos tanpa latar; dalam satu
+// kolom leaderboard itu terlihat seperti dua gaya berbeda yang tidak sengaja
+// (persis yang ditandai di tangkapan layar). Sekarang seluruh kolom = 5
+// lingkaran ukuran sama, kedalaman warna yang menurun membawa hierarkinya.
+const GAYA_DEFAULT = "bg-inset text-ink3";
 
 export default function RankBadge({ rank, className }) {
-  const juara = rank <= 3;
   return (
     <span
       className={cn(
         "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
-        "text-[12px] font-bold tabular-nums",
-        juara ? GAYA[rank] : "text-ink3",
+        // leading-none WAJIB: tanpa ini, line-height "normal" bawaan font
+        // (Inter Variable) membuat glyph angka duduk sedikit di atas pusat
+        // vertikal box meski flex items-center sudah dipasang — flex
+        // memusatkan LINE BOX, bukan glyph itu sendiri, jadi line-height
+        // yang longgar tetap menggeser posisi visualnya.
+        "text-[12px] font-bold leading-none tabular-nums",
+        GAYA[rank] || GAYA_DEFAULT,
         className
       )}
       aria-label={`Peringkat ${rank}`}

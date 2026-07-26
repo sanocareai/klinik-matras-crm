@@ -11,11 +11,13 @@ import { cn } from "@/lib/utils.js";
 // depth 1..2 = tint terang, teks biru gelap
 // depth 3..4 = biru pekat, teks putih
 // Semua pasangan bg/teks di bawah sudah dicek kontrasnya untuk light & dark.
+// Opacity caption dinaikkan (70→80, 60→75, 65→80) — nilai lama terlalu pudar
+// di layar produksi ("teks putih/abu susah dibaca" pada blok biru pekat).
 const SKIN = {
-  1: { box: "bg-blue-100",  label: "text-blue-800/70", value: "text-blue-900", icon: "bg-blue-200 text-blue-800",  sub: "text-blue-800/60" },
-  2: { box: "bg-blue-200",  label: "text-blue-900/70", value: "text-blue-900", icon: "bg-blue-300 text-blue-900",  sub: "text-blue-900/60" },
-  3: { box: "bg-bluesolid/85", label: "text-white/75", value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/65" },
-  4: { box: "bg-bluesolid", label: "text-white/75",    value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/65" },
+  1: { box: "bg-blue-100",  label: "text-blue-800/80", value: "text-blue-900", icon: "bg-blue-200 text-blue-800",  sub: "text-blue-800/75" },
+  2: { box: "bg-blue-200",  label: "text-blue-900/80", value: "text-blue-900", icon: "bg-blue-300 text-blue-900",  sub: "text-blue-900/75" },
+  3: { box: "bg-bluesolid/85", label: "text-white/85", value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/80" },
+  4: { box: "bg-bluesolid", label: "text-white/85",    value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/80" },
 };
 
 export default function StatCard({

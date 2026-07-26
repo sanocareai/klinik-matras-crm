@@ -297,25 +297,45 @@ body {
    Komponen lama tidak terpengaruh: semuanya sudah menetapkan background/border
    sendiri lewat class (.btn, .quick-chip, dst) yang menang atas reset ini.
    `font: inherit` justru MEMPERBAIKI mereka — teks tombol jadi ikut font UI,
-   bukan Arial bawaan browser. */
-button, [type="button"], [type="submit"], [type="reset"] {
-  background-color: transparent;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  text-align: inherit;
-}
-button:disabled { cursor: not-allowed; }
+   bukan Arial bawaan browser.
 
-input, select, textarea {
-  font: inherit;
-  color: inherit;
+   ⚠️ BUG NYATA YANG PERNAH TERJADI — kenapa ini WAJIB di dalam @layer base:
+   Blok ini sebelumnya ditulis TANPA @layer. Per spesifikasi CSS, aturan yang
+   TIDAK berada di dalam layer apa pun SELALU menang atas aturan yang berada
+   di dalam layer manapun — TIDAK PEDULI SPESIFISITAS. Karena utility Tailwind
+   (bg-inset, p-2.5, rounded-chip, shadow-card, dst) berada di `@layer
+   utilities` (lihat styles/tailwind.css), reset tanpa-layer ini MENGALAHKAN
+   semuanya. Akibatnya: setiap <button> di DS v2 (FilterPill, segmented
+   control periode, dsb) kehilangan latar/padding/radius sepenuhnya dan
+   tampil sebagai teks polos menempel tanpa jarak — persis seperti yang
+   dilaporkan di tangkapan layar produksi ("7 hari 30 hari 3 bulan" tanpa
+   pemisah/latar).
+   Perbaikan: blok ini dibungkus @layer base, dan tailwind.css SEKARANG
+   mendeklarasikan urutan `@layer theme, base, utilities;` di baris paling
+   atas — itu menjamin base < utilities, jadi utility class SELALU menang atas
+   reset ini, sementara reset ini tetap menang atas gaya bawaan BROWSER (yang
+   levelnya di luar/di bawah semua layer penulis). JANGAN keluarkan blok ini
+   dari @layer base. */
+@layer base {
+  button, [type="button"], [type="submit"], [type="reset"] {
+    background-color: transparent;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: inherit;
+  }
+  button:disabled { cursor: not-allowed; }
+
+  input, select, textarea {
+    font: inherit;
+    color: inherit;
+  }
+  /* Hilangkan tampilan bawaan OS pada select/date supaya ikut permukaan DS. */
+  select { appearance: none; -webkit-appearance: none; }
+  input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
 }
-/* Hilangkan tampilan bawaan OS pada select/date supaya ikut permukaan DS. */
-select { appearance: none; -webkit-appearance: none; }
-input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
 
 /* Transisi halus saat tema ditukar — HANYA warna, dan hanya di permukaan.
    Tidak diterapkan ke `*` supaya tidak mengganggu animasi lain. */

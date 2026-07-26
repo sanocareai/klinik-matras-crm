@@ -446,18 +446,27 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
   }
 });
 
+// ?from=&to= OPSIONAL — kalau diisi, funnel dihitung dari lead yang MASUK
+// (Customer.createdAt) pada periode itu, dikelompokkan menurut stage mereka
+// SEKARANG. Tanpa filter (perilaku lama): seluruh customer, sepanjang waktu.
+// Dulu endpoint ini tidak menerima parameter tanggal sama sekali — tombol
+// pemilih periode di kartu "Deal Pipeline" tidak melakukan apa-apa.
 analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   try {
+    const { from, to } = req.query;
+    const custWhere = buildDateWhere(from, to);
+
     const stageGroups = await prisma.customer.groupBy({
       by: ["pipelineStage"],
       _count: { _all: true },
+      where: custWhere,
     });
 
     const stageValues = await Promise.all(
       stageGroups.map(async (g) => {
         const agg = await prisma.order.aggregate({
           where: {
-            customer: { pipelineStage: g.pipelineStage },
+            customer: { pipelineStage: g.pipelineStage, ...custWhere },
             status: { not: "CANCELLED" },
           },
           _sum: { value: true },
@@ -823,7 +832,11 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
           where: { type: "INDIVIDUAL" },
           orderBy: { lastMessageAt: "desc" }, take: 1,
           select: {
-            lastMessageAt: true, sessionId: true,
+            // `id` ditambahkan supaya frontend bisa deep-link langsung ke
+            // percakapan ini di Inbox (?conv=<id>) — sebelumnya tidak dipilih,
+            // jadi kartu "Lead Panas" hanya bisa mengarah ke /pipeline umum,
+            // sales harus cari sendiri percakapannya secara manual.
+            id: true, lastMessageAt: true, sessionId: true,
             messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true, content: true } },
           },
         },
@@ -872,6 +885,9 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
         assignedTo: c.assignedSales?.name || null,
         lastMessageAt: conv?.lastMessageAt || null,
         sessionLabel: conv?.sessionId || "CS-1",
+        // null kalau customer ini belum pernah punya percakapan INDIVIDUAL —
+        // frontend HARUS jaga-jaga (fallback ke /pipeline), jangan asumsikan selalu ada.
+        conversationId: conv?.id || null,
       };
     })
       .sort((a, b) => b.score - a.score)

@@ -25,6 +25,13 @@ function jenisDari(t) {
 // Padanan "Upcoming Tasks" di referensi. Sumber datanya /analytics/follow-ups
 // (percakapan yang menunggu balasan) — itu satu-satunya "tugas" nyata yang
 // dimiliki sistem ini; TIDAK ada modul task terpisah, jadi tidak dibuat-buat.
+//
+// `t.id` DARI BACKEND ADALAH CONVERSATION ID (lihat routes/analytics.js
+// /follow-ups: `items.push({ id: c.id, ... })` dengan c = Conversation).
+// Klik baris sekarang membuka Inbox LANGSUNG di percakapan itu lewat
+// `?conv=` — mekanisme deep-link ini sudah ada (dipakai toast notifikasi),
+// bukan fitur baru di backend. Sebelumnya semua baris hanya navigate ke
+// "/inbox" polos, sales harus cari sendiri kontaknya secara manual.
 export default function TaskQueueCard({ items = [], loading, error }) {
   const navigate = useNavigate();
   const list = (Array.isArray(items) ? items : []).slice(0, 4);
@@ -49,15 +56,17 @@ export default function TaskQueueCard({ items = [], loading, error }) {
             return (
               <button
                 key={t.id}
-                onClick={() => navigate("/inbox")}
+                onClick={() => navigate(`/inbox?conv=${t.id}`)}
                 className="-mx-2 flex items-center gap-3 rounded-btn px-2 py-2.5 text-left transition-colors hover:bg-hovertint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 <IconTile icon={j.Icon} depth={j.depth} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <p className="t-body truncate font-medium">{t.customerName}</p>
-                  <p className="t-secondary truncate">{t.nextAction || j.label}</p>
+                  <p className="t-body truncate font-semibold">{t.customerName}</p>
+                  {/* Kontras dinaikkan dari t-secondary (60% alpha) ke 75% —
+                      di kartu ini teksnya kecil, 60% terasa terlalu pudar. */}
+                  <p className="truncate text-[13px] text-ink/75">{t.nextAction || j.label}</p>
                 </div>
-                <span className="t-secondary flex shrink-0 items-center gap-1 text-[11px] tabular-nums">
+                <span className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-ink/65">
                   <Clock size={11} />
                   {formatDurasiRelatif(t.waitingMinutes)}
                 </span>
