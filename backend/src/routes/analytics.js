@@ -410,6 +410,13 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
     const { year, month } = nowPartsWIB();
 
+    // Batas rentang sebagai Date untuk $queryRaw (buildDateWhere menghasilkan
+    // objek Prisma, tidak bisa dipakai di raw SQL). Sentinel dipakai saat
+    // preset "Semua" supaya SQL-nya tetap satu bentuk — tanpa ini query raw
+    // di bawah harus dirakit kondisional dan mudah salah.
+    const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
+
     const users = await prisma.user.findMany({
       where: { role: { not: "ADMIN" } },
       select: { id: true, name: true, avatarUrl: true },
@@ -419,12 +426,34 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
 
+    // Ada transisi stage tercatat di periode ini? pipeline_transitions baru
+    // mulai merekam 25 Jul 2026 dan TIDAK bisa di-backfill, jadi untuk periode
+    // sebelum itu konversi harus tampil "—" (belum ada datanya), BUKAN 0%
+    // (yang terbaca sebagai "tidak ada yang closing" — kesimpulan yang salah).
+    const transisiPeriode = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n FROM pipeline_transitions
+      WHERE created_at >= ${mulai} AND created_at < ${selesai}`;
+    const adaDataTransisi = (transisiPeriode[0]?.n || 0) > 0;
+
     const rows = await Promise.all(users.map(async (u) => {
+      // DUA lingkup yang HARUS dibedakan — inilah sumber bug yang diperbaiki:
+      //
+      // `mine`        = percakapan yang DIBUAT dalam rentang → untuk metrik
+      //                 AKTIVITAS periode (ditangani, dibalas, respons, SLA).
+      // `mineAtribusi`= percakapan KAPAN SAJA → untuk MENGHUBUNGKAN order ke
+      //                 sales. Order hari ini bisa datang dari lead bulan lalu;
+      //                 kalau tautannya ikut difilter tanggal, order itu tidak
+      //                 teratribusi ke siapa pun dan kolom Nilai jadi Rp0
+      //                 padahal perusahaan jelas ada penjualan. Itu yang
+      //                 terjadi sebelum perbaikan ini (dan yang membuat
+      //                 "7 percakapan · Rp0 · 14.3% konversi" tampak aneh).
       const mine = { ...convWhere, assignedToId: u.id };
+      const mineAtribusi = { type: "INDIVIDUAL", assignedToId: u.id };
 
       const [
         handled, replied, resolved, stalledRaw,
         stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
+        paidRaw, orderingCustomers,
       ] = await Promise.all([
         prisma.conversation.count({ where: mine }),
         // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
@@ -439,9 +468,13 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         prisma.conversation.count({ where: { ...mine, messages: { some: { direction: "OUTBOUND" } } } }),
         prisma.conversation.count({ where: { ...mine, status: "RESOLVED" } }),
 
-        // MENGGANTUNG: percakapan yang dia pegang, pesan TERAKHIR dari
-        // customer (INBOUND), dan sudah >60 menit tanpa balasan. Ini beban
-        // yang masih menempel ke orang ini SEKARANG — bukan sejarah.
+        // MENGGANTUNG dalam rentang: percakapan yang dia pegang (dibuat dalam
+        // rentang), pesan TERAKHIR dari customer, >60 menit tanpa balasan.
+        // Sengaja DIBATASI rentang supaya ikut berubah saat tanggal diganti —
+        // sebelumnya query ini tanpa filter tanggal, sehingga baris "0
+        // percakapan · 8 menggantung" bisa muncul (angka dari sepanjang waktu
+        // ditempel di sebelah angka periode). Angka "sekarang, lintas periode"
+        // tetap dilaporkan terpisah sebagai `stalledNow` di total tim.
         prisma.$queryRaw`
           SELECT COUNT(*)::int AS n
           FROM "Conversation" c
@@ -451,42 +484,47 @@ analyticsRouter.get("/sales-report", async (req, res) => {
           ) m ON m."conversationId" = c.id
           WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
             AND c.status != 'RESOLVED'
+            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
             AND m.direction = 'INBOUND'
             AND m."createdAt" < NOW() - INTERVAL '60 minutes'`,
 
-        // Sebaran stage customer dari percakapan yang dia pegang — inilah
-        // funnel per sales. Dihitung lewat Customer yang punya conversation
-        // milik user ini (bukan assignedSalesId — lihat catatan atribusi).
+        // Sebaran stage — POSISI SAAT INI dari seluruh customer yang
+        // percakapannya dia pegang (TIDAK difilter tanggal: "stage sekarang"
+        // adalah keadaan, bukan aliran periode). Dilabeli jelas di UI supaya
+        // tidak dibaca sebagai kejadian dalam periode.
         prisma.customer.groupBy({
           by: ["pipelineStage"],
-          where: { conversations: { some: mine } },
+          where: { conversations: { some: mineAtribusi } },
           _count: { _all: true },
         }),
 
+        // Order dalam rentang, TAUTAN sales tidak difilter tanggal (lihat
+        // catatan `mineAtribusi`).
         prisma.order.aggregate({
           where: {
             ...buildDateWhere(from, to), status: { not: "CANCELLED" },
-            customer: { conversations: { some: mine } },
+            customer: { conversations: { some: mineAtribusi } },
           },
           _count: { _all: true }, _sum: { value: true },
         }),
         prisma.order.aggregate({
           where: {
             ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paymentStatus: "LUNAS",
-            customer: { conversations: { some: mine } },
+            customer: { conversations: { some: mineAtribusi } },
           },
           _sum: { value: true },
         }),
         prisma.order.count({
           where: {
             ...buildDateWhere(from, to), hasComplaint: true,
-            customer: { conversations: { some: mine } },
+            customer: { conversations: { some: mineAtribusi } },
           },
         }),
 
         // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
-        // pertama). JOIN ke Conversation supaya grup WA internal & percakapan
-        // sales lain tidak ikut terhitung.
+        // pertama), DIBATASI percakapan yang dibuat dalam rentang. JOIN ke
+        // Conversation supaya grup WA internal & percakapan sales lain tidak
+        // ikut terhitung.
         prisma.$queryRaw`
           SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
                  COUNT(*)::int AS sample
@@ -494,18 +532,21 @@ analyticsRouter.get("/sales-report", async (req, res) => {
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
             FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
             WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
             GROUP BY 1
           ) i
           JOIN (
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
             FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
             WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
             GROUP BY 1
           ) o ON i."conversationId" = o."conversationId"
           WHERE o."createdAt" > i."createdAt"`,
 
-        // SLA breach = percakapan yang respons pertamanya > 60 menit. Ambang
-        // 60 menit mengikuti aturan takeover yang sudah dipakai di Inbox.
+        // SLA breach = percakapan (dibuat dalam rentang) yang respons
+        // pertamanya > 60 menit. Ambang 60 menit mengikuti aturan takeover
+        // yang sudah dipakai di Inbox.
         prisma.$queryRaw`
           SELECT COUNT(*)::int AS n FROM (
             SELECT i."conversationId"
@@ -513,22 +554,49 @@ analyticsRouter.get("/sales-report", async (req, res) => {
               SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
               FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
               WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+                AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
               GROUP BY 1
             ) i
             JOIN (
               SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
               FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
               WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+                AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
               GROUP BY 1
             ) o ON i."conversationId" = o."conversationId"
             WHERE o."createdAt" > i."createdAt"
               AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
           ) t`,
+
+        // Berapa customer PINDAH ke PAID di dalam rentang — konversi sebagai
+        // ALIRAN periode, bukan keadaan. Ini pembilang conversion rate yang
+        // sepadan dengan penyebutnya (percakapan ditangani pada periode yang
+        // sama). Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
+        // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
+        // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
+        prisma.$queryRaw`
+          SELECT COUNT(DISTINCT pt.customer_id)::int AS n
+          FROM pipeline_transitions pt
+          JOIN "Conversation" c ON c."customerId" = pt.customer_id
+          WHERE pt.to_stage = 'PAID'
+            AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
+            AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
+
+        // Customer DISTINCT yang punya order dalam rentang — hasil konkret
+        // yang datanya sudah ada sekarang (tidak bergantung pada riwayat
+        // transisi yang baru mulai direkam).
+        prisma.customer.count({
+          where: {
+            conversations: { some: mineAtribusi },
+            orders: { some: { ...buildDateWhere(from, to), status: { not: "CANCELLED" } } },
+          },
+        }),
       ]);
 
       const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
       const stageCount = (s) => byStage[s] || 0;
-      const paid = stageCount("PAID") + stageCount("REVIEWED");
+      const paidSekarang = stageCount("PAID") + stageCount("REVIEWED");
+      const paidPeriode = paidRaw[0]?.n || 0;
       const orders = orderAgg._count._all;
       const gross = orderAgg._sum.value || 0;
       const target = targetMap[u.id] || 0;
@@ -544,15 +612,30 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         respondedSample: respRaw[0]?.sample || 0,
         slaBreach: slaBreach[0]?.n || 0,
 
-        // Funnel (8 stage baru)
+        // POSISI SAAT INI (bukan aliran periode) — sengaja tidak difilter
+        // tanggal, dan UI WAJIB melabelinya begitu.
         funnel: {
           NEW: stageCount("NEW"), QUALIFIED: stageCount("QUALIFIED"), QUOTED: stageCount("QUOTED"),
           BOOKED: stageCount("BOOKED"), SCHEDULED: stageCount("SCHEDULED"),
           COMPLETED: stageCount("COMPLETED"), PAID: stageCount("PAID"), REVIEWED: stageCount("REVIEWED"),
         },
-        paidCustomers: paid,
-        // Conversion = dari percakapan yang dia pegang, berapa % jadi bayar.
-        conversionRate: handled > 0 ? Math.round((paid / handled) * 1000) / 10 : null,
+        paidCustomersNow: paidSekarang,
+
+        // ALIRAN PERIODE — ikut berubah saat tanggal diganti.
+        paidCustomers: paidPeriode,
+        orderingCustomers,
+        // Konversi = customer yang PINDAH ke Paid dalam periode / percakapan
+        // ditangani dalam periode. Dua-duanya aliran periode → sepadan.
+        // null (UI: "—") kalau riwayat transisi belum ada datanya di periode
+        // ini, supaya tidak terbaca sebagai "0% closing".
+        conversionRate: adaDataTransisi && handled > 0
+          ? Math.round((paidPeriode / handled) * 1000) / 10
+          : null,
+        // Konversi berbasis ORDER — datanya sudah ada sekarang, jadi ini yang
+        // bisa dipercaya sebelum riwayat transisi terkumpul.
+        orderConversionRate: handled > 0
+          ? Math.round((orderingCustomers / handled) * 1000) / 10
+          : null,
 
         // Hasil
         orders,
@@ -566,6 +649,21 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       };
     }));
 
+    // "Menggantung SEKARANG" lintas periode — sinyal operasional yang tidak
+    // boleh hilang hanya karena user memilih rentang "hari ini". Dipisah dari
+    // kolom per-periode supaya tidak tercampur (lihat catatan `stalled`).
+    const stalledNowRaw = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n
+      FROM "Conversation" c
+      JOIN (
+        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
+        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
+      ) m ON m."conversationId" = c.id
+      WHERE c."type" = 'INDIVIDUAL' AND c."assignedToId" IS NOT NULL
+        AND c.status != 'RESOLVED'
+        AND m.direction = 'INBOUND'
+        AND m."createdAt" < NOW() - INTERVAL '60 minutes'`;
+
     // Total tim — supaya UI tidak menjumlahkan sendiri (dan tidak salah
     // menjumlahkan rata-rata, kesalahan klasik di laporan seperti ini).
     const t = rows.reduce((a, r) => ({
@@ -574,17 +672,25 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       orders: a.orders + r.orders, grossValue: a.grossValue + r.grossValue,
       collectedValue: a.collectedValue + r.collectedValue,
       paidCustomers: a.paidCustomers + r.paidCustomers,
+      orderingCustomers: a.orderingCustomers + r.orderingCustomers,
       slaBreach: a.slaBreach + r.slaBreach, complaints: a.complaints + r.complaints,
       target: a.target + r.target,
-    }), { handled: 0, replied: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
+    }), { handled: 0, replied: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
 
     res.json({
       periodeTarget: { year, month },
+      // Dipakai UI untuk memutuskan menampilkan "—" vs 0% pada konversi
+      // berbasis transisi stage.
+      adaDataTransisi,
+      stalledNow: stalledNowRaw[0]?.n || 0,
       rows: rows.sort((a, b) => b.grossValue - a.grossValue),
       total: {
         ...t,
         replyRate:      t.handled > 0 ? Math.round((t.replied / t.handled) * 100) : null,
-        conversionRate: t.handled > 0 ? Math.round((t.paidCustomers / t.handled) * 1000) / 10 : null,
+        conversionRate: adaDataTransisi && t.handled > 0
+          ? Math.round((t.paidCustomers / t.handled) * 1000) / 10 : null,
+        orderConversionRate: t.handled > 0
+          ? Math.round((t.orderingCustomers / t.handled) * 1000) / 10 : null,
         aov:            t.orders  > 0 ? Math.round(t.grossValue / t.orders) : 0,
         percentToTarget: t.target > 0 ? Math.round((t.grossValue / t.target) * 100) : null,
       },
