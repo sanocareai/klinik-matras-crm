@@ -755,6 +755,7 @@ export default function ChatScreen({ route, navigation }) {
             )}
             <AttachComposer
               conversationId={conversationId}
+              customerName={routeName}
               onSent={(msg) => { useMessageStore.getState().appendMessage(conversationId, msg); scrollToBottomSoon(); }}
             />
             <TextInput

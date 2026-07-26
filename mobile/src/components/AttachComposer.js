@@ -12,10 +12,11 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
-import { Plus, Image as ImageIcon, Camera, FileText, X, Video } from "lucide-react-native";
+import { Plus, Image as ImageIcon, Camera, FileText, X, Video, Package } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import PressableScale from "./PressableScale";
+import ProductPicker from "./ProductPicker";
 
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
@@ -58,13 +59,15 @@ async function compressImage(uri) {
   }
 }
 
-export default function AttachComposer({ conversationId, onSent }) {
+export default function AttachComposer({ conversationId, customerName, onSent }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems] = useState([]);
   const [hd, setHd] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [sendingProduct, setSendingProduct] = useState(false);
 
   // mediaTypeOf: string tetap ("document") ATAU function per-asset (dari
   // ImagePicker, tiap asset punya field .type "image"|"video" sendiri).
@@ -110,6 +113,31 @@ export default function AttachComposer({ conversationId, onSent }) {
     const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
     if (result.canceled || !result.assets?.length) return;
     addAssets(result.assets, "document");
+  }
+
+  function openProductPicker() {
+    setShowSheet(false);
+    setShowProductPicker(true);
+  }
+
+  // Kirim foto produk — beda dari handleSendAll di atas (yang mengunggah FILE
+  // dari device): ini kirim gambar yang SUDAH ADA di server (Galeri Produk),
+  // jadi satu request ke send-product, backend yang urus WAHA & bikin
+  // beberapa Message sekaligus (1 per foto). onSent dipanggil SEKALI PER
+  // PESAN — kontrak yang sama seperti loop di handleSendAll — supaya
+  // ChatScreen.js tidak perlu tahu bedanya "1 pesan" vs "beberapa pesan
+  // sekaligus", cukup satu pola appendMessage per panggilan.
+  async function handleSendProduct(payload) {
+    setSendingProduct(true);
+    try {
+      const result = await api.sendProduct(conversationId, payload);
+      (result.messages || []).forEach((m) => onSent?.(m));
+      setShowProductPicker(false);
+    } catch (err) {
+      Alert.alert("Gagal kirim produk", err.message);
+    } finally {
+      setSendingProduct(false);
+    }
   }
 
   function removeItem(uid) {
@@ -176,9 +204,21 @@ export default function AttachComposer({ conversationId, onSent }) {
               <FileText size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
               <Text style={styles.sheetItemText}>Dokumen</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={openProductPicker}>
+              <Package size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Galeri Produk</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <ProductPicker
+        visible={showProductPicker}
+        customerName={customerName}
+        sending={sendingProduct}
+        onClose={() => setShowProductPicker(false)}
+        onSend={handleSendProduct}
+      />
 
       {/* Modal preview sebelum kirim */}
       <Modal visible={items.length > 0} transparent animationType="slide" onRequestClose={() => !sending && closePreview()}>

@@ -325,6 +325,13 @@ export const api = {
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,
   // cuma dipakai untuk prefill form, sama seperti send-product di chat).
   getProducts: () => request("/products"),
+  // Kirim foto produk langsung ke chat — endpoint & payload SAMA PERSIS
+  // dengan web (frontend/src/components/ProductPicker.jsx), dipakai
+  // components/ProductPicker.js mobile (gap yang diperbaiki 26 Jul 2026:
+  // sebelumnya cuma bisa lampir foto dari galeri/kamera HP, tidak bisa
+  // kirim katalog produk resmi tanpa keluar app).
+  sendProduct: (conversationId, data) =>
+    request(`/conversations/${conversationId}/send-product`, { method: "POST", body: JSON.stringify(data) }),
 
   // Daftar user (untuk modal Transfer percakapan ke sales lain)
   getUsers: () => request("/users"),
