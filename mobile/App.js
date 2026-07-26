@@ -8,7 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
-import { House, MessageCircle, Users, UserRound } from "lucide-react-native";
+import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -21,6 +21,7 @@ import ChatScreen from "./src/screens/ChatScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import PelangganScreen from "./src/screens/PelangganScreen";
+import OrdersScreen from "./src/screens/OrdersScreen";
 import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
 import InAppBanner from "./src/components/InAppBanner";
 import SocketStatusBanner from "./src/components/SocketStatusBanner";
@@ -49,7 +50,12 @@ const Tab = createBottomTabNavigator();
 // konsep floating/rounded/pill sebelumnya). Ikon lucide polos TANPA
 // lingkaran/pill background sama sekali — aktif cuma beda warna+ketebalan
 // stroke, non-aktif slate-400 biasa.
-const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Profil: UserRound };
+// "Order" ditambahkan 26 Jul 2026 (analisa gap fitur CRM web vs app) — sisi
+// PENGERJAAN (antrean produksi lintas pelanggan), terpisah dari tab
+// Pelanggan yang sisi PENJUALAN/pipeline. Ini gap paling bernilai buat sales
+// di lapangan: sebelumnya "order mana yang sedang diproses?" tidak bisa
+// dijawab tanpa buka satu-satu dari 1.297 pelanggan.
+const TAB_ICONS = { Home: House, Chats: MessageCircle, Pelanggan: Users, Order: ClipboardList, Profil: UserRound };
 
 // Tinggi AREA KONTEN bar — 52-56 (compact, TANPA circle/pill jadi tidak
 // butuh ruang ekstra). paddingBottom dihitung terpisah di MainTabs() dari
@@ -112,6 +118,7 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Chats" component={ChatListScreen} />
       <Tab.Screen name="Pelanggan" component={PelangganScreen} />
+      <Tab.Screen name="Order" component={OrdersScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -161,7 +168,7 @@ function createTabBarStyle(tokens) {
 // Pola resmi React Navigation untuk kasus ini: pasang onStateChange di
 // NavigationContainer, simpan nama route aktif ke state di App(), lalu
 // teruskan sebagai prop ke sini.
-const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Profil", "CustomerDetail"];
+const LIGHT_SCREENS = ["Home", "Chats", "Pelanggan", "Order", "Profil", "CustomerDetail"];
 function SafeAreaTopBg({ routeName, children }) {
   const tokens = useTokens();
   const colors = useColors();

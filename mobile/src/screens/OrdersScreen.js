@@ -1,0 +1,342 @@
+// Tab "Order" — ORDER-CENTRIC, lintas semua pelanggan. Gap yang diperbaiki
+// (analisa 26 Jul 2026): sebelumnya order HANYA bisa dilihat dari dalam
+// profil 1 pelanggan (CustomerProfileContent.js) — pertanyaan operasional
+// paling dasar "order mana yang sedang diproses SEKARANG?" tidak bisa
+// dijawab tanpa membuka satu-satu dari 1.297 pelanggan (94% di antaranya
+// tidak punya order sama sekali). Endpoint & filosofi SAMA dengan halaman
+// Order web (frontend/src/pages/Orders.jsx) — 1 baris = 1 order, bukan 1
+// pelanggan, diurutkan per status kerja.
+//
+// TIDAK bisa membuat order baru dari sini (sengaja) — order baru tetap
+// dibuat dari konteks 1 pelanggan (Pelanggan tab → profil → "+ Order"),
+// karena butuh detail spesifik pelanggan itu. Layar ini murni untuk
+// TRACKING & update status order yang sudah ada.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl,
+} from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { Search, Package, AlertTriangle, MessageCircle, ChevronDown } from "lucide-react-native";
+import { ScrollView } from "react-native";
+import { api } from "../api";
+import { useTokens } from "../constants/theme";
+import { navigateToChat } from "../lib/navigationRef";
+import Avatar from "../components/Avatar";
+import PressableScale from "../components/PressableScale";
+import OrderCard from "../components/OrderCard";
+import OrderFormModal from "../components/OrderFormModal";
+import {
+  formatRupiah, formatRupiahShort,
+  ORDER_STATUS_LABELS, ORDER_STATUSES,
+} from "../utils/format";
+
+const DEBOUNCE_MS = 300;
+const PAGE_SIZE = 20;
+// Ambang "mandek" — SAMA PERSIS dengan web (pages/Orders.jsx MANDEK_HARI)
+// supaya sales yang kerja dari HP dan dari CRM web melihat definisi yang
+// konsisten, bukan dua standar berbeda.
+const MANDEK_HARI = 7;
+const isMandek = (o) => !["DELIVERED", "CANCELLED"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
+
+const STATUS_TABS = [{ key: "", label: "Semua" }, ...ORDER_STATUSES.map((s) => ({ key: s, label: ORDER_STATUS_LABELS[s] || s }))];
+
+function SkeletonRow({ tokens, styles }) {
+  return (
+    <View style={styles.card}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <View style={styles.skeletonAvatar} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <View style={[styles.skeletonBar, { width: "50%" }]} />
+          <View style={[styles.skeletonBar, { width: "30%" }]} />
+        </View>
+      </View>
+      <View style={[styles.skeletonBar, { height: 40, borderRadius: 10 }]} />
+    </View>
+  );
+}
+
+// Header customer di atas tiap OrderCard — INI yang membuat daftar order
+// lintas-pelanggan bisa dibaca: OrderCard sendiri TIDAK tahu/tidak
+// menampilkan siapa pelanggannya (dibangun untuk konteks 1 customer yang
+// sudah diketahui dari layar profil), jadi identitas pelanggan + jalan
+// pintas ke chat-nya ditambahkan di SINI, bukan mengubah OrderCard (yang
+// masih dipakai apa adanya di CustomerProfileContent.js).
+function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit }) {
+  const mandek = isMandek(order);
+  const nama = order.customerName || order.customerPhone || "Tanpa nama";
+  return (
+    <View style={styles.card}>
+      <View style={styles.customerHeader}>
+        <Avatar name={nama} size={36} avatarUrl={order.profilePictureUrl} />
+        <View style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
+          <Text style={styles.customerName} numberOfLines={1}>{nama}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <Text
+              style={[
+                styles.daysText,
+                mandek && { color: tokens.color.warning, fontWeight: "700" },
+              ]}
+            >
+              {mandek && <AlertTriangle size={10} color={tokens.color.warning} />}
+              {" "}{order.daysInStatus === 0 ? "Masuk hari ini" : `${order.daysInStatus} hari di status ini`}
+              {order.daysInStatusPerkiraan ? "*" : ""}
+            </Text>
+          </View>
+        </View>
+        <PressableScale
+          style={[styles.chatBtn, !order.conversationId && { opacity: 0.35 }]}
+          onPress={() => order.conversationId && navigateToChat({ conversationId: order.conversationId, name: nama, customerId: order.customerId })}
+          disabled={!order.conversationId}
+        >
+          <MessageCircle size={16} color={tokens.color.accent} strokeWidth={2} />
+        </PressableScale>
+      </View>
+
+      <OrderCard
+        order={order}
+        onRefresh={onRefresh}
+        onDeleted={onDeleted}
+        onEdit={onEdit}
+      />
+    </View>
+  );
+}
+
+export default function OrdersScreen() {
+  const tokens = useTokens();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [hanyaMandek, setHanyaMandek] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [summary, setSummary] = useState(null); // { total, value } dari perStatus
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [editingOrder, setEditingOrder] = useState(null);
+
+  const debounceRef = useRef(null);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setErrorMsg(null);
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (statusFilter) params.status = statusFilter;
+      const data = await api.getOrders(params);
+      setOrders(data.items || []);
+      setSummary({
+        total: (data.items || []).length,
+        value: (data.items || []).reduce((s, o) => s + (o.value || 0), 0),
+      });
+      setVisibleCount(PAGE_SIZE);
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [search, statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function handleSearchChange(v) {
+    setSearchInput(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearch(v.trim()), DEBOUNCE_MS);
+  }
+
+  function handleRefresh() {
+    setRefreshing(true);
+    load(true);
+  }
+
+  const filtered = useMemo(
+    () => (hanyaMandek ? orders.filter(isMandek) : orders),
+    [orders, hanyaMandek]
+  );
+  const mandekCount = useMemo(() => orders.filter(isMandek).length, [orders]);
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+
+  function handleEndReached() {
+    setVisibleCount((v) => Math.min(v + PAGE_SIZE, filtered.length));
+  }
+
+  const handleDeleted = useCallback((orderId) => {
+    setOrders((list) => list.filter((o) => o.id !== orderId));
+  }, []);
+
+  // OrderFormModal onUpdated tidak mengirim data (cuma sinyal) — refetch
+  // seluruh daftar adalah cara paling sederhana yang TETAP BENAR (bukan
+  // patch manual field-per-field yang mudah lupa satu field baru nanti).
+  const handleUpdated = useCallback(() => { load(true); }, [load]);
+  const handleQuickRefresh = useCallback(() => { load(true); }, [load]);
+
+  const renderItem = useCallback(({ item }) => (
+    <OrderRow
+      order={item} tokens={tokens} styles={styles}
+      onRefresh={handleQuickRefresh}
+      onDeleted={handleDeleted}
+      onEdit={setEditingOrder}
+    />
+  ), [tokens, styles, handleQuickRefresh, handleDeleted]);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Order</Text>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Search size={18} color={tokens.color.textMuted} strokeWidth={2} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Cari ID order, nama, nomor…"
+          placeholderTextColor={tokens.color.textMuted}
+          value={searchInput}
+          onChangeText={handleSearchChange}
+        />
+      </View>
+
+      {/* Ringkasan singkat — bukan 4 kartu KPI seperti web (ruang HP
+          terbatas), cukup 1 baris supaya sales tetap tahu skala tanpa
+          menggeser fokus dari daftar itu sendiri. */}
+      {!loading && summary && (
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryText}>
+            {summary.total} order · {formatRupiahShort(summary.value)}
+          </Text>
+          <PressableScale
+            style={[styles.mandekPill, hanyaMandek && { backgroundColor: tokens.color.warning + "22", borderColor: tokens.color.warning }]}
+            onPress={() => setHanyaMandek((v) => !v)}
+          >
+            <AlertTriangle size={11} color={hanyaMandek ? tokens.color.warning : tokens.color.textMuted} strokeWidth={2.2} />
+            <Text style={[styles.mandekPillText, hanyaMandek && { color: tokens.color.warning }]}>
+              {mandekCount} mandek
+            </Text>
+          </PressableScale>
+        </View>
+      )}
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsWrap}
+        contentContainerStyle={styles.tabsContent}
+      >
+        {STATUS_TABS.map((t) => {
+          const active = statusFilter === t.key;
+          return (
+            <PressableScale
+              key={t.key || "ALL"}
+              style={[styles.statusChip, active && { backgroundColor: tokens.color.accentSoft, borderColor: tokens.color.accent }]}
+              onPress={() => setStatusFilter(t.key)}
+            >
+              <Text style={[styles.statusChipText, active && { color: tokens.color.accent }]}>{t.label}</Text>
+            </PressableScale>
+          );
+        })}
+      </ScrollView>
+
+      {loading ? (
+        <View style={{ paddingHorizontal: 16 }}>
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} tokens={tokens} styles={styles} />)}
+        </View>
+      ) : errorMsg ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyText}>Gagal memuat order: {errorMsg}</Text>
+        </View>
+      ) : visible.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Package size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
+          <Text style={styles.emptyText}>
+            {search || statusFilter || hanyaMandek ? "Tidak ada order yang cocok" : "Belum ada order"}
+          </Text>
+        </View>
+      ) : (
+        <FlashList
+          data={visible}
+          keyExtractor={(o) => o.id}
+          renderItem={renderItem}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.4}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[tokens.color.accent]} />
+          }
+          ListFooterComponent={
+            visibleCount < filtered.length ? (
+              <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} />
+            ) : null
+          }
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
+        />
+      )}
+
+      {editingOrder && (
+        <OrderFormModal
+          visible
+          order={editingOrder}
+          customerId={editingOrder.customerId}
+          onClose={() => setEditingOrder(null)}
+          onUpdated={() => { setEditingOrder(null); handleUpdated(); }}
+          onDeleted={(id) => { setEditingOrder(null); handleDeleted(id); }}
+        />
+      )}
+    </View>
+  );
+}
+
+function createStyles(tokens) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: tokens.color.bg },
+    header: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+    },
+    title: { fontSize: 24, fontWeight: "700", color: tokens.color.textPrimary },
+    searchWrap: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      marginHorizontal: 16, marginBottom: 8, backgroundColor: tokens.color.card,
+      borderRadius: tokens.radius.pill, paddingHorizontal: 14, paddingVertical: 10,
+      ...tokens.shadow.soft, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    },
+    searchInput: { flex: 1, fontSize: 14, color: tokens.color.textPrimary },
+    summaryRow: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      marginHorizontal: 16, marginBottom: 8,
+    },
+    summaryText: { fontSize: 12.5, color: tokens.color.textSecondary, fontWeight: "600" },
+    mandekPill: {
+      flexDirection: "row", alignItems: "center", gap: 4,
+      paddingHorizontal: 9, paddingVertical: 4, borderRadius: tokens.radius.chip,
+      borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+    },
+    mandekPillText: { fontSize: 11, fontWeight: "700", color: tokens.color.textMuted },
+    tabsWrap: { flexGrow: 0, marginBottom: 8 },
+    tabsContent: { paddingHorizontal: 16, gap: 8 },
+    statusChip: {
+      paddingHorizontal: 12, paddingVertical: 7, borderRadius: tokens.radius.chip,
+      backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+    },
+    statusChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
+    card: {
+      backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 10,
+      marginBottom: 10, ...tokens.shadow.soft,
+    },
+    customerHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 2 },
+    customerName: { fontSize: 13.5, fontWeight: "700", color: tokens.color.textPrimary },
+    daysText: { fontSize: 11, color: tokens.color.textMuted, marginTop: 1 },
+    chatBtn: {
+      width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center",
+      backgroundColor: tokens.color.accentSoft, marginLeft: 8,
+    },
+    emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80, paddingHorizontal: 24 },
+    emptyText: { color: tokens.color.textMuted, fontSize: 14, textAlign: "center" },
+    skeletonAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.subtle },
+    skeletonBar: { height: 11, borderRadius: 6, backgroundColor: tokens.color.subtle },
+  });
+}

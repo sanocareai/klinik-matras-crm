@@ -30,6 +30,14 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// Singkatan untuk ruang terbatas (dipakai OrdersScreen ringkasan) — konvensi
+// SAMA PERSIS dengan frontend/src/utils/format.js (CLAUDE.md §11).
+export function formatRupiahShort(n) {
+  if (n >= 1_000_000) return "Rp" + (n / 1_000_000).toFixed(1) + "jt";
+  if (n >= 1_000) return "Rp" + (n / 1_000).toFixed(0) + "rb";
+  return "Rp" + (n || 0);
+}
+
 // Order/Payment status — SAMA PERSIS dengan frontend/src/utils/format.js
 // (dan backend/prisma/schema.prisma enum OrderStatus/PaymentStatus, sumber
 // kebenaran). BUG (fix): versi lama CustomerProfileContent.js punya mapping

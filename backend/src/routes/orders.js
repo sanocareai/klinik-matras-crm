@@ -115,6 +115,17 @@ orderRouter.get("/", async (req, res) => {
       where,
       include: {
         items: { orderBy: { sortOrder: "asc" } },
+        // BUG YANG DIPERBAIKI (ditemukan sebelum sempat dipakai — mobile
+        // OrdersScreen.js membuka OrderFormModal edit yang sama dengan
+        // konteks 1-customer): tanpa weightEntries di sini, form edit
+        // mengira order ini TIDAK PUNYA berat badan tersimpan sama sekali
+        // (array kosong), dan logika diff-nya (bandingkan weightEntries
+        // lama vs form) akan memperlakukan SEMUA entri berat yang sudah
+        // ada sebagai "tidak ada" — berpotensi menduplikasi atau
+        // menghapus data berat badan multi-orang yang sudah benar
+        // tersimpan. items sudah disertakan sebelumnya justru karena bug
+        // yang sama akan terjadi pada baris layanan kalau tidak disertakan.
+        weightEntries: { orderBy: { sortOrder: "asc" } },
         customer: {
           select: {
             id: true, name: true, phone: true, city: true, profilePictureUrl: true,

@@ -312,6 +312,15 @@ export const api = {
   // satu sumber dipakai OrderSection.jsx web & OrderFormModal.js mobile.
   getOrderOptions: () => request("/master-data/order-options"),
 
+  // Daftar order LINTAS PELANGGAN (order-centric) — endpoint SAMA yang
+  // dipakai halaman Order web (frontend/src/pages/Orders.jsx). Beda dari
+  // addOrder/updateOrder di atas yang selalu berkonteks 1 customer: ini
+  // untuk pertanyaan "order mana yang sedang diproses SEKARANG", tidak
+  // bisa dijawab dari tab Pelanggan yang isinya 1.297 pelanggan (94% tanpa
+  // order sama sekali). Lihat backend/src/routes/orders.js#GET /.
+  getOrders: (params) => request("/orders" + buildQuery(params)),
+  getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
+
   // Galeri Produk — dipakai OrderFormModal sebagai pemilih cepat nama+harga
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,
   // cuma dipakai untuk prefill form, sama seperti send-product di chat).
