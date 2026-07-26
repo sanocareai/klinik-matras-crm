@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  LayoutDashboard, MessageSquare, Users, GitBranch,
+  LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog,
   LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles, MoreVertical,
 } from "lucide-react";
@@ -28,6 +28,9 @@ const NAV_SECTIONS = [
     items: [
       { to: "/customers", label: "Pelanggan",     Icon: Users },
       { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
+      // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
+      // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
+      { to: "/orders",    label: "Order",         Icon: ClipboardList },
       { to: "/products",  label: "Galeri Produk", Icon: Package, adminOnly: true },
     ],
   },

@@ -1,0 +1,469 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
+  AlertTriangle, Clock, MessageSquare, Package,
+} from "lucide-react";
+import { api } from "../api.js";
+import {
+  formatRupiah, formatRupiahShort,
+  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+} from "../utils/format.js";
+import { formatTanggalPendek } from "../utils/formatDate.js";
+import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { Button } from "@/components/ui/button.jsx";
+import { Skeleton } from "@/components/ui/skeleton.jsx";
+import Avatar from "../components/Avatar.jsx";
+import { cn } from "@/lib/utils.js";
+import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
+
+// ═══ HALAMAN ORDER ════════════════════════════════════════════════════════
+// Kenapa halaman TERSENDIRI, bukan tab di Pelanggan:
+// tabel Pelanggan berisi 1.297 pelanggan sementara hanya ~68 punya order, jadi
+// order yang sedang dikerjakan tenggelam di antara ribuan lead dingin — dan
+// 1 pelanggan dengan 3 order tidak bisa dibaca dalam satu baris pelanggan.
+// Di sini 1 BARIS = 1 ORDER, sehingga pertanyaan operasional dasar ("mana yang
+// sedang diproses?", "mana yang mandek?") bisa dijawab sekali lihat.
+//
+// Alur kerja produksi (BUKAN alfabet) — urutan ini yang membuat papan terbaca
+// sebagai antrean, bukan daftar acak.
+const ALUR = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED"];
+const SEMUA_STATUS = [...ALUR, "CANCELLED"];
+
+const STATUS_TONE = {
+  PENDING:    { chip: "bg-orangebg text-orange", dot: "bg-orange" },
+  PICKUP:     { chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  PROCESSING: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  READY:      { chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  DELIVERED:  { chip: "bg-greenbg text-green",   dot: "bg-green" },
+  CANCELLED:  { chip: "bg-redbg text-red",       dot: "bg-red" },
+};
+
+const PAYMENT_TONE = {
+  BELUM_BAYAR: "bg-redbg text-red",
+  DP:          "bg-orangebg text-orange",
+  LUNAS:       "bg-greenbg text-green",
+};
+
+const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+
+// Ambang "mandek": order yang tertahan di satu status kerja terlalu lama.
+// DELIVERED/CANCELLED dikecualikan — itu status AKHIR, lama di sana normal.
+const MANDEK_HARI = 7;
+const isMandek = (o) =>
+  !["DELIVERED", "CANCELLED"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
+
+function OrderCard({ order, onOpenChat, onOpenTimeline }) {
+  const mandek = isMandek(order);
+  const nama = order.customerName || order.customerPhone || "Tanpa nama";
+  return (
+    <div className="rounded-xl bg-surface p-2.5 shadow-card transition-shadow duration-150 hover:shadow-popover">
+      <div className="flex items-start gap-2">
+        <Avatar name={nama} src={order.profilePictureUrl} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold leading-tight text-ink">{nama}</p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-ink3">
+            {order.orderNumber || "tanpa ID"}
+          </p>
+        </div>
+        <span className={cn("shrink-0 rounded-chip px-1.5 py-0.5 text-[10px] font-semibold", PAYMENT_TONE[order.paymentStatus])}>
+          {PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus}
+        </span>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[13px] font-bold tabular-nums text-ink">
+          {formatRupiah(order.value || 0)}
+        </span>
+        <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[10px] font-semibold text-ink2">
+          {KATEGORI_LABELS[order.category] || order.category}
+        </span>
+      </div>
+
+      <p className={cn("mt-1.5 flex items-center gap-1 text-[11px]", mandek ? "font-semibold text-orange" : "text-ink3")}>
+        {mandek ? <AlertTriangle size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
+        {order.daysInStatus === 0 ? "Masuk hari ini" : `${order.daysInStatus} hari di status ini`}
+        {order.daysInStatusPerkiraan && <span title="Riwayat status belum terekam untuk order ini — dihitung dari terakhir diubah">*</span>}
+      </p>
+
+      {order.hasComplaint && (
+        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
+          <AlertTriangle size={11} className="shrink-0" /> Ada komplain
+        </p>
+      )}
+
+      <div className="mt-2 flex items-center gap-1 border-t border-line pt-2">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-ink3">
+          {order.assignedSales?.name || "Belum ada sales"}
+        </span>
+        <button
+          type="button" onClick={() => onOpenTimeline(order)}
+          title="Lihat riwayat status order"
+          className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2"
+        >
+          <Clock size={13} />
+        </button>
+        <button
+          type="button" onClick={() => onOpenChat(order)}
+          title={order.conversationId ? "Buka chat customer" : "Customer belum pernah chat"}
+          disabled={!order.conversationId}
+          className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
+        >
+          <MessageSquare size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function Orders() {
+  const navigate = useNavigate();
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView]       = useState(() => localStorage.getItem("orders-view") || "board");
+  const [cari, setCari]       = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [fKategori, setFKategori] = useState("");
+  const [fBayar, setFBayar]   = useState("");
+  const [hanyaMandek, setHanyaMandek] = useState(false);
+  const [timelineOrder, setTimelineOrder] = useState(null);
+
+  // Debounce pencarian — tiap ketikan tidak boleh jadi satu request.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(cari.trim()), 300);
+    return () => clearTimeout(t);
+  }, [cari]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.getOrders({
+        search: debounced || undefined,
+        category: fKategori || undefined,
+        paymentStatus: fBayar || undefined,
+      });
+      setData(res);
+    } catch (e) {
+      console.error("Gagal muat order:", e);
+      setData({ items: [], perStatus: [] });
+    } finally {
+      setLoading(false);
+    }
+  }, [debounced, fKategori, fBayar]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function gantiView(v) {
+    setView(v);
+    localStorage.setItem("orders-view", v);
+  }
+
+  const items = useMemo(() => {
+    let list = data?.items || [];
+    if (hanyaMandek) list = list.filter(isMandek);
+    return list;
+  }, [data, hanyaMandek]);
+
+  const perStatus = useMemo(() => {
+    const map = {};
+    for (const s of SEMUA_STATUS) map[s] = { count: 0, value: 0 };
+    for (const o of items) {
+      if (!map[o.status]) map[o.status] = { count: 0, value: 0 };
+      map[o.status].count++;
+      map[o.status].value += o.value || 0;
+    }
+    return map;
+  }, [items]);
+
+  const totalMandek = items.filter(isMandek).length;
+  const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
+  const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
+                           .reduce((s, o) => s + (o.value || 0), 0);
+  const adaFilter = !!(debounced || fKategori || fBayar || hanyaMandek);
+
+  function bukaChat(order) {
+    if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
+  }
+
+  async function handleExport() {
+    const { exportToExcel } = await import("../utils/export.js");
+    exportToExcel(
+      items.map((o) => ({
+        "ID Order": o.orderNumber || "",
+        Pelanggan: o.customerName || "",
+        "No HP": o.customerPhone || "",
+        Kota: o.customerCity || "",
+        Kategori: KATEGORI_LABELS[o.category] || o.category,
+        Status: ORDER_STATUS_LABELS[o.status] || o.status,
+        "Hari di Status": o.daysInStatus ?? "",
+        Mandek: isMandek(o) ? "Ya" : "",
+        Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
+        // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
+        // di utils/exportLaporan.js soal uang sebagai teks).
+        Nilai: o.value || 0,
+        Komplain: o.hasComplaint ? "Ya" : "",
+        "Sales Person": o.assignedSales?.name || "",
+        Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
+      })),
+      "order-" + new Date().toISOString().slice(0, 10)
+    );
+  }
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="Order"
+        subtitle={
+          loading ? "Memuat…"
+            : totalMandek > 0
+              ? `${items.length} order · ${totalMandek} mandek ≥${MANDEK_HARI} hari di status yang sama`
+              : `${items.length} order · ${formatRupiah(totalNilai)}`
+        }
+        actions={
+          <>
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
+              <input
+                type="search" value={cari} onChange={(e) => setCari(e.target.value)}
+                placeholder="Cari ID order, nama, nomor…"
+                aria-label="Cari order"
+                className="h-8 w-52 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              />
+              {cari && (
+                <button type="button" onClick={() => setCari("")} aria-label="Hapus pencarian"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink3 hover:text-ink">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            <select
+              value={fKategori} onChange={(e) => setFKategori(e.target.value)}
+              aria-label="Filter kategori"
+              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <option value="">Semua Kategori</option>
+              {Object.entries(KATEGORI_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <select
+              value={fBayar} onChange={(e) => setFBayar(e.target.value)}
+              aria-label="Filter status pembayaran"
+              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <option value="">Semua Pembayaran</option>
+              {Object.entries(PAYMENT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <Button
+              variant={hanyaMandek ? "primary" : "ghost"} size="sm"
+              onClick={() => setHanyaMandek((v) => !v)}
+              title={`Hanya order yang tertahan ≥${MANDEK_HARI} hari di status yang sama`}
+            >
+              <AlertTriangle size={14} /> Mandek
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => gantiView(view === "board" ? "table" : "board")}>
+              {view === "board" ? <ListIcon size={14} /> : <LayoutGrid size={14} />}
+              {view === "board" ? "Tabel" : "Papan"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw size={14} /> Refresh
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleExport} disabled={items.length === 0}>
+              <Download size={14} /> Export
+            </Button>
+          </>
+        }
+      />
+
+      <PageBody>
+        {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
+            sering dicari dan paling mudah hilang dari pandangan. */}
+        {!loading && items.length > 0 && (
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { l: "Total order", v: items.length.toLocaleString("id-ID") },
+              { l: "Nilai order", v: formatRupiah(totalNilai) },
+              { l: "Belum lunas", v: formatRupiah(belumLunas) },
+              { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined },
+            ].map((k) => (
+              <div key={k.l} className="rounded-2xl bg-surface p-3.5 shadow-card">
+                <p className="text-[11px] font-medium text-ink3">{k.l}</p>
+                <p className={cn("mt-1 text-[17px] font-bold tabular-nums", k.tone || "text-ink")}>{k.v}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {adaFilter && !loading && (
+          <p className="mb-3 text-xs text-ink3">
+            {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
+            <button type="button"
+              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setHanyaMandek(false); }}
+              className="font-semibold text-accent hover:underline">
+              Reset filter
+            </button>
+          </p>
+        )}
+
+        {data?.truncated && (
+          <p className="mb-3 text-[11px] text-ink3">
+            Menampilkan {items.length} order terbaru (dibatasi demi kecepatan). Pakai
+            pencarian atau filter untuk mempersempit.
+          </p>
+        )}
+
+        {loading ? (
+          <div className="flex gap-3 overflow-hidden">
+            {ALUR.map((s) => (
+              <div key={s} className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl bg-inset/80 p-2.5">
+                <Skeleton className="h-5 w-24" />
+                {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+              </div>
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface py-16 text-center shadow-card">
+            <Package className="text-ink3" size={28} />
+            <p className="text-sm font-semibold text-ink2">
+              {adaFilter ? "Tidak ada order yang cocok" : "Belum ada order"}
+            </p>
+            <p className="max-w-md text-xs text-ink3">
+              {adaFilter
+                ? "Coba ubah kata pencarian atau reset filter."
+                : "Order dibuat dari profil pelanggan — buka Pelanggan, pilih pelanggan, lalu tambah order."}
+            </p>
+          </div>
+        ) : view === "board" ? (
+          // Papan per status kerja + scroll horizontal, tiap kolom punya scroll
+          // vertikal sendiri (pelajaran dari Pipeline: satu kolom panjang tidak
+          // boleh menentukan panjang halaman).
+          <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+            {SEMUA_STATUS.filter((s) => s !== "CANCELLED" || perStatus[s].count > 0).map((status) => {
+              const kolom = items.filter((o) => o.status === status);
+              const mandekKolom = kolom.filter(isMandek).length;
+              return (
+                <div key={status} className="flex w-[272px] shrink-0 flex-col rounded-2xl bg-inset/80 p-2.5">
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATUS_TONE[status]?.dot || "bg-ink3")} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">
+                      {ORDER_STATUS_LABELS[status] || status}
+                    </span>
+                    <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink2">
+                      {kolom.length}
+                    </span>
+                  </div>
+                  <div className="mb-2 mt-1 flex items-baseline justify-between gap-2 px-0.5">
+                    <span className="text-[13px] font-bold tabular-nums text-ink">
+                      {formatRupiahShort(perStatus[status].value)}
+                    </span>
+                    {mandekKolom > 0 && (
+                      <span className="shrink-0 text-[10px] font-semibold text-orange">
+                        {mandekKolom} mandek
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
+                    {kolom.map((o) => (
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} />
+                    ))}
+                    {kolom.length === 0 && (
+                      <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
+                        Kosong
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl bg-surface shadow-card">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {["ID Order", "Pelanggan", "Kategori", "Status", "Lama", "Pembayaran", "Nilai", "Sales", "Dibuat", ""].map((h) => (
+                    <th key={h} className="whitespace-nowrap border-b border-line px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((o) => {
+                  const mandek = isMandek(o);
+                  return (
+                    <tr key={o.id} className="border-b border-line last:border-0 hover:bg-hovertint">
+                      <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
+                        {o.orderNumber || "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={o.customerName || o.customerPhone || "?"} src={o.profilePictureUrl} size="sm" />
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-semibold text-ink">
+                              {o.customerName || "Tanpa nama"}
+                            </p>
+                            <p className="truncate text-[11px] tabular-nums text-ink3">{o.customerPhone || "—"}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-ink2">
+                        {KATEGORI_LABELS[o.category] || o.category}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <span className={cn("rounded-chip px-2 py-0.5 text-[10px] font-semibold uppercase", STATUS_TONE[o.status]?.chip)}>
+                          {ORDER_STATUS_LABELS[o.status] || o.status}
+                        </span>
+                      </td>
+                      <td className={cn("whitespace-nowrap px-3 py-2.5 tabular-nums", mandek ? "font-semibold text-orange" : "text-ink2")}>
+                        {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <span className={cn("rounded-chip px-2 py-0.5 text-[10px] font-semibold", PAYMENT_TONE[o.paymentStatus])}>
+                          {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
+                        {formatRupiah(o.value || 0)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-ink3">{o.assignedSales?.name || "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-ink3">
+                        {o.createdAt ? formatTanggalPendek(o.createdAt) : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => setTimelineOrder(o)} title="Riwayat status"
+                            className="rounded-md p-1 text-ink3 hover:bg-hovertint hover:text-ink2">
+                            <Clock size={14} />
+                          </button>
+                          <button type="button" onClick={() => bukaChat(o)} disabled={!o.conversationId}
+                            title={o.conversationId ? "Buka chat" : "Belum pernah chat"}
+                            className="rounded-md p-1 text-ink3 hover:bg-hovertint hover:text-accent disabled:opacity-40">
+                            <MessageSquare size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && items.some((o) => o.daysInStatusPerkiraan) && (
+          <p className="mt-3 text-[11px] leading-relaxed text-ink3">
+            <strong>*</strong> Riwayat status baru mulai direkam sistem, jadi untuk
+            order lama “lama di status” dihitung dari kapan order terakhir diubah —
+            bisa lebih pendek dari kenyataan. Order yang statusnya berubah setelah
+            ini akan punya riwayat yang tepat.
+          </p>
+        )}
+      </PageBody>
+
+      <OrderTimelineDrawer
+        order={timelineOrder}
+        onClose={() => setTimelineOrder(null)}
+        onOpenChat={bukaChat}
+      />
+    </PageContainer>
+  );
+}

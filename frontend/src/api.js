@@ -196,6 +196,10 @@ export const api = {
   // Orders + OrderItem
   updateOrder: (orderId, data) =>
     request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Daftar order (order-centric) untuk halaman Order — beda dari
+  // getCustomers(): 1 baris = 1 ORDER, bukan 1 pelanggan.
+  getOrders: (params) => request("/orders" + buildQuery(params)),
+  getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
   updateOrderItem: (itemId, data) =>

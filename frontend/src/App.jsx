@@ -19,6 +19,7 @@ const Dashboard     = lazy(() => import("./pages/Dashboard.jsx"));
 const Inbox         = lazy(() => import("./pages/Inbox.jsx"));
 const Customers     = lazy(() => import("./pages/Customers.jsx"));
 const Pipeline      = lazy(() => import("./pages/Pipeline.jsx"));
+const Orders        = lazy(() => import("./pages/Orders.jsx"));
 const Broadcast     = lazy(() => import("./pages/Broadcast.jsx"));
 const Automation    = lazy(() => import("./pages/Automation.jsx"));
 const Laporan       = lazy(() => import("./pages/Laporan.jsx"));
@@ -154,6 +155,7 @@ export default function App() {
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />
             <Route path="/pipeline"    element={<Pipeline />} />
+            <Route path="/orders"      element={<Orders />} />
             <Route path="/broadcast"   element={<Broadcast />} />
             <Route path="/automation"  element={<Automation />} />
             <Route path="/laporan"     element={<Laporan />} />

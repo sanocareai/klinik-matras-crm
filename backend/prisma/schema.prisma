@@ -126,6 +126,7 @@ model User {
   handoverEventsFrom    HandoverEvent[] @relation("HandoverFrom")
   handoverEventsTo      HandoverEvent[] @relation("HandoverTo")
   pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
+  orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
 }
 
 // Token push notification aplikasi mobile (Expo Push Token) — 1 user bisa
@@ -391,10 +392,51 @@ model Order {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  items         OrderItem[]
-  weightEntries OrderWeightEntry[]
+  items             OrderItem[]
+  weightEntries     OrderWeightEntry[]
+  statusTransitions OrderStatusTransition[]
 
   @@index([customerId])
+  @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
+}
+
+// Riwayat perpindahan STATUS ORDER (append-only) — pasangan dari
+// pipeline_transitions, tapi untuk sisi PENGERJAAN bukan penjualan.
+// Order.status hanya menyimpan posisi SEKARANG; tabel ini yang membuat
+// pertanyaan "kenapa order ini lama?" bisa dijawab: berapa hari tertahan di
+// Diproses, kapan pindah ke Siap Kirim, siapa yang memindahkan.
+//
+// TIDAK BISA DI-BACKFILL: perpindahan sebelum tabel ini ada tidak terekam,
+// jadi laporan kecepatan produksi baru bermakna setelah beberapa minggu
+// pemakaian (pola & peringatan yang sama seperti pipeline_transitions —
+// lihat empty state di features/laporan/components/PipelineTab.jsx).
+//
+// Ditulis dalam SATU transaksi dengan update Order.status (routes/orders.js
+// PATCH /:id), dan HANYA kalau status benar-benar berubah — form order sering
+// mengirim seluruh field termasuk status yang sama, dan riwayat penuh baris
+// "PENDING → PENDING" membuat perhitungan durasi tidak berguna.
+//
+// CATATAN RELASI (penting untuk script merge customer): FK-nya ke Order
+// (Cascade), BUKAN ke Customer. Order sendiri memakai RESTRICT ke Customer,
+// jadi merge customer yang masih punya order akan GAGAL KERAS — bukan
+// menghapus riwayat ini diam-diam. Lihat peringatan di CLAUDE.md §5.
+model OrderStatusTransition {
+  id         String      @id @default(uuid()) @db.Uuid
+  orderId    String      @map("order_id")
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus @map("from_status")
+  toStatus   OrderStatus @map("to_status")
+
+  // Nullable + SetNull: kalau user dihapus, riwayat produksi TETAP ada
+  // (data operasional tidak boleh hilang karena pegawai resign).
+  changedById String? @map("changed_by")
+  changedBy   User?   @relation("OrderStatusActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at") // UTC — lihat src/utils/wib.js
+
+  @@index([orderId, createdAt]) // timeline per order
+  @@index([toStatus, createdAt]) // "berapa masuk Siap Kirim per periode"
+  @@map("order_status_transitions")
 }
 
 // Counter sequence untuk generate nomor order otomatis per prefix+bulan+tahun
