@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
-import { formatRupiah, STAGE_LABELS } from "../utils/format.js";
+import { STAGE_LABELS } from "../utils/format.js";
 import { makeRange, toApiParams, formatRangeText } from "../lib/dateRange.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
@@ -10,11 +10,14 @@ import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
 import PercakapanTab from "@/features/laporan/components/PercakapanTab.jsx";
 import PenjualanTab from "@/features/laporan/components/PenjualanTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
-import PerformaCsTab from "@/features/laporan/components/PerformaCsTab.jsx";
-// Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
+import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
+// Lazy — lihat catatan yang sama di Customers.jsx: workbook export (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
-const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Performa CS"];
+// "Performa CS" → "Sales": tab ini bukan lagi tabel performa 4 kolom, tapi
+// laporan penjualan per orang (beban percakapan → funnel → uang). Lihat
+// features/laporan/components/SalesReportTab.jsx.
+const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Sales"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -25,12 +28,13 @@ export default function Laporan() {
   const [range, setRange] = useState(() => makeRange("last_30_days"));
 
   const [overview, setOverview] = useState(null);
+  const [summary, setSummary]   = useState(null);
   const [perf, setPerf]         = useState(null);
-  const [csPerf, setCsPerf]     = useState([]);
-  const [salesPerf, setSalesPerf] = useState([]);
+  const [salesReport, setSalesReport] = useState(null);
   const [funnel, setFunnel]     = useState([]);
   const [velocity, setVelocity] = useState(null);
   const [loading, setLoading]   = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const loadData = useCallback(async () => {
     // Preset "Semua" sengaja mengirim from/to kosong (= tanpa filter tanggal),
@@ -42,23 +46,25 @@ export default function Laporan() {
     if (setengahJadi) return;
     setLoading(true);
     try {
-      // Target selalu pakai bulan saat ini (sama seperti Dashboard)
-      const now = new Date();
-      const [ov, pf, cs, fn, sp, vl] = await Promise.all([
+      const [ov, sm, pf, fn, sr, vl] = await Promise.all([
         api.getAnalyticsOverview(params),
+        api.getBusinessSummary(params),
         api.getAnalyticsPerformance(params),
-        api.getAnalyticsCsPerformance(params),
-        api.getAnalyticsPipelineFunnel(),
-        api.getSalesPerformance({ year: now.getFullYear(), month: now.getMonth() + 1 }).catch(() => []),
-        // .catch(null) — endpoint ini baru; kalau backend belum ter-deploy,
-        // tab Pipeline tetap tampil (funnel jalan) dan widget kecepatan
-        // jatuh ke empty state, bukan menggagalkan seluruh halaman Laporan.
+        // BUG YANG DIPERBAIKI: dulu dipanggil TANPA argumen, jadi corong
+        // Pipeline selalu menampilkan data SEPANJANG WAKTU sementara header
+        // halaman menyebut periode tertentu — tiga jendela waktu berbeda
+        // dalam satu laporan. Sekarang semuanya memakai `params` yang sama.
+        api.getAnalyticsPipelineFunnel(params),
+        api.getSalesReport(params).catch(() => null),
+        // .catch(null) — endpoint baru; kalau backend belum ter-deploy, tab
+        // Pipeline tetap tampil (corong jalan) dan widget kecepatan jatuh ke
+        // empty state, bukan menggagalkan seluruh halaman Laporan.
         api.getAnalyticsPipelineVelocity(params).catch(() => null),
       ]);
       setOverview(ov);
+      setSummary(sm);
       setPerf(pf);
-      setCsPerf(cs || []);
-      setSalesPerf(sp || []);
+      setSalesReport(sr);
       setVelocity(vl);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
@@ -78,51 +84,28 @@ export default function Laporan() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  async function handleExportRingkasan() {
-    const { exportToExcel } = await import("../utils/export.js");
-    exportToExcel([
-      { Metrik: "Pelanggan Baru",    Nilai: overview?.newCustomers || 0 },
-      { Metrik: "Total Order",       Nilai: overview?.totalOrders || 0 },
-      { Metrik: "Nilai Penjualan",   Nilai: formatRupiah(overview?.totalOrderValue || 0) },
-      { Metrik: "Total Percakapan",  Nilai: perf?.totalConversations || 0 },
-      { Metrik: "Avg Response",      Nilai: Math.round(perf?.avgResponseMinutes || 0) + " mnt" },
-      { Metrik: "Closing Rate",      Nilai: perf?.closingRate ? (perf.closingRate * 100).toFixed(1) + "%" : "0%" },
-    ], `laporan-ringkasan-${namaFile(range)}`);
+  // SATU tombol export untuk SELURUH laporan (bukan per-tab seperti dulu:
+  // Ringkasan mengekspor 6 baris, Performa CS punya tombolnya sendiri, dan
+  // tab lain tidak bisa diexport sama sekali). Isinya sheet terpisah per
+  // bagian — lihat utils/exportLaporan.js.
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const { exportLaporanWorkbook } = await import("../utils/exportLaporan.js");
+      exportLaporanWorkbook({
+        periode: formatRangeText(range),
+        namaFile: `laporan-klinik-matras-${namaFile(range)}`,
+        summary, overview, perf, funnel, velocity, salesReport,
+      });
+    } catch (e) {
+      alert(e.message || "Gagal membuat file export.");
+    } finally {
+      setExporting(false);
+    }
   }
-
-  async function handleExportCS() {
-    const { exportToExcel } = await import("../utils/export.js");
-    const tMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
-    exportToExcel(
-      csPerf.map((r) => {
-        const sp = tMap[r.userId];
-        return {
-          "Sales Person":       r.name,
-          "Total Percakapan":   r.totalConversations,
-          "Avg Response (mnt)": Math.round(r.avgResponseMinutes || 0),
-          "Closing Rate":       r.closingRate != null ? `${r.closingRate}%` : "—",
-          "Total Nilai Order":  formatRupiah(r.totalOrderValue || 0),
-          "Target Bulanan":     sp?.target > 0 ? formatRupiah(sp.target) : "Belum Diset",
-          "% Pencapaian":       sp?.percentToTarget != null ? `${sp.percentToTarget}%` : "—",
-        };
-      }),
-      `laporan-cs-${namaFile(range)}`
-    );
-  }
-
-  const monthlyRevenue   = overview?.monthlyRevenue || [];
-  const monthlyCustomers = overview?.monthlyCustomers || [];
-  const channelBreakdown = overview?.channelBreakdown || [];
-  const targetMap = Object.fromEntries(salesPerf.map((r) => [r.userId, r]));
 
   return (
     <div className="dash-page" style={{ paddingBottom: 40 }}>
-      {/* BUG (fix): wrapper sebelumnya cuma punya paddingBottom (0 kiri/
-          kanan/atas) — konten nempel rata ke tepi sidebar/browser, beda
-          dari halaman lain (Dashboard dst pakai .dash-page, 28px/32px
-          desktop, 16px mobile). Reuse class yang sama di sini. */}
-      {/* Header — TETAP CSS lama (belum migrasi Tailwind), konsisten dgn
-          header halaman lain yang belum di-redesign. */}
       <div className="page-header">
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Laporan Analitik</h1>
@@ -134,15 +117,13 @@ export default function Laporan() {
           <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleExportRingkasan}>
-            <Download size={14} /> Export
+          <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
+            <Download size={14} /> {exporting ? "Menyiapkan…" : "Export Excel"}
           </button>
           <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>
 
-      {/* Tabs — direstyle Tailwind (Radix Tabs, aksesibel), state & urutan
-          tab SAMA PERSIS dengan sebelumnya. */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           {TABS.map((t) => (
@@ -160,28 +141,28 @@ export default function Laporan() {
             <>
               <TabsContent value="Ringkasan">
                 <RingkasanTab
-                  overview={overview} perf={perf}
-                  monthlyRevenue={monthlyRevenue} monthlyCustomers={monthlyCustomers}
-                  channelBreakdown={channelBreakdown}
+                  summary={summary} overview={overview} perf={perf}
+                  funnel={funnel} onGoTab={setTab}
                 />
               </TabsContent>
 
               <TabsContent value="Percakapan">
-                <PercakapanTab perf={perf} channelBreakdown={channelBreakdown} />
+                <PercakapanTab perf={perf} channelBreakdown={overview?.channelBreakdown || []} />
               </TabsContent>
 
               <TabsContent value="Penjualan">
-                <PenjualanTab overview={overview} monthlyRevenue={monthlyRevenue} />
+                <PenjualanTab overview={overview} summary={summary} />
               </TabsContent>
 
               <TabsContent value="Pipeline">
                 <PipelineTab funnel={funnel} velocity={velocity} />
               </TabsContent>
 
-              <TabsContent value="Performa CS">
-                <PerformaCsTab
-                  csPerf={csPerf} targetMap={targetMap} onExport={handleExportCS}
-                  monthlyRevenue={monthlyRevenue}
+              <TabsContent value="Sales">
+                <SalesReportTab
+                  report={salesReport}
+                  grossTotalPerusahaan={summary?.uang?.grossValue}
+                  onExport={handleExport}
                 />
               </TabsContent>
             </>
