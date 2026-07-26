@@ -423,13 +423,36 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       const mine = { ...convWhere, assignedToId: u.id };
 
       const [
-        handled, replied, resolved,
+        handled, replied, resolved, stalledRaw,
         stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
       ] = await Promise.all([
         prisma.conversation.count({ where: mine }),
         // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
+        //
+        // CATATAN JUJUR soal metrik ini: di data nyata replyRate hampir SELALU
+        // 100%, karena `assignedToId` justru terisi PADA SAAT sales membalas.
+        // Jadi angka ini berguna sebagai pemeriksaan kewarasan (kalau <100%
+        // berarti ada percakapan diklaim tapi tidak pernah dibalas), BUKAN
+        // sebagai pembeda performa. Yang benar-benar membedakan adalah
+        // `stalled` di bawah — pola "dibalas sekali lalu hilang" yang jadi
+        // alasan fitur takeover dibuat (lihat CLAUDE.md §7C poin 4).
         prisma.conversation.count({ where: { ...mine, messages: { some: { direction: "OUTBOUND" } } } }),
         prisma.conversation.count({ where: { ...mine, status: "RESOLVED" } }),
+
+        // MENGGANTUNG: percakapan yang dia pegang, pesan TERAKHIR dari
+        // customer (INBOUND), dan sudah >60 menit tanpa balasan. Ini beban
+        // yang masih menempel ke orang ini SEKARANG — bukan sejarah.
+        prisma.$queryRaw`
+          SELECT COUNT(*)::int AS n
+          FROM "Conversation" c
+          JOIN (
+            SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
+            FROM "Message" ORDER BY "conversationId", "createdAt" DESC
+          ) m ON m."conversationId" = c.id
+          WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            AND c.status != 'RESOLVED'
+            AND m.direction = 'INBOUND'
+            AND m."createdAt" < NOW() - INTERVAL '60 minutes'`,
 
         // Sebaran stage customer dari percakapan yang dia pegang — inilah
         // funnel per sales. Dihitung lewat Customer yang punya conversation
@@ -515,6 +538,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
 
         // Aktivitas
         handled, replied, resolved,
+        stalled: stalledRaw[0]?.n || 0,
         replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
         avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
         respondedSample: respRaw[0]?.sample || 0,
@@ -546,12 +570,13 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     // menjumlahkan rata-rata, kesalahan klasik di laporan seperti ini).
     const t = rows.reduce((a, r) => ({
       handled: a.handled + r.handled, replied: a.replied + r.replied,
+      stalled: a.stalled + r.stalled,
       orders: a.orders + r.orders, grossValue: a.grossValue + r.grossValue,
       collectedValue: a.collectedValue + r.collectedValue,
       paidCustomers: a.paidCustomers + r.paidCustomers,
       slaBreach: a.slaBreach + r.slaBreach, complaints: a.complaints + r.complaints,
       target: a.target + r.target,
-    }), { handled: 0, replied: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
+    }), { handled: 0, replied: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
 
     res.json({
       periodeTarget: { year, month },
