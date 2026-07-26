@@ -3,12 +3,14 @@ import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Palette,
+  Bold, Italic, Strikethrough,
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
+import { WA_MARKERS, toggleWaFormat, parseWaFormatting } from "../utils/waFormat.jsx";
 
 // Polling fallback (Fix UX sync-history) kalau socket putus/belum sempat
 // connect — 3 detik sesuai spec.
@@ -44,7 +46,7 @@ const KATEGORI_COLORS = {
   lainnya:   { bg: "#f3f4f6", color: "#374151" },
 };
 
-const EMPTY_TPL_FORM = { nama: "", kategori: "pembukaan", isi: "" };
+const EMPTY_TPL_FORM = { nama: "", kategori: "pembukaan", isi: "", isShared: false };
 
 function formatSyncDuration(startedAt, finishedAt) {
   const seconds = Math.round((new Date(finishedAt) - new Date(startedAt)) / 1000);
@@ -54,7 +56,37 @@ function formatSyncDuration(startedAt, finishedAt) {
   return `${minutes} mnt ${rest} dtk`;
 }
 
-function TemplateSection() {
+// Revisi 26 Jul 2026: dulu SATU daftar rata untuk semua orang (file JSON
+// tanpa kepemilikan). Sekarang dipisah "Template Tim" (isShared, hanya ADMIN
+// yang kelola) vs "Template Saya" (pribadi milik user yang login, SALES
+// bebas bikin/edit/hapus punya sendiri) — sesuai keputusan 26 Jul 2026:
+// "sales punya template masing-masing yang bisa dicustomize". Backend
+// (routes/templates.js) yang menegakkan siapa boleh apa lewat `canManage`
+// per-item; komponen ini cuma mengikuti flag itu, bukan menghitung ulang.
+function TemplateFormatToolbar({ textareaRef, value, onChange }) {
+  function apply(marker) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const { nextText, selStart, selEnd } = toggleWaFormat(el, value, marker);
+    onChange(nextText);
+    setTimeout(() => {
+      el.focus();
+      el.selectionStart = selStart;
+      el.selectionEnd = selEnd;
+    }, 0);
+  }
+  const btnStyle = { padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center" };
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+      <button type="button" title="Tebal (*teks*)" style={btnStyle} onClick={() => apply(WA_MARKERS.bold)}><Bold size={13} /></button>
+      <button type="button" title="Miring (_teks_)" style={btnStyle} onClick={() => apply(WA_MARKERS.italic)}><Italic size={13} /></button>
+      <button type="button" title="Coret (~teks~)" style={btnStyle} onClick={() => apply(WA_MARKERS.strike)}><Strikethrough size={13} /></button>
+    </div>
+  );
+}
+
+function TemplateSection({ user }) {
+  const isAdmin = user?.role === "ADMIN";
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -62,6 +94,7 @@ function TemplateSection() {
   const [editId, setEditId] = useState(null);
   const [msg, setMsg] = useState(null);
   const [copied, setCopied] = useState(null);
+  const formTextareaRef = useRef(null);
 
   useEffect(() => {
     api.getTemplates()
@@ -83,7 +116,7 @@ function TemplateSection() {
 
   function openEdit(tpl) {
     setEditId(tpl.id);
-    setForm({ nama: tpl.nama, kategori: tpl.kategori, isi: tpl.isi });
+    setForm({ nama: tpl.nama, kategori: tpl.kategori, isi: tpl.isi, isShared: tpl.isShared });
     setShowForm(true);
   }
 
@@ -129,18 +162,102 @@ function TemplateSection() {
     });
   }
 
-  const grouped = Object.keys(KATEGORI_LABELS).reduce((acc, k) => {
-    acc[k] = templates.filter((t) => t.kategori === k);
-    return acc;
-  }, {});
+  // Dua daftar terpisah — bukan "daftar polos dikelompokkan kategori" seperti
+  // dulu, karena kepemilikan sekarang bagian penting dari cara membacanya:
+  // sales harus langsung lihat mana template MEREKA (bebas ubah) vs Template
+  // Tim (cuma bisa pakai). Dalam tiap daftar tetap dikelompokkan kategori.
+  const templateTim   = templates.filter((t) => t.isShared);
+  const templateSaya  = templates.filter((t) => !t.isShared);
+
+  function renderDaftar(list) {
+    const grouped = Object.keys(KATEGORI_LABELS).reduce((acc, k) => {
+      acc[k] = list.filter((t) => t.kategori === k);
+      return acc;
+    }, {});
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {Object.entries(KATEGORI_LABELS).map(([key, label]) => {
+          const items = grouped[key] || [];
+          if (items.length === 0) return null;
+          const colors = KATEGORI_COLORS[key];
+          return (
+            <div key={key}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: colors.bg, color: colors.color }}>
+                  {label}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{items.length} template</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {items.map((tpl) => (
+                  <div
+                    key={tpl.id}
+                    style={{ padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-primary)", display: "flex", gap: 12, alignItems: "flex-start" }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 13 }}>
+                        {tpl.nama}
+                        {tpl.isShared && tpl.author == null && (
+                          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>· TIM</span>
+                        )}
+                      </p>
+                      {/* Format WhatsApp langsung dirender di sini juga (bukan
+                          teks mentah "*.../*") — supaya preview template SAMA
+                          dengan tampilan di TemplatePicker Inbox dan pesan
+                          yang benar-benar terkirim. */}
+                      <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                        {parseWaFormatting(tpl.isi)}
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button
+                        title="Salin isi template"
+                        onClick={() => handleCopy(tpl)}
+                        style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: copied === tpl.id ? "#166534" : "var(--text-muted)" }}
+                      >
+                        {copied === tpl.id ? <CheckCircle size={13} /> : <Copy size={13} />}
+                      </button>
+                      {/* Edit/Hapus HANYA kalau backend bilang boleh — server
+                          yang menegakkan aturan (template Tim = admin saja,
+                          template pribadi = pemiliknya saja), tombol ini
+                          cuma mengikuti, tidak menghitung ulang aturannya. */}
+                      {tpl.canManage && (
+                        <>
+                          <button
+                            title="Edit"
+                            onClick={() => openEdit(tpl)}
+                            style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)" }}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            title="Hapus"
+                            onClick={() => handleDelete(tpl.id)}
+                            style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", color: "#991b1b" }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="settings-card">
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
-        <div>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 200 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Template Pesan</h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-            Template siap pakai untuk mempercepat balasan di Inbox. Gunakan <code>{"{nama_customer}"}</code> untuk nama otomatis.
+            Template siap pakai untuk mempercepat balasan di Inbox. Gunakan <code>{"{nama_customer}"}</code> untuk nama otomatis,
+            dan tombol <strong>Tebal/Miring/Coret</strong> di bawah — formatnya akan tampil PERSIS begitu di WhatsApp customer.
           </p>
         </div>
         <button className="btn btn-primary btn-sm" onClick={openAdd} style={{ gap: 5, display: "flex", alignItems: "center" }}>
@@ -187,7 +304,13 @@ function TemplateSection() {
             </div>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">Isi Pesan *</label>
+              <TemplateFormatToolbar
+                textareaRef={formTextareaRef}
+                value={form.isi}
+                onChange={(v) => setForm((f) => ({ ...f, isi: v }))}
+              />
               <textarea
+                ref={formTextareaRef}
                 value={form.isi}
                 onChange={(e) => setForm((f) => ({ ...f, isi: e.target.value }))}
                 placeholder={"Halo kak {nama_customer}, terima kasih sudah menghubungi Klinik Matras..."}
@@ -197,8 +320,35 @@ function TemplateSection() {
               />
               <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
                 Gunakan <code>{"{nama_customer}"}</code> — akan diganti otomatis dengan nama customer saat dipakai di Inbox.
+                Pilih teks lalu klik tombol format di atas untuk menebalkan/memiringkan/mencoret
+                (kotak ketik tetap teks polos dengan simbol WhatsApp — sama seperti WhatsApp asli,
+                gayanya baru terlihat saat template dipakai/dikirim).
               </p>
+              {form.isi && (
+                <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bg-primary)", border: "1px dashed var(--border)", borderRadius: 6 }}>
+                  <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)" }}>Preview</p>
+                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {parseWaFormatting(form.isi)}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {/* Toggle "jadikan Template Tim" HANYA untuk ADMIN — sales tidak
+                bisa mempromosikan template pribadinya sendiri jadi milik
+                tim (server juga menolak ini kalau dipaksa lewat API, lihat
+                routes/templates.js). */}
+            {isAdmin && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={!!form.isShared}
+                  onChange={(e) => setForm((f) => ({ ...f, isShared: e.target.checked }))}
+                />
+                Jadikan Template Tim (terlihat &amp; bisa dipakai semua sales)
+              </label>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button type="submit" className="btn btn-primary btn-sm">
                 <Save size={13} /> {editId ? "Simpan Perubahan" : "Buat Template"}
@@ -211,7 +361,7 @@ function TemplateSection() {
         </div>
       )}
 
-      {/* Daftar template per kategori */}
+      {/* Daftar template — dipisah Tim vs Saya */}
       {loading ? (
         <p className="text-muted">Memuat...</p>
       ) : templates.length === 0 ? (
@@ -219,60 +369,25 @@ function TemplateSection() {
           Belum ada template. Klik "+ Tambah Template" untuk mulai.
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          {Object.entries(KATEGORI_LABELS).map(([key, label]) => {
-            const items = grouped[key] || [];
-            if (items.length === 0) return null;
-            const colors = KATEGORI_COLORS[key];
-            return (
-              <div key={key}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: colors.bg, color: colors.color }}>
-                    {label}
-                  </span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{items.length} template</span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {items.map((tpl) => (
-                    <div
-                      key={tpl.id}
-                      style={{ padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-primary)", display: "flex", gap: 12, alignItems: "flex-start" }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 13 }}>{tpl.nama}</p>
-                        <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {tpl.isi}
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                        <button
-                          title="Salin isi template"
-                          onClick={() => handleCopy(tpl)}
-                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: copied === tpl.id ? "#166534" : "var(--text-muted)" }}
-                        >
-                          {copied === tpl.id ? <CheckCircle size={13} /> : <Copy size={13} />}
-                        </button>
-                        <button
-                          title="Edit"
-                          onClick={() => openEdit(tpl)}
-                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)" }}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          title="Hapus"
-                          onClick={() => handleDelete(tpl.id)}
-                          style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", color: "#991b1b" }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          <div>
+            <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+              Template Tim {templateTim.length > 0 && `(${templateTim.length})`}
+            </h3>
+            {templateTim.length === 0 ? (
+              <p className="text-muted" style={{ fontSize: 13 }}>Belum ada template tim.</p>
+            ) : renderDaftar(templateTim)}
+          </div>
+          <div>
+            <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+              Template Saya {templateSaya.length > 0 && `(${templateSaya.length})`}
+            </h3>
+            {templateSaya.length === 0 ? (
+              <p className="text-muted" style={{ fontSize: 13 }}>
+                Belum punya template pribadi. Klik "+ Tambah Template" — hanya Anda yang bisa lihat dan pakai.
+              </p>
+            ) : renderDaftar(templateSaya)}
+          </div>
         </div>
       )}
     </div>
@@ -803,7 +918,7 @@ export default function Pengaturan({ user }) {
           {/* ── TEMPLATE PESAN ── */}
           {section === "tampilan" && <AppearanceSection />}
 
-          {section === "template" && <TemplateSection />}
+          {section === "template" && <TemplateSection user={user} />}
 
           {/* ── TARGET SALES ── */}
           {section === "target-sales" && <SalesTargetSection />}

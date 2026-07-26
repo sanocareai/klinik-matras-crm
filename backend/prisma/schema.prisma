@@ -127,6 +127,42 @@ model User {
   handoverEventsTo      HandoverEvent[] @relation("HandoverTo")
   pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
   orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
+  messageTemplates      MessageTemplate[]
+}
+
+// Revisi 26 Jul 2026: template pesan dipindah dari file JSON polos
+// (backend/data/templates.json, TANPA kepemilikan — SEMUA user baca/tulis
+// file yang SAMA, race condition nyata kalau 2 sales edit bersamaan karena
+// tidak ada transaksi) ke tabel database dengan KEPEMILIKAN eksplisit.
+//
+// Skema kepemilikan (keputusan bisnis 26 Jul 2026 — "sales punya template
+// masing-masing yang bisa dicustomize"):
+//   - isShared=true  → "Template Tim", terlihat & terpakai SEMUA user, tapi
+//     HANYA ADMIN yang boleh membuat/mengedit/menghapusnya (kontinuitas
+//     nada komunikasi perusahaan — 5 template lama dari templates.json
+//     dimigrasikan ke sini sebagai isShared=true, authorId=null).
+//   - isShared=false → "Template Saya", pribadi milik authorId, HANYA
+//     pemiliknya (atau ADMIN) yang boleh mengedit/menghapus. SALES yang
+//     membuat template BARU selalu isShared=false (dipaksa di route,
+//     bukan cuma di UI) — mencegah tiap sales menambah ke daftar bersama
+//     tim tanpa kurasi.
+// authorId NULLABLE + SetNull (bukan Cascade): template company (isShared)
+// authorId-nya memang null; kalau user personal dihapus, template
+// pribadinya TETAP ADA (jadi "tanpa pemilik", bukan ikut terhapus — supaya
+// isi yang sudah teruji tidak hilang begitu saja saat sales resign).
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  nama      String
+  kategori  String   @default("lainnya")
+  isi       String
+  isShared  Boolean  @default(false)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([isShared])
 }
 
 // Token push notification aplikasi mobile (Expo Push Token) — 1 user bisa

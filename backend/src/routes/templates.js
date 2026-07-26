@@ -1,112 +1,120 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = path.join(__dirname, "../../data/templates.json");
 
 export const templateRouter = express.Router();
 templateRouter.use(requireAuth);
 
-const DEFAULT_TEMPLATES = [
-  {
-    id: "tpl-default-1",
-    nama: "Salam Pembuka",
-    kategori: "pembukaan",
-    isi: "Halo! Selamat datang di Klinik Matras. Ada yang bisa kami bantu untuk kebutuhan kasur Anda? 😊",
-  },
-  {
-    id: "tpl-default-2",
-    nama: "Follow Up Pelanggan",
-    kategori: "follow_up",
-    isi: "Halo kak {nama_customer}, kami dari Klinik Matras ingin menanyakan apakah ada yang bisa kami bantu lebih lanjut?",
-  },
-  {
-    id: "tpl-default-3",
-    nama: "Konfirmasi Order Diterima",
-    kategori: "konfirmasi",
-    isi: "Baik kak {nama_customer}, pesanan sudah kami terima. Tim kami akan segera menghubungi untuk penjadwalan. Terima kasih! 🙏",
-  },
-  {
-    id: "tpl-default-4",
-    nama: "Order Siap Diambil",
-    kategori: "konfirmasi",
-    isi: "Kak {nama_customer}, kasur Anda sudah selesai diproses dan siap untuk pengambilan/pengiriman. Mohon konfirmasi waktu yang sesuai. 😊",
-  },
-  {
-    id: "tpl-default-5",
-    nama: "Ucapan Terima Kasih",
-    kategori: "penutupan",
-    isi: "Terima kasih sudah mempercayakan kebutuhan kasur Anda kepada Klinik Matras, kak {nama_customer}. Hubungi kami kembali jika ada yang perlu dibantu! 🌟",
-  },
-];
+// Revisi 26 Jul 2026: dulu file JSON polos (backend/data/templates.json),
+// SEMUA user baca/tulis file yang SAMA tanpa kepemilikan — race condition
+// nyata kalau 2 sales edit bersamaan (write terakhir menang, yang lain
+// hilang tanpa jejak). Sekarang tabel MessageTemplate dengan kepemilikan
+// eksplisit. Isi lama dipindah lewat scripts/migrate-templates-json.js.
+// Lihat catatan panjang di schema.prisma.
+//
+// SKEMA VISIBILITAS:
+//   - isShared=true  → "Template Tim": semua user bisa PAKAI, HANYA ADMIN
+//     yang boleh membuat/mengedit/menghapus (kontinuitas nada komunikasi
+//     perusahaan).
+//   - isShared=false → "Template Saya": pribadi milik authorId, hanya
+//     pemiliknya (atau ADMIN) yang boleh mengedit/menghapus.
 
-function readTemplates() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8")); }
-  catch { return DEFAULT_TEMPLATES; }
+function bisaKelola(tpl, user) {
+  if (user.role === "ADMIN") return true;
+  return !tpl.isShared && tpl.authorId === user.id;
 }
 
-function writeTemplates(data) {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
-function generateId() {
-  return "tpl-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-}
-
-// GET /api/templates
-templateRouter.get("/", (req, res) => {
-  res.json(readTemplates());
+// GET /api/templates — Template Tim (isShared) + Template Saya (milik user
+// yang login). SALES tidak pernah melihat template pribadi sales lain.
+templateRouter.get("/", async (req, res) => {
+  try {
+    const templates = await prisma.messageTemplate.findMany({
+      where: { OR: [{ isShared: true }, { authorId: req.user.id }] },
+      include: { author: { select: { id: true, name: true } } },
+      orderBy: [{ isShared: "desc" }, { createdAt: "asc" }],
+    });
+    res.json(templates.map((t) => ({ ...t, canManage: bisaKelola(t, req.user) })));
+  } catch (err) {
+    console.error("templates list error:", err);
+    res.status(500).json({ error: "Gagal memuat template" });
+  }
 });
 
 // POST /api/templates
-templateRouter.post("/", (req, res) => {
-  const { nama, kategori, isi } = req.body;
+// isShared HANYA dihormati kalau pengirimnya ADMIN — dipaksa di server
+// (bukan cuma disembunyikan di UI), supaya SALES tidak bisa menambah ke
+// daftar Template Tim lewat request API langsung.
+templateRouter.post("/", async (req, res) => {
+  const { nama, kategori, isi, isShared } = req.body;
   if (!nama?.trim() || !isi?.trim()) {
     return res.status(400).json({ error: "Nama dan isi template wajib diisi" });
   }
-  const templates = readTemplates();
-  const tpl = {
-    id: generateId(),
-    nama: nama.trim(),
-    kategori: kategori || "lainnya",
-    isi: isi.trim(),
-    createdAt: new Date().toISOString(),
-  };
-  templates.push(tpl);
-  writeTemplates(templates);
-  res.status(201).json(tpl);
-});
-
-// PATCH /api/templates/:id
-templateRouter.patch("/:id", (req, res) => {
-  const { nama, kategori, isi } = req.body;
-  const templates = readTemplates();
-  const idx = templates.findIndex((t) => t.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Template tidak ditemukan" });
-
-  templates[idx] = {
-    ...templates[idx],
-    ...(nama !== undefined && { nama: nama.trim() }),
-    ...(kategori !== undefined && { kategori }),
-    ...(isi !== undefined && { isi: isi.trim() }),
-    updatedAt: new Date().toISOString(),
-  };
-  writeTemplates(templates);
-  res.json(templates[idx]);
-});
-
-// DELETE /api/templates/:id
-templateRouter.delete("/:id", (req, res) => {
-  const templates = readTemplates();
-  const filtered = templates.filter((t) => t.id !== req.params.id);
-  if (filtered.length === templates.length) {
-    return res.status(404).json({ error: "Template tidak ditemukan" });
+  try {
+    const shared = req.user.role === "ADMIN" && !!isShared;
+    const tpl = await prisma.messageTemplate.create({
+      data: {
+        nama: nama.trim(),
+        kategori: kategori || "lainnya",
+        isi: isi.trim(),
+        isShared: shared,
+        // Template TIM sengaja authorId=null (milik company, bukan 1
+        // orang) — konsisten dengan template lama yang dimigrasikan lewat
+        // scripts/migrate-templates-json.js.
+        authorId: shared ? null : req.user.id,
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+    res.status(201).json({ ...tpl, canManage: true });
+  } catch (err) {
+    console.error("template create error:", err);
+    res.status(500).json({ error: "Gagal membuat template" });
   }
-  writeTemplates(filtered);
-  res.json({ ok: true });
+});
+
+// PATCH /api/templates/:id — hanya pemilik (template pribadi) atau ADMIN.
+templateRouter.patch("/:id", async (req, res) => {
+  const { nama, kategori, isi, isShared } = req.body;
+  try {
+    const existing = await prisma.messageTemplate.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Template tidak ditemukan" });
+    if (!bisaKelola(existing, req.user)) {
+      return res.status(403).json({ error: "Ini bukan template Anda" });
+    }
+
+    const tpl = await prisma.messageTemplate.update({
+      where: { id: req.params.id },
+      data: {
+        ...(nama     !== undefined && { nama: nama.trim() }),
+        ...(kategori !== undefined && { kategori }),
+        ...(isi      !== undefined && { isi: isi.trim() }),
+        // Ubah status shared HANYA boleh ADMIN — sales tidak bisa
+        // "mempromosikan" template pribadinya jadi milik tim sendiri.
+        ...(isShared !== undefined && req.user.role === "ADMIN" && {
+          isShared: !!isShared,
+          authorId: isShared ? null : existing.authorId,
+        }),
+      },
+      include: { author: { select: { id: true, name: true } } },
+    });
+    res.json({ ...tpl, canManage: true });
+  } catch (err) {
+    console.error("template update error:", err);
+    res.status(500).json({ error: "Gagal memperbarui template" });
+  }
+});
+
+// DELETE /api/templates/:id — hanya pemilik (template pribadi) atau ADMIN.
+templateRouter.delete("/:id", async (req, res) => {
+  try {
+    const existing = await prisma.messageTemplate.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Template tidak ditemukan" });
+    if (!bisaKelola(existing, req.user)) {
+      return res.status(403).json({ error: "Ini bukan template Anda" });
+    }
+    await prisma.messageTemplate.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("template delete error:", err);
+    res.status(500).json({ error: "Gagal menghapus template" });
+  }
 });
