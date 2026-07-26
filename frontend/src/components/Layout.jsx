@@ -11,6 +11,7 @@ import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
 import { BRAND } from "@/lib/brand.js";
+import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 
 // Seksi sidebar — adminOnly di level section = sembunyikan seluruh seksi untuk SALES
@@ -247,6 +248,10 @@ export default function Layout({ user, onLogout, children }) {
           })}
           </LayoutGroup>
         </nav>
+
+        {/* Kartu promo + bantuan (DS v2.1) — mengisi ruang kosong bawah
+            sidebar, pola sama dengan referensi. Disembunyikan saat collapsed. */}
+        <SidebarPromo collapsed={collapsed} />
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil

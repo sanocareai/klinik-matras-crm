@@ -1,25 +1,16 @@
 import React, { useState } from "react";
-import { Users, ShoppingCart, Percent, Sparkles } from "lucide-react";
+import { Users, ShoppingCart, Wallet, Target } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { formatTanggalIndo } from "../utils/format.js";
-import { makeRange } from "../lib/dateRange.js";
+import { formatTanggalIndo, formatRupiahShort } from "../utils/format.js";
+import { makeRange, presetLabel } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
-import { BAND2_IS_MOCK } from "../features/dashboard/data/contracts.js";
-// Band 1
-import MetricCard from "../features/dashboard/components/MetricCard.jsx";
-import HeroMetricCard from "../features/dashboard/components/HeroMetricCard.jsx";
-import SalesPerformanceStrip from "../features/dashboard/components/SalesPerformanceStrip.jsx";
-// Band 2 (Act)
-import AIRecommendations from "../features/dashboard/components/AIRecommendations.jsx";
-import HotLeads from "../features/dashboard/components/HotLeads.jsx";
-import FollowUpTasks from "../features/dashboard/components/FollowUpTasks.jsx";
-import TeamHealth from "../features/dashboard/components/TeamHealth.jsx";
-// Band 3 (Analyze) — reuse existing + new
-import ChartWidget from "../features/dashboard/components/ChartWidget.jsx";
-import PipelineWidget from "../features/dashboard/components/PipelineWidget.jsx";
-import ConversationAnalytics from "../features/dashboard/components/ConversationAnalytics.jsx";
-import RevenueTrend from "../features/dashboard/components/RevenueTrend.jsx";
+import StatCard from "@/components/ui/stat-card.jsx";
+import RevenueOverview from "../features/dashboard/components/RevenueOverview.jsx";
+import PipelineFunnelCard from "../features/dashboard/components/PipelineFunnelCard.jsx";
+import TopRepsCard from "../features/dashboard/components/TopRepsCard.jsx";
+import TaskQueueCard from "../features/dashboard/components/TaskQueueCard.jsx";
+import HotLeadsCard from "../features/dashboard/components/HotLeadsCard.jsx";
 import LeadsDetailModal from "../features/dashboard/components/LeadsDetailModal.jsx";
 
 function todayStr() {
@@ -27,9 +18,17 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// Dashboard = command center (Wave 2A). Tiga band: Orient → Act → Analyze.
-// Band 1 & 3 pakai data NYATA (/analytics/*), Band 2 pakai kontrak MOCK sampai
-// Wave 2B. Tidak menyentuh WAHA/SSE/inbox.
+// ═══ DASHBOARD (DS v2.1) ══════════════════════════════════════════════════
+// Tata letak mengikuti pola referensi:
+//   header sapaan + date picker
+//   → 4 kartu KPI (baris penuh)
+//   → Ringkasan Penjualan (kartu lebar penuh, angka + area chart)
+//   → 2 kolom: Corong Pipeline | Sales Terbaik
+//   → 2 kolom: Perlu Ditindak  | Lead Panas
+//
+// KEDALAMAN UBIN NAIK BERURUTAN di baris KPI (1→2→3→4). Itu yang memberi
+// "gradasi biru terang→gelap" yang diminta: satu keluarga warna, tapi barisnya
+// tidak terlihat rata/monoton. Angka & delta tetap yang membawa informasi.
 export default function Dashboard({ user }) {
   const [range, setRange] = useState(() => makeRange("last_30_days"));
   const [leadsModal, setLeadsModal] = useState(null);
@@ -37,71 +36,82 @@ export default function Dashboard({ user }) {
 
   const ov = d.overview.data;
   const sales = Array.isArray(d.salesPerf.data) ? d.salesPerf.data : [];
-  const conversion = ov && ov.totalCustomers > 0
+  const konversi = ov && ov.totalCustomers > 0
     ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
     : 0;
   const userName = user?.name?.split(" ")[0] || "Anda";
+  const label = presetLabel(range);
 
   return (
     <PageContainer>
       <PageHeader
         title={`Halo, ${userName} 👋`}
-        subtitle={formatTanggalIndo()}
+        subtitle={`Ringkasan bisnis Anda · ${formatTanggalIndo()}`}
         actions={<DateRangePicker value={range} onChange={setRange} />}
       />
 
       <PageBody>
-        {/* ── BAND 1 — ORIENT: "Apa yang terjadi?" ── */}
+        {/* ── KPI ── gradasi kedalaman 1→4 di satu baris */}
         <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <HeroMetricCard
-            value={ov?.totalOrderValue || 0}
-            trend={ov?.growthOrderValue}
-            sparkline={ov?.monthlyRevenue || []}
-          />
-          <MetricCard
-            label="Total Leads"
-            value={ov?.totalCustomers || 0}
-            icon={Users}
-            trend={ov?.growthCustomers}
+          <StatCard
+            label="Pelanggan Baru" icon={Users} depth={1}
+            value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
+            delta={ov?.growthCustomers}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
           />
-          <MetricCard label="Total Order" value={ov?.totalOrders || 0} icon={ShoppingCart} trend={ov?.growthOrders} />
-          <MetricCard label="Conversion Rate" value={conversion} format="percent" icon={Percent} />
-        </section>
-        <SalesPerformanceStrip data={sales} loading={d.salesPerf.isLoading} error={d.salesPerf.isError} />
-
-        {/* ── BAND 2 — ACT: Sano Intelligence (unggulan, zona pembeda produk) ── */}
-        {/* DS v2 (spec Step 4): container dekoratif DIHAPUS — dulu section
-            ber-border + gradient membungkus Card yang membungkus Card lagi
-            (3 tingkat). Sekarang header = teks biasa TANPA container, lalu
-            kartu-kartunya langsung. Dua tingkat bersarang hilang. */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-accent" />
-            <h2 className="t-card-title">Sano Intelligence</h2>
-            <span className="t-secondary">· Apa yang harus dilakukan sekarang</span>
-            <span className="t-caption ml-auto hidden sm:block">Ditenagai AI</span>
-          </div>
-
-          <AIRecommendations
-            items={d.recommendations.data?.items || []}
-            loading={d.recommendations.isLoading}
-            error={d.recommendations.isError}
-            isMock={BAND2_IS_MOCK}
+          <StatCard
+            label="Total Order" icon={ShoppingCart} depth={2}
+            value={(ov?.totalOrders ?? 0).toLocaleString("id-ID")}
+            delta={ov?.growthOrders}
           />
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <HotLeads items={d.hotLeads.data?.items || []} loading={d.hotLeads.isLoading} error={d.hotLeads.isError} isMock={BAND2_IS_MOCK} />
-            <FollowUpTasks items={d.followUps.data?.items || []} loading={d.followUps.isLoading} error={d.followUps.isError} isMock={BAND2_IS_MOCK} />
-            <TeamHealth data={sales} loading={d.salesPerf.isLoading} error={d.salesPerf.isError} user={user} />
-          </div>
+          <StatCard
+            label="Nilai Penjualan" icon={Wallet} depth={3}
+            value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
+            delta={ov?.growthOrderValue}
+          />
+          <StatCard
+            label="Konversi" icon={Target} depth={4}
+            value={`${konversi}%`}
+            deltaSuffix="pelanggan yang order"
+          />
         </section>
 
-        {/* ── BAND 3 — ANALYZE: "Kenapa ini terjadi?" ── */}
+        {/* ── Ringkasan penjualan (lebar penuh) ── */}
+        <RevenueOverview
+          total={ov?.totalOrderValue ?? 0}
+          delta={ov?.growthOrderValue}
+          series={ov?.monthlyRevenue ?? []}
+          periodLabel={label}
+          loading={d.overview.isLoading}
+          error={d.overview.isError}
+        />
+
+        {/* ── Dua kolom: corong + leaderboard ── */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PipelineWidget funnel={d.funnel.data} loading={d.funnel.isLoading} />
-          <ChartWidget data={ov?.leadSourceBreakdown} loading={d.overview.isLoading} />
-          <ConversationAnalytics data={d.performance.data} loading={d.performance.isLoading} error={d.performance.isError} />
-          <RevenueTrend data={ov?.monthlyRevenue || []} loading={d.overview.isLoading} error={d.overview.isError} />
+          <PipelineFunnelCard
+            funnel={d.funnel.data}
+            loading={d.funnel.isLoading}
+            periodLabel={label}
+          />
+          <TopRepsCard
+            data={sales}
+            loading={d.salesPerf.isLoading}
+            error={d.salesPerf.isError}
+          />
+        </section>
+
+        {/* ── Dua kolom: antrean tindakan + lead panas ── */}
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <TaskQueueCard
+            items={d.followUps.data?.items}
+            loading={d.followUps.isLoading}
+            error={d.followUps.isError}
+          />
+          <HotLeadsCard
+            items={d.hotLeads.data?.items}
+            loading={d.hotLeads.isLoading}
+            error={d.hotLeads.isError}
+          />
         </section>
       </PageBody>
 

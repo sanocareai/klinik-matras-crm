@@ -49,6 +49,41 @@
   --red:    #D70015;  --red-bg:    rgba(215, 0, 21, 0.10);
   --orange: #C93400;  --orange-bg: rgba(201, 52, 0, 0.10);
   --green:  #248A3D;  --green-bg:  rgba(36, 138, 61, 0.10);
+
+  /* ═══ TANGGA BIRU (DS v2.1) ══════════════════════════════════════════════
+     Satu KELUARGA warna, banyak KEDALAMAN. Ini yang membuat UI terasa
+     "hidup tapi seragam": ikon/kartu/funnel semuanya biru, yang membedakan
+     hanya terang-gelapnya, bukan hue-nya.
+
+     Kenapa perlu: DS v2 (versi sebelumnya) melarang semua tint dan hasilnya
+     terlalu dingin/rata — ubin ikon berwarna justru sumber utama kehangatan
+     visual di referensi. Tangga ini mengembalikannya TANPA memunculkan
+     hue liar (ungu/oranye/hijau dekoratif).
+
+     Dipakai: --blue-50..200 = latar ubin ikon · 500..700 = ikon & angka ·
+              600 = accent utama (= --accent) · 700..900 = emphasis/funnel dalam */
+  --blue-50:  #EFF5FF;
+  --blue-100: #DBE8FE;
+  --blue-200: #BFD4FE;
+  --blue-300: #93B4FD;
+  --blue-400: #6090FA;
+  --blue-500: #3B72F6;
+  --blue-600: #2563EB;
+  --blue-700: #1D4FD8;
+  --blue-800: #1E40AF;
+  --blue-900: #1E3A8A;
+  /* Teks DI ATAS ubin tint terang — selalu cukup kontras di light mode. */
+  --blue-ink: #1D4FD8;
+
+  /* ── ISIAN PADAT (bukan tint) ──────────────────────────────────────────
+     Untuk elemen yang diisi PENUH biru dengan teks putih di atasnya: ubin
+     ikon depth-5, segmen funnel terdalam, badge peringkat 1.
+     Dipisah dari tangga tint DENGAN SENGAJA: di mode gelap tangga tint
+     di-inversi jadi lebih TERANG, dan teks putih di atas biru terang
+     (#6A97F7) hanya ~2.8:1 — di bawah ambang AA. Token ini tetap cukup
+     pekat di kedua mode supaya teks putih selalu lolos kontras. */
+  --blue-solid:     #2563EB;
+  --blue-solid-ink: #FFFFFF;
 }
 
 [data-theme="dark"] {
@@ -75,6 +110,29 @@
   --red:    #FF453A;  --red-bg:    rgba(255, 69, 58, 0.16);
   --orange: #FF9F0A;  --orange-bg: rgba(255, 159, 10, 0.16);
   --green:  #30D158;  --green-bg:  rgba(48, 209, 88, 0.16);
+
+  /* ── TANGGA BIRU — MODE GELAP ────────────────────────────────────────────
+     Tangga di-INVERSI arah pemakaiannya, bukan sekadar digelapkan:
+     • 50..200 (latar ubin) jadi biru TRANSPARAN di atas #1C1C1E. Hex terang
+       seperti #EFF5FF akan menyilaukan dan merusak kedalaman permukaan.
+     • 500..900 (ikon/teks) jadi LEBIH TERANG, bukan lebih gelap — di atas
+       permukaan gelap, biru pekat #1E3A8A praktis tidak terbaca.
+     Efeknya: class yang sama (`bg-blue-50 text-blue-700`) tetap benar di dua
+     mode tanpa satu pun kondisional di komponen. */
+  --blue-50:  rgba(96, 145, 250, 0.10);
+  --blue-100: rgba(96, 145, 250, 0.16);
+  --blue-200: rgba(96, 145, 250, 0.24);
+  --blue-300: rgba(96, 145, 250, 0.34);
+  --blue-400: #4A7DF0;
+  --blue-500: #5C8DF5;
+  --blue-600: #6A97F7;
+  --blue-700: #8FB2FA;
+  --blue-800: #B3CBFC;
+  --blue-900: #D3E0FE;
+  --blue-ink: #A9C4FB;
+  /* Tetap saturasi tinggi (bukan #6A97F7) supaya teks putih tetap terbaca. */
+  --blue-solid:     #2C6BE0;
+  --blue-solid-ink: #FFFFFF;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -178,16 +236,20 @@
   --radius-input: var(--r-sm);
   --shadow-md:    var(--shadow-popover);
 
-  /* Skala brand lama (brand-50…900) dipakai ratusan kali lewat util Tailwind
-     (bg-brand-600, text-brand-700, …). Dipetakan ke accent supaya tidak ada
-     biru kedua. Shade ekstrem dibiarkan sebagai tint accent, bukan hue baru. */
-  --color-brand-50:  var(--accent-bg);
-  --color-brand-100: var(--accent-bg);
-  --color-brand-500: var(--accent);
-  --color-brand-600: var(--accent);
-  --color-brand-700: var(--accent-hover);
-  --color-brand-800: var(--accent-hover);
-  --color-brand-900: var(--accent-hover);
+  /* Skala brand lama (brand-50…900) → TANGGA BIRU yang sama.
+     DS v2 memetakan semuanya ke satu accent, yang membuat halaman lama
+     kehilangan seluruh kedalaman. Sekarang dipetakan per-shade, jadi CSS
+     legacy ikut mendapat tangga terang→gelap, bukan satu biru rata. */
+  --color-brand-50:  var(--blue-50);
+  --color-brand-100: var(--blue-100);
+  --color-brand-200: var(--blue-200);
+  --color-brand-300: var(--blue-300);
+  --color-brand-400: var(--blue-400);
+  --color-brand-500: var(--blue-500);
+  --color-brand-600: var(--blue-600);
+  --color-brand-700: var(--blue-700);
+  --color-brand-800: var(--blue-800);
+  --color-brand-900: var(--blue-900);
 
   /* Warna chart lama → semantik baru (hanya 3 + accent). */
   --color-chart-green:       var(--green);

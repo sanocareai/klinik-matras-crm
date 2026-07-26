@@ -101,6 +101,25 @@
   --color-accenthov: var(--accent-hover);
   --color-accentbg:  var(--accent-bg);
 
+  /* Tangga biru (DS v2.1) → util bg-blue-50 … text-blue-900.
+     Satu keluarga warna, banyak kedalaman: inilah yang bikin ubin ikon &
+     funnel terasa hidup tanpa memunculkan hue kedua. Nilainya ditukar per
+     tema di tokens.css, jadi class yang sama benar di light DAN dark. */
+  --color-blue-50:  var(--blue-50);
+  --color-blue-100: var(--blue-100);
+  --color-blue-200: var(--blue-200);
+  --color-blue-300: var(--blue-300);
+  --color-blue-400: var(--blue-400);
+  --color-blue-500: var(--blue-500);
+  --color-blue-600: var(--blue-600);
+  --color-blue-700: var(--blue-700);
+  --color-blue-800: var(--blue-800);
+  --color-blue-900: var(--blue-900);
+  --color-blue-ink: var(--blue-ink);
+  /* Isian padat + tintanya — pasangan yang dijamin lolos kontras di 2 mode. */
+  --color-bluesolid:    var(--blue-solid);
+  --color-bluesolidink: var(--blue-solid-ink);
+
   /* Semantik — hanya 3, hanya untuk makna */
   --color-red:      var(--red);
   --color-redbg:    var(--red-bg);
