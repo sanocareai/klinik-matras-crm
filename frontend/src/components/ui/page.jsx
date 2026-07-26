@@ -15,16 +15,39 @@ export function PageContainer({ className, children, ...props }) {
 }
 
 // Header halaman: judul (H1) + subjudul opsional di kiri, aksi di kanan.
-// Membungkus rapi di mobile (aksi turun ke bawah judul). `actions` = node.
+//
+// ⚠️ BUG NYATA YANG PERNAH TERJADI DI SINI: dulu `sm:flex-row` (baris di atas
+// 640px) dengan judul `min-w-0` TANPA lebar minimum, dan aksi `shrink-0`. Di
+// jendela desktop "sedang" (bukan sempit, bukan lebar penuh — mis. ~1000px,
+// halaman dengan banyak kontrol seperti Order: pencarian + 2 dropdown + 4
+// tombol), total lebar aksi melebihi ruang tersisa. Karena aksi TIDAK BOLEH
+// menyusut (shrink-0) sementara judul BOLEH menyusut sampai berapa pun
+// (min-w-0 menghapus batas bawaan flex), browser memaksa kolom judul
+// menyusut sampai nyaris 0px — hasilnya subjudul yang harusnya satu kalimat
+// merender SATU KATA PER BARIS memanjang ke bawah ("85" / "order" / "." /
+// "35" / "mandek" / ...), bukan salah CSS wrap biasa tapi kolom yang
+// benar-benar sesempit itu.
+//
+// Perbaikan: TIDAK memakai breakpoint tetap (sm/lg/xl) sama sekali — breakpoint
+// tetap hanya memindahkan masalah ke lebar lain (halaman dengan aksi lebih
+// banyak akan tetap pecah di breakpoint yang sama). Sebagai gantinya:
+//  1. `flex-wrap` di kontainer LUAR — kalau aksi tidak muat di sebelah judul,
+//     SELURUH blok aksi pindah ke baris baru (elemen flex tidak diperas
+//     sampai gepeng, cuma dibungkus ke baris berikutnya).
+//  2. Judul diberi `min-w-[180px]` — batas bawah yang tidak boleh dilanggar
+//     apa pun yang terjadi di sebelahnya, jadi 1-2 kata judul tidak akan
+//     pernah pecah jadi satu-huruf-per-baris.
+//  3. Blok aksi sendiri tetap `flex-wrap` (kontrol di dalamnya boleh
+//     membungkus ke baris ke-2/ke-3 kalau memang tidak muat satu baris).
 export function PageHeader({ title, subtitle, actions, className, children }) {
   return (
     <div
       className={cn(
-        "mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
+        "mb-6 flex flex-wrap items-start justify-between gap-3",
         className
       )}
     >
-      <div className="min-w-0">
+      <div className="min-w-[180px] flex-1">
         {title && (
           <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
             {title}
@@ -34,7 +57,7 @@ export function PageHeader({ title, subtitle, actions, className, children }) {
         {children}
       </div>
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
       )}
     </div>
   );

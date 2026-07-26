@@ -222,11 +222,18 @@ body {
 
 /* ─── PAGE LAYOUTS ───────────────────────────────────────── */
 .page { padding: 28px 32px; }
+/* flex-wrap + min-width sama seperti perbaikan components/ui/page.jsx
+   PageHeader — lihat komentar panjang di sana. Bug yang sama: tanpa
+   flex-wrap, blok aksi (shrink:0 secara implisit karena tidak flex-shrink)
+   memaksa .page-header-left menyusut sampai nyaris 0px di lebar jendela
+   "sedang" (bukan mobile, tapi kontrol terlalu banyak untuk satu baris),
+   membuat judul/subjudul pecah satu-kata-per-baris. */
 .page-header {
-  display: flex; justify-content: space-between; align-items: flex-start;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+  gap: 12px;
   margin-bottom: 24px;
 }
-.page-header-left {}
+.page-header-left { min-width: 180px; flex: 1 1 auto; }
 .page-greeting { font-size: 22px; font-weight: 700; color: var(--text-main); margin: 0; }
 .page-date { font-size: 13px; color: var(--text-muted); margin: 2px 0 0; }
 .page-loading { padding: 48px 32px; color: var(--text-small); text-align: center; }
