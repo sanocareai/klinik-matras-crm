@@ -153,9 +153,16 @@ analyticsRouter.get("/overview", async (req, res) => {
       }),
     ]);
 
+    // BUG YANG DIPERBAIKI (26 Jul 2026): dulu `prev === 0 && curr > 0` →
+    // return 100, jadi UI menampilkan badge "+100%" percaya diri padahal
+    // periode pembanding KOSONG (sistem baru jalan, belum ada baseline).
+    // "+100%" itu bukan pertumbuhan — itu pembagian dengan nol. Di Laporan
+    // produksi SEMUA kartu tampil "+100%" bersamaan, yang jelas menyesatkan
+    // owner. Sekarang null = "tidak bisa dihitung", dan frontend merender
+    // "—" / "belum ada pembanding", BUKAN angka palsu.
     function growth(curr, prev) {
       if (prev === null || prev === undefined) return null;
-      if (prev === 0) return curr > 0 ? 100 : 0;
+      if (prev === 0) return null;
       return Math.round(((curr - prev) / prev) * 100);
     }
 
@@ -191,6 +198,375 @@ analyticsRouter.get("/overview", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══ DERET WAKTU ADAPTIF — HELPER BERSAMA ═════════════════════════════════
+// Dipakai /revenue-series, /business-summary, dan /sales-report supaya
+// granularitas & pengisian bucket kosong TIDAK diimplementasikan ulang
+// (dan tidak bisa saling drift) di tiap endpoint.
+//
+// Granularitas: <= 92 hari → HARIAN, lebih panjang → BULANAN. Alasannya
+// praktis: 30 hari dalam bucket BULANAN = 1 titik (grafik tampak kosong,
+// bug yang sudah pernah terjadi di kartu Sales Overview), sedangkan 1 tahun
+// harian = 365 titik yang tidak terbaca.
+function seriesWindow(from, to) {
+  const sekarang = nowPartsWIB();
+  const mulai   = from ? startOfDayWIB(from) : startOfMonthWIB(sekarang.year, sekarang.month);
+  const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
+  const totalHari = Math.max(1, Math.round((selesai - mulai) / 86_400_000));
+  return { mulai, selesai, harian: totalHari <= 92 };
+}
+
+// Nama bucket WIB dari sebuah instant UTC. `mulai` hasil startOfDayWIB()
+// adalah instant UTC (mis. 1 Jul WIB = 30 Jun 17:00Z) — jadi getUTCMonth()
+// LANGSUNG atas instant itu mengembalikan JUNI, bukan Juli. Pergeseran +7 jam
+// di sini yang membuat nama bucket cocok dengan hasil
+// `date_trunc(... AT TIME ZONE 'Asia/Jakarta')` di SQL.
+function namaBucketWIB(instant, harian) {
+  const wib = new Date(instant.getTime() + 7 * 3600_000);
+  const iso = wib.toISOString();
+  return harian ? iso.slice(0, 10) : iso.slice(0, 7);
+}
+
+// Bangun deret LENGKAP termasuk bucket bernilai 0. Bucket kosong WAJIB diisi:
+// kalau hari tanpa transaksi dilewati, garis grafik "melompat" dan terbaca
+// seolah penjualan berjalan kontinu.
+function fillBuckets({ mulai, selesai, harian }, map) {
+  const points = [];
+  if (harian) {
+    for (let t = mulai.getTime(); t < selesai.getTime(); t += 86_400_000) {
+      const b = namaBucketWIB(new Date(t), true);
+      points.push({ bucket: b, value: map[b] || 0 });
+    }
+  } else {
+    const awal  = namaBucketWIB(mulai, false);
+    const akhir = namaBucketWIB(new Date(selesai.getTime() - 1), false);
+    let [y, m] = awal.split("-").map(Number);
+    const [ay, am] = akhir.split("-").map(Number);
+    while (y < ay || (y === ay && m <= am)) {
+      const b = `${y}-${String(m).padStart(2, "0")}`;
+      points.push({ bucket: b, value: map[b] || 0 });
+      m++; if (m > 12) { m = 1; y++; }
+    }
+  }
+  return points;
+}
+
+// ── GET /analytics/business-summary?from=&to= ──────────────────────────────
+// RINGKASAN EKSEKUTIF untuk owner: satu request yang menjawab "bagaimana
+// kondisi bisnis pada periode ini" tanpa harus pindah-pindah tab.
+//
+// KENAPA ENDPOINT BARU, bukan menambah /overview: /overview dipakai Dashboard
+// (dipanggil tiap buka halaman) dan sudah berat. Metrik di bawah ini hanya
+// dibutuhkan halaman Laporan.
+//
+// SEMUA metrik di sini menghormati ?from/?to. Ini penting: deret bulanan di
+// /overview justru MENGABAIKAN rentang (hardcode 6 bulan terakhir), sehingga
+// grafik lama bertentangan dengan header "Periode: ..." di halaman yang sama.
+//
+// Uang: `grossValue` = nilai order masuk (booked, CANCELLED dikecualikan).
+// `collectedValue` = yang benar-benar LUNAS (Order.paymentStatus). Dua angka
+// ini SENGAJA dipisah — order Rp10jt yang belum dibayar bukan uang di tangan,
+// dan owner perlu melihat selisihnya (piutang) secara eksplisit.
+analyticsRouter.get("/business-summary", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const custWhere  = buildDateWhere(from, to);
+    const orderWhere = { ...buildDateWhere(from, to), status: { not: "CANCELLED" } };
+    const win = seriesWindow(from, to);
+
+    const [
+      orderAgg, lunasAgg, dpAgg,
+      statusGroups, categoryGroups,
+      cityGroups, complaintCount,
+      paidCustomers, totalCustomers, customersWithOrders,
+      revenueRaw, customerRaw,
+    ] = await Promise.all([
+      prisma.order.aggregate({ where: orderWhere, _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
+      prisma.order.aggregate({ where: { ...orderWhere, paymentStatus: "LUNAS" }, _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.aggregate({ where: { ...orderWhere, paymentStatus: "DP" }, _count: { _all: true }, _sum: { value: true } }),
+
+      prisma.order.groupBy({ by: ["status"], where: buildDateWhere(from, to), _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.groupBy({ by: ["category"], where: orderWhere, _count: { _all: true }, _sum: { value: true } }),
+
+      prisma.customer.groupBy({ by: ["city"], where: custWhere, _count: { _all: true } }),
+      prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
+
+      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["PAID", "REVIEWED"] } } }),
+      prisma.customer.count({ where: custWhere }),
+      prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
+
+      // Deret pendapatan & pelanggan baru — granularitas mengikuti panjang
+      // rentang (lihat seriesWindow), jadi rentang 30 hari = 30 titik HARIAN.
+      win.harian
+        ? prisma.$queryRaw`
+            SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                   COALESCE(SUM(value), 0)::bigint AS value
+            FROM "Order" WHERE status != 'CANCELLED'
+              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`
+        : prisma.$queryRaw`
+            SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                   COALESCE(SUM(value), 0)::bigint AS value
+            FROM "Order" WHERE status != 'CANCELLED'
+              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`,
+
+      win.harian
+        ? prisma.$queryRaw`
+            SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                   COUNT(*)::int AS value
+            FROM "Customer"
+            WHERE "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`
+        : prisma.$queryRaw`
+            SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                   COUNT(*)::int AS value
+            FROM "Customer"
+            WHERE "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`,
+    ]);
+
+    const gross     = orderAgg._sum.value || 0;
+    const collected = lunasAgg._sum.value || 0;
+    const totalOrders = orderAgg._count._all;
+
+    res.json({
+      granularity: win.harian ? "day" : "month",
+
+      uang: {
+        grossValue: gross,
+        collectedValue: collected,
+        dpValue: dpAgg._sum.value || 0,
+        // Piutang = sudah di-order, belum lunas. Angka ini yang biasanya
+        // hilang dari laporan padahal paling dicari owner.
+        outstandingValue: gross - collected,
+        collectedRate: gross > 0 ? Math.round((collected / gross) * 100) : null,
+        totalOrders,
+        // AOV — nilai rata-rata per order. Naik/turunnya AOV menjelaskan
+        // perubahan revenue yang tidak terjelaskan oleh jumlah order.
+        aov: totalOrders > 0 ? Math.round(gross / totalOrders) : 0,
+      },
+
+      // Konversi NYATA (bukan "percakapan selesai / total" yang dulu
+      // dilabeli "Closing Rate" dan menyesatkan — itu metrik kebersihan
+      // inbox, bukan penjualan).
+      konversi: {
+        totalCustomers,
+        paidCustomers,
+        customersWithOrders,
+        paidRate:  totalCustomers > 0 ? Math.round((paidCustomers / totalCustomers) * 1000) / 10 : null,
+        orderRate: totalCustomers > 0 ? Math.round((customersWithOrders / totalCustomers) * 1000) / 10 : null,
+      },
+
+      // Beban produksi per status order — ini antrean kerja tim, bukan
+      // sekadar statistik. CANCELLED ikut supaya totalnya jujur.
+      orderStatus: statusGroups.map((g) => ({
+        status: g.status, count: g._count._all, value: g._sum.value || 0,
+      })),
+
+      revenueByCategory: categoryGroups.map((g) => ({
+        category: g.category, count: g._count._all, value: g._sum.value || 0,
+      })),
+
+      topCities: cityGroups
+        .map((g) => ({ city: g.city || "Belum diisi", count: g._count._all }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8),
+
+      komplain: {
+        count: complaintCount,
+        rate: totalOrders > 0 ? Math.round((complaintCount / totalOrders) * 1000) / 10 : null,
+      },
+
+      revenueSeries:  fillBuckets(win, Object.fromEntries(revenueRaw.map((r) => [r.bucket, Number(r.value)]))),
+      customerSeries: fillBuckets(win, Object.fromEntries(customerRaw.map((r) => [r.bucket, Number(r.value)]))),
+    });
+  } catch (err) {
+    console.error("business-summary error:", err);
+    res.status(500).json({ error: "Gagal memuat ringkasan bisnis" });
+  }
+});
+
+// ── GET /analytics/sales-report?from=&to= ──────────────────────────────────
+// LAPORAN SALES mendalam — pengganti tabel "Performa CS" yang lama (yang cuma
+// 4 kolom: percakapan, closing rate, avg response, nilai order).
+//
+// ⚠️ ATRIBUSI (keputusan bisnis, jangan diubah tanpa diskusi): seluruh metrik
+// di sini memakai `Conversation.assignedToId` — "percakapan yang SAYA pegang".
+// BUKAN `Customer.assignedSalesId` (kepemilikan lead di CRM). Dua field ini
+// bisa TIDAK SINKRON, dan mencampurnya di satu tabel membuat conversion rate
+// tidak bisa dibaca (pembilang dan penyebut dari populasi berbeda).
+// Konsekuensi yang harus disadari: order dari customer yang percakapannya
+// dipegang sales lain TIDAK masuk ke angka orang ini.
+//
+// "Dibalas" = ada MINIMAL SATU pesan OUTBOUND di percakapan itu. Ini yang
+// membedakan sales yang benar-benar merespons dari yang cuma "kebagian"
+// percakapan — masalah nyata yang jadi alasan fitur takeover dibuat.
+analyticsRouter.get("/sales-report", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
+    const { year, month } = nowPartsWIB();
+
+    const users = await prisma.user.findMany({
+      where: { role: { not: "ADMIN" } },
+      select: { id: true, name: true, avatarUrl: true },
+      orderBy: { name: "asc" },
+    });
+
+    const targets = await prisma.salesTarget.findMany({ where: { year, month } });
+    const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
+
+    const rows = await Promise.all(users.map(async (u) => {
+      const mine = { ...convWhere, assignedToId: u.id };
+
+      const [
+        handled, replied, resolved,
+        stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
+      ] = await Promise.all([
+        prisma.conversation.count({ where: mine }),
+        // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
+        prisma.conversation.count({ where: { ...mine, messages: { some: { direction: "OUTBOUND" } } } }),
+        prisma.conversation.count({ where: { ...mine, status: "RESOLVED" } }),
+
+        // Sebaran stage customer dari percakapan yang dia pegang — inilah
+        // funnel per sales. Dihitung lewat Customer yang punya conversation
+        // milik user ini (bukan assignedSalesId — lihat catatan atribusi).
+        prisma.customer.groupBy({
+          by: ["pipelineStage"],
+          where: { conversations: { some: mine } },
+          _count: { _all: true },
+        }),
+
+        prisma.order.aggregate({
+          where: {
+            ...buildDateWhere(from, to), status: { not: "CANCELLED" },
+            customer: { conversations: { some: mine } },
+          },
+          _count: { _all: true }, _sum: { value: true },
+        }),
+        prisma.order.aggregate({
+          where: {
+            ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paymentStatus: "LUNAS",
+            customer: { conversations: { some: mine } },
+          },
+          _sum: { value: true },
+        }),
+        prisma.order.count({
+          where: {
+            ...buildDateWhere(from, to), hasComplaint: true,
+            customer: { conversations: { some: mine } },
+          },
+        }),
+
+        // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
+        // pertama). JOIN ke Conversation supaya grup WA internal & percakapan
+        // sales lain tidak ikut terhitung.
+        prisma.$queryRaw`
+          SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
+                 COUNT(*)::int AS sample
+          FROM (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+            WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            GROUP BY 1
+          ) i
+          JOIN (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+            WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            GROUP BY 1
+          ) o ON i."conversationId" = o."conversationId"
+          WHERE o."createdAt" > i."createdAt"`,
+
+        // SLA breach = percakapan yang respons pertamanya > 60 menit. Ambang
+        // 60 menit mengikuti aturan takeover yang sudah dipakai di Inbox.
+        prisma.$queryRaw`
+          SELECT COUNT(*)::int AS n FROM (
+            SELECT i."conversationId"
+            FROM (
+              SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+              FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              GROUP BY 1
+            ) i
+            JOIN (
+              SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+              FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              GROUP BY 1
+            ) o ON i."conversationId" = o."conversationId"
+            WHERE o."createdAt" > i."createdAt"
+              AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
+          ) t`,
+      ]);
+
+      const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
+      const stageCount = (s) => byStage[s] || 0;
+      const paid = stageCount("PAID") + stageCount("REVIEWED");
+      const orders = orderAgg._count._all;
+      const gross = orderAgg._sum.value || 0;
+      const target = targetMap[u.id] || 0;
+
+      return {
+        userId: u.id, name: u.name, avatarUrl: u.avatarUrl,
+
+        // Aktivitas
+        handled, replied, resolved,
+        replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
+        avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
+        respondedSample: respRaw[0]?.sample || 0,
+        slaBreach: slaBreach[0]?.n || 0,
+
+        // Funnel (8 stage baru)
+        funnel: {
+          NEW: stageCount("NEW"), QUALIFIED: stageCount("QUALIFIED"), QUOTED: stageCount("QUOTED"),
+          BOOKED: stageCount("BOOKED"), SCHEDULED: stageCount("SCHEDULED"),
+          COMPLETED: stageCount("COMPLETED"), PAID: stageCount("PAID"), REVIEWED: stageCount("REVIEWED"),
+        },
+        paidCustomers: paid,
+        // Conversion = dari percakapan yang dia pegang, berapa % jadi bayar.
+        conversionRate: handled > 0 ? Math.round((paid / handled) * 1000) / 10 : null,
+
+        // Hasil
+        orders,
+        grossValue: gross,
+        collectedValue: lunasAgg._sum.value || 0,
+        aov: orders > 0 ? Math.round(gross / orders) : 0,
+        target,
+        percentToTarget: target > 0 ? Math.round((gross / target) * 100) : null,
+        complaints: complaintCount,
+        complaintRate: orders > 0 ? Math.round((complaintCount / orders) * 1000) / 10 : null,
+      };
+    }));
+
+    // Total tim — supaya UI tidak menjumlahkan sendiri (dan tidak salah
+    // menjumlahkan rata-rata, kesalahan klasik di laporan seperti ini).
+    const t = rows.reduce((a, r) => ({
+      handled: a.handled + r.handled, replied: a.replied + r.replied,
+      orders: a.orders + r.orders, grossValue: a.grossValue + r.grossValue,
+      collectedValue: a.collectedValue + r.collectedValue,
+      paidCustomers: a.paidCustomers + r.paidCustomers,
+      slaBreach: a.slaBreach + r.slaBreach, complaints: a.complaints + r.complaints,
+      target: a.target + r.target,
+    }), { handled: 0, replied: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
+
+    res.json({
+      periodeTarget: { year, month },
+      rows: rows.sort((a, b) => b.grossValue - a.grossValue),
+      total: {
+        ...t,
+        replyRate:      t.handled > 0 ? Math.round((t.replied / t.handled) * 100) : null,
+        conversionRate: t.handled > 0 ? Math.round((t.paidCustomers / t.handled) * 1000) / 10 : null,
+        aov:            t.orders  > 0 ? Math.round(t.grossValue / t.orders) : 0,
+        percentToTarget: t.target > 0 ? Math.round((t.grossValue / t.target) * 100) : null,
+      },
+    });
+  } catch (err) {
+    console.error("sales-report error:", err);
+    res.status(500).json({ error: "Gagal memuat laporan sales" });
   }
 });
 
@@ -508,50 +884,33 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
 analyticsRouter.get("/revenue-series", async (req, res) => {
   try {
     const { from, to } = req.query;
-    const sekarang = nowPartsWIB();
-    const mulai   = from ? startOfDayWIB(from) : startOfMonthWIB(sekarang.year, sekarang.month);
-    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
-
-    const totalHari = Math.max(1, Math.round((selesai - mulai) / 86_400_000));
-    const harian = totalHari <= 92;
+    // Granularitas & pengisian bucket kosong dipindah ke helper bersama
+    // (seriesWindow/fillBuckets di atas) — dulu diimplementasikan di sini
+    // saja, lalu /business-summary butuh logika yang SAMA. Menyalinnya berarti
+    // dua tempat yang bisa drift. Sekalian memperbaiki off-by-one bucket
+    // BULANAN: `mulai.getUTCMonth()` dihitung atas instant UTC (1 Jul WIB =
+    // 30 Jun 17:00Z → JUNI), jadi deret bulanan dulu selalu diawali satu
+    // bucket nol yang tidak ada isinya. Lihat namaBucketWIB().
+    const win = seriesWindow(from, to);
 
     // date_trunc di zona WIB — lihat catatan bucket WIB di /overview.
-    const rows = harian
+    const rows = win.harian
       ? await prisma.$queryRaw`
           SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                  COALESCE(SUM(value), 0)::bigint AS value
           FROM "Order"
-          WHERE status != 'CANCELLED' AND "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`
       : await prisma.$queryRaw`
           SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
                  COALESCE(SUM(value), 0)::bigint AS value
           FROM "Order"
-          WHERE status != 'CANCELLED' AND "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
 
-    const map = Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)]));
-
-    // Bangun deret LENGKAP (termasuk bucket bernilai 0).
-    const points = [];
-    if (harian) {
-      for (let t = mulai.getTime(); t < selesai.getTime(); t += 86_400_000) {
-        // Nama bucket harus dihitung di WIB, bukan UTC, supaya cocok dgn SQL.
-        const b = new Date(t + 7 * 3600_000).toISOString().slice(0, 10);
-        points.push({ bucket: b, value: map[b] || 0 });
-      }
-    } else {
-      let y = mulai.getUTCFullYear(), m = mulai.getUTCMonth() + 1;
-      const akhir = new Date(selesai.getTime() - 1);
-      while (y < akhir.getUTCFullYear() || (y === akhir.getUTCFullYear() && m <= akhir.getUTCMonth() + 1)) {
-        const b = `${y}-${String(m).padStart(2, "0")}`;
-        points.push({ bucket: b, value: map[b] || 0 });
-        m++; if (m > 12) { m = 1; y++; }
-      }
-    }
-
+    const points = fillBuckets(win, Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)])));
     const total = points.reduce((s, p) => s + p.value, 0);
-    res.json({ granularity: harian ? "day" : "month", points, total });
+    res.json({ granularity: win.harian ? "day" : "month", points, total });
   } catch (err) {
     console.error("revenue-series error:", err);
     res.status(500).json({ error: "Gagal memuat deret pendapatan" });

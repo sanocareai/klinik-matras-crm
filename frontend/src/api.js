@@ -226,6 +226,10 @@ export const api = {
   // Sales Overview. Menggantikan pemakaian monthlyRevenue di kartu itu, yang
   // selalu 6 bulan & mengabaikan rentang terpilih (grafik jadi 1 titik/kosong).
   getRevenueSeries: (params) => request("/analytics/revenue-series" + buildQuery(params)),
+  // Ringkasan eksekutif Laporan (uang/konversi/beban produksi/kota/komplain +
+  // deret adaptif) & laporan sales mendalam — keduanya menghormati from/to.
+  getBusinessSummary: (params) => request("/analytics/business-summary" + buildQuery(params)),
+  getSalesReport: (params) => request("/analytics/sales-report" + buildQuery(params)),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
