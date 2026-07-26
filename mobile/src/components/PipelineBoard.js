@@ -112,7 +112,7 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
   );
 }
 
-// customersByStage: { LEAD: [...], QUALIFIED: [...], ... }
+// customersByStage: { NEW: [...], QUALIFIED: [...], ... }
 // stageOrder: array kunci stage, urut tampil
 // pipelineLabels/pipelineColors: { STAGE: label/color }
 export default function PipelineBoard({

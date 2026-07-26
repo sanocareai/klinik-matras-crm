@@ -8,21 +8,24 @@ import { cn } from "@/lib/utils.js";
 // (sano-color-system.md §4). Sengaja class statis, bukan dibangun runtime,
 // supaya ke-scan Tailwind.
 export const STAGE_DOT = {
-  LEAD:      "bg-orange",
+  NEW:       "bg-orange",
   QUALIFIED: "bg-accent",
   QUOTED:    "bg-accent",
-  WON:       "bg-green",
-  LOST:      "bg-red",
+  BOOKED:    "bg-accent",
+  SCHEDULED: "bg-accent",
+  COMPLETED: "bg-accent",
+  PAID:      "bg-green",
+  REVIEWED:  "bg-green",
 };
 
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
 // 14 hari dipilih supaya tidak berisik: siklus jual kasur di sini berhari-hari
 // (lihat laporan Kecepatan Pipeline), jadi 7 hari akan menandai deal normal.
-// WON/LOST DIKECUALIKAN: itu stage AKHIR — "lama tidak disentuh" di sana
+// PAID/REVIEWED DIKECUALIKAN: itu stage AKHIR — "lama tidak disentuh" di sana
 // artinya sudah selesai, bukan mandek.
 const STALE_DAYS = 14;
 export function isStale(card, stage) {
-  if (stage === "WON" || stage === "LOST") return false;
+  if (stage === "PAID" || stage === "REVIEWED") return false;
   return (card?.daysSince || 0) >= STALE_DAYS;
 }
 

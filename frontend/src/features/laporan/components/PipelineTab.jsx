@@ -1,31 +1,30 @@
 import React from "react";
 import { ChevronRight, Timer, ArrowRightLeft } from "lucide-react";
-import { formatRupiah } from "@/utils/format.js";
+import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import ChartCard from "./ChartCard.jsx";
 import Sparkline from "./Sparkline.jsx";
 
-// DS v2: gradient 5-warna DIHAPUS (aturan satu accent). Stage bukan skala
-// warna — hanya WON/LOST yang punya makna (berhasil/gagal); sisanya netral dan
-// dibedakan oleh URUTAN + angkanya, bukan oleh hue masing-masing.
-// Kartu funnel jadi permukaan inset dengan teks normal, bukan blok berwarna.
+// Revisi 26 Jul 2026: pipeline 8-stage, LOST dihapus (jadi hanya PAID/REVIEWED
+// yang punya makna "berhasil"). Label dipakai langsung dari STAGE_LABELS
+// (utils/format.js) — dulu file ini punya salinan sendiri (STAGE_LABEL_ID)
+// yang independen dan rawan drift dari sumber utama (lihat CLAUDE.md §8,
+// "Label 'Penawaran' masih muncul di beberapa tempat"); sekarang satu sumber.
 const STAGE_BG = {
-  LEAD: "bg-inset", QUALIFIED: "bg-inset", QUOTED: "bg-inset",
-  WON: "bg-greenbg", LOST: "bg-redbg",
+  NEW: "bg-inset", QUALIFIED: "bg-inset", QUOTED: "bg-inset",
+  BOOKED: "bg-inset", SCHEDULED: "bg-inset", COMPLETED: "bg-inset",
+  PAID: "bg-greenbg", REVIEWED: "bg-greenbg",
 };
-// Bar progres per stage — accent, kecuali WON/LOST yang semantik.
+// Bar progres per stage — accent, kecuali PAID/REVIEWED yang semantik.
 const STAGE_BAR = {
-  LEAD: "bg-accent", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
-  WON: "bg-green", LOST: "bg-red",
+  NEW: "bg-accent", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
+  BOOKED: "bg-accent", SCHEDULED: "bg-accent", COMPLETED: "bg-accent",
+  PAID: "bg-green", REVIEWED: "bg-green",
 };
 const STAGE_DOT = {
-  LEAD: "bg-accent", QUALIFIED: "bg-accent", QUOTED: "bg-orange",
-  WON: "bg-green", LOST: "bg-red",
-};
-
-const STAGE_LABEL_ID = {
-  LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Offers/Negosiasi",
-  WON: "Berhasil", LOST: "Gagal",
+  NEW: "bg-orange", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
+  BOOKED: "bg-accent", SCHEDULED: "bg-accent", COMPLETED: "bg-accent",
+  PAID: "bg-green", REVIEWED: "bg-green",
 };
 
 // "3.4" → "3,4 hari" · "0.5" → "12 jam" (di bawah 1 hari lebih enak dibaca
@@ -40,11 +39,12 @@ function formatDurasiHari(hari) {
   return `${hari.toString().replace(".", ",")} hari`;
 }
 
-// Stage yang paling lama tertahan = kemungkinan bottleneck. WON/LOST dikecualikan
-// (itu stage AKHIR — "lama di WON" tidak berarti macet, cuma belum pindah lagi).
+// Stage yang paling lama tertahan = kemungkinan bottleneck. PAID/REVIEWED
+// dikecualikan (itu stage AKHIR — "lama di PAID" tidak berarti macet, cuma
+// belum pindah lagi / memang sudah selesai).
 function cariBottleneck(avgDaysInStage) {
   const kandidat = (avgDaysInStage || []).filter(
-    (r) => r.stage !== "WON" && r.stage !== "LOST" && r.avgDays != null && r.sample > 0
+    (r) => r.stage !== "PAID" && r.stage !== "REVIEWED" && r.avgDays != null && r.sample > 0
   );
   if (kandidat.length === 0) return null;
   return kandidat.reduce((a, b) => (b.avgDays > a.avgDays ? b : a));
@@ -168,7 +168,7 @@ export default function PipelineTab({ funnel, velocity }) {
             <Timer className="mt-0.5 shrink-0 text-orange" size={16} />
             <p className="text-xs leading-relaxed text-ink">
               Paling lama tertahan di{" "}
-              <strong>{STAGE_LABEL_ID[bottleneck.stage] || bottleneck.stage}</strong> —
+              <strong>{STAGE_LABELS[bottleneck.stage] || bottleneck.stage}</strong> —
               rata-rata <strong>{formatDurasiHari(bottleneck.avgDays)}</strong>. Ini
               kandidat bottleneck yang paling layak dibenahi lebih dulu.
             </p>
@@ -180,7 +180,7 @@ export default function PipelineTab({ funnel, velocity }) {
             <div key={row.stage} className="flex items-center gap-3">
               <span className="flex w-32 shrink-0 items-center gap-2 text-xs font-semibold text-ink2">
                 <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STAGE_DOT[row.stage] || "bg-ink3"}`} />
-                <span className="truncate">{STAGE_LABEL_ID[row.stage] || row.stage}</span>
+                <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
               </span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-inset">
                 <div
@@ -220,7 +220,7 @@ export default function PipelineTab({ funnel, velocity }) {
             <div key={row.stage} className="rounded-xl bg-inset/60 p-3">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ink2">
                 <ArrowRightLeft size={11} className="shrink-0 text-ink3" />
-                <span className="truncate">{STAGE_LABEL_ID[row.stage] || row.stage}</span>
+                <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
               </p>
               <p className="mt-1.5 text-xl font-extrabold tabular-nums text-ink">{row.count}</p>
             </div>

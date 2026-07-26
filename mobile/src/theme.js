@@ -68,18 +68,26 @@ export const avatarColors = [
   "#7c3aed", "#ec4899", "#f97316", "#0891b2",
 ];
 
+// Revisi 26 Jul 2026: pipeline 8-stage, LOST dihapus. Skema warna: oranye =
+// baru, biru/ungu-tosca = sedang berjalan (5 stage tengah), hijau = berhasil.
 export const stageColors = {
-  LEAD: "#f59e0b",
+  NEW: "#f59e0b",
   QUALIFIED: "#2563eb",
   QUOTED: "#7c3aed",
-  WON: "#16a34a",
-  LOST: "#dc2626",
+  BOOKED: "#0891b2",
+  SCHEDULED: "#4f46e5",
+  COMPLETED: "#0d9488",
+  PAID: "#16a34a",
+  REVIEWED: "#059669",
 };
 
 export const stageLabels = {
-  LEAD: "Lead",
+  NEW: "New",
   QUALIFIED: "Qualified",
-  QUOTED: "Offers/Negosiasi",
-  WON: "Won",
-  LOST: "Lost",
+  QUOTED: "Quoted",
+  BOOKED: "Booked",
+  SCHEDULED: "Scheduled",
+  COMPLETED: "Completed",
+  PAID: "Paid",
+  REVIEWED: "Already Reviewed",
 };

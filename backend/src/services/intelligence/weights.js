@@ -23,7 +23,7 @@ export const THRESHOLDS = {
   unansweredMinutes: 180,   // >3 jam = follow-up menunggu
   inactivity30: 30,
   inactivity60: 60,
-  abandonedQuoteDays: 3,    // QUOTED tapi diam >3 hari
+  abandonedQuoteDays: 3,    // QUOTED tapi diam >3 hari (belum lanjut ke BOOKED)
   repeatOrderDays: 365,     // customer lama, order terakhir >12 bulan
   activeConvMessages: 3,    // percakapan aktif = >=3 pesan dalam recentActivityDays
   recentActivityDays: 3,
@@ -36,7 +36,11 @@ export const HEALTH_WEIGHTS = {
   base: 50,
   orderBase: 20,
   orderValueMax: 15, orderValuePer: 5_000_000,
-  stage: { WON: 15, QUOTED: 10, QUALIFIED: 5 },
+  // Revisi 26 Jul 2026: pipeline 8-stage — makin dekat ke PAID (berhasil
+  // sebenarnya), makin tinggi bobotnya. REVIEWED sedikit di atas PAID (sudah
+  // kasih testimoni = relasi paling sehat). Nilai awal wajar, silakan di-tune
+  // dari perilaku sales nyata (lihat catatan file ini).
+  stage: { NEW: 0, QUALIFIED: 5, QUOTED: 10, BOOKED: 12, SCHEDULED: 13, COMPLETED: 14, PAID: 15, REVIEWED: 16 },
   recency: { d2: 15, d7: 10, d14: 5 },
   complaintPenalty: 25,
   inactivity: { d60: 25, d30: 15 },

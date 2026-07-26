@@ -11,7 +11,7 @@ import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/K
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
-const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 
 // Total nilai per kolom, dengan count-up saat berubah. Dipisah jadi komponen
 // sendiri karena useCountUp adalah hook — tidak boleh dipanggil di dalam
@@ -76,7 +76,7 @@ export default function Pipeline() {
     });
     try {
       // Ini juga yang mencatat baris pipeline_transitions di backend (satu
-      // transaksi) dan memicu webhook lead.won kalau toStage = WON —
+      // transaksi) dan memicu webhook lead.won kalau toStage = PAID —
       // lihat routes/customers.js PATCH /:id.
       await api.updateCustomer(card.id, { pipelineStage: toStage });
     } catch (err) {

@@ -244,7 +244,7 @@ customerRouter.patch("/:id", async (req, res) => {
 
       // Dicatat HANYA kalau stage BENAR-BENAR berpindah. Form CRM sering
       // mengirim seluruh field termasuk pipelineStage yang tidak berubah —
-      // tanpa cek ini riwayat akan penuh baris "LEAD → LEAD" dan analisa
+      // tanpa cek ini riwayat akan penuh baris "NEW → NEW" dan analisa
       // kecepatan pipeline jadi tidak berguna.
       let transisi = null;
       if (pipelineStage !== undefined && pipelineStage !== sebelum.pipelineStage) {
@@ -268,7 +268,7 @@ customerRouter.patch("/:id", async (req, res) => {
     // menunggu n8n, dan n8n yang mati tidak boleh membatalkan perubahan stage.
     // dispatchLeadWon() sudah menangkap semua error di dalam; .catch() di sini
     // hanya jaring terakhir supaya tidak ada unhandled rejection.
-    if (transisi?.toStage === "WON") {
+    if (transisi?.toStage === "PAID") {
       dispatchLeadWon(prisma, {
         customerId:  customer.id,
         fromStage:   transisi.fromStage,

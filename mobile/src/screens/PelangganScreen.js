@@ -31,9 +31,10 @@ const VIEW_MODE_KEY = "pelangganViewMode"; // "list" | "board" — persist Async
 // editor, TIDAK diubah supaya tidak ada efek samping di layar lain). Warna
 // TETAP reuse stageColors global (konsisten dengan badge stage yang sudah
 // dipakai di mana-mana).
-const STAGE_ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+const STAGE_ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 const PIPELINE_LABELS = {
-  LEAD: "Lead", QUALIFIED: "Prospek", QUOTED: "Offers/Negosiasi", WON: "Berhasil", LOST: "Gagal",
+  NEW: "New", QUALIFIED: "Qualified", QUOTED: "Quoted", BOOKED: "Booked",
+  SCHEDULED: "Scheduled", COMPLETED: "Completed", PAID: "Paid", REVIEWED: "Already Reviewed",
 };
 const STAGE_TABS = [{ key: "ALL", label: "Semua" }, ...STAGE_ORDER.map((s) => ({ key: s, label: PIPELINE_LABELS[s] }))];
 
@@ -196,7 +197,7 @@ export default function PelangganScreen({ navigation }) {
     const counts = { ALL: customers.length };
     STAGE_ORDER.forEach((s) => { counts[s] = 0; });
     customers.forEach((c) => {
-      const s = c.pipelineStage || "LEAD";
+      const s = c.pipelineStage || "NEW";
       counts[s] = (counts[s] || 0) + 1;
     });
     return counts;
@@ -204,14 +205,14 @@ export default function PelangganScreen({ navigation }) {
 
   const filteredByStage = useMemo(() => {
     if (stageFilter === "ALL") return customers;
-    return customers.filter((c) => (c.pipelineStage || "LEAD") === stageFilter);
+    return customers.filter((c) => (c.pipelineStage || "NEW") === stageFilter);
   }, [customers, stageFilter]);
 
   const customersByStage = useMemo(() => {
     const grouped = {};
     STAGE_ORDER.forEach((s) => { grouped[s] = []; });
     customers.forEach((c) => {
-      const s = c.pipelineStage || "LEAD";
+      const s = c.pipelineStage || "NEW";
       if (!grouped[s]) grouped[s] = [];
       grouped[s].push(c);
     });

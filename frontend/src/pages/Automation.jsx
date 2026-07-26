@@ -156,7 +156,7 @@ function WorkflowTab() {
           </div>
           <div className="form-group">
             <label className="form-label">Kondisi (opsional)</label>
-            <input type="text" placeholder="Contoh: pipelineStage = LEAD"
+            <input type="text" placeholder="Contoh: pipelineStage = NEW"
               value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))} />
           </div>
           <div className="form-group">

@@ -1,14 +1,17 @@
 import React from "react";
 import { STAGE_LABELS } from "../../utils/format.js";
 
-const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 
 const STAGE_ACTIVE_CLASS = {
-  LEAD:      "active-lead",
+  NEW:       "active-new",
   QUALIFIED: "active-qualified",
   QUOTED:    "active-quoted",
-  WON:       "active-won",
-  LOST:      "active-lost",
+  BOOKED:    "active-booked",
+  SCHEDULED: "active-scheduled",
+  COMPLETED: "active-completed",
+  PAID:      "active-paid",
+  REVIEWED:  "active-reviewed",
 };
 
 export default function StageSelect({ value, onChange }) {

@@ -17,7 +17,11 @@ export function computeHealth(s) {
     score += W.orderBase + Math.min(W.orderValueMax, Math.round((s.orderValue / W.orderValuePer) * W.orderValueMax));
     signals.push({ type: "positive", label: `${s.orderCount} order · ${rpShort(s.orderValue)}` });
   }
-  if (s.stage === "WON") { score += W.stage.WON; signals.push({ type: "positive", label: "Deal berhasil" }); }
+  if (s.stage === "REVIEWED") { score += W.stage.REVIEWED; signals.push({ type: "positive", label: "Sudah kasih review" }); }
+  else if (s.stage === "PAID") { score += W.stage.PAID; signals.push({ type: "positive", label: "Deal berhasil (dibayar)" }); }
+  else if (s.stage === "COMPLETED") { score += W.stage.COMPLETED; signals.push({ type: "positive", label: "Pekerjaan selesai" }); }
+  else if (s.stage === "SCHEDULED") { score += W.stage.SCHEDULED; signals.push({ type: "positive", label: "Sudah dijadwalkan" }); }
+  else if (s.stage === "BOOKED") { score += W.stage.BOOKED; signals.push({ type: "positive", label: "Sudah booking" }); }
   else if (s.stage === "QUOTED") { score += W.stage.QUOTED; signals.push({ type: "positive", label: "Aktivitas penawaran" }); }
   else if (s.stage === "QUALIFIED") { score += W.stage.QUALIFIED; signals.push({ type: "positive", label: "Prospek terkualifikasi" }); }
 
@@ -37,7 +41,7 @@ export function computeHealth(s) {
   if (s.daysSince != null) {
     if (s.complaintsOpen > 0) { trend = "down"; trendLabel = "Menurun — ada komplain"; }
     else if (s.daysSince > 30) { trend = "down"; trendLabel = "Menurun — makin pasif"; }
-    else if (s.daysSince <= 3 && (s.orderCount > 0 || s.stage === "QUOTED" || s.stage === "WON")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
+    else if (s.daysSince <= 3 && (s.orderCount > 0 || ["QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"].includes(s.stage))) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
     else { trend = "flat"; trendLabel = "Stabil"; }
   }
 

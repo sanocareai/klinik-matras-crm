@@ -17,13 +17,13 @@ pipelineRouter.get("/board", async (req, res) => {
     });
 
     const now = Date.now();
-    const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 
     const board = {};
     STAGES.forEach((s) => { board[s] = []; });
 
     customers.forEach(({ orders, ...c }) => {
-      const stage = c.pipelineStage || "LEAD";
+      const stage = c.pipelineStage || "NEW";
       const daysSince = Math.floor((now - new Date(c.updatedAt).getTime()) / 86_400_000);
       const totalValue = orders.reduce((sum, o) => sum + o.value, 0);
       if (!board[stage]) board[stage] = [];

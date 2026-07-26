@@ -372,7 +372,7 @@ analyticsRouter.get("/source-performance", async (req, res) => {
     const result = await Promise.all(sources.map(async (s) => {
       const [won, orderAgg] = await Promise.all([
         prisma.customer.count({
-          where: { leadSource: s.leadSource, pipelineStage: "WON", ...custDateWhere },
+          where: { leadSource: s.leadSource, pipelineStage: "PAID", ...custDateWhere },
         }),
         prisma.order.aggregate({
           where: {
@@ -479,7 +479,7 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
       })
     );
 
-    const ORDER = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+    const ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
     const sorted = ORDER.map((s) => stageValues.find((r) => r.stage === s) || { stage: s, count: 0, value: 0 });
 
     res.json(sorted);
@@ -614,12 +614,12 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
         GROUP BY 1
       `,
 
-      // Tren bulanan masuk WON — bucket WIB (lihat catatan di /overview)
+      // Tren bulanan masuk PAID — bucket WIB (lihat catatan di /overview)
       prisma.$queryRaw`
         SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS month,
                COUNT(*)::int AS value
         FROM pipeline_transitions
-        WHERE to_stage = 'WON'
+        WHERE to_stage = 'PAID'
           AND created_at >= NOW() - INTERVAL '6 months'
         GROUP BY 1 ORDER BY 1
       `,
@@ -631,12 +631,12 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
       `,
     ]);
 
-    const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
+    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
     const durasiMap = Object.fromEntries(durasiRaw.map((r) => [r.stage, r]));
     const masukMap  = Object.fromEntries(masukStageRaw.map((r) => [r.stage, r.count]));
 
     res.json({
-      // Selalu 5 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
+      // Selalu 8 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
       avgDaysInStage: STAGES.map((s) => ({
         stage:   s,
         avgDays: durasiMap[s]?.avg_days != null ? Number(Number(durasiMap[s].avg_days).toFixed(1)) : null,

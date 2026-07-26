@@ -14,7 +14,7 @@ export function detectSignals(ctx) {
   const lastOrder = orders.reduce((a, o) => (!a || new Date(o.createdAt) > new Date(a.createdAt) ? o : a), null);
   const lastOrderDaysAgo = lastOrder ? Math.floor((Date.now() - new Date(lastOrder.createdAt).getTime()) / 86_400_000) : null;
   const complaintsOpen = customer.riwayatKomplain?.length || orders.filter((o) => o.hasComplaint).length;
-  const stage = customer.pipelineStage || "LEAD";
+  const stage = customer.pipelineStage || "NEW";
 
   // Pesan terbaru + aktivitas (dari semua percakapan yang dimuat).
   let latest = null;

@@ -95,7 +95,7 @@ async function main() {
       if (!match.assignedSalesId && dup.assignedSalesId) patch.assignedSalesId = dup.assignedSalesId;
       if (!match.tags?.length    && dup.tags?.length)    patch.tags            = dup.tags;
       if (!match.name            && dup.name)            patch.name            = dup.name;
-      if (dup.pipelineStage !== "LEAD" && match.pipelineStage === "LEAD") {
+      if (dup.pipelineStage !== "NEW" && match.pipelineStage === "NEW") {
         patch.pipelineStage = dup.pipelineStage;
       }
       if (dup.customerType !== "END_USER" && match.customerType === "END_USER") {

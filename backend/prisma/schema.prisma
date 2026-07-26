@@ -74,12 +74,22 @@ enum ConversationType {
   GROUP // percakapan grup WhatsApp internal (tidak ada customer)
 }
 
+// Revisi 26 Jul 2026: dari 5 stage (LEAD/QUALIFIED/QUOTED/WON/LOST) jadi 8
+// stage yang mengikuti exit-criteria eksplisit tiap tahap operasional nyata
+// (bukan lagi cuma "menang/kalah"). LOST DIHAPUS (keputusan bisnis) — data
+// customer yang dulu LOST dipetakan ke QUALIFIED lewat migrasi data, WON lama
+// dipetakan ke PAID. "Berhasil"/closing yang SEBENARNYA sekarang PAID (bukan
+// BOOKED) — pembayaran diterima, bukan sekadar deal disepakati. Lihat
+// migration 20260726120000_migrate_pipeline_stage_8_wave untuk detail mapping.
 enum PipelineStage {
-  LEAD
-  QUALIFIED
-  QUOTED
-  WON
-  LOST
+  NEW // Lead baru masuk WhatsApp, belum kirim data diri
+  QUALIFIED // Data minimum lengkap (kota, ukuran, foto, keluhan) + area layanan cocok + ada intent
+  QUOTED // Sudah dikasih harga/rekomendasi
+  BOOKED // Setuju harga+jadwal, penuhi syarat booking
+  SCHEDULED // Sudah dijadwalkan pickup/kunjungan teknisi
+  COMPLETED // Pekerjaan selesai dikerjakan
+  PAID // Pembayaran diterima — INI baru dihitung "berhasil" sebenarnya
+  REVIEWED // Sudah kasih review Google Maps / testimoni WhatsApp
 }
 
 enum MessageDirection {
@@ -138,7 +148,7 @@ model Customer {
   email                   String?
   city                    String?
   tags                    String[]      @default([])
-  pipelineStage           PipelineStage @default(LEAD)
+  pipelineStage           PipelineStage @default(NEW)
   leadSource              LeadSource?
   assignedSalesId         String?
   assignedSales           User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
@@ -161,11 +171,11 @@ model Customer {
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
 }
 
-// Log SETIAP perpindahan pipeline stage seorang customer (LEAD → QUALIFIED →
+// Log SETIAP perpindahan pipeline stage seorang customer (NEW → QUALIFIED →
 // ...). Customer.pipelineStage hanya menyimpan posisi SEKARANG — tabel ini
 // menyimpan RIWAYAT-nya, supaya laporan bisa bergeser dari sekadar "berapa
 // banyak di stage X sekarang" ke data time-series: kecepatan pipeline (berapa
-// lama rata-rata LEAD→WON), analisa cohort, dan tren konversi per periode.
+// lama rata-rata NEW→PAID), analisa cohort, dan tren konversi per periode.
 //
 // APPEND-ONLY: baris di sini tidak pernah di-update/dihapus (kecuali ikut
 // terhapus bersama customer-nya). Ditulis dalam transaksi yang sama dengan
@@ -191,7 +201,7 @@ model PipelineTransition {
 
   @@index([customerId, createdAt]) // timeline per customer
   @@index([createdAt]) // agregasi time-series lintas customer (tren harian/bulanan)
-  @@index([toStage, createdAt]) // "berapa yang masuk WON per periode" — velocity & funnel
+  @@index([toStage, createdAt]) // "berapa yang masuk PAID per periode" — velocity & funnel
   @@map("pipeline_transitions")
 }
 

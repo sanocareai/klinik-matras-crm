@@ -85,7 +85,7 @@ async function main() {
       if (!match.email          && lid.email)           patch.email          = lid.email;
       if (!match.assignedSalesId && lid.assignedSalesId) patch.assignedSalesId = lid.assignedSalesId;
       if (!match.tags?.length   && lid.tags?.length)    patch.tags           = lid.tags;
-      if (lid.pipelineStage !== "LEAD" && match.pipelineStage === "LEAD") {
+      if (lid.pipelineStage !== "NEW" && match.pipelineStage === "NEW") {
         patch.pipelineStage = lid.pipelineStage;
       }
 

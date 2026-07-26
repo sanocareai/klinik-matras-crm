@@ -26,7 +26,7 @@
  * @property {string} id             = customerId
  * @property {string} name
  * @property {string} phone
- * @property {"LEAD"|"QUALIFIED"|"QUOTED"|"WON"|"LOST"} stage
+ * @property {"NEW"|"QUALIFIED"|"QUOTED"|"BOOKED"|"SCHEDULED"|"COMPLETED"|"PAID"|"REVIEWED"} stage
  * @property {number} score          0–100 = signalScore saat ini (kompat UI)
  * @property {number} signalScore    skor rule-based sinyal (eksplisit)
  * @property {number|null} aiConfidence RESERVED — keyakinan model AI (Phase 4), null utk sekarang

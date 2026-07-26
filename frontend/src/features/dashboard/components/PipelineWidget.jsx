@@ -7,7 +7,7 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
-const MAIN_STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON"];
+const MAIN_STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 
 export default function PipelineWidget({ funnel, loading }) {
   const byStage = useMemo(() => {
@@ -17,7 +17,6 @@ export default function PipelineWidget({ funnel, loading }) {
   }, [funnel]);
 
   const mainRows = MAIN_STAGES.map((stage) => byStage[stage] || { stage, count: 0, value: 0 });
-  const lostRow = byStage.LOST || { stage: "LOST", count: 0, value: 0 };
   const maxCount = Math.max(1, ...mainRows.map((r) => r.count));
 
   if (loading) {
@@ -56,13 +55,6 @@ export default function PipelineWidget({ funnel, loading }) {
           );
         })}
       </div>
-
-      {lostRow.count > 0 && (
-        <div className="dash-pipeline-lost">
-          <span>Gagal</span>
-          <span>{lostRow.count} deal{lostRow.value > 0 ? ` · ${formatRupiahShort(lostRow.value)}` : ""}</span>
-        </div>
-      )}
     </motion.div>
   );
 }

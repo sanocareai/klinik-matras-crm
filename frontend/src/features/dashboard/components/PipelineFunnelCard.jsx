@@ -7,10 +7,11 @@ import { api } from "@/api.js";
 import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
 import { toApiParams } from "@/lib/dateRange.js";
 
-// Urutan tahap yang ditampilkan di corong. LOST sengaja TIDAK masuk: funnel
-// menggambarkan alur menuju closing, dan menaruh "Gagal" di ujung bawah akan
-// membuat tahap terpekat (paling menonjol) justru kegagalan.
-const TAHAP = ["LEAD", "QUALIFIED", "QUOTED", "WON"];
+// Revisi 26 Jul 2026: pipeline 8-stage (LOST dihapus dari sistem, jadi tidak
+// ada lagi stage negatif yang perlu disembunyikan dari corong) — seluruh
+// tahap NEW→REVIEWED ditampilkan supaya corong mencerminkan exit-criteria
+// nyata di tiap tahap operasional.
+const TAHAP = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
 
 // ─── DEAL PIPELINE ───────────────────────────────────────────────────────────
 // DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — sekarang mengikuti SATU
@@ -37,8 +38,8 @@ export default function PipelineFunnelCard({ range }) {
     value: formatRupiah(byStage[s]?.value ?? 0),
   }));
 
-  const lead = byStage.LEAD?.count ?? 0;
-  const won  = byStage.WON?.count ?? 0;
+  const lead = byStage.NEW?.count ?? 0;
+  const won  = byStage.PAID?.count ?? 0;
   const konversi = lead > 0 ? Math.round((won / lead) * 100) : null;
 
   return (

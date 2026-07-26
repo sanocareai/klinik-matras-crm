@@ -9,7 +9,7 @@ const minAgo = (m) => new Date(Date.now() - m * 60_000).toISOString();
 const dayAgo = (d) => new Date(Date.now() - d * 86_400_000).toISOString();
 
 // signals memilih pesan terbaru via max(createdAt), jadi urutan array bebas.
-function ctx({ stage = "LEAD", orders = [], msgs = [] }) {
+function ctx({ stage = "NEW", orders = [], msgs = [] }) {
   return {
     customer: { id: "c", name: "Test", phone: "628123456789", pipelineStage: stage, assignedSalesId: null, createdAt: dayAgo(120), orders },
     conversations: msgs.length
@@ -20,7 +20,7 @@ function ctx({ stage = "LEAD", orders = [], msgs = [] }) {
 
 test("complaint escalation → resolve complaint, urgent, health down", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "WON",
+    stage: "PAID",
     orders: [{ value: 5_000_000, status: "DELIVERED", hasComplaint: true, createdAt: dayAgo(40) }],
     msgs: [{ direction: "OUTBOUND", content: "baik pak", createdAt: dayAgo(2) }], // kontak terakhir 2 hari
   }));
@@ -45,7 +45,7 @@ test("hot buying intent → opportunity tinggi + intents terdeteksi", () => {
 
 test("cold customer → health Berisiko, reaktivasi, priority low", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "LEAD", orders: [],
+    stage: "NEW", orders: [],
     msgs: [{ direction: "OUTBOUND", content: "halo", createdAt: dayAgo(90) }],
   }));
   assert.equal(i.health.category, "Berisiko");
