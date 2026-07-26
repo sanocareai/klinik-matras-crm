@@ -561,14 +561,36 @@ function SalesTargetSection() {
 
 const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
 
+// Section yang boleh diakses SALES (bukan cuma ADMIN). Revisi 26 Jul 2026:
+// sebelumnya SELURUH halaman Pengaturan diblokir untuk non-admin di satu
+// gerbang paling atas ("Hanya admin yang bisa mengakses halaman
+// Pengaturan") — akibatnya "Template Saya" yang justru dirancang supaya
+// SETIAP sales bisa bikin template sendiri (lihat routes/templates.js,
+// keputusan bisnis yang sama) tidak pernah bisa dibuka sales sama sekali,
+// terlepas dari kepemilikan per-template di backend sudah benar. Sekarang
+// gerbangnya PER-SECTION: SALES cuma bisa buka "Template Pesan" (untuk
+// kelola template pribadinya), section lain (Profil Perusahaan, Status
+// WhatsApp, Target Sales, Data & Backup) TETAP admin-only.
+const SALES_ALLOWED_SECTIONS = ["template"];
+
 export default function Pengaturan({ user }) {
+  const isAdmin = user?.role === "ADMIN";
+
   // Deep link ?section=target-sales — dipakai widget Target Sales di
   // Dashboard supaya empty state bisa langsung buka tab yang relevan.
+  // SALES: default ke "template" (satu-satunya section yang boleh dia
+  // buka), bukan "profil" yang akan langsung kena gerbang akses-terbatas.
   const [searchParams] = useSearchParams();
-  const initialSection = NAV_KEYS.includes(searchParams.get("section"))
-    ? searchParams.get("section")
-    : "profil";
+  const requestedSection = searchParams.get("section");
+  const sectionValid = NAV_KEYS.includes(requestedSection)
+    && (isAdmin || SALES_ALLOWED_SECTIONS.includes(requestedSection));
+  const initialSection = sectionValid ? requestedSection : (isAdmin ? "profil" : "template");
   const [section, setSection] = useState(initialSection);
+
+  // Sidebar/dropdown SALES cuma menampilkan section yang boleh dia buka —
+  // bukan cuma disembunyikan di UI, gerbang di bawah (sebelum render body)
+  // tetap menolak kalau section di-set lewat cara lain (mis. URL manual).
+  const visibleNavItems = isAdmin ? NAV_ITEMS : NAV_ITEMS.filter((n) => SALES_ALLOWED_SECTIONS.includes(n.key));
 
   // Settings
   const [settings, setSettings]   = useState(null);
@@ -732,12 +754,18 @@ export default function Pengaturan({ user }) {
     }
   }
 
-  if (user?.role !== "ADMIN") {
+  // Gerbang PER-SECTION (bukan seluruh halaman lagi) — lihat komentar
+  // SALES_ALLOWED_SECTIONS di atas. `section` di sini SUDAH divalidasi lewat
+  // `sectionValid` saat inisialisasi awal, tapi dicek ULANG di sini karena
+  // `setSection` bisa dipanggil kapan saja lewat klik sidebar/dropdown —
+  // keduanya sudah difilter ke `visibleNavItems` untuk SALES, tapi gerbang
+  // ini tetap jaring terakhir kalau ada jalan lain mengubah `section`.
+  if (!isAdmin && !SALES_ALLOWED_SECTIONS.includes(section)) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 12 }}>
         <Lock size={40} color="var(--text-muted)" />
         <h2 style={{ margin: 0, color: "var(--text-muted)" }}>Akses Terbatas</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Hanya admin yang bisa mengakses halaman Pengaturan.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Hanya admin yang bisa mengakses bagian ini.</p>
       </div>
     );
   }
@@ -746,32 +774,44 @@ export default function Pengaturan({ user }) {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Pengaturan</h1>
-          <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>Konfigurasi sistem CRM Klinik Matras</p>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
+            {isAdmin ? "Pengaturan" : "Template Pesan"}
+          </h1>
+          <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
+            {isAdmin ? "Konfigurasi sistem CRM Klinik Matras" : "Kelola template balasan cepat milik Anda sendiri"}
+          </p>
         </div>
       </div>
 
-      {/* Dropdown sub-menu — mobile saja (sidebar disembunyikan via CSS di breakpoint ini) */}
-      <select
-        className="settings-mobile-select"
-        value={section}
-        onChange={(e) => setSection(e.target.value)}
-      >
-        {NAV_ITEMS.map(({ key, label }) => (
-          <option key={key} value={key}>{label}</option>
-        ))}
-      </select>
+      {/* Dropdown sub-menu — mobile saja (sidebar disembunyikan via CSS di
+          breakpoint ini). SALES cuma punya 1 opsi (Template Pesan), jadi
+          dropdown-nya tidak perlu ditampilkan sama sekali — dropdown
+          1-opsi cuma bingung, bukan navigasi. */}
+      {visibleNavItems.length > 1 && (
+        <select
+          className="settings-mobile-select"
+          value={section}
+          onChange={(e) => setSection(e.target.value)}
+        >
+          {visibleNavItems.map(({ key, label }) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+      )}
 
       <div className="settings-layout">
-        {/* Sidebar */}
+        {/* Sidebar — disembunyikan total untuk SALES (cuma 1 section, sidebar
+            navigasi tidak ada gunanya untuk 1 pilihan). */}
+        {visibleNavItems.length > 1 && (
         <nav className="settings-sidebar">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+          {visibleNavItems.map(({ key, label, icon: Icon }) => (
             <button key={key} className={`settings-nav-item ${section === key ? "active" : ""}`}
               onClick={() => setSection(key)}>
               <Icon size={16} /> {label}
             </button>
           ))}
         </nav>
+        )}
 
         {/* Main */}
         <div className="settings-main">
