@@ -316,14 +316,24 @@ export default function Composer({ conversation, mediaUploaderRef }) {
             satu tombol ini untuk membungkusnya (sama seperti WhatsApp Web).
             TIDAK ADA tombol underline — WhatsApp sendiri tidak punya format
             itu, menambahkannya cuma akan mengirim simbol yang tidak
-            dikenali WhatsApp customer. */}
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.bold)} className="chat-action-btn" title="Tebal (*teks*)">
+            dikenali WhatsApp customer.
+            ⚠️ `chat-format-btn` DISEMBUNYIKAN di layar sempit (index.css,
+            @media max-width:768px) — BUG YANG DIPERBAIKI: baris ikon
+            (template+lampiran+emoji+3 tombol format+mic+kirim) tidak muat
+            dalam satu baris di HP, `.chat-input` tidak wrap, jadi kotak
+            ketik & tombol kirim TERDORONG KELUAR LAYAR (bukan cuma sempit —
+            hilang total dari tampilan). Di mobile, format TETAP bisa
+            dipakai dengan mengetik simbol *_~ langsung (parser di
+            MessageBubble tidak peduli lewat tombol atau ketik manual) —
+            sama seperti WhatsApp asli yang juga tidak punya tombol format
+            permanen di toolbar mobile-nya. */}
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.bold)} className="chat-action-btn chat-format-btn" title="Tebal (*teks*)">
           <Bold size={15} />
         </button>
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.italic)} className="chat-action-btn" title="Miring (_teks_)">
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.italic)} className="chat-action-btn chat-format-btn" title="Miring (_teks_)">
           <Italic size={15} />
         </button>
-        <button type="button" onClick={() => applyFormat(WA_MARKERS.strike)} className="chat-action-btn" title="Coret (~teks~)">
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.strike)} className="chat-action-btn chat-format-btn" title="Coret (~teks~)">
           <Strikethrough size={15} />
         </button>
 

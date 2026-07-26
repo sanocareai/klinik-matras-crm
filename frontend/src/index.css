@@ -656,6 +656,14 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   color: var(--text-primary);
+  /* BUG YANG DIPERBAIKI: --bg-card (putih, #FFFFFF) vs latar .chat-window
+     (--bg-base, #F5F5F7) cuma beda ~2% luminance, dan --border/--hairline
+     cuma rgba(0,0,0,0.08) — di layar HP tertentu (brightness tinggi, PWA,
+     dsb) beda setipis itu praktis TIDAK TERLIHAT, jadi bubble pesan
+     customer tampak "menyatu" dengan background, teksnya seolah melayang
+     tanpa wadah. Shadow (bukan cuma warna/border) memberi definisi yang
+     tidak bergantung pada seberapa mirip 2 warna itu di layar tertentu. */
+  box-shadow: var(--shadow-card);
 }
 .bubble.out {
   align-self: flex-end;
@@ -2319,6 +2327,14 @@ input:focus, select:focus, textarea:focus {
   .chat-action-btn { width: 38px; height: 38px; }
   .chat-send-btn  { width: 42px; height: 42px; }
   .chat-textarea { font-size: 16px; } /* 16px hindari auto-zoom iOS */
+  /* BUG YANG DIPERBAIKI: 3 tombol format (Bold/Italic/Strikethrough) yang
+     ditambahkan ke .chat-input mendorong total lebar ikon melebihi layar HP
+     — `.chat-input` tidak wrap, jadi kotak ketik & tombol kirim terdorong
+     KELUAR LAYAR sepenuhnya (bukan cuma sempit). Disembunyikan di mobile;
+     format tetap bisa dipakai dengan mengetik *tebal*/_miring_/~coret~
+     langsung — parser-nya (utils/waFormat.jsx) tidak peduli sumbernya
+     tombol atau ketik manual. */
+  .chat-format-btn { display: none; }
 
   /* Page padding lebih kecil */
   .page { padding: 16px; }
