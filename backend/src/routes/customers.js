@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import { dispatchLeadWon } from "../services/automationWebhook.js";
+import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -46,111 +47,209 @@ customerRouter.post("/", async (req, res) => {
   res.status(201).json(customer);
 });
 
-// Daftar semua pelanggan + agregat order + filter opsional
-customerRouter.get("/", async (req, res) => {
-  const { search, stage, source, sales, salesId } = req.query;
-
-  const where = {};
-  if (stage)  where.pipelineStage = stage;
-  if (source) where.leadSource    = source;
-  if (sales)  where.assignedSalesId = sales;
-  // ?salesId= — BEDA dari ?sales= di atas: ?sales= filter Customer.assignedSalesId
-  // (kepemilikan LEAD/pipeline). ?salesId= filter lewat conversation yang
-  // DITANGANI sales itu (Conversation.assignedToId — definisi take-over),
-  // dipakai filter "Sales:" di tab Pelanggan mobile (lihat
-  // mobile/src/screens/PelangganScreen.js). Customer bisa punya banyak
-  // conversation (individual biasanya cuma 1) — "some" berarti customer
-  // ikut kalau ADA conversation yang assignedToId-nya cocok.
-  if (salesId) where.conversations = { some: { assignedToId: salesId } };
-  if (search) {
-    where.OR = [
-      { name:            { contains: search, mode: "insensitive" } },
-      { phone:           { contains: search } },
-      { instagramHandle: { contains: search, mode: "insensitive" } },
-      { email:           { contains: search, mode: "insensitive" } },
-    ];
+// Kota untuk dropdown filter — dulu diturunkan client-side dari SELURUH
+// daftar pelanggan yang di-fetch (lihat catatan paginasi di bawah); begitu
+// list utama dipaginasi, tidak ada lagi "seluruh daftar" di browser untuk
+// menurunkannya dari situ, jadi dipisah jadi endpoint kecil sendiri.
+customerRouter.get("/meta/cities", async (req, res) => {
+  try {
+    const rows = await prisma.customer.findMany({
+      where: { city: { not: null } },
+      distinct: ["city"],
+      select: { city: true },
+      orderBy: { city: "asc" },
+    });
+    res.json(rows.map((r) => r.city).filter(Boolean));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+});
 
-  const customers = await prisma.customer.findMany({
-    where,
-    include: {
-      orders: {
-        include: {
-          items:         { orderBy: { sortOrder: "asc" } },
-          weightEntries: { orderBy: { sortOrder: "asc" } },
-        },
-      },
-      assignedSales: true,
-      conversations: { orderBy: { lastMessageAt: "desc" }, take: 1 },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+// Kolom yang boleh dipakai sort — whitelist eksplisit (bukan terima nama
+// kolom apa pun dari query string langsung) supaya tidak ada jalan untuk
+// sort ke kolom yang tidak dimaksudkan/tidak ada.
+const SORT_FIELDS = {
+  name: "name", createdAt: "createdAt", updatedAt: "updatedAt",
+  orderCount: "orderCount", orderValue: "orderValue", city: "city",
+};
 
-  const result = customers.map(({ orders, conversations, ...c }) => {
-    // Sort by updatedAt — order yang paling baru diperbarui statusnya
-    const sorted = [...orders].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    const latest = sorted[0] || null;
+// Revisi 27 Jul 2026 — PAGINASI & FILTER PINDAH KE SERVER (dulu SEMUA
+// pelanggan di-fetch sekaligus dengan include orders/items/weightEntries
+// PENUH, lalu search/filter/sort/pagination dihitung di browser dari array
+// itu). Di 1.320+ pelanggan (94% tanpa order sama sekali, tapi tetap ikut
+// ter-include relasinya) ini cuma "belum kelihatan lambat", bukan "aman" —
+// growth lead adalah angka yang paling cepat naik di bisnis ini. Sekarang:
+// - `where` dibangun dari query params (termasuk quickChip VIP/Belum Order/
+//   Tidak Aktif yang dulu cuma client-side), difilter di DATABASE.
+// - orderCount/orderValue dibaca LANGSUNG dari kolom Customer (denormalized,
+//   lihat services/customerOrderAggregate.js) — bukan include seluruh
+//   relasi orders lagi, jadi VIP/sort nilai order jadi query Postgres biasa.
+// - "Latest order" (status/keluhan/merk/dll) & riwayat komplain HANYA
+//   diambil untuk pelanggan di HALAMAN INI (1 query ber-`IN`, bukan N+1,
+//   dan bukan seluruh 1.320 pelanggan).
+// ⚠️ KOMPATIBILITAS MUNDUR — JANGAN DIHAPUS TANPA MEMPERBARUI SEMUA PEMANGGIL:
+// endpoint ini dipakai 3 tempat dengan ekspektasi BENTUK RESPONS BERBEDA:
+//   - frontend/src/pages/Customers.jsx (SUDAH diperbarui bareng revisi ini,
+//     kirim ?page= eksplisit) → ekspektasi { items, total, page, pageSize, counts }
+//   - frontend/src/pages/Pengaturan.jsx#handleExportCustomers (export Excel,
+//     BELUM diperbarui — sengaja, butuh SEMUA baris tanpa terpotong halaman)
+//     dan mobile/src/screens/PelangganScreen.js (BELUM diperbarui, scope
+//     revisi ini cuma tabel Pelanggan web) → keduanya TIDAK PERNAH kirim
+//     ?page=, ekspektasi array polos SEMUA pelanggan seperti sebelumnya.
+// Pembeda: KEHADIRAN query param `page`. Ada → jalur paginasi baru (array
+// dipotong + metadata). Tidak ada → jalur lama (semua baris, array polos) —
+// masih query yang sama (denormalized orderCount/orderValue, bukan include
+// orders penuh lagi), cuma tanpa skip/take dan bentuk respons array polos.
+customerRouter.get("/", async (req, res) => {
+  try {
+    const {
+      search, stage, source, sales, salesId, city, customerType, quickChip,
+      sortKey, sortDir,
+    } = req.query;
+    const isPaginated = req.query.page !== undefined;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
 
-    // Parse field dari notes JSON order terbaru (merk, ukuran, keluhan)
-    let latestKeluhan = null, latestMerkKasur = null, latestUkuranKasur = null;
-    if (latest?.notes) {
-      try {
-        const n = JSON.parse(latest.notes);
-        latestKeluhan    = n.keluhanCustomer || null;
-        latestMerkKasur  = n.merkKasur       || null;
-        latestUkuranKasur = n.ukuranKasur    || null;
-      } catch {}
+    const where = {};
+    if (stage)  where.pipelineStage = stage;
+    if (source) where.leadSource    = source;
+    if (sales)  where.assignedSalesId = sales;
+    // ?salesId= — BEDA dari ?sales= di atas: ?sales= filter Customer.assignedSalesId
+    // (kepemilikan LEAD/pipeline). ?salesId= filter lewat conversation yang
+    // DITANGANI sales itu (Conversation.assignedToId — definisi take-over),
+    // dipakai filter "Sales:" di tab Pelanggan mobile (lihat
+    // mobile/src/screens/PelangganScreen.js).
+    if (salesId) where.conversations = { some: { assignedToId: salesId } };
+    if (city) where.city = city;
+    if (customerType) where.customerType = customerType;
+    if (search) {
+      where.OR = [
+        { name:            { contains: search, mode: "insensitive" } },
+        { phone:           { contains: search } },
+        { instagramHandle: { contains: search, mode: "insensitive" } },
+        { email:           { contains: search, mode: "insensitive" } },
+      ];
+    }
+    // Quick chip — SEKARANG query Postgres biasa (WHERE kolom denormalized),
+    // dulu ini filter client-side atas array yang sudah di-fetch penuh.
+    if (quickChip === "vip") where.orderValue = { gte: 5_000_000 };
+    if (quickChip === "no-order") where.orderCount = 0;
+    if (quickChip === "inactive") {
+      const cutoff = new Date(Date.now() - 30 * 86_400_000);
+      // Cocok utk 2 kasus: TIDAK PERNAH chat sama sekali, ATAU pesan
+      // terakhirnya lebih dari 30 hari lalu — `some` di relasi kosong = false,
+      // NOT false = true, jadi customer tanpa conversation individual pun ikut.
+      where.NOT = { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: cutoff } } } };
     }
 
-    // Gabung semua nama layanan dari items order terbaru jadi 1 string
-    const latestLayanan = (latest?.items || [])
-      .map((i) => i.layananName)
-      .filter(Boolean)
-      .join(", ") || null;
+    const orderByField = SORT_FIELDS[sortKey] || "updatedAt";
+    const orderByDir = sortDir === "asc" ? "asc" : "desc";
 
-    // Riwayat komplain dari semua order
-    const riwayatKomplain = orders
-      .filter((o) => o.hasComplaint)
-      .sort((a, b) => new Date(b.complaintDate) - new Date(a.complaintDate))
-      .map((o) => ({
-        orderId:        o.id,
-        orderNumber:    o.orderNumber,
-        complaintDate:  o.complaintDate,
-        complaintDetail: o.complaintDetail,
-      }));
+    const [totalCount, customersPage, typeGroups] = await Promise.all([
+      prisma.customer.count({ where }),
+      prisma.customer.findMany({
+        where,
+        include: {
+          assignedSales: true,
+          conversations: {
+            where: { type: "INDIVIDUAL" },
+            orderBy: { lastMessageAt: "desc" }, take: 1,
+            select: { lastMessageAt: true },
+          },
+        },
+        orderBy: { [orderByField]: orderByDir },
+        // Jalur lama (mobile, export Pengaturan) TIDAK kirim ?page= — tanpa
+        // skip/take di situ supaya perilakunya tetap "semua baris" seperti
+        // sebelumnya, cuma sekarang query-nya lebih ringan (tidak include
+        // orders penuh lagi).
+        ...(isPaginated && { skip: (page - 1) * pageSize, take: pageSize }),
+      }),
+      // Total per tab (Semua/End User/Korporat) — SENGAJA lepas dari filter
+      // lain (search/stage/quickChip/dst), sama seperti perilaku lama:
+      // tab count itu angka global, bukan "yang cocok filter saat ini".
+      prisma.customer.groupBy({ by: ["customerType"], _count: { _all: true } }),
+    ]);
 
-    // BUG YANG DIPERBAIKI: `orders` di sini TIDAK difilter status, jadi
-    // order CANCELLED ikut menaikkan orderCount/orderValue — beda dari
-    // SELURUH endpoint lain di codebase (analytics, sales-report, dst) yang
-    // konsisten mengecualikan CANCELLED. Akibatnya nyata: badge VIP (>=Rp5jt)
-    // bisa menyala dari nilai order yang sudah dibatalkan, dan quick filter
-    // "Belum Order" (orderCount === 0) tidak akan menangkap customer yang
-    // SEMUA order-nya batal — padahal secara bisnis mereka belum pernah
-    // benar-benar bertransaksi. `latest`/`sorted` di atas SENGAJA tetap
-    // memakai seluruh order (termasuk CANCELLED) — drawer profil memang
-    // harus menampilkan riwayat order apa adanya, termasuk yang batal.
-    const ordersAktif = orders.filter((o) => o.status !== "CANCELLED");
+    // "Order terbaru" (status/keluhan/merk/ukuran/layanan) + riwayat komplain
+    // — HANYA untuk pelanggan di halaman ini, 1 query ber-`IN`.
+    const ids = customersPage.map((c) => c.id);
+    const orders = ids.length
+      ? await prisma.order.findMany({
+          where: { customerId: { in: ids } },
+          include: {
+            items:         { orderBy: { sortOrder: "asc" } },
+            weightEntries: { orderBy: { sortOrder: "asc" } },
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : [];
+    const ordersByCustomer = {};
+    for (const o of orders) (ordersByCustomer[o.customerId] ||= []).push(o);
 
-    return {
-      ...c,
-      orderCount: ordersAktif.length,
-      orderValue: ordersAktif.reduce((sum, o) => sum + o.value, 0),
-      lastMessageAt: conversations[0]?.lastMessageAt || null,
-      latestOrderStatus:   latest?.status        || null,
-      latestOrderNumber:   latest?.orderNumber   || null,
-      latestPaymentStatus: latest?.paymentStatus || null,
-      latestBeratBadan:    latest?.beratBadan    || null,
-      latestWeightEntries: latest?.weightEntries || [],
-      latestKeluhan,
-      latestMerkKasur,
-      latestUkuranKasur,
-      latestLayanan,
-      pernahKomplain: riwayatKomplain.length > 0,
-      riwayatKomplain,
+    const items = customersPage.map(({ conversations, ...c }) => {
+      const custOrders = ordersByCustomer[c.id] || [];
+      const latest = custOrders[0] || null; // sudah terurut updatedAt desc dari query
+
+      let latestKeluhan = null, latestMerkKasur = null, latestUkuranKasur = null;
+      if (latest?.notes) {
+        try {
+          const n = JSON.parse(latest.notes);
+          latestKeluhan    = n.keluhanCustomer || null;
+          latestMerkKasur  = n.merkKasur       || null;
+          latestUkuranKasur = n.ukuranKasur    || null;
+        } catch {}
+      }
+
+      const latestLayanan = (latest?.items || [])
+        .map((i) => i.layananName)
+        .filter(Boolean)
+        .join(", ") || null;
+
+      const riwayatKomplain = custOrders
+        .filter((o) => o.hasComplaint)
+        .sort((a, b) => new Date(b.complaintDate) - new Date(a.complaintDate))
+        .map((o) => ({
+          orderId:        o.id,
+          orderNumber:    o.orderNumber,
+          complaintDate:  o.complaintDate,
+          complaintDetail: o.complaintDetail,
+        }));
+
+      return {
+        ...c,
+        // orderCount/orderValue SUDAH ada di `c` (kolom denormalized asli),
+        // tidak dihitung ulang di sini lagi.
+        lastMessageAt: conversations[0]?.lastMessageAt || null,
+        latestOrderStatus:   latest?.status        || null,
+        latestOrderNumber:   latest?.orderNumber   || null,
+        latestPaymentStatus: latest?.paymentStatus || null,
+        latestBeratBadan:    latest?.beratBadan    || null,
+        latestWeightEntries: latest?.weightEntries || [],
+        latestKeluhan,
+        latestMerkKasur,
+        latestUkuranKasur,
+        latestLayanan,
+        pernahKomplain: riwayatKomplain.length > 0,
+        riwayatKomplain,
+      };
+    });
+
+    // Jalur lama: array polos, tanpa metadata paginasi — persis bentuk
+    // respons sebelum revisi ini (mobile & export Pengaturan masih
+    // mengandalkan ini apa adanya).
+    if (!isPaginated) return res.json(items);
+
+    const counts = {
+      all: typeGroups.reduce((s, g) => s + g._count._all, 0),
+      endUser: typeGroups.find((g) => g.customerType === "END_USER")?._count._all || 0,
+      korporat: typeGroups.find((g) => g.customerType === "CORPORATE")?._count._all || 0,
     };
-  });
 
-  res.json(result);
+    res.json({ items, total: totalCount, page, pageSize, counts });
+  } catch (err) {
+    console.error("customers list error:", err);
+    res.status(500).json({ error: "Gagal memuat daftar pelanggan" });
+  }
 });
 
 customerRouter.get("/:id", async (req, res) => {
@@ -360,10 +459,15 @@ customerRouter.post("/:id/orders", async (req, res) => {
     },
     include: { items: true },
   });
+  await syncCustomerOrderAggregate(req.params.id);
   res.status(201).json(order);
 });
 
 // Update status / notes / orderNumber order
+// (endpoint lama — UI aktif sekarang pakai PATCH /orders/:id di orders.js;
+// dipertahankan + tetap disinkronkan supaya tidak jadi jalan diam-diam yang
+// membuat Customer.orderCount/orderValue basi kalau ini masih dipanggil
+// lewat integrasi lain di luar UI.)
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
   const { status, notes, quantity, orderNumber } = req.body;
   const order = await prisma.order.update({
@@ -376,6 +480,7 @@ customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
     },
     include: { items: { orderBy: { sortOrder: "asc" } } },
   });
+  await syncCustomerOrderAggregate(order.customerId);
   res.json(order);
 });
 

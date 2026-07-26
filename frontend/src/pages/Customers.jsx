@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Plus, Download } from "lucide-react";
 import { api } from "../api.js";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
@@ -9,137 +9,135 @@ import CustomerFilters from "@/features/customers/components/CustomerFilters.jsx
 import CustomersTable from "@/features/customers/components/CustomersTable.jsx";
 import CustomerCardList from "@/features/customers/components/CustomerCardList.jsx";
 import NewCustomerModal from "@/features/customers/components/NewCustomerModal.jsx";
+import BulkActionBar from "@/features/customers/components/BulkActionBar.jsx";
 import {
   formatRupiah, STAGE_LABELS, SOURCE_LABELS, HEALTH_LABELS,
-  isVIP, daysSinceLastChat, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
 } from "../utils/format.js";
-// Lazy — xlsx + file-saver di balik exportToExcel() cukup besar (~285KB),
-// dynamic import() di titik pakai (bukan static import di atas) supaya
-// hanya diunduh saat tombol Export BENAR-BENAR diklik, bukan ikut terbawa
-// tiap kali halaman ini dibuka.
 
-// Pelanggan "Korporat" = berdasarkan field customerType (bukan tag)
-const isKorporat = (c) => c.customerType === "CORPORATE";
+// Revisi 27 Jul 2026: halaman ini dulu fetch SELURUH 1.320+ pelanggan (dengan
+// relasi order lengkap) sekali di awal, lalu filter/sort/paginasi semuanya di
+// browser. Sekarang search/filter/sort/pagination dikirim ke server lewat
+// query param (?page=...) — lihat komentar panjang di backend/src/routes/
+// customers.js GET / soal kenapa (dan soal 2 caller lama — Pengaturan export
+// & mobile PelangganScreen — yang SENGAJA masih dibiarkan pakai jalur lama
+// tanpa ?page=).
+const DEBOUNCE_MS = 350;
 
-// Wave 5B: halaman ini sekarang ORKESTRATOR — seluruh presentasi pindah ke
-// features/customers/components/*. Semua state & logika filter/sort tetap DI
-// SINI (komponen anak controlled), jadi tidak ada sumber kebenaran kedua.
+function mapTypeTab(typeTab) {
+  if (typeTab === "end-user") return "END_USER";
+  if (typeTab === "korporat") return "CORPORATE";
+  return undefined;
+}
+
 export default function Customers() {
-  const [customers, setCustomers]   = useState([]);
-  const [users, setUsers]           = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({ all: 0, endUser: 0, korporat: 0 });
+  const [users, setUsers] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  // Customer type tab
-  const [typeTab, setTypeTab]       = useState("all"); // "all" | "end-user" | "korporat"
-
-  // Filters
-  const [search, setSearch]         = useState("");
+  const [typeTab, setTypeTab] = useState("all"); // "all" | "end-user" | "korporat"
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [filterStage, setFilterStage]   = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [filterSales, setFilterSales]   = useState("");
   const [filterCity, setFilterCity]     = useState("");
   const [quickChip, setQuickChip]   = useState("");
-
-  // Sort
   const [sortKey, setSortKey]   = useState("updatedAt");
   const [sortDir, setSortDir]   = useState("desc");
-
-  // Pagination
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  // Drawer + modal
+  const [selected, setSelected] = useState(new Set());
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+
   const [drawerCustomerId, setDrawerCustomerId] = useState(null);
   const [showModal, setShowModal]   = useState(false);
   const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState("");
 
+  // Search sekarang memicu request jaringan (bukan filter lokal gratis
+  // seperti sebelumnya) — debounce supaya tidak fetch tiap ketikan.
+  const debounceRef = useRef(null);
+  function handleSearchChange(v) {
+    setSearchInput(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(v.trim());
+      setPage(1);
+    }, DEBOUNCE_MS);
+  }
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  // Sales list & daftar kota — sekali muat, tidak terikat filter/halaman aktif.
   useEffect(() => {
-    Promise.all([api.getCustomers(), api.getUsers()]).then(([c, u]) => {
-      setCustomers(c);
-      setUsers(u);
-      setLoading(false);
-    });
+    api.getUsers().then(setUsers).catch(() => {});
+    api.getCustomerCities().then(setCities).catch(() => {});
   }, []);
 
-  // Unique cities for dropdown
-  const cities = useMemo(() => {
-    const s = new Set(customers.map((c) => c.city).filter(Boolean));
-    return [...s].sort();
-  }, [customers]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const res = await api.getCustomers({
+        page, limit: pageSize,
+        search: search || undefined,
+        stage: filterStage || undefined,
+        source: filterSource || undefined,
+        sales: filterSales || undefined,
+        city: filterCity || undefined,
+        customerType: mapTypeTab(typeTab),
+        quickChip: quickChip || undefined,
+        sortKey, sortDir,
+      });
+      setItems(res.items);
+      setTotal(res.total);
+      setCounts(res.counts);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip, sortKey, sortDir]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Seleksi baris tidak relevan lintas halaman/filter — kosongkan begitu
+  // salah satu berubah supaya tidak ada checkbox "hantu" yang menunjuk
+  // pelanggan yang sudah tidak terlihat di halaman ini.
+  useEffect(() => { setSelected(new Set()); }, [page, search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip]);
 
   const salesUsers = useMemo(() => users.filter((u) => u.role === "SALES"), [users]);
 
-  const counts = useMemo(() => ({
-    all:      customers.length,
-    endUser:  customers.filter((c) => !isKorporat(c)).length,
-    korporat: customers.filter(isKorporat).length,
-  }), [customers]);
-
-  const filtered = useMemo(() => {
-    let list = customers.filter((c) => {
-      // Customer type tab
-      if (typeTab === "end-user"  && isKorporat(c)) return false;
-      if (typeTab === "korporat"  && !isKorporat(c)) return false;
-
-      const q = search.toLowerCase();
-      const matchSearch = !q ||
-        c.name?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.instagramHandle?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q);
-      const matchStage  = !filterStage  || c.pipelineStage === filterStage;
-      const matchSource = !filterSource || c.leadSource    === filterSource;
-      const matchSales  = !filterSales  || c.assignedSalesId === filterSales;
-      const matchCity   = !filterCity   || c.city === filterCity;
-
-      let matchChip = true;
-      if (quickChip === "vip")      matchChip = isVIP(c);
-      if (quickChip === "no-order") matchChip = (c.orderCount || 0) === 0;
-      if (quickChip === "inactive") matchChip = daysSinceLastChat(c.lastMessageAt) > 30;
-
-      return matchSearch && matchStage && matchSource && matchSales && matchCity && matchChip;
-    });
-
-    list = [...list].sort((a, b) => {
-      let av = a[sortKey], bv = b[sortKey];
-      if (typeof av === "string") av = av?.toLowerCase() || "";
-      if (typeof bv === "string") bv = bv?.toLowerCase() || "";
-      av = av ?? ""; bv = bv ?? "";
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-
-    return list;
-  }, [customers, typeTab, search, filterStage, filterSource, filterSales, filterCity, quickChip, sortKey, sortDir]);
-
-  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
-
   function toggleSort(key) {
-    if (sortKey === key) setSortDir((d) => d === "asc" ? "desc" : "asc");
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
     setPage(1);
   }
 
   function resetAllFilters() {
-    setSearch(""); setFilterStage(""); setFilterSource("");
-    setFilterSales(""); setFilterCity(""); setQuickChip(""); setPage(1);
+    setSearchInput(""); setSearch("");
+    setFilterStage(""); setFilterSource("");
+    setFilterSales(""); setFilterCity(""); setQuickChip("");
+    setPage(1);
   }
-
-  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip;
 
   // Setiap perubahan filter WAJIB reset ke halaman 1 — kalau tidak, user bisa
   // terjebak di halaman 5 padahal hasil filter cuma 1 halaman (tampak kosong).
   const withReset = (setter) => (v) => { setter(v); setPage(1); };
 
+  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip;
   const emptyMessage = hasFilters || typeTab !== "all"
     ? "Tidak ada pelanggan yang cocok dengan filter."
     : "Belum ada pelanggan.";
 
   function handleDrawerUpdated(updated) {
-    setCustomers((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+    setItems((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
   }
 
   async function handleCreate(e) {
@@ -147,10 +145,10 @@ export default function Customers() {
     setCreateError("");
     setCreating(true);
     try {
-      const c = await api.createCustomer(newForm);
-      setCustomers((prev) => [{ ...c, orderCount: 0, orderValue: 0 }, ...prev]);
+      await api.createCustomer(newForm);
       setShowModal(false);
       setNewForm({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
+      load(); // refetch — supaya total/urutan/halaman tetap benar dari server
     } catch (err) {
       setCreateError(err.message);
     } finally {
@@ -158,43 +156,88 @@ export default function Customers() {
     }
   }
 
+  // Export sekarang TIDAK bisa lagi memetakan `filtered` di browser (cuma
+  // halaman aktif yang dimuat). Panggil endpoint yang sama TANPA `page` —
+  // otomatis balik ke jalur lama (array polos, SEMUA baris cocok filter,
+  // tidak dipotong halaman) sambil tetap kirim filter yang sedang aktif.
   async function handleExport() {
     const { exportToExcel } = await import("../utils/export.js");
-    const data = filtered.map((c) => ({
-      /* Urutan kolom cocok dengan urutan tabel di halaman */
-      "Nama Pelanggan": c.name || c.phone || c.instagramHandle || "",
-      "ID Order": c.latestOrderNumber || "",
-      "No HP": c.phone || "",
-      Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
-      Email: c.email || "",
-      Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
-      "Status Order": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
-      "Status Pembayaran": PAYMENT_STATUS_LABELS[c.latestPaymentStatus] || "",
-      "Keluhan Terbaru": c.latestKeluhan || "",
-      "Merk Kasur": c.latestMerkKasur || "",
-      "Ukuran Kasur": c.latestUkuranKasur || "",
-      "Berat Badan (kg)": c.latestBeratBadan || "",
-      Layanan: c.latestLayanan || "",
-      // HEALTH_LABELS diimpor dari utils/format.js — sebelumnya didefinisikan
-      // ulang secara lokal di fungsi ini, salinan yang bisa drift.
-      "Status Kesehatan": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
-      Tags: c.tags?.join(", ") || "",
-      "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
-      Kota: c.city || "",
-      "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
-      "Jumlah Order": c.orderCount || 0,
-      "Total Nilai Order": formatRupiah(c.orderValue || 0),
-      "Pernah Komplain": c.pernahKomplain ? "Ya" : "Tidak",
-      "Sales Person": c.assignedSales?.name || "",
-    }));
-    exportToExcel(data, `pelanggan-${typeTab}-${new Date().toISOString().slice(0, 10)}`);
+    try {
+      const rows = await api.getCustomers({
+        search: search || undefined,
+        stage: filterStage || undefined,
+        source: filterSource || undefined,
+        sales: filterSales || undefined,
+        city: filterCity || undefined,
+        customerType: mapTypeTab(typeTab),
+        quickChip: quickChip || undefined,
+      });
+      const data = rows.map((c) => ({
+        /* Urutan kolom cocok dengan urutan tabel di halaman */
+        "Nama Pelanggan": c.name || c.phone || c.instagramHandle || "",
+        "ID Order": c.latestOrderNumber || "",
+        "No HP": c.phone || "",
+        Instagram: c.instagramHandle ? "@" + c.instagramHandle : "",
+        Email: c.email || "",
+        Pipeline: STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "",
+        "Status Order": ORDER_STATUS_LABELS[c.latestOrderStatus] || (c.latestOrderStatus ? c.latestOrderStatus : "Belum Ada Order"),
+        "Status Pembayaran": PAYMENT_STATUS_LABELS[c.latestPaymentStatus] || "",
+        "Keluhan Terbaru": c.latestKeluhan || "",
+        "Merk Kasur": c.latestMerkKasur || "",
+        "Ukuran Kasur": c.latestUkuranKasur || "",
+        "Berat Badan (kg)": c.latestBeratBadan || "",
+        Layanan: c.latestLayanan || "",
+        "Status Kesehatan": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
+        Tags: c.tags?.join(", ") || "",
+        "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
+        Kota: c.city || "",
+        "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
+        "Jumlah Order": c.orderCount || 0,
+        "Total Nilai Order": formatRupiah(c.orderValue || 0),
+        "Pernah Komplain": c.pernahKomplain ? "Ya" : "Tidak",
+        "Sales Person": c.assignedSales?.name || "",
+      }));
+      exportToExcel(data, `pelanggan-${typeTab}-${new Date().toISOString().slice(0, 10)}`);
+    } catch (err) {
+      alert("Gagal export: " + err.message);
+    }
+  }
+
+  // Bulk assign sales — dipanggil per-id lewat endpoint yang sudah ada
+  // (api.updateCustomer), bukan endpoint bulk baru. Wajar untuk puluhan
+  // baris terpilih sekaligus (yang dipilih ada di 1 halaman), bukan
+  // seluruh 1.320+ pelanggan.
+  async function handleBulkAssign(salesId) {
+    setBulkAssigning(true);
+    try {
+      const results = await Promise.allSettled(
+        [...selected].map((id) => api.updateCustomer(id, { assignedSalesId: salesId }))
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      setSelected(new Set());
+      await load();
+      if (failed > 0) alert(`${failed} pelanggan gagal di-assign, sisanya berhasil.`);
+    } finally {
+      setBulkAssigning(false);
+    }
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((c) => c.id))));
+  }
+  function toggleSelectOne(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
 
   return (
     <PageContainer>
       <PageHeader
         title="Pelanggan"
-        subtitle={loading ? "Memuat data pelanggan…" : `${filtered.length} dari ${customers.length} pelanggan`}
+        subtitle={loading ? "Memuat data pelanggan…" : `${total.toLocaleString("id-ID")} pelanggan`}
         actions={
           <>
             <Button variant="ghost" onClick={handleExport} disabled={loading}>
@@ -211,7 +254,7 @@ export default function Customers() {
         <CustomerFilters
           typeTab={typeTab} onTypeTab={withReset(setTypeTab)} counts={counts}
           quickChip={quickChip} onQuickChip={withReset(setQuickChip)}
-          search={search} onSearch={withReset(setSearch)}
+          search={searchInput} onSearch={handleSearchChange}
           filterStage={filterStage} onFilterStage={withReset(setFilterStage)}
           filterSource={filterSource} onFilterSource={withReset(setFilterSource)}
           filterCity={filterCity} onFilterCity={withReset(setFilterCity)}
@@ -220,21 +263,40 @@ export default function Customers() {
           hasFilters={hasFilters} onReset={resetAllFilters}
         />
 
+        {selected.size > 0 && (
+          <BulkActionBar
+            count={selected.size}
+            salesUsers={salesUsers}
+            busy={bulkAssigning}
+            onAssign={handleBulkAssign}
+            onClear={() => setSelected(new Set())}
+          />
+        )}
+
+        {loadError && (
+          <p className="rounded-lg bg-red/10 px-3 py-2 text-[13px] text-red">
+            Gagal memuat data pelanggan: {loadError}
+          </p>
+        )}
+
         {/* Desktop tabel (hidden md:block) & mobile kartu (md:hidden) — aturan
             breakpoint ada DI komponen masing-masing, bukan di index.css. */}
         <CustomersTable
-          rows={paginated} loading={loading} emptyMessage={emptyMessage}
+          rows={items} loading={loading} emptyMessage={emptyMessage}
           sortKey={sortKey} sortDir={sortDir} onSort={toggleSort}
           onOpen={setDrawerCustomerId}
+          selected={selected} onToggleSelect={toggleSelectOne}
+          allSelected={items.length > 0 && selected.size === items.length}
+          onToggleSelectAll={toggleSelectAll}
         />
         <CustomerCardList
-          rows={paginated} loading={loading} emptyMessage={emptyMessage}
+          rows={items} loading={loading} emptyMessage={emptyMessage}
           onOpen={setDrawerCustomerId}
         />
 
-        {!loading && filtered.length > 0 && (
+        {!loading && total > 0 && (
           <Pagination
-            page={page} pageSize={pageSize} total={filtered.length}
+            page={page} pageSize={pageSize} total={total}
             onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1); }}
           />
         )}

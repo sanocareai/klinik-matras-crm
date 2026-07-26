@@ -14,10 +14,12 @@ import {
 // Urutan kolom WAJIB dipertahankan (CLAUDE.md Gelombang 5 poin 1 & 3):
 // Nama → ID Order → No HP → Pipeline → Status Order → Keluhan → Kesehatan → Tags
 // lalu kolom tambahan. Urutan ini juga harus cocok dengan export Excel.
-const COL_COUNT = 14;
+// +1 kolom checkbox seleksi massal (Wave 5B lanjutan — bulk assign sales).
+const COL_COUNT = 15;
 
 export default function CustomersTable({
   rows, loading, emptyMessage, sortKey, sortDir, onSort, onOpen,
+  selected, onToggleSelect, allSelected, onToggleSelectAll,
 }) {
   const dirFor = (key) => (sortKey === key ? sortDir : null);
 
@@ -26,6 +28,14 @@ export default function CustomersTable({
       <Table>
         <THead>
           <TR>
+            <TH className="w-8">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleSelectAll}
+                aria-label="Pilih semua pelanggan di halaman ini"
+              />
+            </TH>
             <TH sortable sortDir={dirFor("name")} onSort={() => onSort("name")}>Nama Pelanggan</TH>
             <TH>ID Order</TH>
             <TH>No HP</TH>
@@ -35,7 +45,7 @@ export default function CustomersTable({
             <TH>Kesehatan</TH>
             <TH>Tags</TH>
             <TH>Tipe</TH>
-            <TH>Kota</TH>
+            <TH sortable sortDir={dirFor("city")} onSort={() => onSort("city")}>Kota</TH>
             <TH numeric sortable sortDir={dirFor("orderCount")} onSort={() => onSort("orderCount")}>Order</TH>
             <TH numeric sortable sortDir={dirFor("orderValue")} onSort={() => onSort("orderValue")}>Nilai Order</TH>
             <TH>Sales Person</TH>
@@ -50,6 +60,14 @@ export default function CustomersTable({
             const korporat = c.customerType === "CORPORATE";
             return (
               <TR key={c.id} clickable onClick={() => onOpen(c.id)}>
+                <TD onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected?.has(c.id) || false}
+                    onChange={() => onToggleSelect(c.id)}
+                    aria-label={`Pilih ${displayName}`}
+                  />
+                </TD>
                 <TD>
                   <div className="flex items-center gap-2.5">
                     <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />

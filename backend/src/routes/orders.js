@@ -5,18 +5,25 @@ import { requireAuth } from "../middleware/auth.js";
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
 
-// Helper: hitung ulang Order.value = SUM semua items, update ke DB
+// Helper: hitung ulang Order.value = SUM semua items, update ke DB, LALU
+// sinkronkan Customer.orderCount/orderValue (dipakai 3 endpoint di bawah:
+// tambah/ubah/hapus item layanan — sentralisasi di sini supaya sync-nya
+// tidak perlu diulang manual di tiap endpoint).
 async function syncOrderValue(orderId) {
   const agg = await prisma.orderItem.aggregate({
     where: { orderId },
     _sum: { harga: true },
   });
   const total = agg._sum.harga || 0;
-  await prisma.order.update({ where: { id: orderId }, data: { value: total } });
+  const order = await prisma.order.update({
+    where: { id: orderId }, data: { value: total }, select: { customerId: true },
+  });
+  await syncCustomerOrderAggregate(order.customerId);
   return total;
 }
 
@@ -74,6 +81,12 @@ orderRouter.patch("/:id", async (req, res) => {
 
       return updated;
     });
+
+    // Di LUAR transaksi (sync-nya sendiri melakukan query & update terpisah,
+    // tidak perlu ikut atomicity dengan update order — kalau sync gagal,
+    // order-nya sendiri tetap berhasil tersimpan, cuma kolom denormalized
+    // Customer sesaat tidak sinkron sampai order berikutnya di-sentuh).
+    await syncCustomerOrderAggregate(order.customerId);
 
     res.json(order);
   } catch (err) {
@@ -246,7 +259,10 @@ orderRouter.get("/:id/timeline", async (req, res) => {
 // DELETE /api/orders/:id — hapus order beserta items & weightEntries (cascade via FK)
 orderRouter.delete("/:id", async (req, res) => {
   try {
-    await prisma.order.delete({ where: { id: req.params.id } });
+    // customerId diambil SEBELUM delete — setelah dihapus tidak ada lagi
+    // jalan untuk tahu order ini tadinya milik customer mana.
+    const existing = await prisma.order.delete({ where: { id: req.params.id } });
+    await syncCustomerOrderAggregate(existing.customerId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

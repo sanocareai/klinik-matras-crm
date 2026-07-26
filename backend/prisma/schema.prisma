@@ -199,6 +199,23 @@ model Customer {
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
 
+  // Revisi 27 Jul 2026: DENORMALIZED dari tabel Order (bukan sumber
+  // kebenaran — sumber kebenaran tetap Order.value/status), disinkronkan
+  // lewat services/customerOrderAggregate.js SETIAP kali order berubah
+  // (buat/hapus/ubah status atau value, tambah/ubah/hapus item layanan).
+  // CANCELLED dikecualikan dari keduanya — konsisten dengan definisi yang
+  // sudah dipakai di analytics/sales-report/GET pipeline board.
+  //
+  // KENAPA didenormalisasi (bukan dihitung on-the-fly tiap request seperti
+  // sebelumnya): tabel Pelanggan (1.320+ baris & terus bertambah) butuh
+  // filter ("Belum Order"), sort ("Nilai Order" terbesar), DAN paginasi di
+  // level DATABASE secara bersamaan. Prisma tidak bisa mem-filter/mengurutkan
+  // findMany berdasarkan SUM relasi yang difilter (WHERE status != CANCELLED)
+  // tanpa raw SQL — kolom asli di sini membuat WHERE/ORDER BY/LIMIT jadi query
+  // Postgres biasa, bukan agregasi ulang tiap kali halaman dibuka.
+  orderCount Int @default(0)
+  orderValue Int @default(0)
+
   conversations Conversation[]
   notes         Note[]
   orders        Order[]
@@ -206,6 +223,8 @@ model Customer {
   pipelineTransitions PipelineTransition[]
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
+  @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
+  @@index([orderCount]) // filter cepat "Belum Order" (orderCount = 0)
 }
 
 // Log SETIAP perpindahan pipeline stage seorang customer (NEW → QUALIFIED →

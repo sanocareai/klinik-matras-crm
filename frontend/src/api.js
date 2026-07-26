@@ -175,6 +175,7 @@ export const api = {
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),
+  getCustomerCities: () => request("/customers/meta/cities"),
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (data) =>
     request("/customers", { method: "POST", body: JSON.stringify(data) }),
