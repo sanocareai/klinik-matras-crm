@@ -2,34 +2,35 @@ import React from "react";
 import { cn } from "@/lib/utils.js";
 
 // ─── FUNNEL (DS v2.1) ────────────────────────────────────────────────────────
-// Funnel trapesium: tiap tahap menyempit, angka besar di dalam segmen, label +
-// nilai di kanan. Bentuknya dibuat dengan clip-path (bukan SVG) supaya teks di
-// dalamnya tetap teks HTML biasa — bisa dipilih, di-scale, dan dibaca screen
-// reader tanpa trik tambahan.
+// Corong trapesium: tiap tahap menyempit, angka di dalam segmen, label di kanan.
 //
-// WARNA — referensi memakai 4 hue berbeda (biru/ungu/oranye/hijau). Di sini
-// SATU keluarga biru, yang berbeda kedalamannya: makin ke bawah makin PEKAT.
-// Alasannya bukan cuma keseragaman: tahap paling bawah (Berhasil) adalah yang
-// paling bernilai, jadi warna terpekat mendarat di tempat yang paling penting.
-// Gradasi terang→gelap juga otomatis membaca sebagai "menyaring/mengerucut".
-// Dua tahap pertama pakai tint (teks biru gelap di atasnya), tahap yang makin
-// dalam pakai ISIAN PADAT + teks putih. Isian padat memakai token khusus yang
-// tetap pekat di mode gelap — kalau memakai blue-600/700 langsung, di dark
-// mode nilainya justru menerang dan teks putihnya gagal kontras.
+// PERBAIKAN dari versi pertama — di produksi bentuknya salah:
+//  1. Segmen di-render `width: <persen>%` DI DALAM kolom sempit, jadi
+//     penyempitannya nyaris tidak terlihat (semua terlihat seperti bar).
+//     Sekarang SEMUA segmen selebar kolom, dan yang menyempit adalah BENTUK-nya
+//     lewat clip-path — jadi tepinya benar-benar miring dan menyatu.
+//  2. Label di kanan kena truncate ("Pros...", "Offers/Negosi..."). Kolom label
+//     sekarang punya lebar tetap yang cukup dan tidak lagi ikut menyusut.
+//
+// WARNA: satu keluarga biru, makin ke bawah makin PEKAT — tahap terbawah
+// (Berhasil) paling bernilai, jadi warna terkuat mendarat di tempat terpenting.
 const RAMP = [
   "bg-blue-200 text-blue-900",
   "bg-blue-300 text-blue-900",
-  "bg-bluesolid/80 text-bluesolidink",
+  "bg-bluesolid/85 text-bluesolidink",
   "bg-bluesolid text-bluesolidink",
   "bg-bluesolid text-bluesolidink",
 ];
 
-// Lebar tiap segmen menyempit bertahap (100% → 60%). Dihitung, bukan dihardcode,
-// supaya funnel dengan 3/4/5 tahap tetap proporsional.
-function lebarSegmen(i, total) {
-  if (total <= 1) return 100;
-  const min = 60;
-  return 100 - ((100 - min) * i) / (total - 1);
+// Persentase inset tiap sisi per tahap: 0% (kotak penuh) → menyempit bertahap.
+// Nilai maksimum 18% per sisi supaya tahap terakhir masih cukup lebar untuk
+// menampung angka 4 digit tanpa terpotong.
+function insetPersen(i, total) {
+  if (total <= 1) return [0, 0];
+  const maks = 18;
+  const atas = (maks * i) / (total - 1);
+  const bawah = (maks * (i + 1)) / (total - 1);
+  return [atas, Math.min(bawah, maks)];
 }
 
 export default function Funnel({ stages = [], className }) {
@@ -37,32 +38,32 @@ export default function Funnel({ stages = [], className }) {
   if (n === 0) return null;
 
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex flex-col gap-1", className)}>
       {stages.map((s, i) => {
-        const w = lebarSegmen(i, n);
-        const wNext = lebarSegmen(i + 1, n);
-        // Sisi kiri-kanan miring mengikuti selisih lebar segmen berikutnya —
-        // itu yang membuat tumpukan terlihat menyatu jadi satu corong.
-        const inset = n > 1 ? Math.max(0, (w - wNext) / 2 / w * 100) : 0;
-
+        const [insetAtas, insetBawah] = insetPersen(i, n);
         return (
-          <div key={s.key ?? i} className="flex items-center gap-3">
-            <div className="relative shrink-0" style={{ width: `${w}%`, minWidth: 96 }}>
+          <div key={s.key ?? i} className="flex items-stretch gap-3">
+            {/* Segmen: selalu selebar kolomnya; yang menyempit adalah bentuknya. */}
+            <div className="min-w-0 flex-1">
               <div
                 className={cn(
-                  "flex h-11 items-center justify-center text-[17px] font-bold tabular-nums",
+                  "flex h-12 items-center justify-center text-[17px] font-bold tabular-nums",
                   RAMP[i] || RAMP[RAMP.length - 1]
                 )}
                 style={{
-                  clipPath: `polygon(0 0, 100% 0, ${100 - inset}% 100%, ${inset}% 100%)`,
+                  clipPath: `polygon(${insetAtas}% 0, ${100 - insetAtas}% 0, ${100 - insetBawah}% 100%, ${insetBawah}% 100%)`,
                 }}
               >
-                {s.count}
+                {typeof s.count === "number" ? s.count.toLocaleString("id-ID") : s.count}
               </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="t-body truncate font-medium leading-tight">{s.label}</p>
-              {s.value != null && <p className="t-secondary truncate">{s.value}</p>}
+
+            {/* Kolom label: lebar TETAP supaya nama tahap tidak pernah terpotong. */}
+            <div className="flex w-[132px] shrink-0 flex-col justify-center">
+              <p className="text-[13px] font-semibold leading-tight text-ink">{s.label}</p>
+              {s.value != null && (
+                <p className="t-secondary mt-0.5 text-[11px] tabular-nums">{s.value}</p>
+              )}
             </div>
           </div>
         );

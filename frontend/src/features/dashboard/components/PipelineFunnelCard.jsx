@@ -28,12 +28,12 @@ export default function PipelineFunnelCard({ funnel = [], loading, periodLabel =
 
   return (
     <SectionCard
-      title="Corong Pipeline"
+      title="Deal Pipeline"
       action={<FilterPill>{periodLabel}</FilterPill>}
       footer={
         <div className="flex items-center justify-between">
-          <span className="t-body">Tingkat Konversi</span>
-          <span className="text-[17px] font-bold tabular-nums text-accent">
+          <span className="t-body">Conversion Rate</span>
+          <span className="text-[17px] font-bold tabular-nums text-blue-700">
             {konversi != null ? `${konversi}%` : "—"}
           </span>
         </div>

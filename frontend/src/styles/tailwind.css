@@ -19,7 +19,7 @@
      Geist DILEPAS sesuai spec redesign; paket @fontsource masih terpasang di
      package.json tapi tidak lagi jadi font UI (lihat catatan migrasi).
      Mono tetap Geist Mono untuk angka/data mentah. */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter Variable', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
 
   --color-brand-50:  #EAF2FC;

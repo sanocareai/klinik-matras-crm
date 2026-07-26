@@ -31,7 +31,7 @@ export default function TaskQueueCard({ items = [], loading, error }) {
 
   return (
     <SectionCard
-      title="Perlu Ditindak"
+      title="Needs Action"
       footer={<ViewAllLink onClick={() => navigate("/inbox")}>Buka Inbox</ViewAllLink>}
     >
       {loading ? (

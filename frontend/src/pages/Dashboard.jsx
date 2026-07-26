@@ -54,37 +54,32 @@ export default function Dashboard({ user }) {
         {/* ── KPI ── gradasi kedalaman 1→4 di satu baris */}
         <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard
-            label="Pelanggan Baru" icon={Users} depth={1}
+            label="New Leads" icon={Users} depth={1}
             value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
             delta={ov?.growthCustomers}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
           />
           <StatCard
-            label="Total Order" icon={ShoppingCart} depth={2}
+            label="Total Orders" icon={ShoppingCart} depth={2}
             value={(ov?.totalOrders ?? 0).toLocaleString("id-ID")}
             delta={ov?.growthOrders}
           />
           <StatCard
-            label="Nilai Penjualan" icon={Wallet} depth={3}
+            label="Revenue" icon={Wallet} depth={3}
             value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
             delta={ov?.growthOrderValue}
           />
           <StatCard
-            label="Konversi" icon={Target} depth={4}
+            label="Conversion" icon={Target} depth={4}
             value={`${konversi}%`}
             deltaSuffix="pelanggan yang order"
           />
         </section>
 
         {/* ── Ringkasan penjualan (lebar penuh) ── */}
-        <RevenueOverview
-          total={ov?.totalOrderValue ?? 0}
-          delta={ov?.growthOrderValue}
-          series={ov?.monthlyRevenue ?? []}
-          periodLabel={label}
-          loading={d.overview.isLoading}
-          error={d.overview.isError}
-        />
+        {/* RevenueOverview mengambil deretnya SENDIRI (harian) + punya
+            pemilih periode sendiri — lihat komponennya. */}
+        <RevenueOverview />
 
         {/* ── Dua kolom: corong + leaderboard ── */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">

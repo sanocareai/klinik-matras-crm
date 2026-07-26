@@ -151,7 +151,7 @@
 
   /* Font stack sistem Apple. Geist (dipakai v1) dilepas di sini SESUAI SPEC —
      lihat catatan migrasi; ini perubahan tampilan yang terlihat. */
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", Inter,
              system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -284,6 +284,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESET KONTROL — WAJIB, karena Tailwind preflight SENGAJA DIMATIKAN
+   ═══════════════════════════════════════════════════════════════════════════
+   Tanpa preflight, <button> & <input> masih memakai gaya bawaan BROWSER:
+     border: 2px outset ButtonBorder · background: ButtonFace (abu) ·
+     font: 400 13.333px Arial
+   Akibat nyatanya terlihat di produksi: sel kalender date picker jadi KOTAK
+   abu ber-border, link "Lihat semua" jadi pil kosong, dan teks di dalam tombol
+   memakai Arial 13.3px sehingga tangga tipe tidak konsisten.
+
+   Komponen lama tidak terpengaruh: semuanya sudah menetapkan background/border
+   sendiri lewat class (.btn, .quick-chip, dst) yang menang atas reset ini.
+   `font: inherit` justru MEMPERBAIKI mereka — teks tombol jadi ikut font UI,
+   bukan Arial bawaan browser. */
+button, [type="button"], [type="submit"], [type="reset"] {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+button:disabled { cursor: not-allowed; }
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+/* Hilangkan tampilan bawaan OS pada select/date supaya ikut permukaan DS. */
+select { appearance: none; -webkit-appearance: none; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+
 /* Transisi halus saat tema ditukar — HANYA warna, dan hanya di permukaan.
    Tidak diterapkan ke `*` supaya tidak mengganggu animasi lain. */
 body, .card-surface, .card-inset {
@@ -387,16 +420,60 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   border: none !important;
 }
 
-/* ── SIDEBAR: item aktif = blok accent-bg membulat, BUKAN strip border ──────
-   Spec Step 4. `.nav-pill` adalah elemen pill framer-motion di SidebarLink.jsx. */
+/* ── SIDEBAR: bersih & minimalis (DS v2.2) ─────────────────────────────────
+   Keluhan dari tangkapan layar produksi: sidebar terlihat "berantakan" —
+   ikon dengan ketebalan garis campur-aduk, badge/dot tambahan, dan aksen
+   violet AI yang jadi hue liar di antara ikon biru.
+
+   Perbaikan di sini:
+   • SEMUA ikon nav satu ketebalan garis (1.75) dan satu warna. Ikon lucide
+     mewarisi stroke-width dari CSS, jadi bisa diseragamkan tanpa menyentuh
+     ~20 pemanggilan <Icon/>.
+   • Ikon AI tidak lagi violet — ikut keluarga biru (aturan satu accent).
+   • Dot penanda AI dihapus: itu titik dekoratif yang tidak menyampaikan
+     status apa pun, dan justru sumber kesan "ramai".
+   • Item aktif = blok accent-bg membulat, tanpa strip border. */
 .nav-pill {
   background: var(--accent-bg) !important;
   border: none !important;
   border-radius: var(--r-md) !important;
   box-shadow: none !important;
 }
-.sidebar-link.active { color: var(--accent) !important; }
+.sidebar-link.active { color: var(--accent) !important; font-weight: 600; }
 .sidebar-link:hover:not(.active) { background: var(--bg-hover); }
+
+.sidebar-link .nav-icon,
+.sidebar-link .nav-icon-ai {
+  stroke-width: 1.75 !important;
+  opacity: 1 !important;
+  color: var(--text-secondary) !important;
+}
+.sidebar-link.active .nav-icon,
+.sidebar-link.active .nav-icon-ai { color: var(--accent) !important; }
+/* Dot dekoratif AI dihapus — tidak membawa informasi. */
+.nav-ai-dot { display: none !important; }
+
+/* Brand & tombol collapse: tenang, tanpa kotak/garis. */
+.sidebar-brand-icon, .sidebar-collapse-btn, .sidebar-close-mobile {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.sidebar-collapse-btn:hover, .sidebar-close-mobile:hover { background: var(--bg-hover) !important; }
+.sidebar-brand-sub { color: var(--text-tertiary) !important; }
+/* Label seksi: kecil, uppercase, tenang (tangga tipe caption). */
+.sidebar-section-label {
+  font-size: 11px !important; font-weight: 500 !important;
+  text-transform: uppercase !important; letter-spacing: 0.05em !important;
+  color: var(--text-tertiary) !important;
+}
+/* Profil di footer: blok inset lembut, bukan kartu ber-border. */
+.sidebar-profile {
+  background: transparent !important; border: none !important;
+  border-radius: var(--r-md) !important;
+}
+.sidebar-profile:hover { background: var(--bg-hover) !important; }
+.sidebar { border-right: none !important; box-shadow: none !important; }
 
 /* ── INBOX: daftar chat & jendela chat ─────────────────────────────────────
    Spec Step 4: tanpa border, pemisah baris hairline, indikator belum dibaca

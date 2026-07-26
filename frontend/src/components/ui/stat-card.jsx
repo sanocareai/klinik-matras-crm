@@ -1,32 +1,41 @@
 import React from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { Card } from "./card.jsx";
-import IconTile from "./icon-tile.jsx";
 import { cn } from "@/lib/utils.js";
 
-// ─── STAT CARD (DS v2.1) — kartu KPI ─────────────────────────────────────────
-// Susunan mengikuti referensi, dari atas ke bawah:
-//   ubin ikon bertint → label kecil abu → ANGKA BESAR → delta + "vs periode".
+// ─── STAT CARD (DS v2.2) — kartu KPI berisian penuh ──────────────────────────
+// Gaya mengikuti kartu metrik Google Ads: BLOK BERWARNA PENUH, bukan kartu
+// putih dengan ubin ikon kecil. Yang berbeda dari Google Ads: di sana tiap blok
+// hue-nya lain (biru/merah/kuning/hijau); di sini SATU keluarga biru dengan
+// KEDALAMAN bertingkat — seragam tapi tetap membentuk gradasi terang→gelap.
 //
-// Urutan itu penting: ikon dulu memberi jangkar visual, angka jadi elemen
-// paling dominan, konteks (delta) paling akhir dan paling kecil. Itu sebabnya
-// kartu ini bisa dibaca sekilas tanpa membaca labelnya.
-//
-// `depth` mengatur kedalaman ubin — pemanggil menaikkannya berurutan (1,2,3,4)
-// supaya satu baris KPI membentuk gradasi terang→gelap yang seragam.
+// depth 1..2 = tint terang, teks biru gelap
+// depth 3..4 = biru pekat, teks putih
+// Semua pasangan bg/teks di bawah sudah dicek kontrasnya untuk light & dark.
+const SKIN = {
+  1: { box: "bg-blue-100",  label: "text-blue-800/70", value: "text-blue-900", icon: "bg-blue-200 text-blue-800",  sub: "text-blue-800/60" },
+  2: { box: "bg-blue-200",  label: "text-blue-900/70", value: "text-blue-900", icon: "bg-blue-300 text-blue-900",  sub: "text-blue-900/60" },
+  3: { box: "bg-bluesolid/85", label: "text-white/75", value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/65" },
+  4: { box: "bg-bluesolid", label: "text-white/75",    value: "text-white",    icon: "bg-white/20 text-white",     sub: "text-white/65" },
+};
+
 export default function StatCard({
-  label, value, icon, depth = 1, delta, deltaSuffix = "vs minggu lalu",
+  label, value, icon: Icon, depth = 1, delta, deltaSuffix = "vs last week",
   onClick, className,
 }) {
+  const s = SKIN[depth] || SKIN[1];
   const adaDelta = delta != null && Number.isFinite(delta);
   const naik = adaDelta && delta >= 0;
   const Arrow = naik ? TrendingUp : TrendingDown;
+  // Di blok pekat (depth 3–4), hijau/merah semantik tidak cukup kontras di atas
+  // biru tua — delta-nya dibuat putih dan arah dibaca dari ikon panahnya.
+  const gelap = depth >= 3;
 
   return (
-    <Card
+    <div
       className={cn(
-        "flex flex-col gap-3 p-5",
-        onClick && "cursor-pointer transition-shadow hover:shadow-popover",
+        "flex flex-col gap-3 rounded-card p-5 shadow-card transition-shadow",
+        s.box,
+        onClick && "cursor-pointer hover:shadow-popover",
         className
       )}
       onClick={onClick}
@@ -34,28 +43,32 @@ export default function StatCard({
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
     >
-      <IconTile icon={icon} depth={depth} size="md" />
+      <span className={cn("inline-flex h-10 w-10 items-center justify-center rounded-chip", s.icon)}>
+        {Icon && <Icon size={19} strokeWidth={2} />}
+      </span>
 
       <div>
-        <p className="t-secondary">{label}</p>
-        {/* Angka: tabular-nums supaya digit tidak bergeser saat count-up. */}
-        <p className="t-metric mt-1">{value}</p>
+        <p className={cn("text-[13px] font-medium", s.label)}>{label}</p>
+        <p className={cn("mt-1 text-[30px] font-bold leading-none tracking-[-0.02em] tabular-nums", s.value)}>
+          {value}
+        </p>
       </div>
 
       {adaDelta && (
         <div className="flex items-baseline gap-1.5">
-          {/* Hijau/merah di sini MAKNA (naik/turun), bukan dekorasi — satu dari
-              tiga warna semantik yang diizinkan di samping tangga biru. */}
           <span className={cn(
             "inline-flex items-center gap-0.5 text-[13px] font-semibold tabular-nums",
-            naik ? "text-green" : "text-red"
+            gelap ? "text-white" : naik ? "text-green" : "text-red"
           )}>
             <Arrow size={13} strokeWidth={2.5} />
             {naik ? "+" : ""}{Number(delta).toFixed(1)}%
           </span>
-          <span className="t-secondary text-[11px]">{deltaSuffix}</span>
+          <span className={cn("text-[11px]", s.sub)}>{deltaSuffix}</span>
         </div>
       )}
-    </Card>
+      {!adaDelta && deltaSuffix && (
+        <span className={cn("text-[11px]", s.sub)}>{deltaSuffix}</span>
+      )}
+    </div>
   );
 }

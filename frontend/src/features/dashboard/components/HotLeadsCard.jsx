@@ -25,7 +25,7 @@ export default function HotLeadsCard({ items = [], loading, error }) {
 
   return (
     <SectionCard
-      title="Lead Panas"
+      title="Hot Leads"
       footer={<ViewAllLink onClick={() => navigate("/pipeline")}>Buka Pipeline</ViewAllLink>}
     >
       {loading ? (
@@ -54,7 +54,7 @@ export default function HotLeadsCard({ items = [], loading, error }) {
                     Ditampilkan supaya skornya tidak terasa seperti angka buram. */}
                 <p className="t-secondary truncate">{l.reason}</p>
               </div>
-              <span className="shrink-0 text-[13px] font-bold tabular-nums text-accent">
+              <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
                 {l.valueEstimate ? formatRupiahShort(l.valueEstimate) : `${l.score}`}
               </span>
             </button>

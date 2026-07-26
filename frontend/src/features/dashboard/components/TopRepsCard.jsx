@@ -18,7 +18,7 @@ export default function TopRepsCard({ data = [], loading, error, periodLabel = "
 
   return (
     <SectionCard
-      title="Sales Terbaik"
+      title="Top Performing Reps"
       action={<FilterPill>{periodLabel}</FilterPill>}
       footer={<ViewAllLink onClick={() => navigate("/laporan")}>Lihat semua sales</ViewAllLink>}
     >
@@ -37,7 +37,7 @@ export default function TopRepsCard({ data = [], loading, error, periodLabel = "
               <RankBadge rank={i + 1} />
               <Avatar name={r.name} src={r.avatarUrl} size="sm" />
               <span className="t-body min-w-0 flex-1 truncate font-medium">{r.name}</span>
-              <span className="shrink-0 text-[13px] font-bold tabular-nums text-accent">
+              <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
                 {formatRupiah(r.totalOrderValue || 0)}
               </span>
               <span className="t-secondary w-16 shrink-0 text-right text-[11px]">

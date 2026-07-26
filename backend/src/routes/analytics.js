@@ -480,6 +480,75 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   }
 });
 
+// ── GET /analytics/revenue-series?from=&to= ────────────────────────────────
+// Deret pendapatan untuk grafik "Sales Overview".
+//
+// MASALAH YANG DIPERBAIKI: kartu itu tadinya memakai `monthlyRevenue` dari
+// /overview, yang SELALU 6 bulan terakhir dan mengabaikan rentang yang dipilih.
+// Di produksi data order baru terkumpul 1 bulan → deretnya hanya 1 titik →
+// Recharts tidak bisa menggambar garis dari satu titik, jadi grafiknya tampak
+// KOSONG (hanya satu dot). Endpoint ini memberi granularitas HARIAN sehingga
+// rentang 30 hari menghasilkan 30 titik.
+//
+// Granularitas otomatis: <= 92 hari → HARIAN, lebih panjang → BULANAN.
+// Alasannya praktis: 1 tahun harian = 365 titik yang tidak terbaca di kartu
+// selebar itu, sedangkan 30 hari bulanan = 1 titik (bug yang sama terulang).
+//
+// Bucket kosong DIISI 0 — kalau hari tanpa order dilewati, garisnya akan
+// "melompat" dan menyesatkan (terlihat seperti penjualan kontinu).
+analyticsRouter.get("/revenue-series", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const sekarang = nowPartsWIB();
+    const mulai   = from ? startOfDayWIB(from) : startOfMonthWIB(sekarang.year, sekarang.month);
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
+
+    const totalHari = Math.max(1, Math.round((selesai - mulai) / 86_400_000));
+    const harian = totalHari <= 92;
+
+    // date_trunc di zona WIB — lihat catatan bucket WIB di /overview.
+    const rows = harian
+      ? await prisma.$queryRaw`
+          SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                 COALESCE(SUM(value), 0)::bigint AS value
+          FROM "Order"
+          WHERE status != 'CANCELLED' AND "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+          GROUP BY 1 ORDER BY 1`
+      : await prisma.$queryRaw`
+          SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                 COALESCE(SUM(value), 0)::bigint AS value
+          FROM "Order"
+          WHERE status != 'CANCELLED' AND "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+          GROUP BY 1 ORDER BY 1`;
+
+    const map = Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)]));
+
+    // Bangun deret LENGKAP (termasuk bucket bernilai 0).
+    const points = [];
+    if (harian) {
+      for (let t = mulai.getTime(); t < selesai.getTime(); t += 86_400_000) {
+        // Nama bucket harus dihitung di WIB, bukan UTC, supaya cocok dgn SQL.
+        const b = new Date(t + 7 * 3600_000).toISOString().slice(0, 10);
+        points.push({ bucket: b, value: map[b] || 0 });
+      }
+    } else {
+      let y = mulai.getUTCFullYear(), m = mulai.getUTCMonth() + 1;
+      const akhir = new Date(selesai.getTime() - 1);
+      while (y < akhir.getUTCFullYear() || (y === akhir.getUTCFullYear() && m <= akhir.getUTCMonth() + 1)) {
+        const b = `${y}-${String(m).padStart(2, "0")}`;
+        points.push({ bucket: b, value: map[b] || 0 });
+        m++; if (m > 12) { m = 1; y++; }
+      }
+    }
+
+    const total = points.reduce((s, p) => s + p.value, 0);
+    res.json({ granularity: harian ? "day" : "month", points, total });
+  } catch (err) {
+    console.error("revenue-series error:", err);
+    res.status(500).json({ error: "Gagal memuat deret pendapatan" });
+  }
+});
+
 // ── GET /analytics/pipeline-velocity?from=&to= ─────────────────────────────
 // Sisi WAKTU dari pipeline — pembaca pertama tabel pipeline_transitions.
 // /pipeline-funnel menjawab "berapa banyak di stage X SEKARANG"; endpoint ini

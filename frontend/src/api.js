@@ -221,6 +221,10 @@ export const api = {
   // pipeline_transitions. Data baru terkumpul sejak 25 Juli 2026, tidak
   // bisa di-backfill; respons menyertakan dataStartedAt untuk empty state.
   getAnalyticsPipelineVelocity: (params) => request("/analytics/pipeline-velocity" + buildQuery(params)),
+  // Deret pendapatan HARIAN (atau bulanan kalau rentang > 92 hari) untuk grafik
+  // Sales Overview. Menggantikan pemakaian monthlyRevenue di kartu itu, yang
+  // selalu 6 bulan & mengabaikan rentang terpilih (grafik jadi 1 titik/kosong).
+  getRevenueSeries: (params) => request("/analytics/revenue-series" + buildQuery(params)),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
