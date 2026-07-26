@@ -12,8 +12,11 @@ const ErrState = () => (
 function pctOf(r) {
   return r.percentToTarget ?? (r.target > 0 ? Math.round(((r.totalOrderValue || 0) / r.target) * 100) : 0);
 }
-function variantOf(pct) {
-  return pct >= 100 ? "success" : pct >= 60 ? "brand" : pct >= 30 ? "warning" : "danger";
+// DS v2: progress ke target SELALU accent. Mewarnai merah/oranye tiap kali di
+// bawah target membuat dashboard terlihat alarm terus-menerus dan membuat warna
+// semantik kehilangan arti. Angka persennya sendiri sudah menyampaikan posisi.
+function variantOf() {
+  return "accent";
 }
 
 // Kesehatan Tim — ROLE-AWARE:
@@ -33,12 +36,12 @@ export default function TeamHealth({ data, loading, error, user }) {
       <Card className="flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center gap-1.5">
-            <Target size={15} className="text-brand-600" /> Target Saya
+            <Target size={15} className="text-ink3" /> Target Saya
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />
+            <div className="h-28 animate-pulse rounded-btn bg-inset" />
           ) : error ? (
             <ErrState />
           ) : !me || !me.target ? (
@@ -46,13 +49,13 @@ export default function TeamHealth({ data, loading, error, user }) {
           ) : (
             <div className="flex flex-col gap-3">
               <div className="flex items-end justify-between">
-                <span className="text-[34px] font-bold leading-none tabular-nums text-slate-900">{pct}%</span>
-                <span className="pb-1 text-[12px] text-slate-400">bulan ini</span>
+                <span className="t-metric">{pct}%</span>
+                <span className="t-secondary pb-1">bulan ini</span>
               </div>
-              <ProgressBar value={pct} variant={variantOf(pct)} />
-              <div className="flex justify-between text-[12px]">
-                <span className="tabular-nums text-slate-500">{formatRupiah(me.totalOrderValue || 0)} / {formatRupiah(me.target)}</span>
-                <span className="tabular-nums font-semibold text-slate-700">Sisa {formatRupiahShort(remaining)}</span>
+              <ProgressBar value={pct} variant={variantOf()} />
+              <div className="flex justify-between text-[13px]">
+                <span className="tabular-nums text-ink2">{formatRupiah(me.totalOrderValue || 0)} / {formatRupiah(me.target)}</span>
+                <span className="tabular-nums font-medium text-ink">Sisa {formatRupiahShort(remaining)}</span>
               </div>
             </div>
           )}
@@ -66,12 +69,12 @@ export default function TeamHealth({ data, loading, error, user }) {
     <Card className="flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          <Users size={15} className="text-brand-600" /> Kesehatan Tim Sales
+          <Users size={15} className="text-ink3" /> Kesehatan Tim Sales
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3.5">
         {loading ? (
-          [...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 44, borderRadius: 10 }} />)
+          [...Array(3)].map((_, i) => <div key={i} className="h-11 animate-pulse rounded-btn bg-inset" />)
         ) : error ? (
           <ErrState />
         ) : rows.length === 0 ? (
@@ -82,11 +85,11 @@ export default function TeamHealth({ data, loading, error, user }) {
             return (
               <div key={r.userId} className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-[13px]">
-                  <span className="font-medium text-slate-700">{r.name}</span>
-                  <span className="tabular-nums font-semibold text-slate-900">{pct}%</span>
+                  <span className="text-ink">{r.name}</span>
+                  <span className="text-right tabular-nums font-semibold text-ink">{pct}%</span>
                 </div>
-                <ProgressBar value={pct} variant={variantOf(pct)} />
-                <div className="flex justify-between text-[11px] tabular-nums text-slate-400">
+                <ProgressBar value={pct} variant={variantOf()} />
+                <div className="flex justify-between text-[11px] tabular-nums text-ink3">
                   <span>{formatRupiahShort(r.totalOrderValue || 0)}</span>
                   <span>target {formatRupiahShort(r.target || 0)}</span>
                 </div>

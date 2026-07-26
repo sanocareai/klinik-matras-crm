@@ -26,7 +26,7 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
 
   if (rows.length === 0) {
     return (
-      <p className="py-10 text-center text-[13px] text-slate-400 md:hidden">{emptyMessage}</p>
+      <p className="py-10 text-center text-[13px] text-ink3 md:hidden">{emptyMessage}</p>
     );
   }
 
@@ -39,19 +39,19 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
             key={c.id}
             type="button"
             onClick={() => onOpen(c.id)}
-            className="w-full rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm transition-colors duration-100 active:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+            className="w-full rounded-2xl bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <div className="flex items-start gap-2.5">
               <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
-                  <span className="truncate text-[13px] font-semibold text-slate-800">{displayName}</span>
+                  <span className="truncate text-[13px] font-semibold text-ink">{displayName}</span>
                   {c.pernahKomplain && (
-                    <AlertTriangle size={12} className="shrink-0 text-chart-rose" title="Pernah komplain" />
+                    <AlertTriangle size={12} className="shrink-0 text-red" title="Pernah komplain" />
                   )}
                   {isVIP(c) && <Badge variant="violet">VIP</Badge>}
                 </div>
-                <p className="mt-0.5 truncate text-[11px] tabular-nums text-slate-400">
+                <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3">
                   {formatPhoneDisplay(c.phone) || (c.instagramHandle ? "@" + c.instagramHandle : "—")}
                 </p>
               </div>
@@ -60,10 +60,10 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
               </Badge>
             </div>
 
-            <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-50 pt-2 text-[11px]">
-              <span className="truncate text-slate-400">{c.city || "Kota belum diisi"}</span>
-              <span className="shrink-0 tabular-nums text-slate-500">
-                {c.orderCount || 0} order · <span className="font-semibold text-slate-700">{formatRupiah(c.orderValue || 0)}</span>
+            <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2 text-[11px]">
+              <span className="truncate text-ink3">{c.city || "Kota belum diisi"}</span>
+              <span className="shrink-0 tabular-nums text-ink2">
+                {c.orderCount || 0} order · <span className="font-semibold text-ink">{formatRupiah(c.orderValue || 0)}</span>
               </span>
             </div>
 
@@ -73,7 +73,7 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
                   <span key={tag} className={`tag-chip ${tagClass(tag)}`}>{tag}</span>
                 ))}
                 {c.tags.length > 3 && (
-                  <span className="text-[11px] text-slate-400">+{c.tags.length - 3}</span>
+                  <span className="text-[11px] text-ink3">+{c.tags.length - 3}</span>
                 )}
               </div>
             )}

@@ -6,13 +6,13 @@ import { formatDuration } from "../../../utils/format.js";
 
 function Stat({ icon: Icon, label, value, tint }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+    <div className="flex items-center gap-3 rounded-xl bg-inset/60 p-3">
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tint}`}>
         <Icon size={16} />
       </span>
       <div className="min-w-0">
-        <div className="text-[17px] font-bold leading-none tabular-nums text-slate-900">{value}</div>
-        <div className="mt-1 truncate text-[11px] text-slate-400">{label}</div>
+        <div className="text-[17px] font-bold leading-none tabular-nums text-ink">{value}</div>
+        <div className="mt-1 truncate text-[11px] text-ink3">{label}</div>
       </div>
     </div>
   );
@@ -35,10 +35,10 @@ export default function ConversationAnalytics({ data, loading, error }) {
           </div>
         ) : (
           <>
-            <Stat icon={MessageSquare} label="Total percakapan" value={p.totalConversations ?? 0} tint="bg-brand-50 text-brand-600" />
-            <Stat icon={Clock} label="Rata-rata respon" value={formatDuration(p.avgResponseMinutes)} tint="bg-chart-orange-soft text-chart-orange" />
-            <Stat icon={CheckCircle2} label="Closing rate" value={`${p.closingRate ?? 0}%`} tint="bg-chart-green-soft text-chart-green" />
-            <Stat icon={Inbox} label="Belum selesai" value={p.openCount ?? 0} tint="bg-slate-100 text-slate-500" />
+            <Stat icon={MessageSquare} label="Total percakapan" value={p.totalConversations ?? 0} tint="bg-accentbg text-accent" />
+            <Stat icon={Clock} label="Rata-rata respon" value={formatDuration(p.avgResponseMinutes)} tint="bg-orangebg text-orange" />
+            <Stat icon={CheckCircle2} label="Closing rate" value={`${p.closingRate ?? 0}%`} tint="bg-greenbg text-green" />
+            <Stat icon={Inbox} label="Belum selesai" value={p.openCount ?? 0} tint="bg-inset text-ink2" />
           </>
         )}
       </CardContent>

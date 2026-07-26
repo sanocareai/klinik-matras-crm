@@ -27,13 +27,13 @@ export default function RevenueTrend({ data, loading, error }) {
               <AreaChart data={rows} margin={{ top: 5, right: 8, left: -12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2064B7" stopOpacity={0.24} />
-                    <stop offset="100%" stopColor="#2064B7" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.24} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} />
                 <YAxis
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
                   axisLine={false}
                   tickLine={false}
                   width={52}
@@ -41,9 +41,9 @@ export default function RevenueTrend({ data, loading, error }) {
                 />
                 <Tooltip
                   formatter={(v) => [formatRupiahShort(v), "Revenue"]}
-                  contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 12, boxShadow: "0 4px 16px rgba(15,23,42,0.1)" }}
+                  contentStyle={{ borderRadius: 12, border: "1px solid var(--hairline)", fontSize: 12, boxShadow: "0 4px 16px rgba(15,23,42,0.1)" }}
                 />
-                <Area type="monotone" dataKey="value" stroke="#2064B7" strokeWidth={2} fill="url(#revFill)" />
+                <Area type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} fill="url(#revFill)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

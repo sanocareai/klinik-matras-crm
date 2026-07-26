@@ -38,13 +38,13 @@ export default function CalendarMonth({ month, from, to, hover, maxDate, onPick,
 
   return (
     <div className="select-none">
-      <p className="mb-1.5 px-1 text-[11px] font-bold tracking-wide text-slate-500">
+      <p className="mb-1.5 px-1 text-[11px] font-bold tracking-wide text-ink2">
         {BULAN_ID[awal.month()]} {awal.year()}
       </p>
 
       <div className="grid grid-cols-7 gap-y-0.5">
         {HARI.map((h, i) => (
-          <div key={i} className="pb-1 text-center text-[10px] font-semibold text-slate-400">{h}</div>
+          <div key={i} className="pb-1 text-center text-[10px] font-semibold text-ink3">{h}</div>
         ))}
 
         {sel.map((d, i) => {
@@ -70,20 +70,20 @@ export default function CalendarMonth({ month, from, to, hover, maxDate, onPick,
                 "relative h-7 text-[12px] tabular-nums transition-colors duration-100",
                 // Ujung rentang: sudut membulat hanya di sisi luar, supaya
                 // rentang terlihat menyambung seperti satu batang.
-                isEdge && "bg-brand-600 font-bold text-white",
+                isEdge && "bg-accent font-bold text-white",
                 isFrom && !isTo && "rounded-l-full",
                 isTo && !isFrom && "rounded-r-full",
                 isFrom && isTo && "rounded-full",
-                inRange && "bg-brand-50 text-brand-800",
-                !isEdge && !inRange && !disabled && "rounded-full text-slate-600 hover:bg-slate-100",
-                disabled && "cursor-not-allowed text-slate-200",
-                isToday && !isEdge && "font-bold text-brand-700"
+                inRange && "bg-accentbg text-accent",
+                !isEdge && !inRange && !disabled && "rounded-full text-ink2 hover:bg-hovertint",
+                disabled && "cursor-not-allowed text-ink3/40",
+                isToday && !isEdge && "font-bold text-accent"
               )}
             >
               {d.date()}
               {/* Titik penanda "hari ini" — informasi tidak hanya lewat warna. */}
               {isToday && !isEdge && (
-                <span className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-brand-600" />
+                <span className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent" />
               )}
             </button>
           );

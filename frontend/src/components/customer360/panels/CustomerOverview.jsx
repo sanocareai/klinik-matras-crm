@@ -7,12 +7,12 @@ export default function CustomerOverview({ text }) {
   return (
     <Card className="p-4">
       <div className="mb-1.5 flex items-center gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sano Insight</span>
-        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-slate-400">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-ink2">Sano Insight</span>
+        <span className="rounded bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
           Rule-based
         </span>
       </div>
-      <p className="text-[13px] leading-relaxed text-slate-700">
+      <p className="text-[13px] leading-relaxed text-ink">
         {text || "Belum ada cukup data untuk ringkasan pelanggan."}
       </p>
     </Card>

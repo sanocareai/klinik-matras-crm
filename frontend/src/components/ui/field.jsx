@@ -8,17 +8,17 @@ export function Field({ label, htmlFor, error, hint, required, className, childr
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
-        <label htmlFor={htmlFor} className="text-xs font-medium text-slate-500">
+        <label htmlFor={htmlFor} className="text-xs font-medium text-ink2">
           {label}
-          {required && <span className="ml-0.5 text-chart-rose">*</span>}
+          {required && <span className="ml-0.5 text-red">*</span>}
         </label>
       )}
       {children}
       {/* Error menang atas hint — hanya salah satu yang tampil. */}
       {error ? (
-        <p className="text-[11px] text-chart-rose">{error}</p>
+        <p className="text-[11px] text-red">{error}</p>
       ) : hint ? (
-        <p className="text-[11px] text-slate-400">{hint}</p>
+        <p className="text-[11px] text-ink3">{hint}</p>
       ) : null}
     </div>
   );

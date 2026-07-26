@@ -4,7 +4,7 @@ import { AreaChart, Area, ResponsiveContainer } from "recharts";
 // Mini trend 7-titik di dalam KpiCard — HANYA dekoratif (tanpa axis/tooltip),
 // data diturunkan dari series bulanan yang sudah di-fetch (bukan endpoint
 // baru), lihat KpiCard.jsx pemanggilnya.
-export default function Sparkline({ data, color = "#ffffff", solid = false }) {
+export default function Sparkline({ data, color = "var(--bg-surface)", solid = false }) {
   if (!data || data.length < 2) return null;
   const gradId = `spark-${color.replace("#", "")}-${solid ? "s" : "o"}`;
   return (

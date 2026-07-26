@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input.jsx";
 import { LEAD_SOURCES, KOTA_LIST } from "@/utils/format.js";
 
 const SELECT_CLS =
-  "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-900 " +
-  "outline-none transition-colors focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-600/40";
+  "h-9 w-full rounded-lg bg-surface px-2.5 text-sm text-ink " +
+  "outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/40";
 
 // Form tambah pelanggan baru. Wave 5B: dipindah dari overlay buatan sendiri
 // (.modal-overlay/.modal-box) ke primitive ui/modal.jsx (Radix Dialog) —
@@ -66,10 +66,10 @@ export default function NewCustomerModal({
             </select>
           </Field>
 
-          {error && <p className="text-[13px] text-chart-rose">{error}</p>}
+          {error && <p className="text-[13px] text-red">{error}</p>}
         </div>
 
-        <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4">
+        <div className="mt-5 flex justify-end gap-2 border-t border-line pt-4">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Batal</Button>
           <Button type="submit" disabled={submitting}>
             {submitting ? "Menyimpan…" : "Tambah Pelanggan"}

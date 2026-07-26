@@ -8,7 +8,7 @@ import ChartCard from "./ChartCard.jsx";
 import ChartTooltip from "./ChartTooltip.jsx";
 import { buildSparkline } from "../utils.js";
 
-const AXIS_STYLE = { fontSize: 12, fill: "#64748b" };
+const AXIS_STYLE = { fontSize: 12, fill: "var(--text-secondary)" };
 const MA_WINDOW = 3;
 
 // Rata-rata bergerak N-bulan — endpoint /analytics/overview cuma balikin
@@ -59,19 +59,19 @@ export default function PenjualanTab({ overview, monthlyRevenue }) {
           <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
             <defs>
               <linearGradient id="salesBarFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#4F97E3" />
-                <stop offset="100%" stopColor="#2064B7" />
+                <stop offset="0%" stopColor="var(--accent)" />
+                <stop offset="100%" stopColor="var(--accent)" />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+            <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
             <XAxis dataKey="month" tickFormatter={labelBulan} tick={AXIS_STYLE} axisLine={false} tickLine={false} />
             <YAxis tickFormatter={(v) => `${(v / 1_000_000).toFixed(0)}jt`} tick={AXIS_STYLE} axisLine={false} tickLine={false} />
             <Tooltip
               content={<ChartTooltip formatter={(v, n) => [formatRupiah(v), n === "ma" ? `Rata-rata ${MA_WINDOW} bulan` : "Pendapatan"]} labelFormatter={labelBulan} />}
-              cursor={{ fill: "#f1f5f9" }}
+              cursor={{ fill: "var(--bg-inset)" }}
             />
             <Bar dataKey="value" name="value" fill="url(#salesBarFill)" radius={[8, 8, 0, 0]} maxBarSize={44} isAnimationActive animationDuration={700} />
-            <Line dataKey="ma" name="ma" type="monotone" stroke="#7c3aed" strokeWidth={2.5} dot={false} isAnimationActive animationDuration={700} />
+            <Line dataKey="ma" name="ma" type="monotone" stroke="var(--accent)" strokeWidth={2.5} dot={false} isAnimationActive animationDuration={700} />
           </ComposedChart>
         </ResponsiveContainer>
       </ChartCard>

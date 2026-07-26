@@ -233,6 +233,25 @@ export function isVIP(customer) {
 // hari" jadi cocok dengan yang dilihat user di kolom tanggal.
 export const daysSinceLastChat = hariSejak;
 
+// Durasi RELATIF & ringkas — satu satuan saja, dibulatkan.
+// "45 mnt" · "3 jam" · "25 hari" · "2 bln"
+//
+// Dipakai untuk WAKTU TUNGGU (antrean follow-up). formatDuration() di bawah
+// menghasilkan "615 jam 9 mnt" untuk kasus lama — presisi menit tidak ada
+// gunanya pada angka sebesar itu, dan justru menyembunyikan fakta
+// sesungguhnya ("sudah 25 hari"). Untuk durasi kerja yang pendek (mis. avg
+// response time) formatDuration() tetap yang benar.
+export function formatDurasiRelatif(minutes) {
+  const m = Math.round(Number(minutes) || 0);
+  if (m < 1) return "baru saja";
+  if (m < 60) return `${m} mnt`;
+  const jam = Math.floor(m / 60);
+  if (jam < 24) return `${jam} jam`;
+  const hari = Math.floor(jam / 24);
+  if (hari < 60) return `${hari} hari`;
+  return `${Math.floor(hari / 30)} bln`;
+}
+
 // Format durasi menit ke "X jam Y mnt" atau "X mnt"
 export function formatDuration(minutes) {
   if (!minutes && minutes !== 0) return "—";

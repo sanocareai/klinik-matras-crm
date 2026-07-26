@@ -15,10 +15,11 @@
    disamakan dgn --success/--warning/--purple yang sudah ada di index.css,
    bukan palet baru — supaya konsisten dengan badge/status di halaman lain. */
 @theme {
-  /* Font UI — Geist (Vercel), self-hosted via Fontsource (lihat main.jsx).
-     Menghasilkan util `font-sans` / `font-mono`; body juga di-set ke Geist di
-     index.css. Fallback Inter→sistem supaya aman kalau font belum termuat. */
-  --font-sans: 'Geist Variable', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Font UI — DS v2: font sistem Apple (SF di Apple, Segoe/Roboto di lain).
+     Geist DILEPAS sesuai spec redesign; paket @fontsource masih terpasang di
+     package.json tapi tidak lagi jadi font UI (lihat catatan migrasi).
+     Mono tetap Geist Mono untuk angka/data mentah. */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
 
   --color-brand-50:  #EAF2FC;
@@ -66,6 +67,57 @@
     0%   { background-position: -200% 0; }
     100% { background-position: 200% 0; }
   }
+}
+
+/* ── DS v2 → UTILITY TAILWIND ─────────────────────────────────────────────
+   WAJIB `@theme inline`: bentuk ini menghasilkan `var(--token)` di CSS
+   utility-nya, jadi nilainya di-resolve SAAT DIPAKAI dan otomatis ikut
+   [data-theme="dark"]. `@theme` biasa akan MENYALIN nilai light-nya dan dark
+   mode tidak akan pernah jalan — kesalahan yang mudah tidak terlihat.
+   Definisi tokennya ada di styles/tokens.css.
+
+   RADIUS: skala radius bawaan Tailwind SENGAJA TIDAK diubah, karena
+   rounded-lg/xl/2xl bawaan (8/12/16px) sudah persis sama dengan
+   r-sm/r-md/r-lg di spec — mengubahnya akan menggeser ratusan pemakaian yang
+   sudah benar. Alias semantik di bawah dipakai untuk kode baru supaya niatnya
+   terbaca (rounded-card, bukan rounded-2xl). */
+@theme inline {
+  /* Permukaan */
+  --color-base:    var(--bg-base);
+  --color-surface: var(--bg-surface);
+  --color-inset:   var(--bg-inset);
+  --color-hovertint: var(--bg-hover);
+
+  /* Teks */
+  --color-ink:  var(--text-primary);
+  --color-ink2: var(--text-secondary);
+  --color-ink3: var(--text-tertiary);
+
+  /* Garis (hanya untuk hairline pemisah di dalam list) */
+  --color-line: var(--hairline);
+
+  /* Accent — SATU-SATUNYA warna dekoratif */
+  --color-accent:    var(--accent);
+  --color-accenthov: var(--accent-hover);
+  --color-accentbg:  var(--accent-bg);
+
+  /* Semantik — hanya 3, hanya untuk makna */
+  --color-red:      var(--red);
+  --color-redbg:    var(--red-bg);
+  --color-orange:   var(--orange);
+  --color-orangebg: var(--orange-bg);
+  --color-green:    var(--green);
+  --color-greenbg:  var(--green-bg);
+
+  /* Elevasi — satu shadow card, satu shadow popover. Tidak ada yang lain. */
+  --shadow-card:    var(--shadow-card);
+  --shadow-popover: var(--shadow-popover);
+
+  /* Alias radius semantik (anak selalu < induk) */
+  --radius-chip:  var(--r-sm);
+  --radius-btn:   var(--r-md);
+  --radius-card:  var(--r-lg);
+  --radius-panel: var(--r-xl);
 }
 
 /* shadcn/ui butuh token semantik standar (background/foreground/card/dst)

@@ -12,7 +12,30 @@
          kelihatan DI ATAS keyboard, bukan ketutup. Browser yang belum kenal
          token ini mengabaikannya (aman, tidak invalid). -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#2563EB" />
+    <!-- Default terang (#F5F5F7 = --bg-base). Diganti runtime oleh
+         ThemeProvider kalau tema gelap aktif. -->
+    <meta name="theme-color" content="#F5F5F7" />
+    <!-- ⚠️ ANTI-KEDIP TEMA — script ini WAJIB blocking (tanpa defer/async) dan
+         WAJIB berada SEBELUM <body> dirender. Kalau data-theme baru di-set
+         setelah React mount, user dark-mode akan melihat kilatan putih dulu.
+         Logika di sini HARUS sama dengan src/lib/ThemeProvider.jsx (key
+         "sano-theme", default "light", data-theme hanya di-set saat gelap). -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("sano-theme");
+          if (p !== "light" && p !== "dark" && p !== "system") p = "light";
+          var gelap = p === "dark" || (p === "system"
+            && window.matchMedia
+            && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (gelap) {
+            document.documentElement.setAttribute("data-theme", "dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#000000");
+          }
+        } catch (e) { /* localStorage diblokir → biarkan terang */ }
+      })();
+    </script>
     <!-- mobile-web-app-capable = standar (Chrome/Android/Brave/Opera, semua
          Chromium). apple-mobile-web-app-capable = WAJIB TERPISAH utk Safari
          iOS — tanpa ini, "Add to Home Screen" tetap buka di dalam Safari

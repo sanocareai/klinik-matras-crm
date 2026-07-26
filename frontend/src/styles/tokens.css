@@ -1,0 +1,349 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SANO DESIGN SYSTEM v2 — TOKEN LAYER (Apple-style, minimalis)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   FILOSOFI: hierarki datang dari TONE PERMUKAAN + SPACING + SATU shadow lembut.
+   BUKAN dari border 1px. Border pada card/panel/badge/tombol DILARANG.
+   Garis hanya boleh muncul sebagai hairline pemisah DI DALAM list.
+
+   ⚠️ URUTAN IMPORT PENTING: file ini di-import PALING AKHIR di main.jsx,
+   SETELAH index.css. Beberapa nama token di sini SENGAJA bertabrakan dengan
+   :root lama di index.css (--bg-base, --text-primary, --text-secondary,
+   --shadow-card). Karena file ini datang terakhir, nilainya MENANG — jadi
+   ~3.000 baris CSS lama yang memakai var(--text-primary) dsb LANGSUNG ikut
+   palet baru dan ikut dark mode, tanpa perlu ditulis ulang satu per satu.
+   Itu disengaja, bukan tabrakan yang tidak sengaja.
+
+   Dark mode = TUKAR TOKEN, bukan desain ulang. Light mode adalah referensi.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ── PERMUKAAN ─────────────────────────────────────────────────────────
+     3 tingkat saja: base (halaman) → surface (card) → inset (isi di dalam
+     card). Kalau butuh tingkat ke-4, desainnya terlalu bersarang. */
+  --bg-base:    #F5F5F7;
+  --bg-surface: #FFFFFF;
+  --bg-inset:   #F5F5F7;
+  --bg-hover:   rgba(0, 0, 0, 0.03);
+
+  /* ── TEKS ─────────────────────────────────────────────────────────────── */
+  --text-primary:   #1D1D1F;
+  --text-secondary: rgba(29, 29, 31, 0.60);
+  --text-tertiary:  rgba(29, 29, 31, 0.40);
+
+  /* ── GARIS & ELEVASI ──────────────────────────────────────────────────── */
+  --hairline: rgba(0, 0, 0, 0.08);
+  --shadow-card:    0 1px 3px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
+  --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 16px 48px rgba(0, 0, 0, 0.12);
+
+  /* ── ACCENT: SATU-SATUNYA warna dekoratif ─────────────────────────────── */
+  --accent:       #0071E3;
+  --accent-hover: #0060C0;
+  --accent-bg:    rgba(0, 113, 227, 0.10);
+
+  /* ── SEMANTIK: hanya 3, dan hanya untuk MAKNA (bukan dekorasi) ─────────
+     Nilai light memakai varian "accessible" Apple — versi cerah (#FF3B30 dsb)
+     tidak lolos kontras untuk TEKS di atas #FFFFFF. */
+  --red:    #D70015;  --red-bg:    rgba(215, 0, 21, 0.10);
+  --orange: #C93400;  --orange-bg: rgba(201, 52, 0, 0.10);
+  --green:  #248A3D;  --green-bg:  rgba(36, 138, 61, 0.10);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-base:    #000000;
+  --bg-surface: #1C1C1E;
+  --bg-inset:   #2C2C2E;
+  --bg-hover:   rgba(255, 255, 255, 0.05);
+
+  --text-primary:   #F5F5F7;
+  --text-secondary: rgba(245, 245, 247, 0.60);
+  --text-tertiary:  rgba(245, 245, 247, 0.40);
+
+  --hairline: rgba(255, 255, 255, 0.10);
+  --shadow-card:    0 1px 3px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.20);
+  --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.40), 0 16px 48px rgba(0, 0, 0, 0.50);
+
+  --accent:       #0A84FF;
+  --accent-hover: #339CFF;
+  /* 16%, bukan 10% — tint 10% praktis tidak terlihat di atas #1C1C1E. */
+  --accent-bg:    rgba(10, 132, 255, 0.16);
+
+  --red:    #FF453A;  --red-bg:    rgba(255, 69, 58, 0.16);
+  --orange: #FF9F0A;  --orange-bg: rgba(255, 159, 10, 0.16);
+  --green:  #30D158;  --green-bg:  rgba(48, 209, 88, 0.16);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SKALA (tidak tergantung mode)
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Spacing — TIDAK ADA nilai di luar daftar ini. */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px;
+  --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px;
+
+  /* Radius — anak SELALU lebih kecil dari induknya. */
+  --r-sm: 8px;   /* chip, input */
+  --r-md: 12px;  /* tombol, card kecil, inset */
+  --r-lg: 16px;  /* card */
+  --r-xl: 20px;  /* container besar */
+
+  /* Font stack sistem Apple. Geist (dipakai v1) dilepas di sini SESUAI SPEC —
+     lihat catatan migrasi; ini perubahan tampilan yang terlihat. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+             system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TANGGA TIPE — TEPAT LIMA LANGKAH. Jangan bikin ukuran lain.
+   Dipakai sebagai class supaya ladder-nya bisa ditegakkan (satu util Tailwind
+   tidak bisa menyatakan size+weight+tracking+warna sekaligus).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.t-page-title {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.2; color: var(--text-primary);
+}
+.t-card-title {
+  font-size: 17px; font-weight: 600; line-height: 1.3;
+  color: var(--text-primary);
+}
+.t-body {
+  font-size: 15px; font-weight: 400; line-height: 1.45;
+  color: var(--text-primary);
+}
+.t-secondary {
+  font-size: 13px; font-weight: 400; line-height: 1.4;
+  color: var(--text-secondary);
+}
+.t-caption {
+  font-size: 11px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; line-height: 1.3; color: var(--text-tertiary);
+}
+/* Angka metrik — satu-satunya ukuran di luar tangga, khusus angka besar.
+   tabular-nums supaya digit tidak "goyang" saat count-up berjalan. */
+.t-metric {
+  font-size: 34px; font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.05; color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .t-page-title { font-size: 24px; }
+  .t-metric     { font-size: 28px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   JEMBATAN KE TOKEN LAMA (strangler-fig)
+   ═══════════════════════════════════════════════════════════════════════════
+   index.css (~3.000 baris) dan halaman yang BELUM dimigrasi (Inbox, Automation,
+   Pengaturan, Broadcast, …) memakai nama token lama. Di-arahkan ulang ke token
+   baru di sini supaya SEMUA halaman langsung ikut palet + dark mode tanpa
+   ditulis ulang. Ini yang membuat dark mode benar-benar menyeluruh, bukan cuma
+   di halaman yang sudah disentuh.
+
+   Warna dekoratif lama (violet/pink/ungu) DIPETAKAN KE ACCENT — aturan
+   "satu accent" ditegakkan di level token, jadi halaman lama tidak bisa lagi
+   memunculkan hue liar meski kodenya belum diubah. */
+:root, [data-theme="dark"] {
+  --bg-card:       var(--bg-surface);
+  --bg-page:       var(--bg-base);
+  --bg-subtle:     var(--bg-inset);
+  --bg-secondary:  var(--bg-inset);
+  --border:        var(--hairline);
+  --text-muted:    var(--text-tertiary);
+  --text-main:     var(--text-primary);
+  --text-small:    var(--text-tertiary);
+
+  --accent-soft:   var(--accent-bg);
+  --color-primary: var(--accent);
+  --color-success: var(--green);
+  --color-warning: var(--orange);
+  --color-danger:  var(--red);
+  --success:       var(--green);
+  --warning:       var(--orange);
+  --danger:        var(--red);
+  /* Hue dekoratif lama → accent (aturan satu accent) */
+  --color-purple:  var(--accent);
+  --color-pink:    var(--accent);
+
+  --sidebar-bg:          var(--bg-surface);
+  --sidebar-text:        var(--text-secondary);
+  --sidebar-active-bg:   var(--accent-bg);
+  --sidebar-active-text: var(--accent);
+  --sidebar-hover-bg:    var(--bg-hover);
+
+  --radius-card:  var(--r-lg);
+  --radius-input: var(--r-sm);
+  --shadow-md:    var(--shadow-popover);
+
+  /* Skala brand lama (brand-50…900) dipakai ratusan kali lewat util Tailwind
+     (bg-brand-600, text-brand-700, …). Dipetakan ke accent supaya tidak ada
+     biru kedua. Shade ekstrem dibiarkan sebagai tint accent, bukan hue baru. */
+  --color-brand-50:  var(--accent-bg);
+  --color-brand-100: var(--accent-bg);
+  --color-brand-500: var(--accent);
+  --color-brand-600: var(--accent);
+  --color-brand-700: var(--accent-hover);
+  --color-brand-800: var(--accent-hover);
+  --color-brand-900: var(--accent-hover);
+
+  /* Warna chart lama → semantik baru (hanya 3 + accent). */
+  --color-chart-green:       var(--green);
+  --color-chart-green-soft:  var(--green-bg);
+  --color-chart-orange:      var(--orange);
+  --color-chart-orange-soft: var(--orange-bg);
+  --color-chart-rose:        var(--red);
+  --color-chart-rose-soft:   var(--red-bg);
+  --color-chart-violet:      var(--accent);
+  --color-chart-violet-soft: var(--accent-bg);
+
+  /* Permukaan AI: gradient dihapus — aturan satu accent. Tetap terdefinisi
+     supaya kelas .bg-ai-gradient / .ai-shimmer yang sudah dipakai tidak pecah,
+     tapi sekarang jadi tint accent yang tenang. */
+  --gradient-ai: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  --ai-glow:     var(--accent-bg);
+  --color-ai-violet:      var(--accent);
+  --color-ai-blue:        var(--accent);
+  --color-ai-violet-soft: var(--accent-bg);
+  --color-ai-ink:         var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASAR GLOBAL
+   ═══════════════════════════════════════════════════════════════════════════ */
+html { background: var(--bg-base); }
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Transisi halus saat tema ditukar — HANYA warna, dan hanya di permukaan.
+   Tidak diterapkan ke `*` supaya tidak mengganggu animasi lain. */
+body, .card-surface, .card-inset {
+  transition: background-color var(--motion-base, 180ms) ease-out,
+              color var(--motion-base, 180ms) ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  body, .card-surface, .card-inset { transition: none; }
+}
+
+/* Hairline pemisah dalam list — SATU-SATUNYA garis yang diizinkan.
+   Inset horizontal supaya menghormati padding induk (garis tidak menabrak tepi). */
+.hairline-y > * + * { border-top: 1px solid var(--hairline); }
+
+/* Scrollbar tipis mengikuti tema (kalau tidak, di dark mode muncul jalur putih). */
+* { scrollbar-color: var(--hairline) transparent; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STEP 5 — SWEEP BORDER PADA CSS LEGACY
+   ═══════════════════════════════════════════════════════════════════════════
+   index.css punya 116 deklarasi `border:`. Menyuntingnya satu per satu di file
+   3.000 baris berisiko tinggi dan sulit di-review; jadi border-nya DIMATIKAN
+   di sini lewat daftar selektor EKSPLISIT. Keuntungannya: satu tempat, mudah
+   di-review, mudah di-revert, dan bisa dicocokkan dengan inventaris di catatan
+   migrasi. Daftar ini diturunkan dari pemindaian selektor yang benar-benar
+   memakai `border: 1px|1.5px|2px solid`, bukan dari dugaan.
+
+   ⚠️ SENGAJA TIDAK memakai `* { border: none }` — border-top/bottom pada baris
+   list, sel tabel, dan tab adalah HAIRLINE yang MEMANG diinginkan spec. Yang
+   dimatikan hanya border PENUH pada permukaan. */
+
+/* — Kartu & panel: border → satu shadow lembut — */
+.card, .chart-card, .stat-card, .settings-card, .user-card, .workflow-card,
+.estimate-card, .kpi-mini, .wa-session-card, .dash-metric-card, .dash-chart-card,
+.dash-session-card, .target-sales-person-card, .product-editor, .order-item,
+.leads-detail-row, .table-wrap, .media-gallery-doc-item, .preview-doc,
+.product-image-item, .picker-image-item, .bubble-poll-option {
+  border: none !important;
+  box-shadow: var(--shadow-card);
+  background-color: var(--bg-surface);
+}
+/* Baris di DALAM kartu tidak boleh ikut mengapung — tone saja, tanpa shadow. */
+.order-item, .leads-detail-row, .bubble-poll-option, .product-image-item,
+.picker-image-item, .media-gallery-doc-item {
+  box-shadow: none;
+  background-color: var(--bg-inset);
+}
+
+/* — Permukaan mengapung: satu-satunya elevasi berat — */
+.conv-context-menu, .chat-dots-dropdown, .template-picker-popup,
+.emoji-picker-popup, .model-picker-dropdown, .msg-action-bar,
+.pipeline-undo-toast, .media-quality-toggle {
+  border: none !important;
+  box-shadow: var(--shadow-popover);
+  background-color: var(--bg-surface);
+}
+
+/* — Tombol: tidak ada border di tingkat mana pun (3 tingkat, lihat button.jsx) — */
+.btn-secondary {
+  border: none !important;
+  background-color: var(--accent-bg);
+  color: var(--accent);
+}
+.btn-ghost, .panel-edit-btn, .picker-kat-btn, .media-gallery-tab,
+.bubble-media-load-btn, .model-selector-pill, .stage-btn {
+  border: none !important;
+}
+
+/* — Input & kontrol: gaya Apple = permukaan TERISI, bukan kotak ber-outline — */
+input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], input[type="date"], input[type="search"],
+select, textarea, .chat-textarea, .caption-input, .template-search,
+.status-select, .role-select, .product-image-label-input,
+.leads-detail-date-input, .media-preview-caption, .settings-mobile-select {
+  border: none !important;
+  background-color: var(--bg-inset);
+  color: var(--text-primary);
+}
+/* Fokus ditandai RING accent, bukan border yang muncul-hilang (menggeser layout). */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* — Bubble chat masuk: permukaan, bukan kotak ber-border — */
+.bubble.in, .ai-bubble.ai, .copilot-msg-assistant .copilot-msg-bubble {
+  border: none !important;
+  background-color: var(--bg-inset);
+}
+
+/* — Banner feedback inline: tinted, tanpa border (pola Badge) — */
+.inline-feedback-success { border: none !important; background: var(--green-bg);  color: var(--green); }
+.inline-feedback-warning { border: none !important; background: var(--orange-bg); color: var(--orange); }
+.inline-feedback-error   { border: none !important; background: var(--red-bg);    color: var(--red); }
+.inline-feedback-info    { border: none !important; background: var(--accent-bg); color: var(--accent); }
+
+/* — Sisa: hilangkan border tanpa mengubah latar — */
+.wizard-step-circle, .bubble-failed, .emoji-mart-loading, .search-input-wrap,
+.msg-select-checkbox, .picker-caption-preview, .customer-panel-backdrop,
+.session-unknown-banner select, .cm-search input[type="text"], .cm-search button {
+  border: none !important;
+}
+
+/* ── SIDEBAR: item aktif = blok accent-bg membulat, BUKAN strip border ──────
+   Spec Step 4. `.nav-pill` adalah elemen pill framer-motion di SidebarLink.jsx. */
+.nav-pill {
+  background: var(--accent-bg) !important;
+  border: none !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: none !important;
+}
+.sidebar-link.active { color: var(--accent) !important; }
+.sidebar-link:hover:not(.active) { background: var(--bg-hover); }
+
+/* ── INBOX: daftar chat & jendela chat ─────────────────────────────────────
+   Spec Step 4: tanpa border, pemisah baris hairline, indikator belum dibaca
+   berupa TITIK (bukan pill ber-border). */
+.conv-item { border: none !important; border-bottom: 1px solid var(--hairline) !important; }
+.conv-item:hover { background: var(--bg-hover); }
+.conv-item.active { background: var(--accent-bg); }
+.conv-unread-badge {
+  border: none !important;
+  background: var(--accent) !important;
+  color: #fff;
+}

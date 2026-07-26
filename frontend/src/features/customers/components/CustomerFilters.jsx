@@ -11,15 +11,15 @@ import { PIPELINE_STAGES, LEAD_SOURCES } from "@/utils/format.js";
 // (controlled), jadi tidak ada sumber kebenaran kedua.
 
 const SELECT_CLS =
-  "h-8 rounded-lg border border-slate-200 bg-white px-2 text-[13px] text-slate-600 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40";
+  "h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
 // Quick chip: warna aktif berbeda per chip supaya cepat dikenali (VIP ungu,
 // belum order oranye, tidak aktif abu) — dipertahankan dari versi CSS lama.
 const CHIPS = [
-  { key: "vip",      label: "VIP (≥ Rp5jt)",        active: "bg-chart-violet text-white border-chart-violet" },
-  { key: "no-order", label: "Belum Order",           active: "bg-chart-orange text-white border-chart-orange" },
-  { key: "inactive", label: "Tidak Aktif (>30 hari)", active: "bg-slate-500 text-white border-slate-500" },
+  { key: "vip",      label: "VIP (≥ Rp5jt)",        active: "bg-accent text-white border-accent" },
+  { key: "no-order", label: "Belum Order",           active: "bg-orange text-white border-orange" },
+  { key: "inactive", label: "Tidak Aktif (>30 hari)", active: "bg-ink3 text-surface" },
 ];
 
 export default function CustomerFilters({
@@ -42,7 +42,7 @@ export default function CustomerFilters({
   return (
     <div className="flex flex-col gap-3">
       {/* Tab tipe pelanggan */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-100 pb-px">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-line pb-px">
         {tabs.map(({ key, label, Icon, count }) => {
           const on = typeTab === key;
           return (
@@ -52,17 +52,17 @@ export default function CustomerFilters({
               aria-current={on ? "true" : undefined}
               className={cn(
                 "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors duration-150",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
                 on
-                  ? "border-brand-600 text-brand-700"
-                  : "border-transparent text-slate-400 hover:text-slate-600"
+                  ? "text-accent"
+                  : "border-transparent text-ink3 hover:text-ink"
               )}
             >
               <Icon size={14} />
               {label}
               <span className={cn(
                 "rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                on ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-500"
+                on ? "bg-accentbg text-accent" : "bg-inset text-ink2"
               )}>
                 {count}
               </span>
@@ -79,9 +79,9 @@ export default function CustomerFilters({
             onClick={() => onQuickChip(quickChip === key ? "" : key)}
             aria-pressed={quickChip === key}
             className={cn(
-              "rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-150",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
-              quickChip === key ? active : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+              "rounded-full  px-3 py-1 text-xs font-semibold transition-colors duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+              quickChip === key ? active : "bg-surface text-ink2 hover:text-ink"
             )}
           >
             {label}

@@ -26,11 +26,11 @@ export function PageHeader({ title, subtitle, actions, className, children }) {
     >
       <div className="min-w-0">
         {title && (
-          <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-slate-900">
+          <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
             {title}
           </h1>
         )}
-        {subtitle && <p className="mt-1 text-[13px] text-slate-500">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-[13px] text-ink2">{subtitle}</p>}
         {children}
       </div>
       {actions && (

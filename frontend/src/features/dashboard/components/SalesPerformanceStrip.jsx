@@ -15,23 +15,23 @@ export default function SalesPerformanceStrip({ data, loading, error }) {
   if (loading) return <div className="skeleton skeleton-card" style={{ height: 64, marginBottom: 0 }} />;
   // API failure → strip tetap render tapi netral (tidak crash / tidak angka palsu).
   if (error) return (
-    <Card className="flex items-center gap-2 p-4 text-[13px] text-slate-400">
-      <span className="text-sm font-semibold text-slate-600">Performa Tim</span> · gagal memuat data
+    <Card className="flex items-center gap-2 p-4 text-[13px] text-ink3">
+      <span className="text-sm font-semibold text-ink2">Performa Tim</span> · gagal memuat data
     </Card>
   );
 
   return (
     <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5">
       <div className="flex items-baseline gap-2 sm:w-52 sm:shrink-0">
-        <span className="text-sm font-semibold text-slate-700">Performa Tim</span>
-        <span className="text-[12px] text-slate-400">bulan ini</span>
+        <span className="text-sm font-semibold text-ink">Performa Tim</span>
+        <span className="text-[12px] text-ink3">bulan ini</span>
       </div>
       <div className="min-w-0 flex-1">
         <ProgressBar value={pct || 0} variant={variant} />
       </div>
       <div className="flex items-center gap-4 text-[12px] sm:shrink-0">
-        <span className="tabular-nums text-[15px] font-bold text-slate-900">{pct != null ? `${pct}%` : "—"}</span>
-        <span className="tabular-nums text-slate-500">
+        <span className="tabular-nums text-[15px] font-bold text-ink">{pct != null ? `${pct}%` : "—"}</span>
+        <span className="tabular-nums text-ink2">
           {pct != null ? `${formatRupiah(totalAchieved)} / ${formatRupiah(totalTarget)}` : "Target belum diset"}
         </span>
       </div>

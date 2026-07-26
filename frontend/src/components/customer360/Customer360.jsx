@@ -77,18 +77,18 @@ export default function Customer360({ customerId, onClose, onUpdated }) {
             <HealthScoreCard health={health} />
             {/* Profil — prioritas rendah, collapsible (default tertutup) supaya
                 360 terasa "intelligence drawer", bukan form edit. */}
-            <div className="rounded-2xl border border-black/5 bg-card shadow-sm">
+            <div className="rounded-2xl bg-surface shadow-card">
               <button
                 type="button"
                 onClick={() => setProfileOpen((o) => !o)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"
                 aria-expanded={profileOpen}
               >
-                <span className="text-[13px] font-semibold text-slate-700">Profil &amp; Detail</span>
-                <ChevronDown size={16} className={`text-slate-400 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+                <span className="text-[13px] font-semibold text-ink">Profil &amp; Detail</span>
+                <ChevronDown size={16} className={`text-ink3 transition-transform ${profileOpen ? "rotate-180" : ""}`} />
               </button>
               {profileOpen && (
-                <div className="border-t border-slate-100 px-4 py-4">
+                <div className="border-t border-line px-4 py-4">
                   <ProfileFields customer={c} onUpdated={handleUpdated} />
                 </div>
               )}

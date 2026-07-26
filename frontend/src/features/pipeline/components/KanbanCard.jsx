@@ -8,11 +8,11 @@ import { cn } from "@/lib/utils.js";
 // (sano-color-system.md §4). Sengaja class statis, bukan dibangun runtime,
 // supaya ke-scan Tailwind.
 export const STAGE_DOT = {
-  LEAD:      "bg-amber-400",
-  QUALIFIED: "bg-brand-600",
-  QUOTED:    "bg-violet-500",
-  WON:       "bg-emerald-500",
-  LOST:      "bg-rose-500",
+  LEAD:      "bg-orange",
+  QUALIFIED: "bg-accent",
+  QUOTED:    "bg-accent",
+  WON:       "bg-green",
+  LOST:      "bg-red",
 };
 
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
@@ -47,24 +47,24 @@ export default function KanbanCard({
       // dan kartu tampak terangkat/transparan selamanya sampai reload.
       onDragEnd={onDragEnd}
       className={cn(
-        "group relative rounded-xl border bg-white p-2.5 shadow-sm",
-        // Lift saat digeser: shadow-md + scale ~1.02 dalam 150ms, dan slot asal
+        "group relative rounded-xl  bg-surface p-2.5 shadow-card",
+        // Lift saat digeser: shadow-popover + scale ~1.02 dalam 150ms, dan slot asal
         // diredam (opacity) — sano-animation-guidelines.md §3.6.
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",
-        "hover:shadow-md active:cursor-grabbing",
+        "hover:shadow-popover active:cursor-grabbing",
         dragging
-          ? "scale-[1.02] opacity-40 shadow-md"
-          : "cursor-grab border-slate-100",
-        stale && !dragging && "border-amber-200"
+          ? "scale-[1.02] opacity-40 shadow-popover"
+          : "cursor-grab",
+        stale && !dragging && ""
       )}
     >
       <div className="flex items-start gap-2">
         <Avatar name={nama} src={card.profilePictureUrl} size="sm" />
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold leading-tight text-slate-800">{nama}</p>
+          <p className="truncate text-[13px] font-semibold leading-tight text-ink">{nama}</p>
           {card.phone && (
-            <p className="mt-0.5 truncate text-[11px] tabular-nums text-slate-400">{card.phone}</p>
+            <p className="mt-0.5 truncate text-[11px] tabular-nums text-ink3">{card.phone}</p>
           )}
         </div>
 
@@ -72,7 +72,7 @@ export default function KanbanCard({
             jadi ini satu-satunya cara memindah deal dari HP. */}
         <div className="relative shrink-0">
           <button
-            className="rounded-md p-1 text-slate-300 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+            className="rounded-md p-1 text-ink3 transition-colors duration-150 hover:bg-hovertint hover:text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             title="Pindah stage"
             aria-label={`Pindah ${nama} ke stage lain`}
             aria-expanded={menuOpen}
@@ -84,17 +84,17 @@ export default function KanbanCard({
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-20" onClick={onToggleMenu} />
-              <div className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <div className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl bg-surface py-1 shadow-popover">
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-ink3">
                   Pindah ke
                 </p>
                 {stages.filter((s) => s !== stage).map((s) => (
                   <button
                     key={s}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-ink2 transition-colors duration-150 hover:bg-hovertint"
                     onClick={() => onMoveToStage(s)}
                   >
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", STAGE_DOT[s] || "bg-slate-400")} />
+                    <span className={cn("h-2 w-2 shrink-0 rounded-full", STAGE_DOT[s] || "bg-ink3")} />
                     {STAGE_LABELS[s] || s}
                   </button>
                 ))}
@@ -105,10 +105,10 @@ export default function KanbanCard({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[13px] font-bold tabular-nums text-slate-800">
+        <span className="text-[13px] font-bold tabular-nums text-ink">
           {formatRupiah(card.totalValue)}
         </span>
-        <span className={cn("text-[11px] tabular-nums", stale ? "font-semibold text-amber-600" : "text-slate-400")}>
+        <span className={cn("text-[11px] tabular-nums", stale ? "font-semibold text-orange" : "text-ink3")}>
           {card.daysSince}h lalu
         </span>
       </div>
@@ -116,14 +116,14 @@ export default function KanbanCard({
       {/* Peringatan stale — informasinya JUGA tersampaikan lewat teks, bukan
           hanya warna (aturan aksesibilitas sano-animation-guidelines.md §1.5). */}
       {stale && (
-        <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-600">
+        <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-orange">
           <AlertTriangle size={11} className="shrink-0" />
           Mandek {card.daysSince} hari — perlu ditindak
         </p>
       )}
 
       {card.assignedSales && (
-        <p className="mt-1.5 truncate border-t border-slate-50 pt-1.5 text-[11px] text-slate-400">
+        <p className="mt-1.5 truncate border-t border-line pt-1.5 text-[11px] text-ink3">
           {card.assignedSales.name}
         </p>
       )}

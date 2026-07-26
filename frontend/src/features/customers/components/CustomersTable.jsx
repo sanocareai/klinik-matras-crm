@@ -55,9 +55,9 @@ export default function CustomersTable({
                     <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
-                        <span className="truncate font-semibold text-slate-800">{displayName}</span>
+                        <span className="truncate font-semibold text-ink">{displayName}</span>
                         {c.pernahKomplain && (
-                          <AlertTriangle size={12} className="shrink-0 text-chart-rose" title="Pernah komplain" />
+                          <AlertTriangle size={12} className="shrink-0 text-red" title="Pernah komplain" />
                         )}
                       </div>
                       {isVIP(c) && <Badge variant="violet" className="mt-0.5">VIP</Badge>}
@@ -65,12 +65,12 @@ export default function CustomersTable({
                   </div>
                 </TD>
 
-                <TD>{c.latestOrderNumber || <span className="text-slate-300">—</span>}</TD>
+                <TD>{c.latestOrderNumber || <span className="text-ink3">—</span>}</TD>
 
                 <TD>
                   {c.phone && <div className="tabular-nums">{c.phone}</div>}
-                  {c.instagramHandle && <div className="text-[11px] text-slate-400">@{c.instagramHandle}</div>}
-                  {!c.phone && !c.instagramHandle && <span className="text-slate-300">—</span>}
+                  {c.instagramHandle && <div className="text-[11px] text-ink3">@{c.instagramHandle}</div>}
+                  {!c.phone && !c.instagramHandle && <span className="text-ink3">—</span>}
                 </TD>
 
                 {/* Semua warna status lewat helper variant di utils/format.js —
@@ -87,19 +87,19 @@ export default function CustomersTable({
                     <Badge variant={orderStatusVariant(c.latestOrderStatus)}>
                       {ORDER_STATUS_LABELS[c.latestOrderStatus] || c.latestOrderStatus}
                     </Badge>
-                  ) : <span className="text-slate-300">—</span>}
+                  ) : <span className="text-ink3">—</span>}
                 </TD>
 
                 <TD className="max-w-44">
                   {c.latestKeluhan ? (
                     <span className="block truncate" title={c.latestKeluhan}>{c.latestKeluhan}</span>
-                  ) : <span className="text-slate-300">—</span>}
+                  ) : <span className="text-ink3">—</span>}
                 </TD>
 
                 <TD>
                   {c.healthStatus
                     ? <Badge variant={healthVariant(c.healthStatus)}>{HEALTH_LABELS[c.healthStatus]}</Badge>
-                    : <span className="text-slate-300">—</span>}
+                    : <span className="text-ink3">—</span>}
                 </TD>
 
                 <TD>
@@ -109,10 +109,10 @@ export default function CustomersTable({
                         <span key={t} className={`tag-chip ${tagClass(t)}`}>{t}</span>
                       ))}
                       {c.tags.length > 3 && (
-                        <span className="text-[11px] text-slate-400">+{c.tags.length - 3}</span>
+                        <span className="text-[11px] text-ink3">+{c.tags.length - 3}</span>
                       )}
                     </span>
-                  ) : <span className="text-slate-300">—</span>}
+                  ) : <span className="text-ink3">—</span>}
                 </TD>
 
                 <TD>
@@ -121,10 +121,10 @@ export default function CustomersTable({
                   </Badge>
                 </TD>
 
-                <TD>{c.city || <span className="text-slate-300">—</span>}</TD>
+                <TD>{c.city || <span className="text-ink3">—</span>}</TD>
                 <TD numeric>{c.orderCount || 0}</TD>
-                <TD numeric className="font-semibold text-slate-700">{formatRupiah(c.orderValue)}</TD>
-                <TD>{c.assignedSales?.name || <span className="text-slate-300">—</span>}</TD>
+                <TD numeric className="font-semibold text-ink">{formatRupiah(c.orderValue)}</TD>
+                <TD>{c.assignedSales?.name || <span className="text-ink3">—</span>}</TD>
 
                 <TD onClick={(e) => { e.stopPropagation(); onOpen(c.id); }}>
                   <Button variant="ghost" size="sm">Lihat</Button>

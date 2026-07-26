@@ -38,14 +38,14 @@ export default function Pagination({
 
   // Target sentuh minimal 32px (h-8 w-8) — sejalan dgn aturan touch target
   // CLAUDE.md; tombol angka melebar sendiri kalau halaman >99.
-  const btn = "inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 " +
-    "bg-white px-2 text-[13px] font-semibold text-slate-600 transition-colors duration-150 " +
-    "hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40";
+  const btn = "inline-flex h-8 min-w-8 items-center justify-center rounded-lg " +
+    "bg-surface px-2 text-[13px] font-semibold text-ink2 transition-colors duration-150 " +
+    "hover:bg-hovertint disabled:pointer-events-none disabled:opacity-40 " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 py-3">
-      <span className="mr-1 text-xs text-slate-400">
+      <span className="mr-1 text-xs text-ink3">
         {total === 0 ? "0 data" : `${start}–${end} dari ${total}`}
       </span>
 
@@ -55,11 +55,11 @@ export default function Pagination({
 
       {getPages().map((p, i) =>
         p === "..." ? (
-          <span key={`dot-${i}`} className="px-1 text-[13px] text-slate-300">…</span>
+          <span key={`dot-${i}`} className="px-1 text-[13px] text-ink3">…</span>
         ) : (
           <button
             key={p}
-            className={cn(btn, p === page && "border-brand-600 bg-brand-600 text-white hover:bg-brand-700")}
+            className={cn(btn, p === page && "bg-accent text-white hover:bg-accenthov")}
             onClick={() => onPage(p)}
             aria-current={p === page ? "page" : undefined}
           >
@@ -73,7 +73,7 @@ export default function Pagination({
       </button>
 
       <select
-        className="ml-1 h-8 rounded-lg border border-slate-200 bg-white px-2 text-[13px] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+        className="ml-1 h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         value={pageSize}
         onChange={(e) => { onPageSize(Number(e.target.value)); onPage(1); }}
         aria-label="Jumlah data per halaman"

@@ -14,13 +14,13 @@ export function EmptyState({ icon: Icon, title, description, action, className, 
       {...props}
     >
       {Icon && (
-        <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+        <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-inset text-ink3">
           <Icon size={20} />
         </div>
       )}
-      {title && <h3 className="text-sm font-semibold text-slate-700">{title}</h3>}
+      {title && <h3 className="text-sm font-semibold text-ink">{title}</h3>}
       {description && (
-        <p className="max-w-xs text-[13px] leading-relaxed text-slate-400">{description}</p>
+        <p className="max-w-xs text-[13px] leading-relaxed text-ink3">{description}</p>
       )}
       {action && <div className="mt-2">{action}</div>}
     </div>

@@ -5,9 +5,9 @@ import MetricCard from "./MetricCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 
 const CHANNEL_LABEL = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram" };
-const CHANNEL_COLOR = { WHATSAPP: "bg-chart-green", INSTAGRAM: "bg-chart-violet" };
+const CHANNEL_COLOR = { WHATSAPP: "bg-green", INSTAGRAM: "bg-accent" };
 const STATUS_COLOR = {
-  OPEN: "bg-brand-500", PENDING: "bg-chart-orange", RESOLVED: "bg-chart-green",
+  OPEN: "bg-accent", PENDING: "bg-orange", RESOLVED: "bg-green",
 };
 const STATUS_LABEL = { OPEN: "Terbuka", PENDING: "Pending", RESOLVED: "Selesai" };
 
@@ -39,46 +39,46 @@ export default function PercakapanTab({ perf, channelBreakdown }) {
           {/* Stacked bar ringan (bukan recharts) — cuma 1-2 kategori,
               cukup pakai div proporsional + animasi width, lebih ringan
               dari chart penuh untuk kasus sesederhana ini. */}
-          <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+          <div className="flex h-3 overflow-hidden rounded-full bg-inset">
             {channelBreakdown.map((row) => (
               <div
                 key={row.channel}
-                className={`h-full transition-[width] duration-700 ease-out ${CHANNEL_COLOR[row.channel] || "bg-brand-500"}`}
+                className={`h-full transition-[width] duration-700 ease-out ${CHANNEL_COLOR[row.channel] || "bg-accent"}`}
                 style={{ width: `${totalChannel > 0 ? (row.count / totalChannel) * 100 : 0}%` }}
               />
             ))}
           </div>
           <div className="mt-4 flex flex-col gap-2">
             {channelBreakdown.map((row) => (
-              <div key={row.channel} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <span className={`h-2.5 w-2.5 rounded-full ${CHANNEL_COLOR[row.channel] || "bg-brand-500"}`} />
+              <div key={row.channel} className="flex items-center justify-between rounded-xl bg-inset px-3 py-2.5">
+                <span className="flex items-center gap-2 text-sm font-medium text-ink2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${CHANNEL_COLOR[row.channel] || "bg-accent"}`} />
                   {CHANNEL_LABEL[row.channel] || row.channel}
                 </span>
-                <span className="text-lg font-bold text-slate-800">{row.count}</span>
+                <span className="text-lg font-bold text-ink">{row.count}</span>
               </div>
             ))}
           </div>
         </ChartCard>
 
         <ChartCard index={5} title="Status Percakapan" description="Terbuka / Pending / Selesai" empty={statusBreakdown.length === 0 ? "Belum ada data." : null}>
-          <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+          <div className="flex h-3 overflow-hidden rounded-full bg-inset">
             {statusBreakdown.map((row) => (
               <div
                 key={row.status}
-                className={`h-full transition-[width] duration-700 ease-out ${STATUS_COLOR[row.status] || "bg-brand-500"}`}
+                className={`h-full transition-[width] duration-700 ease-out ${STATUS_COLOR[row.status] || "bg-accent"}`}
                 style={{ width: `${totalStatus > 0 ? (row.count / totalStatus) * 100 : 0}%` }}
               />
             ))}
           </div>
           <div className="mt-4 flex flex-col gap-2">
             {statusBreakdown.map((row) => (
-              <div key={row.status} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <span className={`h-2.5 w-2.5 rounded-full ${STATUS_COLOR[row.status] || "bg-brand-500"}`} />
+              <div key={row.status} className="flex items-center justify-between rounded-xl bg-inset px-3 py-2.5">
+                <span className="flex items-center gap-2 text-sm font-medium text-ink2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${STATUS_COLOR[row.status] || "bg-accent"}`} />
                   {STATUS_LABEL[row.status] || row.status}
                 </span>
-                <span className="text-lg font-bold text-slate-800">{row.count}</span>
+                <span className="text-lg font-bold text-ink">{row.count}</span>
               </div>
             ))}
           </div>

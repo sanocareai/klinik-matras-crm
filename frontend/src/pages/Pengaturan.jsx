@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
-  MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp,
+  MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Palette,
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
@@ -12,6 +12,8 @@ import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT
 
 // Polling fallback (Fix UX sync-history) kalau socket putus/belum sempat
 // connect — 3 detik sesuai spec.
+import AppearanceSection from "@/features/settings/AppearanceSection.jsx";
+
 const SYNC_POLL_INTERVAL_MS = 3000;
 
 const NAV_ITEMS = [
@@ -19,6 +21,7 @@ const NAV_ITEMS = [
   { key: "whatsapp",     label: "Status WhatsApp",    icon: Wifi },
   { key: "template",     label: "Template Pesan",     icon: MessageSquare },
   { key: "target-sales", label: "Target Sales",       icon: TrendingUp },
+  { key: "tampilan",     label: "Tampilan",           icon: Palette },
   { key: "keamanan",     label: "Keamanan Akun",      icon: Lock },
   { key: "data",         label: "Data & Backup",      icon: Download },
 ];
@@ -798,6 +801,8 @@ export default function Pengaturan({ user }) {
           )}
 
           {/* ── TEMPLATE PESAN ── */}
+          {section === "tampilan" && <AppearanceSection />}
+
           {section === "template" && <TemplateSection />}
 
           {/* ── TARGET SALES ── */}

@@ -40,11 +40,11 @@ export default function ProfileFields({ customer, onUpdated }) {
     finally { setBusy(false); }
   }
 
-  const fbClass = feedback?.type === "success" ? "bg-chart-green-soft text-chart-green"
-    : feedback?.type === "warning" ? "bg-chart-orange-soft text-chart-orange" : "bg-chart-rose-soft text-chart-rose";
+  const fbClass = feedback?.type === "success" ? "bg-greenbg text-green"
+    : feedback?.type === "warning" ? "bg-orangebg text-orange" : "bg-redbg text-red";
   const health = customer.healthStatus;
   const ctype = customer.customerType || "END_USER";
-  const selectCls = "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-600/30";
+  const selectCls = "h-9 w-full rounded-lg bg-surface px-3 text-sm text-ink outline-none focus:ring-2 focus:ring-accent/30";
 
   return (
     <form onSubmit={saveProfile} className="flex flex-col gap-3">
@@ -66,10 +66,10 @@ export default function ProfileFields({ customer, onUpdated }) {
         <div className="flex flex-wrap gap-1.5">
           {[["SAKIT", "Sakit"], ["TIDAK_SAKIT", "Tidak Sakit"]].map(([v, l]) => (
             <button key={v} type="button" disabled={busy} onClick={() => patch({ healthStatus: health === v ? null : v })}
-              className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${
+              className={`rounded-full  px-3 py-1 text-[12px] font-semibold transition-colors ${
                 health === v
-                  ? (v === "SAKIT" ? "border-chart-rose bg-chart-rose-soft text-chart-rose" : "border-chart-green bg-chart-green-soft text-chart-green")
-                  : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>{l}</button>
+                  ? (v === "SAKIT" ? "border-red bg-redbg text-red" : "border-green bg-greenbg text-green")
+                  : "text-ink2 hover:bg-hovertint"}`}>{l}</button>
           ))}
         </div>
       </Field>
@@ -78,28 +78,28 @@ export default function ProfileFields({ customer, onUpdated }) {
         <div className="flex gap-1.5">
           {[["END_USER", "End User"], ["CORPORATE", "Corporate"]].map(([v, l]) => (
             <button key={v} type="button" disabled={busy} onClick={() => ctype !== v && patch({ customerType: v })}
-              className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${
-                ctype === v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>{l}</button>
+              className={`rounded-full  px-3 py-1 text-[12px] font-semibold transition-colors ${
+                ctype === v ? "bg-accentbg text-accent" : "text-ink2 hover:bg-hovertint"}`}>{l}</button>
           ))}
         </div>
       </Field>
 
-      <Field label="Sumber Lead"><div className="text-[13px] text-slate-500">{SOURCE_LABELS[customer.leadSource] || customer.leadSource || "—"}</div></Field>
-      <Field label="Sales Person"><div className="text-[13px] text-slate-500">{customer.assignedSales?.name || "—"}</div></Field>
+      <Field label="Sumber Lead"><div className="text-[13px] text-ink2">{SOURCE_LABELS[customer.leadSource] || customer.leadSource || "—"}</div></Field>
+      <Field label="Sales Person"><div className="text-[13px] text-ink2">{customer.assignedSales?.name || "—"}</div></Field>
 
       <Button type="submit" disabled={saving} className="w-full justify-center">{saving ? "Menyimpan..." : "Simpan Perubahan"}</Button>
 
       {/* Riwayat Keluhan (konteks kesehatan) */}
       <div className="mt-1">
-        <div className="mb-1.5 text-[12px] font-semibold text-slate-700">Riwayat Keluhan</div>
+        <div className="mb-1.5 text-[12px] font-semibold text-ink">Riwayat Keluhan</div>
         {(!customer.allKeluhan || customer.allKeluhan.length === 0) ? (
-          <p className="text-[12px] text-slate-400">Belum ada riwayat keluhan.</p>
+          <p className="text-[12px] text-ink3">Belum ada riwayat keluhan.</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {customer.allKeluhan.map((it, i) => (
-              <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <div className="text-[12px] text-amber-800">{it.keluhan}</div>
-                <div className="mt-0.5 text-[10.5px] text-slate-400">{formatTanggalWaktu(it.tanggal)}</div>
+              <div key={i} className="rounded-lg bg-orangebg px-3 py-2">
+                <div className="text-[12px] text-ink">{it.keluhan}</div>
+                <div className="mt-0.5 text-[10.5px] text-ink3">{formatTanggalWaktu(it.tanggal)}</div>
               </div>
             ))}
           </div>

@@ -2,19 +2,26 @@ import React from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils.js";
 
-// PENTING: variant `default` HARUS identik dengan versi lama (kelas yang sama
-// persis) supaya semua Card yang sudah dipakai tidak berubah tampilannya saat
-// migrasi. Variant baru bersifat aditif. Lihat sano-components.md §B.2.
-const cardVariants = cva("rounded-2xl transition-shadow duration-200", {
+// ─── CARD (Sano DS v2) ───────────────────────────────────────────────────────
+// TIDAK ADA BORDER. Hierarki dari tone permukaan + spacing + satu shadow lembut.
+// Padding 24px sekarang ada DI Card (v1 menaruhnya di CardHeader/CardContent),
+// supaya card tanpa header pun punya padding yang benar.
+//
+// Nama variant lama DIPERTAHANKAN supaya pemakaian yang sudah ada tidak pecah,
+// tapi dipetakan ulang:
+//   default     → permukaan standar
+//   hero        → SAMA dengan default. Isian navy gelap DIHAPUS (spec Step 4:
+//                 angka besar yang membawa emphasis, bukan latarnya). Variant
+//                 dibiarkan ada supaya `variant="hero"` di kode lama tetap
+//                 valid — hasilnya kini identik dengan default.
+//   ai-insight  → permukaan + tint accent tipis; gradient violet dihapus
+//                 (aturan satu accent).
+const cardVariants = cva("rounded-card bg-surface p-6", {
   variants: {
     variant: {
-      default: "border border-black/5 bg-card text-card-foreground shadow-sm hover:shadow-md",
-      // Kartu "hero" — SATU per view (KPI paling penting). Gradient navy brand,
-      // teks putih. Lihat sano-dashboard-layout.md §2.
-      hero: "border border-brand-900/20 bg-gradient-to-br from-brand-800 to-brand-900 text-white shadow-md",
-      // Kartu insight/rekomendasi AI. Tint violet lembut + aksen gradient di
-      // border kiri. HANYA untuk konten AI. Lihat sano-color-system.md §3.
-      "ai-insight": "border border-ai-violet/15 bg-ai-violet-soft/60 text-ai-ink shadow-sm hover:shadow-md",
+      default:      "shadow-card",
+      hero:         "shadow-card",
+      "ai-insight": "bg-accentbg shadow-card",
     },
   },
   defaultVariants: { variant: "default" },
@@ -24,20 +31,30 @@ export function Card({ className, variant, ...props }) {
   return <div className={cn(cardVariants({ variant }), className)} {...props} />;
 }
 
+// ─── CARD INSET ──────────────────────────────────────────────────────────────
+// Untuk konten BERSARANG di dalam Card. Tanpa shadow, tanpa border — dibedakan
+// HANYA oleh tone permukaan. Radius lebih kecil dari induknya (r-md < r-lg),
+// sesuai aturan "anak selalu lebih kecil dari induk".
+export function CardInset({ className, ...props }) {
+  return <div className={cn("rounded-btn bg-inset p-4", className)} {...props} />;
+}
+
 export { cardVariants };
 
+// Header/Content TIDAK lagi membawa padding sendiri (Card sudah p-6) — kalau
+// dua-duanya punya padding, hasilnya dobel dan density-nya rusak.
 export function CardHeader({ className, ...props }) {
-  return <div className={cn("flex flex-col gap-1 p-5 pb-3", className)} {...props} />;
+  return <div className={cn("mb-4 flex flex-col gap-1", className)} {...props} />;
 }
 
 export function CardTitle({ className, ...props }) {
-  return <h3 className={cn("text-sm font-semibold text-slate-700", className)} {...props} />;
+  return <h3 className={cn("t-card-title", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }) {
-  return <p className={cn("text-xs text-slate-400", className)} {...props} />;
+  return <p className={cn("t-secondary", className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }) {
-  return <div className={cn("p-5 pt-0", className)} {...props} />;
+  return <div className={cn(className)} {...props} />;
 }

@@ -10,7 +10,17 @@ const itemVariants = {
 
 // Palet monokromatik (gradasi slate) + 1 aksen biru untuk irisan terbesar —
 // sesuai spec "Palette monokromatik + 1 aksen".
-const MONO_PALETTE = ["#2563EB", "#94A3B8", "#CBD5E1", "#64748B", "#E2E8F0", "#475569"];
+// DS v2: satu accent + gradasi TINTA (bukan gradasi slate hardcoded), jadi
+// paletnya ikut tema terang/gelap. Irisan terbesar dapat accent, sisanya
+// makin redup — hierarki lewat opacity, bukan lewat hue berbeda.
+const MONO_PALETTE = [
+  "var(--accent)",
+  "var(--text-secondary)",
+  "var(--text-tertiary)",
+  "var(--hairline)",
+  "var(--accent-bg)",
+  "var(--bg-inset)",
+];
 
 export default function ChartWidget({ data, loading }) {
   const sorted = useMemo(() => {

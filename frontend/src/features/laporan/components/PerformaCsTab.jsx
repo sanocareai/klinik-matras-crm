@@ -12,16 +12,16 @@ import ChartTooltip from "./ChartTooltip.jsx";
 // diset abu-abu, >=100 hijau, >=50 biru brand, di bawahnya oranye),
 // cuma dipetakan ke kelas Tailwind instead of hex inline.
 function progressBarClass(pct) {
-  if (pct == null) return "bg-slate-300";
-  if (pct >= 100) return "bg-chart-green";
-  if (pct >= 50) return "bg-brand-600";
-  return "bg-chart-orange";
+  if (pct == null) return "bg-line";
+  if (pct >= 100) return "bg-green";
+  if (pct >= 50) return "bg-accent";
+  return "bg-orange";
 }
 function progressTextClass(pct) {
-  if (pct == null) return "text-slate-400";
-  if (pct >= 100) return "bg-chart-green-soft text-chart-green";
-  if (pct >= 50) return "bg-brand-50 text-brand-700";
-  return "bg-chart-orange-soft text-chart-orange";
+  if (pct == null) return "text-ink3";
+  if (pct >= 100) return "bg-greenbg text-green";
+  if (pct >= 50) return "bg-accentbg text-accent";
+  return "bg-orangebg text-orange";
 }
 
 // monthlyRevenue — deret pendapatan bulanan dari /analytics/overview, dipakai
@@ -70,7 +70,7 @@ export default function PerformaCsTab({ csPerf, targetMap, onExport, monthlyReve
         description="Performa & progress target bulanan per anggota"
         empty={csPerf.length === 0 ? "Belum ada data performa CS pada periode ini." : null}
       >
-        <div className="flex flex-col divide-y divide-slate-100">
+        <div className="flex flex-col divide-y divide-line">
           {csPerf.map((row) => {
             const sp = targetMap[row.userId];
             const target = sp?.target ?? 0;
@@ -80,23 +80,23 @@ export default function PerformaCsTab({ csPerf, targetMap, onExport, monthlyReve
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <Avatar name={row.name} src={row.avatarUrl} size="md" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-700">{row.name}</p>
-                    <p className="text-xs text-slate-400">{row.totalConversations || 0} percakapan · {formatDuration(row.avgResponseMinutes)}</p>
+                    <p className="truncate text-sm font-semibold text-ink">{row.name}</p>
+                    <p className="text-xs text-ink3">{row.totalConversations || 0} percakapan · {formatDuration(row.avgResponseMinutes)}</p>
                   </div>
                 </div>
 
                 <div className={`inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
-                  (row.closingRate || 0) >= 50 ? "bg-chart-green-soft text-chart-green" : "bg-chart-orange-soft text-chart-orange"
+                  (row.closingRate || 0) >= 50 ? "bg-greenbg text-green" : "bg-orangebg text-orange"
                 }`}>
                   {row.closingRate != null ? `${row.closingRate}%` : "—"} closing
                 </div>
 
                 <div className="w-full sm:w-56">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600">{formatRupiah(row.totalOrderValue || 0)}</span>
-                    {target > 0 && <span className="text-slate-400">/ {formatRupiah(target)}</span>}
+                    <span className="font-semibold text-ink2">{formatRupiah(row.totalOrderValue || 0)}</span>
+                    {target > 0 && <span className="text-ink3">/ {formatRupiah(target)}</span>}
                   </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-inset">
                     <div
                       className={`h-full rounded-full transition-[width] duration-700 ease-out ${progressBarClass(pct)}`}
                       style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
@@ -118,14 +118,14 @@ export default function PerformaCsTab({ csPerf, targetMap, onExport, monthlyReve
             <BarChart data={csPerf} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="csBarFill" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#2064B7" />
-                  <stop offset="100%" stopColor="#4F97E3" />
+                  <stop offset="0%" stopColor="var(--accent)" />
+                  <stop offset="100%" stopColor="var(--accent)" />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: "#64748b" }} width={100} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltip formatter={(v) => [v, "Percakapan"]} />} cursor={{ fill: "#f1f5f9" }} />
+              <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 12, fill: "var(--text-secondary)" }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: "var(--text-secondary)" }} width={100} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip formatter={(v) => [v, "Percakapan"]} />} cursor={{ fill: "var(--bg-inset)" }} />
               <Bar dataKey="totalConversations" name="Percakapan" fill="url(#csBarFill)" radius={[0, 8, 8, 0]} isAnimationActive animationDuration={700} maxBarSize={22} />
             </BarChart>
           </ResponsiveContainer>

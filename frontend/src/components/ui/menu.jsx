@@ -14,7 +14,7 @@ export function Menu({ trigger, children, align = "end", sideOffset = 6, classNa
           align={align}
           sideOffset={sideOffset}
           className={cn(
-            "z-[150] min-w-[180px] rounded-xl border border-black/5 bg-white p-1.5 shadow-md outline-none",
+            "z-[150] min-w-[180px] rounded-xl bg-surface p-1.5 shadow-popover outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
             className
           )}
@@ -32,10 +32,10 @@ export function MenuItem({ className, destructive, icon: Icon, children, ...prop
     <DropdownMenu.Item
       className={cn(
         "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] font-medium outline-none",
-        "data-[highlighted]:bg-slate-100",
+        "data-[highlighted]:bg-inset",
         destructive
-          ? "text-chart-rose data-[highlighted]:bg-chart-rose-soft"
-          : "text-slate-600",
+          ? "text-red data-[highlighted]:bg-redbg"
+          : "text-ink2",
         className
       )}
       {...props}
@@ -48,12 +48,12 @@ export function MenuItem({ className, destructive, icon: Icon, children, ...prop
 
 export function MenuLabel({ className, children }) {
   return (
-    <DropdownMenu.Label className={cn("px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400", className)}>
+    <DropdownMenu.Label className={cn("px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink3", className)}>
       {children}
     </DropdownMenu.Label>
   );
 }
 
 export function MenuSeparator({ className }) {
-  return <DropdownMenu.Separator className={cn("my-1 h-px bg-slate-100", className)} />;
+  return <DropdownMenu.Separator className={cn("my-1 h-px bg-inset", className)} />;
 }

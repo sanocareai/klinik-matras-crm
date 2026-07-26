@@ -14,7 +14,7 @@ export default function ChartCard({ title, description, children, empty, classNa
       </CardHeader>
       <CardContent>
         {empty ? (
-          <div className="flex h-[200px] items-center justify-center text-sm text-slate-400">{empty}</div>
+          <div className="flex h-[200px] items-center justify-center text-sm text-ink3">{empty}</div>
         ) : children}
       </CardContent>
     </Card>

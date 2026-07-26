@@ -12,7 +12,7 @@ import { buildSparkline } from "../utils.js";
 const CHANNEL_LABEL = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram" };
 const CHANNEL_COLOR = { WHATSAPP: "var(--color-chart-green)", INSTAGRAM: "var(--color-chart-violet)" };
 
-const AXIS_STYLE = { fontSize: 12, fill: "#64748b" };
+const AXIS_STYLE = { fontSize: 12, fill: "var(--text-secondary)" };
 
 export default function RingkasanTab({ overview, perf, monthlyRevenue, monthlyCustomers, channelBreakdown }) {
   const totalChannel = channelBreakdown.reduce((s, c) => s + (c.count || 0), 0);
@@ -62,18 +62,18 @@ export default function RingkasanTab({ overview, perf, monthlyRevenue, monthlyCu
             <AreaChart data={monthlyRevenue} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#2064B7" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#2064B7" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+              <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
               <XAxis dataKey="month" tickFormatter={labelBulan} tick={AXIS_STYLE} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={(v) => `${(v / 1_000_000).toFixed(0)}jt`} tick={AXIS_STYLE} axisLine={false} tickLine={false} />
               <Tooltip
                 content={<ChartTooltip formatter={(v) => [formatRupiah(v), "Pendapatan"]} labelFormatter={labelBulan} />}
               />
               <Area
-                type="monotone" dataKey="value" stroke="#2064B7" strokeWidth={2.5}
+                type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2.5}
                 fill="url(#revenueFill)" isAnimationActive animationDuration={700}
               />
             </AreaChart>
@@ -96,25 +96,25 @@ export default function RingkasanTab({ overview, perf, monthlyRevenue, monthlyCu
                   isAnimationActive animationDuration={700}
                 >
                   {channelBreakdown.map((e) => (
-                    <Cell key={e.channel} fill={CHANNEL_COLOR[e.channel] || "#2064B7"} stroke="none" />
+                    <Cell key={e.channel} fill={CHANNEL_COLOR[e.channel] || "var(--accent)"} stroke="none" />
                   ))}
                 </Pie>
                 <Tooltip content={<ChartTooltip formatter={(v, n) => [v, CHANNEL_LABEL[n] || n]} />} />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-extrabold text-slate-800">{totalChannel}</span>
-              <span className="text-[11px] text-slate-400">percakapan</span>
+              <span className="text-2xl font-extrabold text-ink">{totalChannel}</span>
+              <span className="text-[11px] text-ink3">percakapan</span>
             </div>
           </div>
           <div className="mt-3 flex flex-col gap-1.5">
             {channelBreakdown.map((row) => (
               <div key={row.channel} className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-slate-500">
-                  <span className="h-2 w-2 rounded-full" style={{ background: CHANNEL_COLOR[row.channel] || "#2064B7" }} />
+                <span className="flex items-center gap-1.5 text-ink2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: CHANNEL_COLOR[row.channel] || "var(--accent)" }} />
                   {CHANNEL_LABEL[row.channel] || row.channel}
                 </span>
-                <span className="font-semibold text-slate-700">{row.count}</span>
+                <span className="font-semibold text-ink">{row.count}</span>
               </div>
             ))}
           </div>
@@ -130,14 +130,14 @@ export default function RingkasanTab({ overview, perf, monthlyRevenue, monthlyCu
           <BarChart data={monthlyCustomers} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
             <defs>
               <linearGradient id="customersFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#4F97E3" />
-                <stop offset="100%" stopColor="#2064B7" />
+                <stop offset="0%" stopColor="var(--accent)" />
+                <stop offset="100%" stopColor="var(--accent)" />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" vertical={false} />
+            <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
             <XAxis dataKey="month" tickFormatter={labelBulan} tick={AXIS_STYLE} axisLine={false} tickLine={false} />
             <YAxis tick={AXIS_STYLE} axisLine={false} tickLine={false} />
-            <Tooltip content={<ChartTooltip formatter={(v) => [v, "Pelanggan Baru"]} labelFormatter={labelBulan} />} cursor={{ fill: "#f1f5f9" }} />
+            <Tooltip content={<ChartTooltip formatter={(v) => [v, "Pelanggan Baru"]} labelFormatter={labelBulan} />} cursor={{ fill: "var(--bg-inset)" }} />
             <Bar dataKey="count" fill="url(#customersFill)" radius={[8, 8, 0, 0]} isAnimationActive animationDuration={700} maxBarSize={48} />
           </BarChart>
         </ResponsiveContainer>

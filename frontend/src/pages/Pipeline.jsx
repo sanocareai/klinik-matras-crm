@@ -20,7 +20,7 @@ const STAGES = ["LEAD", "QUALIFIED", "QUOTED", "WON", "LOST"];
 function ColumnTotal({ value }) {
   const animated = useCountUp(value);
   return (
-    <span className="text-[13px] font-bold tabular-nums text-slate-700">
+    <span className="text-[13px] font-bold tabular-nums text-ink">
       {formatRupiah(Math.round(animated))}
     </span>
   );
@@ -151,7 +151,7 @@ export default function Pipeline() {
         actions={
           <>
             <select
-              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[13px] text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               value={filterSales}
               onChange={(e) => setFilterSales(e.target.value)}
               aria-label="Filter sales person"
@@ -175,7 +175,7 @@ export default function Pipeline() {
         {loading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {STAGES.map((s) => (
-              <div key={s} className="flex flex-col gap-2 rounded-2xl bg-slate-50/80 p-2.5">
+              <div key={s} className="flex flex-col gap-2 rounded-2xl bg-inset/80 p-2.5">
                 <Skeleton className="h-5 w-24" />
                 {[0, 1].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
               </div>
@@ -195,18 +195,18 @@ export default function Pipeline() {
                   onDragLeave={() => setDragOver(null)}
                   onDrop={(e) => onDrop(e, stage)}
                   className={cn(
-                    "flex flex-col rounded-2xl border p-2.5 transition-colors duration-150",
+                    "flex flex-col rounded-2xl  p-2.5 transition-colors duration-150",
                     dragOver === stage
-                      ? "border-brand-300 bg-brand-50/70"
-                      : "border-transparent bg-slate-50/80"
+                      ? "bg-accentbg/70"
+                      : "border-transparent bg-inset/80"
                   )}
                 >
                   <div className="flex items-center gap-2 px-0.5">
-                    <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage] || "bg-slate-400")} />
-                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-600">
+                    <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STAGE_DOT[stage] || "bg-ink3")} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">
                       {STAGE_LABELS[stage] || stage}
                     </span>
-                    <span className="rounded-full bg-white px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-slate-500">
+                    <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink2">
                       {cards.length}
                     </span>
                   </div>
@@ -230,7 +230,7 @@ export default function Pipeline() {
                       />
                     ))}
                     {cards.length === 0 && (
-                      <div className="flex min-h-16 items-center justify-center rounded-xl border border-dashed border-slate-200 px-2 py-3 text-center text-[11px] text-slate-400">
+                      <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
                         Kosong
                       </div>
                     )}

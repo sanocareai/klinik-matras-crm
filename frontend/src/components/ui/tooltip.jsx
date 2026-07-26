@@ -16,7 +16,7 @@ export function Tooltip({ content, children, side = "top", delayDuration = 200, 
             side={side}
             sideOffset={6}
             className={cn(
-              "z-50 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-md",
+              "z-50 rounded-lg bg-ink text-surface px-2.5 py-1.5 text-[11px] font-medium text-white shadow-popover",
               "data-[state=delayed-open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0",
               className
             )}

@@ -129,8 +129,8 @@ export default function App() {
           className="w-[340px] text-center"
         >
           <div className="mb-3 text-[40px]">⏰</div>
-          <h3 className="mb-2 text-[17px] font-bold text-slate-900">Sesi Berakhir</h3>
-          <p className="mb-5 text-sm text-slate-500">
+          <h3 className="mb-2 text-[17px] font-bold text-ink">Sesi Berakhir</h3>
+          <p className="mb-5 text-sm text-ink2">
             Login Anda sudah kadaluarsa. Silakan login kembali untuk melanjutkan.
           </p>
           <Button className="w-full" onClick={handleForceRelogin}>

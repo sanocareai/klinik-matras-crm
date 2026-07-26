@@ -7,7 +7,7 @@ export default function Customer360Skeleton() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-start gap-3 border-b border-slate-200 bg-white p-4">
+      <div className="flex items-start gap-3 border-b border-line bg-surface p-4">
         <Skeleton className="h-11 w-11 rounded-full" />
         <div className="flex-1 space-y-2">
           <Skeleton className="h-5 w-40 rounded-md" />
