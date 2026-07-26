@@ -1,10 +1,11 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2 } from "lucide-react";
+import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useDraft, useReplyTarget, useEditingMessage, useComposerStore } from "../../stores/composerStore.js";
+import { WA_MARKERS, toggleWaFormat, parseWaFormatting } from "../../../../utils/waFormat.jsx";
 
 // Fase G: MediaUploader & VoiceRecorder jadi chunk terpisah, di-load begitu
 // ChatWindow pertama kali dibuka — bukan ikut initial bundle app/login/Dashboard.
@@ -88,7 +89,7 @@ function TemplatePicker({ customer, onSelect, onClose }) {
                     <span className="template-badge" style={{ background: c.bg, color: c.color }}>{KATEGORI_LABELS[tpl.kategori]}</span>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>{tpl.nama}</span>
                   </div>
-                  <p className="template-preview">{preview}</p>
+                  <p className="template-preview">{parseWaFormatting(preview)}</p>
                 </button>
               );
             })}
@@ -221,6 +222,25 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     if (file) mediaUploaderRef.current?.addFiles([file]);
   }
 
+  // Terapkan format WhatsApp (*tebal*/_miring_/~coret~) ke teks yang dipilih
+  // di textarea. Textarea TETAP teks polos (sengaja, sama seperti kotak
+  // ketik WhatsApp asli — simbol format terlihat apa adanya saat mengetik,
+  // baru dirender jadi gaya setelah terkirim/diterima, lihat MessageBubble +
+  // utils/waFormat.jsx). Kalau tidak ada seleksi, simbol kosong disisipkan
+  // di posisi kursor supaya user tinggal mengetik di tengahnya.
+  function applyFormat(marker) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const { nextText, selStart, selEnd } = toggleWaFormat(el, draft, marker);
+    setDraft(nextText);
+    setTimeout(() => {
+      el.focus();
+      el.selectionStart = selStart;
+      el.selectionEnd = selEnd;
+      autoGrowTextarea(el);
+    }, 0);
+  }
+
   function insertEmoji(emoji) {
     const el = textareaRef.current;
     if (!el) { setDraft(draft + emoji); return; }
@@ -291,6 +311,21 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           </button>
           {showEmoji && <EmojiMartPopup onSelect={insertEmoji} onClose={() => setShowEmoji(false)} />}
         </div>
+
+        {/* Format WhatsApp — pilih teks di kotak ketik dulu, lalu klik salah
+            satu tombol ini untuk membungkusnya (sama seperti WhatsApp Web).
+            TIDAK ADA tombol underline — WhatsApp sendiri tidak punya format
+            itu, menambahkannya cuma akan mengirim simbol yang tidak
+            dikenali WhatsApp customer. */}
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.bold)} className="chat-action-btn" title="Tebal (*teks*)">
+          <Bold size={15} />
+        </button>
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.italic)} className="chat-action-btn" title="Miring (_teks_)">
+          <Italic size={15} />
+        </button>
+        <button type="button" onClick={() => applyFormat(WA_MARKERS.strike)} className="chat-action-btn" title="Coret (~teks~)">
+          <Strikethrough size={15} />
+        </button>
 
         <textarea
           ref={textareaRef}

@@ -1495,6 +1495,10 @@ input:focus, select:focus, textarea:focus {
 }
 .bubble-text {
   display: block; margin-top: 4px; font-size: 13.5px; line-height: 1.45;
+  /* pre-wrap: baris baru di pesan (Shift+Enter di composer, atau pesan
+     multi-baris dari customer) sebelumnya hilang/kolaps jadi satu baris
+     panjang — <span> polos tidak menghormati "\n" tanpa ini. */
+  white-space: pre-wrap; word-break: break-word;
 }
 .bubble-media-placeholder {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;

@@ -4,6 +4,7 @@ import {
   Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
+import { parseWaFormatting } from "../../../../utils/waFormat.jsx";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
 import { api } from "../../../../api.js";
 import { useMessageStore } from "../../stores/messageStore.js";
@@ -408,7 +409,12 @@ function MessageBubbleBase({
               <MediaPlaceholderCard message={m} conversationId={conversationId} />
             )}
 
-            {text && <span className="bubble-text">{text}</span>}
+            {/* BUG YANG DIPERBAIKI: dulu `{text}` polos — sintaks format
+                WhatsApp (*tebal*, _miring_, ~coret~, ```monospace```) yang
+                diketik sales ATAU dikirim customer tampil sebagai tanda baca
+                literal di CRM, padahal WhatsApp asli merendernya jadi teks
+                bergaya. Lihat utils/waFormat.jsx. */}
+            {text && <span className="bubble-text">{parseWaFormatting(text)}</span>}
           </>
         )}
 
