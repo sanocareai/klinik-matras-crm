@@ -262,14 +262,6 @@ export const api = {
   getSalesPerformance: (year, month) =>
     request("/analytics/sales-performance" + buildQuery({ year, month })),
 
-  // Total nilai SEMUA order (endpoint SAMA yang dipakai kartu "Total Nilai"
-  // Dashboard.jsx web) — BEDA cakupan dari sales-performance di atas: yang
-  // ini menghitung SEMUA order dalam rentang tanggal, TIDAK peduli customer-
-  // nya sudah punya sales assigned atau belum. Dipakai HomeScreen.js untuk
-  // menampilkan angka yang benar-benar sama dengan web, supaya "Target Tim"
-  // (yang sengaja cuma menghitung order ber-sales, demi akurasi target
-  // per-orang) tidak disalahpahami sebagai total omzet perusahaan.
-  getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
 
   // Performa CS per sales (chat ditangani + closingRate = RESOLVED/total —
   // definisi "conversion rate" yang SAMA dipakai Laporan.jsx web, lihat

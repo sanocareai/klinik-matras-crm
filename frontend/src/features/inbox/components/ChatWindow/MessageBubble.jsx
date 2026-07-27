@@ -221,29 +221,51 @@ function MessageBubbleBase({
   message: m, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
-  const [hovered, setHovered] = useState(false);
+  // Revisi 28 Jul 2026 — GANTI POLA INTERAKSI: dulu aksi pesan (Balas/
+  // Teruskan/Edit/Hapus/Pilih) muncul sebagai overlay mengambang begitu
+  // KURSOR LEWAT di atas bubble (`hovered`). Masalahnya: (a) kelihatan
+  // kuno & "berkedip" tiap kursor lewat tanpa sengaja, (b) di layar sentuh
+  // hover itu konsep yang tidak ada, jadi dulu dipaksa pakai long-press yang
+  // menampilkan overlay yang SAMA lalu auto-hilang setelah 4 detik, (c)
+  // overlay-nya menumpuk di atas bubble & sering ketutup/kepotong.
+  //
+  // Sekarang: MENU KONTEKS sungguhan — klik-kanan di desktop,
+  // tahan (long-press) di HP/tablet. Menu muncul DI POSISI kursor/jari
+  // (position: fixed), bukan menempel di atas bubble, jadi tidak pernah
+  // kepotong dan tidak pernah muncul tanpa diminta.
+  const [menuPos, setMenuPos] = useState(null); // { x, y } | null
   const longPressTimerRef = useRef(null);
+  const touchStartRef = useRef(null);
   const rowRef = useRef(null);
+  const menuRef = useRef(null);
 
-  // BUG (fix): `hovered` cuma di-toggle lewat onMouseEnter/onMouseLeave —
-  // di trackpad/layar sentuh, mouseleave TIDAK SELALU terpanggil (misal
-  // scroll-drag lewat sentuhan, atau tap cepat lalu langsung geser layar),
-  // jadi msg-action-bar bisa nyangkut kelihatan terus di atas bubble padahal
-  // cursor sudah pindah. Safety net: begitu hovered=true, pasang listener
-  // level dokumen — klik/sentuh APA PUN di luar row ini langsung tutup,
-  // terlepas dari kenapa mouseleave/touchend sebelumnya gagal.
+  const closeMenu = () => setMenuPos(null);
+
+  // Tutup menu saat klik/sentuh di luar, scroll, resize, atau tekan Escape.
+  // Scroll WAJIB ikut menutup: menu pakai position fixed (koordinat viewport),
+  // jadi kalau daftar pesan di-scroll sementara menu terbuka, menu akan
+  // "menggantung" di tempat yang tidak lagi berkaitan dengan bubble-nya.
   useEffect(() => {
-    if (!hovered) return;
-    function handleOutside(e) {
-      if (rowRef.current && !rowRef.current.contains(e.target)) setHovered(false);
+    if (!menuPos) return;
+    function onOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) closeMenu();
     }
-    document.addEventListener("mousedown", handleOutside);
-    document.addEventListener("touchstart", handleOutside);
+    function onKey(e) { if (e.key === "Escape") closeMenu(); }
+    document.addEventListener("mousedown", onOutside);
+    document.addEventListener("touchstart", onOutside);
+    document.addEventListener("keydown", onKey);
+    // capture:true — event scroll tidak "bubble", jadi listener di document
+    // tanpa capture TIDAK akan kena scroll dari container pesan di dalamnya.
+    document.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
     return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      document.removeEventListener("touchstart", handleOutside);
+      document.removeEventListener("mousedown", onOutside);
+      document.removeEventListener("touchstart", onOutside);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
     };
-  }, [hovered]);
+  }, [menuPos]);
 
   const isOut     = m.direction === "OUTBOUND";
   const isSending = m.status === "sending";
@@ -262,13 +284,13 @@ function MessageBubbleBase({
     e.stopPropagation();
     if (!confirm("Pesan ini akan dihapus dari CRM (tidak menghapus dari WhatsApp pelanggan). Lanjutkan?")) return;
     onDeleteLocal(m);
-    setHovered(false);
+    closeMenu();
   }
   function handleDeleteEveryoneClick(e) {
     e.stopPropagation();
     if (!confirm("Pesan ini akan dihapus dari WhatsApp pelanggan juga. Lanjutkan?")) return;
     onDeleteEveryone(m);
-    setHovered(false);
+    closeMenu();
   }
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
@@ -283,24 +305,75 @@ function MessageBubbleBase({
   const pastedMapsLocation = text && !hasMedia ? extractMapsLocation(text) : null;
   const isUnsupportedType = text === UNSUPPORTED_PLACEHOLDER;
 
-  function handleTouchStart() {
+  // Menu tidak masuk akal (dan aksinya tidak valid) untuk pesan yang masih
+  // terkirim, gagal, sudah dihapus, atau saat mode pilih-banyak aktif.
+  const menuEnabled = !selectionMode && !isSending && !isFailed && !isRevoked;
+
+  // Jaga menu tetap di dalam viewport — kalau diklik dekat tepi kanan/bawah,
+  // koordinat mentah akan membuat menu terpotong keluar layar.
+  function openMenuAt(clientX, clientY) {
+    const MENU_W = 210, MENU_H = 250, PAD = 8;
+    const x = Math.min(clientX, window.innerWidth  - MENU_W - PAD);
+    const y = Math.min(clientY, window.innerHeight - MENU_H - PAD);
+    setMenuPos({ x: Math.max(PAD, x), y: Math.max(PAD, y) });
+  }
+
+  // Desktop: klik kanan. preventDefault supaya menu konteks browser tidak
+  // ikut muncul menutupi menu kita.
+  function handleContextMenu(e) {
+    if (!menuEnabled) return;
+    e.preventDefault();
+    openMenuAt(e.clientX, e.clientY);
+  }
+
+  // HP/tablet: tahan ~500ms. Posisi diambil dari titik sentuh AWAL (bukan
+  // posisi saat timer menyala) supaya menu muncul tepat di bawah jari.
+  // Digeser >10px = user sedang scroll, BUKAN menahan → batalkan; tanpa
+  // ambang ini menu ikut muncul tiap kali scroll pelan (persis keluhan
+  // "swipe kepencet" yang sudah diperbaiki di ConversationItem mobile).
+  function handleTouchStart(e) {
+    if (!menuEnabled) return;
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
     longPressTimerRef.current = setTimeout(() => {
-      setHovered(true);
-      setTimeout(() => setHovered(false), 4000);
-    }, 600);
+      openMenuAt(t.clientX, t.clientY);
+    }, 500);
+  }
+  function handleTouchMove(e) {
+    const start = touchStartRef.current;
+    if (!start) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - start.x) > 10 || Math.abs(t.clientY - start.y) > 10) {
+      clearTimeout(longPressTimerRef.current);
+    }
   }
   function handleTouchEnd() { clearTimeout(longPressTimerRef.current); }
+  // Bersihkan timer kalau komponen di-unmount saat jari masih menahan
+  // (mis. daftar pesan di-recycle/berpindah percakapan) — kalau tidak,
+  // setMenuPos dipanggil pada komponen yang sudah tidak ada.
+  useEffect(() => () => clearTimeout(longPressTimerRef.current), []);
+
+  // Satu daftar aksi, dipakai untuk menu klik-kanan MAUPUN long-press —
+  // tidak ada dua sumber kebenaran daftar aksi.
+  const actions = [
+    onReply       && { key: "reply",   label: "Balas",             Icon: Reply,      onClick: () => onReply(m) },
+    onForward     && { key: "forward", label: "Teruskan",          Icon: Forward,    onClick: () => onForward(m) },
+    canEdit       && { key: "edit",    label: "Edit",              Icon: Pencil,     onClick: () => onEdit(m) },
+    onEnterSelection && { key: "select", label: "Pilih",           Icon: CheckSquare, onClick: () => onEnterSelection(m) },
+    canDeleteLocal && { key: "del-local", label: "Hapus untuk Saya", Icon: Trash2, onClick: null, raw: handleDeleteLocalClick },
+    canDeleteEveryone && { key: "del-all", label: "Hapus untuk Semua", Icon: Trash2, onClick: null, raw: handleDeleteEveryoneClick, danger: true },
+  ].filter(Boolean);
 
   return (
     <div
       ref={rowRef}
       className="msg-row"
       style={{ display: "flex", flexDirection: "row", alignItems: "center", width: "100%", gap: 8 }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      onTouchMove={() => clearTimeout(longPressTimerRef.current)}
+      onTouchMove={handleTouchMove}
+      onTouchCancel={handleTouchEnd}
     >
       {/* Checkbox mode pilih (multi-select) — SELALU di ujung kiri layar
           (bukan cuma "sebelah kiri bubble"), sama seperti WhatsApp asli.
@@ -320,38 +393,33 @@ function MessageBubbleBase({
         style={{ display: "flex", flexDirection: "column", alignItems: isOut ? "flex-end" : "flex-start", flex: 1, minWidth: 0, cursor: selectionMode ? "pointer" : "default" }}
         onClick={selectionMode ? () => onToggleSelect(m) : undefined}
       >
-      {hovered && !selectionMode && !isSending && !isFailed && !isRevoked && (
-        <div className="msg-action-bar">
-          {onReply && (
-            <button onClick={(e) => { e.stopPropagation(); onReply(m); setHovered(false); }} title="Balas">
-              <Reply size={14} />
+      {/* Menu konteks — klik kanan (desktop) / tahan (HP-tablet). position
+          fixed di koordinat kursor/jari, dirender di dalam row ini (bukan
+          portal) karena listener "klik di luar" di atas mengandalkan
+          menuRef.contains(). */}
+      {menuPos && actions.length > 0 && (
+        <div
+          ref={menuRef}
+          className="msg-context-menu"
+          style={{ left: menuPos.x, top: menuPos.y }}
+          role="menu"
+          // Klik di dalam menu jangan menembus ke row (row punya onClick
+          // toggle-select saat mode pilih aktif).
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {actions.map(({ key, label, Icon, onClick, raw, danger }) => (
+            <button
+              key={key}
+              type="button"
+              role="menuitem"
+              className={danger ? "danger" : undefined}
+              onClick={raw ? raw : (e) => { e.stopPropagation(); onClick(); closeMenu(); }}
+            >
+              <Icon size={14} />
+              <span>{label}</span>
             </button>
-          )}
-          {onForward && (
-            <button onClick={(e) => { e.stopPropagation(); onForward(m); setHovered(false); }} title="Teruskan">
-              <Forward size={14} />
-            </button>
-          )}
-          {canEdit && (
-            <button onClick={(e) => { e.stopPropagation(); onEdit(m); setHovered(false); }} title="Edit">
-              <Pencil size={14} />
-            </button>
-          )}
-          {canDeleteLocal && (
-            <button onClick={handleDeleteLocalClick} title="Hapus untuk Saya">
-              <Trash2 size={14} />
-            </button>
-          )}
-          {canDeleteEveryone && (
-            <button onClick={handleDeleteEveryoneClick} title="Hapus untuk Semua">
-              <Trash2 size={14} color="var(--danger, #dc2626)" />
-            </button>
-          )}
-          {onEnterSelection && (
-            <button onClick={(e) => { e.stopPropagation(); onEnterSelection(m); setHovered(false); }} title="Pilih">
-              <CheckSquare size={14} />
-            </button>
-          )}
+          ))}
         </div>
       )}
 

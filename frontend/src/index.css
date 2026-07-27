@@ -2066,14 +2066,38 @@ input:focus, select:focus, textarea:focus {
 .bubble-forwarded { display: flex; align-items: center; gap: 3px; font-size: 11px; font-style: italic; opacity: 0.65; margin-bottom: 4px; }
 .msg-sender-name { font-size: 11px; font-weight: 700; color: #7c3aed; margin-bottom: 3px; }
 
-/* Action bar mini (Reply/Forward) saat hover/long-press */
-.msg-action-bar {
-  display: flex; gap: 4px; margin-bottom: 4px;
-  background: white; border: 1px solid var(--border); border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12); padding: 3px 8px;
+/* Menu konteks aksi pesan — klik kanan (desktop) / tahan (HP & tablet).
+   MENGGANTIKAN .msg-action-bar lama (overlay yang muncul saat kursor lewat
+   di atas bubble — lihat catatan panjang di MessageBubble.jsx). position
+   fixed: koordinatnya viewport (dari e.clientX/Y), jadi menu muncul tepat
+   di kursor/jari dan tidak pernah kepotong oleh container bubble. */
+.msg-context-menu {
+  position: fixed; z-index: 1100;
+  min-width: 190px; padding: 5px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  animation: msgMenuIn 0.12s ease-out;
 }
-.msg-action-bar button { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 3px; border-radius: 50%; display: flex; align-items: center; transition: background 0.12s, color 0.12s; }
-.msg-action-bar button:hover { background: #f1f5f9; color: var(--color-primary); }
+@keyframes msgMenuIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.msg-context-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 12px; border: none; background: none; cursor: pointer;
+  font-size: 13.5px; color: var(--text-main); text-align: left;
+  border-radius: 8px; transition: background 0.1s;
+}
+.msg-context-menu button:hover { background: var(--bg-hover, #f1f5f9); }
+.msg-context-menu button.danger { color: var(--color-danger, #dc2626); }
+/* Cegah "tahan lalu muncul menu seleksi teks bawaan browser" bentrok dengan
+   long-press kita di layar sentuh — teks bubble tetap bisa dipilih di
+   desktop (pointer: fine), cuma di perangkat sentuh yang dimatikan. */
+@media (pointer: coarse) {
+  .msg-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}
 
 /* Checkbox mode pilih (multi-select) — selalu di ujung kiri (lihat MessageBubble.jsx) */
 .msg-select-checkbox {
