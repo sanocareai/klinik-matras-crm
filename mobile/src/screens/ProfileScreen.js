@@ -126,6 +126,13 @@ export default function ProfileScreen({ navigation }) {
     saveNotifPrefs(next).catch(() => {}); // fire-and-forget, ini preferensi lokal saja
   }
 
+  // Revisi 28 Jul 2026: app SEKARANG juga cek update OTOMATIS sekali tiap
+  // dibuka (lib/autoUpdate.js, dipanggil dari App.js#Root) — tombol ini
+  // jadi JALUR CADANGAN manual, bukan satu-satunya cara. Beda sengaja dari
+  // versi otomatis: yang manual TAMPILKAN alert (sukses/gagal/sudah
+  // terbaru) karena user MEMINTA aksi ini secara eksplisit, sedangkan versi
+  // otomatis diam-diam total (lihat komentar di autoUpdate.js) supaya tidak
+  // mengganggu di setiap app dibuka.
   async function handleCheckUpdate() {
     // Jaga-jaga ganda — tombol sudah disabled (lihat prop disabled di JSX)
     // kalau native module belum tersedia, tapi dicek lagi di sini supaya

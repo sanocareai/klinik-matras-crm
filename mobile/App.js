@@ -31,6 +31,7 @@ import { queryClient } from "./src/lib/queryClient";
 import { useSocketEvents } from "./src/hooks/useSocketEvents";
 import { useBadgeSync } from "./src/hooks/useBadgeSync";
 import { initOutboxFlush } from "./src/lib/outboxFlush";
+import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
 import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
 
 // BUG (fix, audit startup): sebelum ini TIDAK ADA preventAutoHideAsync() sama
@@ -210,6 +211,12 @@ function Root() {
     const unsubscribe = initOutboxFlush();
     return unsubscribe;
   }, [user]);
+
+  // Cek update OTA otomatis sekali tiap app dibuka (lihat lib/autoUpdate.js
+  // untuk penjelasan kenapa cuma saat launch, bukan tiap kali kembali dari
+  // background) — TIDAK bergantung `user` (jalan juga di layar Login),
+  // supaya perbaikan penting tetap sampai walau sales belum sempat login.
+  useEffect(() => { checkForUpdateOnLaunch(); }, []);
 
   // Ketuk notifikasi → langsung buka chat percakapan itu. Nama customer
   // diambil dari judul notifikasi (dikirim backend). Dilewati di Expo Go —
