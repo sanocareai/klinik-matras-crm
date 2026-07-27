@@ -20,16 +20,15 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import Avatar from "../components/Avatar";
 
-// ⚠️ expo-updates BELUM ter-link di dev build M6 sekarang (native module
-// "ExpoUpdates" belum ada) — import statis bikin app crash total begitu
-// ProfileScreen.js dievaluasi (bukan cuma saat tombol ditekan), karena
-// expo-updates cek native module-nya di top-level module evaluation.
-// Dibungkus require() + try/catch (pola sama dengan expo-notifications di
-// push.js) supaya crash-nya tertangkap di sini saja — Updates jadi null,
-// tombol "Cek Update" di bawah otomatis disabled dgn keterangan kecil.
-// JANGAN dikembalikan ke import statis sampai APK M6 (yang sudah nge-link
-// expo-updates) benar-benar dipasang — fitur ini akan otomatis hidup lagi
-// tanpa perlu ubah kode apa pun begitu native module-nya tersedia.
+// Revisi 28 Jul 2026: expo-updates SEKARANG dikonfigurasi (app.json
+// "updates"/"runtimeVersion" + channel per profil di eas.json, lihat
+// `eas update:configure`) dan ter-link mulai versionCode 7 (v3.0.0) — jadi
+// blok require() ini SEHARUSNYA selalu berhasil di build APK/EAS mulai
+// sekarang. Tetap dibungkus try/catch (bukan import statis) sebagai
+// pertahanan berlapis: kalau suatu saat dijalankan di Expo Go / dev client
+// yang belum linking modulnya, app tidak crash total saat file ini
+// dievaluasi — tombol "Cek Update" otomatis disabled dgn keterangan kecil,
+// bukan seluruh layar Profil ikut mati.
 let Updates = null;
 try {
   Updates = require("expo-updates");
