@@ -32,10 +32,29 @@ const NON_DOWNLOADABLE_MEDIA_TYPES = new Set(["location", "contact", "poll"]);
 // (mis. pesan sangat lama sebelum sinkronisasi riwayat, atau race jarang
 // belum sempat tersimpan) — reply tetap disimpan sebagai pesan biasa, cuma
 // tanpa kartu kutipan, BUKAN gagal total.
-async function resolveReplyToId(quotedExternalId) {
-  if (!quotedExternalId) return null;
-  const quoted = await prisma.message.findUnique({
-    where: { externalId: quotedExternalId }, select: { id: true },
+// BUG YANG DIPERBAIKI (percobaan ke-2): versi pertama fungsi ini pakai
+// findUnique({ externalId }) — EXACT match — dan TIDAK PERNAH ketemu sama
+// sekali. Dikonfirmasi dari payload produksi nyata:
+//   replyTo.id (dari WAHA)  = "3EB0ECF87833E4DF360E7C"          ← ID TELANJANG
+//   Message.externalId (DB) = "true_6285697620076@c.us_3EB0ECF..." ← KOMPOSIT
+// Formatnya "{fromMe}_{chatId}_{messageId}", dan chatId-nya pun bisa BEDA
+// (@c.us saat pesan disimpan vs @lid saat event kutipan datang) — jadi
+// merangkai ulang string komposit pun tidak aman. Satu-satunya bagian yang
+// dijamin identik adalah SEGMEN TERAKHIR (messageId).
+// Ini persis kelas bug yang SUDAH dipecahkan message.ack di bawah — pakai
+// helper messageIdSegment + endsWith yang SAMA, jangan bikin pola ketiga.
+// conversationId dipakai mempersempit pencarian (pesan yang dikutip selalu
+// ada di percakapan yang sama) — sekaligus mencegah salah tembak ke pesan
+// milik percakapan lain kalau segmen ID kebetulan bertabrakan.
+async function resolveReplyToId(quotedExternalId, conversationId) {
+  const idSegment = messageIdSegment(quotedExternalId);
+  if (!idSegment) return null;
+  const quoted = await prisma.message.findFirst({
+    where: {
+      externalId: { endsWith: idSegment },
+      ...(conversationId ? { conversationId } : {}),
+    },
+    select: { id: true },
   });
   return quoted?.id || null;
 }
@@ -355,7 +374,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)
     let message;
     try {
-      const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
+      const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId, conversation.id);
       message = await prisma.message.create({
         data: { conversationId: conversation.id, direction, content, mediaType, mediaUrl, externalId,
                 senderName: fromMe ? null : (senderName || null),
@@ -525,7 +544,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
   let inboundMsg;
   try {
-    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
+    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId, conversation.id);
     inboundMsg = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -666,7 +685,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
 
   let outboundMsg;
   try {
-    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
+    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId, conversation.id);
     outboundMsg = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -1042,7 +1061,7 @@ async function autoSyncHistory() {
           // untuk kasus tepi itu; jalur webhook real-time (di atas) tidak
           // kena masalah ini karena pesan yang di-quote SELALU sudah masuk
           // duluan secara real-time sebelum balasannya datang.
-          const replyToId = await resolveReplyToId(parsed.quotedExternalId);
+          const replyToId = await resolveReplyToId(parsed.quotedExternalId, conv.id);
           await prisma.message.create({
             data: {
               conversationId: conv.id,

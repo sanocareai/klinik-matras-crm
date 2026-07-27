@@ -47,6 +47,16 @@ function normalizeRawMediaType(raw) {
   return KNOWN_MEDIA_TYPES.has(t) ? t : null;
 }
 
+// Ambil ID pesan yang dikutip dari contextInfo wrapper tipe pesan apa pun.
+// ⚠️ CASING: field raw-nya "stanzaID" (huruf D BESAR) — DIKONFIRMASI dari
+// payload produksi nyata, bukan dari dokumentasi. Percobaan fix pertama
+// menulis "stanzaId" (d kecil) dan diam-diam SELALU undefined. Kedua ejaan
+// diterima supaya tahan kalau engine lain memakai casing berbeda.
+function ctxStanzaId(wrapper) {
+  const ctx = wrapper?.contextInfo;
+  return ctx?.stanzaID || ctx?.stanzaId || null;
+}
+
 function mimeToMediaType(mime) {
   const m = (mime || "").split(";")[0].trim().toLowerCase();
   if (m.startsWith("image/")) return "image";
@@ -224,17 +234,23 @@ export function parseHistoryMessage(msg) {
   // WAHA menormalkan info ini SAMA seperti msg.media/msg.location/msg.vCards
   // di atas — field top-level `replyTo: { id, participant, body }` (SATU
   // bentuk utk kedua engine GOWS & NOWEB), diprioritaskan dulu. Fallback raw
-  // Baileys (NOWEB) contextInfo.stanzaId ada di dalam wrapper tipe pesan
-  // manapun (extendedTextMessage utk teks yang di-reply, atau di wrapper
-  // media kalau media yang di-reply) — dicek kedua kalau normalized kosong.
+  // Baileys contextInfo.stanzaID ada di dalam wrapper tipe pesan manapun
+  // (extendedTextMessage utk teks yang di-reply, atau di wrapper media kalau
+  // media yang di-reply) — dicek kedua kalau normalized kosong.
+  //
+  // ⚠️ ID yang dikembalikan di sini adalah ID TELANJANG WhatsApp (mis.
+  // "3EB0ECF87833E4DF360E7C"), BUKAN externalId komposit yang kita simpan
+  // ("true_628xxx@c.us_3EB0..."). Pemanggil WAJIB mencocokkannya lewat
+  // resolveReplyToId() di webhooks.js (match segmen terakhir), JANGAN
+  // exact-match ke Message.externalId — itu tidak akan pernah ketemu.
   const quotedExternalId =
     msg.replyTo?.id || msg._data?.replyTo?.id ||
-    rawMsg.extendedTextMessage?.contextInfo?.stanzaId ||
-    rawMsg.imageMessage?.contextInfo?.stanzaId ||
-    rawMsg.videoMessage?.contextInfo?.stanzaId ||
-    rawMsg.audioMessage?.contextInfo?.stanzaId ||
-    rawMsg.documentMessage?.contextInfo?.stanzaId ||
-    rawMsg.stickerMessage?.contextInfo?.stanzaId ||
+    ctxStanzaId(rawMsg.extendedTextMessage) ||
+    ctxStanzaId(rawMsg.imageMessage) ||
+    ctxStanzaId(rawMsg.videoMessage) ||
+    ctxStanzaId(rawMsg.audioMessage) ||
+    ctxStanzaId(rawMsg.documentMessage) ||
+    ctxStanzaId(rawMsg.stickerMessage) ||
     null;
 
   // 1) Teks — normalized (msg.body) dulu, fallback raw GOWS
