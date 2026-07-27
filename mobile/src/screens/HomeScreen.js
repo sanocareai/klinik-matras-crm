@@ -8,12 +8,16 @@
 //   achieved) — PERSIS pola yang sama dengan TargetSalesWidget.jsx web
 //   (frontend/src/features/dashboard/components/TargetSalesWidget.jsx),
 //   supaya angka tim konsisten & tidak duplikat logic.
-// - Performa Sales (chat ditangani + conversion): GET /analytics/cs-performance
-//   (SAMA yang dipakai Laporan.jsx web) — per user: totalConversations,
-//   closingRate. closingRate = RESOLVED/total conversation yang ditangani —
-//   ini DEFINISI "conversion rate" yang sudah dipakai web (bukan
-//   order-based; sudah dicek dulu di Laporan.jsx/backend sebelum dipakai
-//   di sini, supaya tidak beda definisi dengan dashboard web).
+// - Performa Sales (chat ditangani + conversion): GET /analytics/sales-report
+//   (SAMA yang dipakai TopRepsCard.jsx & Laporan > Sales Report web) — per
+//   user: handled (chat ditangani), orderConversionRate. GANTI dari
+//   cs-performance/closingRate (28 Jul 2026): closingRate = % RESOLVED,
+//   metrik operasional CS, BUKAN metrik closing sales — sales bisa saja
+//   sudah closing order hari ini tapi chat-nya tetap terbuka (customer
+//   lanjut chat soal pengiriman dll), jadi closingRate 0% padahal ada order
+//   masuk — membingungkan. orderConversionRate = % percakapan yang
+//   customer-nya BENAR-BENAR bikin order, sejalan dengan Rp di sebelahnya.
+//   null (bukan 0) kalau belum ada percakapan ditangani — tampilkan "—".
 // - Belum Dibalas: GET /conversations/unread-count.
 // - Percakapan Saya: GET /conversations/counts (field milikSaya).
 // - Perlu Ditindak: GET /conversations (list biasa) sudah balikin
@@ -58,7 +62,7 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [perf, setPerf] = useState([]); // sales-performance rows (target/achieved), semua sales
-  const [csPerf, setCsPerf] = useState([]); // cs-performance rows (chat/conversion), semua sales
+  const [csPerf, setCsPerf] = useState([]); // sales-report .rows (chat/orderConversionRate), semua sales
   const [csSortAsc, setCsSortAsc] = useState(false); // default: conversion tertinggi dulu
   const [unreadCount, setUnreadCount] = useState(0);
   const [myConvCount, setMyConvCount] = useState(0);
@@ -71,16 +75,16 @@ export default function HomeScreen({ navigation }) {
     try {
       const now = new Date();
       const { from, to } = monthRangeStrings();
-      const [perfRows, csRows, unread, counts, convRes, sessionRows] = await Promise.all([
+      const [perfRows, salesReport, unread, counts, convRes, sessionRows] = await Promise.all([
         api.getSalesPerformance(now.getFullYear(), now.getMonth() + 1).catch(() => []),
-        api.getCsPerformance(from, to).catch(() => []),
+        api.getSalesReport(from, to).catch(() => null),
         api.getUnreadCount().catch(() => ({ count: 0 })),
         api.getConversationCounts().catch(() => ({})),
         api.getConversations({}).catch(() => ({ data: [] })),
         api.getSessionDistribution("today").catch(() => []),
       ]);
       setPerf(perfRows || []);
-      setCsPerf(csRows || []);
+      setCsPerf(salesReport?.rows || []); // sales-report balikin { rows, total }, bukan array langsung
       setUnreadCount(unread?.count || 0);
       setMyConvCount(counts?.milikSaya || 0);
       setSessionDist(sessionRows || []);
@@ -144,12 +148,16 @@ export default function HomeScreen({ navigation }) {
   const hasTeamTarget = teamTotals.totalTarget > 0;
 
   // Baris Performa Sales yang ditampilkan — SALES cuma lihat baris sendiri,
-  // ADMIN lihat semua + sortable by conversion (closingRate).
+  // ADMIN lihat semua + sortable by conversion (orderConversionRate).
+  // null (belum ada percakapan ditangani) SELALU di bawah, terlepas arah sort —
+  // null bukan "0%", jadi tidak boleh ikut bersaing rank dengan angka asli.
   const csRowsToShow = useMemo(() => {
     if (!isAdmin) return csPerf.filter((r) => r.userId === user?.id);
-    const sorted = [...csPerf].sort((a, b) =>
-      csSortAsc ? a.closingRate - b.closingRate : b.closingRate - a.closingRate
-    );
+    const sorted = [...csPerf].sort((a, b) => {
+      if (a.orderConversionRate == null) return 1;
+      if (b.orderConversionRate == null) return -1;
+      return csSortAsc ? a.orderConversionRate - b.orderConversionRate : b.orderConversionRate - a.orderConversionRate;
+    });
     return sorted;
   }, [csPerf, isAdmin, user?.id, csSortAsc]);
 
@@ -317,7 +325,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Performa Sales — chat ditangani + conversion (closingRate) */}
+      {/* Performa Sales — chat ditangani + conversion (orderConversionRate) */}
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Performa Sales</Text>
@@ -336,10 +344,12 @@ export default function HomeScreen({ navigation }) {
               <Avatar name={r.name} avatarUrl={r.avatarUrl} size={32} />
               <View style={styles.perfBody}>
                 <Text style={styles.perfName} numberOfLines={1}>{r.name}</Text>
-                <Text style={styles.perfMeta}>{r.totalConversations} chat ditangani</Text>
+                <Text style={styles.perfMeta}>{r.handled} chat ditangani</Text>
               </View>
               <View style={styles.perfBadge}>
-                <Text style={styles.perfBadgeText}>{r.closingRate}%</Text>
+                <Text style={styles.perfBadgeText}>
+                  {r.orderConversionRate == null ? "—" : `${r.orderConversionRate}%`}
+                </Text>
               </View>
             </View>
           ))

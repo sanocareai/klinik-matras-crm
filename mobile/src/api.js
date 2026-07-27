@@ -263,12 +263,17 @@ export const api = {
     request("/analytics/sales-performance" + buildQuery({ year, month })),
 
 
-  // Performa CS per sales (chat ditangani + closingRate = RESOLVED/total —
-  // definisi "conversion rate" yang SAMA dipakai Laporan.jsx web, lihat
-  // backend/src/routes/analytics.js#cs-performance). from/to: "YYYY-MM-DD".
-  // Balikin SEMUA sales (role != ADMIN) — caller filter/sort di client.
-  getCsPerformance: (from, to) =>
-    request("/analytics/cs-performance" + buildQuery({ from, to })),
+  // Performa sales mendalam (chat ditangani + orderConversionRate = %
+  // percakapan yang customer-nya BENAR-BENAR bikin order) — endpoint SAMA
+  // yang dipakai TopRepsCard.jsx & Laporan > Sales Report web, lihat
+  // backend/src/routes/analytics.js#sales-report. from/to: "YYYY-MM-DD".
+  // GANTI dari getCsPerformance (dihapus 28 Jul 2026): closingRate di situ
+  // = % percakapan RESOLVED (metrik operasional CS), BUKAN metrik closing
+  // sales — sales bisa sudah closing order tapi chat-nya tetap terbuka.
+  // orderConversionRate sejalan dengan grossValue (sama-sama berbasis order).
+  // Balikin { rows: [...], total: {...} } — caller ambil .rows, bukan array langsung.
+  getSalesReport: (from, to) =>
+    request("/analytics/sales-report" + buildQuery({ from, to })),
 
   // Distribusi lead baru & percakapan aktif per sesi WA (CS-1/CS-2) —
   // endpoint SAMA yang dipakai widget Dashboard web (backend/src/routes/
