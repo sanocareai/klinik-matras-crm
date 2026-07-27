@@ -142,13 +142,22 @@ function ConversationItemBase({ id, onPress }) {
     setShowPeek(true);
   }
 
-  // BUG YANG DIPERBAIKI: sebelumnya aksi (toggleReadUnread/togglePin) dipicu
-  // langsung dari `onSwipeableOpen` Swipeable — jadi begitu geser melewati
-  // threshold, aksi LANGSUNG jalan, walau user cuma sedang scroll list dan
-  // tidak sengaja menggeser sedikit ke samping. Sekarang: menggeser HANYA
-  // membuka panel aksi (tetap terbuka menampilkan tombol), aksi baru benar-
-  // benar jalan saat tombol yang terbuka itu DI-TAP — persis pola WhatsApp
-  // asli (geser untuk munculkan tombol, tap tombolnya untuk eksekusi).
+  // BUG YANG DIPERBAIKI (percobaan ke-2 — percobaan pertama TIDAK LENGKAP):
+  // aksi (toggleReadUnread/togglePin) dipicu LANGSUNG dari `onSwipeableOpen`
+  // Swipeable — begitu geser melewati threshold, aksi LANGSUNG jalan, walau
+  // user cuma sedang scroll list dan tidak sengaja menggeser sedikit ke
+  // samping. Percobaan fix sebelumnya SUDAH menambah tombol Pressable di
+  // renderLeftActions/renderRightActions di bawah (supaya tap eksplisit BISA
+  // memicu aksi) TAPI LUPA MENGHAPUS `onSwipeableOpen` di <Swipeable> —
+  // jadi kedua jalur aktif bersamaan: begitu panel kebuka (dari swipe SEKECIL
+  // apa pun yang melewati threshold), `onSwipeableOpen` TETAP langsung
+  // menjalankan aksi juga, sebelum sempat tap tombolnya. Bug persis yang
+  // sama masih terjadi walau tombolnya sudah ada. Sekarang `onSwipeableOpen`
+  // dihapus total — geser HANYA membuka panel (tetap terbuka menampilkan
+  // tombol), aksi baru benar-benar jalan saat tombol itu DI-TAP — persis
+  // pola WhatsApp asli. Threshold juga dinaikkan (60→110) + `friction`
+  // ditambahkan supaya geser kecil/tidak sengaja tidak sampai membuka panel
+  // sama sekali (keluhan "kepencet" — geser dikit langsung ke-trigger).
   function renderLeftActions() {
     // Muncul saat swipe KANAN (drag ke kanan) → toggle dibaca/belum dibaca
     const ReadIcon = isUnread ? Check : Circle;
@@ -191,14 +200,21 @@ function ConversationItemBase({ id, onPress }) {
         ref={swipeableRef}
         renderLeftActions={renderLeftActions}
         renderRightActions={renderRightActions}
-        onSwipeableOpen={(direction) => {
-          if (direction === "left") toggleReadUnread();
-          else togglePin();
-        }}
         overshootLeft={false}
         overshootRight={false}
-        leftThreshold={60}
-        rightThreshold={60}
+        // Dinaikkan dari 60 — 60px kelewat gampang terlewati oleh gesture
+        // scroll vertikal yang sedikit miring/diagonal (jari manusia jarang
+        // gerak lurus 100%), itu penyebab "geser dikit langsung ke-trigger".
+        // 110px (~seperempat lebar layar rata-rata) butuh gerakan horizontal
+        // yang jelas SENGAJA, bukan insidental.
+        leftThreshold={110}
+        rightThreshold={110}
+        // friction memperlambat panel MENGIKUTI jari (butuh tarikan lebih
+        // jauh utk jarak layar yang sama) — dua-duanya (threshold+friction)
+        // dipakai bareng: threshold menunda KAPAN panel dianggap "terbuka",
+        // friction membuat PROSES menggesernya sendiri terasa lebih berat/
+        // tidak licin, jadi tidak ke-drag tidak sengaja saat scroll.
+        friction={1.8}
       >
         <PressableScale
           style={[styles.card, pressed && styles.cardPressed]}
