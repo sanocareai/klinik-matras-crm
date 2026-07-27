@@ -100,45 +100,47 @@ export default function CustomerFilters({
         ))}
       </div>
 
-      {/* Search + filter — flex-wrap (BUKAN nowrap seperti sebelumnya) supaya
-          kalau tidak muat di 1 baris, dropdown filter turun ke baris baru,
-          bukan memaksa search box menyusut sampai placeholder-nya kepotong.
-          min-w di search memastikan lebar minimum yang tetap nyaman dibaca. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchInput
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Cari nama, nomor, email, atau Instagram…"
-          className="w-full min-w-[240px] flex-1 sm:w-auto sm:flex-none sm:basis-72"
-        />
+      {/* Search — BARIS SENDIRI, full width. BUG YANG DIPERBAIKI: sebelumnya
+          sebaris dengan 4 dropdown filter + tombol Reset, jadi di lebar
+          desktop biasa search box dipaksa jadi ±288px (basis-72) — placeholder
+          "Cari nama, nomor, email, atau Instagram…" kepotong di tengah kata,
+          bukan cuma di layar sempit. Full width sendiri menghindari kompetisi
+          ruang itu sama sekali, di lebar berapa pun. */}
+      <SearchInput
+        value={search}
+        onChange={(e) => onSearch(e.target.value)}
+        placeholder="Cari nama, nomor, email, atau Instagram…"
+        className="w-full"
+      />
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <select className={selectCls(!!filterStage)} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
-            <option value="">Semua Stage</option>
-            {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-          </select>
+      {/* Dropdown filter — baris terpisah, flex-wrap turun ke baris baru
+          kalau tidak muat, bukan menyusutkan lebar tiap dropdown. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select className={selectCls(!!filterStage)} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
+          <option value="">Semua Stage</option>
+          {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+        </select>
 
-          <select className={selectCls(!!filterSource)} value={filterSource} onChange={(e) => onFilterSource(e.target.value)} aria-label="Filter sumber lead">
-            <option value="">Semua Sumber</option>
-            {LEAD_SOURCES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-          </select>
+        <select className={selectCls(!!filterSource)} value={filterSource} onChange={(e) => onFilterSource(e.target.value)} aria-label="Filter sumber lead">
+          <option value="">Semua Sumber</option>
+          {LEAD_SOURCES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+        </select>
 
-          <select className={selectCls(!!filterCity)} value={filterCity} onChange={(e) => onFilterCity(e.target.value)} aria-label="Filter kota">
-            <option value="">Semua Kota</option>
-            {cities.map((city) => <option key={city} value={city}>{city}</option>)}
-          </select>
+        <select className={selectCls(!!filterCity)} value={filterCity} onChange={(e) => onFilterCity(e.target.value)} aria-label="Filter kota">
+          <option value="">Semua Kota</option>
+          {cities.map((city) => <option key={city} value={city}>{city}</option>)}
+        </select>
 
-          <select className={selectCls(!!filterSales)} value={filterSales} onChange={(e) => onFilterSales(e.target.value)} aria-label="Filter sales person">
-            <option value="">Semua Sales Person</option>
-            {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+        <select className={selectCls(!!filterSales)} value={filterSales} onChange={(e) => onFilterSales(e.target.value)} aria-label="Filter sales person">
+          <option value="">Semua Sales Person</option>
+          {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
 
-          {hasFilters && (
-            <Button variant="ghost" size="sm" onClick={onReset}>
-              <X size={14} /> Reset
-            </Button>
-          )}
-        </div>
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={onReset}>
+            <X size={14} /> Reset
+          </Button>
+        )}
       </div>
     </div>
   );
