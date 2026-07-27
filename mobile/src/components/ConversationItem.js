@@ -86,7 +86,12 @@ function ConversationItemBase({ id, onPress }) {
   const isUnread = !!c.unread;
   const isRead = !!c.isRead;
   const isPinned = !!c.pinned;
-  const unreadCount = c.unreadCount ?? (isUnread ? 1 : 0);
+  // BUG YANG DIPERBAIKI: `c.unreadCount ?? (isUnread ? 1 : 0)` tidak fallback
+  // saat unreadCount sudah 0 (angka, bukan null/undefined) — sama seperti
+  // bug di ChatListScreen.js#matches, lihat catatan panjang di sana. Row
+  // yang di-mark unread manual (unread=true, unreadCount masih 0) jadi tidak
+  // tampil badge angkanya sama sekali walau `isUnread` true.
+  const unreadCount = c.unreadCount > 0 ? c.unreadCount : (isUnread ? 1 : 0);
   // Badge CS-1/CS-2 — field sessionId cuma berisi salah satu dari ini kalau
   // sudah ter-set (lihat CLAUDE.md "Multi-session WAHA aktif").
   const sessionLabel = c.sessionId === "CS-1" || c.sessionId === "CS-2" ? c.sessionId : null;

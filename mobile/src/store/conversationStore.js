@@ -81,11 +81,14 @@ export const useFilter = () => useConversationStore((s) => s.filter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
 
 // Total unread lintas SEMUA percakapan (cache global) — dipakai badge ikon
-// app (lihat hooks/useBadgeSync.js). unreadCount bisa belum terisi utk
-// beberapa payload lama, fallback ke 1 kalau cuma flag boolean unread yang
-// ada (pola sama dengan ConversationItem.js).
+// app (lihat hooks/useBadgeSync.js). BUG YANG DIPERBAIKI: `unreadCount ??
+// (unread?1:0)` tidak fallback saat unreadCount sudah 0 (angka, bukan
+// null/undefined) — percakapan yang di-mark unread manual (unread=true,
+// unreadCount belum ikut naik) tidak pernah tersumbang ke badge app,
+// bikin badge ikon lebih kecil dari kenyataan. Sama seperti fix di
+// ChatListScreen.js#matches & ConversationItem.js.
 export const useTotalUnreadCount = () => useConversationStore((s) =>
   Object.values(s.conversationsById).reduce(
-    (sum, c) => sum + (c.unreadCount ?? (c.unread ? 1 : 0)), 0
+    (sum, c) => sum + (c.unreadCount > 0 ? c.unreadCount : (c.unread ? 1 : 0)), 0
   )
 );

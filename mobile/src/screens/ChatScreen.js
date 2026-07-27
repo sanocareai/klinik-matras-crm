@@ -18,6 +18,7 @@ import {
   Alert, ActivityIndicator, Modal,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
@@ -100,6 +101,7 @@ export default function ChatScreen({ route, navigation }) {
   const { conversationId, name: routeName, isGroup: routeIsGroup, customerId: routeCustomerId } = route.params;
   const { user } = useAuth();
   const keyboardHeight = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
 
   const conversation = useConversationStore((s) => s.conversationsById[conversationId]);
   const allMessages = useMessagesForConv(conversationId);
@@ -579,7 +581,20 @@ export default function ChatScreen({ route, navigation }) {
     // edge-to-edge sama sekali), jadi header+list+composer digeser naik
     // secara DETERMINISTIK sebesar tinggi keyboard asli, bukan berharap ke
     // mekanisme native yang sudah terbukti tidak konsisten.
-    <View style={[styles.container, { paddingBottom: keyboardHeight }]}>
+    //
+    // BUG (fix) — 3-BUTTON NAV: keyboardHeight dari getWindowVisibleDisplayFrame
+    // TERBUKTI di lapangan tidak menghitung tinggi navigation bar Android
+    // gaya lama (3 ikon: segitiga/lingkaran/kotak) di sistem edge-to-edge —
+    // di HP yang masih pakai 3-button nav (BUKAN gesture nav), composer
+    // digeser naik kurang jauh persis sebesar tinggi nav bar itu, jadi kotak
+    // ketik tertutup nav bar & tidak bisa disentuh. Gesture nav punya inset
+    // bawah nyaris 0 jadi bug ini tidak kelihatan di situ — cocok dengan
+    // laporan "cuma HP yang masih 3 tombol". Fix: tambahkan insets.bottom
+    // (react-native-safe-area-context, tinggi navigation bar sesungguhnya)
+    // di atas keyboardHeight saat keyboard terbuka; saat keyboard tertutup,
+    // insets.bottom tetap dipakai supaya composer selalu punya jarak aman
+    // dari nav bar.
+    <View style={[styles.container, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + insets.bottom : insets.bottom }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>

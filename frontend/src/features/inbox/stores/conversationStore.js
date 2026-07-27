@@ -88,15 +88,15 @@ export const useFilter       = () => useConversationStore((s) => s.filter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
 
 // Total unread lintas semua percakapan — dipakai untuk title tab browser
-// "(N) Inbox — Klinik Matras" (Fase G). unreadCount belum selalu diisi
-// backend lama, fallback ke 1 kalau cuma tahu unread=true (sama seperti
-// pola ConversationItem.jsx).
+// "(N) Inbox — Klinik Matras" (Fase G). BUG YANG DIPERBAIKI: `unreadCount ??
+// (unread?1:0)` tidak fallback saat unreadCount sudah 0 (angka, bukan
+// null/undefined) — lihat catatan sama di ConversationItem.jsx.
 export const useTotalUnreadCount = () => useConversationStore((s) => {
   let total = 0;
   for (const id of s.conversationOrder) {
     const c = s.conversationsById[id];
     if (!c) continue;
-    total += c.unreadCount ?? (c.unread ? 1 : 0);
+    total += c.unreadCount > 0 ? c.unreadCount : (c.unread ? 1 : 0);
   }
   return total;
 });

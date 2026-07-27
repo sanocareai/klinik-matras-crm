@@ -361,6 +361,20 @@ model Message {
   sentById String?
   sentBy   User?   @relation("MessageSender", fields: [sentById], references: [id])
 
+  // Revisi 28 Jul 2026 — BUG PRODUKSI SERIUS: clientId dibuat mobile/web
+  // SEKALI per percobaan kirim (ChatScreen.js#handleSend), tapi SEBELUMNYA
+  // cuma dipakai rekonsiliasi optimistic-UI, TIDAK PERNAH disimpan/dicek di
+  // server. Di lapangan (koneksi 4G naik-turun), request kirim pesan bisa
+  // TIMEOUT di HP (30 detik, lihat mobile/src/api.js) padahal sendText() ke
+  // WAHA di server SUDAH BERHASIL — client menganggap gagal, memasukkan ke
+  // outbox (lib/outboxFlush.js), lalu retry beberapa menit kemudian
+  // mengirim ULANG pesan yang SEBENARNYA sudah terkirim. Karena server tidak
+  // pernah cek "clientId ini pernah diproses belum", tiap retry = kirim
+  // WhatsApp SUNGGUHAN baru — pelanggan menerima pesan yang sama berkali-
+  // kali. clientId sekarang disimpan + dicek DULU sebelum sendText()
+  // dipanggil lagi (lihat routes/conversations.js POST /:id/messages).
+  clientId String? @unique
+
   @@index([conversationId])
 }
 

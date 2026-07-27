@@ -394,13 +394,26 @@ conversationRouter.post("/:id/read", async (req, res) => {
 // quotedMessageId: WAHA externalId pesan yang dikutip (opsional, untuk reply/quote)
 // replyToId: DB id pesan yang dikutip (opsional, untuk simpan relasi di DB)
 conversationRouter.post("/:id/messages", async (req, res) => {
-  // clientId: opsional, dibuat mobile/web SEKALI saat pesan optimistic
-  // dibuat (lihat ChatScreen.js#handleSend) — TIDAK disimpan ke DB (murni
-  // utk rekonsiliasi client-side antara response HTTP ini dan echo
-  // Socket.IO message:new yang sama-sama membawa objek Message ini ke
-  // client yang sama, lihat catatan panjang di messageStore.js#appendMessage).
+  // clientId: dibuat mobile/web SEKALI per percobaan kirim (ChatScreen.js
+  // #handleSend). BUG PRODUKSI YANG DIPERBAIKI (28 Jul 2026): field ini
+  // SEBELUMNYA cuma dipakai rekonsiliasi optimistic-UI, TIDAK PERNAH dicek
+  // di server — akibatnya kalau HTTP request timeout di HP (30 detik,
+  // koneksi lapangan naik-turun) PADAHAL sendText() ke WAHA sudah berhasil,
+  // client menganggap gagal → masuk outbox (lib/outboxFlush.js) → retry
+  // beberapa menit kemudian mengirim ULANG ke WhatsApp SUNGGUHAN, walau
+  // pesan sebelumnya sudah sampai. Pelanggan menerima pesan sama berkali-
+  // kali (dikonfirmasi screenshot produksi: pesan yang sama muncul 3x
+  // dengan centang biru, jeda beberapa menit antar kirim). Sekarang: kalau
+  // clientId ini SUDAH PERNAH diproses (ada row Message dengan clientId
+  // sama), balikin langsung row yang sudah ada — TIDAK panggil sendText()
+  // lagi sama sekali.
   const { content, quotedMessageId, replyToId, clientId } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: "Pesan kosong" });
+
+  if (clientId) {
+    const existing = await prisma.message.findUnique({ where: { clientId } });
+    if (existing) return res.json({ ...existing, clientId });
+  }
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
@@ -447,11 +460,17 @@ conversationRouter.post("/:id/messages", async (req, res) => {
         replyToId: replyToId || null,
         externalId: wahaMsg?.id || null,
         sentById: req.user.id,
+        clientId: clientId || null,
       },
     });
   } catch (e) {
     if (e.code !== "P2002") throw e;
-    message = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id } });
+    // Race sangat sempit: 2 request ber-clientId SAMA lolos cek di atas
+    // nyaris bersamaan (jarang — retry outbox berjeda menit, bukan
+    // milidetik) — clientId lebih spesifik, cek itu duluan sebelum externalId.
+    message = clientId
+      ? await prisma.message.findUnique({ where: { clientId } })
+      : await prisma.message.findUnique({ where: { externalId: wahaMsg?.id } });
   }
   // firstResponderId diisi SEKALI (pesan outbound pertama di percakapan ini)
   // dan tidak pernah berubah lagi walau assignedToId pindah tangan lewat

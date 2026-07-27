@@ -45,10 +45,13 @@ function ConversationItemBase({ id }) {
   const isRead     = !!c.isRead;
   const isReplied  = !c.isUnanswered;
   const isPinned   = !!c.pinned;
-  // Backend belum expose jumlah unread real (cuma boolean `unread`) —
-  // tampilkan count kalau field ada (siap dipakai begitu backend nambah),
-  // fallback ke 1 titik saat cuma tahu unread=true.
-  const unreadCount = c.unreadCount ?? (isUnread ? 1 : 0);
+  // BUG YANG DIPERBAIKI: `unreadCount ?? (isUnread ? 1 : 0)` tidak fallback
+  // saat unreadCount sudah 0 (angka, bukan null/undefined) — percakapan
+  // yang di-mark unread manual (unread=true, unreadCount belum ikut naik
+  // dari 0) jadi tidak tampil badge angkanya sama sekali walau isUnread
+  // true (bug sama ditemukan di mobile/ChatListScreen.js, konfirmasi
+  // produksi: badge tab "Belum Dibaca" 34 tapi baris yang lolos filter cuma 4).
+  const unreadCount = c.unreadCount > 0 ? c.unreadCount : (isUnread ? 1 : 0);
   const unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount);
   // Badge CS-1/CS-2 — field sessionId belum ada di schema Conversation saat
   // ini (lihat CLAUDE.md §"Multi-session WAHA"), jadi badge ini otomatis

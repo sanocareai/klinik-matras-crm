@@ -54,8 +54,20 @@ function matches(c, filter, userId, query) {
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
   if (filter === "UNREAD") {
-    const unreadCount = c.unreadCount ?? (c.unread ? 1 : 0);
-    if (unreadCount <= 0) return false;
+    // BUG YANG DIPERBAIKI: `c.unreadCount ?? (c.unread ? 1 : 0)` SALAH kalau
+    // unreadCount sudah terisi ANGKA 0 (bukan null/undefined) — `??` cuma
+    // fallback saat null/undefined, jadi 0 tetap 0, bukan ikut fallback ke
+    // `c.unread`. Ini kejadian NYATA: swipe manual "Tandai Belum Dibaca"
+    // (ConversationItem.js#toggleReadUnread) set unread=true TANPA
+    // menaikkan unreadCount (tetap 0 dari sebelumnya sudah dibaca) — badge
+    // tab "Belum Dibaca" (dihitung server dari kolom `unread` boolean,
+    // lihat GET /conversations/counts) jadi lebih besar dari jumlah baris
+    // yang lolos filter client ini (contoh produksi: badge 34, baris
+    // tampil cuma 4). Sekarang `unread` boolean jadi sumber kebenaran utama
+    // — SAMA seperti definisi server — unreadCount cuma dipakai kalau
+    // benar-benar > 0.
+    const isUnread = !!c.unread || (c.unreadCount ?? 0) > 0;
+    if (!isUnread) return false;
   }
   if (query) {
     const hay = [c.customer?.name, c.customer?.phone, c.groupName]
