@@ -212,6 +212,31 @@ export function parseHistoryMessage(msg) {
   // handleOutboundFromPhone, cuma buta terhadap salah satu casing engine.
   const rawMsg = msg._data?.Message || msg._data?.message || {};
 
+  // BUG YANG DIPERBAIKI: kalau CUSTOMER membalas/mengutip pesan pakai fitur
+  // reply/quote WhatsApp asli (dari HP-nya, BUKAN dari CRM), efek kutipan
+  // ("bubble-quote" di atas bubble, lihat MessageBubble.jsx) TIDAK PERNAH
+  // muncul — cuma teks polos. Dikonfirmasi produksi: dari 441 pesan yang
+  // punya replyToId, 100% OUTBOUND (balasan sales via composer CRM, yang
+  // memang eksplisit kirim replyToId sendiri) — 0 INBOUND, padahal customer
+  // pasti pernah quote-reply. Penyebabnya: parser ini sama sekali tidak
+  // pernah membaca field kutipan dari payload WAHA.
+  //
+  // WAHA menormalkan info ini SAMA seperti msg.media/msg.location/msg.vCards
+  // di atas — field top-level `replyTo: { id, participant, body }` (SATU
+  // bentuk utk kedua engine GOWS & NOWEB), diprioritaskan dulu. Fallback raw
+  // Baileys (NOWEB) contextInfo.stanzaId ada di dalam wrapper tipe pesan
+  // manapun (extendedTextMessage utk teks yang di-reply, atau di wrapper
+  // media kalau media yang di-reply) — dicek kedua kalau normalized kosong.
+  const quotedExternalId =
+    msg.replyTo?.id || msg._data?.replyTo?.id ||
+    rawMsg.extendedTextMessage?.contextInfo?.stanzaId ||
+    rawMsg.imageMessage?.contextInfo?.stanzaId ||
+    rawMsg.videoMessage?.contextInfo?.stanzaId ||
+    rawMsg.audioMessage?.contextInfo?.stanzaId ||
+    rawMsg.documentMessage?.contextInfo?.stanzaId ||
+    rawMsg.stickerMessage?.contextInfo?.stanzaId ||
+    null;
+
   // 1) Teks — normalized (msg.body) dulu, fallback raw GOWS
   let text =
     msg.body ||
@@ -256,11 +281,11 @@ export function parseHistoryMessage(msg) {
 
   if (mediaType) {
     const content = caption || MEDIA_TYPE_PLACEHOLDER[mediaType] || "[Media]";
-    return { externalId, direction, content, mediaType, mediaUrl, createdAt, unsupported: false, rawType: mediaType };
+    return { externalId, direction, content, mediaType, mediaUrl, createdAt, unsupported: false, rawType: mediaType, quotedExternalId };
   }
 
   if (text) {
-    return { externalId, direction, content: text, mediaType: null, mediaUrl: null, createdAt, unsupported: false, rawType: "text" };
+    return { externalId, direction, content: text, mediaType: null, mediaUrl: null, createdAt, unsupported: false, rawType: "text", quotedExternalId };
   }
 
   // 3) Lokasi / kontak (vCard) / poll — bukan media biasa, tidak ada file
@@ -270,15 +295,15 @@ export function parseHistoryMessage(msg) {
   // raw _data.Message kalau kosong.
   const locationContent = tryParseLocationNormalized(msg) || tryParseLocation(rawMsg);
   if (locationContent) {
-    return { externalId, direction, content: locationContent, mediaType: "location", mediaUrl: null, createdAt, unsupported: false, rawType: "location" };
+    return { externalId, direction, content: locationContent, mediaType: "location", mediaUrl: null, createdAt, unsupported: false, rawType: "location", quotedExternalId };
   }
   const contactContent = tryParseContactNormalized(msg) || tryParseContact(rawMsg);
   if (contactContent) {
-    return { externalId, direction, content: contactContent, mediaType: "contact", mediaUrl: null, createdAt, unsupported: false, rawType: "contact" };
+    return { externalId, direction, content: contactContent, mediaType: "contact", mediaUrl: null, createdAt, unsupported: false, rawType: "contact", quotedExternalId };
   }
   const pollContent = tryParsePoll(rawMsg);
   if (pollContent) {
-    return { externalId, direction, content: pollContent, mediaType: "poll", mediaUrl: null, createdAt, unsupported: false, rawType: "poll" };
+    return { externalId, direction, content: pollContent, mediaType: "poll", mediaUrl: null, createdAt, unsupported: false, rawType: "poll", quotedExternalId };
   }
 
   // Tipe pesan sama sekali tidak dikenali (bukan teks, bukan media yang
@@ -292,6 +317,6 @@ export function parseHistoryMessage(msg) {
     externalId, direction,
     content: "[Pesan tidak didukung]",
     mediaType: null, mediaUrl: null, createdAt,
-    unsupported: true, rawType: unknownType,
+    unsupported: true, rawType: unknownType, quotedExternalId,
   };
 }

@@ -23,6 +23,23 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 // tipe ini masuk, cuma nambah latensi tanpa hasil).
 const NON_DOWNLOADABLE_MEDIA_TYPES = new Set(["location", "contact", "poll"]);
 
+// Cari Message.id (DB) dari externalId (WAHA) pesan yang di-quote/reply —
+// dipakai bareng parseHistoryMessage's `quotedExternalId` supaya efek kutipan
+// (bubble-quote, lihat MessageBubble.jsx) muncul untuk balasan/quote yang
+// datang DARI CUSTOMER, bukan cuma yang dikirim lewat composer CRM (yang
+// sudah eksplisit kirim replyToId sendiri). null kalau tidak ada kutipan,
+// ATAU kalau pesan yang di-quote itu belum/tidak pernah tersimpan di DB kita
+// (mis. pesan sangat lama sebelum sinkronisasi riwayat, atau race jarang
+// belum sempat tersimpan) — reply tetap disimpan sebagai pesan biasa, cuma
+// tanpa kartu kutipan, BUKAN gagal total.
+async function resolveReplyToId(quotedExternalId) {
+  if (!quotedExternalId) return null;
+  const quoted = await prisma.message.findUnique({
+    where: { externalId: quotedExternalId }, select: { id: true },
+  });
+  return quoted?.id || null;
+}
+
 // Ambil segmen ID pesan (bagian TERAKHIR setelah "_") dari id komposit WAHA
 // "true_<chatJid>_<messageId>" — dipakai untuk cocokkan Message.externalId
 // yang JID-nya bisa beda skema (LID vs c.us/nomor) dari event yang berbeda
@@ -338,10 +355,18 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)
     let message;
     try {
+      const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
       message = await prisma.message.create({
         data: { conversationId: conversation.id, direction, content, mediaType, mediaUrl, externalId,
                 senderName: fromMe ? null : (senderName || null),
-                rawType: parsedMedia.rawType || null },
+                rawType: parsedMedia.rawType || null, replyToId },
+        // include replyTo — BUG YANG DIPERBAIKI: emitNewMessage di bawah kirim
+        // hasil create() ini APA ADANYA lewat Socket.IO ke client; tanpa
+        // include ini, payload cuma bawa replyToId (string ID mentah), bukan
+        // object {content,direction,mediaType,isRevoked} yang MessageBubble
+        // butuh untuk merender kartu kutipan — quote baru muncul setelah
+        // reload (GET /:id/messages, yang SUDAH include ini), bukan live.
+        include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
       });
     } catch (e) {
       if (e.code !== "P2002") throw e;
@@ -500,6 +525,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
   let inboundMsg;
   try {
+    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
     inboundMsg = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -509,7 +535,11 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         mediaUrl,
         externalId,
         rawType: parsedMedia.rawType || null,
+        replyToId,
       },
+      // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
+      // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
+      include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
     });
   } catch (e) {
     if (e.code !== "P2002") throw e;
@@ -636,6 +666,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
 
   let outboundMsg;
   try {
+    const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId);
     outboundMsg = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -646,7 +677,12 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
         externalId,
         ack: initialAck || 0,
         rawType: parsedMedia.rawType || null,
+        replyToId,
       },
+      // include replyTo — lihat catatan sama di handleGroupMessage/
+      // handleInboundMessage: tanpa ini efek kutipan cuma muncul setelah
+      // reload, bukan live via Socket.IO.
+      include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
     });
   } catch (e) {
     if (e.code !== "P2002") throw e;
@@ -998,6 +1034,15 @@ async function autoSyncHistory() {
         if (parsed.isStatus) { console.log("[auto-sync] drop status/broadcast dari", phone); continue; }
         if (parsed.unsupported) console.warn("[auto-sync] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
         try {
+          // Catatan: fetchChatHistory mengurutkan terbaru-dulu, jadi kalau
+          // pesan ini me-reply pesan yang LEBIH BARU dalam batch sync yang
+          // SAMA (jarang, tapi mungkin di percakapan lama), lookup di bawah
+          // bisa belum menemukan target-nya (belum ke-insert). Bukan bug
+          // berbahaya — reply tetap tersimpan, cuma tanpa kartu kutipan
+          // untuk kasus tepi itu; jalur webhook real-time (di atas) tidak
+          // kena masalah ini karena pesan yang di-quote SELALU sudah masuk
+          // duluan secara real-time sebelum balasannya datang.
+          const replyToId = await resolveReplyToId(parsed.quotedExternalId);
           await prisma.message.create({
             data: {
               conversationId: conv.id,
@@ -1008,6 +1053,7 @@ async function autoSyncHistory() {
               externalId:     parsed.externalId,
               createdAt:      parsed.createdAt,
               rawType:        parsed.rawType || null,
+              replyToId,
             },
           });
           totalNew++;
