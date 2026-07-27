@@ -340,7 +340,8 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     try {
       message = await prisma.message.create({
         data: { conversationId: conversation.id, direction, content, mediaType, mediaUrl, externalId,
-                senderName: fromMe ? null : (senderName || null) },
+                senderName: fromMe ? null : (senderName || null),
+                rawType: parsedMedia.rawType || null },
       });
     } catch (e) {
       if (e.code !== "P2002") throw e;
@@ -507,6 +508,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         mediaType,
         mediaUrl,
         externalId,
+        rawType: parsedMedia.rawType || null,
       },
     });
   } catch (e) {
@@ -643,6 +645,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
         mediaUrl,
         externalId,
         ack: initialAck || 0,
+        rawType: parsedMedia.rawType || null,
       },
     });
   } catch (e) {
@@ -1004,6 +1007,7 @@ async function autoSyncHistory() {
               mediaUrl:       parsed.mediaUrl,
               externalId:     parsed.externalId,
               createdAt:      parsed.createdAt,
+              rawType:        parsed.rawType || null,
             },
           });
           totalNew++;

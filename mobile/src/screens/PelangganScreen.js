@@ -1,11 +1,27 @@
 // Tab Pelanggan — list customer + search (Fase M5.5-B), diperluas M5.5-D:
 // filter pipeline stage bergaya chip + view "Pipeline Board" (kanban mini).
-// ⚠️ GET /customers TIDAK paginated di backend (balikin array PENUH hasil
-// search+salesId, tanpa filter stage — lihat catatan di api.js#getCustomers).
-// Ini dimanfaatkan: SATU fetch dipakai utk list, count per stage, DAN board
-// — semua difilter/dikelompokkan CLIENT-SIDE dari array yang sudah LENGKAP
-// (bukan dari subset ter-paginate, jadi count-nya akurat), baru di-WINDOWING
-// per tampilan (list: visibleCount, board: per-kolom) demi performa render.
+//
+// Revisi 28 Jul 2026 — BUG YANG DIPERBAIKI: layar ini SEBELUMNYA selalu
+// menarik SELURUH daftar pelanggan (GET /customers TANPA ?page=, jalur lama
+// yang balikin array polos penuh) setiap kali dibuka — diukur langsung di
+// produksi: 1.442.029 bytes utk ~1.320 pelanggan, 50x lebih besar dari
+// respons web yang sudah dipaginasi (28.728 bytes utk 25 baris). Di 4G ini
+// bisa beberapa detik nunggu tiap buka tab Pelanggan, dan makin lambat
+// seiring pelanggan bertambah.
+//
+// Sekarang split 2 jalur data:
+// - LIST VIEW → paginasi SUNGGUHAN ke server (?page=&limit=), infinite
+//   scroll nambah halaman, filter search/sales/stage dikirim ke server
+//   (backend sudah dukung ini dari revisi Customers.jsx web sebelumnya).
+//   Trade-off yang disengaja: pindah tab stage sekarang butuh 1 request
+//   baru (dulu instan karena SEMUA data sudah ada di memori) — itu memang
+//   harga dari tidak lagi menarik semuanya sekaligus.
+// - BOARD VIEW (kanban) → tetap butuh SEMUA pelanggan per stage (kolom
+//   kanban tidak masuk akal kalau cuma sebagian), jadi tetap pakai jalur
+//   lama (tanpa ?page=) TAPI cuma di-fetch LAZY saat user benar-benar
+//   pindah ke Board — bukan otomatis ikut ke-fetch tiap buka tab Pelanggan
+//   seperti sebelumnya (yang mana itu pemborosan ekstra untuk mayoritas
+//   sales yang cuma pakai List view).
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, FlatList, ScrollView,
@@ -23,7 +39,7 @@ import PressableScale from "../components/PressableScale";
 import PipelineBoard from "../components/PipelineBoard";
 
 const DEBOUNCE_MS = 300;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 25;
 const VIEW_MODE_KEY = "pelangganViewMode"; // "list" | "board" — persist AsyncStorage
 
 // Label pipeline KHUSUS layar ini (chip/board) — beda dari stageLabels
@@ -110,11 +126,24 @@ export default function PelangganScreen({ navigation }) {
   const { user } = useAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [customers, setCustomers] = useState([]);
+
+  // ── List view: paginasi sungguhan ke server ──
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [stageCounts, setStageCounts] = useState({ ALL: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // ── Board view: tetap butuh SEMUA data per stage, tapi lazy-load
+  // (cuma fetch begitu user benar-benar pindah ke Board) ──
+  const [boardCustomers, setBoardCustomers] = useState([]);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [boardError, setBoardError] = useState(null);
+  const [boardLoadedOnce, setBoardLoadedOnce] = useState(false);
+
   const [salesUsers, setSalesUsers] = useState([]);
   const [stageFilter, setStageFilter] = useState("ALL");
   const [viewMode, setViewMode] = useState("list"); // "list" | "board"
@@ -148,25 +177,62 @@ export default function PelangganScreen({ navigation }) {
     api.getUsers().then((list) => setSalesUsers((list || []).filter((u) => u.role !== "ADMIN"))).catch(() => {});
   }, []);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  // Muat 1 halaman List view. targetPage dikirim eksplisit (bukan dari state
+  // `page`) supaya tidak ada race antara "halaman berikutnya" vs "reset ke
+  // halaman 1 karena filter berubah" saling timpa.
+  const loadPage = useCallback(async (targetPage, { append = false, silent = false } = {}) => {
+    if (append) setLoadingMore(true);
+    else if (!silent) setLoading(true);
     setErrorMsg(null);
     try {
-      const params = {};
+      const params = { page: targetPage, limit: PAGE_SIZE };
       if (search) params.search = search;
       if (salesId) params.salesId = salesId;
+      if (stageFilter !== "ALL") params.stage = stageFilter;
       const data = await api.getCustomers(params);
-      setCustomers(data);
-      setVisibleCount(PAGE_SIZE);
+      setItems((prev) => (append ? [...prev, ...(data.items || [])] : (data.items || [])));
+      setTotal(data.total || 0);
+      setPage(targetPage);
+      // stageCounts dari SERVER (agregat cepat, bukan dihitung dari array
+      // penuh di client seperti sebelumnya) — tetap akurat walau List view
+      // cuma memuat sebagian data.
+      if (data.stageCounts) setStageCounts(data.stageCounts);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
+    }
+  }, [search, salesId, stageFilter]);
+
+  // Filter berubah (search/sales/stage) → reset ke halaman 1, BUKAN nambah
+  // halaman — kalau tidak, ganti tab stage akan nge-append ke list lama.
+  useEffect(() => { loadPage(1); }, [loadPage]);
+
+  // Board view — full fetch (jalur lama TANPA ?page=) HANYA saat viewMode
+  // benar-benar "board", supaya List view (mayoritas pemakaian) tidak ikut
+  // menanggung biaya menarik semua data.
+  const loadBoard = useCallback(async (silent = false) => {
+    if (!silent) setBoardLoading(true);
+    setBoardError(null);
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (salesId) params.salesId = salesId;
+      const data = await api.getCustomers(params); // TANPA page= → array penuh
+      setBoardCustomers(data || []);
+    } catch (err) {
+      setBoardError(err.message);
+    } finally {
+      setBoardLoading(false);
+      setBoardLoadedOnce(true);
     }
   }, [search, salesId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (viewMode === "board") loadBoard();
+  }, [viewMode, loadBoard]);
 
   function handleSearchChange(v) {
     setSearchInput(v);
@@ -176,11 +242,13 @@ export default function PelangganScreen({ navigation }) {
 
   function handleRefresh() {
     setRefreshing(true);
-    load(true);
+    if (viewMode === "board") loadBoard(true);
+    else loadPage(1, { silent: true });
   }
 
   function handleEndReached() {
-    setVisibleCount((v) => Math.min(v + PAGE_SIZE, filteredByStage.length));
+    if (loadingMore || loading || items.length >= total) return;
+    loadPage(page + 1, { append: true });
   }
 
   // useCallback — dipakai closure renderItem (list) & PipelineBoard (board),
@@ -190,45 +258,30 @@ export default function PelangganScreen({ navigation }) {
     navigation.navigate("CustomerDetail", { customerId: c.id, name: c.name, phone: c.phone });
   }, [navigation]);
 
-  // Count per stage — DARI ARRAY PENUH hasil search+salesId (bukan dari
-  // subset ter-windowing/ter-paginate), jadi selalu akurat & independen
-  // dari stage tab mana yang sedang aktif.
-  const stageCounts = useMemo(() => {
-    const counts = { ALL: customers.length };
-    STAGE_ORDER.forEach((s) => { counts[s] = 0; });
-    customers.forEach((c) => {
-      const s = c.pipelineStage || "NEW";
-      counts[s] = (counts[s] || 0) + 1;
-    });
-    return counts;
-  }, [customers]);
-
-  const filteredByStage = useMemo(() => {
-    if (stageFilter === "ALL") return customers;
-    return customers.filter((c) => (c.pipelineStage || "NEW") === stageFilter);
-  }, [customers, stageFilter]);
-
+  // Board dikelompokkan dari boardCustomers (full fetch lazy), BUKAN dari
+  // `items` (halaman List view yang sengaja cuma sebagian).
   const customersByStage = useMemo(() => {
     const grouped = {};
     STAGE_ORDER.forEach((s) => { grouped[s] = []; });
-    customers.forEach((c) => {
+    boardCustomers.forEach((c) => {
       const s = c.pipelineStage || "NEW";
       if (!grouped[s]) grouped[s] = [];
       grouped[s].push(c);
     });
     return grouped;
-  }, [customers]);
+  }, [boardCustomers]);
 
   // Pindahkan pelanggan ke stage lain dari Pipeline Board (long-press card)
-  // — optimistic update ke state lokal, revert + alert kalau gagal. Endpoint
-  // SAMA yang dipakai CustomerProfileContent.js (PATCH /customers/:id).
+  // — optimistic update ke state lokal (boardCustomers), revert + alert
+  // kalau gagal. Endpoint SAMA yang dipakai CustomerProfileContent.js
+  // (PATCH /customers/:id).
   const handleMoveStage = useCallback(async (customer, newStage) => {
     const prevStage = customer.pipelineStage;
-    setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: newStage } : c)));
+    setBoardCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: newStage } : c)));
     try {
       await api.updateCustomer(customer.id, { pipelineStage: newStage });
     } catch (err) {
-      setCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: prevStage } : c)));
+      setBoardCustomers((list) => list.map((c) => (c.id === customer.id ? { ...c, pipelineStage: prevStage } : c)));
       throw err;
     }
   }, []);
@@ -241,14 +294,6 @@ export default function PelangganScreen({ navigation }) {
     <CustomerRow customer={item} onPress={openDetail} />
   ), [openDetail]);
 
-  // useMemo — slice() SEBELUMNYA dihitung ulang tiap render PelangganScreen
-  // (termasuk render yang tidak ada hubungannya sama sekali dengan list,
-  // mis. buka picker sales, ketik di search box sebelum debounce nembak),
-  // bikin FlashList terima prop `data` dengan reference baru terus-menerus.
-  const visible = useMemo(
-    () => filteredByStage.slice(0, visibleCount),
-    [filteredByStage, visibleCount]
-  );
   const selectedSalesName = salesId ? (salesUsers.find((u) => u.id === salesId)?.name || "…") : "Semua";
 
   return (
@@ -309,7 +354,26 @@ export default function PelangganScreen({ navigation }) {
         </ScrollView>
       )}
 
-      {loading ? (
+      {viewMode === "board" ? (
+        boardLoading && !boardLoadedOnce ? (
+          <View style={styles.list}>
+            {Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)}
+          </View>
+        ) : boardError ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>Gagal memuat pelanggan: {boardError}</Text>
+          </View>
+        ) : (
+          <PipelineBoard
+            customersByStage={customersByStage}
+            stageOrder={STAGE_ORDER}
+            pipelineLabels={PIPELINE_LABELS}
+            pipelineColors={stageColors}
+            onCardPress={openDetail}
+            onMoveStage={handleMoveStage}
+          />
+        )
+      ) : loading ? (
         <View style={styles.list}>
           {Array.from({ length: 7 }).map((_, i) => <SkeletonRow key={i} />)}
         </View>
@@ -317,16 +381,7 @@ export default function PelangganScreen({ navigation }) {
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Gagal memuat pelanggan: {errorMsg}</Text>
         </View>
-      ) : viewMode === "board" ? (
-        <PipelineBoard
-          customersByStage={customersByStage}
-          stageOrder={STAGE_ORDER}
-          pipelineLabels={PIPELINE_LABELS}
-          pipelineColors={stageColors}
-          onCardPress={openDetail}
-          onMoveStage={handleMoveStage}
-        />
-      ) : visible.length === 0 ? (
+      ) : items.length === 0 ? (
         <View style={styles.emptyWrap}>
           <UsersIcon size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
           <Text style={styles.emptyText}>
@@ -335,7 +390,7 @@ export default function PelangganScreen({ navigation }) {
         </View>
       ) : (
         <FlashList
-          data={visible}
+          data={items}
           keyExtractor={(c) => c.id}
           renderItem={renderCustomerRow}
           onEndReached={handleEndReached}
@@ -344,9 +399,7 @@ export default function PelangganScreen({ navigation }) {
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[tokens.color.accent]} />
           }
           ListFooterComponent={
-            visibleCount < filteredByStage.length ? (
-              <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} />
-            ) : null
+            loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} /> : null
           }
           contentContainerStyle={{ paddingBottom: 90 }}
         />

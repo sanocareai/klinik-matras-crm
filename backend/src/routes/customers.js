@@ -145,7 +145,14 @@ customerRouter.get("/", async (req, res) => {
     const orderByField = SORT_FIELDS[sortKey] || "updatedAt";
     const orderByDir = sortDir === "asc" ? "asc" : "desc";
 
-    const [totalCount, customersPage, typeGroups] = await Promise.all([
+    // Sama seperti `where` di atas TAPI TANPA pipelineStage — dipakai untuk
+    // hitung "berapa customer di tiap stage KALAU tab ini dipilih" (tab
+    // pipeline chip mobile, lihat mobile/PelangganScreen.js), supaya count
+    // tetap masuk akal walau search/salesId lagi aktif, TIDAK ikut berubah
+    // cuma karena user pindah-pindah tab stage itu sendiri.
+    const { pipelineStage: _omitStage, ...whereForStageCounts } = where;
+
+    const [totalCount, customersPage, typeGroups, stageGroups] = await Promise.all([
       prisma.customer.count({ where }),
       prisma.customer.findMany({
         where,
@@ -168,6 +175,7 @@ customerRouter.get("/", async (req, res) => {
       // lain (search/stage/quickChip/dst), sama seperti perilaku lama:
       // tab count itu angka global, bukan "yang cocok filter saat ini".
       prisma.customer.groupBy({ by: ["customerType"], _count: { _all: true } }),
+      prisma.customer.groupBy({ by: ["pipelineStage"], where: whereForStageCounts, _count: { _all: true } }),
     ]);
 
     // "Order terbaru" (status/keluhan/merk/ukuran/layanan) + riwayat komplain
@@ -244,8 +252,14 @@ customerRouter.get("/", async (req, res) => {
       endUser: typeGroups.find((g) => g.customerType === "END_USER")?._count._all || 0,
       korporat: typeGroups.find((g) => g.customerType === "CORPORATE")?._count._all || 0,
     };
+    // Per stage — dipakai chip pipeline mobile (mobile/PelangganScreen.js).
+    // "ALL" = jumlah SEMUA stage dijumlahkan (setara totalCount TANPA filter
+    // stage), supaya tab "Semua" tetap benar walau salah satu tab stage
+    // dipilih.
+    const stageCounts = { ALL: stageGroups.reduce((s, g) => s + g._count._all, 0) };
+    for (const g of stageGroups) stageCounts[g.pipelineStage] = g._count._all;
 
-    res.json({ items, total: totalCount, page, pageSize, counts });
+    res.json({ items, total: totalCount, page, pageSize, counts, stageCounts });
   } catch (err) {
     console.error("customers list error:", err);
     res.status(500).json({ error: "Gagal memuat daftar pelanggan" });

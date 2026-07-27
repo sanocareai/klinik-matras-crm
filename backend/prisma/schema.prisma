@@ -344,6 +344,15 @@ model Message {
   isRevoked      Boolean          @default(false) // soft-delete (WAHA message.revoked) — content dikosongkan, bubble tetap ada ("Pesan ini telah dihapus")
   createdAt      DateTime         @default(now())
 
+  // Revisi 28 Jul 2026: tipe pesan WhatsApp ASLI dari parseHistoryMessage.js
+  // (mis. "image", "location", "text", atau nama field mentah WAHA kalau
+  // TIDAK dikenali sama sekali, mis. "reactionMessage"). Paling berguna untuk
+  // kasus tidak dikenali (content jadi "[Pesan tidak didukung]") — SEBELUMNYA
+  // info ini cuma di-console.warn lalu dibuang, jadi begitu log server
+  // ke-reset (mis. redeploy) kita PERMANEN kehilangan info tipe apa yang
+  // sebenarnya masuk, padahal itu pesan sungguhan yang tidak terbaca di CRM.
+  rawType        String?
+
   // Sales yang kirim pesan OUTBOUND ini dari CRM (web/app) — null untuk
   // pesan INBOUND (dari customer) dan pesan lama sebelum field ini ada.
   // Dipakai buat set Conversation.firstResponderId sekali di
