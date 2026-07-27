@@ -161,7 +161,7 @@ customerRouter.get("/", async (req, res) => {
           conversations: {
             where: { type: "INDIVIDUAL" },
             orderBy: { lastMessageAt: "desc" }, take: 1,
-            select: { lastMessageAt: true },
+            select: { id: true, lastMessageAt: true },
           },
         },
         orderBy: { [orderByField]: orderByDir },
@@ -228,6 +228,12 @@ customerRouter.get("/", async (req, res) => {
         // orderCount/orderValue SUDAH ada di `c` (kolom denormalized asli),
         // tidak dihitung ulang di sini lagi.
         lastMessageAt: conversations[0]?.lastMessageAt || null,
+        // conversationId — dipakai frontend supaya klik baris/kartu Pelanggan
+        // bisa langsung deep-link ke chat customer ini (/inbox?conv=<id>),
+        // sama pola yang sudah dipakai halaman Order (bukaChat) & Pipeline
+        // KanbanCard — bukan cuma lempar ke /inbox generik lalu sales harus
+        // cari sendiri percakapannya secara manual (susah di layar HP/tablet).
+        conversationId: conversations[0]?.id || null,
         latestOrderStatus:   latest?.status        || null,
         latestOrderNumber:   latest?.orderNumber   || null,
         latestPaymentStatus: latest?.paymentStatus || null,

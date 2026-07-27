@@ -4,7 +4,6 @@ import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
-import CoPilotFloat from "./components/CoPilotFloat.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
@@ -146,7 +145,8 @@ export default function App() {
     <BrowserRouter>
       <InstallPrompt />
       <UpdateBanner />
-      <CoPilotFloat />
+      {/* Floating "Tanya Sano" (CoPilotFloat) DIHAPUS — sudah ada akses lewat
+          sidebar (AI & OTOMASI > Tanya Sano), FAB ini jadi redundan. */}
       <Layout user={user} onLogout={handleLogout}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>

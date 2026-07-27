@@ -8,11 +8,13 @@ import { api } from "../api.js";
 import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  PIPELINE_STAGES, STAGE_LABELS, stageVariant,
 } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { badgeVariants } from "@/components/ui/badge.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
@@ -79,7 +81,34 @@ function StatusSelect({ order, onChange, className }) {
   );
 }
 
-function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange }) {
+// Dropdown TAHAP PIPELINE customer, langsung dari halaman Order — sebelumnya
+// sales yang sedang mengecek/mengubah status ORDER (StatusSelect di atas)
+// harus pindah dulu ke halaman Pelanggan/Pipeline kalau juga perlu update
+// tahap pipeline-nya (mis. tandai "Paid" setelah order lunas & terkirim).
+// Warna chip pakai badgeVariants yang SAMA dengan Badge pipeline di
+// Pelanggan/Pipeline (stageVariant), supaya tidak ada skema warna kedua.
+function PipelineStageSelect({ order, onChange, className }) {
+  return (
+    <select
+      value={order.pipelineStage || "NEW"}
+      onChange={(e) => onChange(order, e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Ubah tahap pipeline untuk ${order.customerName || "pelanggan"}`}
+      className={cn(
+        badgeVariants({ variant: stageVariant(order.pipelineStage) }),
+        "cursor-pointer appearance-none border-0 py-0.5 pl-2 pr-1 text-[10px]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+        className
+      )}
+    >
+      {PIPELINE_STAGES.map(({ value, label }) => (
+        <option key={value} value={value}>{label}</option>
+      ))}
+    </select>
+  );
+}
+
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   return (
@@ -97,8 +126,9 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange }) {
         </span>
       </div>
 
-      <div className="mt-2">
-        <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
+      <div className="mt-2 flex items-center gap-1.5">
+        <StatusSelect order={order} onChange={onStatusChange} className="flex-1" />
+        <PipelineStageSelect order={order} onChange={onStageChange} className="flex-1" />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -123,7 +153,11 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange }) {
       )}
 
       <div className="mt-2 flex items-center gap-1 border-t border-line pt-2">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-ink3">
+        {/* BUG YANG DIPERBAIKI: nama sales sebelumnya text-ink3 (opacity 40%,
+            dipakai untuk placeholder/data kosong) — nama sales itu DATA
+            SUNGGUHAN, bukan "kosong", jadi kontrasnya dinaikkan ke text-ink2
+            + medium weight supaya kebaca jelas, bukan pudar seperti "—". */}
+        <span className={cn("min-w-0 flex-1 truncate text-[11px]", order.assignedSales ? "font-medium text-ink2" : "text-ink3")}>
           {order.assignedSales?.name || "Belum ada sales"}
         </span>
         <button
@@ -226,6 +260,20 @@ export default function Orders() {
       load();
     } catch (err) {
       alert("Gagal ubah status: " + err.message);
+    }
+  }
+
+  // Ubah TAHAP PIPELINE customer langsung dari sini (bukan status order —
+  // 2 hal beda, lihat PipelineStageSelect) — endpoint SAMA yang dipakai
+  // Pelanggan/Pipeline (PATCH /customers/:id), pipelineStage cuma "menumpang"
+  // di baris order karena didenormalisasi ke respons GET /orders.
+  async function handleStageChange(order, newStage) {
+    if (newStage === order.pipelineStage || !order.customerId) return;
+    try {
+      await api.updateCustomer(order.customerId, { pipelineStage: newStage });
+      load();
+    } catch (err) {
+      alert("Gagal ubah tahap pipeline: " + err.message);
     }
   }
 
@@ -406,7 +454,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -423,7 +471,7 @@ export default function Orders() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  {["ID Order", "Pelanggan", "Kategori", "Status", "Lama", "Pembayaran", "Nilai", "Sales", "Dibuat", ""].map((h) => (
+                  {["ID Order", "Pelanggan", "Kategori", "Status", "Pipeline", "Lama", "Pembayaran", "Nilai", "Sales", "Dibuat", ""].map((h) => (
                     <th key={h} className="whitespace-nowrap border-b border-line px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
                       {h}
                     </th>
@@ -455,6 +503,9 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <PipelineStageSelect order={o} onChange={handleStageChange} />
+                      </td>
                       <td className={cn("whitespace-nowrap px-3 py-2.5 tabular-nums", mandek ? "font-semibold text-orange" : "text-ink2")}>
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
                       </td>
@@ -466,7 +517,9 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
                         {formatRupiah(o.value || 0)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-ink3">{o.assignedSales?.name || "—"}</td>
+                      <td className={cn("whitespace-nowrap px-3 py-2.5", o.assignedSales ? "font-medium text-ink2" : "text-ink3")}>
+                        {o.assignedSales?.name || "—"}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-ink3">
                         {o.createdAt ? formatTanggalPendek(o.createdAt) : "—"}
                       </td>

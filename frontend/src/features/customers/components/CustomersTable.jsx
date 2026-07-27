@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -21,7 +22,20 @@ export default function CustomersTable({
   rows, loading, emptyMessage, sortKey, sortDir, onSort, onOpen,
   selected, onToggleSelect, allSelected, onToggleSelectAll,
 }) {
+  const navigate = useNavigate();
   const dirFor = (key) => (sortKey === key ? sortDir : null);
+
+  // BUG YANG DIPERBAIKI: klik baris SEBELUMNYA selalu buka drawer profil —
+  // untuk sampai ke chat customer, sales harus buka drawer dulu lalu cari
+  // tombol "Lanjutkan WhatsApp" yang kecil di dalamnya (susah dijangkau di
+  // HP/tablet). Sekarang klik baris LANGSUNG ke chat (deep-link
+  // /inbox?conv=) kalau customer sudah pernah chat — itu aksi yang jauh
+  // lebih sering dibutuhkan sales daripada buka profil. Profil TETAP bisa
+  // diakses lewat tombol "Lihat" eksplisit di kolom Aksi (tidak dihapus).
+  function handleRowClick(c) {
+    if (c.conversationId) navigate(`/inbox?conv=${c.conversationId}`);
+    else onOpen(c.id);
+  }
 
   return (
     <TableWrap className="hidden md:block">
@@ -59,7 +73,7 @@ export default function CustomersTable({
             const displayName = c.name || c.phone || c.instagramHandle || "—";
             const korporat = c.customerType === "CORPORATE";
             return (
-              <TR key={c.id} clickable onClick={() => onOpen(c.id)}>
+              <TR key={c.id} clickable onClick={() => handleRowClick(c)}>
                 <TD onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
@@ -142,10 +156,16 @@ export default function CustomersTable({
                 <TD>{c.city || <span className="text-ink3">—</span>}</TD>
                 <TD numeric>{c.orderCount || 0}</TD>
                 <TD numeric className="font-semibold text-ink">{formatRupiah(c.orderValue)}</TD>
-                <TD>{c.assignedSales?.name || <span className="text-ink3">—</span>}</TD>
+                {/* BUG YANG DIPERBAIKI: nama sales sebelumnya text-ink3 (opacity
+                    40%, dipakai untuk placeholder/data kosong) — ini DATA
+                    SUNGGUHAN, bukan kosong, jadi kontrasnya dinaikkan supaya
+                    kebaca jelas, bukan pudar seperti tanda "—". */}
+                <TD className={c.assignedSales ? "font-medium text-ink2" : undefined}>
+                  {c.assignedSales?.name || <span className="text-ink3">—</span>}
+                </TD>
 
                 <TD onClick={(e) => { e.stopPropagation(); onOpen(c.id); }}>
-                  <Button variant="ghost" size="sm">Lihat</Button>
+                  <Button variant="ghost" size="sm" title="Lihat profil pelanggan">Profil</Button>
                 </TD>
               </TR>
             );

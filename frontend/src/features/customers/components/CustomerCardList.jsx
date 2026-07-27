@@ -1,5 +1,6 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle, UserRound } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -16,6 +17,19 @@ import {
 // CustomersTable — ambangnya sama (768px), tapi aturannya ada DI komponen,
 // bukan terpisah di index.css yang mudah lupa dirawat.
 export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }) {
+  const navigate = useNavigate();
+
+  // BUG YANG DIPERBAIKI: tap kartu SEBELUMNYA selalu buka drawer profil —
+  // di HP/tablet, satu-satunya jalan ke chat customer adalah tombol kecil
+  // "Lanjutkan WhatsApp" DI DALAM drawer itu, susah dijangkau. Sekarang tap
+  // kartu LANGSUNG ke chat (deep-link /inbox?conv=) kalau customer sudah
+  // pernah chat. Profil tetap bisa dibuka lewat ikon kecil di pojok kartu
+  // (lihat tombol terpisah di bawah), bukan dihapus sama sekali.
+  function handleCardTap(c) {
+    if (c.conversationId) navigate(`/inbox?conv=${c.conversationId}`);
+    else onOpen(c.id);
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-2 md:hidden">
@@ -35,11 +49,13 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
       {rows.map((c) => {
         const displayName = c.name || formatPhoneDisplay(c.phone) || c.instagramHandle || "?";
         return (
-          <button
+          <div
             key={c.id}
-            type="button"
-            onClick={() => onOpen(c.id)}
-            className="w-full rounded-2xl bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            role="button"
+            tabIndex={0}
+            onClick={() => handleCardTap(c)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCardTap(c); }}
+            className="w-full cursor-pointer rounded-2xl bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <div className="flex items-start gap-2.5">
               <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
@@ -58,6 +74,17 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
               <Badge variant={stageVariant(c.pipelineStage)} className="shrink-0">
                 {STAGE_LABELS[c.pipelineStage] || c.pipelineStage || "—"}
               </Badge>
+              {/* Profil tetap bisa dibuka lewat ikon kecil ini — tap kartu
+                  sendiri sekarang langsung ke chat (lihat handleCardTap). */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpen(c.id); }}
+                title="Lihat profil pelanggan"
+                aria-label="Lihat profil pelanggan"
+                className="shrink-0 rounded-full p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2"
+              >
+                <UserRound size={15} />
+              </button>
             </div>
 
             <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2 text-[11px]">
@@ -77,7 +104,7 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
                 )}
               </div>
             )}
-          </button>
+          </div>
         );
       })}
     </div>
