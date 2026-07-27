@@ -57,11 +57,19 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    // BUG YANG DIPERBAIKI: section ini SEBELUMNYA adminOnly di level SEKSI,
+    // jadi SELURUH seksi (termasuk link "Pengaturan" itu sendiri) hilang
+    // total dari sidebar SALES — akibatnya SALES tidak pernah bisa membuka
+    // halaman Pengaturan sama sekali, walau pages/Pengaturan.jsx SUDAH
+    // punya logika sendiri yang mempersempit tampilan SALES ke section
+    // "Template Pesan" doang (lihat SALES_ALLOWED_SECTIONS di sana) — logika
+    // itu tidak pernah kepakai karena pintu masuknya sudah tertutup di sini.
+    // "Pengguna & Peran" TETAP admin-only (item-level, seperti section lain
+    // yang campur admin+non-admin, mis. DATA/Galeri Produk).
     section: "PENGATURAN",
-    adminOnly: true,
     items: [
       { to: "/pengaturan", label: "Pengaturan",       Icon: Settings },
-      { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog },
+      { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog, adminOnly: true },
     ],
   },
 ];

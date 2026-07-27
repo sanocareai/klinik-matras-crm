@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import { ChevronLeft, ChevronRight, ChevronDown, Calendar } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button } from "./ui/button.jsx";
-import CalendarMonth, { BULAN_ID } from "./ui/calendar-month.jsx";
+import CalendarMonth from "./ui/calendar-month.jsx";
 import {
   SIMPLE_PRESETS, PARAM_PRESETS, makeRange, makeCustomRange,
   previousPeriod, stepRange, canStep, formatRangeText, presetLabel, todayWIB,
@@ -236,29 +236,33 @@ export default function DateRangePicker({ value, onChange }) {
               </label>
             </div>
 
-            {/* Navigasi bulan */}
-            <div className="flex items-center justify-between px-3.5 py-2">
-              <span className="text-[11px] font-bold tracking-wide text-ink2">
-                {BULAN_ID[anchor.month()]} {anchor.year()}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button" onClick={() => setAnchor((a) => a.subtract(1, "month"))}
-                  aria-label="Bulan sebelumnya"
-                  className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAnchor((a) => a.add(1, "month"))}
-                  disabled={anchor.add(1, "month").isAfter(todayWIB().startOf("month"))}
-                  aria-label="Bulan berikutnya"
-                  className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint disabled:pointer-events-none disabled:opacity-30"
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
+            {/* Navigasi geser 2 bulan yang ditampilkan bersamaan. BUG YANG
+                DIPERBAIKI: baris ini SEBELUMNYA juga menampilkan label bulan
+                sendiri (mis. "JUN 2026") DI ATAS grid — padahal tiap
+                CalendarMonth di bawah SUDAH menampilkan label bulannya
+                masing-masing ("JUN 2026" & "JUL 2026"). Hasilnya 3 label
+                bulan berjejer (1 di sini + 2 di kalender), dan yang di sini
+                cuma mewakili bulan KIRI jadi terasa salah/tidak nyambung
+                dengan kalender KANAN. Sekarang cuma panah geser, tanpa teks
+                — label bulan satu-satunya sumber kebenaran ada di tiap
+                CalendarMonth. */}
+            <div className="flex items-center justify-end gap-1 px-3.5 py-2">
+              <button
+                type="button" onClick={() => setAnchor((a) => a.subtract(1, "month"))}
+                aria-label="Bulan sebelumnya"
+                className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnchor((a) => a.add(1, "month"))}
+                disabled={anchor.add(1, "month").isAfter(todayWIB().startOf("month"))}
+                aria-label="Bulan berikutnya"
+                className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronRight size={15} />
+              </button>
             </div>
 
             <div
