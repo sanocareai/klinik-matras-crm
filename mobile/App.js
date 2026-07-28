@@ -14,6 +14,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChatListScreen from "./src/screens/ChatListScreen";
@@ -283,9 +284,25 @@ function applyInterGlobally() {
   TextInput.defaultProps.style = [{ fontFamily: "Inter_400Regular" }, TextInput.defaultProps.style];
 }
 
+// GAP (fix): dulu TIDAK ADA persistensi state navigasi sama sekali — kalau
+// Android mematikan proses app ini di background (tekanan memori, umum
+// terjadi kalau user buka app lain lumayan lama), JS runtime hilang total.
+// Begitu user balik, app COLD-START ulang dari nol dan selalu mendarat di
+// tab default (Home) — BUKAN melanjutkan tab/layar yang terakhir dibuka
+// (mis. Inbox), walau dari sisi user terasa seperti app "masih jalan di
+// background" (icon masih ada di recent apps). Fix: simpan state navigasi
+// ke AsyncStorage tiap kali berubah, baca lagi sebagai initialState saat app
+// benar-benar mulai ulang. Dibungkus try/catch KETAT — kalau gagal baca/
+// parse apa pun, jatuh ke `undefined` (perilaku LAMA: mulai fresh dari Home),
+// TIDAK PERNAH bikin app crash gara-gara data tersimpan yang rusak/dari versi
+// lama yang skema layarnya sudah beda.
+const NAV_PERSISTENCE_KEY = "navState_v1";
+
 export default function App() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   const [routeName, setRouteName] = useState();
+  const [navReady, setNavReady] = useState(false);
+  const [initialNavState, setInitialNavState] = useState();
   const colors = useColors();
 
   // Baru sembunyikan splash SETELAH font siap — lihat preventAutoHideAsync()
@@ -295,16 +312,32 @@ export default function App() {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded]);
 
-  if (!fontsLoaded) {
+  // Baca state navigasi tersimpan SEKALI di awal — splash native (dipertahankan
+  // lewat preventAutoHideAsync di atas) menutupi jeda baca AsyncStorage ini,
+  // jadi tidak ada kedipan UI kosong sama sekali.
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(NAV_PERSISTENCE_KEY)
+      .then((raw) => { if (alive && raw) setInitialNavState(JSON.parse(raw)); })
+      .catch(() => {}) // rusak/gagal baca → biarkan undefined, mulai fresh
+      .finally(() => { if (alive) setNavReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!fontsLoaded || !navReady) {
     return <View style={{ flex: 1, backgroundColor: colors.header }} />;
   }
   applyInterGlobally();
 
   // Update nama route aktif lewat navigationRef (bukan hook) — dibaca ulang
   // saat navigator pertama kali siap (onReady) dan tiap kali state navigasi
-  // berubah (onStateChange, misal push/pop/back).
-  function syncRouteName() {
+  // berubah (onStateChange, misal push/pop/back). Sekalian simpan state
+  // TERBARU ke AsyncStorage di sini (fire-and-forget — gagal simpan sekali
+  // bukan hal fatal, cuma berarti restore berikutnya jatuh ke state sebelumnya).
+  function syncRouteName(state) {
     setRouteName(navigationRef.getCurrentRoute()?.name);
+    const s = state ?? navigationRef.getRootState?.();
+    if (s) AsyncStorage.setItem(NAV_PERSISTENCE_KEY, JSON.stringify(s)).catch(() => {});
   }
 
   return (
@@ -315,7 +348,8 @@ export default function App() {
             <AuthProvider>
               <NavigationContainer
                 ref={navigationRef}
-                onReady={syncRouteName}
+                initialState={initialNavState}
+                onReady={() => syncRouteName()}
                 onStateChange={syncRouteName}
               >
                 <SafeAreaTopBg routeName={routeName}>

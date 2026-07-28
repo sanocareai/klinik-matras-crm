@@ -7,14 +7,18 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  RefreshControl, ActivityIndicator, ScrollView,
+  RefreshControl, ActivityIndicator, ScrollView, Alert,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
-import { Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw } from "lucide-react-native";
+import {
+  Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
+  Pin, PinOff, Check, Circle,
+} from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { lightHaptic } from "../lib/haptics";
 import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
 import { InboxListSkeleton } from "../components/SkeletonLoader";
@@ -99,6 +103,67 @@ export default function ChatListScreen({ navigation }) {
   const [counts, setCounts] = useState({});
   const debounceRef = useRef(null);
 
+  // GAP (fix): dulu tidak ada mode pilih-banyak ala WhatsApp (tap avatar
+  // beberapa chat → header berubah jadi bar aksi). Aksi bar SENGAJA dibatasi
+  // ke yang SUDAH ada endpoint per-item aman (pin, tandai dibaca) — TIDAK
+  // menambah kapabilitas baru (mis. hapus percakapan) yang belum pernah ada
+  // & butuh diskusi produk sendiri soal retensi data CRM.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  const enterSelection = useCallback((id) => {
+    lightHaptic();
+    setSelectionMode(true);
+    setSelectedIds(new Set([id]));
+  }, []);
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }, []);
+  const exitSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  async function bulkAction(patchFn) {
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(ids.map((id) => patchFn(id)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) Alert.alert("Sebagian gagal", `${failed} dari ${ids.length} percakapan gagal diproses.`);
+    exitSelection();
+  }
+  // Pin/unpin massal: kalau SEBAGIAN sudah pin & sebagian belum, aksi
+  // menyamakan semua jadi PINNED (lebih intuitif drpd toggle per-item yang
+  // hasilnya campur aduk) — sama pola dgn email client umumnya.
+  function bulkPin() {
+    bulkAction((id) => api.updateConversation(id, { pinned: true }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, pinned: true, pinnedAt: new Date().toISOString() })
+    ));
+  }
+  function bulkUnpin() {
+    bulkAction((id) => api.updateConversation(id, { pinned: false }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, pinned: false, pinnedAt: null })
+    ));
+  }
+  function bulkMarkRead() {
+    bulkAction((id) => api.markConversationRead(id).then(() =>
+      useConversationStore.getState().upsertConversation({ id, unread: false, unreadCount: 0, isRead: true })
+    ));
+  }
+  function bulkMarkUnread() {
+    bulkAction((id) => api.updateConversation(id, { unread: true, isRead: false }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, unread: true, isRead: false })
+    ));
+  }
+  // Tombol pin di bar: kalau SEMUA yang dipilih sudah pinned → aksi jadi
+  // unpin semua; selain itu (campur/belum ada yang pin) → pin semua.
+  const selectedConvs = [...selectedIds].map((id) => conversationsById[id]).filter(Boolean);
+  const allSelectedPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.pinned);
+
   const { isLoading, isError, error, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
     useConversations({ filter, search, userId: user?.id });
 
@@ -158,17 +223,50 @@ export default function ChatListScreen({ navigation }) {
   // memanggil ulang fungsi ini setiap kali komponen induk re-render, jadi
   // kalau bukan useCallback, closure baru dibuat tiap kali walau openChat
   // sendiri sudah stabil.
+  // GAP (fix): selectionMode/selectedIds sengaja MASUK dependency — saat
+  // mode pilih aktif, checkmark tiap baris harus ikut update. Ini beda dari
+  // openChat (stabil selamanya) — trade-off perf yang disengaja & aman:
+  // mode pilih cuma aktif saat user EKSPLISIT lagi memilih (bukan jalur
+  // scroll normal sehari-hari yang perf-nya krusial).
   const renderItem = useCallback(({ item }) => (
-    <ConversationItem id={item} onPress={openChat} />
-  ), [openChat]);
+    <ConversationItem
+      id={item}
+      onPress={openChat}
+      selectionMode={selectionMode}
+      selected={selectedIds.has(item)}
+      onToggleSelect={toggleSelect}
+      onEnterSelection={enterSelection}
+    />
+  ), [openChat, selectionMode, selectedIds, toggleSelect, enterSelection]);
 
   const empty = EMPTY_STATE[filter] || EMPTY_STATE.ALL;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header — GAP (fix): bar aksi mode-pilih ala WhatsApp, muncul GANTI
+          header biasa selama selectionMode aktif (bukan modal/overlay
+          terpisah — sama pola dgn selectionToolbar di ChatScreen.js). */}
       <View style={styles.header}>
-        {searchOpen ? (
+        {selectionMode ? (
+          <View style={styles.selectionBar}>
+            <TouchableOpacity onPress={exitSelection} style={styles.headerIconBtn}>
+              <X size={20} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <Text style={styles.selectionCount}>{selectedIds.size} dipilih</Text>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={allSelectedPinned ? bulkUnpin : bulkPin} style={styles.headerIconBtn}>
+              {allSelectedPinned
+                ? <PinOff size={19} color={tokens.color.textPrimary} strokeWidth={2.2} />
+                : <Pin size={19} color={tokens.color.textPrimary} strokeWidth={2.2} />}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={bulkMarkRead} style={styles.headerIconBtn}>
+              <Check size={19} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={bulkMarkUnread} style={styles.headerIconBtn}>
+              <Circle size={19} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+        ) : searchOpen ? (
           <View style={styles.searchRow}>
             <TextInput
               autoFocus
@@ -291,6 +389,8 @@ function createStyles(tokens) {
   title: { color: tokens.color.textPrimary, fontSize: 24, fontWeight: "700" },
   subtitle: { color: tokens.color.textSecondary, fontSize: 12, marginTop: 2 },
   headerIconBtn: { padding: 8 },
+  selectionBar: { flex: 1, flexDirection: "row", alignItems: "center" },
+  selectionCount: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginLeft: 4 },
   headerIconText: { fontSize: 18, color: tokens.color.textPrimary },
   searchRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
   searchInput: {

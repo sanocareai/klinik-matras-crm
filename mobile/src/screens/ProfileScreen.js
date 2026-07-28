@@ -175,7 +175,11 @@ export default function ProfileScreen({ navigation }) {
         ]
       );
     } catch (err) {
-      Alert.alert("Gagal cek update", err.message);
+      const friendly = describeUpdateError(err);
+      Alert.alert(
+        "Gagal cek update",
+        friendly ? `${friendly}\n\nDetail teknis: ${err.message}` : (err.message || "Error tidak diketahui")
+      );
     } finally {
       setCheckingUpdate(false);
     }
@@ -329,6 +333,41 @@ export default function ProfileScreen({ navigation }) {
 // disediakan Metro bundler, aman dipakai di mana saja.
 function isDevBuild() {
   return __DEV__;
+}
+
+// GAP (fix): dulu err.message mentah ditampilkan apa adanya — untuk
+// checkForUpdateAsync() ini SERING cuma bungkus native generik ("Call to
+// function 'ExpoUpdates.checkForUpdateAsync' has been rejected → Caused by:
+// Failed to check for update") yang TIDAK menjelaskan sebab sebenarnya ke
+// user, bikin laporan bug sulit ditindaklanjuti (pesan yang dilaporkan cuma
+// judul generik ini, bukan penyebab asli). Kategorikan pola yang DIKETAHUI,
+// tapi TETAP sertakan pesan asli di detail — supaya kalau kategorinya salah
+// tebak, info aslinya tidak hilang.
+function describeUpdateError(err) {
+  const msg = err?.message || "";
+  const lower = msg.toLowerCase();
+  if (lower.includes("network") || lower.includes("timeout") || lower.includes("timed out") || lower.includes("fetch")) {
+    return "Tidak bisa terhubung ke server update — cek koneksi internet, lalu coba lagi.";
+  }
+  if (lower.includes("no update manifest") || lower.includes("no compatible update")) {
+    return "Belum ada versi baru yang dipublikasikan untuk build ini (normal kalau memang belum ada update dirilis).";
+  }
+  if (lower.includes("runtimeversion") || lower.includes("runtime version")) {
+    return "Build ini tidak cocok dengan versi update yang tersedia — perlu pasang APK baru, bukan lewat update ini.";
+  }
+  if (lower.includes("channel")) {
+    return "Channel update untuk build ini belum dikonfigurasi dengan benar — hubungi admin.";
+  }
+  // Bungkus generik native ("Call to function ... has been rejected → Caused
+  // by: Failed to check for update") — dikonfirmasi 28 Jul 2026 ini pesan
+  // paling sering muncul di lapangan. TIDAK menyebut sebab spesifik sama
+  // sekali di level JS, jadi paling mungkin: internet putus/lemah SAAT itu,
+  // server update (u.expo.dev) sedang tidak terjangkau, atau memang belum
+  // pernah ada `eas update` dipublikasikan ke channel build ini (bukan bug).
+  if (lower.includes("failed to check for update") || lower.includes("has been rejected")) {
+    return "Gagal menghubungi server update saat ini. Kemungkinan: koneksi internet sedang lemah/putus, atau server update sedang tidak terjangkau. Coba lagi sebentar lagi — kalau terus gagal padahal internet lancar, laporkan ke admin.";
+  }
+  return null; // tidak dikenali — tampilkan pesan asli apa adanya
 }
 
 function createStyles(tokens) {

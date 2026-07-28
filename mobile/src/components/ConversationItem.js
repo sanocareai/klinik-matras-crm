@@ -7,7 +7,7 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
-  Check, CheckCheck, Clock, Circle, Pin, PinOff, Image as ImageIcon, Video, Mic, FileText,
+  Check, CheckCheck, Clock, Circle, Pin, PinOff, Image as ImageIcon, Video, Mic, FileText, CheckCircle2,
 } from "lucide-react-native";
 import AvatarStack from "./AvatarStack";
 import PressableScale from "./PressableScale";
@@ -66,7 +66,13 @@ function lastPreviewParts(c, tokens) {
   return { OutboundIcon, outboundIconColor, MediaIcon, text: MediaIcon ? MEDIA_LABEL[msg.mediaType] : "" };
 }
 
-function ConversationItemBase({ id, onPress }) {
+// GAP (fix): dulu tidak ada mode pilih-banyak — WhatsApp asli punya tap
+// avatar (atau long-press) → masuk mode pilih, header berubah jadi bar aksi
+// (pin/tandai dibaca dkk). Trigger di sini SENGAJA beda dari long-press (yang
+// sudah dipakai PeekPreviewModal) — tap AVATAR yang jadi pintu masuk, supaya
+// tidak rebutan gesture dengan long-press-preview yang sudah ada & tidak
+// perlu diubah.
+function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSelect, onEnterSelection }) {
   const c = useConversation(id);
   const { user } = useAuth();
   const tokens = useTokens();
@@ -198,6 +204,7 @@ function ConversationItemBase({ id, onPress }) {
     <Animated.View entering={FadeInDown.duration(220)} style={styles.itemWrap}>
       <Swipeable
         ref={swipeableRef}
+        enabled={!selectionMode}
         renderLeftActions={renderLeftActions}
         renderRightActions={renderRightActions}
         overshootLeft={false}
@@ -217,14 +224,30 @@ function ConversationItemBase({ id, onPress }) {
         friction={1.8}
       >
         <PressableScale
-          style={[styles.card, pressed && styles.cardPressed]}
-          onPress={() => onPress(c)}
+          style={[styles.card, pressed && styles.cardPressed, selected && styles.cardSelected]}
+          onPress={() => (selectionMode ? onToggleSelect(id) : onPress(c))}
           onPressIn={() => setPressed(true)}
           onPressOut={() => setPressed(false)}
-          onLongPress={handleLongPress}
+          onLongPress={selectionMode ? undefined : handleLongPress}
           delayLongPress={350}
         >
-          <AvatarStack avatars={[{ name, avatarUrl: c.customer?.profilePictureUrl }]} size={48} isGroup={isGroup} />
+          {/* GAP (fix): tap avatar = pintu masuk mode pilih-banyak (kalau
+              belum aktif) atau toggle centang (kalau sudah aktif) — tap
+              TERPISAH dari onPress baris (yang buka chat), Pressable
+              bersarang di RN aman selama beda area sentuh (avatar vs sisa
+              baris), tidak seperti nested Touchable identik area yang
+              rawan salah tangkap. */}
+          <Pressable
+            onPress={() => (selectionMode ? onToggleSelect(id) : onEnterSelection(id))}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <AvatarStack avatars={[{ name, avatarUrl: c.customer?.profilePictureUrl }]} size={48} isGroup={isGroup} />
+            {selectionMode && (
+              <View style={[styles.selectCheckWrap, selected && styles.selectCheckWrapActive]}>
+                {selected && <CheckCircle2 size={16} color="#fff" strokeWidth={2.6} />}
+              </View>
+            )}
+          </Pressable>
           <View style={styles.body}>
             <View style={styles.top}>
               <View style={styles.nameRow}>
@@ -320,6 +343,15 @@ function createStyles(tokens) {
   },
   // Tap feedback: highlight bg-slate-50 biasa (bukan card shadow/scale doang)
   cardPressed: { backgroundColor: tokens.color.bg },
+  cardSelected: { backgroundColor: tokens.color.accentSoft },
+  // Lingkaran kecil di sudut avatar — kosong (outline) saat mode aktif tapi
+  // baris ini belum dicentang, terisi solid + centang putih kalau sudah.
+  selectCheckWrap: {
+    position: "absolute", right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: tokens.color.card, backgroundColor: tokens.color.card,
+    alignItems: "center", justifyContent: "center",
+  },
+  selectCheckWrapActive: { backgroundColor: tokens.color.accent, borderColor: tokens.color.accent },
   body: { flex: 1 },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   nameRow: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 },
