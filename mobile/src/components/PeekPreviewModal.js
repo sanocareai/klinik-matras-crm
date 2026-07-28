@@ -13,6 +13,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal, ActivityIndicator,
 } from "react-native";
 import Animated, { ZoomIn } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   MessageCircle, UserPlus, Image as ImageIcon, Video, Mic, FileText,
 } from "lucide-react-native";
@@ -24,7 +25,13 @@ import { useConversationStore } from "../store/conversationStore";
 import { lightHaptic } from "../lib/haptics";
 
 const { height: SCREEN_H } = Dimensions.get("window");
-const POPUP_HEIGHT_ESTIMATE = 340; // dipakai clamp posisi biar tidak overflow layar
+// GAP (fix): dulu tinggi popup TEBAKAN STATIS (340) dipakai untuk clamp posisi
+// — kalau konten lebih tinggi dari itu (pesan panjang + tombol "Ambil
+// Percakapan" sekaligus muncul), popup tetap overflow lewat batas bawah layar.
+// Sekarang cuma dipakai sebagai ESTIMASI AWAL sebelum onLayout pertama
+// (frame pertama saja) — begitu tinggi ASLI terukur, clamp dihitung ulang
+// dari angka nyata (lihat measuredHeight di bawah).
+const POPUP_HEIGHT_ESTIMATE = 340;
 const PEEK_LIMIT = 5;
 
 const MEDIA_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText };
@@ -58,10 +65,12 @@ function PeekMessageRow({ message, tokens, styles }) {
 export default function PeekPreviewModal({ visible, conversation, anchorY = 0, onClose, onOpenChat }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const [takingOver, setTakingOver] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState(null); // GAP (fix): tinggi ASLI dari onLayout, bukan tebakan
 
   const conversationId = conversation?.id;
 
@@ -70,6 +79,7 @@ export default function PeekPreviewModal({ visible, conversation, anchorY = 0, o
     let alive = true;
     setLoading(true);
     setErrorMsg(null);
+    setMeasuredHeight(null); // konten beda per percakapan → tinggi lama tidak boleh ikut terbawa
     api.peekConversation(conversationId, PEEK_LIMIT)
       .then((data) => { if (alive) setMessages(data || []); })
       .catch((err) => { if (alive) setErrorMsg(err.message || "Gagal memuat pratinjau"); })
@@ -101,9 +111,16 @@ export default function PeekPreviewModal({ visible, conversation, anchorY = 0, o
   const sessionLabel = conversation.sessionId === "CS-1" || conversation.sessionId === "CS-2" ? conversation.sessionId : null;
   const needsTakeover = !isGroup && !conversation.assignedToId;
 
-  // Clamp: popup ditaruh sedikit di atas titik tekan, tidak pernah lewat
-  // batas atas (50px, sisakan ruang status bar) atau batas bawah layar.
-  const top = Math.min(Math.max(anchorY - 60, 50), SCREEN_H - POPUP_HEIGHT_ESTIMATE - 40);
+  // Clamp: popup ditaruh sedikit di atas titik tekan, tidak pernah lewat batas
+  // atas/bawah layar. GAP (fix): floor atas dulu hardcode 50px (asumsi tinggi
+  // status bar) — sekarang pakai insets.top ASLI (notch/status bar device
+  // nyata) + sedikit jarak. Tinggi popup pakai measuredHeight (dari onLayout)
+  // begitu tersedia, bukan tebakan 340 — popup dgn pesan panjang / footer
+  // "Ambil Percakapan" sekaligus muncul yang lebih tinggi dari 340 sekarang
+  // ikut ter-clamp benar, tidak overflow lewat bawah layar.
+  const popupHeight = measuredHeight ?? POPUP_HEIGHT_ESTIMATE;
+  const topFloor = insets.top + 12;
+  const top = Math.min(Math.max(anchorY - 60, topFloor), SCREEN_H - popupHeight - insets.bottom - 12);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -112,7 +129,11 @@ export default function PeekPreviewModal({ visible, conversation, anchorY = 0, o
           popup di dalamnya plain View, tombol di dalam tetap terima tap
           duluan karena Touchable anak menang responder). */}
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
-        <Animated.View entering={ZoomIn.duration(150)} style={[styles.popup, { top }]}>
+        <Animated.View
+          entering={ZoomIn.duration(150)}
+          style={[styles.popup, { top }]}
+          onLayout={(e) => setMeasuredHeight(e.nativeEvent.layout.height)}
+        >
           <View style={styles.header}>
             <Avatar name={name} isGroup={isGroup} size={36} avatarUrl={conversation.customer?.profilePictureUrl} />
             <View style={styles.headerText}>

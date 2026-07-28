@@ -61,7 +61,7 @@ function SkeletonRow({ tokens, styles }) {
 // sudah diketahui dari layar profil), jadi identitas pelanggan + jalan
 // pintas ke chat-nya ditambahkan di SINI, bukan mengubah OrderCard (yang
 // masih dipakai apa adanya di CustomerProfileContent.js).
-function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit }) {
+function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit, onExpand }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   return (
@@ -97,6 +97,7 @@ function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit }) {
         onRefresh={onRefresh}
         onDeleted={onDeleted}
         onEdit={onEdit}
+        onExpand={onExpand}
       />
     </View>
   );
@@ -119,6 +120,7 @@ export default function OrdersScreen() {
   const [editingOrder, setEditingOrder] = useState(null);
 
   const debounceRef = useRef(null);
+  const listRef = useRef(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -162,6 +164,20 @@ export default function OrdersScreen() {
   const mandekCount = useMemo(() => orders.filter(isMandek).length, [orders]);
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
 
+  // GAP (fix): card yang di-expand dekat bawah layar dulu kepotong, harus
+  // scroll manual. double rAF: tunggu 1 frame render `expanded` commit +
+  // FlashList re-measure tinggi cell yang baru, baru scroll — kalau langsung
+  // scroll di frame yang sama, list masih pakai tinggi LAMA (collapsed) jadi
+  // hasilnya salah posisi.
+  const handleExpandOrder = useCallback((orderId) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const item = visible.find((o) => o.id === orderId);
+        if (item) listRef.current?.scrollToItem({ item, animated: true, viewPosition: 0.25 });
+      });
+    });
+  }, [visible]);
+
   function handleEndReached() {
     setVisibleCount((v) => Math.min(v + PAGE_SIZE, filtered.length));
   }
@@ -182,8 +198,9 @@ export default function OrdersScreen() {
       onRefresh={handleQuickRefresh}
       onDeleted={handleDeleted}
       onEdit={setEditingOrder}
+      onExpand={() => handleExpandOrder(item.id)}
     />
-  ), [tokens, styles, handleQuickRefresh, handleDeleted]);
+  ), [tokens, styles, handleQuickRefresh, handleDeleted, handleExpandOrder]);
 
   return (
     <View style={styles.container}>
@@ -259,6 +276,7 @@ export default function OrdersScreen() {
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           data={visible}
           keyExtractor={(o) => o.id}
           renderItem={renderItem}

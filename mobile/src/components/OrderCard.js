@@ -55,7 +55,7 @@ function ChipPicker({ options, labels, value, onChange }) {
   );
 }
 
-export default function OrderCard({ order, onRefresh, onDeleted, onEdit }) {
+export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpand }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const info = parseNotes(order.notes);
@@ -120,7 +120,19 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit }) {
 
   return (
     <View style={styles.card}>
-      <TouchableOpacity style={styles.summaryRow} onPress={() => setExpanded((v) => !v)}>
+      <TouchableOpacity
+        style={styles.summaryRow}
+        onPress={() => {
+          // GAP (fix): dulu tidak ada auto-scroll saat expand — kalau card
+          // dekat bawah layar, konten expanded kepotong, harus scroll manual.
+          // `onExpand` (opsional, dikasih OrdersScreen lewat OrderRow) minta
+          // parent scroll card ini ke posisi terlihat, HANYA saat membuka
+          // (bukan menutup — menutup tidak butuh reposisi apa pun).
+          const next = !expanded;
+          setExpanded(next);
+          if (next) onExpand?.();
+        }}
+      >
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={styles.summaryTop}>
             <Text style={[styles.orderNumber, catBadge]}>{order.orderNumber || layananSummary || "Order"}</Text>

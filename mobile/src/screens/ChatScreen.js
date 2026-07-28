@@ -21,7 +21,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NetInfo from "@react-native-community/netinfo";
 import {
-  ChevronLeft, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
+  ChevronLeft, ChevronDown, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
   Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
@@ -124,6 +124,7 @@ export default function ChatScreen({ route, navigation }) {
   const [editingMessage, setEditingMessage] = useState(null); // pesan yang sedang diedit, null = mode normal
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false); // GAP (fix): tidak ada affordance "lompat ke pesan terbaru" saat scroll jauh ke atas
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
@@ -146,6 +147,22 @@ export default function ChatScreen({ route, navigation }) {
   // menambah pesan (kirim teks/media/VN/retry).
   function scrollToBottomSoon() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }
+  // GAP (fix): list ini tidak "inverted" (lihat catatan FlashList v2 di atas
+  // file) — bawah = contentOffset.y mendekati (contentSize.height -
+  // layoutMeasurement.height). Tombol "lompat ke terbaru" muncul begitu jarak
+  // dari bawah > ~1.5 layar (600px), supaya tidak muncul-hilang berkedip saat
+  // user cuma geser dikit di dekat bawah.
+  const JUMP_BUTTON_THRESHOLD_PX = 600;
+  const handleListScroll = useCallback((e) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    setShowJumpToLatest(distanceFromBottom > JUMP_BUTTON_THRESHOLD_PX);
+  }, []);
+  function jumpToLatest() {
+    lightHaptic();
+    listRef.current?.scrollToEnd({ animated: true });
+    setShowJumpToLatest(false);
   }
   // Selalu ikuti `text` state terbaru TANPA bikin handleEditMessage di bawah
   // dependen ke `text` (yang berubah tiap keystroke) — kalau dependen,
@@ -193,6 +210,7 @@ export default function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
+    setShowJumpToLatest(false);
   }, [conversationId]);
 
   useEffect(() => {
@@ -639,11 +657,17 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.emptyText}>Belum ada pesan di percakapan ini</Text>
         </View>
       ) : (
+        // GAP (fix): wrapper relative supaya tombol "lompat ke terbaru" bisa
+        // absolute DI DALAM area list ini saja (bukan seluruh layar) — tetap
+        // terposisi benar terlepas dari paddingBottom keyboard di container luar.
+        <View style={{ flex: 1, position: "relative" }}>
         <FlashList
           ref={listRef}
           style={styles.list}
           data={items}
           keyExtractor={(item) => item.id}
+          onScroll={handleListScroll}
+          scrollEventThrottle={100}
           // Sebelumnya cuma dibedakan "divider" vs "message" — semua tipe
           // media (teks pendek ~57px, foto ~260px, audio ~75px, kartu
           // lokasi/kontak/poll ~110px) dipaksa masuk SATU pool recycling yang
@@ -673,6 +697,12 @@ export default function ChatScreen({ route, navigation }) {
           renderItem={renderItem}
           contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 8 }}
         />
+        {showJumpToLatest && (
+          <PressableScale style={styles.jumpToLatestBtn} onPress={jumpToLatest}>
+            <ChevronDown size={22} color="#fff" strokeWidth={2.4} />
+          </PressableScale>
+        )}
+        </View>
       )}
 
       {/* Input kirim pesan — grup DULU cuma bisa dibaca (composer di-disable
@@ -903,6 +933,11 @@ function createStyles(tokens) {
   menuBtn: { paddingHorizontal: 12 },
   menuIcon: { color: tokens.color.textPrimary, fontSize: 22, fontWeight: "700" },
   list: { flex: 1 },
+  jumpToLatestBtn: {
+    position: "absolute", right: 14, bottom: 14, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
   dividerWrap: { alignItems: "center", marginVertical: 8 },
   dividerText: {
     backgroundColor: tokens.color.subtle, color: tokens.color.textSecondary, fontSize: 12,
