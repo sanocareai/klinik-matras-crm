@@ -26,6 +26,7 @@ import { lightHaptic, mediumHaptic } from "../lib/haptics";
 import { parseWaFormatting } from "../utils/waFormat";
 import { useMessageStore } from "../store/messageStore";
 
+const TEXT_COLLAPSED_LINES = 8; // batas baris sebelum "Baca Selengkapnya" muncul, dekat dengan batas WhatsApp asli
 const SWIPE_REPLY_THRESHOLD = 60; // px geser sebelum reply ter-trigger (spec)
 const SWIPE_REPLY_MAX = 84;       // batas visual geser bubble, jangan kabur terlalu jauh
 const HIGHLIGHT_HOLD_MS = 1100;   // berapa lama background kuning bertahan penuh sebelum fade
@@ -270,6 +271,17 @@ function MessageBubbleBase({
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [showActions, setShowActions] = useState(false);
+  // FITUR (tambahan): "Baca Selengkapnya" ala WhatsApp untuk teks panjang —
+  // sebelumnya bubble teks panjang apa adanya ditampilkan PENUH, bikin
+  // 1 bubble bisa memenuhi seluruh layar dan mendorong pesan lain jauh ke
+  // luar pandangan saat scroll. `isLongText` baru dipastikan BENAR kalau
+  // onTextLayout balikin jumlah baris PERSIS sama dengan batas
+  // TEXT_COLLAPSED_LINES (tanda dia KEPOTONG oleh numberOfLines, bukan
+  // kebetulan pas berhenti di baris terakhir) — RN tidak expose info
+  // "apakah teks ini truncated" secara langsung, ini pendekatan standar yang
+  // dipakai kebanyakan implementasi read-more di RN.
+  const [textExpanded, setTextExpanded] = useState(false);
+  const [isLongText, setIsLongText] = useState(false);
 
   const isOut = m.direction === "OUTBOUND";
   const isSending = m.status === "sending";
@@ -586,9 +598,22 @@ function MessageBubbleBase({
                 )}
 
                 {!!text && (
-                  <Text style={[styles.text, isOut && styles.textOut]}>
-                    {parseWaFormatting(text, 0, isOut ? "#e0f2ff" : tokens.color.accent)}
-                  </Text>
+                  <>
+                    <Text
+                      style={[styles.text, isOut && styles.textOut]}
+                      numberOfLines={textExpanded ? undefined : TEXT_COLLAPSED_LINES}
+                      onTextLayout={(e) => {
+                        if (!textExpanded && e.nativeEvent.lines.length >= TEXT_COLLAPSED_LINES) setIsLongText(true);
+                      }}
+                    >
+                      {parseWaFormatting(text, 0, isOut ? "#e0f2ff" : tokens.color.accent)}
+                    </Text>
+                    {isLongText && !textExpanded && (
+                      <TouchableOpacity onPress={() => setTextExpanded(true)}>
+                        <Text style={[styles.readMoreText, isOut && styles.readMoreTextOut]}>Baca Selengkapnya</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -756,6 +781,8 @@ function createStyles(tokens) {
   pollOptionText: { fontSize: 13, color: tokens.color.textPrimary },
   text: { fontSize: 15, color: tokens.color.textPrimary },
   textOut: { color: "#fff" },
+  readMoreText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent, marginTop: 2 },
+  readMoreTextOut: { color: "#e0f2ff" },
   revokedRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   revokedText: { fontSize: 14, fontStyle: "italic", color: tokens.color.textMuted },
   revokedTextOut: { color: "rgba(255,255,255,0.8)" },
