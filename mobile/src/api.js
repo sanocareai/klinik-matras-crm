@@ -342,6 +342,17 @@ export const api = {
   // Daftar user (untuk modal Transfer percakapan ke sales lain)
   getUsers: () => request("/users"),
 
-  // Template pesan (quick reply)
+  // Template pesan (quick reply). GAP (fix): dulu cuma getTemplates (read-only)
+  // — sales tidak bisa kelola template SENDIRI dari app, harus lewat web,
+  // padahal backend SUDAH izinkan (bisaKelola() di templates.js: siapa pun
+  // boleh CRUD template pribadinya sendiri isShared=false, cuma "jadi
+  // Template Tim" yang admin-only). Endpoint SAMA dgn Pengaturan > Template
+  // Pesan web (TemplateSection).
   getTemplates: () => request("/templates"),
+  createTemplate: (data) =>
+    request("/templates", { method: "POST", body: JSON.stringify(data) }),
+  updateTemplate: (id, data) =>
+    request(`/templates/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteTemplate: (id) =>
+    request(`/templates/${id}`, { method: "DELETE" }),
 };

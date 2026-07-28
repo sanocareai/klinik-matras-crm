@@ -787,12 +787,10 @@ export default function ChatScreen({ route, navigation }) {
             </View>
           )}
           <View style={styles.inputBar}>
-            {/* Template Pesan (quick reply) — GAP (fix): mobile sudah punya
-                api.getTemplates() lama tapi tidak pernah dipakai di UI mana
-                pun, sales cuma bisa pakai template dari CRM web. Read+insert
-                saja (sama seperti TemplatePicker di Composer.jsx web) — kelola
-                template (buat/edit/hapus) TETAP cuma di web Pengaturan >
-                Template Pesan (adminOnly), tidak diport ke sini. */}
+            {/* Template Pesan (quick reply) — TemplatePickerSheet.js sekarang
+                juga bisa CRUD (28 Jul 2026 fix — kelola template pribadi
+                BUKAN adminOnly seperti dikira sebelumnya, lihat
+                bisaKelola() di backend/src/routes/templates.js). */}
             {!editingMessage && (
               <PressableScale style={styles.attachBtn} onPress={() => setShowTemplatePicker(true)}>
                 <MessageSquare size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
