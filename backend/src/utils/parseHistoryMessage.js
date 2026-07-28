@@ -180,10 +180,12 @@ function isStatusBroadcastJid(jid) {
 // Parse 1 pesan history WAHA jadi bentuk siap simpan ke Message.
 // Return: {
 //   externalId, direction, content, mediaType, mediaUrl, createdAt,
-//   unsupported: boolean, rawType: string|null, isStatus: boolean
+//   unsupported: boolean, rawType: string|null, isStatus: boolean,
+//   isAlbumMarker: boolean
 //   // unsupported=true kalau tipe pesan sama sekali tidak dikenali (bukan
 //   // cuma "media tanpa URL"); isStatus=true → caller WAJIB skip (jangan
 //   // simpan ke Message sama sekali, ini bukan pesan individual).
+//   // isAlbumMarker=true → caller WAJIB skip juga, lihat catatan di bawah.
 // }
 export function parseHistoryMessage(msg) {
   const externalId = msg.id || msg.key?.id || null;
@@ -302,6 +304,30 @@ export function parseHistoryMessage(msg) {
 
   if (text) {
     return { externalId, direction, content: text, mediaType: null, mediaUrl: null, createdAt, unsupported: false, rawType: "text", quotedExternalId };
+  }
+
+  // BUG YANG DIPERBAIKI: kalau customer kirim BEBERAPA foto/video sekaligus
+  // (fitur "album" WhatsApp — pilih beberapa media, kirim satu kali), WAHA
+  // TERNYATA mengirim webhook TAMBAHAN berisi cuma "albumMessage" (header
+  // pengumuman "album isinya N foto + M video akan menyusul") — pesan ini
+  // SENDIRI TIDAK PUNYA media/teks apa pun, foto/video ASLINYA menyusul
+  // sebagai pesan-pesan TERPISAH setelahnya (yang sudah diparse benar oleh
+  // kode di atas). DIKONFIRMASI dari payload produksi nyata (docker logs):
+  //   "Message": { "messageContextInfo": {...}, "albumMessage": {
+  //     "expectedImageCount": 2, "expectedVideoCount": 2, "contextInfo": {...}
+  //   }}
+  // Parser SEBELUMNYA tidak kenal "albumMessage", jatuh ke fallback
+  // "unsupported" — pesan header kosong ini tersimpan sebagai bubble
+  // "[Pesan tidak didukung]" di CRM, padahal foto/videonya sendiri
+  // SEBENARNYA lengkap & tampil benar di bubble-bubble sesudahnya (persis
+  // pola yang dilaporkan: 1 bubble error, diikuti foto yang tampil normal).
+  // Caller WAJIB skip simpan pesan ini sama sekali (isAlbumMarker=true) —
+  // sama seperti isStatus, tidak ada apa pun untuk ditampilkan.
+  if (rawMsg.albumMessage && !text && !mediaType) {
+    return {
+      externalId, direction, content: null, mediaType: null, mediaUrl: null, createdAt,
+      unsupported: false, rawType: "albumMessage", isAlbumMarker: true,
+    };
   }
 
   // 3) Lokasi / kontak (vCard) / poll — bukan media biasa, tidak ada file

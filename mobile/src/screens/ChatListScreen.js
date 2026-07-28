@@ -102,6 +102,7 @@ export default function ChatListScreen({ navigation }) {
   const [searchInput, setSearchInput] = useState(search);
   const [counts, setCounts] = useState({});
   const debounceRef = useRef(null);
+  const listRef = useRef(null);
 
   // GAP (fix): dulu tidak ada mode pilih-banyak ala WhatsApp (tap avatar
   // beberapa chat → header berubah jadi bar aksi). Aksi bar SENGAJA dibatasi
@@ -271,7 +272,7 @@ export default function ChatListScreen({ navigation }) {
             <TextInput
               autoFocus
               style={styles.searchInput}
-              placeholder="Cari nama, nomor, atau grup…"
+              placeholder="Cari nama, nomor, grup, atau isi pesan…"
               placeholderTextColor={tokens.color.textMuted}
               value={searchInput}
               onChangeText={handleSearchChange}
@@ -321,7 +322,17 @@ export default function ChatListScreen({ navigation }) {
             <PressableScale
               key={t.key}
               style={[styles.pill, active && styles.pillActive]}
-              onPress={() => useConversationStore.getState().setFilter(t.key)}
+              onPress={() => {
+                // FITUR (tambahan): gaya WhatsApp — tab yang SUDAH aktif
+                // ditekan lagi → scroll balik ke chat teratas, bukan no-op.
+                // Sebelumnya user yang sudah scroll jauh ke bawah cari
+                // customer lama harus scroll manual balik ke atas satu-satu.
+                if (active) {
+                  listRef.current?.scrollToOffset({ offset: 0, animated: true });
+                } else {
+                  useConversationStore.getState().setFilter(t.key);
+                }
+              }}
             >
               <Text style={[styles.pillText, active && styles.pillTextActive]}>{t.label}</Text>
               {count > 0 && (
@@ -354,6 +365,7 @@ export default function ChatListScreen({ navigation }) {
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           data={visibleIds}
           keyExtractor={(id) => id}
           renderItem={renderItem}

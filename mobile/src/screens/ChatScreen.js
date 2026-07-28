@@ -80,16 +80,56 @@ function getStatusOptions(tokens) {
 // "loncat" tiap kirim pesan. m._key (lihat messageStore.js#ensureKey) STABIL
 // dari awal pesan dibuat sampai selamanya, TIDAK IKUT berubah saat id
 // berganti — pakai itu utk identitas cell, m.id tetap dipakai sebagai data.
+// FITUR (tambahan): grid multi-foto/video ala WhatsApp. Kalau customer/sales
+// kirim >2 foto/video sekaligus (native multi-select-send WhatsApp), WAHA
+// mengantarkannya sebagai pesan-pesan TERPISAH yang tiba berurutan dalam
+// hitungan detik (lihat catatan album di backend/src/utils/parseHistoryMessage.js
+// — header "albumMessage"-nya sendiri sudah di-skip di backend, TIDAK pernah
+// sampai ke sini). Deteksi runtun tersebut di sisi tampilan (bukan skema DB
+// baru — album WhatsApp tidak punya id pengelompokan yang stabil untuk
+// disimpan) dan gabungkan jadi SATU bubble grid, persis pola WhatsApp asli.
+const ALBUM_WINDOW_MS = 60 * 1000; // jarak maksimal antar pesan supaya masih dianggap 1 "kiriman sekaligus"
+const ALBUM_MIN_COUNT = 3;         // >2 sesuai permintaan — 1-2 foto tetap bubble biasa
+
+function isAlbumCandidate(m) {
+  return (m.mediaType === "image" || m.mediaType === "video") && !!m.mediaUrl && !m.isRevoked;
+}
+
 function buildItems(messages) {
   const items = [];
   let lastDateKey = null;
-  for (const m of messages) {
+  let i = 0;
+  while (i < messages.length) {
+    const m = messages[i];
     const dateKey = new Date(m.createdAt).toDateString();
     if (dateKey !== lastDateKey) {
       items.push({ _type: "divider", id: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
       lastDateKey = dateKey;
     }
+
+    if (isAlbumCandidate(m)) {
+      const run = [m];
+      let j = i + 1;
+      while (
+        j < messages.length &&
+        isAlbumCandidate(messages[j]) &&
+        messages[j].direction === m.direction &&
+        new Date(messages[j].createdAt).toDateString() === dateKey &&
+        Math.abs(new Date(messages[j].createdAt).getTime() - new Date(messages[j - 1].createdAt).getTime()) <= ALBUM_WINDOW_MS
+      ) {
+        run.push(messages[j]);
+        j++;
+      }
+      if (run.length >= ALBUM_MIN_COUNT) {
+        const last = run[run.length - 1];
+        items.push({ _type: "message", id: last._key || last.id, message: last, albumMessages: run });
+        i = j;
+        continue;
+      }
+    }
+
     items.push({ _type: "message", id: m._key || m.id, message: m });
+    i++;
   }
   return items;
 }
@@ -561,6 +601,8 @@ export default function ChatScreen({ route, navigation }) {
     return (
       <MessageBubble
         message={m}
+        albumMessages={item.albumMessages}
+        conversationId={conversationId}
         isGroup={isGroup}
         highlighted={highlightedId === m.id}
         onReply={handleReplyMessage}
@@ -580,7 +622,7 @@ export default function ChatScreen({ route, navigation }) {
   }, [
     styles, isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
     handleRetry, openMediaViewer, handleDeleteLocal, handleDeleteEveryone, handleEnterSelection,
-    selectionMode, selectedIds, handleToggleSelect,
+    selectionMode, selectedIds, handleToggleSelect, conversationId,
   ]);
 
   return (
@@ -676,7 +718,7 @@ export default function ChatScreen({ route, navigation }) {
           // sebaliknya) → guncang/reflow tiap recycle, ini penyebab lag utama
           // di FlashList (bukan estimatedItemSize semata). Pisah per
           // mediaType supaya tiap pool isinya seragam.
-          getItemType={(item) => (item._type === "divider" ? "divider" : (item.message.mediaType || "text"))}
+          getItemType={(item) => (item._type === "divider" ? "divider" : (item.albumMessages ? "album" : (item.message.mediaType || "text")))}
           // BUG (fix): `estimatedItemSize` (yang dulu diset di sini) SUDAH
           // TIDAK ADA di @shopify/flash-list v2 API (cek node_modules/
           // @shopify/flash-list/dist/FlashListProps.d.ts — tidak disebut

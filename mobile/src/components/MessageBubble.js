@@ -15,13 +15,16 @@ import Animated, {
 } from "react-native-reanimated";
 import {
   Check, CheckCheck, CheckSquare, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil, Trash2,
+  Image as ImageIcon, Video as VideoIcon, Mic, Smile, Download, Loader2,
 } from "lucide-react-native";
-import { mediaUrl } from "../api";
+import { mediaUrl, api } from "../api";
 import { useTokens } from "../constants/theme";
 import { clockTime } from "../utils/format";
 import AudioPlayer from "./AudioPlayer";
 import PressableScale from "./PressableScale";
 import { lightHaptic, mediumHaptic } from "../lib/haptics";
+import { parseWaFormatting } from "../utils/waFormat";
+import { useMessageStore } from "../store/messageStore";
 
 const SWIPE_REPLY_THRESHOLD = 60; // px geser sebelum reply ter-trigger (spec)
 const SWIPE_REPLY_MAX = 84;       // batas visual geser bubble, jangan kabur terlalu jauh
@@ -55,6 +58,59 @@ const MEDIA_LABEL = {
   image: "Foto", video: "Video", audio: "Pesan Suara", document: "Dokumen", sticker: "Stiker",
   location: "Lokasi", contact: "Kontak", poll: "Polling",
 };
+
+// Ikon per mediaType — sama dengan MEDIA_TYPE_ICON di
+// frontend/src/features/inbox/components/ChatWindow/MessageBubble.jsx,
+// dipakai kartu placeholder di bawah supaya state "media tidak tersedia"
+// tidak cuma teks polos (ini bagian dari fix "beberapa icon tidak terbaca").
+const MEDIA_TYPE_ICON = {
+  image: ImageIcon, video: VideoIcon, audio: Mic, document: FileText, sticker: Smile,
+  location: MapPin, contact: User, poll: BarChart3,
+};
+
+// Kartu placeholder untuk media yang mediaType-nya diketahui tapi mediaUrl
+// belum tersedia (WAHA gagal auto-download saat webhook masuk, atau data
+// lama). Tombol "Muat Media" panggil fetch-on-demand (POST .../load-media)
+// — sama pola dengan MediaPlaceholderCard di web, kalau berhasil update
+// langsung ke messageStore supaya bubble ganti jadi media asli tanpa perlu
+// reload chat. Tanpa conversationId (belum di-passing dari layar pemanggil)
+// tombol dinonaktifkan alih-alih diam-diam gagal saat ditekan.
+function MediaPlaceholder({ mediaType, content, messageId, conversationId, styles, tokens }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const Icon = MEDIA_TYPE_ICON[mediaType] || FileText;
+  const label = MEDIA_LABEL[mediaType] || "Media";
+
+  async function handleLoad() {
+    if (!conversationId || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await api.loadMessageMedia(conversationId, messageId);
+      useMessageStore.getState().updateMessage(messageId, { mediaUrl: updated.mediaUrl });
+    } catch (err) {
+      setError(err.message || "Gagal muat media");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View style={styles.mediaPlaceholder}>
+      <Icon size={16} color={tokens.color.textMuted} strokeWidth={2} />
+      <Text style={styles.mediaMissing}>
+        {label}{content && !content.startsWith("[") ? ` — ${content}` : ""} tidak tersedia
+      </Text>
+      {!!conversationId && (
+        <TouchableOpacity style={styles.mediaLoadBtn} onPress={handleLoad} disabled={loading}>
+          {loading ? <Loader2 size={13} color={tokens.color.accent} /> : <Download size={13} color={tokens.color.accent} />}
+          <Text style={styles.mediaLoadBtnText}>{loading ? "Memuat..." : "Muat Media"}</Text>
+        </TouchableOpacity>
+      )}
+      {!!error && <Text style={styles.mediaLoadError}>{error}</Text>}
+    </View>
+  );
+}
 
 // Lokasi/kontak/poll BUKAN media asli (tidak pernah punya mediaUrl) —
 // content-nya JSON string (lihat backend/src/utils/parseHistoryMessage.js),
@@ -147,8 +203,49 @@ function DocumentRow({ url }) {
   );
 }
 
+// Grid multi-foto/video ala WhatsApp — dipakai saat MessageBubble menerima
+// `albumMessages` (>2 foto/video berurutan, dikelompokkan di
+// ChatScreen.js#buildItems). 2 kolom sederhana (bukan layout asimetris WA
+// asli yang lebih rumit) — cukup untuk kebutuhan "tidak lagi tampil
+// terpisah satu-satu", tile terakhir dapat overlay "+N" kalau item lebih
+// dari 4. Tap tile mana pun buka media viewer yang SAMA dengan tap foto
+// tunggal (onOpenMedia sudah cari index di seluruh galeri percakapan).
+const ALBUM_MAX_TILES = 4;
+function AlbumGrid({ items, onOpenMedia, styles }) {
+  const shown = items.slice(0, ALBUM_MAX_TILES);
+  const extra = items.length - ALBUM_MAX_TILES;
+  return (
+    <View style={styles.albumGrid}>
+      {shown.map((it, idx) => {
+        const isLastTile = idx === shown.length - 1 && extra > 0;
+        return (
+          <TouchableOpacity key={it.id} style={styles.albumTile} onPress={() => onOpenMedia?.(it)}>
+            <Image
+              source={{ uri: mediaUrl(it.mediaUrl) }}
+              style={styles.albumTileImage}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={120}
+            />
+            {it.mediaType === "video" && !isLastTile && (
+              <View style={styles.albumTilePlayWrap}>
+                <Play size={18} color="#fff" fill="#fff" strokeWidth={0} />
+              </View>
+            )}
+            {isLastTile && (
+              <View style={styles.albumTileOverlay}>
+                <Text style={styles.albumTileOverlayText}>+{extra}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 function MessageBubbleBase({
-  message: m, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
+  message: m, albumMessages, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   const tokens = useTokens();
@@ -401,6 +498,8 @@ function MessageBubbleBase({
                 <Ban size={13} color={isOut ? "rgba(255,255,255,0.8)" : tokens.color.textMuted} strokeWidth={2} />
                 <Text style={[styles.revokedText, isOut && styles.revokedTextOut]}>Pesan ini telah dihapus</Text>
               </View>
+            ) : albumMessages && albumMessages.length > 1 ? (
+              <AlbumGrid items={albumMessages} onOpenMedia={onOpenMedia} styles={styles} />
             ) : (
               <>
                 {m.mediaType === "image" && m.mediaUrl && (
@@ -435,19 +534,39 @@ function MessageBubbleBase({
                 {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
                 {m.mediaType === "document" && m.mediaUrl && <DocumentRow url={m.mediaUrl} />}
                 {m.mediaType === "location" && (structuredData ? <LocationCard data={structuredData} /> : (
-                  <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
+                  <View style={styles.mediaPlaceholder}>
+                    <MapPin size={16} color={tokens.color.textMuted} strokeWidth={2} />
+                    <Text style={styles.mediaMissing}>Lokasi tidak bisa ditampilkan</Text>
+                  </View>
                 ))}
                 {m.mediaType === "contact" && (structuredData ? <ContactCard data={structuredData} /> : (
-                  <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
+                  <View style={styles.mediaPlaceholder}>
+                    <User size={16} color={tokens.color.textMuted} strokeWidth={2} />
+                    <Text style={styles.mediaMissing}>Kontak tidak bisa ditampilkan</Text>
+                  </View>
                 ))}
                 {m.mediaType === "poll" && (structuredData ? <PollCard data={structuredData} /> : (
-                  <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
+                  <View style={styles.mediaPlaceholder}>
+                    <BarChart3 size={16} color={tokens.color.textMuted} strokeWidth={2} />
+                    <Text style={styles.mediaMissing}>Polling tidak bisa ditampilkan</Text>
+                  </View>
                 ))}
                 {hasMedia && !m.mediaUrl && !isStructured && (
-                  <Text style={styles.mediaMissing}>{MEDIA_LABEL[m.mediaType] || "Media"} tidak tersedia</Text>
+                  <MediaPlaceholder
+                    mediaType={m.mediaType}
+                    content={m.content}
+                    messageId={m.id}
+                    conversationId={conversationId}
+                    styles={styles}
+                    tokens={tokens}
+                  />
                 )}
 
-                {!!text && <Text style={[styles.text, isOut && styles.textOut]}>{text}</Text>}
+                {!!text && (
+                  <Text style={[styles.text, isOut && styles.textOut]}>
+                    {parseWaFormatting(text, 0, isOut ? "#e0f2ff" : tokens.color.accent)}
+                  </Text>
+                )}
               </>
             )}
 
@@ -563,6 +682,22 @@ function createStyles(tokens) {
   forwarded: { fontSize: 11, color: tokens.color.textMuted, fontStyle: "italic" },
   image: { width: 220, height: 220, borderRadius: 10, marginBottom: 4 },
   sticker: { width: 130, height: 130, marginBottom: 4 },
+  // Grid album (>2 foto/video sekaligus) — total lebar SAMA dengan `image`
+  // (220) supaya bubble tidak melebar beda-beda tergantung ada album atau
+  // tidak, 2 kolom x 109 dengan gap 2 pas ke 220.
+  albumGrid: {
+    width: 220, flexDirection: "row", flexWrap: "wrap", gap: 2, marginBottom: 4, borderRadius: 10, overflow: "hidden",
+  },
+  albumTile: { width: 109, height: 109, backgroundColor: "#0f172a" },
+  albumTileImage: { width: "100%", height: "100%" },
+  albumTilePlayWrap: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center",
+  },
+  albumTileOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  albumTileOverlayText: { color: "#fff", fontSize: 20, fontWeight: "700" },
   videoThumb: {
     width: 220, height: 140, borderRadius: 10, marginBottom: 4, backgroundColor: "#0f172a",
     alignItems: "center", justifyContent: "center",
@@ -570,7 +705,17 @@ function createStyles(tokens) {
   videoLabel: { color: "#e2e8f0", fontSize: 11, marginTop: 4 },
   docRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4, maxWidth: 220 },
   docName: { fontSize: 13, color: tokens.color.textPrimary, flex: 1 },
-  mediaMissing: { fontSize: 12, color: tokens.color.textMuted, fontStyle: "italic", marginBottom: 4 },
+  mediaMissing: { fontSize: 12, color: tokens.color.textMuted, fontStyle: "italic", flexShrink: 1 },
+  mediaPlaceholder: {
+    flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6,
+    paddingVertical: 4, marginBottom: 4, maxWidth: 220,
+  },
+  mediaLoadBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 12, backgroundColor: tokens.color.subtle,
+  },
+  mediaLoadBtnText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600" },
+  mediaLoadError: { fontSize: 11, color: tokens.color.danger, width: "100%" },
   structCard: {
     backgroundColor: tokens.color.subtle, borderRadius: 10, padding: 10, marginBottom: 4, minWidth: 180,
   },

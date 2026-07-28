@@ -361,6 +361,14 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
     // baca hasMedia + _data.Info.MediaType + fallback placeholder — content
     // TIDAK PERNAH kosong lagi walau download gagal.
     const parsedMedia = parseHistoryMessage(payload);
+    // Header "album" WhatsApp (kirim beberapa foto/video sekaligus) — pesan
+    // ini sendiri TIDAK PUNYA konten, foto/videonya menyusul sebagai pesan
+    // terpisah. Lihat catatan panjang di parseHistoryMessage.js. Skip total,
+    // JANGAN simpan bubble kosong "[Pesan tidak didukung]".
+    if (parsedMedia.isAlbumMarker) {
+      console.log("[webhook] Grup: skip header album (bukan pesan sungguhan), id:", externalId);
+      return;
+    }
     const mediaType = parsedMedia.mediaType;
     let mediaUrl = null;
     let content = parsedMedia.content;
@@ -530,6 +538,12 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   // placeholder sesuai tipe. content TIDAK PERNAH kosong lagi walau
   // download gagal (bug lama: content="" + mediaUrl=null = bubble kosong).
   const parsedMedia = parseHistoryMessage(payload);
+  // Header "album" WhatsApp — lihat catatan panjang di parseHistoryMessage.js
+  // & handleGroupMessage di atas. Skip total, jangan simpan bubble kosong.
+  if (parsedMedia.isAlbumMarker) {
+    console.log("[webhook] Skip header album (bukan pesan sungguhan), id:", externalId);
+    return "skip-album-marker";
+  }
   const mediaType = parsedMedia.mediaType;
   let mediaUrl = null;
   const content = parsedMedia.content;
@@ -673,6 +687,12 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
   // (sales kirim foto langsung dari HP, bukan lewat CRM, jadi tersimpan
   // sebagai bubble kosong). parseHistoryMessage sama seperti 2 handler lain.
   const parsedMedia = parseHistoryMessage(payload);
+  // Header "album" WhatsApp — lihat catatan panjang di parseHistoryMessage.js
+  // & handleGroupMessage di atas. Skip total, jangan simpan bubble kosong.
+  if (parsedMedia.isAlbumMarker) {
+    console.log("[webhook] fromMe: skip header album (bukan pesan sungguhan), id:", externalId);
+    return "skip-album-marker";
+  }
   const mediaType = parsedMedia.mediaType;
   let mediaUrl = null;
   const content = parsedMedia.content;
@@ -1051,6 +1071,9 @@ async function autoSyncHistory() {
         const parsed = parseHistoryMessage(msg);
         if (!parsed.externalId) continue;
         if (parsed.isStatus) { console.log("[auto-sync] drop status/broadcast dari", phone); continue; }
+      // Header "album" WhatsApp — lihat catatan panjang di parseHistoryMessage.js
+      // & handleGroupMessage di atas. Skip total, jangan simpan bubble kosong.
+      if (parsed.isAlbumMarker) { console.log("[auto-sync] skip header album (bukan pesan sungguhan) dari", phone); continue; }
         if (parsed.unsupported) console.warn("[auto-sync] Tipe pesan tidak dikenali:", parsed.rawType, "externalId:", parsed.externalId);
         try {
           // Catatan: fetchChatHistory mengurutkan terbaru-dulu, jadi kalau

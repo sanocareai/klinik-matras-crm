@@ -219,6 +219,10 @@ export const api = {
   // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh WhatsApp.
   deleteMessageLocal: (conversationId, messageId) =>
     request(`/conversations/${conversationId}/messages/${messageId}/local`, { method: "DELETE" }),
+  // Muat ulang media yang gagal auto-download (mediaType diketahui tapi
+  // mediaUrl belum ada) — sama dengan frontend/src/api.js#loadMessageMedia.
+  loadMessageMedia: (conversationId, messageId) =>
+    request(`/conversations/${conversationId}/messages/${messageId}/load-media`, { method: "POST" }),
   // file = { uri, name, type } dari image/document/kamera picker.
   // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
   // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.

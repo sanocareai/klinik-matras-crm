@@ -169,13 +169,31 @@ export default function OrdersScreen() {
   // FlashList re-measure tinggi cell yang baru, baru scroll — kalau langsung
   // scroll di frame yang sama, list masih pakai tinggi LAMA (collapsed) jadi
   // hasilnya salah posisi.
+  //
+  // BUG (fix, 28 Jul 2026): card PALING ATAS/BAWAH di daftar masih kepotong
+  // walau sudah ada auto-scroll di atas. Root cause ganda:
+  //   1. viewPosition:0.25 taruh bagian ATAS card di 25% tinggi viewport —
+  //      untuk card yang tinggi konten expanded-nya BESAR (banyak add-ons/
+  //      catatan), sisa 75% viewport seringkali TIDAK CUKUP menampung
+  //      seluruh detail, jadi bagian bawahnya tetap kepotong. viewPosition:0
+  //      (taruh di PALING ATAS viewport) kasih ruang MAKSIMAL di bawahnya,
+  //      berlaku sama baik untuk card di tengah maupun di ujung daftar.
+  //   2. Untuk card PALING BAWAH daftar, total content-size FlashList belum
+  //      sempat bertambah (masih ukuran lama/collapsed) di momen scroll
+  //      pertama sehingga permintaan scroll ke-clamp duluan sebelum area
+  //      expanded selesai ter-render — card auto-scroll ke posisi yang
+  //      SEOLAH benar tapi sebetulnya masih dibatasi content-size lama.
+  //      Fix: scroll KEDUA setelah jeda kecil (150ms), setelah FlashList
+  //      pasti sudah re-measure & content-size ikut bertambah.
   const handleExpandOrder = useCallback((orderId) => {
+    const scrollToOrder = () => {
+      const item = visible.find((o) => o.id === orderId);
+      if (item) listRef.current?.scrollToItem({ item, animated: true, viewPosition: 0 });
+    };
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const item = visible.find((o) => o.id === orderId);
-        if (item) listRef.current?.scrollToItem({ item, animated: true, viewPosition: 0.25 });
-      });
+      requestAnimationFrame(scrollToOrder);
     });
+    setTimeout(scrollToOrder, 150);
   }, [visible]);
 
   function handleEndReached() {
@@ -290,7 +308,7 @@ export default function OrdersScreen() {
               <ActivityIndicator style={{ marginVertical: 16 }} color={tokens.color.accent} />
             ) : null
           }
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 420 }}
         />
       )}
 

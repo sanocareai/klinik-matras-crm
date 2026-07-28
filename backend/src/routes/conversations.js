@@ -203,13 +203,19 @@ conversationRouter.get("/", async (req, res) => {
   if (unread === "true") where.unread = true;
 
   if (search) {
-    // Cari di customer (individual) DAN di groupName (grup)
+    // Cari di customer (individual), groupName (grup), DAN isi pesan —
+    // sebelumnya search cuma cocok ke nama/nomor/nama grup, jadi customer
+    // yang chat pakai kata kunci spesifik (mis. "kasur sewa", "komplain
+    // busa") tidak ketemu sama sekali walau percakapannya jelas relevan.
+    // { messages: { some: ... } } bikin percakapan ikut muncul kalau
+    // SALAH SATU pesannya (arah manapun) mengandung kata kunci itu.
     where.OR = [
       { customer: { OR: [
         { name:  { contains: search, mode: "insensitive" } },
         { phone: { contains: search } },
       ]}},
       { groupName: { contains: search, mode: "insensitive" } },
+      { messages: { some: { content: { contains: search, mode: "insensitive" } } } },
     ];
   }
 
