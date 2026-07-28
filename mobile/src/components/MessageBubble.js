@@ -3,7 +3,7 @@
 // varian teks/foto/video/audio/dokumen, ack ticks, reply quote, forwarded
 // label, long-press → Reply/Forward/Salin. memo supaya list tidak
 // re-render seluruh bubble tiap ada pesan baru masuk.
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { lazy, memo, Suspense, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Linking, Alert, Modal,
 } from "react-native";
@@ -203,6 +203,14 @@ function DocumentRow({ url }) {
   );
 }
 
+// Lazy (sama alasan MediaViewerModal.js di ChatScreen.js) — VideoThumbPreview
+// import expo-video, MessageBubble.js dirender utk SEMUA pesan di SEMUA
+// chat yang dibuka, jadi kalau expo-video di-import statis di sini costnya
+// ikut kebawa startup app tiap kali layar chat manapun dibuka. Suspense
+// fallback null aman: tile/thumbnail cuma "kosong sebentar" (background
+// gelap videoThumb/albumTile sudah ada di baliknya) sebelum chunk termuat.
+const VideoThumbPreview = lazy(() => import("./VideoThumbPreview"));
+
 // Grid multi-foto/video ala WhatsApp — dipakai saat MessageBubble menerima
 // `albumMessages` (>2 foto/video berurutan, dikelompokkan di
 // ChatScreen.js#buildItems). 2 kolom sederhana (bukan layout asimetris WA
@@ -218,16 +226,27 @@ function AlbumGrid({ items, onOpenMedia, styles }) {
     <View style={styles.albumGrid}>
       {shown.map((it, idx) => {
         const isLastTile = idx === shown.length - 1 && extra > 0;
+        const isVideo = it.mediaType === "video";
         return (
           <TouchableOpacity key={it.id} style={styles.albumTile} onPress={() => onOpenMedia?.(it)}>
-            <Image
-              source={{ uri: mediaUrl(it.mediaUrl) }}
-              style={styles.albumTileImage}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={120}
-            />
-            {it.mediaType === "video" && !isLastTile && (
+            {isVideo ? (
+              // BUG (fix): tile video dulu dikasih ke <Image> (expo-image)
+              // seolah-olah file video adalah gambar — gagal decode total,
+              // jadi tile-nya kosong/rusak. File video WAJIB lewat
+              // VideoThumbPreview (expo-video), bukan Image.
+              <Suspense fallback={null}>
+                <VideoThumbPreview uri={mediaUrl(it.mediaUrl)} style={styles.albumTileImage} />
+              </Suspense>
+            ) : (
+              <Image
+                source={{ uri: mediaUrl(it.mediaUrl) }}
+                style={styles.albumTileImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={120}
+              />
+            )}
+            {isVideo && !isLastTile && (
               <View style={styles.albumTilePlayWrap}>
                 <Play size={18} color="#fff" fill="#fff" strokeWidth={0} />
               </View>
@@ -515,8 +534,12 @@ function MessageBubbleBase({
                 )}
                 {m.mediaType === "video" && m.mediaUrl && (
                   <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
-                    <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
-                    <Text style={styles.videoLabel}>Video</Text>
+                    <Suspense fallback={null}>
+                      <VideoThumbPreview uri={mediaUrl(m.mediaUrl)} style={StyleSheet.absoluteFillObject} />
+                    </Suspense>
+                    <View style={styles.videoPlayOverlay}>
+                      <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
+                    </View>
                   </TouchableOpacity>
                 )}
                 {m.mediaType === "sticker" && m.mediaUrl && (
@@ -700,9 +723,12 @@ function createStyles(tokens) {
   albumTileOverlayText: { color: "#fff", fontSize: 20, fontWeight: "700" },
   videoThumb: {
     width: 220, height: 140, borderRadius: 10, marginBottom: 4, backgroundColor: "#0f172a",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",
   },
-  videoLabel: { color: "#e2e8f0", fontSize: 11, marginTop: 4 },
+  videoPlayOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
   docRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4, maxWidth: 220 },
   docName: { fontSize: 13, color: tokens.color.textPrimary, flex: 1 },
   mediaMissing: { fontSize: 12, color: tokens.color.textMuted, fontStyle: "italic", flexShrink: 1 },

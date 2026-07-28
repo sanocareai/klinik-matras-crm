@@ -23,10 +23,12 @@ import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, ChevronDown, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
   Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
+  Bold, Italic, Strikethrough, Code,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
+import { WA_MARKERS, toggleWaFormatRN } from "../utils/waFormat";
 import { lightHaptic } from "../lib/haptics";
 import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 import Avatar from "../components/Avatar";
@@ -322,6 +324,32 @@ export default function ChatScreen({ route, navigation }) {
   function handleChangeText(t) {
     setText(t);
     useComposerStore.getState().setDraft(conversationId, t);
+  }
+
+  // FITUR (tambahan): toolbar Bold/Italic/Strikethrough/Monospace saat teks
+  // di composer di-seleksi — mirip menu format yang muncul di WhatsApp asli
+  // ketika user seleksi teks (sebelumnya app ini cuma kasih menu OS bawaan
+  // Cut/Copy/Translate/Share, tidak ada cara terapkan gaya tanpa ngetik
+  // manual */_/~ / ``` ). `forcedSelection` cuma dipakai SEKALI (immediately
+  // setelah tap tombol format) buat paksa TextInput reselect teks yang baru
+  // dibungkus — di luar momen itu `selection` TIDAK dikontrol sama sekali
+  // (undefined) supaya native cursor behavior tetap normal saat mengetik,
+  // menghindari isu "caret melompat" kalau `selection` di-controlled terus.
+  const [textSelection, setTextSelection] = useState({ start: 0, end: 0 });
+  const [forcedSelection, setForcedSelection] = useState(null);
+
+  function handleSelectionChange(e) {
+    setTextSelection(e.nativeEvent.selection);
+    if (forcedSelection) setForcedSelection(null);
+  }
+
+  function applyFormat(marker) {
+    const { start, end } = textSelection;
+    if (start === end) return; // tombol formatnya sendiri sudah di-gate hanya muncul saat ada seleksi, ini jaga-jaga
+    const { nextText, selStart, selEnd } = toggleWaFormatRN(text, start, end, marker);
+    handleChangeText(nextText);
+    setForcedSelection({ start: selStart, end: selEnd });
+    setTextSelection({ start: selStart, end: selEnd });
   }
 
   async function handleSend() {
@@ -828,6 +856,22 @@ export default function ChatScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           )}
+          {textSelection.start !== textSelection.end && (
+            <View style={styles.formatToolbar}>
+              <TouchableOpacity style={styles.formatBtn} onPress={() => applyFormat(WA_MARKERS.bold)}>
+                <Bold size={16} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.formatBtn} onPress={() => applyFormat(WA_MARKERS.italic)}>
+                <Italic size={16} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.formatBtn} onPress={() => applyFormat(WA_MARKERS.strike)}>
+                <Strikethrough size={16} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.formatBtn} onPress={() => applyFormat(WA_MARKERS.mono)}>
+                <Code size={16} color={tokens.color.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={styles.inputBar}>
             {/* Template Pesan (quick reply) — TemplatePickerSheet.js sekarang
                 juga bisa CRUD (28 Jul 2026 fix — kelola template pribadi
@@ -849,6 +893,8 @@ export default function ChatScreen({ route, navigation }) {
               placeholderTextColor={tokens.color.textMuted}
               value={text}
               onChangeText={handleChangeText}
+              onSelectionChange={handleSelectionChange}
+              selection={forcedSelection || undefined}
               multiline
             />
             {text.trim() ? (
@@ -1020,6 +1066,14 @@ function createStyles(tokens) {
   replyBarTitle: { fontSize: 11, fontWeight: "700", color: tokens.color.accent },
   replyBarText: { fontSize: 12, color: tokens.color.textSecondary },
   replyBarClose: { fontSize: 15, color: tokens.color.textMuted, padding: 4 },
+  formatToolbar: {
+    flexDirection: "row", gap: 6, paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: tokens.color.subtle, borderTopWidth: 1, borderTopColor: tokens.color.border,
+  },
+  formatBtn: {
+    width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center",
+    backgroundColor: tokens.color.card,
+  },
   inputBar: {
     flexDirection: "row", alignItems: "flex-end", padding: 8, gap: 4,
     backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,

@@ -70,3 +70,31 @@ export function parseWaFormatting(text, depth = 0, linkColor) {
   }
   return nodes;
 }
+
+// ── Toolbar formatting composer (mirip menu Bold/Italic/Strikethrough/
+// Monospace yang muncul di WhatsApp asli saat teks di-seleksi) ────────────
+// Port dari toggleWaFormat di frontend/src/utils/waFormat.jsx — di sana
+// argumennya `el` (elemen <textarea> DOM, ambil selectionStart/End sendiri),
+// di RN TextInput tidak expose itu, jadi versi ini terima {start, end}
+// langsung dari state `onSelectionChange`. Logika toggle SAMA PERSIS: kalau
+// seleksi sudah persis dibungkus marker ini, lepas (bukan dobel-bungkus).
+export const WA_MARKERS = { bold: "*", italic: "_", strike: "~", mono: "```" };
+
+export function toggleWaFormatRN(draft, start, end, marker) {
+  const selected = draft.slice(start, end);
+  const sudahDibungkus = selected.length >= marker.length * 2 &&
+    selected.startsWith(marker) && selected.endsWith(marker);
+
+  let nextText, selStart, selEnd;
+  if (sudahDibungkus) {
+    const inti = selected.slice(marker.length, selected.length - marker.length);
+    nextText = draft.slice(0, start) + inti + draft.slice(end);
+    selStart = start; selEnd = start + inti.length;
+  } else {
+    const dibungkus = marker + selected + marker;
+    nextText = draft.slice(0, start) + dibungkus + draft.slice(end);
+    selStart = start + marker.length;
+    selEnd = selStart + selected.length;
+  }
+  return { nextText, selStart, selEnd };
+}
