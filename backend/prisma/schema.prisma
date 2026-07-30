@@ -411,7 +411,7 @@ model Product {
   id          String         @id @default(cuid())
   name        String
   description String?
-  category    String? // "Upgrade" | "Garansi" | "Servis" | "Info"
+  category    String? // "Upgrade" | "Matras Baru" | "Garansi" | "Servis" | "Info" | "Lainnya"
   price       Int?
   priceUnit   String? // "per unit" | "mulai dari" | null
   images      ProductImage[]

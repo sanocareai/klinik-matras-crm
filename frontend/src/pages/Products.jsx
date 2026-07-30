@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Upload, ChevronUp, ChevronDown, Package, Tag } from "lucide-react";
 import { api } from "../api.js";
 
-const KATEGORI_OPTIONS = ["Upgrade", "Garansi", "Servis", "Info", "Lainnya"];
+const KATEGORI_OPTIONS = ["Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
 
 function formatHarga(price, priceUnit) {
   if (!price) return "-";

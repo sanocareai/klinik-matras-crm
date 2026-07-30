@@ -3,7 +3,7 @@ import { X, Search, Package, Check, ChevronLeft, SendHorizonal } from "lucide-re
 import { api } from "../api.js";
 
 const KATEGORI_ALL = "Semua";
-const KATEGORI_OPTIONS = [KATEGORI_ALL, "Upgrade", "Garansi", "Servis", "Info", "Lainnya"];
+const KATEGORI_OPTIONS = [KATEGORI_ALL, "Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
 
 function formatHarga(price, priceUnit) {
   if (!price) return null;

@@ -16,7 +16,7 @@ import { useTokens } from "../constants/theme";
 import PressableScale from "./PressableScale";
 
 const KATEGORI_ALL = "Semua";
-const KATEGORI_OPTIONS = [KATEGORI_ALL, "Upgrade", "Garansi", "Servis", "Info", "Lainnya"];
+const KATEGORI_OPTIONS = [KATEGORI_ALL, "Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
 
 function formatHarga(price, priceUnit) {
   if (!price) return null;
