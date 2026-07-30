@@ -387,6 +387,23 @@ customerRouter.patch("/:id", async (req, res) => {
             changedById: req.user?.id || null,
           },
         });
+
+        // FITUR (tambahan, 30 Jul 2026): tahap pipeline "Paid" dan
+        // Order.paymentStatus SEBELUMNYA 2 field independen (Pipeline milik
+        // Customer, paymentStatus milik Order) — di lapangan ini bikin
+        // bingung berulang kali ("pipeline sudah Paid tapi badge order masih
+        // Belum Bayar"), karena sales wajar mengira menandai "Paid" berarti
+        // order-nya lunas. Sinkron SATU ARAH saja (Paid → Lunas, BUKAN
+        // sebaliknya): begitu stage jadi PAID, semua order aktif (bukan
+        // CANCELLED) milik pelanggan ini otomatis ikut ditandai LUNAS.
+        // Order yang statusnya CANCELLED sengaja dilewati — order batal
+        // tidak pernah butuh ditandai lunas apa pun tahap pipeline-nya.
+        if (pipelineStage === "PAID") {
+          await tx.order.updateMany({
+            where: { customerId: customer.id, status: { not: "CANCELLED" }, paymentStatus: { not: "LUNAS" } },
+            data: { paymentStatus: "LUNAS" },
+          });
+        }
       }
 
       return { customer, transisi };
