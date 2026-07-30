@@ -47,10 +47,10 @@ const VIEW_MODE_KEY = "pelangganViewMode"; // "list" | "board" — persist Async
 // editor, TIDAK diubah supaya tidak ada efek samping di layar lain). Warna
 // TETAP reuse stageColors global (konsisten dengan badge stage yang sudah
 // dipakai di mana-mana).
-const STAGE_ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+const STAGE_ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
 const PIPELINE_LABELS = {
   NEW: "New", QUALIFIED: "Qualified", QUOTED: "Quoted", BOOKED: "Booked",
-  SCHEDULED: "Scheduled", COMPLETED: "Completed", PAID: "Paid", REVIEWED: "Already Reviewed",
+  SCHEDULED: "Scheduled", COMPLETED: "Completed", REVIEWED: "Already Reviewed",
 };
 const STAGE_TABS = [{ key: "ALL", label: "Semua" }, ...STAGE_ORDER.map((s) => ({ key: s, label: PIPELINE_LABELS[s] }))];
 

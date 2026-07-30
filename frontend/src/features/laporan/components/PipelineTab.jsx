@@ -10,21 +10,23 @@ import Sparkline from "./Sparkline.jsx";
 // (utils/format.js) — dulu file ini punya salinan sendiri (STAGE_LABEL_ID)
 // yang independen dan rawan drift dari sumber utama (lihat CLAUDE.md §8,
 // "Label 'Penawaran' masih muncul di beberapa tempat"); sekarang satu sumber.
+// Revisi 30 Jul 2026: PAID dihapus (7 stage) — COMPLETED sekarang yang
+// punya makna "berhasil" bareng REVIEWED.
 const STAGE_BG = {
   NEW: "bg-inset", QUALIFIED: "bg-inset", QUOTED: "bg-inset",
-  BOOKED: "bg-inset", SCHEDULED: "bg-inset", COMPLETED: "bg-inset",
-  PAID: "bg-greenbg", REVIEWED: "bg-greenbg",
+  BOOKED: "bg-inset", SCHEDULED: "bg-inset",
+  COMPLETED: "bg-greenbg", REVIEWED: "bg-greenbg",
 };
-// Bar progres per stage — accent, kecuali PAID/REVIEWED yang semantik.
+// Bar progres per stage — accent, kecuali COMPLETED/REVIEWED yang semantik.
 const STAGE_BAR = {
   NEW: "bg-accent", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
-  BOOKED: "bg-accent", SCHEDULED: "bg-accent", COMPLETED: "bg-accent",
-  PAID: "bg-green", REVIEWED: "bg-green",
+  BOOKED: "bg-accent", SCHEDULED: "bg-accent",
+  COMPLETED: "bg-green", REVIEWED: "bg-green",
 };
 const STAGE_DOT = {
   NEW: "bg-orange", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
-  BOOKED: "bg-accent", SCHEDULED: "bg-accent", COMPLETED: "bg-accent",
-  PAID: "bg-green", REVIEWED: "bg-green",
+  BOOKED: "bg-accent", SCHEDULED: "bg-accent",
+  COMPLETED: "bg-green", REVIEWED: "bg-green",
 };
 
 // "3.4" → "3,4 hari" · "0.5" → "12 jam" (di bawah 1 hari lebih enak dibaca
@@ -39,12 +41,12 @@ function formatDurasiHari(hari) {
   return `${hari.toString().replace(".", ",")} hari`;
 }
 
-// Stage yang paling lama tertahan = kemungkinan bottleneck. PAID/REVIEWED
-// dikecualikan (itu stage AKHIR — "lama di PAID" tidak berarti macet, cuma
-// belum pindah lagi / memang sudah selesai).
+// Stage yang paling lama tertahan = kemungkinan bottleneck. COMPLETED/REVIEWED
+// dikecualikan (itu stage AKHIR — "lama di COMPLETED" tidak berarti macet,
+// cuma belum pindah lagi / memang sudah selesai).
 function cariBottleneck(avgDaysInStage) {
   const kandidat = (avgDaysInStage || []).filter(
-    (r) => r.stage !== "PAID" && r.stage !== "REVIEWED" && r.avgDays != null && r.sample > 0
+    (r) => r.stage !== "COMPLETED" && r.stage !== "REVIEWED" && r.avgDays != null && r.sample > 0
   );
   if (kandidat.length === 0) return null;
   return kandidat.reduce((a, b) => (b.avgDays > a.avgDays ? b : a));

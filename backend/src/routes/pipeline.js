@@ -27,7 +27,7 @@ pipelineRouter.get("/board", async (req, res) => {
     });
 
     const now = Date.now();
-    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
 
     const board = {};
     STAGES.forEach((s) => { board[s] = []; });
@@ -53,7 +53,7 @@ pipelineRouter.get("/board", async (req, res) => {
         unreadCount: conv?.unreadCount || 0,
         // Status order TERBARU — supaya kartu Kanban menunjukkan tahap
         // pengerjaan, bukan cuma stage penjualan. Dua hal berbeda: customer
-        // bisa PAID sementara kasurnya masih PROCESSING.
+        // bisa COMPLETED sementara kasurnya masih PROCESSING.
         latestOrderStatus: orders.length
           ? orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0].status
           : null,

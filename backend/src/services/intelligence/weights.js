@@ -36,11 +36,12 @@ export const HEALTH_WEIGHTS = {
   base: 50,
   orderBase: 20,
   orderValueMax: 15, orderValuePer: 5_000_000,
-  // Revisi 26 Jul 2026: pipeline 8-stage — makin dekat ke PAID (berhasil
-  // sebenarnya), makin tinggi bobotnya. REVIEWED sedikit di atas PAID (sudah
-  // kasih testimoni = relasi paling sehat). Nilai awal wajar, silakan di-tune
+  // Revisi 30 Jul 2026: pipeline 7-stage (PAID dihapus, lihat schema.prisma
+  // enum PipelineStage) — makin dekat ke COMPLETED (berhasil sebenarnya),
+  // makin tinggi bobotnya. REVIEWED sedikit di atas COMPLETED (sudah kasih
+  // testimoni = relasi paling sehat). Nilai awal wajar, silakan di-tune
   // dari perilaku sales nyata (lihat catatan file ini).
-  stage: { NEW: 0, QUALIFIED: 5, QUOTED: 10, BOOKED: 12, SCHEDULED: 13, COMPLETED: 14, PAID: 15, REVIEWED: 16 },
+  stage: { NEW: 0, QUALIFIED: 5, QUOTED: 10, BOOKED: 12, SCHEDULED: 13, COMPLETED: 15, REVIEWED: 16 },
   recency: { d2: 15, d7: 10, d14: 5 },
   complaintPenalty: 25,
   inactivity: { d60: 25, d30: 15 },

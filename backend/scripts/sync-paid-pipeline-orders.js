@@ -1,3 +1,11 @@
+// OBSOLETE (30 Jul 2026): stage pipeline "PAID" yang di-query di sini SUDAH
+// DIHAPUS TOTAL dari enum PipelineStage (lihat migrasi
+// 20260730120000_remove_paid_pipeline_stage) — script ini sudah dijalankan
+// SEKALI (--apply) sebelum stage-nya dihapus, dipertahankan cuma sebagai
+// riwayat/dokumentasi kenapa 62 order tertentu berubah jadi LUNAS pada
+// tanggal itu. JANGAN dijalankan lagi — where.customer.pipelineStage:"PAID"
+// di bawah tidak akan pernah match apa pun lagi (enum-nya sudah tidak ada).
+//
 // Backfill SEKALI: sebelum fix di routes/customers.js (PATCH /:id), tahap
 // pipeline "Paid" dan Order.paymentStatus adalah 2 field independen — sales
 // bisa saja sudah menandai pelanggan "Paid" TANPA order-nya ikut ditandai

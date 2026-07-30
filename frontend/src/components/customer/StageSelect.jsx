@@ -1,7 +1,7 @@
 import React from "react";
 import { STAGE_LABELS } from "../../utils/format.js";
 
-const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
 
 const STAGE_ACTIVE_CLASS = {
   NEW:       "active-new",
@@ -10,7 +10,6 @@ const STAGE_ACTIVE_CLASS = {
   BOOKED:    "active-booked",
   SCHEDULED: "active-scheduled",
   COMPLETED: "active-completed",
-  PAID:      "active-paid",
   REVIEWED:  "active-reviewed",
 };
 

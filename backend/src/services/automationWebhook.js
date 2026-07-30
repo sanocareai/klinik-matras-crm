@@ -87,12 +87,13 @@ export async function dispatchAutomationEvent(event, payload) {
 }
 
 /**
- * Event "lead.won" — dipanggil saat pipelineStage customer berpindah ke PAID
- * (label UI: "Paid"). Revisi 26 Jul 2026: trigger dipindah dari BOOKED/WON
- * lama ke PAID — "berhasil" yang sebenarnya adalah pembayaran diterima,
- * bukan sekadar deal disepakati. Kumpulkan detail customer + nilai order di
- * sini, BUKAN di route handler, supaya query tambahannya ikut di luar jalur
- * respons.
+ * Event "lead.won" — dipanggil saat pipelineStage customer berpindah ke
+ * COMPLETED (label UI: "Completed"). Revisi 30 Jul 2026: trigger dipindah
+ * dari PAID (DIHAPUS dari pipeline — lihat schema.prisma enum PipelineStage,
+ * tracking pembayaran sekarang murni lewat Order.paymentStatus per-order) ke
+ * COMPLETED, stage terakhir "operasional" sebelum Reviewed. Kumpulkan detail
+ * customer + nilai order di sini, BUKAN di route handler, supaya query
+ * tambahannya ikut di luar jalur respons.
  *
  * Selalu resolve — aman dipanggil tanpa await (fire-and-forget).
  */
@@ -129,7 +130,7 @@ export async function dispatchLeadWon(prisma, { customerId, fromStage, changedBy
 
     return await dispatchAutomationEvent("lead.won", {
       customer: { ...detail, assignedSales },
-      pipeline: { fromStage, toStage: "PAID", label: "Paid" },
+      pipeline: { fromStage, toStage: "COMPLETED", label: "Completed" },
       order: {
         totalValue,
         orderCount: orders.length,

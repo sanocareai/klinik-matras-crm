@@ -102,9 +102,14 @@ export function tagClass(tag) {
 
 // Revisi 26 Jul 2026: 5 stage (LEAD/QUALIFIED/QUOTED/WON/LOST) → 8 stage yang
 // mengikuti exit-criteria operasional nyata. LOST dihapus dari pipeline utama
-// (data lama dipetakan ke QUALIFIED lewat migrasi backend). "Berhasil"
-// sebenarnya sekarang PAID (pembayaran diterima), bukan BOOKED — lihat
-// backend/prisma/schema.prisma untuk definisi exit-criteria tiap stage.
+// (data lama dipetakan ke QUALIFIED lewat migrasi backend).
+// Revisi 30 Jul 2026: PAID dihapus (8 → 7 stage) — redundan dengan
+// Order.paymentStatus (BELUM_BAYAR/DP/LUNAS) yang sudah ada per-order, lebih
+// presisi karena 1 pelanggan bisa punya beberapa order dengan status bayar
+// beda-beda (data lama PAID dipetakan ke COMPLETED lewat migrasi backend).
+// "Berhasil" sebenarnya sekarang COMPLETED (pekerjaan selesai dikerjakan),
+// bukan BOOKED — lihat backend/prisma/schema.prisma untuk definisi
+// exit-criteria tiap stage.
 export const STAGE_LABELS = {
   NEW: "New",
   QUALIFIED: "Qualified",
@@ -112,7 +117,6 @@ export const STAGE_LABELS = {
   BOOKED: "Booked",
   SCHEDULED: "Scheduled",
   COMPLETED: "Completed",
-  PAID: "Paid",
   REVIEWED: "Already Reviewed",
 };
 
@@ -177,7 +181,7 @@ export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELI
 // PENTING: kunci ORDER_STATUS_VARIANT mengikuti enum NYATA di kode
 // (PENDING/PICKUP/... dari ORDER_STATUS_LABELS), bukan daftar lama di CLAUDE.md.
 // Hanya 4 hue (aturan Sano DS v2 §badge.jsx): orange = baru/butuh perhatian,
-// accent (biru) = sedang berjalan (5 stage tengah, sengaja SATU warna supaya
+// accent (biru) = sedang berjalan (4 stage tengah, sengaja SATU warna supaya
 // progres tidak terasa "loncat-loncat"), green = benar-benar berhasil.
 export const STAGE_VARIANT = {
   NEW:       "warning", // oranye — baru masuk, belum diproses
@@ -185,8 +189,7 @@ export const STAGE_VARIANT = {
   QUOTED:    "info",
   BOOKED:    "info",
   SCHEDULED: "info",
-  COMPLETED: "info",
-  PAID:      "success", // hijau — berhasil sebenarnya (dibayar)
+  COMPLETED: "success", // hijau — berhasil sebenarnya (pekerjaan selesai; dulu PAID sebelum dihapus 30 Jul 2026)
   REVIEWED:  "success", // hijau — bonus: sudah kasih testimoni
 };
 

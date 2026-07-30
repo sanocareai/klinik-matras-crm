@@ -70,14 +70,16 @@ export const avatarColors = [
 
 // Revisi 26 Jul 2026: pipeline 8-stage, LOST dihapus. Skema warna: oranye =
 // baru, biru/ungu-tosca = sedang berjalan (5 stage tengah), hijau = berhasil.
+// Revisi 30 Jul 2026: PAID dihapus (7 stage) — redundan dengan
+// Order.paymentStatus per-order. COMPLETED sekarang jadi stage "berhasil"
+// (dulu warna PAID), REVIEWED tetap hijau lebih gelap sebagai bonus akhir.
 export const stageColors = {
   NEW: "#f59e0b",
   QUALIFIED: "#2563eb",
   QUOTED: "#7c3aed",
   BOOKED: "#0891b2",
   SCHEDULED: "#4f46e5",
-  COMPLETED: "#0d9488",
-  PAID: "#16a34a",
+  COMPLETED: "#16a34a",
   REVIEWED: "#059669",
 };
 
@@ -88,6 +90,5 @@ export const stageLabels = {
   BOOKED: "Booked",
   SCHEDULED: "Scheduled",
   COMPLETED: "Completed",
-  PAID: "Paid",
   REVIEWED: "Already Reviewed",
 };

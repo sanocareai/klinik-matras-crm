@@ -293,13 +293,13 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.customer.groupBy({ by: ["city"], where: custWhere, _count: { _all: true } }),
       prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
 
-      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["PAID", "REVIEWED"] } } }),
+      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["COMPLETED", "REVIEWED"] } } }),
       prisma.customer.count({ where: custWhere }),
       prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
 
-      // PEMERIKSAAN INTEGRITAS: customer ditandai Paid/Already Reviewed TAPI
-      // tidak punya satu pun order. Ini mustahil secara bisnis — kalau sudah
-      // bayar, harus ada order yang dibayar. Penyebabnya stage digeser manual
+      // PEMERIKSAAN INTEGRITAS: customer ditandai Completed/Already Reviewed
+      // TAPI tidak punya satu pun order. Ini mustahil secara bisnis — kalau
+      // pekerjaannya sudah selesai, harus ada order yang dikerjakan. Penyebabnya stage digeser manual
       // di Kanban tanpa membuat order, jadi PENDAPATANNYA TIDAK PERNAH
       // TERCATAT. Ini yang membuat angka seperti "1 pelanggan bayar tapi Rp0"
       // muncul di Laporan Sales — bukan salah hitung, tapi data yang memang
@@ -307,7 +307,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // dibereskan, kapan pun terjadinya.
       prisma.customer.count({
         where: {
-          pipelineStage: { in: ["PAID", "REVIEWED"] },
+          pipelineStage: { in: ["COMPLETED", "REVIEWED"] },
           NOT: { orders: { some: { status: { not: "CANCELLED" } } } },
         },
       }),
@@ -590,17 +590,19 @@ analyticsRouter.get("/sales-report", async (req, res) => {
               AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
           ) t`,
 
-        // Berapa customer PINDAH ke PAID di dalam rentang — konversi sebagai
-        // ALIRAN periode, bukan keadaan. Ini pembilang conversion rate yang
-        // sepadan dengan penyebutnya (percakapan ditangani pada periode yang
-        // sama). Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
-        // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
-        // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
+        // Berapa customer PINDAH ke COMPLETED (dulu PAID, dihapus dari
+        // pipeline — lihat schema.prisma enum PipelineStage) di dalam
+        // rentang — konversi sebagai ALIRAN periode, bukan keadaan. Ini
+        // pembilang conversion rate yang sepadan dengan penyebutnya
+        // (percakapan ditangani pada periode yang sama). Sebelumnya
+        // pembilangnya memakai "stage sekarang" (keadaan sepanjang waktu)
+        // sementara penyebutnya periode — campur aduk, dan itu yang membuat
+        // 14.3% muncul bersamaan dengan Rp0.
         prisma.$queryRaw`
           SELECT COUNT(DISTINCT pt.customer_id)::int AS n
           FROM pipeline_transitions pt
           JOIN "Conversation" c ON c."customerId" = pt.customer_id
-          WHERE pt.to_stage = 'PAID'
+          WHERE pt.to_stage = 'COMPLETED'
             AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
             AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
 
@@ -617,7 +619,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
 
       const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
       const stageCount = (s) => byStage[s] || 0;
-      const paidSekarang = stageCount("PAID") + stageCount("REVIEWED");
+      const paidSekarang = stageCount("COMPLETED") + stageCount("REVIEWED");
       const paidPeriode = paidRaw[0]?.n || 0;
       const orders = orderAgg._count._all;
       const gross = orderAgg._sum.value || 0;
@@ -639,7 +641,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         funnel: {
           NEW: stageCount("NEW"), QUALIFIED: stageCount("QUALIFIED"), QUOTED: stageCount("QUOTED"),
           BOOKED: stageCount("BOOKED"), SCHEDULED: stageCount("SCHEDULED"),
-          COMPLETED: stageCount("COMPLETED"), PAID: stageCount("PAID"), REVIEWED: stageCount("REVIEWED"),
+          COMPLETED: stageCount("COMPLETED"), REVIEWED: stageCount("REVIEWED"),
         },
         paidCustomersNow: paidSekarang,
 
@@ -901,7 +903,7 @@ analyticsRouter.get("/source-performance", async (req, res) => {
     const result = await Promise.all(sources.map(async (s) => {
       const [won, orderAgg] = await Promise.all([
         prisma.customer.count({
-          where: { leadSource: s.leadSource, pipelineStage: "PAID", ...custDateWhere },
+          where: { leadSource: s.leadSource, pipelineStage: "COMPLETED", ...custDateWhere },
         }),
         prisma.order.aggregate({
           where: {
@@ -1008,7 +1010,7 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
       })
     );
 
-    const ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+    const ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
     const sorted = ORDER.map((s) => stageValues.find((r) => r.stage === s) || { stage: s, count: 0, value: 0 });
 
     res.json(sorted);
@@ -1126,12 +1128,13 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
         GROUP BY 1
       `,
 
-      // Tren bulanan masuk PAID — bucket WIB (lihat catatan di /overview)
+      // Tren bulanan masuk COMPLETED (dulu PAID, dihapus dari pipeline) —
+      // bucket WIB (lihat catatan di /overview)
       prisma.$queryRaw`
         SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS month,
                COUNT(*)::int AS value
         FROM pipeline_transitions
-        WHERE to_stage = 'PAID'
+        WHERE to_stage = 'COMPLETED'
           AND created_at >= NOW() - INTERVAL '6 months'
         GROUP BY 1 ORDER BY 1
       `,
@@ -1143,12 +1146,12 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
       `,
     ]);
 
-    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
     const durasiMap = Object.fromEntries(durasiRaw.map((r) => [r.stage, r]));
     const masukMap  = Object.fromEntries(masukStageRaw.map((r) => [r.stage, r.count]));
 
     res.json({
-      // Selalu 8 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
+      // Selalu 7 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
       avgDaysInStage: STAGES.map((s) => ({
         stage:   s,
         avgDays: durasiMap[s]?.avg_days != null ? Number(Number(durasiMap[s].avg_days).toFixed(1)) : null,

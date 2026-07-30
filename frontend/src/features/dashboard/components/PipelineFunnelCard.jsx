@@ -11,7 +11,9 @@ import { toApiParams } from "@/lib/dateRange.js";
 // ada lagi stage negatif yang perlu disembunyikan dari corong) — seluruh
 // tahap NEW→REVIEWED ditampilkan supaya corong mencerminkan exit-criteria
 // nyata di tiap tahap operasional.
-const TAHAP = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "PAID", "REVIEWED"];
+// Revisi 30 Jul 2026: PAID dihapus (7 stage) — COMPLETED sekarang jadi tahap
+// "berhasil" (dipakai juga sebagai pembilang conversion rate di bawah).
+const TAHAP = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
 
 // ─── DEAL PIPELINE ───────────────────────────────────────────────────────────
 // DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — sekarang mengikuti SATU
@@ -39,7 +41,7 @@ export default function PipelineFunnelCard({ range }) {
   }));
 
   const lead = byStage.NEW?.count ?? 0;
-  const won  = byStage.PAID?.count ?? 0;
+  const won  = byStage.COMPLETED?.count ?? 0;
   const konversi = lead > 0 ? Math.round((won / lead) * 100) : null;
 
   return (

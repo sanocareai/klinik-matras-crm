@@ -25,19 +25,19 @@ export const STAGE_DOT = {
   QUOTED:    "bg-accent",
   BOOKED:    "bg-accent",
   SCHEDULED: "bg-accent",
-  COMPLETED: "bg-accent",
-  PAID:      "bg-green",
+  COMPLETED: "bg-green",
   REVIEWED:  "bg-green",
 };
 
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
 // 14 hari dipilih supaya tidak berisik: siklus jual kasur di sini berhari-hari
 // (lihat laporan Kecepatan Pipeline), jadi 7 hari akan menandai deal normal.
-// PAID/REVIEWED DIKECUALIKAN: itu stage AKHIR — "lama tidak disentuh" di sana
-// artinya sudah selesai, bukan mandek.
+// COMPLETED/REVIEWED DIKECUALIKAN: itu stage AKHIR — "lama tidak disentuh" di
+// sana artinya sudah selesai, bukan mandek (dulu PAID/REVIEWED sebelum PAID
+// dihapus dari pipeline 30 Jul 2026).
 const STALE_DAYS = 14;
 export function isStale(card, stage) {
-  if (stage === "PAID" || stage === "REVIEWED") return false;
+  if (stage === "COMPLETED" || stage === "REVIEWED") return false;
   return (card?.daysSince || 0) >= STALE_DAYS;
 }
 

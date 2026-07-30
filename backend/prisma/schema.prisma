@@ -81,14 +81,22 @@ enum ConversationType {
 // dipetakan ke PAID. "Berhasil"/closing yang SEBENARNYA sekarang PAID (bukan
 // BOOKED) — pembayaran diterima, bukan sekadar deal disepakati. Lihat
 // migration 20260726120000_migrate_pipeline_stage_8_wave untuk detail mapping.
+// Revisi 30 Jul 2026: PAID dihapus dari pipeline (7 stage, dari 8). Tracking
+// pembayaran sudah punya rumah sendiri yang lebih tepat: Order.paymentStatus
+// (BELUM_BAYAR/DP/LUNAS), per-ORDER bukan per-pelanggan — pelanggan dengan
+// beberapa order bisa saja 1 lunas 1 belum, sesuatu yang tidak pernah bisa
+// direpresentasikan oleh 1 stage pipeline tunggal. Sempat ada percobaan
+// sinkron otomatis (pipeline "Paid" -> semua order jadi LUNAS) tapi ini
+// cuma tambal masalah yang akar sebabnya stage ini sendiri redundan —
+// dihapus total, bukan disinkronkan terus-menerus. Lihat migrasi
+// 20260730_remove_paid_pipeline_stage untuk mapping data lama (PAID -> COMPLETED).
 enum PipelineStage {
   NEW // Lead baru masuk WhatsApp, belum kirim data diri
   QUALIFIED // Data minimum lengkap (kota, ukuran, foto, keluhan) + area layanan cocok + ada intent
   QUOTED // Sudah dikasih harga/rekomendasi
   BOOKED // Setuju harga+jadwal, penuhi syarat booking
   SCHEDULED // Sudah dijadwalkan pickup/kunjungan teknisi
-  COMPLETED // Pekerjaan selesai dikerjakan
-  PAID // Pembayaran diterima — INI baru dihitung "berhasil" sebenarnya
+  COMPLETED // Pekerjaan selesai dikerjakan — SEKARANG stage terakhir "operasional", dianggap "berhasil" (dulu diwakili PAID)
   REVIEWED // Sudah kasih review Google Maps / testimoni WhatsApp
 }
 
@@ -231,7 +239,7 @@ model Customer {
 // ...). Customer.pipelineStage hanya menyimpan posisi SEKARANG — tabel ini
 // menyimpan RIWAYAT-nya, supaya laporan bisa bergeser dari sekadar "berapa
 // banyak di stage X sekarang" ke data time-series: kecepatan pipeline (berapa
-// lama rata-rata NEW→PAID), analisa cohort, dan tren konversi per periode.
+// lama rata-rata NEW→COMPLETED), analisa cohort, dan tren konversi per periode.
 //
 // APPEND-ONLY: baris di sini tidak pernah di-update/dihapus (kecuali ikut
 // terhapus bersama customer-nya). Ditulis dalam transaksi yang sama dengan
@@ -257,7 +265,7 @@ model PipelineTransition {
 
   @@index([customerId, createdAt]) // timeline per customer
   @@index([createdAt]) // agregasi time-series lintas customer (tren harian/bulanan)
-  @@index([toStage, createdAt]) // "berapa yang masuk PAID per periode" — velocity & funnel
+  @@index([toStage, createdAt]) // "berapa yang masuk COMPLETED per periode" — velocity & funnel
   @@map("pipeline_transitions")
 }
 

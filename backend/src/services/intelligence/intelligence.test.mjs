@@ -20,7 +20,7 @@ function ctx({ stage = "NEW", orders = [], msgs = [] }) {
 
 test("complaint escalation → resolve complaint, urgent, health down", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "PAID",
+    stage: "COMPLETED",
     orders: [{ value: 5_000_000, status: "DELIVERED", hasComplaint: true, createdAt: dayAgo(40) }],
     msgs: [{ direction: "OUTBOUND", content: "baik pak", createdAt: dayAgo(2) }], // kontak terakhir 2 hari
   }));
