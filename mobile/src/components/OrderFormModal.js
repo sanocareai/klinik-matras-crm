@@ -39,8 +39,18 @@ import { Image } from "expo-image";
 import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
-import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES } from "../utils/format";
+import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES } from "../utils/format";
 import { useKeyboardHeight } from "../lib/useKeyboardHeight";
+import { stageLabels, stageColors } from "../theme";
+
+// FITUR (tambahan): Tahap Pipeline (New/Qualified/.../Paid) SEBELUMNYA cuma
+// bisa diubah dari web CRM (Orders.jsx) atau dari tab Pelanggan mobile —
+// tab Order (order-centric, lintas pelanggan) tidak punya jalur ubah pipeline
+// sama sekali, jadi order yang sudah bayar/selesai ("Paid") harus ditandai
+// lewat CRM web dulu, tidak bisa langsung dari HP. STAGE_ORDER SAMA PERSIS
+// dengan urutan di stageLabels/stageColors (theme.js) — satu sumber warna &
+// label, bukan didefinisikan ulang di sini.
+const STAGE_ORDER = Object.keys(stageLabels);
 
 const CATEGORY_OPTIONS = [
   { value: "LAYANAN", label: "Service/Upgrade" },
@@ -114,6 +124,15 @@ export default function OrderFormModal({
   const orderOptions = orderOptionsProp || orderOptionsState;
   const [category, setCategory] = useState("LAYANAN");
   const [status, setStatus] = useState("PENDING");
+  const [paymentStatus, setPaymentStatus] = useState("BELUM_BAYAR");
+  // pipelineStage: null = tidak ditampilkan sama sekali (order dari konteks
+  // CustomerProfileContent.js, yang sudah py editor pipeline sendiri di atas
+  // profil — jangan dobel). Order dari OrdersScreen.js (tab Order lintas
+  // pelanggan) SELALU bawa field ini (denormalized dari customer, lihat
+  // backend/src/routes/orders.js GET / — `pipelineStage: customer?.pipelineStage`),
+  // walau nilainya sendiri bisa null (customer belum punya stage).
+  const [pipelineStage, setPipelineStage] = useState(null);
+  const [savingStage, setSavingStage] = useState(false);
   // FITUR (tambahan): Order.quantity SUDAH ada di backend (default 1, dipakai
   // POST /customers/:id/orders & PATCH /orders/:id) tapi belum pernah
   // di-expose di form manapun (web maupun mobile) — selalu diam-diam ke-set
@@ -135,6 +154,9 @@ export default function OrderFormModal({
 
   const isEdit = !!order;
   const isLayanan = category === "LAYANAN";
+  // order.pipelineStage cuma ada kalau caller-nya OrdersScreen.js (lihat
+  // catatan panjang di deklarasi state pipelineStage di atas).
+  const showPipelineEditor = isEdit && Object.prototype.hasOwnProperty.call(order, "pipelineStage");
 
   // Reset (create) ATAU prefill (edit) tiap kali modal dibuka — bukan cuma
   // sekali di mount, karena instance modal ini dipakai ULANG bergantian utk
@@ -151,6 +173,8 @@ export default function OrderFormModal({
       const info = parseNotes(order.notes);
       setCategory(order.category || "LAYANAN");
       setStatus(order.status || "PENDING");
+      setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
+      setPipelineStage(order.pipelineStage ?? null);
       setQuantity(order.quantity ? String(order.quantity) : "1");
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
@@ -169,6 +193,8 @@ export default function OrderFormModal({
     } else {
       setCategory("LAYANAN");
       setStatus("PENDING");
+      setPaymentStatus("BELUM_BAYAR");
+      setPipelineStage(null);
       setQuantity("1");
       setMerkKasur("");
       setUkuran("");
@@ -255,6 +281,7 @@ export default function OrderFormModal({
     const finalMerk = isLayanan ? merkKasur : "Sano";
     await api.updateOrder(order.id, {
       status,
+      paymentStatus,
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
     });
@@ -300,6 +327,27 @@ export default function OrderFormModal({
     }
 
     onUpdated?.();
+  }
+
+  // Tahap Pipeline milik Customer, BUKAN Order (sama seperti web
+  // Orders.jsx#handleStageChange) — disimpan LANGSUNG saat dipilih (optimistic
+  // + rollback kalau gagal), TIDAK ikut menunggu tombol "Simpan Order" di
+  // bawah, karena field ini secara semantik terpisah dari data order itu
+  // sendiri.
+  async function handleStageChange(newStage) {
+    if (newStage === pipelineStage || !customerId || savingStage) return;
+    const prev = pipelineStage;
+    setPipelineStage(newStage);
+    setSavingStage(true);
+    try {
+      await api.updateCustomer(customerId, { pipelineStage: newStage });
+      onUpdated?.();
+    } catch (err) {
+      setPipelineStage(prev);
+      Alert.alert("Gagal ubah tahap pipeline", err.message);
+    } finally {
+      setSavingStage(false);
+    }
   }
 
   async function handleSubmit() {
@@ -397,6 +445,64 @@ export default function OrderFormModal({
                     );
                   })}
                 </View>
+
+                {/* FITUR (tambahan): Status Pembayaran — sebelumnya cuma bisa
+                    diubah dari CRM web (OrderSection.jsx), mobile hanya bisa
+                    MELIHAT badge-nya, tidak bisa mengedit sama sekali. */}
+                <Text style={styles.label}>Status Pembayaran</Text>
+                <View style={styles.statusRow}>
+                  {PAYMENT_STATUSES.map((s) => {
+                    const active = paymentStatus === s;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        style={[styles.statusChip, active && styles.categoryChipActive]}
+                        onPress={() => setPaymentStatus(s)}
+                      >
+                        <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
+                          {PAYMENT_STATUS_LABELS[s] || s}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* FITUR (tambahan): Tahap Pipeline — sebelumnya tab Order
+                    (lintas pelanggan) tidak punya jalur ubah pipeline sama
+                    sekali, order yang statusnya "Paid" harus ditandai lewat
+                    CRM web dulu. Cuma muncul kalau order ini datang dari
+                    OrdersScreen.js (bawa field pipelineStage denormalized) —
+                    lihat showPipelineEditor di atas. Disimpan LANGSUNG saat
+                    dipilih (lihat handleStageChange), bukan menunggu tombol
+                    Simpan di bawah. */}
+                {showPipelineEditor && (
+                  <>
+                    <Text style={styles.label}>Tahap Pipeline</Text>
+                    <View style={styles.statusRow}>
+                      {STAGE_ORDER.map((s) => {
+                        const active = (pipelineStage || "NEW") === s;
+                        return (
+                          <TouchableOpacity
+                            key={s}
+                            style={[
+                              styles.statusChip,
+                              active && { backgroundColor: stageColors[s] + "22", borderColor: stageColors[s] },
+                            ]}
+                            onPress={() => handleStageChange(s)}
+                            disabled={savingStage}
+                          >
+                            <Text
+                              style={[styles.categoryChipText, active && { color: stageColors[s], fontWeight: "700" }]}
+                              numberOfLines={1}
+                            >
+                              {stageLabels[s] || s}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
               </>
             )}
 

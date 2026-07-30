@@ -7,7 +7,7 @@ import {
 import { api } from "../api.js";
 import {
   formatRupiah, formatRupiahShort,
-  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
 } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
@@ -39,12 +39,6 @@ const STATUS_TONE = {
   READY:      { chip: "bg-accentbg text-accent", dot: "bg-accent" },
   DELIVERED:  { chip: "bg-greenbg text-green",   dot: "bg-green" },
   CANCELLED:  { chip: "bg-redbg text-red",       dot: "bg-red" },
-};
-
-const PAYMENT_TONE = {
-  BELUM_BAYAR: "bg-redbg text-red",
-  DP:          "bg-orangebg text-orange",
-  LUNAS:       "bg-greenbg text-green",
 };
 
 const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
@@ -108,7 +102,41 @@ function PipelineStageSelect({ order, onChange, className }) {
   );
 }
 
-function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange }) {
+// FITUR (tambahan): status Pembayaran (Belum Bayar/DP/Lunas) SEBELUMNYA cuma
+// badge statis di halaman ini — satu-satunya jalur mengubahnya adalah masuk
+// dulu ke drawer profil pelanggan (Customer 360 > tab Order), lalu balik lagi
+// ke halaman ini untuk lihat hasilnya (yang tidak auto-refresh, jadi terasa
+// seperti "sudah diganti tapi tidak berubah"). Sekarang bisa diedit langsung
+// di sini, pola SAMA dengan StatusSelect/PipelineStageSelect di atas —
+// refetch penuh via `load()` setelah berhasil, jadi badge yang sama langsung
+// menampilkan nilai baru, bukan menunggu navigasi ulang.
+const PAYMENT_TONE = {
+  BELUM_BAYAR: "bg-redbg text-red",
+  DP:          "bg-orangebg text-orange",
+  LUNAS:       "bg-greenbg text-green",
+};
+function PaymentStatusSelect({ order, onChange, className }) {
+  return (
+    <select
+      value={order.paymentStatus || "BELUM_BAYAR"}
+      onChange={(e) => onChange(order, e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
+      className={cn(
+        "cursor-pointer appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+        PAYMENT_TONE[order.paymentStatus || "BELUM_BAYAR"],
+        className
+      )}
+    >
+      {PAYMENT_STATUSES.map((s) => (
+        <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s] || s}</option>
+      ))}
+    </select>
+  );
+}
+
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   return (
@@ -121,9 +149,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
         </div>
-        <span className={cn("shrink-0 rounded-chip px-1.5 py-0.5 text-[10px] font-semibold", PAYMENT_TONE[order.paymentStatus])}>
-          {PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus}
-        </span>
+        <PaymentStatusSelect order={order} onChange={onPaymentChange} className="shrink-0" />
       </div>
 
       <div className="mt-2 flex items-center gap-1.5">
@@ -274,6 +300,18 @@ export default function Orders() {
       load();
     } catch (err) {
       alert("Gagal ubah tahap pipeline: " + err.message);
+    }
+  }
+
+  // Ubah status PEMBAYARAN order langsung dari sini — endpoint SAMA yang
+  // dipakai OrderSection.jsx (drawer profil pelanggan), PATCH /orders/:id.
+  async function handlePaymentChange(order, newPayment) {
+    if (newPayment === (order.paymentStatus || "BELUM_BAYAR")) return;
+    try {
+      await api.updateOrder(order.id, { paymentStatus: newPayment });
+      load();
+    } catch (err) {
+      alert("Gagal ubah status pembayaran: " + err.message);
     }
   }
 
@@ -454,7 +492,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -510,9 +548,7 @@ export default function Orders() {
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <span className={cn("rounded-chip px-2 py-0.5 text-[10px] font-semibold", PAYMENT_TONE[o.paymentStatus])}>
-                          {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
-                        </span>
+                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
                         {formatRupiah(o.value || 0)}
