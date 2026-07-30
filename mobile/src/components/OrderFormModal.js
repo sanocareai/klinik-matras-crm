@@ -114,6 +114,12 @@ export default function OrderFormModal({
   const orderOptions = orderOptionsProp || orderOptionsState;
   const [category, setCategory] = useState("LAYANAN");
   const [status, setStatus] = useState("PENDING");
+  // FITUR (tambahan): Order.quantity SUDAH ada di backend (default 1, dipakai
+  // POST /customers/:id/orders & PATCH /orders/:id) tapi belum pernah
+  // di-expose di form manapun (web maupun mobile) — selalu diam-diam ke-set
+  // default 1. Ditambahkan di sini per permintaan, form web belum menyusul
+  // (di luar scope task ini).
+  const [quantity, setQuantity] = useState("1");
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [keluhan, setKeluhan] = useState("");
@@ -145,6 +151,7 @@ export default function OrderFormModal({
       const info = parseNotes(order.notes);
       setCategory(order.category || "LAYANAN");
       setStatus(order.status || "PENDING");
+      setQuantity(order.quantity ? String(order.quantity) : "1");
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
       setKeluhan(info.keluhanCustomer);
@@ -162,6 +169,7 @@ export default function OrderFormModal({
     } else {
       setCategory("LAYANAN");
       setStatus("PENDING");
+      setQuantity("1");
       setMerkKasur("");
       setUkuran("");
       setKeluhan("");
@@ -205,6 +213,7 @@ export default function OrderFormModal({
     }
     const created = await api.addOrder(customerId, {
       category,
+      quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
     });
 
@@ -246,6 +255,7 @@ export default function OrderFormModal({
     const finalMerk = isLayanan ? merkKasur : "Sano";
     await api.updateOrder(order.id, {
       status,
+      quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
     });
 
@@ -410,6 +420,33 @@ export default function OrderFormModal({
                   </TouchableOpacity>
                 );
               })}
+            </View>
+
+            {/* Jumlah (quantity) — field baru, sebelumnya cuma tersimpan
+                diam-diam sebagai default 1 di backend, tidak pernah bisa
+                diubah dari form manapun. */}
+            <Text style={styles.label}>Jumlah</Text>
+            <View style={styles.quantityRow}>
+              <TouchableOpacity
+                style={styles.quantityBtn}
+                onPress={() => setQuantity((q) => String(Math.max(1, (Number(q) || 1) - 1)))}
+              >
+                <Text style={styles.quantityBtnText}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.quantityInput}
+                value={quantity}
+                onChangeText={(v) => setQuantity(v.replace(/[^0-9]/g, ""))}
+                onBlur={() => setQuantity((q) => (Number(q) > 0 ? String(Number(q)) : "1"))}
+                keyboardType="numeric"
+                textAlign="center"
+              />
+              <TouchableOpacity
+                style={styles.quantityBtn}
+                onPress={() => setQuantity((q) => String((Number(q) || 1) + 1))}
+              >
+                <Text style={styles.quantityBtnText}>+</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Produk cepat — hanya relevan utk Service/Upgrade */}
@@ -620,6 +657,16 @@ function createStyles(tokens) {
   statusChip: {
     alignItems: "center", paddingVertical: 8, paddingHorizontal: 10, borderRadius: tokens.radius.control,
     borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+  },
+  quantityRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  quantityBtn: {
+    width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+  },
+  quantityBtnText: { fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary },
+  quantityInput: {
+    width: 56, backgroundColor: tokens.color.subtle, borderRadius: 10, paddingVertical: 9,
+    fontSize: 15, fontWeight: "600", color: tokens.color.textPrimary,
   },
   productSearch: {
     backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
