@@ -143,12 +143,12 @@ export default function Kendali() {
           ) : (
             <div className="flex flex-col gap-2">
               {units.blocked.map((b) => (
-                <div key={b.id} className="flex items-center justify-between gap-3 rounded-btn bg-inset px-4 py-3">
-                  <div>
+                <div key={b.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-btn bg-inset px-4 py-3">
+                  <div className="min-w-[140px] flex-1">
                     <div className="text-[13px] font-semibold text-ink">{b.unitCode}</div>
                     <div className="text-[12px] text-ink2">Tahap: {b.stageLabel} — {relatifWaktu(b.blockedSince)}</div>
                   </div>
-                  <Badge variant="red">{b.blockReason || "Tanpa alasan"}</Badge>
+                  <Badge variant="red" className="shrink-0">{b.blockReason || "Tanpa alasan"}</Badge>
                 </div>
               ))}
             </div>
