@@ -103,9 +103,10 @@ Ditulis eksplisit supaya tidak diam-diam merembes:
 
 Ini yang biasanya menunda launch, dan lead time-nya di luar kendali kita:
 
-1. **Printer label termal + stok label + scanner cadangan.** Beli sekarang,
-   bukan saat Phase 1 dimulai. QR adalah tiket kerja fisik — tanpa printer,
-   Phase 1 tidak bisa diuji sama sekali.
+1. ~~**Printer label termal + stok label + scanner cadangan.**~~
+   ⛔ **DIBATALKAN 31 Juli 2026 — JANGAN DIBELI.** Model kiosk scan tidak
+   sesuai cara kerja Sano: satu QC Leader yang meng-update semua proses, dan
+   ID Order sudah cukup sebagai identitas. Lihat D-014.
 2. **Konfirmasi pemetaan garansi** (asumsi terbuka di D-004): apakah
    SERVICE → paket Standard dan UPGRADE → paket Premium benar-benar 1:1?
 3. **Daftar orang + role.** Siapa Production Lead, siapa QC Leader, berapa

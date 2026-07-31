@@ -28,6 +28,7 @@ const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
 const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("./pages/Portal.jsx"));
+const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
@@ -151,13 +152,13 @@ export default function App() {
       <Layout user={user} onLogout={handleLogout}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            {/* Landing default SENGAJA masih /dashboard, bukan /portal.
-                Portal Bengkel/Armada/Kendali masih kosong di Phase 0 — memindahkan
-                7 orang yang sedang bekerja ke layar pemilih berisi kartu mati
-                adalah penurunan kualitas. Ditukar jadi default di Phase 1,
-                begitu portalnya berisi. Lihat docs/sano-hub/PHASE-0.md. */}
-            <Route path="/"            element={<Navigate to="/dashboard" replace />} />
+            {/* Landing sekarang /portal (Gilang, 31 Juli 2026) — Bengkel punya
+                isi nyata (Papan Produksi Harian). AMAN untuk 5 sales existing:
+                role tunggal auto-skip ke satu-satunya portalnya (Growth =
+                /dashboard) tanpa melihat layar pemilih — lihat Portal.jsx. */}
+            <Route path="/"            element={<Navigate to="/portal" replace />} />
             <Route path="/portal"      element={<Portal />} />
+            <Route path="/bengkel"     element={<Bengkel />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />
@@ -171,7 +172,7 @@ export default function App() {
             <Route path="/products"    element={<Products />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
             <Route path="/copilot"     element={<CoPilot />} />
-            <Route path="*"            element={<Navigate to="/dashboard" replace />} />
+            <Route path="*"            element={<Navigate to="/portal" replace />} />
           </Routes>
         </Suspense>
       </Layout>

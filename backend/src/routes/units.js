@@ -1,21 +1,45 @@
 // Endpoint produksi Sano Hub Phase 1 — kiosk scan & QC.
 //
-// STATUS: dibangun dan diuji, TAPI belum dipasang di app.use() index.js —
-// lihat catatan Phase 1 di docs/sano-hub/. Memasangnya adalah langkah
-// terpisah setelah kiosk UI siap, supaya tidak ada endpoint hidup tanpa UI
-// yang memakainya dengan benar.
+// Dipasang di index.js di balik requirePermission — aman walau belum ada
+// user yang punya role produksi (lihat docs/sano-hub/PHASE-0.md).
 
 import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import {
-  startStage, completeStage, failStage, skipStage, recordQcFitTest,
+  startStage, completeStage, failStage, skipStage, recordQcFitTest, getUnitStatus,
   StageTransitionError,
 } from "../services/unitStageEngine.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
+
+// Upload foto tahap produksi — pola SAMA dengan routes/products.js (multer
+// disk storage + kompresi sudah dilakukan di klien sebelum upload, lihat
+// frontend/src/utils/compressImage.js).
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const unitPhotosDir = path.join(__dirname, "../../data/unit-photos");
+if (!fs.existsSync(unitPhotosDir)) fs.mkdirSync(unitPhotosDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: unitPhotosDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".jpg";
+      cb(null, `${req.params.id}-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB — foto sudah dikompres di klien, ini jaring pengaman
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    cb(null, true);
+  },
+});
 
 function handleEngineError(err, res) {
   if (err instanceof StageTransitionError) {
@@ -115,21 +139,45 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
   }
 });
 
-// GET /api/units/:id — detail unit + riwayat tahap, untuk layar kiosk.
+// GET /api/units/by-code/:code — cari unit dari hasil scan QR / input kiosk.
+// HARUS didaftarkan SEBELUM "/:id" — kalau tidak, Express akan mencocokkan
+// "by-code" sebagai path param :id dan endpoint ini tidak pernah kena.
+//
+// Sekaligus mengembalikan status produksi (getUnitStatus) supaya kiosk bisa
+// langsung tahu tombol apa yang harus ditampilkan TANPA menghitung sendiri
+// jalur routing di frontend — satu-satunya sumber kebenaran tetap di server.
+unitRouter.get("/by-code/:code", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const unit = await prisma.unit.findUnique({ where: { unitCode: req.params.code } });
+    if (!unit) return res.status(404).json({ error: `Unit dengan kode "${req.params.code}" tidak ditemukan` });
+    const status = await getUnitStatus(unit.id);
+    res.json(status);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// POST /api/units/:id/photos — upload foto tahap (multipart, field "photos").
+// Mengembalikan array URL, dipakai kiosk sebagai photoUrls saat memanggil
+// complete/qc. Foto TIDAK langsung menempel ke ledger di sini — upload dan
+// penulisan log adalah dua langkah terpisah supaya foto yang gagal diproses
+// tidak membuat baris ledger korup.
+unitRouter.post("/:id/photos", requirePermission(P.UNIT_STAGE_WRITE), upload.array("photos", 6), async (req, res) => {
+  try {
+    const urls = (req.files || []).map((f) => `/media/unit-photos/${f.filename}`);
+    res.json({ urls });
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// GET /api/units/:id — status produksi lengkap, untuk layar kiosk.
 unitRouter.get("/:id", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
-    const unit = await prisma.unit.findUnique({
-      where: { id: req.params.id },
-      include: {
-        currentStage: true,
-        service: true,
-        stageLogs: { orderBy: { createdAt: "desc" }, take: 20, include: { stage: true } },
-        qcFitTests: { orderBy: { createdAt: "desc" }, take: 5 },
-      },
-    });
-    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    res.json(unit);
+    const status = await getUnitStatus(req.params.id);
+    res.json(status);
   } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ error: "Unit tidak ditemukan" });
     handleEngineError(err, res);
   }
 });

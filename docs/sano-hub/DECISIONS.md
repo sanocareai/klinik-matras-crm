@@ -209,6 +209,84 @@ melihat nomor telepon customer maupun harga.
 
 ---
 
+## D-014 — Model kiosk scan DIBATALKAN, diganti Papan Produksi Harian
+
+**Menggantikan sebagian D-005 dan asumsi PRD §1.6 / §7.5 (FR-P-01, FR-P-02).**
+
+**Konteks (klarifikasi Gilang, 31 Juli 2026).** PRD mengasumsikan tiap pekerja
+scan QR di stasiunnya lalu tap tahapnya sendiri ("workers must not type",
+kiosk mode, label QR sebagai tiket kerja fisik). Itu SALAH untuk cara Sano
+bekerja. Kenyataannya:
+
+- **Satu orang** (QC Leader / kepala produksi) yang meng-update SELURUH proses
+  kasur, bukan tiap pekerja di stasiun masing-masing.
+- **ID Order sudah cukup** sebagai identitas. Tidak perlu label QR per unit.
+- Update dilakukan **manual dan terkumpul**, bukan scan per kejadian.
+
+**Alur sebenarnya:**
+```
+Sales input order (CRM, ID auto-generate — sudah ada, CLAUDE.md §7D)
+  → Admin bikin jalur PENGAMBILAN (rute harian; Sano ambil orderan tiap hari,
+    bukan cuma mengirim)
+  → Driver jemput kasur           → dokumentasi foto → grup driver WA
+  → Kepala produksi bikin TARGET HARIAN (pilih order ID yang dikerjakan hari itu)
+  → Produksi jalan                → tiap proses & uji didokumentasikan
+  → Sebelum tutup: kepala produksi UPDATE HASIL HARI ITU ke grup
+  → Kasur selesai
+  → Admin bikin jalur PENGIRIMAN (rute harian)
+  → Driver kirim                  → dokumentasi foto → grup driver WA
+```
+
+**Keputusan.**
+1. `BengkelKiosk.jsx` (scan satu unit per waktu) DIHAPUS — bentuk interaksinya
+   salah, bukan sekadar perlu diperbaiki.
+2. Diganti **Papan Produksi Harian**: target pagi, update sore, banyak unit
+   sekaligus.
+3. **Label QR + printer termal TIDAK JADI dibeli.** Instruksi di PHASE-0.md §3
+   poin 1 dibatalkan.
+
+**Konsekuensi yang harus diingat — arti `unit_stage_logs.actor_id` BERUBAH.**
+Dulu dirancang sebagai "siapa yang MENGERJAKAN". Sekarang isinya selalu
+"siapa yang MENCATAT" (QC Leader). **Jangan pernah membuat laporan
+produktivitas per pekerja dari kolom ini** — datanya tidak pernah berarti itu.
+Kalau produktivitas per pekerja memang mau diukur nanti, butuh kolom/tabel
+sendiri, bukan menafsir ulang kolom ini.
+
+**Yang TETAP berlaku** (lapisan data tidak berubah sama sekali): `Unit`
+(D-002), `routing_stages` sebagai data (D-003), ledger append-only
+`unit_stage_logs`, `Job` PICKUP/DELIVERY, `qc_fit_tests`. Tahap-tahapnya nyata
+— tiap proses memang didokumentasikan — hanya CARA mencatatnya yang berbeda.
+
+---
+
+## D-015 — Dokumentasi WhatsApp adalah produknya, bukan efek samping
+
+**Konteks (Gilang, 31 Juli 2026).** "Kelebihan Sano: setiap proses, uji dan
+lainnya kita dokumentasi dan kirim WhatsApp ke customer, sales tinggal forward
+hasil dokumentasi ke customer." Penjemputan & pengiriman driver juga
+terdokumentasi di grup WA driver.
+
+**Masalahnya:** seluruh dokumentasi itu sekarang hidup DI DALAM thread
+WhatsApp. Tidak bisa dicari, tidak menempel ke order, dan hilang begitu orang
+yang memegangnya keluar.
+
+**Keputusan.** Foto per tahap disimpan menempel ke `unit_stage_logs`
+(kolom `photo_urls` sudah ada sejak migrasi 20260731130000), lalu bisa dilihat
+sebagai satu berkas dokumentasi per order.
+
+**ASUMSI YANG DIPAKAI (belum dikonfirmasi — mudah dibalik):** sistem
+MENYIAPKAN paket dokumentasinya, **sales yang forward manual** ke customer —
+BUKAN kirim otomatis. Alasannya: itu yang dilakukan sekarang, dan ada manusia
+yang memeriksa sebelum sesuatu sampai ke customer. Kirim otomatis lewat WAHA
+gampang ditambahkan nanti kalau memang diinginkan.
+
+**Kenapa ini penting lebih dari sekadar "fitur foto":** foto yang sama melayani
+empat fungsi sekaligus — update ke customer, bukti garansi, pembelaan kalau ada
+sengketa, dan materi marketing. PRD §7.5 sudah bilang "photo discipline is the
+product"; klarifikasi ini menegaskan itu bukan retorika.
+
+---
+
 ## D-013 — ADMIN tidak boleh memajukan tahap produksi atau memutuskan QC
 
 **Keputusan.** Role `ADMIN` mendapat hampir semua permission, KECUALI

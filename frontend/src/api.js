@@ -97,6 +97,25 @@ export const api = {
   // oleh admin langsung berlaku saat refresh, tidak menunggu token 7 hari habis.
   getMe: () => request("/auth/me"),
 
+  // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
+  getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
+  setProductionTargets: (unitIds, { date, note } = {}) =>
+    request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
+  removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),
+  recordStageDone: (unitId, { photoUrls, note } = {}) =>
+    request(`/production/units/${unitId}/done`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
+  getOrderDocumentation: (orderId) => request(`/production/orders/${orderId}/documentation`),
+
+  // Unit — detail & aksi tahap
+  getUnitStatus: (unitId) => request(`/units/${unitId}`),
+  failUnitStage: (unitId, stageId, { blockReason, note }) =>
+    request(`/units/${unitId}/stages/${stageId}/fail`, {
+      method: "POST", body: JSON.stringify({ blockReason, note }),
+    }),
+  recordQcFitTest: (unitId, stageId, data) =>
+    request(`/units/${unitId}/stages/${stageId}/qc`, { method: "POST", body: JSON.stringify(data) }),
+  uploadUnitPhotos: (unitId, formData) => requestFormData(`/units/${unitId}/photos`, formData),
+
   // Conversations
   // Terima string status (cara lama, tetap didukung) ATAU objek
   // { status, search, assignedToId, cursor, limit } (Fase B/F).

@@ -6,16 +6,18 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 
-// Landing portal Sano Hub (PRD §4).
+// Landing portal Sano Hub (PRD §4). Halaman AWAL setelah login mulai Phase 1
+// (Gilang, 31 Juli 2026: "di tampilan awal website gue ingin ada main menu
+// untuk masing-masing divisi") — Bengkel sekarang punya isi nyata (Papan
+// Produksi Harian), jadi kartu "Segera"-nya sudah tidak jujur lagi.
 //
-// ⚠️ PHASE 0 — halaman ini BUKAN halaman default setelah login.
-// Rute default tetap /dashboard, persis seperti sebelumnya. Alasannya: portal
-// Bengkel/Armada/Kendali masih KOSONG di Phase 0, dan memindahkan 7 orang yang
-// sedang bekerja ke layar pemilih berisi tiga kartu mati adalah penurunan
-// kualitas, bukan kemajuan.
-//
-// Halaman ini dijadikan landing default di Phase 1, begitu portalnya berisi.
-// Sampai saat itu aksesnya lewat /portal.
+// Role tunggal LANGSUNG lompat ke portalnya, TANPA lewat layar pemilih (PRD
+// §4: "Single role → skip the chooser and go straight in"). Ini yang membuat
+// perpindahan landing dari /dashboard ke sini AMAN untuk 5 sales existing:
+// mereka cuma punya role SALES → cuma satu portal (Growth) → tetap mendarat
+// langsung di /dashboard seperti sebelumnya, tidak ada yang berubah dari sisi
+// mereka. Yang melihat layar pemilih hanya user dengan LEBIH dari satu portal
+// (mis. admin, atau siapa pun yang nanti pegang dua role).
 
 const PORTAL_ICONS = {
   growth: Users,
@@ -32,9 +34,10 @@ const PORTAL_ACCENT = {
   kendali: "text-violet-600 bg-violet-50",
 };
 
-// Portal yang belum punya isi di Phase 0. Ditandai eksplisit supaya tidak ada
-// yang mengklik lalu mendarat di halaman kosong tanpa penjelasan.
-const BELUM_SIAP = new Set(["bengkel", "armada", "kendali"]);
+// Portal yang belum punya isi. Ditandai eksplisit supaya tidak ada yang
+// mengklik lalu mendarat di halaman kosong tanpa penjelasan. "bengkel" sudah
+// DIKELUARKAN dari daftar ini — Papan Produksi Harian sudah nyata.
+const BELUM_SIAP = new Set(["armada", "kendali"]);
 
 export default function Portal() {
   const navigate = useNavigate();
@@ -47,13 +50,20 @@ export default function Portal() {
       .getMe()
       .then((me) => {
         if (batal) return;
-        setPortals(me.portals || []);
+        const list = me.portals || [];
+        // Role tunggal -> lompat langsung, jangan tampilkan layar pemilih
+        // untuk satu-satunya pilihan yang ada (PRD §4).
+        if (list.length === 1) {
+          navigate(list[0].path, { replace: true });
+          return;
+        }
+        setPortals(list);
       })
       .catch((err) => !batal && setError(err.message));
     return () => {
       batal = true;
     };
-  }, []);
+  }, [navigate]);
 
   if (error) {
     return (

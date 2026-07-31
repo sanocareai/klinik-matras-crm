@@ -138,31 +138,35 @@ export const ROLE_PERMISSIONS = {
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu
 // portal mana yang ditampilkan (PRD §4).
 export const PORTALS = [
+  // Label memakai istilah yang DIPAKAI TIM SEHARI-HARI, bukan istilah PRD.
+  // Gilang menyebut divisi sales sebagai "CRM & Omnichannel WhatsApp" — itu
+  // yang dipakai di UI. Key-nya tetap "growth" (identifier kode Inggris,
+  // label Indonesia — konvensi CLAUDE.md).
   {
     key: "growth",
-    label: "Growth",
-    description: "CRM, percakapan, order, pipeline penjualan",
+    label: "CRM & Omnichannel",
+    description: "Chat WhatsApp, pelanggan, order, pipeline penjualan",
     path: "/dashboard",
     roles: ["ADMIN", "SALES"],
   },
   {
     key: "bengkel",
-    label: "Bengkel",
-    description: "Produksi, tahap pengerjaan, QC, inventory",
+    label: "Produksi & Bengkel",
+    description: "Target harian, tahap pengerjaan, QC, dokumentasi",
     path: "/bengkel",
     roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"],
   },
   {
     key: "armada",
-    label: "Armada",
-    description: "Jadwal pickup & pengiriman, rute, driver",
+    label: "Armada & Pengiriman",
+    description: "Jalur pengambilan & pengiriman harian, driver",
     path: "/armada",
     roles: ["ADMIN", "DISPATCHER", "DRIVER"],
   },
   {
     key: "kendali",
     label: "Kendali",
-    description: "Dashboard lintas portal, keuangan, kapasitas",
+    description: "Ringkasan lintas divisi, keuangan, kapasitas",
     path: "/kendali",
     roles: ["ADMIN", "FINANCE"],
   },

@@ -181,6 +181,7 @@ model User {
   unitStageLogs         UnitStageLog[]          @relation("UnitStageLogActor")
   jobsAsDriver          Job[]                   @relation("JobDriver")
   qcFitTests            QcFitTest[]             @relation("QcFitTestTester")
+  productionTargets     ProductionTarget[]      @relation("ProductionTargetCreator")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -622,9 +623,10 @@ model Unit {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
-  stageLogs UnitStageLog[]
-  jobUnits  JobUnit[]
-  qcFitTests QcFitTest[]
+  stageLogs         UnitStageLog[]
+  jobUnits          JobUnit[]
+  qcFitTests        QcFitTest[]
+  productionTargets ProductionTarget[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -847,6 +849,40 @@ model JobUnit {
   @@unique([jobId, unitId])
   @@index([unitId])
   @@map("job_units")
+}
+
+// Target produksi harian (D-014). Kepala produksi menetapkan pagi hari unit
+// mana saja yang dikerjakan; sebelum tutup hasilnya di-update.
+//
+// Ini yang membuat "target hari ini tercapai berapa?" bisa dijawab — tanpa
+// tabel ini yang tersimpan cuma apa yang TERJADI, bukan apa yang DIRENCANAKAN.
+//
+// Per UNIT, bukan per order: order hotel 15 kasur tidak selalu dikerjakan
+// sekaligus dalam satu hari. UI boleh menampilkan/memilih per order — itu
+// urusan tampilan.
+//
+// BUKAN ledger append-only (beda dari UnitStageLog): salah pilih target lalu
+// dibatalkan itu wajar dan tidak punya nilai audit. Yang append-only tetap
+// hasil kerja sebenarnya.
+model ProductionTarget {
+  id         String   @id @default(uuid()) @db.Uuid
+  // DATE polos — ini "hari kerja", bukan instant. Rentang WIB diterjemahkan
+  // di tepi (backend/src/utils/wib.js).
+  targetDate DateTime @map("target_date") @db.Date
+  unitId     String   @map("unit_id") @db.Uuid
+  unit       Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  // SetNull: kepala produksi resign, riwayat targetnya TETAP ada.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("ProductionTargetCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([targetDate, unitId])
+  @@index([targetDate])
+  @@index([unitId])
+  @@map("production_targets")
 }
 
 enum FitVerdict {

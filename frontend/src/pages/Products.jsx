@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Upload, ChevronUp, ChevronDown, Package, Tag } from "lucide-react";
 import { api } from "../api.js";
+import { compressImage } from "../utils/compressImage.js";
 
 const KATEGORI_OPTIONS = ["Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
 
@@ -8,26 +9,6 @@ function formatHarga(price, priceUnit) {
   if (!price) return "-";
   const angka = `Rp${price.toLocaleString("id-ID")}`;
   return priceUnit ? `${priceUnit} ${angka}` : angka;
-}
-
-// Kompres gambar di browser sebelum upload
-async function compressImage(file, maxWidth = 1600, quality = 0.8) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxWidth / img.width);
-      const canvas = document.createElement("canvas");
-      canvas.width  = Math.round(img.width  * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (blob) => resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" })),
-        "image/jpeg",
-        quality
-      );
-    };
-    img.src = URL.createObjectURL(file);
-  });
 }
 
 // ── ProductEditor ─────────────────────────────────────────────────────────────
