@@ -151,6 +151,25 @@ export const api = {
 
   // Kendali — dashboard lintas portal (Sano Hub Phase 1)
   getKendaliOverview: () => request("/kendali/overview"),
+
+  // Gudang — Inventory v1 (Sano Hub Phase 3)
+  getMaterials: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/inventory/materials${qs ? `?${qs}` : ""}`);
+  },
+  createMaterial: (data) => request("/inventory/materials", { method: "POST", body: JSON.stringify(data) }),
+  updateMaterial: (id, data) => request(`/inventory/materials/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getStock: () => request("/inventory/stock"),
+  getStockMovements: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/inventory/movements${qs ? `?${qs}` : ""}`);
+  },
+  receiveStock: (data) => request("/inventory/movements/receipt", { method: "POST", body: JSON.stringify(data) }),
+  issueStock: (data) => request("/inventory/movements/issue", { method: "POST", body: JSON.stringify(data) }),
+  returnStock: (data) => request("/inventory/movements/return", { method: "POST", body: JSON.stringify(data) }),
+  wasteStock: (data) => request("/inventory/movements/waste", { method: "POST", body: JSON.stringify(data) }),
+  adjustStock: (data) => request("/inventory/movements/adjustment", { method: "POST", body: JSON.stringify(data) }),
+  getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, Camera, CheckCircle2, ClipboardList, Loader2, Plus, X,
 } from "lucide-react";
@@ -245,6 +246,7 @@ function AddTargetPanel({ available, date, onAdded, onClose }) {
 
 // ── Halaman ───────────────────────────────────────────────────────────────
 export default function Bengkel() {
+  const navigate = useNavigate();
   const [board, setBoard] = useState(null);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -309,7 +311,17 @@ export default function Bengkel() {
             <Plus className="h-4 w-4" /> Tambah Target
           </Button>
         }
-      />
+      >
+        <div className="mt-2 flex gap-2">
+          <button className="rounded-chip bg-accentbg px-3 py-1 text-[13px] font-medium text-accent">
+            Papan Produksi
+          </button>
+          <button onClick={() => navigate("/gudang")}
+            className="rounded-chip px-3 py-1 text-[13px] font-medium text-ink2 hover:bg-hovertint">
+            Gudang
+          </button>
+        </div>
+      </PageHeader>
 
       {adding && (
         <AddTargetPanel

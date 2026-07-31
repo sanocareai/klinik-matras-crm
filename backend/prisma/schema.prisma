@@ -184,6 +184,7 @@ model User {
   productionTargets     ProductionTarget[]      @relation("ProductionTargetCreator")
   paymentsRecorded      Payment[]               @relation("PaymentRecorder")
   paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
+  stockMovements        StockMovement[]         @relation("StockMovementActor")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -635,6 +636,7 @@ model Unit {
   jobUnits          JobUnit[]
   qcFitTests        QcFitTest[]
   productionTargets ProductionTarget[]
+  stockMovements    StockMovement[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -1184,4 +1186,106 @@ model ReplySuggestionLog {
 
   @@index([userId, createdAt]) // penghitung kuota harian per-user
   @@index([createdAt]) // rollup biaya bulanan
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// INVENTORY v1 (Phase 3, PRD §8 — "the part that must be right"). Scope
+// SENGAJA dipersempit dari PRD lengkap (disepakati dengan Gilang 1 Agustus
+// 2026): katalog material + ledger + goods receipt + issue manual + stock
+// opname. DITUNDA ke iterasi berikutnya — jangan tergoda menambah sekarang
+// (CLAUDE.md §"Jangan membangun untuk nanti"): BoM auto-expand saat order
+// dikonfirmasi, foam remnant per-sheet (§8.2 PRD), reservasi vs
+// available-to-promise (§8, FR-I-03), reorder point alert (FR-I-05), yield
+// report (FR-I-08). Struktur di bawah ini SENGAJA tidak menutup jalan ke
+// fitur itu (materialId + location sudah cukup umum), tapi juga tidak
+// mencoba menebak bentuknya sekarang.
+
+enum MaterialUnit {
+  PCS
+  METER
+  M3 // meter kubik — busa, dihitung per PRD §8.2 (walau remnant per-sheet-nya sendiri ditunda)
+  SHEET
+  SPOOL
+  KG
+}
+
+enum StockMovementType {
+  RECEIPT    // masuk dari supplier (FR-I-01)
+  ISSUE      // keluar, dipakai ke unit produksi (FR-P-08)
+  RETURN     // sisa material kembali ke gudang
+  WASTE      // terbuang/rusak, WAJIB alasan
+  ADJUSTMENT // hasil stock opname, WAJIB alasan (FR-I-06)
+}
+
+// Katalog material — BUKAN ledger, boleh diedit (nama, status aktif).
+// `serviceLine` NULL = dipakai lintas lini (benang, plastik wrap); terisi =
+// khusus SERVICE atau UPGRADE (D-004: dua lini tidak boleh campur material).
+model Material {
+  id     String       @id @default(uuid()) @db.Uuid
+  code   String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
+  name   String
+  unit   MaterialUnit
+  serviceLine ServiceLine? @map("service_line")
+  active Boolean      @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  movements StockMovement[]
+
+  @@index([active])
+  @@map("materials")
+}
+
+// Ledger APPEND-ONLY (PRD §8.1: "Never store current_qty as a mutable
+// column" — prinsip yang SAMA dengan unit_stage_logs di area Bengkel).
+// Stok dihitung on-the-fly lewat SUM(qty) per material (lihat routes/
+// inventory.js GET /stock) — BUKAN materialized view seperti disarankan
+// PRD, sengaja disederhanakan: volume data di v1 ini kecil, agregasi
+// langsung selalu akurat (tidak ada risiko view basi) dan tidak perlu
+// infrastruktur refresh/cron tambahan. Revisit kalau volume sudah besar.
+model StockMovement {
+  id         String   @id @default(uuid()) @db.Uuid
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  type StockMovementType
+
+  // SELALU dalam satuan Material.unit. Tanda ikut arah: RECEIPT/RETURN
+  // positif, ISSUE/WASTE negatif, ADJUSTMENT bisa dua-duanya (variasi bisa
+  // lebih atau kurang dari hitungan sistem). Decimal(12,4) — cukup presisi
+  // untuk m³ busa (PRD §8.2 contoh: 0.152 m³).
+  qty Decimal @db.Decimal(12, 4)
+
+  // v1: string bebas, BUKAN tabel Location terpisah (YAGNI — belum ada
+  // kebutuhan nyata multi-gudang). Default satu lokasi supaya endpoint yang
+  // tidak peduli lokasi tetap sederhana.
+  location String @default("GUDANG_UTAMA")
+
+  // ISSUE ke unit produksi (FR-P-08) — NULL untuk movement yang tidak
+  // terikat ke unit tertentu (RECEIPT, ADJUSTMENT hasil stock opname).
+  unitId String? @map("unit_id") @db.Uuid
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  // Diisi saat RECEIPT (FR-I-01: "records qty, unit cost, supplier,
+  // batch") — bukan fitur tambahan, ini bagian inti goods receipt.
+  unitCost    Int?    @map("unit_cost") // Rupiah per satuan
+  supplier    String?
+  batchNumber String? @map("batch_number")
+
+  // WAJIB diisi untuk WASTE dan ADJUSTMENT (FR-I-06: "system records
+  // variance as an ADJUSTMENT movement with mandatory reason") — validasi
+  // di route handler, bukan constraint DB (beda jenis movement beda aturan).
+  reason String?
+  note   String?
+
+  // SetNull, bukan Restrict: pegawai gudang resign, riwayat pergerakan
+  // stok TETAP ada — sama prinsipnya dengan aktor di unit_stage_logs.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("StockMovementActor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([materialId, createdAt]) // saldo & riwayat per material
+  @@index([unitId]) // "material apa saja yang dipakai unit ini"
+  @@map("stock_movements")
 }

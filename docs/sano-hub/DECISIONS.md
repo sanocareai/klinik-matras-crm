@@ -609,3 +609,49 @@ jaringan mati (bukan asumsi) — aksi start (tanpa lampiran) DAN complete
 berubah selagi "offline", lalu tersinkron benar begitu jaringan "pulih"
 (event `online` dipicu ulang). Kasus error API (job ID palsu) juga
 diverifikasi TETAP di antrean dengan pesan error, bukan hilang.
+
+---
+
+## D-021 — Inventory v1: inti dulu, sisanya menyusul (Phase 3)
+
+**Keputusan.** Disepakati dengan Gilang 1 Agustus 2026: Inventory PRD §8
+dipersempit ke inti dulu — katalog `Material` + ledger `stock_movements`
+APPEND-ONLY (RECEIPT/ISSUE/RETURN/WASTE/ADJUSTMENT) + goods receipt (FR-I-01)
++ issue manual ke unit (FR-P-08) + stock opname (FR-I-06), dengan halaman
+Gudang di dalam portal Bengkel (tab, bukan portal ke-5 — PRD sendiri bilang
+"Workshop mencakup production + materials + QC dalam satu kata").
+
+**DITUNDA ke iterasi berikutnya (JANGAN dibangun sekarang):**
+- BoM auto-expand saat order dikonfirmasi (§8.3) — perlu desain terpisah:
+  bagaimana spec/routing module memetakan ke baris BoM
+- Foam remnant per-sheet (§8.2: sheet_count DAN volume_m³ sekaligus,
+  REMNANT-BIN) — v1 cuma hitung volume total, belum per-lembar
+- Reservasi vs available-to-promise (FR-I-03)
+- Reorder point alert (FR-I-05) — makanya kolom reorder point SENGAJA
+  tidak ditambahkan ke `Material` sekarang (CLAUDE.md: jangan membangun
+  untuk nanti)
+- Yield report (FR-I-08)
+- Multi-lokasi sungguhan — `location` di v1 cuma string bebas dengan
+  default `"GUDANG_UTAMA"`, bukan tabel Location terpisah
+
+**Kenapa stok dihitung on-the-fly, bukan materialized view.** PRD §8.1
+menyarankan `stock_balance` materialized view yang di-refresh tiap tulis.
+Di v1 ini disederhanakan jadi agregat `SUM(qty)` langsung saat baca — pada
+volume data sekarang selalu akurat (tidak ada risiko view basi) dan tidak
+perlu infrastruktur refresh/cron tambahan. Revisit kalau tabel movement
+sudah besar dan agregat langsung mulai terasa lambat.
+
+**Kenapa `qty` disimpan bertanda (+/-), bukan qty absolut + kolom arah.**
+Ledger jadi bisa langsung di-SUM tanpa CASE/pivot berdasarkan `type` —
+konsisten dengan pola PRD §8 sendiri ("RECEIPT +qty ... ISSUE −qty").
+ADJUSTMENT dari stock opname dihitung otomatis oleh server (selisih hasil
+hitung fisik dikurangi saldo sekarang), BUKAN diinput manual sebagai qty
+bertanda oleh user — mencegah gudang salah tanda saat kondisi paling umum
+(fisik lebih SEDIKIT dari sistem, variance negatif).
+
+**Verifikasi.** Diuji lewat API langsung (receipt 10 m³ → issue 0.152 m³ ke
+unit nyata → waste 0.05 m³ dengan alasan → stock opname hasil hitung 9.5
+→ variance dihitung server persis -0.298, saldo akhir tepat 9.5) dan lewat
+UI dari login: tambah material baru, catat penerimaan, saldo & riwayat
+ter-update benar. Guard permission (INVENTORY_READ/WRITE, WAJIB alasan
+untuk WASTE/ADJUSTMENT, tolak variance nol) semua diverifikasi lewat curl.
