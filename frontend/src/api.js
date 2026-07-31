@@ -142,6 +142,9 @@ export const api = {
   startArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/start`, { method: "POST" }),
   arriveArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST" }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Kendali — dashboard lintas portal (Sano Hub Phase 1)
+  getKendaliOverview: () => request("/kendali/overview"),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap

@@ -30,6 +30,7 @@ const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("./pages/Portal.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
+const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
@@ -161,6 +162,7 @@ export default function App() {
             <Route path="/portal"      element={<Portal />} />
             <Route path="/bengkel"     element={<Bengkel />} />
             <Route path="/armada"      element={<Armada />} />
+            <Route path="/kendali"     element={<Kendali />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />

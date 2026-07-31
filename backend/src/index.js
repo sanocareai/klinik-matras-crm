@@ -31,6 +31,7 @@ import { adminRouter }    from "./routes/admin.js";
 import { unitRouter }     from "./routes/units.js";
 import { productionRouter } from "./routes/production.js";
 import { armadaRouter }     from "./routes/armada.js";
+import { kendaliRouter }    from "./routes/kendali.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
@@ -79,6 +80,7 @@ app.use("/api/knowledge",    knowledgeRouter);
 app.use("/api/units",        unitRouter);
 app.use("/api/production",   productionRouter);
 app.use("/api/armada",       armadaRouter);
+app.use("/api/kendali",      kendaliRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);

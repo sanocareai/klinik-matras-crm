@@ -35,11 +35,11 @@ const PORTAL_ACCENT = {
 };
 
 // Portal yang belum punya isi. Ditandai eksplisit supaya tidak ada yang
-// mengklik lalu mendarat di halaman kosong tanpa penjelasan. "bengkel" dan
-// "armada" sudah DIKELUARKAN dari daftar ini — Papan Produksi Harian dan
-// dispatcher Armada sudah nyata (tampilan driver di Armada masih menyusul,
-// ditangani sendiri di dalam Armada.jsx, bukan di sini).
-const BELUM_SIAP = new Set(["kendali"]);
+// mengklik lalu mendarat di halaman kosong tanpa penjelasan. Semua 4 portal
+// (growth/bengkel/armada/kendali) sekarang punya isi nyata — set ini sengaja
+// dibiarkan ada (bukan dihapus) supaya pola penandaan "belum siap" tetap
+// tersedia kalau ada portal baru ditambahkan nanti.
+const BELUM_SIAP = new Set([]);
 
 export default function Portal() {
   const navigate = useNavigate();
