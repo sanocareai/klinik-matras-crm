@@ -488,6 +488,27 @@ dilaporkan lewat grup WhatsApp dengan foto uang. Volumenya kecil (jadi murah
 dibangun), tapi ini SATU-SATUNYA jejak audit kas yang ada sekarang — permukaan
 kebocoran paling nyata di operasi.
 
+**Implementasi (1 Agustus 2026).** Dua tabel: `payments` (APPEND-ONLY —
+amount, method CASH/TRANSFER/QRIS, foto bukti opsional, siapa yang mencatat)
+dan `payment_verifications` (baris terpisah, bukan kolom `verifiedAt` di
+`payments`, supaya `payments` tetap murni INSERT sesuai aturan ledger di
+CLAUDE.md). "Sudah diverifikasi?" = ADA baris di `payment_verifications`
+untuk payment itu, bukan status yang bisa di-toggle bolak-balik.
+
+Endpoint: `POST /armada/jobs/:id/payment` (driver, HANYA job DELIVERY — D-011
+lahir dari kasus "bayar cash saat kasur diantar", bukan saat diambil),
+`GET /armada/payments` (PAYMENT_READ — ADMIN+FINANCE), `POST
+/armada/payments/:id/verify` (PAYMENT_WRITE — FINANCE saja, ADMIN sengaja
+TIDAK punya ini, sama prinsipnya dengan D-013: siapa yang boleh mencatat
+uang masuk harus jelas, bukan admin serba-bisa). UI: form pencatatan di
+`DriverJobs.jsx` (foto bukti WAJIB kalau metode CASH, opsional untuk
+transfer/QRIS), rekonsiliasi finance di `Kendali.jsx` — bagian ini punya
+loading/error state sendiri, terpisah dari overview, karena PAYMENT_READ
+tidak otomatis dipegang SEMUA role yang boleh buka portal Kendali (ADMIN
+dan FINANCE keduanya punya PAYMENT_READ jadi keduanya lihat daftar
+pembayaran, tapi tombol "Verifikasi" cuma muncul untuk role FINANCE —
+dicek dari `roles` di localStorage, bukan tebakan dari role tunggal lama).
+
 ---
 
 ## D-019 — Login driver: email+password biasa, akun dibuatkan admin (bukan OTP, bukan Google)

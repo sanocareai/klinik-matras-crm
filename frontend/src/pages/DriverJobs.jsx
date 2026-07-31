@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, Loader2, MapPin, Navigation, Phone, Truck, X,
+  AlertTriangle, Camera, CheckCircle2, Loader2, MapPin, Navigation, Phone, Truck, Wallet, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
+import { formatRupiah } from "../utils/format.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -61,6 +62,122 @@ function PhotoCapture({ jobId, photos, setPhotos }) {
       {photos.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {photos.map((u) => <img key={u} src={u} alt="" className="h-14 w-14 rounded-md object-cover" />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PAYMENT_METHODS = [
+  { value: "CASH", label: "Tunai" },
+  { value: "TRANSFER", label: "Transfer" },
+  { value: "QRIS", label: "QRIS" },
+];
+
+// ── Catat Pembayaran (D-011) — HANYA untuk job DELIVERY yang sudah selesai.
+// Customer kadang bayar cash langsung ke driver saat kasur diantar; ini
+// satu-satunya jejak audit kas yang ada sekarang, jadi dibuat semudah
+// mungkin — jumlah + metode, foto opsional (WAJIB kalau tunai, supaya ada
+// bukti serah terima uang, sama semangatnya dengan foto bukti job).
+function PaymentSection({ job, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("CASH");
+  const [photo, setPhoto] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function handlePhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const compressed = await compressImage(file);
+      const fd = new FormData();
+      fd.append("photos", compressed);
+      const { urls } = await api.uploadJobPhotos(job.id, fd);
+      setPhoto(urls[0]);
+    } catch (e2) {
+      setErr("Gagal upload foto: " + e2.message);
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleSave() {
+    const amountInt = parseInt(amount, 10);
+    if (!amountInt || amountInt <= 0) { setErr("Jumlah wajib diisi"); return; }
+    if (method === "CASH" && !photo) { setErr("Foto bukti wajib untuk pembayaran tunai"); return; }
+    setBusy(true);
+    setErr("");
+    try {
+      await api.recordJobPayment(job.id, { amount: amountInt, method, proofPhotoUrl: photo });
+      setOpen(false);
+      setAmount(""); setMethod("CASH"); setPhoto(null);
+      onChanged();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      {job.payments?.length > 0 && (
+        <div className="mb-2 space-y-1.5">
+          {job.payments.map((p) => (
+            <div key={p.id} className="flex items-center justify-between rounded-lg bg-inset px-3 py-2 text-xs">
+              <span className="font-semibold text-ink">{formatRupiah(p.amount)}</span>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="neutral">{PAYMENT_METHODS.find((m) => m.value === p.method)?.label || p.method}</Badge>
+                {p.verifications?.length > 0 && <Badge variant="green">Terverifikasi</Badge>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!open && (
+        <Button variant="neutral" className="h-10 w-full text-xs" onClick={() => setOpen(true)}>
+          <Wallet className="h-3.5 w-3.5" /> Catat Pembayaran
+        </Button>
+      )}
+
+      {open && (
+        <div className="space-y-2">
+          <input
+            type="number" inputMode="numeric" placeholder="Jumlah diterima (Rp)"
+            value={amount} onChange={(e) => setAmount(e.target.value)}
+            className="h-10 w-full rounded-lg border border-border px-3 text-sm outline-none focus:border-accent"
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            {PAYMENT_METHODS.map((m) => (
+              <button
+                key={m.value} type="button" onClick={() => setMethod(m.value)}
+                className={`h-9 rounded-lg border-2 text-xs font-medium ${
+                  method === m.value ? "border-accent bg-accentbg text-accent" : "border-border text-ink2"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed
+                            border-border text-xs font-medium text-ink2 hover:border-accent hover:text-accent">
+            {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+            {photo ? "Foto tersimpan" : "Foto Bukti (opsional untuk non-tunai)"}
+            <input type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} disabled={uploadingPhoto} />
+          </label>
+          {err && <p className="text-[11px] text-red">{err}</p>}
+          <div className="flex gap-2">
+            <Button variant="neutral" className="h-10 flex-1 text-xs" onClick={() => { setOpen(false); setErr(""); }}>Batal</Button>
+            <Button className="h-10 flex-1 text-xs" disabled={busy} onClick={handleSave}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Simpan"}
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -181,9 +298,12 @@ function JobCard({ job, onChanged }) {
       )}
 
       {mode === "idle" && job.status === "COMPLETED" && (
-        <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-green">
-          <CheckCircle2 className="h-4 w-4" /> Selesai
-        </div>
+        <>
+          <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-green">
+            <CheckCircle2 className="h-4 w-4" /> Selesai
+          </div>
+          {job.type === "DELIVERY" && <PaymentSection job={job} onChanged={onChanged} />}
+        </>
       )}
       {mode === "idle" && job.status === "FAILED" && (
         <div className="mt-3 rounded-lg bg-redbg px-2.5 py-2 text-xs text-red">{job.failureReason}</div>

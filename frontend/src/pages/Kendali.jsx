@@ -1,10 +1,108 @@
-import React, { useEffect, useState } from "react";
-import { AlertTriangle, Gauge, Loader2, PackageCheck, TrendingDown, Truck } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Gauge, Loader2, PackageCheck, TrendingDown, Truck, Wallet } from "lucide-react";
 import { api } from "../api.js";
+import { formatRupiah } from "../utils/format.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+
+function currentRoles() {
+  try {
+    return JSON.parse(localStorage.getItem("user"))?.roles || [];
+  } catch {
+    return [];
+  }
+}
+
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+
+// Pembayaran Driver (D-011) — rekonsiliasi finance. Bagian ini SENGAJA
+// punya loading/error state SENDIRI, terpisah dari overview di atas:
+// PAYMENT_READ cuma dipegang ADMIN+FINANCE (bukan semua yang boleh buka
+// Kendali secara permission granular), jadi kalau endpoint ini 403 untuk
+// suatu akun, sisa halaman tetap harus jalan normal.
+function PaymentReconciliation() {
+  const [payments, setPayments] = useState(null);
+  const [error, setError] = useState("");
+  const [verifyingId, setVerifyingId] = useState(null);
+  const canVerify = currentRoles().includes("FINANCE");
+
+  const load = useCallback(() => {
+    api.getPayments().then(setPayments).catch((err) => setError(err.message));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleVerify(id) {
+    setVerifyingId(id);
+    try {
+      await api.verifyPayment(id);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setVerifyingId(null);
+    }
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Pembayaran Driver</CardTitle></CardHeader>
+        <p className="text-[13px] text-red">{error}</p>
+      </Card>
+    );
+  }
+  if (!payments) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Pembayaran Driver</CardTitle></CardHeader>
+        <div className="flex items-center gap-2 py-6 text-ink2">
+          <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-[13px]">Memuat…</span>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Pembayaran Driver</CardTitle></CardHeader>
+      {payments.length === 0 ? (
+        <EmptyState icon={Wallet} title="Belum ada pembayaran tercatat" description="Muncul di sini begitu driver mencatat penerimaan di stop pengiriman." />
+      ) : (
+        <div className="flex flex-col gap-2">
+          {payments.map((p) => {
+            const verified = p.verifications?.length > 0;
+            return (
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-btn bg-inset px-4 py-3">
+                <div className="min-w-[160px] flex-1">
+                  <div className="text-[13px] font-semibold text-ink">{formatRupiah(p.amount)}</div>
+                  <div className="text-[12px] text-ink2">
+                    {p.job?.order?.orderNumber || "—"} · {p.job?.order?.customer?.name || "—"} · dicatat {p.recordedBy?.name || "—"}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant="neutral">{PAYMENT_METHOD_LABEL[p.method] || p.method}</Badge>
+                  {verified ? (
+                    <Badge variant="green">Terverifikasi</Badge>
+                  ) : canVerify ? (
+                    <Button className="h-8 px-3 text-xs" disabled={verifyingId === p.id} onClick={() => handleVerify(p.id)}>
+                      {verifyingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Verifikasi"}
+                    </Button>
+                  ) : (
+                    <Badge variant="orange">Belum Diverifikasi</Badge>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 // KENDALI — dashboard ringkasan lintas portal (PRD §7.7, FR-C). Sano Hub Phase 1.
 //
@@ -222,6 +320,8 @@ export default function Kendali() {
             )}
           </Card>
         </div>
+
+        <PaymentReconciliation />
 
         {/* Belum bisa dihitung — jujur, bukan disembunyikan */}
         {unavailable && (

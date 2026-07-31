@@ -182,6 +182,8 @@ model User {
   jobsAsDriver          Job[]                   @relation("JobDriver")
   qcFitTests            QcFitTest[]             @relation("QcFitTestTester")
   productionTargets     ProductionTarget[]      @relation("ProductionTargetCreator")
+  paymentsRecorded      Payment[]               @relation("PaymentRecorder")
+  paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -840,7 +842,8 @@ model Job {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
-  units JobUnit[]
+  units    JobUnit[]
+  payments Payment[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -860,6 +863,60 @@ model JobUnit {
   @@unique([jobId, unitId])
   @@index([unitId])
   @@map("job_units")
+}
+
+// Pembayaran tunai ke driver (D-011). APPEND-ONLY (CLAUDE.md sano-hub §"Dua
+// aturan": payments ada di daftar ledger yang cuma boleh INSERT) — verifikasi
+// finance BUKAN kolom yang di-UPDATE di baris ini, itu baris BARU di
+// PaymentVerification. "Sudah diverifikasi?" = ADA baris verifikasi untuk
+// payment ini, bukan status yang bisa berubah bolak-balik.
+model Payment {
+  id    String        @id @default(uuid()) @db.Uuid
+  jobId String        @map("job_id") @db.Uuid
+  job   Job           @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  amount        Int // Rupiah, integer
+  method        PaymentMethod
+  proofPhotoUrl String? @map("proof_photo_url")
+
+  // Restrict, BUKAN SetNull: siapa yang mencatat penerimaan uang adalah inti
+  // jejak audit ini — kalau pencatatnya (driver) dihapus, baris ini justru
+  // TIDAK BOLEH kehilangan jejak pelakunya. Hapus user driver harus diblokir
+  // selama masih ada Payment atas namanya (beda dari Job.driverId yang boleh
+  // SetNull — itu cuma penugasan kerja, bukan pencatatan uang).
+  recordedById String @map("recorded_by")
+  recordedBy   User   @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  verifications PaymentVerification[]
+
+  @@index([jobId])
+  @@index([recordedById, createdAt]) // rekonsiliasi harian per driver
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  QRIS
+}
+
+// Verifikasi finance atas satu Payment — baris terpisah, BUKAN kolom
+// verifiedAt/verifiedById di Payment, supaya Payment tetap murni
+// append-only (lihat catatan di atas).
+model PaymentVerification {
+  id        String  @id @default(uuid()) @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  verifiedById String @map("verified_by")
+  verifiedBy   User   @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([paymentId]) // satu payment cuma diverifikasi sekali
+  @@map("payment_verifications")
 }
 
 // Target produksi harian (D-014). Kepala produksi menetapkan pagi hari unit

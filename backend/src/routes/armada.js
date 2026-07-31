@@ -125,6 +125,9 @@ const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE",
 
 const jobInclude = {
   driver: { select: { id: true, name: true } },
+  payments: {
+    select: { id: true, amount: true, method: true, createdAt: true, verifications: { select: { id: true } } },
+  },
   units: {
     include: {
       unit: {
@@ -528,6 +531,95 @@ armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (r
 
     res.json(full);
   } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// ── Pembayaran tunai (D-011) ────────────────────────────────────────────
+// payments APPEND-ONLY (lihat catatan di schema.prisma) — endpoint ini
+// hanya pernah INSERT, tidak pernah UPDATE baris Payment. "Sudah
+// diverifikasi?" dibaca dari ADA-TIDAKNYA baris PaymentVerification.
+
+const paymentInclude = {
+  recordedBy: { select: { id: true, name: true } },
+  verifications: { include: { verifiedBy: { select: { id: true, name: true } } } },
+  job: {
+    select: {
+      id: true, type: true, orderId: true,
+      order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+    },
+  },
+};
+
+// POST /api/armada/jobs/:id/payment { amount, method, proofPhotoUrl? }
+// Sengaja HANYA untuk job DELIVERY — D-011 lahir dari kasus nyata "customer
+// bayar cash ke driver [saat kirim]", bukan saat ambil.
+armadaRouter.post("/jobs/:id/payment", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (job.type !== "DELIVERY") {
+      throw new ArmadaError("Pembayaran hanya dicatat di job pengiriman");
+    }
+    const { amount, method, proofPhotoUrl } = req.body;
+    const amountInt = Number(amount);
+    if (!Number.isInteger(amountInt) || amountInt <= 0) {
+      throw new ArmadaError("Jumlah pembayaran wajib angka bulat lebih dari 0");
+    }
+    if (!["CASH", "TRANSFER", "QRIS"].includes(method)) {
+      throw new ArmadaError("Metode pembayaran tidak valid");
+    }
+    if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/job-photos/")) {
+      throw new ArmadaError("URL foto bukti tidak valid");
+    }
+
+    const payment = await prisma.payment.create({
+      data: {
+        jobId: job.id, amount: amountInt, method,
+        proofPhotoUrl: proofPhotoUrl || null,
+        recordedById: req.user.id,
+      },
+      include: paymentInclude,
+    });
+    res.status(201).json(payment);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/payments?driverId=&date= — rekonsiliasi finance.
+// date difilter berdasarkan HARI WIB (utils/wib.js), bukan UTC polos — lihat
+// aturan tanggal/timezone di CLAUDE.md root §11.
+armadaRouter.get("/payments", requirePermission(P.PAYMENT_READ), async (req, res) => {
+  try {
+    const { driverId, date } = req.query;
+    const where = {};
+    if (driverId) where.recordedById = driverId;
+    if (date) {
+      where.createdAt = { gte: startOfDayWIB(date), lt: endOfDayExclusiveWIB(date) };
+    }
+    const payments = await prisma.payment.findMany({
+      where, include: paymentInclude, orderBy: { createdAt: "desc" },
+    });
+    res.json(payments);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/payments/:id/verify — finance menandai payment ini
+// sudah dicocokkan dengan uang yang benar-benar diterima. INSERT baris
+// baru, bukan update — kalau sudah pernah diverifikasi, unique constraint
+// menolak (satu payment cuma sekali verifikasi).
+armadaRouter.post("/payments/:id/verify", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    await prisma.paymentVerification.create({
+      data: { paymentId: req.params.id, verifiedById: req.user.id },
+    });
+    const payment = await prisma.payment.findUnique({ where: { id: req.params.id }, include: paymentInclude });
+    res.json(payment);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "Pembayaran ini sudah diverifikasi" });
+    if (err.code === "P2003") return res.status(404).json({ error: "Pembayaran tidak ditemukan" });
     handleErr(err, res);
   }
 });

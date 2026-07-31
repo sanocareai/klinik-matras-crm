@@ -142,6 +142,12 @@ export const api = {
   startArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/start`, { method: "POST" }),
   arriveArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST" }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
+  recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  getPayments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/armada/payments${qs ? `?${qs}` : ""}`);
+  },
+  verifyPayment: (id) => request(`/armada/payments/${id}/verify`, { method: "POST" }),
 
   // Kendali — dashboard lintas portal (Sano Hub Phase 1)
   getKendaliOverview: () => request("/kendali/overview"),
