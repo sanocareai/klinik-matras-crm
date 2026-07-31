@@ -105,6 +105,12 @@ export const api = {
   recordStageDone: (unitId, { photoUrls, note } = {}) =>
     request(`/production/units/${unitId}/done`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
   getOrderDocumentation: (orderId) => request(`/production/orders/${orderId}/documentation`),
+  // Kirim tahap dokumentasi terpilih ke customer via WAHA (D-015). entries =
+  // subset dari GET getOrderDocumentation di atas yang dicentang sales.
+  sendDocumentation: (conversationId, orderId, entries) =>
+    request(`/conversations/${conversationId}/send-documentation`, {
+      method: "POST", body: JSON.stringify({ orderId, entries }),
+    }),
 
   // Unit — detail & aksi tahap
   getUnitStatus: (unitId) => request(`/units/${unitId}`),

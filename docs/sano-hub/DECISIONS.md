@@ -209,6 +209,58 @@ melihat nomor telepon customer maupun harga.
 
 ---
 
+## D-016 — Kirim dokumentasi lewat WAHA langsung dari CRM (menggantikan asumsi D-015)
+
+**Menggantikan asumsi di D-015** ("sistem menyiapkan, sales forward manual
+lewat WhatsApp pribadi").
+
+**Konteks (Gilang, 31 Juli 2026).** Diminta eksplisit: "lanjut bikin kirim ke
+customer via WAHA." Sales tidak lagi perlu save-lalu-forward manual — tab
+Dokumentasi (D-015) sekarang punya tombol kirim langsung.
+
+**Keputusan.** `POST /conversations/:id/send-documentation`, MENIRU PERSIS
+pola `/conversations/:id/send-product` yang sudah dipercaya di production
+(delay 1500ms antar foto, `sendWithSessionFallback` CS-1/CS-2, pesan error
+`SESSION_UNKNOWN_ERROR` yang sama) — bukan jalur kirim baru dari nol. Beda
+utamanya: tiap TAHAP dapat caption sendiri (nama tahap + catatan), bukan satu
+caption di foto terakhir seperti send-product, supaya customer paham "ini
+foto tahap apa".
+
+**Manusia tetap memutuskan, cuma jalurnya pindah.** Sales melihat foto,
+MENCENTANG tahap mana yang mau dikirim, baru menekan kirim — bukan sistem
+auto-kirim begitu kepala produksi mencatat tahap selesai. Prinsip D-015
+("manusia mereview sebelum sampai ke customer") tetap dipegang, cuma
+reviewnya sekarang terjadi di CRM alih-alih di aplikasi WhatsApp pribadi sales.
+
+**Pengaman yang WAJIB ada, ditambahkan di endpoint ini:**
+1. **Validasi kepemilikan order↔conversation** — order yang dikirim HARUS
+   milik `customerId` yang sama dengan percakapan tujuan. Tanpa ini, salah
+   klik di tab browser lain bisa mengirim foto kasur customer A ke chat
+   customer B.
+2. **Whitelist path foto** (`/media/unit-photos/...` saja) — `entries` datang
+   dari body request yang dikontrol klien. Tanpa filter ini, endpoint bisa
+   dipaksa mem-fetch URL APA SAJA dan mengirimkannya sebagai lampiran WhatsApp
+   (SSRF lewat parameter file WAHA).
+
+**Permission:** TIDAK ada perubahan — endpoint ini ikut pola
+`conversations.js` yang sudah ada (`requireAuth` polos, bukan
+`requirePermission` granular Sano Hub), konsisten dengan seluruh endpoint
+kirim pesan lain di file yang sama. SALES sudah punya `CONVERSATION_WRITE`
+dari sebelumnya.
+
+**Diverifikasi TANPA mengirim pesan WhatsApp sungguhan** (tidak ada sesi WAHA
+nyata di lingkungan verifikasi, dan mengirim ke nomor uji buatan bukan hal
+yang pantas dicoba): seluruh cabang validasi diuji lewat curl (orderId
+hilang, entries kosong, conversation tidak ada, order↔customer tidak cocok,
+URL foto berbahaya difilter), dan jalur kirim asli diuji sampai titik
+"WAHA tidak terjangkau" — sistem gagal dengan bersih (409
+`SESSION_UNKNOWN_ERROR`, log rapi per foto, tidak crash), PERSIS seperti
+perilaku send-product yang sudah dipercaya. UI (checkbox, tombol, hitungan
+tahap terpilih) diverifikasi lewat browser sungguhan sampai tepat sebelum
+tombol kirim ditekan.
+
+---
+
 ## D-014 — Model kiosk scan DIBATALKAN, diganti Papan Produksi Harian
 
 **Menggantikan sebagian D-005 dan asumsi PRD §1.6 / §7.5 (FR-P-01, FR-P-02).**

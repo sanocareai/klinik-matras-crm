@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, Clock, MessageSquare, Timer, Camera, ImageOff } from "lucide-react";
+import { X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2 } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -11,28 +11,59 @@ import { cn } from "@/lib/utils.js";
 // Tab "Dokumentasi" (D-015) — berkas foto per tahap produksi untuk order ini,
 // dikumpulkan dari unit_stage_logs.photo_urls milik SEMUA unit order. Ini
 // yang "kelebihan Sano" yang Gilang sebut: tiap proses/uji didokumentasikan
-// dan dikirim ke customer. Sales melihat berkas terkumpul di sini, lalu
-// FORWARD MANUAL ke customer (D-015 — sistem TIDAK auto-kirim; asumsi
-// terbuka, lihat DECISIONS.md kalau nanti mau diubah).
+// dan dikirim ke customer.
 //
-// Klik foto membuka ukuran penuh di tab baru — cara paling sederhana & robust
-// untuk "simpan lalu forward" (klik kanan simpan / tekan lama di HP), tanpa
-// membangun lightbox kustom untuk kebutuhan yang sesederhana ini.
-function DocumentationTab({ orderId }) {
+// DUA cara pakai:
+//  1. Klik foto → buka ukuran penuh di tab baru → simpan & forward manual
+//     lewat WhatsApp pribadi sales (cara lama, tetap bisa dipakai).
+//  2. Centang tahap yang mau dikirim → "Kirim ke Customer" → terkirim
+//     LANGSUNG lewat WAHA ke chat WhatsApp customer ini (POST
+//     /conversations/:id/send-documentation, backend/routes/conversations.js).
+//     Manusia (sales) tetap yang MEMILIH & MEMICU — bukan sistem auto-kirim.
+function DocumentationTab({ orderId, conversationId }) {
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(() => new Set());
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState(null); // { sent, total } | { error }
 
   useEffect(() => {
     let batal = false;
     setLoading(true);
     setError("");
+    setSelected(new Set());
+    setSendResult(null);
     api.getOrderDocumentation(orderId)
       .then((r) => { if (!batal) setDoc(r); })
       .catch((e) => { if (!batal) setError(e.message); })
       .finally(() => { if (!batal) setLoading(false); });
     return () => { batal = true; };
   }, [orderId]);
+
+  function toggle(i) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  async function handleSend() {
+    if (!conversationId || selected.size === 0) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const entries = [...selected].map((i) => doc.entries[i]);
+      const result = await api.sendDocumentation(conversationId, orderId, entries);
+      setSendResult({ sent: result.sent, total: result.total });
+      setSelected(new Set());
+    } catch (e) {
+      setSendResult({ error: e.message });
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -60,32 +91,48 @@ function DocumentationTab({ orderId }) {
   }
 
   // Dikelompokkan per UNIT — order multi-kasur (mis. hotel) perlu jelas
-  // "ini foto kasur yang mana", bukan daftar foto tercampur (D-002).
-  const byUnit = doc.entries.reduce((acc, e) => {
-    (acc[e.unitCode] = acc[e.unitCode] || []).push(e);
+  // "ini foto kasur yang mana", bukan daftar foto tercampur (D-002). Index
+  // ASLI di doc.entries dipertahankan (bukan index-dalam-grup) supaya
+  // toggle/selected tetap merujuk baris yang benar setelah dikelompokkan.
+  const byUnit = doc.entries.reduce((acc, e, i) => {
+    (acc[e.unitCode] = acc[e.unitCode] || []).push({ ...e, _idx: i });
     return acc;
   }, {});
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 pb-16">
       <p className="text-[11px] text-ink3">
-        {doc.totalPhotos} foto dari {Object.keys(byUnit).length} unit — klik untuk buka ukuran
-        penuh, lalu simpan & forward ke customer.
+        {doc.totalPhotos} foto dari {Object.keys(byUnit).length} unit. Klik foto untuk
+        buka ukuran penuh (simpan & forward manual), atau centang tahap lalu kirim
+        langsung lewat WhatsApp CRM.
       </p>
       {Object.entries(byUnit).map(([unitCode, entries]) => (
         <div key={unitCode}>
           <p className="mb-1.5 font-mono text-[11px] font-semibold text-ink2">{unitCode}</p>
           <div className="flex flex-col gap-2.5">
-            {entries.map((entry, i) => (
-              <div key={i} className="rounded-xl bg-surface p-2.5 shadow-card">
-                <div className="flex items-center justify-between">
-                  <p className="text-[12px] font-semibold text-ink">{entry.stageLabel}</p>
-                  <p className="text-[10px] text-ink3">{formatTanggal(entry.recordedAt)}</p>
-                </div>
-                {entry.note && <p className="mt-0.5 text-[11px] text-ink2">{entry.note}</p>}
-                <div className="mt-2 flex flex-wrap gap-1.5">
+            {entries.map((entry) => (
+              <div
+                key={entry._idx}
+                className={cn(
+                  "rounded-xl border-2 bg-surface p-2.5 shadow-card transition-colors",
+                  selected.has(entry._idx) ? "border-accent" : "border-transparent"
+                )}
+              >
+                <label className="flex cursor-pointer items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entry._idx)}
+                      onChange={() => toggle(entry._idx)}
+                    />
+                    <span className="text-[12px] font-semibold text-ink">{entry.stageLabel}</span>
+                  </span>
+                  <span className="text-[10px] text-ink3">{formatTanggal(entry.recordedAt)}</span>
+                </label>
+                {entry.note && <p className="mt-0.5 pl-6 text-[11px] text-ink2">{entry.note}</p>}
+                <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
                   {entry.photoUrls.map((url) => (
-                    <a key={url} href={url} target="_blank" rel="noreferrer">
+                    <a key={url} href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
                       <img
                         src={url} alt={entry.stageLabel}
                         className="h-16 w-16 rounded-lg object-cover transition-opacity hover:opacity-80"
@@ -98,6 +145,37 @@ function DocumentationTab({ orderId }) {
           </div>
         </div>
       ))}
+
+      {/* Bar kirim — absolute relatif ke <aside> (aside sudah `fixed`, jadi
+          jadi containing block untuk descendant absolute-nya) supaya bar ini
+          hugs LEBAR DRAWER, bukan lebar viewport, dan tidak ikut scroll
+          bersama daftar foto yang panjang. */}
+      <div className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-base px-4 py-3 shadow-popover">
+        {sendResult?.sent > 0 && (
+          <p className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-green">
+            <CheckCircle2 size={14} /> Terkirim {sendResult.sent}/{sendResult.total} foto ke customer.
+          </p>
+        )}
+        {sendResult?.error && (
+          <p className="mb-2 text-[12px] font-medium text-red">{sendResult.error}</p>
+        )}
+        {!conversationId ? (
+          <p className="text-center text-[11px] text-ink3">
+            Belum ada percakapan WhatsApp untuk pelanggan ini — tidak bisa kirim langsung.
+          </p>
+        ) : (
+          <button
+            type="button"
+            disabled={selected.size === 0 || sending}
+            onClick={handleSend}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent text-[13px]
+                       font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            {sending ? "Mengirim…" : selected.size > 0 ? `Kirim ${selected.size} tahap ke customer` : "Pilih tahap untuk dikirim"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -220,7 +298,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
 
           {tab === "dokumentasi" ? (
             <div className="mt-4">
-              <DocumentationTab orderId={order.id} />
+              <DocumentationTab orderId={order.id} conversationId={order.conversationId} />
             </div>
           ) : (
           <>

@@ -871,6 +871,136 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   res.json({ sent: savedMessages.length, messages: savedMessages });
 });
 
+// POST /:id/send-documentation — kirim berkas dokumentasi produksi (D-015)
+// ke customer. Struktur SAMA PERSIS dengan /send-product di atas (loop +
+// delay 1500ms antar foto, sendWithSessionFallback, SESSION_UNKNOWN_ERROR),
+// bedanya sumber gambar dari unit_stage_logs.photo_urls (Sano Hub), bukan
+// katalog Product — dan tiap TAHAP dapat caption sendiri, bukan cuma satu
+// caption di foto terakhir, supaya customer paham "ini foto tahap apa".
+//
+// Sengaja TIDAK auto-kirim dari server — sales yang memicu lewat tombol di
+// CRM setelah melihat sendiri fotonya (D-015: manusia tetap mereview sebelum
+// sesuatu sampai ke customer, cuma jalurnya sekarang lewat WAHA bukan
+// WhatsApp pribadi sales).
+conversationRouter.post("/:id/send-documentation", async (req, res) => {
+  const { orderId, entries } = req.body;
+  if (!orderId) return res.status(400).json({ error: "orderId wajib diisi" });
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return res.status(400).json({ error: "Tidak ada tahap dipilih untuk dikirim" });
+  }
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (!conversation.customer.phone) {
+    return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, orderNumber: true, customerId: true },
+  });
+  if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+  // Order harus benar-benar milik customer percakapan ini — mencegah salah
+  // kirim dokumentasi kasur customer A ke chat customer B.
+  if (order.customerId !== conversation.customerId) {
+    return res.status(400).json({ error: "Order ini bukan milik pelanggan percakapan ini" });
+  }
+
+  // entries datang dari klien (hasil GET /production/orders/:id/documentation
+  // yang sudah ditampilkan & dipilih sales) — TIDAK dipercaya mentah-mentah.
+  // photoUrls WAJIB berupa path lokal /media/unit-photos/... yang memang kita
+  // simpan sendiri (lihat routes/units.js upload). Tanpa validasi ini, body
+  // request bisa memasukkan URL APA SAJA dan membuat server men-fetch +
+  // mengirim file dari mana pun (SSRF lewat parameter file WAHA).
+  const isValidPhotoUrl = (u) => typeof u === "string" && u.startsWith("/media/unit-photos/");
+  const cleanEntries = entries
+    .map((e) => ({
+      stageLabel: String(e.stageLabel || "").slice(0, 200),
+      note: e.note ? String(e.note).slice(0, 1000) : "",
+      photoUrls: Array.isArray(e.photoUrls) ? e.photoUrls.filter(isValidPhotoUrl) : [],
+    }))
+    .filter((e) => e.photoUrls.length > 0);
+  if (cleanEntries.length === 0) {
+    return res.status(400).json({ error: "Tidak ada foto valid untuk dikirim" });
+  }
+
+  function formatCaption(entry) {
+    let text = `*${entry.stageLabel}* — ${order.orderNumber}`;
+    if (entry.note) text += `\n${entry.note}`;
+    return text;
+  }
+
+  const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+  const savedMessages = [];
+
+  // Diratakan jadi satu daftar foto (bukan nested loop) supaya delay antar
+  // KIRIM konsisten 1500ms di seluruh urutan — sama seperti send-product,
+  // bukan "1500ms antar tahap" yang bisa membuat foto dalam 1 tahap terkirim
+  // beruntun tanpa jeda (rawan dianggap spam oleh WhatsApp).
+  const flatPhotos = [];
+  for (const entry of cleanEntries) {
+    entry.photoUrls.forEach((url, idxInEntry) => {
+      const isLastInEntry = idxInEntry === entry.photoUrls.length - 1;
+      flatPhotos.push({ url, caption: isLastInEntry ? formatCaption(entry) : "" });
+    });
+  }
+
+  for (let i = 0; i < flatPhotos.length; i++) {
+    const { url, caption } = flatPhotos[i];
+    const fileUrl = `${BACKEND_INTERNAL_URL}${url}`;
+
+    try {
+      const { session } = await sendWithSessionFallback(conversation, (s) =>
+        sendMedia(
+          conversation.customer.phone,
+          { mimetype: "image/jpeg", filename: url.split("/").pop(), url: fileUrl },
+          caption,
+          "media",
+          s
+        )
+      );
+      conversation.sessionId = session;
+      const msg = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          content: caption,
+          mediaType: "image",
+          mediaUrl: url,
+          sentById: req.user.id,
+        },
+      });
+      savedMessages.push(msg);
+    } catch (err) {
+      console.error(`[send-documentation] Gagal kirim foto ${url}:`, err.message);
+    }
+
+    if (i < flatPhotos.length - 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
+  if (savedMessages.length === 0 && !conversation.sessionId) {
+    return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+  }
+
+  const lastSaved = savedMessages[savedMessages.length - 1];
+  const updatedConvDoc = await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      lastMessageAt: new Date(),
+      ...(lastSaved ? { lastMessagePreview: buildMessagePreview(lastSaved.content, lastSaved.mediaType) } : {}),
+    },
+  });
+  savedMessages.forEach((m) => emitNewMessage(conversation.id, m));
+  emitConversationUpdate(updatedConvDoc);
+
+  res.json({ sent: savedMessages.length, total: flatPhotos.length, messages: savedMessages });
+});
+
 // Ambil alih (handover) percakapan ke user yang request
 conversationRouter.post("/:id/takeover", async (req, res) => {
   try {
