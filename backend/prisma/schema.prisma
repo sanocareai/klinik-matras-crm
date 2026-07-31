@@ -836,6 +836,15 @@ model Job {
   // job BERHASIL — bukti serah terima, terpisah dari failurePhotoUrls.
   proofPhotoUrls String[] @default([]) @map("proof_photo_urls")
 
+  // Tanda tangan customer/penerima saat job selesai (Phase 2, PWA-lite).
+  // OPSIONAL dengan sengaja — customer/penerima tidak selalu ada di tempat
+  // saat serah terima (titip ke satpam/tetangga itu nyata di lapangan), jadi
+  // ini lapisan kepercayaan TAMBAHAN di atas foto bukti (yang tetap WAJIB),
+  // bukan pengganti atau syarat blocking. Gambar PNG hasil canvas, disimpan
+  // lewat upload dir job-photos yang sama (bukan tabel/kolom terpisah untuk
+  // tipe file) — satu tanda tangan per job, tidak butuh ledger.
+  signatureUrl String? @map("signature_url")
+
   arrivedAt   DateTime? @map("arrived_at")
   completedAt DateTime? @map("completed_at")
 

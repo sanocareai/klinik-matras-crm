@@ -442,8 +442,10 @@ armadaRouter.post("/jobs/:id/arrive", requirePermission(P.JOB_OWN_WRITE), async 
   }
 });
 
-// POST /api/armada/jobs/:id/complete { proofPhotoUrls, note? }
+// POST /api/armada/jobs/:id/complete { proofPhotoUrls, signatureUrl?, note? }
 // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
+// signatureUrl OPSIONAL (lihat catatan di schema.prisma) — lapisan tambahan,
+// bukan syarat blocking.
 armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
@@ -454,11 +456,13 @@ armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), asyn
     if (proofPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum menyelesaikan job");
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+    const { signatureUrl } = req.body;
+    if (signatureUrl != null && !isValidUrl(signatureUrl)) throw new ArmadaError("URL tanda tangan tidak valid");
 
     const updated = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
-        data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls },
+        data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls, signatureUrl: signatureUrl || null },
       });
       const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
       // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, Loader2, MapPin, Navigation, Phone, Truck, Wallet, X,
+  AlertTriangle, Camera, CheckCircle2, Eraser, Loader2, MapPin, Navigation, Phone, Truck, Wallet, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
@@ -64,6 +64,109 @@ function PhotoCapture({ jobId, photos, setPhotos }) {
           {photos.map((u) => <img key={u} src={u} alt="" className="h-14 w-14 rounded-md object-cover" />)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Tanda tangan (Phase 2) — canvas polos, TANPA library baru (CLAUDE.md:
+// jangan tambah dependency tanpa bertanya). OPSIONAL, bukan syarat blocking
+// untuk menyelesaikan job (lihat catatan di schema.prisma) — kalau customer
+// tidak di tempat saat serah terima (titip satpam/tetangga, nyata di
+// lapangan), driver tetap bisa lanjut tanpa tanda tangan.
+function SignaturePad({ jobId, signatureUrl, setSignatureUrl }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const hasStrokeRef = useRef(false);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+
+  function getPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const point = e.touches?.[0] || e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  }
+
+  function start(e) {
+    e.preventDefault();
+    drawingRef.current = true;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+  function move(e) {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111827";
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    hasStrokeRef.current = true;
+  }
+  function end() {
+    drawingRef.current = false;
+  }
+
+  function handleClear() {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    hasStrokeRef.current = false;
+    setSignatureUrl(null);
+    setErr("");
+  }
+
+  async function handleSave() {
+    if (!hasStrokeRef.current) { setErr("Belum ada tanda tangan"); return; }
+    setUploading(true);
+    setErr("");
+    try {
+      const canvas = canvasRef.current;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      const file = new File([blob], "signature.png", { type: "image/png" });
+      const fd = new FormData();
+      fd.append("photos", file);
+      const { urls } = await api.uploadJobPhotos(jobId, fd);
+      setSignatureUrl(urls[0]);
+    } catch (e2) {
+      setErr("Gagal simpan tanda tangan: " + e2.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (signatureUrl) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-inset px-3 py-2">
+        <span className="text-xs font-medium text-ink2">Tanda tangan tersimpan</span>
+        <button type="button" className="text-xs font-medium text-accent" onClick={handleClear}>Ulangi</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <canvas
+        ref={canvasRef} width={300} height={120}
+        className="w-full touch-none rounded-lg border-2 border-dashed border-border bg-white"
+        onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end}
+      />
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-ink2">Tanda tangan customer (opsional)</p>
+        <div className="flex gap-2">
+          <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-ink2" onClick={handleClear}>
+            <Eraser className="h-3 w-3" /> Hapus
+          </button>
+          <button type="button" disabled={uploading} className="flex items-center gap-1 text-[11px] font-medium text-accent" onClick={handleSave}>
+            {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan"}
+          </button>
+        </div>
+      </div>
+      {err && <p className="text-[11px] text-red">{err}</p>}
     </div>
   );
 }
@@ -199,6 +302,7 @@ const FAIL_REASONS_DELIVERY = [
 function JobCard({ job, onChanged }) {
   const [mode, setMode] = useState("idle"); // idle | completing | failing
   const [photos, setPhotos] = useState([]);
+  const [signatureUrl, setSignatureUrl] = useState(null);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -215,6 +319,7 @@ function JobCard({ job, onChanged }) {
       await fn();
       setMode("idle");
       setPhotos([]);
+      setSignatureUrl(null);
       setNote("");
       setFailReason("");
       onChanged();
@@ -301,6 +406,7 @@ function JobCard({ job, onChanged }) {
         <>
           <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-green">
             <CheckCircle2 className="h-4 w-4" /> Selesai
+            {job.signatureUrl && <span className="text-ink2">· bertanda tangan</span>}
           </div>
           {job.type === "DELIVERY" && <PaymentSection job={job} onChanged={onChanged} />}
         </>
@@ -312,6 +418,7 @@ function JobCard({ job, onChanged }) {
       {mode === "completing" && (
         <div className="mt-3 space-y-2">
           <PhotoCapture jobId={job.id} photos={photos} setPhotos={setPhotos} />
+          <SignaturePad jobId={job.id} signatureUrl={signatureUrl} setSignatureUrl={setSignatureUrl} />
           <textarea
             value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan (opsional)"
             className="h-14 w-full rounded-lg border border-border p-2 text-xs outline-none focus:border-accent"
@@ -320,7 +427,7 @@ function JobCard({ job, onChanged }) {
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
             <Button
               className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0}
-              onClick={() => guard(() => api.completeArmadaJob(job.id, { proofPhotoUrls: photos, note }))}
+              onClick={() => guard(() => api.completeArmadaJob(job.id, { proofPhotoUrls: photos, signatureUrl, note }))}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}
             </Button>
