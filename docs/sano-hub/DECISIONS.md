@@ -555,3 +555,57 @@ masih ada di backend untuk kompatibilitas, tapi UI baru tidak memakainya lagi
 lama tetap dipakai di beberapa tempat sebagai gate cepat (`adminOnly`
 middleware, gate halaman `currentUser.role !== "ADMIN"`) — sengaja tidak
 disentuh di keputusan ini, di luar scope.
+
+---
+
+## D-020 — Antrean offline driver (Phase 2, PWA)
+
+**Keputusan.** Setiap aksi driver (mulai/tiba/selesai/gagal/catat
+pembayaran) DICOBA LANGSUNG dulu; kalau gagal karena JARINGAN (bukan
+validasi server), diantre di IndexedDB browser dan otomatis dikirim ulang
+begitu online lagi. Foto & tanda tangan TIDAK diupload saat diambil —
+disimpan sebagai Blob lokal, baru diupload saat submit benar-benar
+terkirim (langsung atau lewat antrean).
+
+**Alasan.** Driver kerja di area sinyal lemah (PRD Phase 2 secara eksplisit
+menyebut "PWA, offline queue" sebagai satu paket). `/api/` sengaja
+NetworkOnly di service worker (vite.config.js) — data CRM harus selalu
+fresh, tidak boleh sajikan cache basi — jadi kalau tidak ditangani, driver
+offline akan gagal total di setiap aksi, bukan cuma pengalaman lambat.
+
+**Kenapa IndexedDB, bukan localStorage.** Entri antrean membawa Blob foto
+(bisa beberapa MB) — localStorage cuma bisa simpan string dan kapasitasnya
+kecil (~5-10MB total, base64-encode Blob juga +33% ukuran & lambat).
+IndexedDB satu-satunya storage browser yang simpan Blob langsung.
+
+**Kenapa ditulis manual, bukan library (idb/Dexie).** Kebutuhannya kecil —
+satu object store, operasi CRUD dasar. CLAUDE.md: jangan tambah dependency
+tanpa bertanya dulu.
+
+**Desain penting — SATU titik submit.** `utils/submitJobAction.js` adalah
+SATU-SATUNYA tempat yang tahu "apa yang sebenarnya dikirim ke server" untuk
+tiap jenis aksi. Dipakai baik oleh percobaan pertama (DriverJobs.jsx) MAUPUN
+pemroses antrean (syncQueue.js) — supaya kedua jalur itu TIDAK PERNAH diam-
+diam berbeda perilakunya (mis. lupa update salah satu saat field baru
+ditambah ke salah satu aksi).
+
+**Error jaringan vs error API dibedakan secara eksplisit**
+(`offlineQueue.js` → `isNetworkError()`): error jaringan → antre, coba lagi
+nanti. Error API (mis. status job sudah berubah di server oleh proses lain)
+→ TETAP di antrean dengan `lastError` terisi, ditampilkan ke driver dengan
+tombol dismiss manual — TIDAK dibuang diam-diam. Kehilangan data driver
+tanpa jejak adalah kegagalan yang lebih parah daripada antrean yang macet.
+
+**Konsekuensi UI.** `DriverJobs.jsx` sekarang TIDAK PERNAH mengosongkan
+daftar job yang sudah berhasil dimuat hanya karena reload gagal (offline) —
+daftar terakhir tetap tampil, cuma dengan banner status sinkron di atas.
+Job yang punya aksi tertunda di antrean tampil dalam mode "Menunggu
+sinkron" (state lokal, BUKAN status Job asli dari server) supaya driver
+tidak mencoba mengirim aksi kedua sebelum yang pertama benar-benar sampai.
+
+**Verifikasi.** Diuji dengan mem-patch `window.fetch` untuk mensimulasikan
+jaringan mati (bukan asumsi) — aksi start (tanpa lampiran) DAN complete
+(dengan foto+tanda tangan) sama-sama terverifikasi: status server TIDAK
+berubah selagi "offline", lalu tersinkron benar begitu jaringan "pulih"
+(event `online` dipicu ulang). Kasus error API (job ID palsu) juga
+diverifikasi TETAP di antrean dengan pesan error, bukan hilang.

@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, Eraser, Loader2, MapPin, Navigation, Phone, Truck, Wallet, X,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Loader2, MapPin,
+  Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
 import { formatRupiah } from "../utils/format.js";
+import { getQueue, removeAction } from "../utils/offlineQueue.js";
+import { submitOrQueue } from "../utils/submitJobAction.js";
+import { processQueue } from "../utils/syncQueue.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -19,6 +23,15 @@ import { Button } from "@/components/ui/button.jsx";
 // "tanpa kecuali"). Tidak ada peta, tidak ada rute — PRD §1.5 Phase 1
 // sengaja manual, driver dapat link Google Maps per-stop (deep link native,
 // bukan peta custom di dalam app).
+//
+// OFFLINE QUEUE (Phase 2) — driver sering kerja di area sinyal lemah. Setiap
+// aksi (mulai/tiba/selesai/gagal/pembayaran) DICOBA LANGSUNG dulu; kalau
+// gagal karena JARINGAN (bukan validasi), diantre di IndexedDB (lihat
+// utils/offlineQueue.js) dan otomatis dikirim ulang begitu online lagi.
+// Foto & tanda tangan TIDAK diupload saat diambil — disimpan sebagai Blob
+// lokal dan baru diupload saat submit BENAR-benar berhasil terkirim (baik
+// langsung maupun lewat antrean), supaya kerja driver di lapangan tidak
+// pernah terhenti menunggu jaringan di tengah proses.
 
 const STATUS_LABEL = {
   ASSIGNED: "Siap Dimulai", EN_ROUTE: "Dalam Perjalanan", ARRIVED: "Tiba di Lokasi",
@@ -31,8 +44,9 @@ function mapsUrl(job) {
   return null;
 }
 
-// ── Kapsul foto (dipakai form Selesai & Gagal) ───────────────────────────
-function PhotoCapture({ jobId, photos, setPhotos }) {
+// ── Kapsul foto (dipakai form Selesai & Gagal & Pembayaran) — foto disimpan
+// LOKAL (File, sudah dikompres), belum diupload. Preview pakai object URL.
+function PhotoCapture({ photos, setPhotos }) {
   const [busy, setBusy] = useState(false);
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -40,12 +54,7 @@ function PhotoCapture({ jobId, photos, setPhotos }) {
     setBusy(true);
     try {
       const compressed = await Promise.all(files.map((f) => compressImage(f)));
-      const fd = new FormData();
-      compressed.forEach((f) => fd.append("photos", f));
-      const { urls } = await api.uploadJobPhotos(jobId, fd);
-      setPhotos((p) => [...p, ...urls]);
-    } catch (err) {
-      alert("Gagal upload foto: " + err.message);
+      setPhotos((p) => [...p, ...compressed]);
     } finally {
       setBusy(false);
       e.target.value = "";
@@ -61,7 +70,9 @@ function PhotoCapture({ jobId, photos, setPhotos }) {
       </label>
       {photos.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {photos.map((u) => <img key={u} src={u} alt="" className="h-14 w-14 rounded-md object-cover" />)}
+          {photos.map((f, i) => (
+            <img key={i} src={URL.createObjectURL(f)} alt="" className="h-14 w-14 rounded-md object-cover" />
+          ))}
         </div>
       )}
     </div>
@@ -72,12 +83,12 @@ function PhotoCapture({ jobId, photos, setPhotos }) {
 // jangan tambah dependency tanpa bertanya). OPSIONAL, bukan syarat blocking
 // untuk menyelesaikan job (lihat catatan di schema.prisma) — kalau customer
 // tidak di tempat saat serah terima (titip satpam/tetangga, nyata di
-// lapangan), driver tetap bisa lanjut tanpa tanda tangan.
-function SignaturePad({ jobId, signatureUrl, setSignatureUrl }) {
+// lapangan), driver tetap bisa lanjut tanpa tanda tangan. Disimpan sebagai
+// Blob lokal, belum diupload — sama alasannya dengan PhotoCapture di atas.
+function SignaturePad({ signatureBlob, setSignatureBlob }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const hasStrokeRef = useRef(false);
-  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
 
   function getPos(e, canvas) {
@@ -116,33 +127,22 @@ function SignaturePad({ jobId, signatureUrl, setSignatureUrl }) {
     const canvas = canvasRef.current;
     canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
     hasStrokeRef.current = false;
-    setSignatureUrl(null);
+    setSignatureBlob(null);
     setErr("");
   }
 
-  async function handleSave() {
+  async function handleConfirm() {
     if (!hasStrokeRef.current) { setErr("Belum ada tanda tangan"); return; }
-    setUploading(true);
     setErr("");
-    try {
-      const canvas = canvasRef.current;
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      const file = new File([blob], "signature.png", { type: "image/png" });
-      const fd = new FormData();
-      fd.append("photos", file);
-      const { urls } = await api.uploadJobPhotos(jobId, fd);
-      setSignatureUrl(urls[0]);
-    } catch (e2) {
-      setErr("Gagal simpan tanda tangan: " + e2.message);
-    } finally {
-      setUploading(false);
-    }
+    const canvas = canvasRef.current;
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    setSignatureBlob(blob);
   }
 
-  if (signatureUrl) {
+  if (signatureBlob) {
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-inset px-3 py-2">
-        <span className="text-xs font-medium text-ink2">Tanda tangan tersimpan</span>
+        <span className="text-xs font-medium text-ink2">Tanda tangan siap</span>
         <button type="button" className="text-xs font-medium text-accent" onClick={handleClear}>Ulangi</button>
       </div>
     );
@@ -161,8 +161,8 @@ function SignaturePad({ jobId, signatureUrl, setSignatureUrl }) {
           <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-ink2" onClick={handleClear}>
             <Eraser className="h-3 w-3" /> Hapus
           </button>
-          <button type="button" disabled={uploading} className="flex items-center gap-1 text-[11px] font-medium text-accent" onClick={handleSave}>
-            {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Simpan"}
+          <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-accent" onClick={handleConfirm}>
+            Simpan
           </button>
         </div>
       </div>
@@ -182,31 +182,20 @@ const PAYMENT_METHODS = [
 // satu-satunya jejak audit kas yang ada sekarang, jadi dibuat semudah
 // mungkin — jumlah + metode, foto opsional (WAJIB kalau tunai, supaya ada
 // bukti serah terima uang, sama semangatnya dengan foto bukti job).
-function PaymentSection({ job, onChanged }) {
+function PaymentSection({ job, onChanged, onQueued }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [justQueued, setJustQueued] = useState(false);
   const [err, setErr] = useState("");
 
-  async function handlePhoto(e) {
+  function handlePhoto(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadingPhoto(true);
-    try {
-      const compressed = await compressImage(file);
-      const fd = new FormData();
-      fd.append("photos", compressed);
-      const { urls } = await api.uploadJobPhotos(job.id, fd);
-      setPhoto(urls[0]);
-    } catch (e2) {
-      setErr("Gagal upload foto: " + e2.message);
-    } finally {
-      setUploadingPhoto(false);
-      e.target.value = "";
-    }
+    compressImage(file).then(setPhoto);
+    e.target.value = "";
   }
 
   async function handleSave() {
@@ -216,10 +205,15 @@ function PaymentSection({ job, onChanged }) {
     setBusy(true);
     setErr("");
     try {
-      await api.recordJobPayment(job.id, { amount: amountInt, method, proofPhotoUrl: photo });
+      const { queued } = await submitOrQueue(job.id, "payment", { amount: amountInt, method }, photo ? [photo] : []);
       setOpen(false);
       setAmount(""); setMethod("CASH"); setPhoto(null);
-      onChanged();
+      if (queued) {
+        setJustQueued(true);
+        onQueued();
+      } else {
+        onChanged();
+      }
     } catch (e2) {
       setErr(e2.message);
     } finally {
@@ -243,8 +237,14 @@ function PaymentSection({ job, onChanged }) {
         </div>
       )}
 
+      {justQueued && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs text-orange">
+          <CloudOff className="h-3.5 w-3.5 shrink-0" /> Tersimpan offline — akan terkirim otomatis
+        </div>
+      )}
+
       {!open && (
-        <Button variant="neutral" className="h-10 w-full text-xs" onClick={() => setOpen(true)}>
+        <Button variant="neutral" className="h-10 w-full text-xs" onClick={() => { setOpen(true); setJustQueued(false); }}>
           <Wallet className="h-3.5 w-3.5" /> Catat Pembayaran
         </Button>
       )}
@@ -270,9 +270,9 @@ function PaymentSection({ job, onChanged }) {
           </div>
           <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed
                             border-border text-xs font-medium text-ink2 hover:border-accent hover:text-accent">
-            {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-            {photo ? "Foto tersimpan" : "Foto Bukti (opsional untuk non-tunai)"}
-            <input type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} disabled={uploadingPhoto} />
+            <Camera className="h-3.5 w-3.5" />
+            {photo ? "Foto siap" : "Foto Bukti (opsional untuk non-tunai)"}
+            <input type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} />
           </label>
           {err && <p className="text-[11px] text-red">{err}</p>}
           <div className="flex gap-2">
@@ -299,10 +299,10 @@ const FAIL_REASONS_DELIVERY = [
 ];
 
 // ── Kartu satu job ────────────────────────────────────────────────────────
-function JobCard({ job, onChanged }) {
+function JobCard({ job, onChanged, onQueued, pending }) {
   const [mode, setMode] = useState("idle"); // idle | completing | failing
   const [photos, setPhotos] = useState([]);
-  const [signatureUrl, setSignatureUrl] = useState(null);
+  const [signatureBlob, setSignatureBlob] = useState(null);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -312,22 +312,45 @@ function JobCard({ job, onChanged }) {
   const maps = mapsUrl(job);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
 
-  async function guard(fn) {
+  function resetForm() {
+    setMode("idle");
+    setPhotos([]);
+    setSignatureBlob(null);
+    setNote("");
+    setFailReason("");
+  }
+
+  async function run(action, payload, files, sig) {
     setBusy(true);
     setErr("");
     try {
-      await fn();
-      setMode("idle");
-      setPhotos([]);
-      setSignatureUrl(null);
-      setNote("");
-      setFailReason("");
-      onChanged();
+      const { queued } = await submitOrQueue(job.id, action, payload, files, sig);
+      resetForm();
+      if (queued) onQueued(); else onChanged();
     } catch (e) {
       setErr(e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (pending) {
+    return (
+      <Card className="p-4 opacity-70">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
+            <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
+          </div>
+          <Badge variant={job.type === "PICKUP" ? "accent" : "green"}>
+            {job.type === "PICKUP" ? "Ambil" : "Kirim"}
+          </Badge>
+        </div>
+        <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs text-orange">
+          <CloudOff className="h-3.5 w-3.5 shrink-0" /> Menunggu sinkron — akan terkirim otomatis begitu online
+        </div>
+      </Card>
+    );
   }
 
   return (
@@ -378,14 +401,14 @@ function JobCard({ job, onChanged }) {
       )}
 
       {mode === "idle" && job.status === "ASSIGNED" && (
-        <Button className="mt-3 h-12 w-full text-sm" disabled={busy} onClick={() => guard(() => api.startArmadaJob(job.id))}>
+        <Button className="mt-3 h-12 w-full text-sm" disabled={busy} onClick={() => run("start", {}, [], null)}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mulai Perjalanan"}
         </Button>
       )}
 
       {mode === "idle" && job.status === "EN_ROUTE" && (
         <div className="mt-3 space-y-2">
-          <Button className="h-12 w-full text-sm" disabled={busy} onClick={() => guard(() => api.arriveArmadaJob(job.id))}>
+          <Button className="h-12 w-full text-sm" disabled={busy} onClick={() => run("arrive", {}, [], null)}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Tiba di Lokasi"}
           </Button>
           <div className="flex gap-2">
@@ -408,7 +431,7 @@ function JobCard({ job, onChanged }) {
             <CheckCircle2 className="h-4 w-4" /> Selesai
             {job.signatureUrl && <span className="text-ink2">· bertanda tangan</span>}
           </div>
-          {job.type === "DELIVERY" && <PaymentSection job={job} onChanged={onChanged} />}
+          {job.type === "DELIVERY" && <PaymentSection job={job} onChanged={onChanged} onQueued={onQueued} />}
         </>
       )}
       {mode === "idle" && job.status === "FAILED" && (
@@ -417,8 +440,8 @@ function JobCard({ job, onChanged }) {
 
       {mode === "completing" && (
         <div className="mt-3 space-y-2">
-          <PhotoCapture jobId={job.id} photos={photos} setPhotos={setPhotos} />
-          <SignaturePad jobId={job.id} signatureUrl={signatureUrl} setSignatureUrl={setSignatureUrl} />
+          <PhotoCapture photos={photos} setPhotos={setPhotos} />
+          <SignaturePad signatureBlob={signatureBlob} setSignatureBlob={setSignatureBlob} />
           <textarea
             value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan (opsional)"
             className="h-14 w-full rounded-lg border border-border p-2 text-xs outline-none focus:border-accent"
@@ -427,7 +450,7 @@ function JobCard({ job, onChanged }) {
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
             <Button
               className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0}
-              onClick={() => guard(() => api.completeArmadaJob(job.id, { proofPhotoUrls: photos, signatureUrl, note }))}
+              onClick={() => run("complete", { note }, photos, signatureBlob)}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}
             </Button>
@@ -450,13 +473,13 @@ function JobCard({ job, onChanged }) {
               </button>
             ))}
           </div>
-          <PhotoCapture jobId={job.id} photos={photos} setPhotos={setPhotos} />
+          <PhotoCapture photos={photos} setPhotos={setPhotos} />
           <div className="flex gap-2">
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
             <Button
               variant="destructive" className="h-11 flex-1 text-xs"
               disabled={busy || !failReason || photos.length === 0}
-              onClick={() => guard(() => api.failArmadaJob(job.id, { failureReason: failReason, failurePhotoUrls: photos, note }))}
+              onClick={() => run("fail", { failureReason: failReason, note }, photos, null)}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Tandai Gagal"}
             </Button>
@@ -470,20 +493,90 @@ function JobCard({ job, onChanged }) {
   );
 }
 
+// ── Bar status sinkron (Phase 2) — online/offline + jumlah aksi menunggu +
+// sinkron manual. Muncul terus (bukan cuma pas offline) supaya driver tahu
+// PASTI kalau ada aksi yang belum benar-benar sampai ke server, bukan
+// diam-diam mengira semua sudah tersimpan.
+function SyncBar({ queueCount, syncing, offline, onSyncNow }) {
+  if (queueCount === 0 && !offline) return null;
+  return (
+    <div className={`mb-3 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-medium ${
+      offline ? "bg-redbg text-red" : "bg-orangebg text-orange"
+    }`}>
+      <div className="flex items-center gap-1.5">
+        {offline ? <WifiOff className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+        {offline
+          ? `Tidak ada koneksi${queueCount > 0 ? ` — ${queueCount} aksi menunggu` : ""}`
+          : `${queueCount} aksi menunggu dikirim`}
+      </div>
+      {!offline && queueCount > 0 && (
+        <button type="button" onClick={onSyncNow} disabled={syncing} className="flex items-center gap-1 underline">
+          {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Kirim Sekarang
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function DriverJobs() {
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState("");
+  const [queue, setQueue] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [offline, setOffline] = useState(!navigator.onLine);
 
   const load = useCallback(async () => {
     try {
       const r = await api.getMyJobs();
       setJobs(r.jobs);
+      setError("");
     } catch (e) {
-      setError(e.message);
+      // SENGAJA TIDAK menimpa `jobs` yang sudah ada — kalau driver offline
+      // dan reload gagal, daftar job TERAKHIR yang berhasil dimuat tetap
+      // tampil (lebih berguna daripada layar error kosong di lapangan).
+      // Hanya tampilkan error kalau memang belum pernah berhasil sama sekali.
+      if (!jobs) setError(e.message);
     }
+  }, [jobs]);
+
+  const refreshQueue = useCallback(async () => {
+    setQueue(await getQueue());
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const syncNow = useCallback(async () => {
+    if (!navigator.onLine) return;
+    setSyncing(true);
+    try {
+      await processQueue();
+    } finally {
+      await refreshQueue();
+      setSyncing(false);
+      load();
+    }
+  }, [refreshQueue, load]);
+
+  useEffect(() => { load(); refreshQueue(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    function handleOnline() { setOffline(false); syncNow(); }
+    function handleOffline() { setOffline(true); }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    // Fallback: event 'online' tidak selalu terpicu di semua browser mobile
+    // (mis. WiFi menyala tapi tanpa internet asli, lalu pulih) — polling
+    // ringan tiap 30 detik menjaga antrean tidak macet selamanya.
+    const interval = setInterval(() => { if (navigator.onLine) syncNow(); }, 30_000);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      clearInterval(interval);
+    };
+  }, [syncNow]);
+
+  async function handleDismissFailed(id) {
+    await removeAction(id);
+    await refreshQueue();
+  }
 
   if (error) {
     return (
@@ -500,19 +593,43 @@ export default function DriverJobs() {
       </div>
     );
   }
-  if (jobs.length === 0) {
-    return (
-      <Card className="p-8 text-center">
-        <Truck className="mx-auto mb-3 h-10 w-10 text-ink2" strokeWidth={1.5} />
-        <h3 className="text-base font-semibold text-ink">Tidak ada job hari ini</h3>
-        <p className="mt-1 text-sm text-ink2">Job baru akan muncul di sini begitu dispatcher menugaskan.</p>
-      </Card>
-    );
-  }
+
+  const pendingJobIds = new Set(queue.map((q) => q.jobId));
+  const failedEntries = queue.filter((q) => q.lastError);
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-      {jobs.map((job) => <JobCard key={job.id} job={job} onChanged={load} />)}
+    <div>
+      <SyncBar queueCount={queue.length} syncing={syncing} offline={offline} onSyncNow={syncNow} />
+
+      {failedEntries.length > 0 && (
+        <div className="mb-3 space-y-1.5">
+          {failedEntries.map((f) => (
+            <div key={f.id} className="flex items-center justify-between gap-2 rounded-lg bg-redbg px-3 py-2 text-xs text-red">
+              <span className="min-w-0 flex-1">Gagal kirim aksi "{f.action}": {f.lastError}</span>
+              <button type="button" onClick={() => handleDismissFailed(f.id)} className="shrink-0">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {jobs.length === 0 ? (
+        <Card className="p-8 text-center">
+          <Truck className="mx-auto mb-3 h-10 w-10 text-ink2" strokeWidth={1.5} />
+          <h3 className="text-base font-semibold text-ink">Tidak ada job hari ini</h3>
+          <p className="mt-1 text-sm text-ink2">Job baru akan muncul di sini begitu dispatcher menugaskan.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {jobs.map((job) => (
+            <JobCard
+              key={job.id} job={job} onChanged={load} onQueued={refreshQueue}
+              pending={pendingJobIds.has(job.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
