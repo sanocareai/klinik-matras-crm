@@ -92,6 +92,11 @@ export const api = {
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
+  // Identitas + role + portal yang boleh dibuka (Sano Hub).
+  // Sengaja baca dari server, bukan dari token di localStorage: perubahan role
+  // oleh admin langsung berlaku saat refresh, tidak menunggu token 7 hari habis.
+  getMe: () => request("/auth/me"),
+
   // Conversations
   // Terima string status (cara lama, tetap didukung) ATAU objek
   // { status, search, assignedToId, cursor, limit } (Fase B/F).

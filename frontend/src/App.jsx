@@ -27,6 +27,7 @@ const Pengguna      = lazy(() => import("./pages/Pengguna.jsx"));
 const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
 const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
+const Portal        = lazy(() => import("./pages/Portal.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
@@ -150,7 +151,13 @@ export default function App() {
       <Layout user={user} onLogout={handleLogout}>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
+            {/* Landing default SENGAJA masih /dashboard, bukan /portal.
+                Portal Bengkel/Armada/Kendali masih kosong di Phase 0 — memindahkan
+                7 orang yang sedang bekerja ke layar pemilih berisi kartu mati
+                adalah penurunan kualitas. Ditukar jadi default di Phase 1,
+                begitu portalnya berisi. Lihat docs/sano-hub/PHASE-0.md. */}
             <Route path="/"            element={<Navigate to="/dashboard" replace />} />
+            <Route path="/portal"      element={<Portal />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />

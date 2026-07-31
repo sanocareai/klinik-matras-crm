@@ -10,9 +10,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Role lama (ADMIN/SALES) TETAP dipakai lewat User.role sampai middleware
+// otorisasi Sano Hub terbukti. Role operasional baru hanya dipegang lewat
+// tabel UserRole — lihat docs/sano-hub/DECISIONS.md (D-010).
 enum Role {
   ADMIN
   SALES
+  PRODUCTION_LEAD
+  PRODUCTION_WORKER
+  QC_LEAD
+  WAREHOUSE
+  DISPATCHER
+  DRIVER
+  FINANCE
+}
+
+// Lini produk penentu katalog material, termin garansi, dan lead time (D-004).
+// SERVICE = restorasi, material grade standar.
+// UPGRADE = dibangun ke standar Matras Sehat, material premium.
+// Satu unit TIDAK BOLEH mencampur modul lintas lini.
+enum ServiceLine {
+  SERVICE
+  UPGRADE
+}
+
+// Fase menentukan urutan besar: INTAKE selalu dulu, MODULE di tengah (0..n,
+// dipilih per unit), FINISH selalu terakhir. `sequence` mengurutkan DI DALAM
+// fase, bukan lintas fase.
+enum StagePhase {
+  INTAKE
+  MODULE
+  FINISH
+}
+
+// Status KASAR unit. Posisi halus di dalam produksi dilacak routing stage +
+// unit_stage_logs, BUKAN enum ini — jangan menambah nilai per-tahap ke sini.
+enum UnitStatus {
+  AWAITING_PICKUP
+  IN_TRANSIT_IN
+  RECEIVED
+  IN_PRODUCTION
+  READY_FOR_DELIVERY
+  READY_ON_CUSTOMER_HOLD // sudah jadi, customer minta tunda kirim — jam terpisah, BUKAN telat kita (D-007)
+  IN_TRANSIT_OUT
+  DELIVERED
+  CANCELLED
 }
 
 enum Channel {
@@ -136,6 +178,38 @@ model User {
   pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
   orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
   messageTemplates      MessageTemplate[]
+
+  roles        UserRole[] @relation("UserRoleHolder")
+  rolesGranted UserRole[] @relation("UserRoleGrantor")
+}
+
+// Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
+// sekaligus Production Lead dan QC Leader; di tim 7 orang itu normal.
+//
+// SENGAJA TIDAK menggantikan User.role di Phase 0. Seluruh kode yang jalan
+// sekarang masih membaca User.role, dan mengubah arti kolom yang sudah dipakai
+// 7 orang di jam kerja bukan langkah yang aman. Dua-duanya hidup dulu; yang
+// lama dimatikan setelah middleware otorisasi baru terbukti (pola strangler,
+// sama seperti migrasi design system).
+//
+// TIDAK ADA "super admin bisa segalanya" sebagai default — itu menghancurkan
+// jejak audit yang justru jadi alasan sistem ini dibangun (PRD §3).
+model UserRole {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id")
+  user   User   @relation("UserRoleHolder", fields: [userId], references: [id], onDelete: Cascade)
+  role   Role
+
+  // SetNull, bukan Cascade: kalau admin pemberi role resign, role yang sudah
+  // diberikan TETAP berlaku — cuma jejak pemberinya yang hilang.
+  grantedById String? @map("granted_by")
+  grantedBy   User?   @relation("UserRoleGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, role])
+  @@index([role]) // "siapa saja driver aktif" — dipakai papan dispatch nanti
+  @@map("user_roles")
 }
 
 // Revisi 26 Jul 2026: template pesan dipindah dari file JSON polos
@@ -481,9 +555,156 @@ model Order {
   items             OrderItem[]
   weightEntries     OrderWeightEntry[]
   statusTransitions OrderStatusTransition[]
+  units             Unit[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
+}
+
+// UNIT — entitas inti Sano Hub (D-002). Satu kasur fisik.
+//
+// Satu Order bisa berisi banyak Unit. Tiap Unit punya QR, diagnosa, racikan,
+// tahap, foto, dan tanggal selesainya SENDIRI. Order cuma pembungkus
+// komersial. Pesanan hotel 30 kasur dikirim bertahap dan tidak pernah berada
+// di satu status — karena itu Order.status akhirnya jadi TURUNAN dari unit,
+// bukan sumber kebenaran (D-006).
+//
+// PHASE 0: tabel ini dibuat dan di-backfill, tapi BELUM dipakai UI mana pun.
+// Order.status masih ditulis manual persis seperti hari ini. Peralihan ke
+// status turunan terjadi di Phase 1, setelah unit benar-benar bergerak lewat
+// tahap produksi.
+//
+// BELUM ADA DI SINI, sengaja (jangan tambahkan sebelum fase-nya tiba):
+//   - current_stage_id  → menyusul bersama migrasi routing_stages
+//   - service_code      → menyusul bersama migrasi service_catalog
+//   - foto, QR, lokasi rak detail, diagnosa → Phase 1
+model Unit {
+  id       String @id @default(uuid()) @db.Uuid
+  // Kode QR terbaca manusia: "<orderNumber>-U<n>", mis. RES-07072026-001-U2.
+  // Order lama tanpa orderNumber (hasil import Excel Jan–Jun) memakai fallback
+  // "LEG-<8 char id order>" — jujur menandai baris warisan.
+  unitCode String @unique @map("unit_code")
+
+  // RESTRICT, bukan Cascade: menghapus Order yang kasurnya masih dipegang
+  // bengkel harus GAGAL KERAS, bukan menghapus jejak unit diam-diam.
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  seq Int // nomor urut unit di dalam order-nya, mulai 1
+
+  // Deskripsi fisik PER UNIT — inilah inti D-002. Satu order bisa berisi satu
+  // queen dan satu king. Hari ini merk/ukuran cuma ada SATU per order, dan
+  // tersimpan sebagai string JSON di dalam Order.notes (lihat buildNotes /
+  // parseNotes di frontend + mobile) — bukan kolom asli.
+  merk   String?
+  ukuran String?
+
+  // Ditetapkan di tahap Uji Fondasi setelah kasur dibongkar, BUKAN saat sales
+  // input order (D-008). NULL sampai unit benar-benar diperiksa.
+  serviceLine ServiceLine? @map("service_line")
+
+  status          UnitStatus @default(AWAITING_PICKUP)
+  storageLocation String?    @map("storage_location")
+
+  // Layanan yang berlaku untuk unit ini. Ditetapkan/direvisi di Uji Fondasi,
+  // bukan saat sales input order. Menentukan modul kerja mana yang dilalui.
+  serviceId String?         @map("service_id") @db.Uuid
+  service   ServiceCatalog? @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  // Posisi unit sekarang di dalam routing. NULL = belum masuk produksi.
+  currentStageId String?       @map("current_stage_id") @db.Uuid
+  currentStage   RoutingStage? @relation(fields: [currentStageId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([orderId, seq])
+  @@index([orderId])
+  @@index([status]) // papan bengkel & Kendali: "berapa unit per status"
+  @@index([currentStageId]) // papan Kanban per tahap
+  @@map("units")
+}
+
+// TAHAP PRODUKSI SEBAGAI DATA (D-003).
+//
+// Isi tabel ini adalah sumber kebenaran urutan produksi — lihat
+// docs/sano-hub/ROUTING.md. Enam layanan TIDAK punya enam template; ada satu
+// tulang punggung (INTAKE → MODULE → FINISH) dengan modul yang dipilih per unit.
+//
+// JANGAN menulis nama tahap di logika aplikasi. Kalau muncul dorongan menulis
+// `if (stage.code === 'fit_test')`, berhenti dan pakai flag — atau tambahkan
+// kolom flag baru di sini.
+model RoutingStage {
+  id       String     @id @default(uuid()) @db.Uuid
+  code     String     @unique
+  labelId  String     @map("label_id") // label bahasa Indonesia untuk UI
+  phase    StagePhase
+  sequence Int
+
+  // NULL = berlaku untuk KEDUA lini. Diisi hanya kalau tahap eksklusif milik
+  // satu lini (mis. Tambah Busa cuma ada di SERVICE).
+  serviceLine ServiceLine? @map("service_line")
+
+  isOptional Boolean @default(false) @map("is_optional")
+
+  // Foto adalah produknya: bukti QC, pembelaan sengketa, baseline garansi,
+  // sekaligus materi marketing.
+  requiresPhoto Boolean @default(false) @map("requires_photo")
+
+  // PAKAI FLAG INI, bukan perbandingan `code`.
+  requiresQc Boolean @default(false) @map("requires_qc")
+
+  // SENGAJA NULL di seed. Jangan ditebak — isi dari unit_stage_logs nyata
+  // setelah beberapa minggu, lalu pakai untuk proyeksi tanggal janji.
+  expectedDurationMinutes Int? @map("expected_duration_minutes")
+
+  requiredRole Role?    @map("required_role")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  serviceModules ServiceCatalogModule[]
+  unitsHere      Unit[]
+
+  @@index([phase, sequence])
+  @@map("routing_stages")
+}
+
+// Katalog layanan yang dijual. Layanan ketujuh = satu baris di sini + pemetaan
+// modulnya, BUKAN routing template baru.
+model ServiceCatalog {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique
+  labelId     String      @map("label_id")
+  serviceLine ServiceLine @map("service_line")
+  active      Boolean     @default(true)
+  sortOrder   Int         @default(0) @map("sort_order")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  modules ServiceCatalogModule[]
+  units   Unit[]
+
+  @@map("service_catalog")
+}
+
+// Modul kerja yang dipakai sebuah layanan, beserta urutannya.
+//
+// DUA ATURAN yang TIDAK dipaksakan oleh constraint kolom dan karena itu wajib
+// divalidasi di aplikasi kalau katalog nanti bisa diedit lewat UI:
+//   1. stage yang dipetakan harus berfase MODULE
+//   2. serviceLine stage harus sama dengan serviceLine layanan, atau NULL
+//      (netral, mis. Ganti Kain) — mencampur lini dilarang (D-004)
+// Keduanya diperiksa keras di blok verifikasi migrasi 20260731100200.
+model ServiceCatalogModule {
+  id        String         @id @default(uuid()) @db.Uuid
+  serviceId String         @map("service_id") @db.Uuid
+  service   ServiceCatalog @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  stageId   String         @map("stage_id") @db.Uuid
+  stage     RoutingStage   @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  sequence  Int
+
+  @@unique([serviceId, stageId])
+  @@index([serviceId])
+  @@map("service_catalog_modules")
 }
 
 // Riwayat perpindahan STATUS ORDER (append-only) — pasangan dari
