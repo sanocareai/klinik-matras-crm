@@ -55,6 +55,13 @@ test("user tanpa role tidak punya permission apa pun", () => {
   assert.equal(permissionsOf({ roles: ["TIDAK_DIKENAL"] }).size, 0);
 });
 
+test("SALES bisa baca status/dokumentasi unit (D-015) tapi TIDAK bisa menulis produksi", () => {
+  assert.ok(hasPermission(sales, P.UNIT_READ));
+  assert.ok(!hasPermission(sales, P.UNIT_STAGE_WRITE));
+  assert.ok(!hasPermission(sales, P.UNIT_ROUTING_WRITE));
+  assert.ok(!hasPermission(sales, P.QC_WRITE));
+});
+
 // --- aturan keamanan inti (PRD §9.3) ---------------------------------------
 test("pekerja produksi TIDAK bisa melihat PII customer maupun harga", () => {
   assert.ok(!hasPermission(worker, P.CUSTOMER_PII_READ));

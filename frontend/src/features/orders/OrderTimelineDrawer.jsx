@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, Clock, MessageSquare, Timer } from "lucide-react";
+import { X, Clock, MessageSquare, Timer, Camera, ImageOff } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -7,6 +7,100 @@ import {
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { cn } from "@/lib/utils.js";
+
+// Tab "Dokumentasi" (D-015) — berkas foto per tahap produksi untuk order ini,
+// dikumpulkan dari unit_stage_logs.photo_urls milik SEMUA unit order. Ini
+// yang "kelebihan Sano" yang Gilang sebut: tiap proses/uji didokumentasikan
+// dan dikirim ke customer. Sales melihat berkas terkumpul di sini, lalu
+// FORWARD MANUAL ke customer (D-015 — sistem TIDAK auto-kirim; asumsi
+// terbuka, lihat DECISIONS.md kalau nanti mau diubah).
+//
+// Klik foto membuka ukuran penuh di tab baru — cara paling sederhana & robust
+// untuk "simpan lalu forward" (klik kanan simpan / tekan lama di HP), tanpa
+// membangun lightbox kustom untuk kebutuhan yang sesederhana ini.
+function DocumentationTab({ orderId }) {
+  const [doc, setDoc] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let batal = false;
+    setLoading(true);
+    setError("");
+    api.getOrderDocumentation(orderId)
+      .then((r) => { if (!batal) setDoc(r); })
+      .catch((e) => { if (!batal) setError(e.message); })
+      .finally(() => { if (!batal) setLoading(false); });
+    return () => { batal = true; };
+  }, [orderId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="rounded-xl bg-redbg px-3.5 py-3 text-[12px] text-red">{error}</p>;
+  }
+
+  if (!doc || doc.entries.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-1.5 rounded-xl bg-surface px-4 py-8 text-center shadow-card">
+        <ImageOff className="text-ink3" size={24} />
+        <p className="text-[13px] font-semibold text-ink2">Belum ada dokumentasi</p>
+        <p className="text-[11px] leading-relaxed text-ink3">
+          Foto muncul di sini begitu kepala produksi mencatat tahap yang wajib foto
+          (Uji Sebelum Bongkar, Bongkar, Uji Berat Badan, Jahit Corner, Finish).
+        </p>
+      </div>
+    );
+  }
+
+  // Dikelompokkan per UNIT — order multi-kasur (mis. hotel) perlu jelas
+  // "ini foto kasur yang mana", bukan daftar foto tercampur (D-002).
+  const byUnit = doc.entries.reduce((acc, e) => {
+    (acc[e.unitCode] = acc[e.unitCode] || []).push(e);
+    return acc;
+  }, {});
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[11px] text-ink3">
+        {doc.totalPhotos} foto dari {Object.keys(byUnit).length} unit — klik untuk buka ukuran
+        penuh, lalu simpan & forward ke customer.
+      </p>
+      {Object.entries(byUnit).map(([unitCode, entries]) => (
+        <div key={unitCode}>
+          <p className="mb-1.5 font-mono text-[11px] font-semibold text-ink2">{unitCode}</p>
+          <div className="flex flex-col gap-2.5">
+            {entries.map((entry, i) => (
+              <div key={i} className="rounded-xl bg-surface p-2.5 shadow-card">
+                <div className="flex items-center justify-between">
+                  <p className="text-[12px] font-semibold text-ink">{entry.stageLabel}</p>
+                  <p className="text-[10px] text-ink3">{formatTanggal(entry.recordedAt)}</p>
+                </div>
+                {entry.note && <p className="mt-0.5 text-[11px] text-ink2">{entry.note}</p>}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {entry.photoUrls.map((url) => (
+                    <a key={url} href={url} target="_blank" rel="noreferrer">
+                      <img
+                        src={url} alt={entry.stageLabel}
+                        className="h-16 w-16 rounded-lg object-cover transition-opacity hover:opacity-80"
+                      />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Riwayat status satu order. Sumbernya tabel order_status_transitions yang
 // APPEND-ONLY dan TIDAK bisa di-backfill — jadi untuk order yang dibuat sebelum
@@ -20,6 +114,12 @@ const TONE = {
 export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
+  const [tab, setTab]         = useState("status"); // "status" | "dokumentasi"
+
+  // Balik ke tab Status tiap kali drawer dibuka order BARU — supaya sales
+  // yang barusan lihat dokumentasi order sebelumnya tidak salah kira sedang
+  // lihat dokumentasi order yang baru dibuka.
+  useEffect(() => { if (order) setTab("status"); }, [order?.id]);
 
   useEffect(() => {
     if (!order) { setData(null); return; }
@@ -96,10 +196,34 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
             </button>
           )}
 
-          <h3 className="mb-2 mt-5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink3">
-            <Clock size={12} /> Riwayat Status
-          </h3>
+          {/* Tab Status/Dokumentasi — dua sumber data terpisah (order_status_
+              transitions vs unit_stage_logs.photo_urls), disatukan di satu
+              drawer supaya sales tidak perlu pindah layar (PRD FR-G-08). */}
+          <div className="mt-4 flex gap-1 rounded-xl bg-inset p-1">
+            {[
+              { key: "status", label: "Status", icon: Clock },
+              { key: "dokumentasi", label: "Dokumentasi", icon: Camera },
+            ].map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold transition-colors",
+                  tab === t.key ? "bg-base text-ink shadow-card" : "text-ink3 hover:text-ink2"
+                )}
+              >
+                <t.icon size={13} /> {t.label}
+              </button>
+            ))}
+          </div>
 
+          {tab === "dokumentasi" ? (
+            <div className="mt-4">
+              <DocumentationTab orderId={order.id} />
+            </div>
+          ) : (
+          <>
           {loading ? (
             <div className="flex flex-col gap-2">
               {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
@@ -153,6 +277,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
                 </li>
               ))}
             </ol>
+          )}
+          </>
           )}
 
           {order.hasComplaint && (

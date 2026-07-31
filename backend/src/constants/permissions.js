@@ -86,6 +86,12 @@ export const ROLE_PERMISSIONS = {
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
     P.CONVERSATION_READ, P.CONVERSATION_WRITE,
     P.ORDER_READ, P.ORDER_WRITE, P.ORDER_PRICE_READ,
+    // Baca-saja: "kasur sampai tahap mana" + dokumentasi foto per tahap
+    // (D-015) untuk dijawab ke customer / di-forward. PRD FR-G-08: order
+    // timeline lintas portal harus terbaca CS tanpa keluar layar. TIDAK
+    // dapat UNIT_STAGE_WRITE/UNIT_ROUTING_WRITE — sales tidak mengubah
+    // produksi, cuma melihatnya.
+    P.UNIT_READ,
     P.DASHBOARD_READ,
   ],
 
