@@ -655,3 +655,49 @@ unit nyata → waste 0.05 m³ dengan alasan → stock opname hasil hitung 9.5
 UI dari login: tambah material baru, catat penerimaan, saldo & riwayat
 ter-update benar. Guard permission (INVENTORY_READ/WRITE, WAJIB alasan
 untuk WASTE/ADJUSTMENT, tolak variance nol) semua diverifikasi lewat curl.
+
+---
+
+## D-022 — 4 notifikasi WhatsApp otomatis ke customer, FR-M ditunda (Phase 4)
+
+**Keputusan.** Phase 4 dipersempit ke FR-N saja (notifikasi) untuk iterasi
+ini. FR-M (uang/outstanding balance) DITUNDA — lihat alasan di bawah.
+
+Empat momen PERSIS sesuai PRD §7.8, tidak lebih ("more than four and
+customers mute you"): pickup dijadwalkan, unit sampai bengkel, siap
+dikirim, terkirim. Diimplementasi di `services/customerNotifications.js`,
+dipicu dari titik yang SUDAH ADA di `armada.js` (buat job PICKUP dengan
+tanggal, job PICKUP/DELIVERY selesai) dan `production.js` (unit tuntas
+seluruh tahap → READY_FOR_DELIVERY). Semua best-effort — gagal kirim WA
+TIDAK PERNAH menggagalkan aksi utamanya, pola yang sama dengan
+`notifyDriverGroup` (D-018), tapi target CUSTOMER, bukan grup internal.
+
+**Kenapa FR-M ditunda.** PRD §9.3/§7.9 mengasumsikan ledger Payment
+per-Order dengan outstanding balance turunan (amount_paid vs Order.value).
+Tapi sistem ini SUDAH punya `Order.paymentStatus` (enum BELUM_BAYAR/DP/
+LUNAS) — field manual yang dipakai analytics.js untuk revenue "collected"
+sejak sebelum Sano Hub ada. Payment ledger yang dibangun D-011 sengaja
+terikat ke Job (driver mencatat penerimaan di stop pengiriman), BUKAN ke
+Order langsung — jadi tidak bisa dipakai untuk "DP saat konfirmasi order"
+(FR-M-01, terjadi sebelum job apa pun ada) tanpa migrasi skema (longgarkan
+Payment.jobId jadi opsional, tambah Payment.orderId wajib, backfill data
+lama). Menyatukan dua sumber kebenaran pembayaran (paymentStatus manual +
+ledger baru) TANPA rencana migrasi yang jelas berisiko menciptakan
+persis masalah yang locking pola D-012/D-017 coba hindari — dua tempat
+nyimpan "status bayar" yang bisa saling tidak sinkron, dan analytics.js
+yang sudah bergantung ke `paymentStatus` bisa mulai berbohong diam-diam.
+Ini keputusan MENUNDA dengan sengaja, bukan lupa — perlu obrolan terpisah
+dengan Gilang soal mana yang jadi sumber kebenaran final sebelum digarap.
+
+**Yang TIDAK dibangun di sini (sengaja):** status link customer (PRD minta
+tokenized link — belum ada fondasinya), estimasi waktu selesai di pesan
+"unit sampai bengkel" (Kendali sudah mengaku tidak bisa menghitung ini,
+lihat unavailable di kendali.js — tidak masuk akal menjanjikannya di WA).
+
+**Verifikasi.** Diuji lewat API langsung: job PICKUP dibuat dengan tanggal
+→ conversation customer dibuat otomatis, percobaan kirim via CS-1 lalu
+CS-2 (fallback session yang benar), gagal (tidak ada WAHA lokal) tapi
+response API tetap 201 — TIDAK menggagalkan pembuatan job. Sama untuk
+job PICKUP selesai (trigger "unit sampai") — response tetap 200 walau
+kirim WA gagal. Konfirmasi lewat log: percobaan kirim BENAR-BENAR terjadi
+(bukan silently skipped), errornya tertangkap di lapisan yang benar.

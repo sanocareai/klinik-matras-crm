@@ -17,6 +17,7 @@ import {
 } from "../services/unitStageEngine.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { prisma } from "../db.js";
+import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
@@ -161,8 +162,24 @@ productionRouter.delete("/targets/:id", requirePermission(P.UNIT_STAGE_WRITE), a
 productionRouter.post("/units/:id/done", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     const { photoUrls, note } = req.body;
+    const before = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { status: true } });
     await recordStageDone(req.params.id, { actorId: req.user.id, photoUrls, note });
     const status = await getUnitStatus(req.params.id);
+
+    // FR-N trigger 3/4: "Siap dikirim" — HANYA saat status BENAR-BENAR baru
+    // pindah ke READY_FOR_DELIVERY (bukan sudah di sana sebelumnya), supaya
+    // tidak terkirim dobel kalau endpoint ini dipanggil lagi untuk unit yang
+    // sama. Best-effort, lihat catatan di customerNotifications.js.
+    if (before?.status !== "READY_FOR_DELIVERY" && status.unit.status === "READY_FOR_DELIVERY") {
+      const order = await prisma.order.findUnique({
+        where: { id: status.unit.orderId },
+        select: { orderNumber: true, customer: { select: { id: true, name: true } } },
+      });
+      if (order?.customer) {
+        notifyReadyForDelivery(status.unit.unitCode, order.orderNumber, order.customer.id, order.customer.name);
+      }
+    }
+
     res.json(status);
   } catch (err) {
     handleErr(err, res);

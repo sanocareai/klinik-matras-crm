@@ -25,6 +25,7 @@ import { sendMedia } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
+import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -332,6 +333,16 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
       },
       include: jobInclude,
     });
+
+    // FR-N trigger 1/4: "Pickup scheduled" — HANYA saat dibuat LANGSUNG
+    // dengan tanggal (bukan diulang tiap PATCH reschedule, supaya dispatcher
+    // bebas menyesuaikan jadwal tanpa memicu notifikasi berkali-kali — lihat
+    // catatan di customerNotifications.js).
+    if (job.type === "PICKUP" && job.scheduledDate) {
+      const customer = job.units[0]?.unit?.order?.customer;
+      if (customer) notifyPickupScheduled(job, customer.id, customer.name);
+    }
+
     res.status(201).json(job);
   } catch (err) {
     handleErr(err, res);
@@ -482,6 +493,16 @@ armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), asyn
     notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
       console.error("[jobs/:id/complete] notifyDriverGroup gagal:", err.message)
     );
+
+    // FR-N trigger 2 & 4/4: "Unit sampai bengkel" (PICKUP) / "Terkirim"
+    // (DELIVERY) — ke CUSTOMER, beda dari notifyDriverGroup di atas yang
+    // ke grup ops internal.
+    const customer = full.units[0]?.unit?.order?.customer;
+    const orderNumber = full.units[0]?.unit?.order?.orderNumber;
+    if (customer) {
+      if (job.type === "PICKUP") notifyUnitReceived(orderNumber, customer.id, customer.name);
+      else notifyDelivered(orderNumber, customer.id, customer.name);
+    }
 
     res.json(full);
   } catch (err) {
