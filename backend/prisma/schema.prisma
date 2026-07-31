@@ -367,6 +367,12 @@ model Conversation {
   pinnedAt      DateTime? // kapan terakhir disematkan
   createdAt     DateTime           @default(now())
 
+  // Grup WhatsApp yang ditugaskan menerima dokumentasi pickup/delivery
+  // driver (D-018). Hanya bermakna untuk type=GROUP. Partial unique index
+  // di database memastikan CUMA SATU conversation boleh true sekaligus —
+  // ditandai admin SEKALI, bukan dipilih ulang tiap job selesai.
+  isDriverGroup Boolean @default(false)
+
   // Sales yang PERTAMA KALI kirim balasan outbound dari CRM di percakapan
   // ini — diisi SEKALI (tidak pernah berubah lagi walau assignedToId
   // berpindah-pindah lewat takeover/transfer), lihat routes/conversations.js

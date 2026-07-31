@@ -209,6 +209,45 @@ melihat nomor telepon customer maupun harga.
 
 ---
 
+## D-018 — Dokumentasi driver ke grup WA OTOMATIS, bukan lewat klik manual
+
+**Konteks (Gilang, 31 Juli 2026).** "Penjemputan dan pengambilan
+terdokumentasi di grup driver whatsapp."
+
+**Beda dengan D-016 (dokumentasi ke CUSTOMER, lewat sales, wajib klik
+manual).** Di sini target-nya grup ops INTERNAL, bukan customer. Pola yang
+Gilang gambarkan ("kepala produksi update ke grup" — D-014) memang berupa
+praktik rutin yang diharapkan otomatis terjadi, bukan sesuatu yang direview
+per pesan. Jadi begitu driver menekan Selesai/Gagal (dengan foto yang SUDAH
+wajib diisi di langkah itu), foto langsung terkirim ke grup — TANPA langkah
+klik konfirmasi tambahan.
+
+**Keputusan.**
+1. `Conversation.isDriverGroup` (boolean, migrasi 20260801110000) — grup WA
+   mana yang ditugaskan. Index unik PARSIAL di database (`WHERE
+   isDriverGroup = true`) memastikan cuma SATU grup aktif kapan pun; ADMIN
+   ganti lewat `PUT /api/armada/driver-group`, sekali di awal.
+2. `notifyDriverGroup()` di `armada.js` dipanggil dari `/complete` dan
+   `/fail`, TIDAK di-`await` (fire-and-forget + `.catch()`) — job yang sudah
+   selesai/gagal ADALAH kebenaran (baris Unit/Job), posting ke grup cuma
+   dokumentasi tambahan. Kalau grup belum ditetapkan atau WAHA gagal, job
+   TETAP sukses; cuma dokumentasinya yang tidak terkirim. Diverifikasi
+   eksplisit: job tetap `COMPLETED` walau kirim ke grup gagal total (tidak
+   ada WAHA nyata di lingkungan tes).
+3. Menandai grup mana yang "Grup Driver" perlu `CONVERSATION_READ` (melihat
+   daftar grup) — role `DISPATCHER` TIDAK punya permission itu (lihat
+   permissions.js), jadi endpoint ini `ADMIN` only (`P.USER_MANAGE`),
+   BUKAN `JOB_WRITE`. Bukan pembatasan baru, konsekuensi dari model
+   permission yang sudah ada.
+
+**Kenapa BUKAN driver yang memilih grup tiap kali:** role `DRIVER` sengaja
+tidak diberi `CONVERSATION_READ` sama sekali (Phase 0) — driver tidak boleh
+menjelajah Inbox. Meminta driver "pilih grup" tiap job selesai bukan cuma
+gesekan ekstra (bertentangan dengan D-014's "satu tap"), tapi juga butuh
+permission yang sengaja tidak diberikan ke role itu.
+
+---
+
 ## D-017 — Bug nyata: dua `getMe` di api.js membuat auto-skip Portal rusak total, tanpa error
 
 **Bukan keputusan desain — catatan insiden**, disimpan di sini karena caranya

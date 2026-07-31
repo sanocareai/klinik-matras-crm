@@ -77,13 +77,13 @@ function resolveSendSession(conversation) {
   return conversation.sessionId || null;
 }
 
-const SESSION_UNKNOWN_ERROR = "Sesi WA percakapan ini belum diketahui — buka menu dan pilih sesi";
+export const SESSION_UNKNOWN_ERROR = "Sesi WA percakapan ini belum diketahui — buka menu dan pilih sesi";
 
 // Dilempar sendWithSessionFallback() kalau conversation.sessionId null DAN
 // semua KNOWN_SESSIONS gagal — caller HARUS tangkap ini terpisah dari error
 // WAHA biasa supaya balikin 409 (munculkan pilihan manual "Pilih sesi..."),
 // bukan 502 (yang berarti sesi sudah benar tapi WAHA-nya yang bermasalah).
-class SessionResolutionError extends Error {}
+export class SessionResolutionError extends Error {}
 
 // Self-healing session resolver — dipakai semua endpoint kirim (messages,
 // media, send-product, forward). Kalau conversation.sessionId SUDAH ada,
@@ -94,7 +94,7 @@ class SessionResolutionError extends Error {}
 // berhasil — begitu berhasil, SIMPAN sessionId itu ke conversation supaya
 // tidak perlu tanya/coba-coba lagi lain kali (self-healing permanen).
 // sendFn menerima 1 argumen: nama session yang sedang dicoba.
-async function sendWithSessionFallback(conversation, sendFn) {
+export async function sendWithSessionFallback(conversation, sendFn) {
   if (conversation.sessionId) {
     const result = await sendFn(conversation.sessionId);
     return { result, session: conversation.sessionId };
@@ -125,7 +125,7 @@ async function sendWithSessionFallback(conversation, sendFn) {
 // pakai nomor customer, GROUP pakai groupJid (sudah format "xxx@g.us",
 // wahaClient.js#sendText/sendMedia sudah handle string yang sudah punya "@"
 // tanpa nambah "@c.us" lagi — tidak perlu ubah wahaClient.js).
-function resolveSendTarget(conversation) {
+export function resolveSendTarget(conversation) {
   if (conversation.type === "GROUP") return conversation.groupJid || null;
   return conversation.customer?.phone || null;
 }

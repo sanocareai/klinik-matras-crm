@@ -7,6 +7,7 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import DriverJobs from "./DriverJobs.jsx";
 
 // ARMADA — dispatcher menjadwalkan pengambilan & pengiriman harian.
 //
@@ -241,6 +242,72 @@ function CreateJobPanel({ type, available, date, onCreated, onClose }) {
   );
 }
 
+// ── Pengaturan Grup Driver (D-018) — ADMIN only, sekali setup ────────────
+// Sengaja MINIMAL: satu dropdown + tombol simpan, bukan halaman pengaturan
+// tersendiri. Ini konfigurasi yang dilakukan SEKALI di awal, bukan aksi
+// rutin harian dispatcher — tidak perlu tempat mewah.
+function DriverGroupSettings() {
+  const [open, setOpen] = useState(false);
+  const [groups, setGroups] = useState(null);
+  const [current, setCurrent] = useState(null);
+  const [selected, setSelected] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || groups) return;
+    Promise.all([api.getGroupConversations(), api.getDriverGroup()]).then(([gs, cur]) => {
+      setGroups(gs);
+      setCurrent(cur.group);
+      setSelected(cur.group?.id || "");
+    });
+  }, [open, groups]);
+
+  async function save() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const r = await api.setDriverGroup(selected);
+      setCurrent(r.group);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="mb-3 text-xs text-ink2 hover:text-accent hover:underline">
+        Grup WhatsApp Driver: {current?.groupName || "belum diatur"} — atur
+      </button>
+    );
+  }
+
+  return (
+    <Card className="mb-4 p-3">
+      <p className="mb-2 text-xs font-semibold text-ink">Grup WhatsApp Driver</p>
+      <p className="mb-2 text-[11px] text-ink2">
+        Dokumentasi foto pickup/delivery driver dikirim otomatis ke grup ini.
+      </p>
+      {!groups ? (
+        <Loader2 className="h-4 w-4 animate-spin text-ink2" />
+      ) : (
+        <div className="flex gap-2">
+          <select
+            value={selected} onChange={(e) => setSelected(e.target.value)}
+            className="h-9 flex-1 rounded-lg border border-border px-2 text-xs text-ink outline-none focus:border-accent"
+          >
+            <option value="">Pilih grup…</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.groupName || g.id}</option>)}
+          </select>
+          <Button className="h-9 text-xs" disabled={busy || !selected} onClick={save}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Simpan"}
+          </Button>
+          <button onClick={() => setOpen(false)} className="text-ink2 hover:text-ink"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Halaman ───────────────────────────────────────────────────────────────
 export default function Armada() {
   const [type, setType] = useState("PICKUP");
@@ -269,14 +336,8 @@ export default function Armada() {
   if (isDriverOnly) {
     return (
       <PageContainer>
-        <div className="py-16 text-center">
-          <Truck className="mx-auto mb-3 h-10 w-10 text-ink2" strokeWidth={1.5} />
-          <h2 className="text-lg font-semibold text-ink">Tampilan Driver Segera Hadir</h2>
-          <p className="mt-1 text-sm text-ink2">
-            Halaman ini untuk dispatcher menjadwalkan job. Daftar job Anda sendiri akan
-            tersedia di sini setelah tampilan driver selesai dibangun.
-          </p>
-        </div>
+        <PageHeader title="Job Saya" subtitle="Pengambilan & pengiriman yang ditugaskan ke Anda hari ini." />
+        <DriverJobs />
       </PageContainer>
     );
   }
@@ -321,6 +382,8 @@ export default function Armada() {
           </div>
         }
       />
+
+      {roles.includes("ADMIN") && <DriverGroupSettings />}
 
       <div className="mb-4 flex gap-1 rounded-xl bg-inset p-1">
         {[

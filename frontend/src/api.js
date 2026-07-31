@@ -125,6 +125,14 @@ export const api = {
   // Armada — jadwal pickup & pengiriman (Sano Hub Phase 1)
   getArmadaBoard: (type, date) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}`),
   getDrivers: () => request("/armada/drivers"),
+  getDriverGroup: () => request("/armada/driver-group"),
+  setDriverGroup: (conversationId) =>
+    request("/armada/driver-group", { method: "PUT", body: JSON.stringify({ conversationId }) }),
+  // Daftar percakapan GRUP — dipakai admin memilih "Grup Driver" (D-018).
+  // Endpoint terpisah di armada.js, BUKAN GET /conversations (endpoint itu
+  // tidak punya filter `type`, dan menambahkannya berarti menyentuh endpoint
+  // yang dipakai luas di Inbox — sama alasannya dengan /armada/drivers).
+  getGroupConversations: () => request("/armada/groups"),
   createArmadaJob: (data) => request("/armada/jobs", { method: "POST", body: JSON.stringify(data) }),
   updateArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`, { method: "DELETE" }),

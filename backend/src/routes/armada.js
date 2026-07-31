@@ -21,6 +21,10 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { sendMedia } from "../services/wahaClient.js";
+import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
+import { buildMessagePreview } from "../utils/messagePreview.js";
+import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -54,6 +58,65 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
+// D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
+// ditugaskan (Conversation.isDriverGroup). BEST-EFFORT, SELALU dibungkus
+// try/catch oleh pemanggil — menyelesaikan job ADALAH kebenaran (Unit/Job
+// record), posting ke grup cuma dokumentasi tambahan. Kalau grup belum
+// ditetapkan atau WAHA gagal, job TETAP berhasil selesai/gagal, cuma
+// dokumentasinya yang tidak terkirim.
+//
+// TIDAK seperti send-documentation (D-016) yang perlu klik manual sales
+// sebelum sampai ke CUSTOMER, ini OTOMATIS — target-nya grup ops INTERNAL,
+// pola yang sama dengan "kepala produksi update ke grup" yang Gilang
+// sebut sebagai praktik biasa, bukan sesuatu yang perlu direview per pesan.
+async function notifyDriverGroup(job, photoUrls, headline) {
+  const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
+  if (!group) return; // belum ditetapkan — diam-diam, bukan error
+
+  const target = resolveSendTarget(group);
+  if (!target) return;
+
+  const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+  const orderNo = job.units[0]?.unit?.order?.orderNumber || job.orderId;
+  const unitList = job.units.map((ju) => ju.unit.unitCode).join(", ");
+
+  const savedMessages = [];
+  for (let i = 0; i < photoUrls.length; i++) {
+    const isLast = i === photoUrls.length - 1;
+    const caption = isLast ? `${headline}\n*${orderNo}*\n${unitList}` : "";
+    try {
+      const { session } = await sendWithSessionFallback(group, (s) =>
+        sendMedia(
+          target,
+          { mimetype: "image/jpeg", filename: photoUrls[i].split("/").pop(), url: `${BACKEND_INTERNAL_URL}${photoUrls[i]}` },
+          caption, "media", s
+        )
+      );
+      group.sessionId = session;
+      // Simpan Message supaya riwayat grup di Inbox CRM tetap sinkron dengan
+      // apa yang benar-benar terkirim ke WhatsApp — sama seperti pola
+      // send-product/send-documentation, bukan jalur kirim yang "senyap".
+      const msg = await prisma.message.create({
+        data: { conversationId: group.id, direction: "OUTBOUND", content: caption, mediaType: "image", mediaUrl: photoUrls[i] },
+      });
+      savedMessages.push(msg);
+    } catch (err) {
+      console.error(`[notifyDriverGroup] Gagal kirim foto ${photoUrls[i]}:`, err.message);
+    }
+    if (!isLast) await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  if (savedMessages.length > 0) {
+    const last = savedMessages[savedMessages.length - 1];
+    const updatedGroup = await prisma.conversation.update({
+      where: { id: group.id },
+      data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(last.content, last.mediaType) },
+    });
+    savedMessages.forEach((m) => emitNewMessage(group.id, m));
+    emitConversationUpdate(updatedGroup);
+  }
+}
+
 // Job dianggap "aktif" (masih akan dikerjakan) — dipakai untuk menyaring
 // unit yang SUDAH punya job tipe ini supaya tidak double-booking. FAILED dan
 // RESCHEDULED SENGAJA TIDAK termasuk aktif — unit itu harus muncul lagi di
@@ -83,6 +146,60 @@ function toDateOnly(input) {
   if (!input) return null;
   return new Date(`${input}T00:00:00.000Z`);
 }
+
+// GET /api/armada/driver-group — grup WA yang ditugaskan menerima
+// dokumentasi (D-018). ADMIN only: menandai grup butuh CONVERSATION_READ
+// untuk melihat daftar grup yang ada, dan DISPATCHER TIDAK punya permission
+// itu (lihat permissions.js) — konsisten, bukan pembatasan baru.
+// GET /api/armada/groups — daftar percakapan GRUP, untuk admin memilih mana
+// "Grup Driver" (D-018). ADMIN only, sama alasannya dengan /driver-group.
+armadaRouter.get("/groups", requirePermission(P.USER_MANAGE), async (req, res) => {
+  try {
+    const groups = await prisma.conversation.findMany({
+      where: { type: "GROUP" },
+      select: { id: true, groupName: true, groupJid: true, isDriverGroup: true },
+      orderBy: { groupName: "asc" },
+    });
+    res.json(groups);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.get("/driver-group", requirePermission(P.USER_MANAGE), async (req, res) => {
+  try {
+    const group = await prisma.conversation.findFirst({
+      where: { type: "GROUP", isDriverGroup: true },
+      select: { id: true, groupName: true, groupJid: true },
+    });
+    res.json({ group });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PUT /api/armada/driver-group { conversationId }
+// Index unik parsial di database (migrasi 20260801110000) yang SEBENARNYA
+// menjamin cuma satu grup aktif — endpoint ini cuma perlu urus "matikan yang
+// lama, nyalakan yang baru" dalam satu transaksi supaya tidak ada jendela
+// waktu dua-duanya true (yang akan membentur index itu).
+armadaRouter.put("/driver-group", requirePermission(P.USER_MANAGE), async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    if (!conversationId) throw new ArmadaError("conversationId wajib diisi");
+    const target = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!target) throw new ArmadaError("Percakapan tidak ditemukan", 404);
+    if (target.type !== "GROUP") throw new ArmadaError("Hanya percakapan GRUP yang bisa ditandai");
+
+    await prisma.$transaction([
+      prisma.conversation.updateMany({ where: { isDriverGroup: true }, data: { isDriverGroup: false } }),
+      prisma.conversation.update({ where: { id: conversationId }, data: { isDriverGroup: true } }),
+    ]);
+    res.json({ ok: true, group: { id: target.id, groupName: target.groupName } });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
 
 // GET /api/armada/drivers — daftar user berrole DRIVER, untuk dropdown
 // penugasan dispatcher. Endpoint terpisah dari GET /api/users (dipakai luas
@@ -350,7 +467,16 @@ armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), asyn
       });
       return j;
     });
-    res.json(await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude }));
+    const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
+
+    // Best-effort, TIDAK PERNAH menggagalkan response job yang sudah beres —
+    // lihat komentar notifyDriverGroup di atas.
+    const headline = job.type === "PICKUP" ? "✅ Pengambilan selesai" : "✅ Pengiriman selesai";
+    notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
+      console.error("[jobs/:id/complete] notifyDriverGroup gagal:", err.message)
+    );
+
+    res.json(full);
   } catch (err) {
     handleErr(err, res);
   }
@@ -394,7 +520,13 @@ armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (r
       }
       return j;
     });
-    res.json(await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude }));
+    const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
+
+    notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
+      console.error("[jobs/:id/fail] notifyDriverGroup gagal:", err.message)
+    );
+
+    res.json(full);
   } catch (err) {
     handleErr(err, res);
   }
