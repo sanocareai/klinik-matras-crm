@@ -487,3 +487,50 @@ stop pengiriman, dengan rekonsiliasi harian per driver dan verifikasi finance.
 dilaporkan lewat grup WhatsApp dengan foto uang. Volumenya kecil (jadi murah
 dibangun), tapi ini SATU-SATUNYA jejak audit kas yang ada sekarang — permukaan
 kebocoran paling nyata di operasi.
+
+---
+
+## D-019 — Login driver: email+password biasa, akun dibuatkan admin (bukan OTP, bukan Google)
+
+**Keputusan.** Asumsi terbuka #4 di CLAUDE.md ("skema login driver — OTP
+telepon vs akun yang dibuatkan") ditutup: driver login PERSIS seperti role
+lain — email + password, akun dibuat admin di halaman Pengguna & Peran. Tidak
+ada OTP telepon, tidak ada Google/OAuth apa pun. Kata Gilang: "login driver
+via otp gaperlu, login hanya by email aja dan email nya kita yang bikin
+gaperlu pakai google."
+
+Sebagai bagian dari keputusan ini, `Pengguna.jsx` dan `routes/users.js`
+diperluas dari 3 peran (ADMIN/SALES/CS) jadi men-dukung SEMUA 9 peran di
+`Role` enum, termasuk DRIVER — sebelumnya admin TIDAK PUNYA cara lewat UI
+untuk memberi seseorang peran Sano Hub apa pun (DRIVER, DISPATCHER,
+PRODUCTION_LEAD, dst), cuma bisa lewat manipulasi DB langsung. Endpoint baru:
+`POST /users/:id/roles` dan `DELETE /users/:id/roles/:role`, aditif sesuai
+D-010 — satu user bisa pegang beberapa peran sekaligus, dicentang/dihapus
+satu-satu, dengan penjagaan tidak boleh menyisakan user tanpa peran sama
+sekali.
+
+**Bug nyata yang ikut ditemukan & diperbaiki di jalan.** `ROLE_LABELS` lama
+di `Pengguna.jsx` punya opsi "CS" — padahal `Role` enum di `schema.prisma`
+TIDAK PERNAH punya value `CS` sejak migrasi ke multi-role (D-010). Membuat
+user dengan peran itu akan gagal di Prisma tanpa pesan yang jelas ke admin.
+Tidak ada yang pernah mencobanya sampai sekarang (makanya lolos tanpa
+ketahuan) — kemungkinan sisa dari sebelum `Role` enum diperluas.
+
+**Detail teknis penting.** `rolesOf()`/`loadRoles()` (auth.js, authorize.js)
+fallback ke kolom `role` tunggal HANYA kalau tabel `user_roles` benar-benar
+kosong untuk user itu — begitu ada SATU baris, kolom lama berhenti dibaca
+sama sekali untuk keperluan otorisasi. Ini jebakan nyata: kalau admin
+menambah satu peran Sano Hub ke user yang sudah punya akses lewat kolom lama
+(mis. SALES), tanpa penanganan khusus mereka bisa kehilangan akses SALES
+begitu saja. Ditangani dengan `materializeRoles()` — SEBELUM add/remove
+apa pun, kalau `user_roles` masih kosong, isi dulu dengan `role` lama user
+itu, baru proses perubahan yang diminta. User baru (dibuat lewat modal
+Tambah Pengguna) langsung dapat baris `user_roles` sejak awal, tidak pernah
+lewat jalur fallback ini sama sekali.
+
+**Konsekuensi.** `PATCH /users/:id` dengan field `role` (kolom tunggal lama)
+masih ada di backend untuk kompatibilitas, tapi UI baru tidak memakainya lagi
+— semua perubahan peran lewat `POST`/`DELETE /users/:id/roles`. Kolom `role`
+lama tetap dipakai di beberapa tempat sebagai gate cepat (`adminOnly`
+middleware, gate halaman `currentUser.role !== "ADMIN"`) — sengaja tidak
+disentuh di keputusan ini, di luar scope.

@@ -1,22 +1,56 @@
 import React, { useEffect, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText,
+  MessageSquare, Users, FileText, Check,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import { formatTanggalWaktu } from "../utils/format.js";
 
-const ROLE_LABELS = { ADMIN: "Admin", SALES: "Sales", CS: "CS" };
-const ROLE_COLORS = { ADMIN: { bg: "#ede9fe", color: "#5b21b6" }, SALES: { bg: "#dbeafe", color: "#1e40af" }, CS: { bg: "#dcfce7", color: "#166534" } };
+// Label & warna peran — SEMUA 9 peran yang dikenal sistem otorisasi
+// (backend/src/constants/permissions.js ROLE_PERMISSIONS), bukan cuma
+// ADMIN/SALES/CS lama. "CS" DIHAPUS di sini — bukan pengurangan fitur,
+// itu memang bukan peran valid di enum Role Prisma; membuat user dengan
+// role itu sebelumnya akan gagal diam-diam di backend.
+const ROLE_LABELS = {
+  ADMIN: "Admin",
+  SALES: "Sales",
+  PRODUCTION_LEAD: "Kepala Produksi",
+  PRODUCTION_WORKER: "Pekerja Produksi",
+  QC_LEAD: "QC Leader",
+  WAREHOUSE: "Gudang",
+  DISPATCHER: "Dispatcher",
+  DRIVER: "Driver",
+  FINANCE: "Keuangan",
+};
+const ROLE_COLORS = {
+  ADMIN:             { bg: "#ede9fe", color: "#5b21b6" },
+  SALES:             { bg: "#dbeafe", color: "#1e40af" },
+  PRODUCTION_LEAD:   { bg: "#fef3c7", color: "#92400e" },
+  PRODUCTION_WORKER: { bg: "#fef3c7", color: "#92400e" },
+  QC_LEAD:           { bg: "#fce7f3", color: "#9d174d" },
+  WAREHOUSE:         { bg: "#fef3c7", color: "#92400e" },
+  DISPATCHER:        { bg: "#d1fae5", color: "#065f46" },
+  DRIVER:            { bg: "#d1fae5", color: "#065f46" },
+  FINANCE:           { bg: "#ede9fe", color: "#5b21b6" },
+};
+const ALL_ROLES = Object.keys(ROLE_LABELS);
 
-function RoleBadge({ role }) {
+function RoleChip({ role }) {
   const { bg, color } = ROLE_COLORS[role] || { bg: "#f3f4f6", color: "#374151" };
   return (
-    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: bg, color }}>
+    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: bg, color, whiteSpace: "nowrap" }}>
       {ROLE_LABELS[role] || role}
     </span>
   );
+}
+
+// Peran EFEKTIF seorang user bisa lebih dari satu (D-010, aditif) —
+// backend selalu mengembalikan array `roles`, tapi jaga-jaga kalau field
+// itu belum terisi (mis. respons lama sebelum reload), fallback ke role
+// tunggal supaya UI tidak pernah menampilkan chip kosong.
+function effectiveRoles(u) {
+  return Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role];
 }
 
 export default function Pengguna({ user: currentUser }) {
@@ -31,7 +65,7 @@ export default function Pengguna({ user: currentUser }) {
   const [showRoleEdit, setShowRoleEdit] = useState(null); // user object
 
   // Add user form
-  const [addForm, setAddForm]   = useState({ name: "", email: "", password: "", role: "CS" });
+  const [addForm, setAddForm]   = useState({ name: "", email: "", password: "", role: "SALES" });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
   const [showAddPw, setShowAddPw] = useState(false);
@@ -41,8 +75,10 @@ export default function Pengguna({ user: currentUser }) {
   const [resetLoading, setResetLoading] = useState(false);
   const [showResetPw, setShowResetPw] = useState(false);
 
-  // Change role
-  const [newRole, setNewRole] = useState("");
+  // Ubah peran — role yang lagi diproses (biar cuma checkbox itu yang
+  // kelihatan loading, bukan seluruh modal terkunci).
+  const [roleBusy, setRoleBusy] = useState(null);
+  const [roleEditError, setRoleEditError] = useState("");
 
   useEffect(() => {
     loadUsers();
@@ -81,7 +117,7 @@ export default function Pengguna({ user: currentUser }) {
       const created = await api.createUser(addForm);
       setUsers((prev) => [...prev, { ...created, _count: { notes: 0, assignedCustomers: 0, assignedConversations: 0 } }]);
       setShowAdd(false);
-      setAddForm({ name: "", email: "", password: "", role: "CS" });
+      setAddForm({ name: "", email: "", password: "", role: "SALES" });
       showFeedback("success", `Pengguna "${created.name}" berhasil ditambahkan.`);
     } catch (err) {
       setAddError(err.message);
@@ -109,15 +145,31 @@ export default function Pengguna({ user: currentUser }) {
     }
   }
 
-  async function handleChangeRole() {
-    if (!newRole || newRole === showRoleEdit.role) { setShowRoleEdit(null); return; }
+  // Toggle satu peran untuk user yang sedang dibuka di modal "Ubah Peran".
+  // Additive (D-010): centang = tambah peran, hapus centang = cabut peran.
+  // Tidak boleh mencabut peran TERAKHIR — server juga menolak ini, tapi
+  // dicegah di sisi UI dulu supaya jelas kenapa (bukan error server generik).
+  async function handleToggleRole(role) {
+    const target = showRoleEdit;
+    if (!target) return;
+    const current = effectiveRoles(target);
+    const hasIt = current.includes(role);
+    if (hasIt && current.length <= 1) {
+      setRoleEditError("User harus punya minimal 1 peran.");
+      return;
+    }
+    setRoleEditError("");
+    setRoleBusy(role);
     try {
-      const updated = await api.updateUser(showRoleEdit.id, { role: newRole });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
-      setShowRoleEdit(null);
-      showFeedback("success", `Role "${showRoleEdit.name}" diubah ke ${ROLE_LABELS[newRole]}.`);
+      const { roles } = hasIt
+        ? await api.removeUserRole(target.id, role)
+        : await api.addUserRole(target.id, role);
+      setUsers((prev) => prev.map((u) => (u.id === target.id ? { ...u, roles } : u)));
+      setShowRoleEdit((prev) => (prev ? { ...prev, roles } : prev));
     } catch (err) {
-      showFeedback("error", err.message);
+      setRoleEditError(err.message);
+    } finally {
+      setRoleBusy(null);
     }
   }
 
@@ -143,9 +195,9 @@ export default function Pengguna({ user: currentUser }) {
     );
   }
 
-  const roleStats = Object.keys(ROLE_LABELS).map((role) => ({
-    role, label: ROLE_LABELS[role], count: users.filter((u) => u.role === role).length,
-  }));
+  const roleStats = ALL_ROLES.map((role) => ({
+    role, label: ROLE_LABELS[role], count: users.filter((u) => effectiveRoles(u).includes(role)).length,
+  })).filter((s) => s.count > 0);
 
   return (
     <div>
@@ -154,7 +206,7 @@ export default function Pengguna({ user: currentUser }) {
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Pengguna & Peran</h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
-            Kelola akun tim admin, CS, dan sales — {users.length} pengguna terdaftar
+            Kelola akun & peran seluruh divisi — {users.length} pengguna terdaftar
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => { setShowAdd(true); setAddError(""); }}>
@@ -168,12 +220,12 @@ export default function Pengguna({ user: currentUser }) {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="user-stats" style={{ marginBottom: 24 }}>
+      {/* Stats — horizontal-scroll supaya aman di mobile walau peran ada 9 */}
+      <div className="user-stats" style={{ marginBottom: 24, display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
         {roleStats.map(({ role, label, count }) => {
-          const { bg, color } = ROLE_COLORS[role];
+          const { bg, color } = ROLE_COLORS[role] || { bg: "#f3f4f6", color: "#374151" };
           return (
-            <div key={role} style={{ padding: "14px 20px", background: bg, borderRadius: 10, display: "flex", alignItems: "center", gap: 12 }}>
+            <div key={role} style={{ flex: "0 0 auto", padding: "14px 20px", background: bg, borderRadius: 10, display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap" }}>
               <ShieldCheck size={22} color={color} />
               <div>
                 <p style={{ margin: 0, fontWeight: 800, fontSize: 22, color }}>{count}</p>
@@ -222,7 +274,11 @@ export default function Pengguna({ user: currentUser }) {
                         </div>
                       </div>
                     </td>
-                    <td><RoleBadge role={u.role} /></td>
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 220 }}>
+                        {effectiveRoles(u).map((role) => <RoleChip key={role} role={role} />)}
+                      </div>
+                    </td>
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
                         <Users size={13} color="var(--text-muted)" />
@@ -243,10 +299,12 @@ export default function Pengguna({ user: currentUser }) {
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm" title="Ubah Peran"
-                          onClick={() => { setShowRoleEdit(u); setNewRole(u.role); }}>
-                          <Shield size={13} /> Peran
-                        </button>
+                        {!isMe && (
+                          <button className="btn btn-ghost btn-sm" title="Ubah Peran"
+                            onClick={() => { setShowRoleEdit(u); setRoleEditError(""); }}>
+                            <Shield size={13} /> Peran
+                          </button>
+                        )}
                         <button className="btn btn-ghost btn-sm" title="Reset Password"
                           onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
                           <Key size={13} /> Reset PW
@@ -290,16 +348,20 @@ export default function Pengguna({ user: currentUser }) {
                     </div>
                     <div className="user-card-email">{u.email}</div>
                   </div>
-                  <RoleBadge role={u.role} />
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0" }}>
+                  {effectiveRoles(u).map((role) => <RoleChip key={role} role={role} />)}
                 </div>
                 <div className="user-card-stats">
                   <span><Users size={12} /> {u._count?.assignedCustomers || 0} pelanggan</span>
                   <span><MessageSquare size={12} /> {u._count?.assignedConversations || 0} percakapan</span>
                 </div>
                 <div className="user-card-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowRoleEdit(u); setNewRole(u.role); }}>
-                    <Shield size={13} /> Peran
-                  </button>
+                  {!isMe && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowRoleEdit(u); setRoleEditError(""); }}>
+                      <Shield size={13} /> Peran
+                    </button>
+                  )}
                   <button className="btn btn-ghost btn-sm" onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
                     <Key size={13} /> Reset PW
                   </button>
@@ -340,6 +402,9 @@ export default function Pengguna({ user: currentUser }) {
                   <label className="form-label">Email (untuk login)</label>
                   <input type="email" placeholder="email@klinikmatras.com" value={addForm.email}
                     onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))} />
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                    Login selalu pakai email + password ini — termasuk untuk driver, tidak perlu OTP/Google.
+                  </p>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Password</label>
@@ -353,12 +418,15 @@ export default function Pengguna({ user: currentUser }) {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Peran</label>
+                  <label className="form-label">Peran Awal</label>
                   <select value={addForm.role} onChange={(e) => setAddForm((f) => ({ ...f, role: e.target.value }))}>
-                    <option value="CS">CS (Customer Service)</option>
-                    <option value="SALES">Sales</option>
-                    <option value="ADMIN">Admin</option>
+                    {ALL_ROLES.map((role) => (
+                      <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                    ))}
                   </select>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                    Bisa ditambah peran lain lagi nanti lewat tombol "Peran".
+                  </p>
                 </div>
                 {addError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: "4px 0 0" }}>{addError}</p>}
               </div>
@@ -373,39 +441,48 @@ export default function Pengguna({ user: currentUser }) {
         </div>
       )}
 
-      {/* ── MODAL UBAH PERAN ── */}
+      {/* ── MODAL UBAH PERAN (multi-select aditif, D-010) ── */}
       {showRoleEdit && (
         <div className="modal-overlay" onClick={() => setShowRoleEdit(null)}>
-          <div className="modal-box" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-box" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Ubah Peran</h3>
+              <h3 className="modal-title">Peran {showRoleEdit.name}</h3>
               <button className="modal-close" onClick={() => setShowRoleEdit(null)}><X size={18} /></button>
             </div>
             <div className="modal-body">
-              <p style={{ margin: "0 0 12px", fontSize: 14 }}>
-                Ubah peran <strong>{showRoleEdit.name}</strong>:
+              <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
+                Satu orang bisa punya lebih dari satu peran — centang untuk menambah, hapus centang untuk mencabut.
               </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                {Object.entries(ROLE_LABELS).map(([role, label]) => (
-                  <button key={role} type="button" className="btn"
-                    style={{
-                      flex: 1, justifyContent: "center",
-                      background: newRole === role ? ROLE_COLORS[role].bg : "var(--bg-secondary)",
-                      color: newRole === role ? ROLE_COLORS[role].color : "var(--text-primary)",
-                      border: `2px solid ${newRole === role ? ROLE_COLORS[role].color : "var(--border)"}`,
-                      fontWeight: 700,
-                    }}
-                    onClick={() => setNewRole(role)}>
-                    {label}
-                  </button>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {ALL_ROLES.map((role) => {
+                  const checked = effectiveRoles(showRoleEdit).includes(role);
+                  const busy = roleBusy === role;
+                  return (
+                    <button key={role} type="button" disabled={busy}
+                      onClick={() => handleToggleRole(role)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                        borderRadius: 8, border: `1px solid ${checked ? "var(--primary)" : "var(--border)"}`,
+                        background: checked ? "#eff6ff" : "#fff", cursor: busy ? "wait" : "pointer",
+                        textAlign: "left", opacity: busy ? 0.6 : 1,
+                      }}>
+                      <span style={{
+                        width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                        border: `1.5px solid ${checked ? "var(--primary)" : "var(--border)"}`,
+                        background: checked ? "var(--primary)" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {checked && <Check size={13} color="#fff" />}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{ROLE_LABELS[role]}</span>
+                    </button>
+                  );
+                })}
               </div>
+              {roleEditError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: "12px 0 0" }}>{roleEditError}</p>}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowRoleEdit(null)}>Batal</button>
-              <button className="btn btn-primary" onClick={handleChangeRole} disabled={newRole === showRoleEdit.role}>
-                Simpan Perubahan
-              </button>
+              <button className="btn btn-primary" onClick={() => setShowRoleEdit(null)}>Selesai</button>
             </div>
           </div>
         </div>

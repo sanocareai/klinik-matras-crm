@@ -7,6 +7,12 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { ROLE_PERMISSIONS } from "../constants/permissions.js";
+
+// Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
+// (constants/permissions.js), supaya daftar ini tidak pernah drift dari
+// peran yang benar-benar dikenal sistem otorisasi.
+const VALID_ROLES = Object.keys(ROLE_PERMISSIONS);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const avatarsDir = path.join(__dirname, "../../uploads/avatars");
@@ -37,28 +43,46 @@ function adminOnly(req, res, next) {
 }
 
 // GET / — daftar semua user (termasuk email untuk admin)
+//
+// `roles` di response adalah daftar peran EFEKTIF (Sano Hub, D-010) —
+// dari tabel user_roles kalau user itu punya baris di sana, atau fallback
+// ke role tunggal lama (`role`) kalau belum pernah disentuh sistem
+// multi-role. Logika fallback ini SAMA PERSIS dengan loadRoles() di
+// auth.js — harus tetap sinkron, supaya "role apa yang berlaku" tidak
+// pernah berbeda antara halaman login dan halaman Pengguna & Peran.
 userRouter.get("/", async (req, res) => {
   try {
     const isAdmin = req.user.role === "ADMIN";
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: isAdmin,
-        role: true,
-        avatarUrl: true,
-        createdAt: true,
-        _count: {
-          select: {
-            notes: true,
-            assignedCustomers: true,
-            assignedConversations: true,
+    const [users, roleRows] = await Promise.all([
+      prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          email: isAdmin,
+          role: true,
+          avatarUrl: true,
+          createdAt: true,
+          _count: {
+            select: {
+              notes: true,
+              assignedCustomers: true,
+              assignedConversations: true,
+            },
           },
         },
-      },
-      orderBy: { name: "asc" },
-    });
-    res.json(users);
+        orderBy: { name: "asc" },
+      }),
+      prisma.userRole.findMany({ select: { userId: true, role: true } }),
+    ]);
+
+    const rolesByUser = {};
+    for (const r of roleRows) (rolesByUser[r.userId] ??= []).push(r.role);
+
+    const withRoles = users.map((u) => ({
+      ...u,
+      roles: rolesByUser[u.id]?.length ? rolesByUser[u.id] : [u.role],
+    }));
+    res.json(withRoles);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -78,6 +102,11 @@ userRouter.get("/me", async (req, res) => {
 });
 
 // POST / — tambah user baru (admin only)
+//
+// Peran yang dipilih langsung DIMATERIALISASI ke user_roles saat pembuatan
+// (bukan cuma diisi ke kolom `role` lama) — supaya user baru tidak pernah
+// lewat jalur fallback loadRoles() sama sekali, dan konsisten dengan
+// bagaimana /:id/roles mengelola peran untuk user yang sudah ada.
 userRouter.post("/", adminOnly, async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -87,21 +116,29 @@ userRouter.post("/", adminOnly, async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ error: "Password minimal 6 karakter" });
     }
+    const chosenRole = role || "SALES";
+    if (!VALID_ROLES.includes(chosenRole)) {
+      return res.status(400).json({ error: "Peran tidak valid" });
+    }
 
     const existing = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
     if (existing) return res.status(409).json({ error: "Email sudah terdaftar" });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        passwordHash,
-        role: role || "SALES",
-      },
-      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          passwordHash,
+          role: chosenRole,
+        },
+        select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
+      });
+      await tx.userRole.create({ data: { userId: created.id, role: chosenRole, grantedById: req.user.id } });
+      return created;
     });
-    res.status(201).json(user);
+    res.status(201).json({ ...user, roles: [chosenRole] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -233,6 +270,68 @@ userRouter.patch("/:id", adminOnly, async (req, res) => {
     res.json(updated);
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "User tidak ditemukan" });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pastikan user punya baris di user_roles SEBELUM dimutasi. Kalau tabel
+// masih kosong untuk user ini (belum pernah disentuh sistem multi-role),
+// isi dulu dengan role tunggal lamanya — supaya akses yang SUDAH ada tidak
+// pernah hilang diam-diam hanya karena admin menambah SATU role baru
+// (D-010: aditif, bukan menggantikan). Tanpa langkah ini, begitu tabel
+// user_roles punya baris pertama, loadRoles()/rolesOf() berhenti membaca
+// kolom `role` lama sama sekali (lihat catatan di authorize.js/auth.js).
+async function materializeRoles(userId) {
+  const count = await prisma.userRole.count({ where: { userId } });
+  if (count > 0) return;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!user) return;
+  await prisma.userRole.create({ data: { userId, role: user.role } }).catch((err) => {
+    if (err.code !== "P2002") throw err; // race benign — baris sudah ada
+  });
+}
+
+// POST /:id/roles — tambah SATU peran (aditif, D-010). admin only.
+userRouter.post("/:id/roles", adminOnly, async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: "Tidak bisa mengubah peran sendiri" });
+    }
+    const { role } = req.body;
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: "Peran tidak valid" });
+    }
+    await materializeRoles(req.params.id);
+    await prisma.userRole.create({
+      data: { userId: req.params.id, role, grantedById: req.user.id },
+    }).catch((err) => {
+      if (err.code !== "P2002") throw err; // sudah punya peran ini — no-op
+    });
+    const rows = await prisma.userRole.findMany({ where: { userId: req.params.id }, select: { role: true } });
+    res.json({ roles: rows.map((r) => r.role) });
+  } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ error: "User tidak ditemukan" });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /:id/roles/:role — cabut SATU peran. admin only. Menolak kalau ini
+// akan menyisakan user tanpa peran sama sekali (akun buntu — tidak dapat
+// portal, tidak dapat permission apa pun).
+userRouter.delete("/:id/roles/:role", adminOnly, async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: "Tidak bisa mengubah peran sendiri" });
+    }
+    await materializeRoles(req.params.id);
+    const count = await prisma.userRole.count({ where: { userId: req.params.id } });
+    if (count <= 1) {
+      return res.status(400).json({ error: "User harus punya minimal 1 peran" });
+    }
+    await prisma.userRole.deleteMany({ where: { userId: req.params.id, role: req.params.role } });
+    const rows = await prisma.userRole.findMany({ where: { userId: req.params.id }, select: { role: true } });
+    res.json({ roles: rows.map((r) => r.role) });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

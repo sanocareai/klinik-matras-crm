@@ -335,6 +335,10 @@ export const api = {
     request(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
   deleteUser: (id) =>
     request(`/users/${id}`, { method: "DELETE" }),
+  addUserRole: (id, role) =>
+    request(`/users/${id}/roles`, { method: "POST", body: JSON.stringify({ role }) }),
+  removeUserRole: (id, role) =>
+    request(`/users/${id}/roles/${role}`, { method: "DELETE" }),
 
   // Settings
   getSettings: () => request("/settings"),

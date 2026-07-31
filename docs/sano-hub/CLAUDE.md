@@ -171,7 +171,7 @@ Tandai kalau sebuah tugas bergantung pada salah satunya:
    nyata setelah beberapa minggu, jangan ditebak
 3. Nilai `OrderItem.layananName` di data historis — belum diaudit, belum tentu
    cocok dengan enam layanan resmi
-4. Skema login driver (OTP telepon vs akun yang dibuatkan) — diputuskan di
-   Phase 2
+4. ~~Skema login driver~~ — DITUTUP, lihat D-019: email+password biasa,
+   akun dibuat admin, tidak ada OTP/Google.
 5. Apakah job pickup boleh membawa unit dari lebih dari satu order. PRD §5.2
    melarang, tapi pesanan hotel 30 kasur (D-006) kemungkinan besar memaksanya
