@@ -35,9 +35,11 @@ const PORTAL_ACCENT = {
 };
 
 // Portal yang belum punya isi. Ditandai eksplisit supaya tidak ada yang
-// mengklik lalu mendarat di halaman kosong tanpa penjelasan. "bengkel" sudah
-// DIKELUARKAN dari daftar ini — Papan Produksi Harian sudah nyata.
-const BELUM_SIAP = new Set(["armada", "kendali"]);
+// mengklik lalu mendarat di halaman kosong tanpa penjelasan. "bengkel" dan
+// "armada" sudah DIKELUARKAN dari daftar ini — Papan Produksi Harian dan
+// dispatcher Armada sudah nyata (tampilan driver di Armada masih menyusul,
+// ditangani sendiri di dalam Armada.jsx, bukan di sini).
+const BELUM_SIAP = new Set(["kendali"]);
 
 export default function Portal() {
   const navigate = useNavigate();
@@ -47,7 +49,7 @@ export default function Portal() {
   useEffect(() => {
     let batal = false;
     api
-      .getMe()
+      .getMyPortals()
       .then((me) => {
         if (batal) return;
         const list = me.portals || [];

@@ -30,6 +30,7 @@ import { sseRouter }      from "./routes/sse.js";
 import { adminRouter }    from "./routes/admin.js";
 import { unitRouter }     from "./routes/units.js";
 import { productionRouter } from "./routes/production.js";
+import { armadaRouter }     from "./routes/armada.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
@@ -40,9 +41,11 @@ import { mkdirSync } from "fs";
 const uploadsDir    = path.join(__dirname, "../uploads");
 const productsDir   = path.join(__dirname, "../data/products");
 const unitPhotosDir = path.join(__dirname, "../data/unit-photos");
+const jobPhotosDir  = path.join(__dirname, "../data/job-photos");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
+mkdirSync(jobPhotosDir,  { recursive: true });
 
 const app = express();
 app.use(cors());
@@ -51,6 +54,7 @@ app.use(express.json({ limit: "10mb" }));
 // Sajikan file media yang diupload
 app.use("/uploads",           express.static(uploadsDir));
 app.use("/media/unit-photos", express.static(unitPhotosDir));
+app.use("/media/job-photos",  express.static(jobPhotosDir));
 app.use("/media/products", express.static(productsDir));
 
 app.use("/api/webhooks",     webhookRouter);
@@ -74,6 +78,7 @@ app.use("/api/knowledge",    knowledgeRouter);
 // role diberikan lewat UserRole. Lihat docs/sano-hub/PHASE-0.md.
 app.use("/api/units",        unitRouter);
 app.use("/api/production",   productionRouter);
+app.use("/api/armada",       armadaRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);

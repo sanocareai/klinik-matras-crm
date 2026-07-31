@@ -821,7 +821,12 @@ model Job {
   accessNotes String? @map("access_notes")
 
   // FR-D-07: setiap kegagalan WAJIB alasan + foto, tanpa kecuali.
-  failureReason String? @map("failure_reason")
+  failureReason     String?  @map("failure_reason")
+  failurePhotoUrls  String[] @default([]) @map("failure_photo_urls")
+
+  // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) saat
+  // job BERHASIL — bukti serah terima, terpisah dari failurePhotoUrls.
+  proofPhotoUrls String[] @default([]) @map("proof_photo_urls")
 
   arrivedAt   DateTime? @map("arrived_at")
   completedAt DateTime? @map("completed_at")

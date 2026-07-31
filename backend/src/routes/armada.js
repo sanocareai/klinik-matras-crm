@@ -1,0 +1,401 @@
+// Armada — jadwal pickup & pengiriman (Sano Hub Phase 1).
+//
+// SENGAJA MINIMAL per PRD §1.5/§11 Phase 1: penjadwalan MANUAL, TANPA route
+// builder, TANPA optimasi rute, TANPA kapasitas kendaraan. Dispatcher pilih
+// unit + driver + tanggal; driver dapat daftar berurut, bukan peta.
+//
+// STATUS UNIT diturunkan dari status Job saat job selesai/gagal — INI
+// SIMPLIFIKASI SADAR: PRD memodelkan IN_TRANSIT_IN/IN_TRANSIT_OUT sebagai
+// jendela terpisah, tapi belum ada fitur scan intake gudang (FR-P-01) yang
+// akan mengonsumsi status IN_TRANSIT_IN. Tanpa fitur itu, unit yang berhenti
+// di IN_TRANSIT_IN tidak akan pernah bisa dipindah lagi — jadi PICKUP selesai
+// langsung ke RECEIVED. Kalau nanti scan intake dibangun, ini perlu direvisi
+// jadi dua langkah.
+
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import multer from "multer";
+import { requireAuth } from "../middleware/auth.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { prisma } from "../db.js";
+import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+
+export const armadaRouter = express.Router();
+armadaRouter.use(requireAuth);
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const jobPhotosDir = path.join(__dirname, "../../data/job-photos");
+if (!fs.existsSync(jobPhotosDir)) fs.mkdirSync(jobPhotosDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: jobPhotosDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".jpg";
+      cb(null, `${req.params.id}-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    cb(null, true);
+  },
+});
+
+class ArmadaError extends Error {
+  constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
+}
+function handleErr(err, res) {
+  if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message });
+  if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
+  console.error("Armada error:", err);
+  return res.status(500).json({ error: "Server error: " + err.message });
+}
+
+// Job dianggap "aktif" (masih akan dikerjakan) — dipakai untuk menyaring
+// unit yang SUDAH punya job tipe ini supaya tidak double-booking. FAILED dan
+// RESCHEDULED SENGAJA TIDAK termasuk aktif — unit itu harus muncul lagi di
+// daftar "available" supaya dispatcher bisa membuat job baru.
+const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
+
+const jobInclude = {
+  driver: { select: { id: true, name: true } },
+  units: {
+    include: {
+      unit: {
+        include: {
+          order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+        },
+      },
+    },
+  },
+};
+
+function deriveStatus(hasDriver, hasDate) {
+  if (hasDriver && hasDate) return "ASSIGNED";
+  if (hasDate) return "SCHEDULED";
+  return "UNSCHEDULED";
+}
+
+function toDateOnly(input) {
+  if (!input) return null;
+  return new Date(`${input}T00:00:00.000Z`);
+}
+
+// GET /api/armada/drivers — daftar user berrole DRIVER, untuk dropdown
+// penugasan dispatcher. Endpoint terpisah dari GET /api/users (dipakai luas
+// di seluruh CRM untuk manajemen user) supaya scope-nya tetap sempit dan
+// tidak menyentuh endpoint yang lebih sensitif itu.
+armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const rows = await prisma.userRole.findMany({
+      where: { role: "DRIVER" },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { user: { name: "asc" } },
+    });
+    res.json(rows.map((r) => r.user));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/board?date=YYYY-MM-DD&type=PICKUP|DELIVERY
+armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { date, type } = req.query;
+    if (!["PICKUP", "DELIVERY"].includes(type)) {
+      return res.status(400).json({ error: "type wajib PICKUP atau DELIVERY" });
+    }
+    const targetDate = toDateOnly(date);
+
+    const jobs = await prisma.job.findMany({
+      where: { type, ...(targetDate ? { scheduledDate: targetDate } : { scheduledDate: null }) },
+      include: jobInclude,
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Unit yang SUDAH terikat job aktif tipe ini — dikecualikan dari "available".
+    const alreadyBookedUnitIds = (
+      await prisma.jobUnit.findMany({
+        where: { job: { type, status: { in: ACTIVE_JOB_STATUSES } } },
+        select: { unitId: true },
+      })
+    ).map((ju) => ju.unitId);
+
+    const eligibleStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
+    const available = await prisma.unit.findMany({
+      where: { status: { in: eligibleStatus }, id: { notIn: alreadyBookedUnitIds } },
+      include: {
+        order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({ date: date || null, type, jobs, available });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/my-jobs?date=YYYY-MM-DD — driver sendiri, hari ini ±1
+// (PRD §9.3: "drivers read only jobs assigned to them, dated today ±1").
+armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const centerDateStr = req.query.date || new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const centerDate = toDateOnly(centerDateStr);
+    const from = new Date(centerDate); from.setUTCDate(from.getUTCDate() - 1);
+    const to = new Date(centerDate); to.setUTCDate(to.getUTCDate() + 2); // +1 hari, eksklusif
+
+    const jobs = await prisma.job.findMany({
+      where: { driverId: req.user.id, scheduledDate: { gte: from, lt: to } },
+      include: jobInclude,
+      orderBy: [{ scheduledDate: "asc" }, { createdAt: "asc" }],
+    });
+    res.json({ jobs });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/jobs/:id
+armadaRouter.get("/jobs/:id", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id }, include: jobInclude });
+    // Driver TANPA JOB_WRITE penuh hanya boleh lihat job miliknya sendiri.
+    // Dispatcher/admin (punya JOB_READ) lolos tanpa cek ini.
+    if (!hasPermission(req.user, P.JOB_READ) && job.driverId !== req.user.id) {
+      return res.status(403).json({ error: "Bukan job Anda" });
+    }
+    res.json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs { type, unitIds, scheduledDate?, driverId?, timeWindow?, addressText? }
+armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { type, unitIds, scheduledDate, driverId, timeWindow, addressText, accessNotes } = req.body;
+    if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
+    if (!Array.isArray(unitIds) || unitIds.length === 0) throw new ArmadaError("Pilih minimal 1 unit");
+
+    const units = await prisma.unit.findMany({ where: { id: { in: unitIds } } });
+    if (units.length !== unitIds.length) throw new ArmadaError("Ada unit yang tidak ditemukan");
+
+    // PRD §5.2: satu job pickup/delivery hanya boleh membawa unit dari SATU
+    // order (batching hotel DI DALAM satu order tetap boleh — D-006 — tapi
+    // MENCAMPUR unit dari order berbeda ke satu job tidak).
+    const orderIds = new Set(units.map((u) => u.orderId));
+    if (orderIds.size > 1) throw new ArmadaError("Semua unit dalam satu job harus dari order yang sama");
+
+    const expectedStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
+    const wrongStatus = units.find((u) => !expectedStatus.includes(u.status));
+    if (wrongStatus) {
+      throw new ArmadaError(
+        `Unit ${wrongStatus.unitCode} berstatus ${wrongStatus.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
+      );
+    }
+
+    const job = await prisma.job.create({
+      data: {
+        type,
+        orderId: [...orderIds][0],
+        scheduledDate: toDateOnly(scheduledDate),
+        driverId: driverId || null,
+        timeWindow: timeWindow || null,
+        addressText: addressText || null,
+        accessNotes: accessNotes || null,
+        status: deriveStatus(!!driverId, !!scheduledDate),
+        units: { create: unitIds.map((unitId) => ({ unitId })) },
+      },
+      include: jobInclude,
+    });
+    res.status(201).json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /api/armada/jobs/:id — reschedule/reassign. HANYA untuk job yang
+// belum berjalan (edit job yang sudah EN_ROUTE/COMPLETED lewat sini akan
+// membingungkan driver yang mungkin sedang di jalan).
+armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
+      throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
+    }
+    const { scheduledDate, driverId, timeWindow, addressText, accessNotes } = req.body;
+    const data = {};
+    if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
+    if (driverId !== undefined) data.driverId = driverId || null;
+    if (timeWindow !== undefined) data.timeWindow = timeWindow;
+    if (addressText !== undefined) data.addressText = addressText;
+    if (accessNotes !== undefined) data.accessNotes = accessNotes;
+
+    const nextDriverId = driverId !== undefined ? driverId : existing.driverId;
+    const nextDate = scheduledDate !== undefined ? data.scheduledDate : existing.scheduledDate;
+    data.status = deriveStatus(!!nextDriverId, !!nextDate);
+
+    const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+    res.json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// DELETE /api/armada/jobs/:id — hanya job yang belum berjalan (salah pilih
+// unit itu wajar; job aktif TIDAK boleh dihapus, cukup ditandai FAILED).
+armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
+      throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa dihapus — tandai FAILED kalau batal`);
+    }
+    await prisma.job.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// Guard bersama untuk endpoint driver (start/arrive/complete/fail/photos):
+// job harus milik driver yang login, KECUALI user punya JOB_WRITE penuh
+// (dispatcher/admin boleh operasikan atas nama driver kalau perlu).
+async function loadOwnedJob(req) {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+  if (!hasPermission(req.user, P.JOB_WRITE) && job.driverId !== req.user.id) {
+    throw new ArmadaError("Bukan job Anda", 403);
+  }
+  return job;
+}
+
+// POST /api/armada/jobs/:id/photos — upload multipart, kembalikan URL.
+armadaRouter.post("/jobs/:id/photos", requirePermission(P.JOB_OWN_WRITE), upload.array("photos", 6), async (req, res) => {
+  try {
+    await loadOwnedJob(req);
+    const urls = (req.files || []).map((f) => `/media/job-photos/${f.filename}`);
+    res.json({ urls });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs/:id/start — driver mulai perjalanan.
+armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (job.status !== "ASSIGNED") throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa dimulai`);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE" } });
+      // DELIVERY EN_ROUTE = driver SUDAH membawa kasur dari bengkel — unit
+      // resmi "dalam perjalanan keluar". PICKUP EN_ROUTE tidak mengubah
+      // status unit (kasur masih di rumah customer, belum dipegang driver).
+      if (job.type === "DELIVERY") {
+        const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
+        await tx.unit.updateMany({
+          where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
+          data: { status: "IN_TRANSIT_OUT" },
+        });
+      }
+    });
+    res.json(await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude }));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs/:id/arrive — driver tiba di lokasi.
+armadaRouter.post("/jobs/:id/arrive", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (job.status !== "EN_ROUTE") throw new ArmadaError(`Job berstatus ${job.status}, belum bisa ditandai tiba`);
+    const updated = await prisma.job.update({
+      where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date() }, include: jobInclude,
+    });
+    res.json(updated);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs/:id/complete { proofPhotoUrls, note? }
+// FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
+armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (!["ARRIVED", "EN_ROUTE"].includes(job.status)) {
+      throw new ArmadaError(`Job berstatus ${job.status}, belum bisa diselesaikan`);
+    }
+    const proofPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+    if (proofPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum menyelesaikan job");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const j = await tx.job.update({
+        where: { id: job.id },
+        data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls },
+      });
+      const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
+      // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke
+      // RECEIVED (bukan IN_TRANSIT_IN dulu) — belum ada fitur scan intake
+      // gudang yang akan mengonsumsi status antara itu.
+      await tx.unit.updateMany({
+        where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
+        data: { status: job.type === "PICKUP" ? "RECEIVED" : "DELIVERED" },
+      });
+      return j;
+    });
+    res.json(await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude }));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs/:id/fail { failureReason, failurePhotoUrls, note? }
+// FR-D-07: "every failure requires a reason code and a photo. No exceptions."
+armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (["COMPLETED", "FAILED"].includes(job.status)) {
+      throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa ditandai gagal lagi`);
+    }
+    const { failureReason } = req.body;
+    const failurePhotoUrls = Array.isArray(req.body.failurePhotoUrls) ? req.body.failurePhotoUrls : [];
+    if (!failureReason) throw new ArmadaError("Alasan kegagalan wajib diisi");
+    if (failurePhotoUrls.length === 0) throw new ArmadaError("Foto wajib diisi saat menandai gagal (FR-D-07, tanpa kecuali)");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!failurePhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const j = await tx.job.update({
+        where: { id: job.id },
+        data: { status: "FAILED", failureReason, failurePhotoUrls },
+      });
+      // DELIVERY yang gagal: unit masih fisik di tangan driver (IN_TRANSIT_OUT
+      // di-set saat /start), tapi percobaan kirim ini GAGAL — kembalikan ke
+      // READY_FOR_DELIVERY supaya muncul lagi di "available" dan dispatcher
+      // bisa membuat job baru. TANPA ini unit terjebak permanen di
+      // IN_TRANSIT_OUT, tidak pernah bisa dijadwalkan ulang.
+      //
+      // PICKUP yang gagal TIDAK perlu ini — status unit tidak pernah berubah
+      // dari AWAITING_PICKUP sejak awal (lihat /start), jadi sudah otomatis
+      // muncul lagi di available begitu job ini bukan lagi "aktif".
+      if (job.type === "DELIVERY") {
+        const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
+        await tx.unit.updateMany({
+          where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" },
+          data: { status: "READY_FOR_DELIVERY" },
+        });
+      }
+      return j;
+    });
+    res.json(await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude }));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});

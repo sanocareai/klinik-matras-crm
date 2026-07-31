@@ -95,7 +95,17 @@ export const api = {
   // Identitas + role + portal yang boleh dibuka (Sano Hub).
   // Sengaja baca dari server, bukan dari token di localStorage: perubahan role
   // oleh admin langsung berlaku saat refresh, tidak menunggu token 7 hari habis.
-  getMe: () => request("/auth/me"),
+  //
+  // ⚠️ NAMA SENGAJA "getMyPortals", BUKAN "getMe" — ada `getMe` LAIN di bagian
+  // Users bawah (request("/users/me")) yang dipakai Automation.jsx duluan.
+  // Object literal JS membiarkan key kedua diam-diam MENIMPA yang pertama
+  // tanpa error apa pun — dua fungsi bernama sama di sini pernah membuat
+  // Portal.jsx nyata-nyata memanggil /users/me (tidak punya field `portals`)
+  // alih-alih /auth/me, sehingga auto-skip role-tunggal rusak total TANPA
+  // console error, TANPA network request yang terlihat salah — cuma
+  // `me.portals` selalu `undefined`. Baru ketahuan lewat tes browser
+  // sungguhan. JANGAN pernah pakai nama "getMe" lagi di file ini.
+  getMyPortals: () => request("/auth/me"),
 
   // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
   getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
@@ -111,6 +121,20 @@ export const api = {
     request(`/conversations/${conversationId}/send-documentation`, {
       method: "POST", body: JSON.stringify({ orderId, entries }),
     }),
+
+  // Armada — jadwal pickup & pengiriman (Sano Hub Phase 1)
+  getArmadaBoard: (type, date) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}`),
+  getDrivers: () => request("/armada/drivers"),
+  createArmadaJob: (data) => request("/armada/jobs", { method: "POST", body: JSON.stringify(data) }),
+  updateArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`, { method: "DELETE" }),
+  getMyJobs: (date) => request(`/armada/my-jobs${date ? `?date=${date}` : ""}`),
+  getArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`),
+  uploadJobPhotos: (jobId, formData) => requestFormData(`/armada/jobs/${jobId}/photos`, formData),
+  startArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/start`, { method: "POST" }),
+  arriveArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST" }),
+  completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
+  failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap
   getUnitStatus: (unitId) => request(`/units/${unitId}`),

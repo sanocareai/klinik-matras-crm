@@ -110,6 +110,11 @@ test("driver tidak punya akses baca job umum, hanya job miliknya", () => {
   assert.ok(!hasPermission(driver, P.JOB_WRITE));
 });
 
+test("driver punya JOB_OWN_WRITE (mulai/tiba/selesai/gagal job miliknya) tapi bukan JOB_WRITE penuh", () => {
+  assert.ok(hasPermission(driver, P.JOB_OWN_WRITE));
+  assert.ok(!hasPermission(driver, P.JOB_WRITE), "driver tidak boleh mengubah job siapa pun");
+});
+
 test("hanya FINANCE yang bisa menulis pembayaran — ADMIN pun tidak", () => {
   assert.ok(hasPermission({ roles: ["FINANCE"] }, P.PAYMENT_WRITE));
   assert.ok(!hasPermission(admin, P.PAYMENT_WRITE));

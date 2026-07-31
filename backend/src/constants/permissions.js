@@ -44,6 +44,11 @@ export const PERMISSIONS = {
   // Driver: HANYA job yang ditugaskan ke dirinya, tanggal hari ini ±1.
   // Pembatasan barisnya ada di query, permission ini cuma pintunya.
   JOB_OWN_READ: "job:own:read",
+  // TERPISAH dari JOB_WRITE (dispatcher, bisa ubah job SIAPA SAJA) — driver
+  // cuma boleh mengubah status job MILIKNYA SENDIRI (mulai/tiba/selesai/
+  // gagal). Pembatasan baris ada di query (WHERE driverId = req.user.id),
+  // permission ini cuma pintunya.
+  JOB_OWN_WRITE: "job:own:write",
   ROUTE_WRITE: "route:write",
 
   // --- Kendali (manajemen & keuangan) ---
@@ -130,7 +135,7 @@ export const ROLE_PERMISSIONS = {
   // Driver melihat PII hanya untuk stop miliknya sendiri — pembatasan baris
   // dilakukan di query, bukan di sini.
   DRIVER: [
-    P.JOB_OWN_READ, P.CUSTOMER_PII_READ,
+    P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
   ],
 
   FINANCE: [

@@ -209,6 +209,46 @@ melihat nomor telepon customer maupun harga.
 
 ---
 
+## D-017 — Bug nyata: dua `getMe` di api.js membuat auto-skip Portal rusak total, tanpa error
+
+**Bukan keputusan desain — catatan insiden**, disimpan di sini karena caranya
+ditemukan lebih penting daripada perbaikannya sendiri.
+
+**Yang terjadi.** `frontend/src/api.js` punya DUA properti bernama `getMe`
+dalam satu object literal yang sama: satu ditambahkan Phase 0
+(`request("/auth/me")`, dipakai Portal.jsx untuk auto-skip role-tunggal),
+satu lagi sudah ada duluan (`request("/users/me")`, dipakai Automation.jsx).
+JavaScript membiarkan key kedua diam-diam MENIMPA yang pertama — tidak ada
+error, tidak ada warning, build tetap sukses, ESLint (kalau ada) mungkin juga
+diam. `api.getMe` di seluruh aplikasi ternyata selalu memanggil `/users/me`.
+
+**Akibatnya:** Portal.jsx memanggil endpoint yang TIDAK PUNYA field
+`portals`, jadi `me.portals || []` selalu jatuh ke array kosong, dan
+auto-skip role-tunggal (dibangun & "diverifikasi" di Phase 0) SEBENARNYA
+tidak pernah berfungsi di browser sungguhan — sampai ditemukan saat menguji
+Armada.
+
+**Kenapa lolos dari verifikasi Phase 0 sebelumnya:** tes browser Phase 0
+untuk portal SELALU menavigasi LANGSUNG ke halaman tujuan (`/bengkel`, dst)
+lewat URL, bukan lewat login → auto-redirect dari `/portal`. Jalur kode yang
+sebenarnya dipakai user asli (login → /portal → auto-skip) TIDAK PERNAH
+benar-benar dilewati sampai sesi ini.
+
+**Perbaikan.** `getMe` Sano Hub diganti nama jadi `getMyPortals` (lihat
+komentar panjang di api.js persis di baris itu — jangan dihapus, itu
+pengingat supaya nama "getMe" tidak dipakai lagi di file ini). `getMe` lama
+(`/users/me`) dibiarkan apa adanya untuk Automation.jsx.
+
+**Pelajaran yang DIPEGANG, bukan cuma dicatat:** "kode terlihat benar" dan
+"sudah pernah dites" adalah dua klaim berbeda. Tes yang mem-bypass jalur asli
+(langsung ke URL tujuan alih-alih lewat alur normal user) bisa lolos 100%
+sambil jalur yang SEBENARNYA dipakai tetap rusak. Sejak insiden ini,
+verifikasi UI Sano Hub SELALU dimulai dari login lalu diikuti sampai ke
+tujuan lewat navigasi yang SAMA PERSIS dengan yang akan dilakukan user —
+bukan jalan pintas ke URL akhir.
+
+---
+
 ## D-016 — Kirim dokumentasi lewat WAHA langsung dari CRM (menggantikan asumsi D-015)
 
 **Menggantikan asumsi di D-015** ("sistem menyiapkan, sales forward manual
