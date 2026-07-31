@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma validate)",
+      "Bash(node --check *)",
+      "Bash(curl -s https://app.sanomatrassehat.com/*)",
+      "Bash(docker compose ps)",
+      "Bash(docker compose logs *)"
+    ]
+  }
+}

@@ -28,6 +28,7 @@ import { trackingRouter, trackingRedirectRouter } from "./routes/tracking.js";
 import { internalRouter } from "./routes/internal.js";
 import { sseRouter }      from "./routes/sse.js";
 import { adminRouter }    from "./routes/admin.js";
+import { unitRouter }     from "./routes/units.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
@@ -63,6 +64,11 @@ app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
 app.use("/api/ai",           replyAssistantRouter); // Wave 4B.0 — additive, tidak mengubah aiRouter
 app.use("/api/knowledge",    knowledgeRouter);
+// Sano Hub Phase 1 — dijaga permission (UNIT_STAGE_WRITE/QC_WRITE/dst).
+// Tidak ada user existing yang punya role produksi, jadi mounting ini AMAN:
+// endpointnya ada tapi tidak ada satu pun akun yang bisa memakainya sampai
+// role diberikan lewat UserRole. Lihat docs/sano-hub/PHASE-0.md.
+app.use("/api/units",        unitRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);

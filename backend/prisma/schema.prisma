@@ -178,6 +178,9 @@ model User {
   pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
   orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
   messageTemplates      MessageTemplate[]
+  unitStageLogs         UnitStageLog[]          @relation("UnitStageLogActor")
+  jobsAsDriver          Job[]                   @relation("JobDriver")
+  qcFitTests            QcFitTest[]             @relation("QcFitTestTester")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -556,6 +559,7 @@ model Order {
   weightEntries     OrderWeightEntry[]
   statusTransitions OrderStatusTransition[]
   units             Unit[]
+  jobs              Job[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -618,6 +622,10 @@ model Unit {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
+  stageLogs UnitStageLog[]
+  jobUnits  JobUnit[]
+  qcFitTests QcFitTest[]
+
   @@unique([orderId, seq])
   @@index([orderId])
   @@index([status]) // papan bengkel & Kendali: "berapa unit per status"
@@ -664,6 +672,8 @@ model RoutingStage {
 
   serviceModules ServiceCatalogModule[]
   unitsHere      Unit[]
+  stageLogs      UnitStageLog[]
+  qcFitTests     QcFitTest[]
 
   @@index([phase, sequence])
   @@map("routing_stages")
@@ -705,6 +715,181 @@ model ServiceCatalogModule {
   @@unique([serviceId, stageId])
   @@index([serviceId])
   @@map("service_catalog_modules")
+}
+
+// Aksi yang dilakukan ke sebuah tahap. Cocok persis dengan PRD §5.1.
+enum StageLogAction {
+  START
+  PAUSE
+  COMPLETE
+  FAIL
+  SKIP
+}
+
+// Alasan blokir PRODUKSI (PRD §6.2). TERPISAH dari
+// UnitStatus.READY_ON_CUSTOMER_HOLD — hold atas permintaan customer BUKAN
+// blokir produksi (D-007); jamnya tidak boleh tercampur dengan alasan di sini.
+enum BlockReason {
+  MATERIAL_SHORTAGE
+  AWAITING_CUSTOMER_APPROVAL
+  MACHINE_DOWN
+  QUALITY_ISSUE
+  OTHER
+}
+
+// LEDGER APPEND-ONLY (Aturan #2). Generik untuk SEMUA tahap.
+//
+// Data spesifik Uji Berat Badan (verdict, override customer, edukasi yang
+// diberikan — ROUTING.md §4) SENGAJA TIDAK di sini, supaya ledger generik ini
+// tetap bersih. Itu tabel tersendiri, dibangun bersama transition engine.
+//
+// TIDAK ADA UPDATE/DELETE dari kode aplikasi. Koreksi = baris baru.
+model UnitStageLog {
+  id     String         @id @default(uuid()) @db.Uuid
+  unitId String         @map("unit_id") @db.Uuid
+  unit   Unit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  stageId String        @map("stage_id") @db.Uuid
+  stage   RoutingStage  @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  action  StageLogAction
+
+  // SetNull: pekerja resign, riwayat produksinya TETAP ada.
+  actorId String? @map("actor_id")
+  actor   User?   @relation("UnitStageLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  startedAt        DateTime? @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  durationSeconds  Int?      @map("duration_seconds")
+
+  blockReason BlockReason? @map("block_reason")
+  note        String?
+
+  // Kolom siap pakai untuk requires_photo — belum ada endpoint upload yang
+  // mengisinya di langkah ini; skemanya disiapkan lebih dulu supaya tidak
+  // berubah lagi begitu upload disambungkan ke transition engine.
+  photoUrls String[] @default([]) @map("photo_urls")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([unitId, createdAt])
+  @@index([stageId, createdAt])
+  @@map("unit_stage_logs")
+}
+
+enum JobType {
+  PICKUP
+  DELIVERY
+}
+
+// PRD §6.3, apa adanya.
+enum JobStatus {
+  UNSCHEDULED
+  SCHEDULED
+  ASSIGNED
+  EN_ROUTE
+  ARRIVED
+  COMPLETED
+  FAILED
+  RESCHEDULED
+}
+
+// Job pickup/delivery — SENGAJA MINIMAL. PRD §11 Phase 1: penjadwalan manual,
+// TANPA dispatch board, TANPA route builder, TANPA vehicle capacity — itu
+// semua Phase 2. Jangan menambah field dispatch di sini "buat nanti".
+model Job {
+  id      String  @id @default(uuid()) @db.Uuid
+  type    JobType
+  orderId String  @map("order_id")
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  scheduledDate DateTime? @map("scheduled_date") @db.Date
+  timeWindow    String?   @map("time_window")
+
+  driverId String?    @map("driver_id")
+  driver   User?      @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  status   JobStatus  @default(UNSCHEDULED)
+
+  // Snapshot alamat PER KUNJUNGAN, bukan tabel Address bersama — CRM ini
+  // belum punya entitas Address (Customer cuma punya field "city"). PRD §5.1:
+  // GPS yang benar didapat dari pin SUKSES PERTAMA di lapangan, jadi ini
+  // properti kunjungan dulu; mendenormalisasi balik ke Customer adalah
+  // keputusan terpisah, setelah datanya terbukti akurat.
+  addressText String? @map("address_text")
+  lat         Float?
+  lng         Float?
+  accessNotes String? @map("access_notes")
+
+  // FR-D-07: setiap kegagalan WAJIB alasan + foto, tanpa kecuali.
+  failureReason String? @map("failure_reason")
+
+  arrivedAt   DateTime? @map("arrived_at")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  units JobUnit[]
+
+  @@index([orderId])
+  @@index([driverId, scheduledDate]) // "job saya hari ini" driver
+  @@index([status, scheduledDate])   // papan Armada
+  @@map("jobs")
+}
+
+// Job membawa SEBAGIAN unit sebuah order, bukan selalu semuanya (D-006:
+// pengiriman hotel bertahap — tahap 1: 15 kasur, tahap 2: 15 kasur).
+model JobUnit {
+  id     String @id @default(uuid()) @db.Uuid
+  jobId  String @map("job_id") @db.Uuid
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  unitId String @map("unit_id") @db.Uuid
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([jobId, unitId])
+  @@index([unitId])
+  @@map("job_units")
+}
+
+enum FitVerdict {
+  TERLALU_KERAS
+  PAS
+  TERLALU_EMPUK
+}
+
+enum PreferenceOverride {
+  LEBIH_KERAS
+  LEBIH_EMPUK
+}
+
+// Verdict Uji Berat Badan (D-005, ROUTING.md §4). TERPISAH dari
+// UnitStageLog generik — bentuknya sendiri (keras/pas/empuk, berat acuan,
+// override customer) tidak masuk akal dipaksakan ke kolom "note" biasa.
+//
+// D-009: override customer yang menyimpang dari rekomendasi berat badan
+// adalah catatan LIABILITY, bukan preferensi biasa — kalau customer memaksa
+// lalu komplain nyeri di kemudian hari, baris ini pembelaan garansinya.
+// educationGiven WAJIB true kalau override terisi, dipaksakan CHECK
+// constraint di database (lihat migration.sql), bukan cuma validasi kode.
+model QcFitTest {
+  id     String @id @default(uuid()) @db.Uuid
+  unitId String @map("unit_id") @db.Uuid
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  stageId String       @map("stage_id") @db.Uuid
+  stage   RoutingStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  verdict           FitVerdict
+  referenceWeightKg Int                @map("reference_weight_kg")
+
+  customerPreferenceOverride PreferenceOverride? @map("customer_preference_override")
+  educationGiven              Boolean             @default(false) @map("education_given")
+
+  testedById String? @map("tested_by_id")
+  testedBy   User?   @relation("QcFitTestTester", fields: [testedById], references: [id], onDelete: SetNull)
+
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([unitId, createdAt])
+  @@map("qc_fit_tests")
 }
 
 // Riwayat perpindahan STATUS ORDER (append-only) — pasangan dari
