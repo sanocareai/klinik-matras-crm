@@ -43,6 +43,18 @@
   --accent-hover: #0060C0;
   --accent-bg:    rgba(0, 113, 227, 0.10);
 
+  /* ── AKSEN SIDEBAR PER DIVISI (Sano Hub, 1 Agustus 2026, keputusan
+     eksplisit Gilang — MENGESAMPINGKAN "satu accent" di atas KHUSUS untuk
+     link/pill aktif di sidebar) ──────────────────────────────────────────
+     Default = --accent (identik sebelumnya) supaya halaman yang belum
+     lewat divisionFromPath() (Layout.jsx) tidak berubah sama sekali.
+     Layout.jsx meng-override ketiganya inline di elemen .sidebar per
+     divisi. TIDAK dipakai di luar sidebar — tombol/badge/chart di body
+     halaman TETAP satu accent biru, cuma nav aktif yang ikut warna divisi. */
+  --sidebar-accent:        var(--accent);
+  --sidebar-accent-strong: var(--accent-hover);
+  --sidebar-accent-bg:     var(--accent-bg);
+
   /* ── SEMANTIK: hanya 3, dan hanya untuk MAKNA (bukan dekorasi) ─────────
      Nilai light memakai varian "accessible" Apple — versi cerah (#FF3B30 dsb)
      tidak lolos kontras untuk TEKS di atas #FFFFFF. */
@@ -454,12 +466,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
      status apa pun, dan justru sumber kesan "ramai".
    • Item aktif = blok accent-bg membulat, tanpa strip border. */
 .nav-pill {
-  background: var(--accent-bg) !important;
+  background: var(--sidebar-accent-bg) !important;
   border: none !important;
   border-radius: var(--r-md) !important;
   box-shadow: none !important;
 }
-.sidebar-link.active { color: var(--accent) !important; font-weight: 600; }
+.sidebar-link.active { color: var(--sidebar-accent-strong) !important; font-weight: 600; }
 .sidebar-link:hover:not(.active) { background: var(--bg-hover); }
 
 .sidebar-link .nav-icon,
@@ -469,7 +481,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   color: var(--text-secondary) !important;
 }
 .sidebar-link.active .nav-icon,
-.sidebar-link.active .nav-icon-ai { color: var(--accent) !important; }
+.sidebar-link.active .nav-icon-ai { color: var(--sidebar-accent) !important; }
 /* Dot dekoratif AI dihapus — tidak membawa informasi. */
 .nav-ai-dot { display: none !important; }
 

@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils.js";
 const DIVISIONS = {
   growth: {
     label: "CRM & Omnichannel",
+    // Tanpa cssVar — default token (:root, tokens.css) sudah biru accent,
+    // TIDAK di-override supaya identik persis dengan sebelumnya.
     accent: { text: "text-blue-600", bg: "bg-blue-50", dot: "bg-blue-600" },
     sections: [
       {
@@ -91,7 +93,10 @@ const DIVISIONS = {
   },
   bengkel: {
     label: "Produksi & Bengkel",
-    accent: { text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-600" },
+    accent: {
+      text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-600",
+      cssVar: { "--sidebar-accent": "#D97706", "--sidebar-accent-strong": "#B45309", "--sidebar-accent-bg": "rgba(217,119,6,0.10)" },
+    },
     sections: [
       {
         section: "BENGKEL",
@@ -104,7 +109,10 @@ const DIVISIONS = {
   },
   armada: {
     label: "Armada & Pengiriman",
-    accent: { text: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-600" },
+    accent: {
+      text: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-600",
+      cssVar: { "--sidebar-accent": "#059669", "--sidebar-accent-strong": "#047857", "--sidebar-accent-bg": "rgba(5,150,105,0.10)" },
+    },
     sections: [
       {
         section: "ARMADA",
@@ -116,7 +124,10 @@ const DIVISIONS = {
   },
   kendali: {
     label: "Kendali",
-    accent: { text: "text-violet-600", bg: "bg-violet-50", dot: "bg-violet-600" },
+    accent: {
+      text: "text-violet-600", bg: "bg-violet-50", dot: "bg-violet-600",
+      cssVar: { "--sidebar-accent": "#7C3AED", "--sidebar-accent-strong": "#6D28D9", "--sidebar-accent-bg": "rgba(124,58,237,0.10)" },
+    },
     sections: [
       {
         section: "KENDALI",
@@ -270,7 +281,7 @@ export default function Layout({ user, onLogout, children }) {
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />
       )}
 
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
+      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
