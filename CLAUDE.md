@@ -262,7 +262,15 @@ PipelineTransition → id (UUID), customerId, fromStage, toStage, changedById,
                 Nama fisik snake_case: tabel "pipeline_transitions" via @@map
 
 // Enum penting:
-PipelineStage: LEAD, QUALIFIED, QUOTED, WON, LOST
+PipelineStage: NEW, QUALIFIED, QUOTED, BOOKED, SCHEDULED, COMPLETED, REVIEWED
+  ⚠️ DIKOREKSI 1 Agustus 2026 — dokumentasi ini SEBELUMNYA menulis
+  "LEAD, QUALIFIED, QUOTED, WON, LOST" dan itu SALAH (sudah lama tidak
+  cocok dengan database). Nilai di atas diverifikasi langsung dari
+  `pg_enum` production. Bug nyata akibat versi lama: endpoint
+  /auth/portal-summary memfilter `pipelineStage: "LEAD"` → cocok NOL baris,
+  kartu Sales CRM di Portal muncul tanpa angka.
+  SELALU cek `backend/prisma/schema.prisma` / pg_enum, jangan percaya
+  daftar enum di file ini.
   (label tampilan QUOTED berubah dari "Penawaran" jadi "Offers/Negosiasi" —
   cuma label, enum value TETAP QUOTED, jangan migrate enum-nya)
 LeadSource: META_ADS, GOOGLE_ADS, WEBSITE_ORGANIC, INSTAGRAM, 

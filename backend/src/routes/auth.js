@@ -113,8 +113,17 @@ authRouter.get("/portal-summary", requireAuth, async (req, res) => {
     const todayWIB = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
     const results = await Promise.all([
-      safe("growth", "LEAD AKTIF", () =>
-        prisma.customer.count({ where: { pipelineStage: { in: ["LEAD", "QUALIFIED", "QUOTED"] } } })),
+      // Enum PipelineStage yang BENAR: NEW, QUALIFIED, QUOTED, BOOKED,
+      // SCHEDULED, COMPLETED, REVIEWED. (CLAUDE.md sempat mendokumentasikan
+      // LEAD/WON/LOST — itu SUDAH TIDAK AKURAT; percobaan pertama endpoint ini
+      // memakai "LEAD" dan gagal diam-diam. Sumber kebenaran: schema.prisma.)
+      //
+      // Dihitung QUALIFIED + QUOTED saja, BUKAN semua tahap terbuka: NEW
+      // berisi ribuan chat masuk mentah yang belum disaring siapa pun, jadi
+      // menghitungnya sebagai "lead aktif" menghasilkan angka besar yang tidak
+      // bisa ditindaklanjuti. Dua tahap ini yang benar-benar sedang digarap sales.
+      safe("growth", "LEAD DALAM PROSES", () =>
+        prisma.customer.count({ where: { pipelineStage: { in: ["QUALIFIED", "QUOTED"] } } })),
       safe("bengkel", "UNIT DIKERJAKAN", () =>
         prisma.unit.count({ where: { status: "IN_PRODUCTION" } })),
       safe("warehouse", "ITEM DI BAWAH MINIMUM", async () => {
