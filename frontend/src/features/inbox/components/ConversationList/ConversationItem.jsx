@@ -6,6 +6,7 @@ import { smartTimestamp } from "../../utils/formatTime.js";
 import { useConversation, useActiveId, useConversationStore } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
 import TransferPickerPopover from "./TransferPickerPopover.jsx";
+import { isAdminUser } from "@/lib/roles.js";
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
@@ -15,7 +16,7 @@ const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "
 // App.jsx → Inbox.jsx → ConversationList.jsx cuma utk 1 flag admin-only.
 function isCurrentUserAdmin() {
   try {
-    return JSON.parse(localStorage.getItem("user") || "null")?.role === "ADMIN";
+    return isAdminUser(JSON.parse(localStorage.getItem("user") || "null"));
   } catch {
     return false;
   }

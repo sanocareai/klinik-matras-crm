@@ -17,6 +17,7 @@ import HandoverHistoryBanner from "./HandoverHistoryBanner.jsx";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
+import { isAdminUser } from "@/lib/roles.js";
 import { useConversationStore } from "../../stores/conversationStore.js";
 import { useComposerStore } from "../../stores/composerStore.js";
 
@@ -399,7 +400,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
               {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
             </button>
           )}
-          {!isGroup && user?.role === "ADMIN" && (
+          {!isGroup && isAdminUser(user) && (
             <button className="chat-action-btn" onClick={handleSyncHistory} disabled={syncingHistory}
               title={syncingHistory ? "Sedang sinkronisasi..." : "Tarik ulang riwayat chat ini dari WAHA (recovery pesan hilang/bubble kosong)"}>
               <Download size={17} />

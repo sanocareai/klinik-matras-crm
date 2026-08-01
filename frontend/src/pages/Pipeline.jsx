@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { cn } from "@/lib/utils.js";
 import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
+import { rolesOf } from "@/lib/roles.js";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -220,7 +221,7 @@ export default function Pipeline() {
               aria-label="Filter sales person"
             >
               <option value="">Semua Sales</option>
-              {users.filter((u) => u.role === "SALES" || u.role === "ADMIN").map((u) => (
+              {users.filter((u) => rolesOf(u).some((r) => r === "SALES" || r === "ADMIN")).map((u) => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>

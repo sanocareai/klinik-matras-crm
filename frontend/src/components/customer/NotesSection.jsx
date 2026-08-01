@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { api } from "../../api.js";
 import { formatTanggalWaktu } from "../../utils/format.js";
+import { isAdminUser } from "@/lib/roles.js";
 
 // Decode JWT dari localStorage untuk tahu userId yang sedang login
 function getCurrentUser() {
@@ -8,7 +9,7 @@ function getCurrentUser() {
     const token = localStorage.getItem("token");
     if (!token) return null;
     const payload = JSON.parse(atob(token.split(".")[1]));
-    return { id: payload.id, role: payload.role };
+    return { id: payload.id, role: payload.role, roles: payload.roles };
   } catch { return null; }
 }
 
@@ -87,7 +88,7 @@ export default function NotesSection({ customer, onUpdate }) {
 
       <div className="note-list">
         {(customer.notes || []).map((n) => {
-          const canEdit = me && (me.id === n.authorId || me.role === "ADMIN");
+          const canEdit = me && (me.id === n.authorId || isAdminUser(me));
           const isEditing = editId === n.id;
 
           return (

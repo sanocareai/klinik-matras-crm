@@ -6,6 +6,7 @@ import {
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import { formatTanggalWaktu } from "../utils/format.js";
+import { isAdminUser } from "@/lib/roles.js";
 
 // Label & warna peran — SEMUA 9 peran yang dikenal sistem otorisasi
 // (backend/src/constants/permissions.js ROLE_PERMISSIONS), bukan cuma
@@ -185,7 +186,7 @@ export default function Pengguna({ user: currentUser }) {
     }
   }
 
-  if (currentUser?.role !== "ADMIN") {
+  if (!isAdminUser(currentUser)) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 12 }}>
         <Lock size={40} color="var(--text-muted)" />

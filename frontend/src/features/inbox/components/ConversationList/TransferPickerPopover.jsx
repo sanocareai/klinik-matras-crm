@@ -9,6 +9,7 @@
 import React, { useEffect, useState } from "react";
 import { UserCog } from "lucide-react";
 import { api } from "../../../../api.js";
+import { isAdminUser } from "@/lib/roles.js";
 
 export default function TransferPickerPopover({ x, y, conversationId, currentAssignedId, onClose, onTransferred }) {
   const [users, setUsers] = useState([]);
@@ -57,7 +58,7 @@ export default function TransferPickerPopover({ x, y, conversationId, currentAss
             >
               <span className="transfer-picker-name">{u.name}</span>
               <span className="transfer-picker-role">
-                {u.id === currentAssignedId ? "Sekarang" : (u.role === "ADMIN" ? "Admin" : "Sales")}
+                {u.id === currentAssignedId ? "Sekarang" : (isAdminUser(u) ? "Admin" : "Sales")}
               </span>
             </button>
           ))

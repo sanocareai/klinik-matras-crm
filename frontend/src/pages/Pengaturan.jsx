@@ -15,6 +15,7 @@ import { WA_MARKERS, toggleWaFormat, parseWaFormatting } from "../utils/waFormat
 // Polling fallback (Fix UX sync-history) kalau socket putus/belum sempat
 // connect — 3 detik sesuai spec.
 import AppearanceSection from "@/features/settings/AppearanceSection.jsx";
+import { isAdminUser } from "@/lib/roles.js";
 
 const SYNC_POLL_INTERVAL_MS = 3000;
 
@@ -86,7 +87,7 @@ function TemplateFormatToolbar({ textareaRef, value, onChange }) {
 }
 
 function TemplateSection({ user }) {
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = isAdminUser(user);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -574,7 +575,7 @@ const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
 const SALES_ALLOWED_SECTIONS = ["template"];
 
 export default function Pengaturan({ user }) {
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = isAdminUser(user);
 
   // Deep link ?section=target-sales — dipakai widget Target Sales di
   // Dashboard supaya empty state bisa langsung buka tab yang relevan.

@@ -13,6 +13,7 @@ import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
 import { BRAND } from "@/lib/brand.js";
+import { isAdminUser } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
@@ -190,7 +191,12 @@ export default function Layout({ user, onLogout, children }) {
   const lastSeenAt    = useRef(new Date().toISOString()); // timestamp polling terakhir
   const fetchUnreadRef = useRef(null); // ref ke fetchUnread terbaru untuk SSE callback
 
-  const isAdmin = user?.role === "ADMIN";
+  // BUG (ditemukan QA 1 Agustus 2026): SEBELUMNYA `user?.role === "ADMIN"` —
+  // field LEGACY tunggal, bukan array `roles` dari sistem multi-role (D-010).
+  // Lihat lib/roles.js untuk detail. Kebetulan tidak kelihatan di production
+  // karena admin yang ada sekarang (Gilang, Novi) sama-sama masih punya
+  // legacy role=ADMIN.
+  const isAdmin = isAdminUser(user);
 
   // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval
   useSSE("new_message", () => { fetchUnreadRef.current?.(); });
