@@ -13,6 +13,7 @@ import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
 import WorkspaceSwitcher from "./WorkspaceSwitcher.jsx";
+import NotificationDrawer from "@/features/notifications/NotificationDrawer.jsx";
 import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
@@ -505,9 +506,12 @@ export default function Layout({ user, onLogout, children }) {
         {/* Hamburger SELALU tersedia sekarang — sidebar ada di semua halaman,
             termasuk Main Hub, jadi tidak ada lagi kondisi "tombol tanpa
             drawer di baliknya". */}
+        {/* `unreadCount` SENGAJA TIDAK dioper lagi ke Topbar (2 Agustus 2026):
+            itu unread INBOX, dan badge lonceng sekarang menghitung notifikasi
+            global dari notificationStore. unreadCount tetap dipakai di
+            SidebarLink "Inbox" beberapa baris di atas — tempat yang benar. */}
         <Topbar
           onToggleMobileMenu={() => setMobileOpen((v) => !v)}
-          unreadCount={unreadCount}
           user={user}
           onLogout={onLogout}
         />

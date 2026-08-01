@@ -29,6 +29,7 @@ const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
 const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("./pages/Portal.jsx"));
 const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
+const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
@@ -184,6 +185,9 @@ export default function App() {
             <Route path="/products"    element={<Products />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
             <Route path="/copilot"     element={<CoPilot />} />
+            {/* Notification Center — kejadian LINTAS workspace. Sengaja BUKAN
+                di bawah /inbox: Inbox khusus percakapan pelanggan (#26/#27). */}
+            <Route path="/notifications" element={<Notifications />} />
             <Route path="*"            element={<Navigate to="/portal" replace />} />
           </Routes>
         </Suspense>

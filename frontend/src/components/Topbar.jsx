@@ -5,6 +5,7 @@ import { formatTanggalIndo, getInitials } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
+import { useNotificationStore, badgeText } from "@/features/notifications/notificationStore.js";
 
 const ROUTE_LABELS = {
   // Tanpa entri ini breadcrumb jatuh ke fallback `pathname.replace("/","")`
@@ -20,19 +21,31 @@ const ROUTE_LABELS = {
   "/automation":  ["AI & Otomasi", "Otomasi"],
   "/pengaturan":  ["Pengaturan"],
   "/pengguna":    ["Pengaturan", "Pengguna & Peran"],
+  // Notification Center berdiri di atas semua workspace, seperti Main Hub —
+  // jadi remahnya tunggal, tidak bersarang di bawah divisi mana pun.
+  "/notifications": ["Notifikasi"],
 };
 
-// Wave 1.1: search dominan + profil chip. Aliran unreadCount (prop dari Layout),
-// navigasi bell → /inbox, dan onToggleMobileMenu TIDAK diubah. `user`/`onLogout`
-// adalah prop aditif (onLogout = handler yang sudah ada; TIDAK mengubah
-// state/flow autentikasi).
+// Wave 1.1: search dominan + profil chip.
+//
+// ⚠️ prop `unreadCount` SUDAH DIHAPUS dari komponen ini (2 Agustus 2026).
+// Dulu dipakai badge lonceng — dan itu justru bug-nya: angka unread Inbox
+// Sales CRM dipakai sebagai badge notifikasi GLOBAL. Sekarang badge membaca
+// notificationStore. unreadCount Inbox TETAP HIDUP di Layout, dipakai badge
+// menu "Inbox" di sidebar, tempat yang memang benar untuknya.
 // showMobileMenu: tombol hamburger disembunyikan di halaman yang memang tidak
 // punya drawer sidebar (saat ini: /portal). Default true supaya semua pemanggil
 // lama berperilaku persis seperti sebelumnya.
-export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unreadCount = 0, user, onLogout }) {
+export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Badge lonceng = notifikasi GLOBAL, bukan unread Inbox (#21/#22).
+  const toggleDrawer = useNotificationStore((s) => s.toggleDrawer);
+  const drawerOpen   = useNotificationStore((s) => s.drawerOpen);
+  const notifUnread  = useNotificationStore((s) => s.notifications.filter((n) => !n.isRead).length);
+  const notifBadge   = badgeText(notifUnread);
   // /portal/:key (command center) py key DINAMIS, tidak bisa didaftar satu-
   // satu di ROUTE_LABELS statis seperti path lain — dicocokkan terpisah di
   // sini, dengan judul divisi ASLI (bukan slug key mentah seperti "bengkel").
@@ -126,16 +139,27 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unre
       <div className="ml-auto flex items-center gap-1.5">
         <span className="hidden text-[13px] text-ink3 lg:block">{formatTanggalIndo()}</span>
 
+        {/* LONCENG — MEMBUKA DRAWER, TIDAK BERNAVIGASI (ketentuan #1/#2).
+            Sebelum refactor 2 Agustus 2026 tombol ini `navigate("/inbox")`
+            dan badge-nya memakai unread Inbox Sales CRM. Dua-duanya salah:
+            lonceng jadi pintu kedua ke Inbox, dan kejadian dari Produksi/
+            Gudang/Armada tidak pernah punya tempat sama sekali.
+            Angkanya sekarang dari notificationStore — LINTAS workspace, dan
+            TIDAK ADA hubungannya dengan unread Inbox (yang tetap punya badge
+            sendiri di menu Inbox di sidebar). */}
         <button
-          onClick={() => navigate("/inbox")}
-          title={unreadCount > 0 ? `${unreadCount} pesan belum dibaca` : "Notifikasi"}
-          aria-label="Notifikasi"
+          onClick={toggleDrawer}
+          title={notifBadge ? `${notifBadge} notifikasi belum dibaca` : "Notifikasi"}
+          aria-label={notifBadge ? `Notifikasi, ${notifBadge} belum dibaca` : "Notifikasi"}
+          aria-expanded={drawerOpen}
+          aria-haspopup="dialog"
           className="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-transform hover:bg-hovertint active:scale-95"
         >
           <Bell size={17} />
-          {unreadCount > 0 && (
+          {/* Aturan #23: null saat 0 → badge tidak dirender sama sekali */}
+          {notifBadge && (
             <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold text-white ring-2 ring-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
+              {notifBadge}
             </span>
           )}
         </button>
