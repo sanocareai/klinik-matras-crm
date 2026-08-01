@@ -3,10 +3,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles, MoreVertical,
+  LogOut, Package, X, Link2, Sparkles, MoreVertical,
   Wrench, Truck, Gauge, Grid3x3,
 } from "lucide-react";
-import { LayoutGroup } from "framer-motion";
+import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
@@ -327,9 +327,6 @@ export default function Layout({ user, onLogout, children }) {
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
-  const [collapsed, setCollapsed]     = useState(
-    () => localStorage.getItem("sidebar-collapsed") === "true"
-  );
   const [mobileOpen, setMobileOpen]   = useState(false);
   const prevUnread    = useRef(null); // null = belum ada data awal
   const lastSeenAt    = useRef(new Date().toISOString()); // timestamp polling terakhir
@@ -408,13 +405,6 @@ export default function Layout({ user, onLogout, children }) {
     return () => clearInterval(interval);
   }, []);
 
-  function toggleCollapsed() {
-    setCollapsed((v) => {
-      localStorage.setItem("sidebar-collapsed", !v);
-      return !v;
-    });
-  }
-
   function closeMobileMenu() {
     setMobileOpen(false);
   }
@@ -427,7 +417,7 @@ export default function Layout({ user, onLogout, children }) {
   const roleLower = displayRole.toLowerCase();
 
   return (
-    <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
+    <div className="app-shell">
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 
@@ -452,21 +442,21 @@ export default function Layout({ user, onLogout, children }) {
         onLogout={onLogout}
       />
 
-      {/* Sidebar detail — HANYA untuk Sales CRM & Omnichannel (instruksi
-          Gilang 1 Agustus 2026: "sidebar crm yang sekarang itu hanya untuk
-          sales CRM & omni channel"). Divisi lain cukup rail + isi halaman;
-          menu mereka yang berjumlah >1 dipindah ke bar horizontal di bawah
-          topbar (lihat app-content) supaya tidak ada navigasi yang hilang.
-          Di MOBILE sidebar ini tetap jadi drawer untuk SEMUA divisi — rail
-          disembunyikan di bawah lg, jadi drawer ini satu-satunya jalan
-          berpindah halaman di HP.
+      {/* Sidebar detail — SEKARANG cuma MOBILE DRAWER, untuk SEMUA divisi
+          (revisi 1 Agustus 2026, kedua kalinya). SEBELUMNYA sidebar lebar ini
+          selalu tampil di desktop untuk Growth — Gilang minta itu dicabut:
+          "taskbar di kiri cuma dashboard per team, bukan operasi/tambah
+          task/job". Rail (WorkspaceRail, di atas) SUDAH memenuhi itu — cuma
+          5 ikon dashboard. Sidebar lebar ini isinya justru item OPERASIONAL
+          (Inbox/Pelanggan/Pipeline/Order/dst) — itu yang dipindah keluar dari
+          kolom kiri permanen, sekarang cuma bar horizontal di bawah topbar
+          (lihat app-content) untuk SEMUA divisi. Di desktop sidebar ini TIDAK
+          PERNAH tampil lagi, cuma jadi drawer mobile (dipicu hamburger).
 
-          DIKECUALIKAN DI /portal (perbaikan 1 Agustus 2026): halaman hub
-          bukan divisi, jadi tidak punya menu divisi untuk ditampilkan. Di HP
-          pun drawer tidak diperlukan di sini — kartu workspace di halamannya
-          SENDIRI yang jadi navigasi, dan rail/menu profil tetap menyediakan
-          jalan keluar. */}
-      {!onPortal && (divisionKey === "growth" || mobileOpen) && (
+          DIKECUALIKAN DI /portal: halaman hub bukan divisi, jadi tidak py
+          menu untuk ditampilkan — drawer pun tidak perlu, kartu workspace di
+          halamannya sendiri yang jadi navigasi. */}
+      {!onPortal && mobileOpen && (
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
@@ -475,23 +465,15 @@ export default function Layout({ user, onLogout, children }) {
               <img src="/logo-small.png" alt="Logo" style={{ width: 20, height: 20, objectFit: "contain" }} />
             </span>
           </div>
-          {!collapsed && (
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="sidebar-brand-name">{BRAND.name}</div>
-              <div className="sidebar-brand-sub">{BRAND.subtitle}</div>
-            </div>
-          )}
-          {/* Tombol tutup di mobile */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="sidebar-brand-name">{BRAND.name}</div>
+            <div className="sidebar-brand-sub">{BRAND.subtitle}</div>
+          </div>
+          {/* Tombol tutup — sidebar ini SEKARANG cuma drawer mobile (lihat
+              catatan render-nya di atas), jadi tidak ada lagi "tombol
+              collapse desktop" — cuma satu cara menutupnya. */}
           <button className="sidebar-close-mobile" onClick={closeMobileMenu} title="Tutup">
             <X size={16} />
-          </button>
-          {/* Tombol collapse di desktop */}
-          <button
-            className="sidebar-collapse-btn"
-            onClick={toggleCollapsed}
-            title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
-          >
-            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
         </div>
 
@@ -504,22 +486,15 @@ export default function Layout({ user, onLogout, children }) {
           type="button"
           onClick={() => navigate("/portal")}
           title="Ganti divisi"
-          className={cn(
-            "mx-3 mb-2 flex items-center gap-2 rounded-btn px-2.5 py-2 text-left transition-colors hover:bg-hovertint",
-            collapsed && "justify-center px-0"
-          )}
+          className="mx-3 mb-2 flex items-center gap-2 rounded-btn px-2.5 py-2 text-left transition-colors hover:bg-hovertint"
         >
           <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", division.accent.bg)}>
             <DivisionIcon className={cn("h-3.5 w-3.5", division.accent.text)} strokeWidth={2} />
           </span>
-          {!collapsed && (
-            <>
-              <span className={cn("min-w-0 flex-1 truncate text-[12px] font-semibold", division.accent.text)}>
-                {division.label}
-              </span>
-              <Grid3x3 size={13} className="shrink-0 text-ink3" />
-            </>
-          )}
+          <span className={cn("min-w-0 flex-1 truncate text-[12px] font-semibold", division.accent.text)}>
+            {division.label}
+          </span>
+          <Grid3x3 size={13} className="shrink-0 text-ink3" />
         </button>
 
         {/* Navigation */}
@@ -532,9 +507,7 @@ export default function Layout({ user, onLogout, children }) {
             if (adminOnly && !isAdmin) return null;
             return (
               <div key={section} className="nav-section">
-                {!collapsed && (
-                  <div className="sidebar-section-label">{section}</div>
-                )}
+                <div className="sidebar-section-label">{section}</div>
                 {items.map(({ to, label, Icon, badge, adminOnly: itemAdmin }) => {
                   if (itemAdmin && !isAdmin) return null;
                   // Affordance AI HALUS untuk "Tanya Sano" (ikon violet + dot).
@@ -549,7 +522,6 @@ export default function Layout({ user, onLogout, children }) {
                       isAI={isAI}
                       showBadge={showBadge}
                       badgeCount={unreadCount}
-                      collapsed={collapsed}
                       onNavigate={closeMobileMenu}
                     />
                   );
@@ -562,8 +534,8 @@ export default function Layout({ user, onLogout, children }) {
 
         {/* Kartu promo "Tanya Sano" (DS v2.1) — fitur AI CRM, HANYA relevan di
             divisi Growth (Bengkel/Armada/Kendali tidak punya co-pilot sendiri
-            saat ini). Disembunyikan saat collapsed (perilaku lama). */}
-        {divisionKey === "growth" && <SidebarPromo collapsed={collapsed} />}
+            saat ini). */}
+        {divisionKey === "growth" && <SidebarPromo />}
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
@@ -576,13 +548,11 @@ export default function Layout({ user, onLogout, children }) {
                 <div className="avatar avatar-sm sidebar-avatar">
                   {(user.name || "?")[0].toUpperCase()}
                 </div>
-                {!collapsed && (
-                  <div className="sidebar-user-info">
-                    <div className="sidebar-user-name">{user.name}</div>
-                    <span className={`role-badge ${roleLower}`}>{displayRole}</span>
-                  </div>
-                )}
-                {!collapsed && <MoreVertical size={15} className="sidebar-kebab-ic" />}
+                <div className="sidebar-user-info">
+                  <div className="sidebar-user-name">{user.name}</div>
+                  <span className={`role-badge ${roleLower}`}>{displayRole}</span>
+                </div>
+                <MoreVertical size={15} className="sidebar-kebab-ic" />
               </button>
             }
           >
@@ -596,11 +566,9 @@ export default function Layout({ user, onLogout, children }) {
             pegang bundle terbaru (bukan basi dari service worker lama) tanpa
             perlu buka DevTools, tersedia untuk semua role (bukan cuma admin
             lewat Pengaturan, yang tidak bisa diakses SALES). */}
-        {!collapsed && (
-          <div className="sidebar-version" title={typeof __BUILD_TIME__ !== "undefined" ? new Date(__BUILD_TIME__).toLocaleString("id-ID") : undefined}>
-            v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
-          </div>
-        )}
+        <div className="sidebar-version" title={typeof __BUILD_TIME__ !== "undefined" ? new Date(__BUILD_TIME__).toLocaleString("id-ID") : undefined}>
+          v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
+        </div>
       </aside>
       )}
 
@@ -615,21 +583,27 @@ export default function Layout({ user, onLogout, children }) {
           onLogout={onLogout}
         />
 
-        {/* Nav horizontal untuk divisi NON-Sales yang punya lebih dari satu
-            halaman (mis. All Teams: Ringkasan/Order/Laporan). Tanpa ini,
-            menghapus sidebar dari divisi tersebut akan MENGHILANGKAN akses ke
-            halaman-halaman itu sama sekali — bukan sekadar mengubah tampilan.
-            Hanya dirender kalau memang ada >1 item yang boleh dilihat user. */}
-        {!onPortal && divisionKey !== "growth" && (() => {
+        {/* Nav horizontal — dulu cuma untuk divisi NON-Growth, SEKARANG untuk
+            SEMUA divisi (lihat catatan di sidebar drawer di atas: ini yang
+            menggantikan sidebar lebar Growth yang dicabut dari desktop).
+            Tanpa ini, halaman operasional (Inbox/Pelanggan/Pipeline/dst)
+            tidak akan terjangkau sama sekali dari desktop selain lewat
+            command center — bukan sekadar ubah tampilan.
+            Growth py ~13 item (jauh lebih banyak dari divisi lain yang cuma
+            1-3) — makanya container INI overflow-x-auto + item shrink-0,
+            supaya scroll ke samping alih-alih baris kedua yang mendorong
+            konten turun tak terduga. */}
+        {!onPortal && (() => {
           const items = division.sections
             .filter((s) => !s.adminOnly || isAdmin)
             .flatMap((s) => s.items)
             .filter((it) => !it.adminOnly || isAdmin);
           if (items.length < 2) return null;
           return (
-            <div className="hidden items-center gap-1.5 border-b border-[#DEE5EF] bg-white px-7 py-2.5 lg:flex">
-              {items.map(({ to, label, Icon }) => {
+            <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-[#DEE5EF] bg-white px-7 py-2.5 [scrollbar-width:none] lg:flex [&::-webkit-scrollbar]:hidden">
+              {items.map(({ to, label, Icon, badge }) => {
                 const active = location.pathname.startsWith(to);
+                const showBadge = !!(badge && unreadCount > 0);
                 return (
                   <button
                     key={to}
@@ -637,13 +611,18 @@ export default function Layout({ user, onLogout, children }) {
                     onClick={() => navigate(to)}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-[11px] px-3 py-1.5 text-[12px] font-bold transition-colors",
+                      "flex shrink-0 items-center gap-1.5 rounded-[11px] px-3 py-1.5 text-[12px] font-bold transition-colors",
                       active
                         ? "bg-[#E8F0FF] text-[#1457D9]"
                         : "text-[#6E7E96] hover:bg-[#F4F7FF] hover:text-[#1457D9]"
                     )}
                   >
                     <Icon className="h-3.5 w-3.5" strokeWidth={2} /> {label}
+                    {showBadge && (
+                      <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-red px-1 text-[9px] font-extrabold text-white">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -651,8 +630,27 @@ export default function Layout({ user, onLogout, children }) {
           );
         })()}
 
+        {/* Transisi antar halaman (catatan Gilang 1 Agustus 2026: "animasi
+            setiap perpindahan agar lebih smooth"). Di-key oleh pathname —
+            AnimatePresence mendeteksi route berganti dari situ, bukan dari
+            `children` berubah identitas (yang selalu berubah tiap render).
+            mode="wait": halaman lama selesai fade-out DULU baru yang baru
+            fade-in — mode default ("sync") akan tumpang tindih sesaat dan
+            terlihat "kedip" karena kedua halaman punya latar putih penuh.
+            Durasi 160ms konsisten dengan pill aktif sidebar (SidebarLink,
+            180ms) — motion Sano dipatok 150–200ms, jangan lebih lambat. */}
         <div className="page-body">
-          {children}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
     </div>
