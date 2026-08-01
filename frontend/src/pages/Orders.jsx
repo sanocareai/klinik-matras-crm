@@ -594,6 +594,7 @@ export default function Orders() {
         order={timelineOrder}
         onClose={() => setTimelineOrder(null)}
         onOpenChat={bukaChat}
+        onPaymentRecorded={load}
       />
     </PageContainer>
   );

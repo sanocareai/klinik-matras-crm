@@ -44,10 +44,12 @@ const uploadsDir    = path.join(__dirname, "../uploads");
 const productsDir   = path.join(__dirname, "../data/products");
 const unitPhotosDir = path.join(__dirname, "../data/unit-photos");
 const jobPhotosDir  = path.join(__dirname, "../data/job-photos");
+const paymentProofsDir = path.join(__dirname, "../data/payment-proofs");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
 mkdirSync(jobPhotosDir,  { recursive: true });
+mkdirSync(paymentProofsDir, { recursive: true });
 
 const app = express();
 app.use(cors());
@@ -57,6 +59,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use("/uploads",           express.static(uploadsDir));
 app.use("/media/unit-photos", express.static(unitPhotosDir));
 app.use("/media/job-photos",  express.static(jobPhotosDir));
+app.use("/media/payment-proofs", express.static(paymentProofsDir));
 app.use("/media/products", express.static(productsDir));
 
 app.use("/api/webhooks",     webhookRouter);

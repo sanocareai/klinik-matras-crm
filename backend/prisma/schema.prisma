@@ -570,6 +570,7 @@ model Order {
   statusTransitions OrderStatusTransition[]
   units             Unit[]
   jobs              Job[]
+  payments          Payment[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -881,10 +882,19 @@ model JobUnit {
 // finance BUKAN kolom yang di-UPDATE di baris ini, itu baris BARU di
 // PaymentVerification. "Sudah diverifikasi?" = ADA baris verifikasi untuk
 // payment ini, bukan status yang bisa berubah bolak-balik.
+// D-023: orderId WAJIB (ledger selalu bisa dijawab "untuk order mana"),
+// jobId OPSIONAL (DP di konfirmasi order terjadi SEBELUM job pickup/delivery
+// mana pun ada — FR-M-01). Payment yang dicatat driver di stop pengiriman
+// (D-011) tetap mengisi keduanya (orderId diturunkan dari job.orderId saat
+// dicatat, bukan diminta manual ke driver).
 model Payment {
   id    String        @id @default(uuid()) @db.Uuid
-  jobId String        @map("job_id") @db.Uuid
-  job   Job           @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  orderId String  @map("order_id")
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  jobId String? @map("job_id") @db.Uuid
+  job   Job?    @relation(fields: [jobId], references: [id], onDelete: Restrict)
 
   amount        Int // Rupiah, integer
   method        PaymentMethod
@@ -902,6 +912,7 @@ model Payment {
 
   verifications PaymentVerification[]
 
+  @@index([orderId])
   @@index([jobId])
   @@index([recordedById, createdAt]) // rekonsiliasi harian per driver
   @@map("payments")

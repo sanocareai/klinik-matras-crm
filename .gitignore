@@ -8,6 +8,8 @@ backend/data/unit-photos/*
 !backend/data/unit-photos/.gitkeep
 backend/data/job-photos/*
 !backend/data/job-photos/.gitkeep
+backend/data/payment-proofs/*
+!backend/data/payment-proofs/.gitkeep
 backend/data/knowledge/documents/*
 !backend/data/knowledge/documents/.gitkeep
 backend/data/knowledge/meta.json

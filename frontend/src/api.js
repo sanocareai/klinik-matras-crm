@@ -297,6 +297,12 @@ export const api = {
     request(`/orders/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteOrderItem: (itemId) =>
     request(`/orders/items/${itemId}`, { method: "DELETE" }),
+  // DP/pembayaran dicatat langsung di order (D-023) — beda dari
+  // recordJobPayment yang terikat ke job pickup/delivery driver.
+  uploadPaymentProof: (orderId, formData) => requestFormData(`/orders/${orderId}/payments/proof`, formData),
+  recordOrderPayment: (orderId, data) =>
+    request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
+  getOrderPayments: (orderId) => api.getPayments({ orderId }),
   deleteOrder: (orderId) =>
     request(`/orders/${orderId}`, { method: "DELETE" }),
   markOrderComplaint: (orderId, data) =>

@@ -1,4 +1,8 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
@@ -6,9 +10,31 @@ import { requireAuth } from "../middleware/auth.js";
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
+import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
+
+// Upload bukti pembayaran DP (D-023) — dir terpisah dari job-photos armada.js
+// karena DP dicatat SEBELUM job pickup/delivery mana pun ada, jadi tidak
+// punya jobId untuk dijadikan prefix nama file.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const paymentProofsDir = path.join(__dirname, "../../data/payment-proofs");
+if (!fs.existsSync(paymentProofsDir)) fs.mkdirSync(paymentProofsDir, { recursive: true });
+const proofUpload = multer({
+  storage: multer.diskStorage({
+    destination: paymentProofsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".jpg";
+      cb(null, `${req.params.id}-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    cb(null, true);
+  },
+});
 
 // Helper: hitung ulang Order.value = SUM semua items, update ke DB, LALU
 // sinkronkan Customer.orderCount/orderValue (dipakai 3 endpoint di bawah:
@@ -91,6 +117,54 @@ orderRouter.patch("/:id", async (req, res) => {
     res.json(order);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/:id/payments/proof — upload multipart, kembalikan URL.
+// Sama pola dengan POST /armada/jobs/:id/photos.
+orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "File foto wajib diisi" });
+  res.json({ url: `/media/payment-proofs/${req.file.filename}` });
+});
+
+// POST /api/orders/:id/payments { amount, method, proofPhotoUrl? }
+// DP saat konfirmasi order (FR-M-01, D-023) — TANPA jobId, beda dari
+// pencatatan driver di stop pengiriman (D-011). Sales/admin mana pun yang
+// login boleh mencatat (sama longgarnya dengan PATCH paymentStatus manual
+// yang sudah ada — orderRouter tidak pakai gate P.* granular, lihat CLAUDE.md
+// sano-hub §"PRD bilang RLS... di sini artinya middleware Express").
+orderRouter.post("/:id/payments", async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+
+    const { amount, method, proofPhotoUrl } = req.body;
+    const amountInt = Number(amount);
+    if (!Number.isInteger(amountInt) || amountInt <= 0) {
+      return res.status(400).json({ error: "Jumlah pembayaran wajib angka bulat lebih dari 0" });
+    }
+    if (!["CASH", "TRANSFER", "QRIS"].includes(method)) {
+      return res.status(400).json({ error: "Metode pembayaran tidak valid" });
+    }
+    if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) {
+      return res.status(400).json({ error: "URL foto bukti tidak valid" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.create({
+        data: {
+          orderId: req.params.id, amount: amountInt, method,
+          proofPhotoUrl: proofPhotoUrl || null,
+          recordedById: req.user.id,
+        },
+      });
+      const status = await recomputeOrderPaymentStatus(tx, req.params.id);
+      return { payment, status };
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: "Server error: " + err.message });
   }
 });
 

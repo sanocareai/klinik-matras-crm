@@ -701,3 +701,55 @@ response API tetap 201 — TIDAK menggagalkan pembuatan job. Sama untuk
 job PICKUP selesai (trigger "unit sampai") — response tetap 200 walau
 kirim WA gagal. Konfirmasi lewat log: percobaan kirim BENAR-BENAR terjadi
 (bukan silently skipped), errornya tertangkap di lapisan yang benar.
+
+---
+
+## D-023 — Payment terikat ke Order, paymentStatus dihitung otomatis (FR-M, susulan D-022)
+
+**Keputusan.** Menutup penundaan FR-M di D-022. `Payment.orderId` sekarang
+WAJIB (sebelumnya cuma `jobId`), `Payment.jobId` jadi OPSIONAL — DP saat
+konfirmasi order (FR-M-01) terjadi SEBELUM job pickup/delivery mana pun
+ada, jadi payment harus bisa berdiri sendiri tanpa job. Payment yang
+dicatat driver di stop pengiriman (D-011) tetap mengisi keduanya —
+`orderId` diturunkan otomatis dari `job.orderId`, tidak diminta manual ke
+driver.
+
+`Order.paymentStatus` (kolom lama, dipakai analytics.js) sekarang DIHITUNG
+ULANG otomatis (`services/paymentLedger.js`) setiap kali ADA Payment baru
+tercatat — dari mana pun asalnya — dibandingkan dengan `Order.value`:
+0 dibayar → BELUM_BAYAR, sebagian → DP, penuh → LUNAS. Dropdown manual di
+Orders.jsx TETAP ADA untuk kasus tanpa jejak ledger (transfer dikonfirmasi
+lewat rekening bank di luar sistem) — override manual berlaku sampai ada
+Payment baru lagi yang memicu hitung ulang.
+
+**Kenapa migrasi ini AMAN dilakukan sekarang (bukan backfill berisiko).**
+Dicek `SELECT COUNT(*) FROM payments` di production SEBELUM menulis
+migrasi — hasilnya 0. Fitur D-011 (driver mencatat pembayaran) baru live,
+belum ada satu pun pembayaran nyata tercatat, jadi `order_id NOT NULL`
+langsung tanpa perlu backfill data lama.
+
+**Kenapa SEMUA payment dihitung (bukan cuma yang terverifikasi finance).**
+Verifikasi (D-011) adalah audit "uangnya benar sampai ke kas", BUKAN
+gerbang "apakah customer sudah bayar" — uang sudah diterima (ada foto
+bukti) begitu Payment tercatat. Kalau outstanding balance cuma dihitung
+dari payment terverifikasi, order akan tampak "belum lunas" padahal
+uangnya sudah di tangan driver/sales, cuma belum direkonsiliasi — itu
+akan membingungkan sales yang menagih customer yang sebenarnya sudah bayar.
+
+**Yang ditambahkan:** `POST /orders/:id/payments` (DP, sales/admin manapun
+yang login — sama longgarnya dengan PATCH paymentStatus manual yang sudah
+ada), `POST /orders/:id/payments/proof` (upload bukti, dir terpisah
+`data/payment-proofs/` karena belum tentu ada jobId untuk prefix nama
+file), `GET /armada/payments?orderId=` (riwayat + rekonsiliasi gabungan).
+Tab baru "Pembayaran" di `OrderTimelineDrawer.jsx` — sudah dibayar, sisa
+tagihan, riwayat semua payment (dari sales maupun driver), form catat DP.
+
+**Verifikasi.** Diuji lewat API: order value 1 (data uji) + payment
+500.000 → LUNAS. Order value 5.000.000 + payment bertahap 2.000.000 lalu
+3.000.000 → DP lalu LUNAS, outstanding terhitung tepat di tiap langkah.
+Regresi D-011 dicek: payment driver di job DELIVERY tetap berhasil dan
+sekarang membawa `orderId` yang benar (diturunkan dari job). Diverifikasi
+juga di UI sungguhan dari login — badge status pembayaran di papan Order
+berubah otomatis jadi LUNAS tanpa refresh manual, tab Pembayaran
+menampilkan kedua payment dengan jumlah SUDAH DIBAYAR/SISA TAGIHAN yang
+tepat.

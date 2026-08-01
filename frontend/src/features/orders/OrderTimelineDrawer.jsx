@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2 } from "lucide-react";
+import { X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2, Wallet } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -7,6 +7,157 @@ import {
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { cn } from "@/lib/utils.js";
+
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+
+// Tab "Pembayaran" (D-023) — DP di konfirmasi order + riwayat pembayaran
+// dari SEMUA sumber (sales di sini, driver di stop pengiriman D-011).
+// Order.paymentStatus dihitung ULANG di backend tiap kali payment baru
+// tercatat (services/paymentLedger.js) — `onRecorded` di sini cuma
+// memicu Orders.jsx refetch daftar order supaya badge status langsung
+// menampilkan nilai baru tanpa navigasi ulang.
+function PaymentTab({ order, onRecorded }) {
+  const [payments, setPayments] = useState(null);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("TRANSFER");
+  const [photo, setPhoto] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [formErr, setFormErr] = useState("");
+
+  function load() {
+    setError("");
+    api.getOrderPayments(order.id).then(setPayments).catch((e) => setError(e.message));
+  }
+  useEffect(() => { setPayments(null); load(); }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handlePhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const fd = new FormData();
+      fd.append("photo", file);
+      const { url } = await api.uploadPaymentProof(order.id, fd);
+      setPhoto(url);
+    } catch (e2) {
+      setFormErr("Gagal upload foto: " + e2.message);
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleSave() {
+    const amountInt = parseInt(amount, 10);
+    if (!amountInt || amountInt <= 0) { setFormErr("Jumlah wajib diisi"); return; }
+    setBusy(true);
+    setFormErr("");
+    try {
+      await api.recordOrderPayment(order.id, { amount: amountInt, method, proofPhotoUrl: photo });
+      setForm(false); setAmount(""); setMethod("TRANSFER"); setPhoto(null);
+      load();
+      onRecorded?.();
+    } catch (e2) {
+      setFormErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const paid = (payments || []).reduce((n, p) => n + p.amount, 0);
+  const outstanding = Math.max((order.value || 0) - paid, 0);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="rounded-xl bg-surface p-2.5 shadow-card">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Sudah Dibayar</p>
+          <p className="mt-0.5 text-[13px] font-bold text-green">{formatRupiah(paid)}</p>
+        </div>
+        <div className="rounded-xl bg-surface p-2.5 shadow-card">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Sisa Tagihan</p>
+          <p className={cn("mt-0.5 text-[13px] font-bold", outstanding > 0 ? "text-red" : "text-ink")}>
+            {formatRupiah(outstanding)}
+          </p>
+        </div>
+      </div>
+
+      {error && <p className="text-[12px] text-red">{error}</p>}
+      {!payments && !error && (
+        <div className="flex flex-col gap-2">{[0, 1].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
+      )}
+      {payments?.length === 0 && (
+        <p className="rounded-xl bg-surface px-3.5 py-3 text-center text-[12px] text-ink3 shadow-card">
+          Belum ada pembayaran tercatat.
+        </p>
+      )}
+      {payments?.map((p) => {
+        const verified = p.verifications?.length > 0;
+        return (
+          <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-surface p-2.5 shadow-card">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-ink">{formatRupiah(p.amount)}</p>
+              <p className="text-[11px] text-ink3">
+                {PAYMENT_METHOD_LABEL[p.method] || p.method} · {p.recordedBy?.name || "—"} · {formatTanggal(p.createdAt)}
+                {p.job?.type && (p.job.type === "PICKUP" ? " · saat ambil" : " · saat kirim")}
+              </p>
+            </div>
+            {verified && <CheckCircle2 size={14} className="shrink-0 text-green" />}
+          </div>
+        );
+      })}
+
+      {!form ? (
+        <button
+          type="button" onClick={() => setForm(true)}
+          className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-accentbg text-[13px] font-semibold text-accent"
+        >
+          <Wallet size={14} /> Catat Pembayaran
+        </button>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-xl bg-surface p-3 shadow-card">
+          <input
+            type="number" inputMode="numeric" placeholder="Jumlah diterima (Rp)"
+            value={amount} onChange={(e) => setAmount(e.target.value)}
+            className="h-10 rounded-lg border border-line px-3 text-[13px] outline-none focus:border-accent"
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
+              <button
+                key={value} type="button" onClick={() => setMethod(value)}
+                className={cn(
+                  "h-9 rounded-lg border-2 text-[12px] font-medium",
+                  method === value ? "border-accent bg-accentbg text-accent" : "border-line text-ink2"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-[12px] font-medium text-ink2">
+            {uploadingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+            {photo ? "Foto siap" : "Foto Bukti (opsional)"}
+            <input type="file" accept="image/*" hidden onChange={handlePhoto} disabled={uploadingPhoto} />
+          </label>
+          {formErr && <p className="text-[11px] text-red">{formErr}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setForm(false); setFormErr(""); }}
+              className="h-9 flex-1 rounded-lg text-[12px] font-semibold text-ink2">Batal</button>
+            <button
+              type="button" disabled={busy} onClick={handleSave}
+              className="h-9 flex-1 rounded-lg bg-accent text-[12px] font-semibold text-white disabled:opacity-40"
+            >
+              {busy ? <Loader2 size={13} className="mx-auto animate-spin" /> : "Simpan"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Tab "Dokumentasi" (D-015) — berkas foto per tahap produksi untuk order ini,
 // dikumpulkan dari unit_stage_logs.photo_urls milik SEMUA unit order. Ini
@@ -189,10 +340,10 @@ const TONE = {
   READY: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab]         = useState("status"); // "status" | "dokumentasi"
+  const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
 
   // Balik ke tab Status tiap kali drawer dibuka order BARU — supaya sales
   // yang barusan lihat dokumentasi order sebelumnya tidak salah kira sedang
@@ -281,6 +432,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
             {[
               { key: "status", label: "Status", icon: Clock },
               { key: "dokumentasi", label: "Dokumentasi", icon: Camera },
+              { key: "pembayaran", label: "Pembayaran", icon: Wallet },
             ].map((t) => (
               <button
                 key={t.key}
@@ -299,6 +451,10 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat }) {
           {tab === "dokumentasi" ? (
             <div className="mt-4">
               <DocumentationTab orderId={order.id} conversationId={order.conversationId} />
+            </div>
+          ) : tab === "pembayaran" ? (
+            <div className="mt-4">
+              <PaymentTab order={order} onRecorded={onPaymentRecorded} />
             </div>
           ) : (
           <>

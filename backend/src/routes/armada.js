@@ -26,6 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
+import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -568,12 +569,8 @@ armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (r
 const paymentInclude = {
   recordedBy: { select: { id: true, name: true } },
   verifications: { include: { verifiedBy: { select: { id: true, name: true } } } },
-  job: {
-    select: {
-      id: true, type: true, orderId: true,
-      order: { select: { orderNumber: true, customer: { select: { name: true } } } },
-    },
-  },
+  order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+  job: { select: { id: true, type: true } },
 };
 
 // POST /api/armada/jobs/:id/payment { amount, method, proofPhotoUrl? }
@@ -597,28 +594,33 @@ armadaRouter.post("/jobs/:id/payment", requirePermission(P.JOB_OWN_WRITE), async
       throw new ArmadaError("URL foto bukti tidak valid");
     }
 
-    const payment = await prisma.payment.create({
-      data: {
-        jobId: job.id, amount: amountInt, method,
-        proofPhotoUrl: proofPhotoUrl || null,
-        recordedById: req.user.id,
-      },
-      include: paymentInclude,
+    const payment = await prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          orderId: job.orderId, jobId: job.id, amount: amountInt, method,
+          proofPhotoUrl: proofPhotoUrl || null,
+          recordedById: req.user.id,
+        },
+      });
+      await recomputeOrderPaymentStatus(tx, job.orderId);
+      return p;
     });
-    res.status(201).json(payment);
+    res.status(201).json(await prisma.payment.findUnique({ where: { id: payment.id }, include: paymentInclude }));
   } catch (err) {
     handleErr(err, res);
   }
 });
 
-// GET /api/armada/payments?driverId=&date= — rekonsiliasi finance.
-// date difilter berdasarkan HARI WIB (utils/wib.js), bukan UTC polos — lihat
-// aturan tanggal/timezone di CLAUDE.md root §11.
+// GET /api/armada/payments?driverId=&date=&orderId= — rekonsiliasi finance
+// DAN riwayat pembayaran satu order (dipakai Orders.jsx). date difilter
+// berdasarkan HARI WIB (utils/wib.js), bukan UTC polos — lihat aturan
+// tanggal/timezone di CLAUDE.md root §11.
 armadaRouter.get("/payments", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
-    const { driverId, date } = req.query;
+    const { driverId, date, orderId } = req.query;
     const where = {};
     if (driverId) where.recordedById = driverId;
+    if (orderId) where.orderId = orderId;
     if (date) {
       where.createdAt = { gte: startOfDayWIB(date), lt: endOfDayExclusiveWIB(date) };
     }

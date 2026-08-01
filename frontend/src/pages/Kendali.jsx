@@ -80,7 +80,8 @@ function PaymentReconciliation() {
                 <div className="min-w-[160px] flex-1">
                   <div className="text-[13px] font-semibold text-ink">{formatRupiah(p.amount)}</div>
                   <div className="text-[12px] text-ink2">
-                    {p.job?.order?.orderNumber || "—"} · {p.job?.order?.customer?.name || "—"} · dicatat {p.recordedBy?.name || "—"}
+                    {p.order?.orderNumber || "—"} · {p.order?.customer?.name || "—"} · dicatat {p.recordedBy?.name || "—"}
+                    {p.job?.type && <span> · {p.job.type === "PICKUP" ? "saat ambil" : "saat kirim"}</span>}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
