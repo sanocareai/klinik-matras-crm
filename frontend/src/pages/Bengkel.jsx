@@ -6,6 +6,7 @@ import {
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -304,7 +305,7 @@ export default function Bengkel() {
   return (
     <PageContainer>
       <PageHeader
-        title="Papan Produksi Harian"
+        title="Production Operations"
         subtitle={`${board.date} — ${summary.moved} dari ${summary.total} target sudah diupdate`}
         actions={
           <Button onClick={() => setAdding((v) => !v)} className="h-10">
@@ -322,6 +323,33 @@ export default function Bengkel() {
           </button>
         </div>
       </PageHeader>
+
+      {/* Command center — semua angka dari `board` (endpoint /production/board),
+          bukan contoh. `summary.total`/`summary.moved` sudah dihitung backend. */}
+      <div className="mb-5">
+        <WorkspaceHero
+          tone="amber"
+          title="Production command center"
+          subtitle="Target harian, progres tahap pengerjaan, dan unit yang belum masuk papan hari ini."
+          health={
+            summary.total === 0
+              ? { label: "Belum ada target hari ini", tone: "warn" }
+              : summary.moved >= summary.total
+                ? { label: "Semua target diupdate", tone: "ok" }
+                : { label: `${summary.total - summary.moved} target belum diupdate`, tone: "warn" }
+          }
+          stats={[
+            { label: "Target hari ini", value: summary.total, hint: board.date },
+            { label: "Sudah diupdate", value: summary.moved, hint: `dari ${summary.total} target` },
+            {
+              label: "Belum diupdate",
+              value: Math.max(summary.total - summary.moved, 0),
+              hint: "menunggu progres",
+            },
+            { label: "Unit di bengkel", value: available.length, hint: "belum masuk target" },
+          ]}
+        />
+      </div>
 
       {adding && (
         <AddTargetPanel

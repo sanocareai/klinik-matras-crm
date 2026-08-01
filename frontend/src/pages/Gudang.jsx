@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 
 // GUDANG — Inventory v1 (Phase 3, PRD §8). Scope disepakati dengan Gilang
 // 1 Agustus 2026: katalog material + ledger + goods receipt + issue manual
@@ -394,8 +395,8 @@ export default function Gudang() {
   return (
     <PageContainer>
       <PageHeader
-        title="Gudang"
-        subtitle="Katalog material & pergerakan stok."
+        title="Warehouse & Inventory Control"
+        subtitle="Stok bahan baku, produk jadi, mutasi, dan stock opname."
         actions={canWrite && (
           <Button onClick={() => setShowAddMaterial(true)} className="h-10">
             <Plus className="h-4 w-4" /> Tambah Material
@@ -412,6 +413,36 @@ export default function Gudang() {
           </button>
         </div>
       </PageHeader>
+
+      {/* Command center — angka dari `stock` yang sedang tampil (data nyata
+          endpoint /inventory/stock). "Perlu reorder" memakai ambang yang SAMA
+          dengan banner di bawah supaya dua tempat tidak pernah beda hitungan. */}
+      {(() => {
+        const perluReorder = stock.filter((m) => m.reorderPoint != null && m.balance <= m.reorderPoint);
+        const belumDiaturReorder = stock.filter((m) => m.reorderPoint == null);
+        return (
+          <div className="mb-5">
+            <WorkspaceHero
+              tone="sky"
+              title="Warehouse command center"
+              subtitle="Saldo material, titik reorder, dan pergerakan stok terbaru dalam satu tampilan."
+              health={
+                perluReorder.length > 0
+                  ? { label: "Perlu replenishment", tone: "warn" }
+                  : { label: "Stok aman", tone: "ok" }
+              }
+              stats={[
+                { label: "Total material", value: stock.length, hint: "aktif di katalog" },
+                { label: "Perlu reorder", value: perluReorder.length, hint: "saldo ≤ titik reorder" },
+                { label: "Belum ada titik reorder", value: belumDiaturReorder.length, hint: "belum dipantau" },
+                // `movements` bisa masih null saat `stock` sudah ada — guard di
+                // atas hanya mengecek `stock`. Jangan pakai .length langsung.
+                { label: "Pergerakan terbaru", value: movements?.length ?? 0, hint: "riwayat termuat" },
+              ]}
+            />
+          </div>
+        );
+      })()}
 
       <PageBody>
         {(() => {

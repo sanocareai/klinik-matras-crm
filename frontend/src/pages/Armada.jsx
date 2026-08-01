@@ -8,6 +8,7 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import DriverJobs from "./DriverJobs.jsx";
 
 // ARMADA — dispatcher menjadwalkan pengambilan & pengiriman harian.
@@ -487,8 +488,8 @@ export default function Armada() {
   return (
     <PageContainer>
       <PageHeader
-        title="Armada"
-        subtitle="Jadwal pengambilan & pengiriman harian."
+        title="Delivery & Fulfillment"
+        subtitle="Penjadwalan armada, rute, dan proof of delivery."
         actions={
           <div className="flex items-center gap-2">
             <input
@@ -501,6 +502,46 @@ export default function Armada() {
           </div>
         }
       />
+
+      {/* Command center — SEMUA angka dihitung dari board yang sedang tampil
+          (data nyata endpoint /armada/board), bukan contoh. Kalau board belum
+          termuat, komponen ini tidak dirender sama sekali. */}
+      {board && (
+        <div className="mb-5">
+          <WorkspaceHero
+            tone="emerald"
+            title="Delivery command center"
+            subtitle="Pantau jadwal pengambilan & pengiriman hari ini, penugasan driver, dan unit yang belum masuk job."
+            health={
+              board.available.length > 0
+                ? { label: `${board.available.length} unit belum dijadwalkan`, tone: "warn" }
+                : { label: "Semua unit terjadwal", tone: "ok" }
+            }
+            stats={[
+              {
+                label: type === "PICKUP" ? "Job pengambilan" : "Job pengiriman",
+                value: board.jobs.length,
+                hint: date,
+              },
+              {
+                label: "Sudah ada driver",
+                value: board.jobs.filter((j) => j.driverId).length,
+                hint: `dari ${board.jobs.length} job`,
+              },
+              {
+                label: "Selesai",
+                value: board.jobs.filter((j) => j.status === "COMPLETED").length,
+                hint: "hari ini",
+              },
+              {
+                label: "Menunggu jadwal",
+                value: board.available.length,
+                hint: type === "PICKUP" ? "unit siap diambil" : "unit siap dikirim",
+              },
+            ]}
+          />
+        </div>
+      )}
 
       {roles.includes("ADMIN") && <DriverGroupSettings />}
 

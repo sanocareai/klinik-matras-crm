@@ -92,7 +92,9 @@ export const api = {
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
-  // Identitas + role + portal yang boleh dibuka (Sano Hub).
+  // Satu angka HIDUP per workspace untuk kartu di halaman Portal (SANSS).
+  getPortalSummary: () => request("/auth/portal-summary"),
+  // Identitas + role + portal yang boleh dibuka (SANSS).
   // Sengaja baca dari server, bukan dari token di localStorage: perubahan role
   // oleh admin langsung berlaku saat refresh, tidak menunggu token 7 hari habis.
   //

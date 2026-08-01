@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Gauge, Loader2, PackageCheck, TrendingDown, Truck, Wallet } from "lucide-react";
+import { AlertTriangle, Loader2, PackageCheck, Truck, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { formatRupiah } from "../utils/format.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -145,19 +146,10 @@ function relatifWaktu(iso) {
   return `${hari} hari lalu`;
 }
 
-function StatCard({ icon: Icon, label, value, tone = "accent" }) {
-  return (
-    <Card className="flex items-start gap-3 p-5">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-${tone}bg text-${tone}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <div className="text-[22px] font-bold leading-tight text-ink">{value}</div>
-        <div className="text-[13px] text-ink2">{label}</div>
-      </div>
-    </Card>
-  );
-}
+// StatCard DIHAPUS (redesign SANSS, 1 Agustus 2026) — keempat KPI-nya pindah
+// ke WorkspaceHero di bawah. Komponen ini juga membangun class Tailwind secara
+// dinamis (`bg-${tone}bg`) yang TIDAK PERNAH bisa dilihat compiler Tailwind,
+// jadi warnanya sebagian memang tidak pernah benar-benar ter-generate.
 
 export default function Kendali() {
   const [data, setData] = useState(null);
@@ -197,21 +189,45 @@ export default function Kendali() {
 
   return (
     <PageContainer>
-      <PageHeader title="Kendali" subtitle="Ringkasan lintas divisi — bengkel, armada, dan kualitas." />
+      <PageHeader
+        title="All Teams Dashboard"
+        subtitle="Executive overview lintas sales, produksi, warehouse, dan delivery."
+      />
+
+      {/* Command center — KPI yang SEBELUMNYA berupa 4 StatCard polos dipindah
+          ke sini, BUKAN diduplikasi: menampilkan angka yang sama dua kali di
+          satu layar cuma bikin orang ragu mana yang benar. Angka & sumbernya
+          persis sama (endpoint /kendali/overview), hanya wadahnya yang baru.
+          "Rework rate" tetap bisa "—" kalau backend belum punya cukup data —
+          itu perilaku lama yang sengaja dipertahankan, jangan diisi angka. */}
+      <div className="mb-5">
+        <WorkspaceHero
+          tone="violet"
+          title="Dashboard command center"
+          subtitle="Ringkasan lintas divisi — bengkel, armada, dan kualitas — dalam satu tampilan."
+          health={
+            units.blocked.length > 0
+              ? { label: `${units.blocked.length} unit terblokir`, tone: "warn" }
+              : { label: "Operasional sehat", tone: "ok" }
+          }
+          stats={[
+            { label: "Total unit aktif", value: units.totalUnits, hint: "di seluruh tahap" },
+            { label: "Unit terblokir", value: units.blocked.length, hint: "butuh tindakan" },
+            {
+              label: "Rework rate QC",
+              value: rework.reworkRate == null ? "—" : `${Math.round(rework.reworkRate * 100)}%`,
+              hint: rework.reworkRate == null ? "data belum cukup" : "dari QC tercatat",
+            },
+            {
+              label: "Job driver hari ini",
+              value: driverActivity.reduce((n, d) => n + d.completed + d.failed, 0),
+              hint: "selesai + gagal",
+            },
+          ]}
+        />
+      </div>
 
       <PageBody>
-        {/* KPI ringkas */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={Gauge} label="Total unit aktif" value={units.totalUnits} tone="accent" />
-          <StatCard icon={AlertTriangle} label="Unit terblokir" value={units.blocked.length} tone="red" />
-          <StatCard
-            icon={TrendingDown}
-            label="Rework rate QC"
-            value={rework.reworkRate == null ? "—" : `${Math.round(rework.reworkRate * 100)}%`}
-            tone={rework.reworkRate > 0.2 ? "red" : "orange"}
-          />
-          <StatCard icon={PackageCheck} label="Job driver hari ini" value={driverActivity.reduce((n, d) => n + d.completed + d.failed, 0)} tone="green" />
-        </div>
 
         {/* Unit per status */}
         <Card>

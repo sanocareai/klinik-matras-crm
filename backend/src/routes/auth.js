@@ -81,3 +81,69 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Server error: " + err.message });
   }
 });
+
+// GET /api/auth/portal-summary — satu angka HIDUP per workspace, untuk kartu
+// di halaman Portal (redesign SANSS, 1 Agustus 2026).
+//
+// SENGAJA angka NYATA, bukan contoh. Mockup desain menampilkan angka seperti
+// "24 lead perlu follow-up" — kalau itu di-hardcode, kartu Portal berubah jadi
+// hiasan yang berbohong begitu data asli bergerak. Lebih baik satu angka jujur
+// per workspace (atau tidak sama sekali) daripada empat angka palsu.
+//
+// HANYA menghitung workspace yang boleh dibuka user ini — tidak membocorkan
+// angka divisi yang bukan haknya. Tiap hitungan dibungkus sendiri: satu query
+// gagal TIDAK menggagalkan seluruh response (kartu itu saja yang tanpa angka).
+authRouter.get("/portal-summary", requireAuth, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, role: true } });
+    if (!user) return res.status(401).json({ error: "User tidak ditemukan" });
+    const roles = await loadRoles(user);
+    const allowed = new Set(portalsFor({ roles }).map((p) => p.key));
+
+    const safe = async (key, label, fn) => {
+      if (!allowed.has(key)) return null;
+      try {
+        return { key, value: await fn(), label };
+      } catch (err) {
+        console.error(`[portal-summary:${key}]`, err.message);
+        return null;
+      }
+    };
+
+    const todayWIB = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
+    const results = await Promise.all([
+      safe("growth", "LEAD AKTIF", () =>
+        prisma.customer.count({ where: { pipelineStage: { in: ["LEAD", "QUALIFIED", "QUOTED"] } } })),
+      safe("bengkel", "UNIT DIKERJAKAN", () =>
+        prisma.unit.count({ where: { status: "IN_PRODUCTION" } })),
+      safe("warehouse", "ITEM DI BAWAH MINIMUM", async () => {
+        const rows = await prisma.$queryRaw`
+          SELECT COUNT(*)::int AS n FROM (
+            SELECT m.id, m.reorder_point, COALESCE(SUM(sm.qty), 0)::float AS balance
+            FROM materials m
+            LEFT JOIN stock_movements sm ON sm.material_id = m.id
+            WHERE m.reorder_point IS NOT NULL
+            GROUP BY m.id, m.reorder_point
+          ) t WHERE t.balance <= t.reorder_point`;
+        return rows[0]?.n ?? 0;
+      }),
+      safe("armada", "JOB HARI INI", () =>
+        prisma.job.count({
+          where: {
+            scheduledDate: new Date(`${todayWIB}T00:00:00.000Z`),
+            status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"] },
+          },
+        })),
+      safe("kendali", "UNIT AKTIF", () =>
+        prisma.unit.count({ where: { status: { notIn: ["DELIVERED", "CANCELLED"] } } })),
+    ]);
+
+    const summary = {};
+    for (const r of results) if (r) summary[r.key] = { value: r.value, label: r.label };
+    res.json(summary);
+  } catch (err) {
+    console.error("Portal summary error:", err.message);
+    res.status(500).json({ error: "Server error: " + err.message });
+  }
+});

@@ -149,35 +149,52 @@ export const ROLE_PERMISSIONS = {
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu
 // portal mana yang ditampilkan (PRD §4).
 export const PORTALS = [
-  // Label SEMPAT "CRM & Omnichannel" (istilah tim sehari-hari) — diganti
-  // "Growth" (1 Agustus 2026, Gilang) supaya konsisten dengan penamaan
-  // divisi lain (Bengkel/Armada/Kendali, satu kata) dan tidak terasa
-  // seperti "masih CRM lama" begitu masuk ke Sano Hub. Key tetap "growth".
+  // Redesign SANSS (1 Agustus 2026, Gilang): label mengikuti mockup —
+  // dwibahasa (judul Inggris, deskripsi Indonesia). Key TIDAK diubah supaya
+  // path/permission/riwayat tidak ikut bergeser.
+  //
+  // GUDANG DIPISAH jadi workspace sendiri ("warehouse") — sebelumnya cuma
+  // sub-halaman di dalam Bengkel. Alasannya: WAREHOUSE adalah role terpisah
+  // dengan permission sendiri (satu-satunya pemegang INVENTORY_WRITE), jadi
+  // menyembunyikannya di balik portal Produksi membuat orang gudang harus
+  // lewat divisi yang bukan miliknya. Sekarang 5 workspace, sesuai mockup.
   {
     key: "growth",
-    label: "Growth",
-    description: "Chat WhatsApp, pelanggan, order, pipeline penjualan",
+    label: "Sales CRM & Omnichannel",
+    description: "Lead, customer journey, quotation, dan seluruh kanal penjualan.",
     path: "/dashboard",
     roles: ["ADMIN", "SALES"],
   },
   {
     key: "bengkel",
-    label: "Produksi & Bengkel",
-    description: "Target harian, tahap pengerjaan, QC, dokumentasi",
+    label: "Production Operations",
+    description: "Perencanaan produksi, work order, quality control, dan kapasitas.",
     path: "/bengkel",
-    roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"],
+    roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"],
+  },
+  {
+    key: "warehouse",
+    label: "Warehouse & Inventory Control",
+    description: "Stok bahan baku, produk jadi, mutasi, dan stock opname.",
+    path: "/gudang",
+    // WAREHOUSE tetap boleh membuka Produksi juga (mereka melayani bengkel),
+    // makanya role ini masih terdaftar di portal bengkel di atas? TIDAK —
+    // sengaja DILEPAS dari sana: orang gudang sekarang mendarat di
+    // workspace-nya sendiri. Kalau nanti terbukti mereka butuh papan
+    // produksi juga, tambahkan lagi WAREHOUSE ke portal bengkel.
+    roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"],
   },
   {
     key: "armada",
-    label: "Armada & Pengiriman",
-    description: "Jalur pengambilan & pengiriman harian, driver",
+    label: "Delivery & Fulfillment",
+    description: "Penjadwalan armada, rute, instalasi, proof of delivery, dan SLA.",
     path: "/armada",
     roles: ["ADMIN", "DISPATCHER", "DRIVER"],
   },
   {
     key: "kendali",
-    label: "Kendali",
-    description: "Ringkasan lintas divisi, keuangan, kapasitas",
+    label: "All Teams Dashboard",
+    description: "Executive overview lintas sales, produksi, warehouse, dan delivery.",
     path: "/kendali",
     roles: ["ADMIN", "FINANCE"],
   },

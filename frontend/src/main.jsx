@@ -7,10 +7,19 @@ import App from "./App.jsx";
 // Font Geist (Vercel) — self-hosted via Fontsource (offline/PWA friendly, tanpa CDN).
 // Geist Sans = font UI utama, Geist Mono = angka/data. Di-import SEBELUM index.css
 // supaya token font-family di sana bisa mereferensikan family-nya.
-// Inter Variable — substitusi metrik-kompatibel untuk SF Pro. Di perangkat
-// Apple, -apple-system tetap menang (SF asli); di Windows/Android yang dipakai
-// Inter, BUKAN Segoe UI/Roboto. Itu yang membuat tipografi SERAGAM lintas
-// perangkat — sebelumnya font ikut berubah tergantung OS.
+// Outfit Variable — font utama SANSS (redesign 1 Agustus 2026, Gilang).
+// Geometric sans pengganti "Acme" (Mojomox) yang komersial/berbayar: huruf
+// 'a' single-story, lingkaran geometris, punya Thin s/d Black. Lisensi OFL,
+// SELF-HOSTED lewat @fontsource (BUKAN Google Fonts CDN) — konsisten dengan
+// aturan project: tidak ada request ke host eksternal.
+//
+// Ini SENGAJA menang atas -apple-system: sebelumnya SF Pro/Inter dibiarkan
+// menang di tiap OS supaya metrik seragam, tapi sekarang identitas visual
+// SANSS lebih penting daripada mengikuti font sistem — Outfit dipakai di
+// SEMUA perangkat, sama persis.
+import "@fontsource-variable/outfit";
+// Inter dipertahankan sebagai fallback metrik (dan masih dipakai beberapa
+// komponen lama yang belum dimigrasi).
 import "@fontsource-variable/inter";
 // Geist Mono dipertahankan untuk angka/data mentah (tabular-nums).
 import "@fontsource-variable/geist-mono";

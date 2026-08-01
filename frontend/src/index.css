@@ -59,10 +59,13 @@
 
 body {
   margin: 0;
-  /* Geist (Vercel) sebagai font UI utama — fallback Inter lalu sistem supaya
-     tetap aman kalau file font belum termuat. Angka pakai tabular via util
-     tabular-nums / .num, BUKAN global (tabular bikin teks biasa terlihat aneh). */
-  font-family: 'Geist Variable', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* SANSS: Outfit Variable (geometric sans, self-hosted) — SATU sumber font
+     dengan tokens.css var(--font-ui). Dulu di sini 'Geist Variable' padahal
+     tokens.css sudah tidak memakainya lagi — dua stack berbeda di dua file,
+     persis jenis drift yang bikin tampilan tidak konsisten. Sekarang file ini
+     MENGIKUTI token, bukan mendefinisikan stack-nya sendiri.
+     Angka pakai tabular via util .num/.tabular-nums, BUKAN global. */
+  font-family: var(--font-ui);
   background: var(--bg-page);
   color: var(--text-main);
   font-size: 14px;

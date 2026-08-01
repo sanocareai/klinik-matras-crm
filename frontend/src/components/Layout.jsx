@@ -93,23 +93,39 @@ const DIVISIONS = {
     ],
   },
   bengkel: {
-    label: "Produksi & Bengkel",
+    label: "Production",
     accent: {
       text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-600",
       cssVar: { "--sidebar-accent": "#D97706", "--sidebar-accent-strong": "#B45309", "--sidebar-accent-bg": "rgba(217,119,6,0.10)" },
     },
     sections: [
       {
-        section: "BENGKEL",
+        section: "PRODUCTION",
         items: [
           { to: "/bengkel", label: "Papan Produksi", Icon: ClipboardList },
-          { to: "/gudang",  label: "Gudang",         Icon: Package },
+        ],
+      },
+    ],
+  },
+  // Workspace ke-5 (SANSS, 1 Agustus 2026) — Gudang dikeluarkan dari Bengkel
+  // jadi workspace sendiri. Lihat alasannya di backend constants/permissions.js.
+  warehouse: {
+    label: "Warehouse",
+    accent: {
+      text: "text-sky-600", bg: "bg-sky-50", dot: "bg-sky-600",
+      cssVar: { "--sidebar-accent": "#0284C7", "--sidebar-accent-strong": "#0369A1", "--sidebar-accent-bg": "rgba(2,132,199,0.10)" },
+    },
+    sections: [
+      {
+        section: "WAREHOUSE",
+        items: [
+          { to: "/gudang", label: "Stok & Material", Icon: Package },
         ],
       },
     ],
   },
   armada: {
-    label: "Armada & Pengiriman",
+    label: "Delivery",
     accent: {
       text: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-600",
       cssVar: { "--sidebar-accent": "#059669", "--sidebar-accent-strong": "#047857", "--sidebar-accent-bg": "rgba(5,150,105,0.10)" },
@@ -124,14 +140,14 @@ const DIVISIONS = {
     ],
   },
   kendali: {
-    label: "Kendali",
+    label: "All Teams",
     accent: {
       text: "text-violet-600", bg: "bg-violet-50", dot: "bg-violet-600",
       cssVar: { "--sidebar-accent": "#7C3AED", "--sidebar-accent-strong": "#6D28D9", "--sidebar-accent-bg": "rgba(124,58,237,0.10)" },
     },
     sections: [
       {
-        section: "KENDALI",
+        section: "ALL TEAMS",
         items: [
           { to: "/kendali", label: "Ringkasan",  Icon: Gauge },
           { to: "/orders",  label: "Order",      Icon: ClipboardList },
@@ -142,14 +158,18 @@ const DIVISIONS = {
   },
 };
 
-const DIVISION_ICON = { growth: Users, bengkel: Wrench, armada: Truck, kendali: Gauge };
+const DIVISION_ICON = { growth: Users, bengkel: Wrench, warehouse: Package, armada: Truck, kendali: Gauge };
 
 // Prefix path → kunci divisi. Path yang tidak cocok apa pun (termasuk
 // /portal sendiri) jatuh ke "growth" sebagai default aman — itu perilaku
 // LAMA (satu-satunya nav sebelum perubahan ini), jadi tidak ada regresi
 // untuk halaman yang belum dipetakan eksplisit di sini.
+//
+// /gudang SEKARANG milik "warehouse", bukan lagi "bengkel" — Gudang sudah
+// jadi workspace sendiri (SANSS, 1 Agustus 2026).
 function divisionFromPath(pathname) {
-  if (pathname.startsWith("/bengkel") || pathname.startsWith("/gudang")) return "bengkel";
+  if (pathname.startsWith("/gudang")) return "warehouse";
+  if (pathname.startsWith("/bengkel")) return "bengkel";
   if (pathname.startsWith("/armada")) return "armada";
   if (pathname.startsWith("/kendali")) return "kendali";
   return "growth";
@@ -221,7 +241,7 @@ export default function Layout({ user, onLogout, children }) {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     // tag: "pesan-baru" supaya notifikasi lama di-replace, tidak menumpuk
-    new Notification("Sano Hub", {
+    new Notification(BRAND.name, {
       body: jumlahBaru === 1
         ? "Ada 1 pesan baru masuk"
         : `Ada ${jumlahBaru} pesan baru masuk`,

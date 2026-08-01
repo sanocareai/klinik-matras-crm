@@ -161,10 +161,13 @@
   --r-lg: 16px;  /* card */
   --r-xl: 20px;  /* container besar */
 
-  /* Font stack sistem Apple. Geist (dipakai v1) dilepas di sini SESUAI SPEC —
-     lihat catatan migrasi; ini perubahan tampilan yang terlihat. */
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", Inter,
-             system-ui, "Segoe UI", Roboto, sans-serif;
+  /* SANSS (1 Agustus 2026): Outfit Variable jadi font UTAMA di SEMUA
+     perangkat — geometric sans pengganti "Acme" komersial. Font sistem
+     (-apple-system dst) TIDAK lagi didahulukan: identitas visual SANSS
+     harus sama persis di Mac/Windows/Android, bukan ikut selera OS.
+     Self-hosted via @fontsource di main.jsx, tanpa CDN eksternal. */
+  --font-ui: "Outfit Variable", Outfit, "Inter Variable", Inter,
+             -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
