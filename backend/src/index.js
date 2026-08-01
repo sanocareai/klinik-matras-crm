@@ -33,6 +33,7 @@ import { productionRouter } from "./routes/production.js";
 import { armadaRouter }     from "./routes/armada.js";
 import { kendaliRouter }    from "./routes/kendali.js";
 import { inventoryRouter }  from "./routes/inventory.js";
+import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
@@ -45,11 +46,15 @@ const productsDir   = path.join(__dirname, "../data/products");
 const unitPhotosDir = path.join(__dirname, "../data/unit-photos");
 const jobPhotosDir  = path.join(__dirname, "../data/job-photos");
 const paymentProofsDir = path.join(__dirname, "../data/payment-proofs");
+// Bukti temuan bongkar & bukti persetujuan customer (PRD §7.4) — dir SENDIRI,
+// terpisah dari foto proses produksi: kepentingan hukum & umur simpannya beda.
+const scopeRevisionPhotosDir = path.join(__dirname, "../data/scope-revision-photos");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
 mkdirSync(jobPhotosDir,  { recursive: true });
 mkdirSync(paymentProofsDir, { recursive: true });
+mkdirSync(scopeRevisionPhotosDir, { recursive: true });
 
 const app = express();
 app.use(cors());
@@ -60,6 +65,7 @@ app.use("/uploads",           express.static(uploadsDir));
 app.use("/media/unit-photos", express.static(unitPhotosDir));
 app.use("/media/job-photos",  express.static(jobPhotosDir));
 app.use("/media/payment-proofs", express.static(paymentProofsDir));
+app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
 app.use("/media/products", express.static(productsDir));
 
 app.use("/api/webhooks",     webhookRouter);
@@ -86,6 +92,7 @@ app.use("/api/production",   productionRouter);
 app.use("/api/armada",       armadaRouter);
 app.use("/api/kendali",      kendaliRouter);
 app.use("/api/inventory",    inventoryRouter);
+app.use("/api/scope-revisions", scopeRevisionRouter);
 app.use("/api/settings",    settingsRouter);
 app.use("/api/templates",   templateRouter);
 app.use("/api/products",    productRouter);

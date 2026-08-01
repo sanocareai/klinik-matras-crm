@@ -185,6 +185,8 @@ model User {
   paymentsRecorded      Payment[]               @relation("PaymentRecorder")
   paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
   stockMovements        StockMovement[]         @relation("StockMovementActor")
+  scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
+  scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -571,6 +573,7 @@ model Order {
   units             Unit[]
   jobs              Job[]
   payments          Payment[]
+  scopeRevisions    ScopeRevision[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -638,6 +641,7 @@ model Unit {
   qcFitTests        QcFitTest[]
   productionTargets ProductionTarget[]
   stockMovements    StockMovement[]
+  scopeRevisions    ScopeRevision[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -687,6 +691,7 @@ model RoutingStage {
   unitsHere      Unit[]
   stageLogs      UnitStageLog[]
   qcFitTests     QcFitTest[]
+  scopeRevisions ScopeRevision[]
 
   @@index([phase, sequence])
   @@map("routing_stages")
@@ -705,6 +710,9 @@ model ServiceCatalog {
 
   modules ServiceCatalogModule[]
   units   Unit[]
+
+  revisionsFrom ScopeRevision[] @relation("ScopeRevisionFrom")
+  revisionsTo   ScopeRevision[] @relation("ScopeRevisionTo")
 
   @@map("service_catalog")
 }
@@ -1023,6 +1031,108 @@ model QcFitTest {
 
   @@index([unitId, createdAt])
   @@map("qc_fit_tests")
+}
+
+// ─── REVISI SCOPE (PRD §7.4 / FR-R, D-008) ──────────────────────────────────
+//
+// Kejadian PALING UMUM di restorasi kasur: kasur dibongkar, kondisi aslinya
+// lebih parah dari dugaan survei, harga harus berubah. Hari ini itu
+// dinegosiasikan lewat WhatsApp lalu hilang — dan total order diam-diam
+// menyimpang dari yang benar-benar ditagih.
+//
+// Menempel ke UNIT, bukan Order (D-002): order berisi 2 kasur bisa punya
+// revisi di satu kasur saja. `orderId` didenormalisasi supaya pertanyaan
+// "revisi ini untuk order mana" selalu bisa dijawab tanpa join lewat unit.
+//
+// TITIK PEMICUNYA `foundation_test` (Uji Fondasi) — di situlah lini & modul
+// DITETAPKAN, bukan saat sales input order (ROUTING.md §5). Tapi `stageId`
+// di bawah TIDAK dibatasi ke tahap tertentu di skema: tahap adalah DATA
+// (D-003), dan mengunci nama tahap di sini akan mengulang persis anti-pattern
+// yang dilarang CLAUDE.md sano-hub.
+enum ScopeRevisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PARTIAL // FR-R-04: customer setuju sebagian
+}
+
+// Lewat mana persetujuan didapat — FR-R-04 mewajibkan bukti, dan bukti
+// berbeda bentuknya per kanal (screenshot WA vs catatan telepon).
+enum ScopeRevisionVia {
+  WHATSAPP
+  TELEPON
+  LANGSUNG
+  LAINNYA
+}
+
+model ScopeRevision {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Restrict: menghapus unit yang punya riwayat negosiasi harga harus GAGAL
+  // KERAS, sama alasannya dengan Unit→Order.
+  unitId String @map("unit_id") @db.Uuid
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  // Tahap saat revisi diajukan. Dipakai FR-R-06 ("revision rate by stage") —
+  // revisi yang selalu muncul di tahap yang sama adalah sinyal proses survei
+  // yang salah, bukan sekadar statistik.
+  stageId String?       @map("stage_id") @db.Uuid
+  stage   RoutingStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  // Layanan sebelum → usulan. FK ke katalog, BUKAN teks bebas: perubahan
+  // layanan mengubah modul kerja yang dilalui unit, jadi harus bisa
+  // di-resolve jadi routing, bukan sekadar dibaca manusia.
+  fromServiceId String?         @map("from_service_id") @db.Uuid
+  fromService   ServiceCatalog? @relation("ScopeRevisionFrom", fields: [fromServiceId], references: [id], onDelete: Restrict)
+  toServiceId   String?         @map("to_service_id") @db.Uuid
+  toService     ServiceCatalog? @relation("ScopeRevisionTo", fields: [toServiceId], references: [id], onDelete: Restrict)
+
+  reason String // temuan bongkar — kenapa harganya harus berubah
+
+  // Rupiah INTEGER (CLAUDE.md: jangan float untuk uang). Boleh negatif:
+  // temuan bisa membuat pekerjaan lebih ringan, bukan cuma lebih mahal.
+  deltaAmount Int @map("delta_amount")
+
+  // FR-R-03: ringkasan ke customer berisi foto + sebelum/sesudah + delta.
+  // Fotonya di sini, bukan menumpang unit_stage_logs — bukti negosiasi harga
+  // punya umur simpan & kepentingan hukum yang berbeda dari foto proses.
+  photoUrls String[] @default([]) @map("photo_urls")
+
+  status ScopeRevisionStatus @default(PENDING)
+
+  // ── Keputusan — diisi SEKALI, dijaga di service layer ────────────────────
+  // Ini SATU-SATUNYA kolom yang berubah setelah baris dibuat, dan itu
+  // penyimpangan yang disadari dari disiplin append-only: ScopeRevision tidak
+  // termasuk daftar ledger (unit_stage_logs, stock_movements, payments,
+  // audit_log). Yang penting tetap terekam permanen — siapa memutuskan, kapan,
+  // lewat kanal apa, dengan bukti apa. Memutuskan ulang DITOLAK (409).
+  decidedById  String?           @map("decided_by")
+  decidedBy    User?             @relation("ScopeRevisionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?         @map("decided_at")
+  decidedVia   ScopeRevisionVia? @map("decided_via")
+  evidenceUrl  String?           @map("evidence_url") // screenshot WA (FR-R-04)
+  decisionNote String?           @map("decision_note")
+
+  // OrderItem yang dibuat saat disetujui. Delta harga TIDAK PERNAH ditulis
+  // ke Order.value langsung — value dihitung dari SUM(items.harga) lewat
+  // syncOrderValue(), dan menulisnya langsung adalah sumber bug yang sudah
+  // tercatat (D-012: "header Rp1.000.000 tapi breakdown Total: Rp0").
+  // Menyimpan tautannya juga yang membuat approve dua kali tidak menggandakan
+  // tagihan.
+  orderItemId String? @map("order_item_id")
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("ScopeRevisionProposer", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([unitId, createdAt])
+  @@index([orderId])
+  @@index([status]) // papan "revisi menunggu jawaban customer"
+  @@index([stageId]) // FR-R-06
+  @@map("scope_revisions")
 }
 
 // Riwayat perpindahan STATUS ORDER (append-only) — pasangan dari

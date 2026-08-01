@@ -35,6 +35,14 @@ export const PERMISSIONS = {
   UNIT_ROUTING_WRITE: "unit:routing:write",
   // Memutuskan hasil Uji Berat Badan (D-005).
   QC_WRITE: "qc:write",
+
+  // Revisi scope (PRD §7.4, D-008). SENGAJA DUA permission terpisah untuk
+  // dua sisi alur yang sama — pemisahan ini yang membuat angka delta harga
+  // bisa dipercaya. Yang membongkar kasur dan melihat kondisi aslinya
+  // MENGAJUKAN; yang bicara ke customer MEREKAM hasilnya. Satu orang tidak
+  // boleh mengarang delta harga sekaligus menyetujuinya sendiri.
+  SCOPE_REVISION_PROPOSE: "scope_revision:propose", // produksi & QC
+  SCOPE_REVISION_DECIDE: "scope_revision:decide",   // sales & admin
   INVENTORY_READ: "inventory:read",
   INVENTORY_WRITE: "inventory:write",
 
@@ -80,7 +88,7 @@ export const ROLE_PERMISSIONS = {
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
     P.CONVERSATION_READ, P.CONVERSATION_WRITE,
     P.ORDER_READ, P.ORDER_WRITE, P.ORDER_PRICE_READ,
-    P.UNIT_READ, P.UNIT_ROUTING_WRITE,
+    P.UNIT_READ, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_DECIDE,
     P.INVENTORY_READ,
     P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
     P.DASHBOARD_READ, P.PAYMENT_READ,
@@ -96,7 +104,7 @@ export const ROLE_PERMISSIONS = {
     // timeline lintas portal harus terbaca CS tanpa keluar layar. TIDAK
     // dapat UNIT_STAGE_WRITE/UNIT_ROUTING_WRITE — sales tidak mengubah
     // produksi, cuma melihatnya.
-    P.UNIT_READ,
+    P.UNIT_READ, P.SCOPE_REVISION_DECIDE,
     P.DASHBOARD_READ,
   ],
 
@@ -108,14 +116,14 @@ export const ROLE_PERMISSIONS = {
   ],
 
   PRODUCTION_LEAD: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_PROPOSE,
     P.CUSTOMER_READ, P.ORDER_READ,
     P.INVENTORY_READ,
     P.DASHBOARD_READ,
   ],
 
   QC_LEAD: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE,
     P.CUSTOMER_READ, P.ORDER_READ,
     P.DASHBOARD_READ,
   ],
