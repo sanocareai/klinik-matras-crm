@@ -753,3 +753,37 @@ juga di UI sungguhan dari login — badge status pembayaran di papan Order
 berubah otomatis jadi LUNAS tanpa refresh manual, tab Pembayaran
 menampilkan kedua payment dengan jumlah SUDAH DIBAYAR/SISA TAGIHAN yang
 tepat.
+
+---
+
+## D-024 — Reorder point alert (PRD FR-I-05), bagian Inventory v1 yang tadinya ditunda
+
+**Keputusan.** `Material.reorderPoint`/`reorderQty` — dua kolom OPSIONAL,
+diisi MANUAL oleh gudang per material. Halaman Gudang menampilkan section
+"Perlu Reorder" (material dengan `balance <= reorderPoint`) di atas daftar
+saldo, plus badge "Reorder" langsung di baris material yang bersangkutan.
+
+**Kenapa manual, bukan dihitung dari histori pemakaian.** Inventory v1
+baru mulai mencatat pergerakan stok — belum ada data konsumsi yang cukup
+untuk forecast titik reorder yang jujur (butuh histori pemakaian per
+minggu/bulan yang stabil). Formula yang dikarang dari data kosong/tipis
+akan menyesatkan gudang lebih parah daripada tidak ada alert sama sekali
+— sama prinsipnya dengan `expected_duration_minutes` di routing_stages
+yang sengaja dikosongkan sampai ada data nyata (lihat CLAUDE.md sano-hub
+"Asumsi yang masih terbuka" #2).
+
+**Kenapa `reorderPoint: null` berarti alert MATI, bukan "reorder di titik
+nol".** Tidak semua material perlu dipantau (bahan langka/sekali pakai
+tidak relevan direstok terus-menerus) — kalau default-nya 0, material yang
+belum pernah diisi datanya akan salah ditafsirkan sebagai "reorder cuma
+kalau stok benar-benar habis", padahal sebenarnya "belum diatur".
+Endpoint PATCH membedakan `undefined` (tidak diubah) dari `null` eksplisit
+(matikan) — dua makna berbeda, jangan digabung.
+
+**Verifikasi.** Material baru dibuat dengan reorderPoint=10, reorderQty=50,
+saldo awal 0 → langsung muncul di "Perlu Reorder" dengan saran "Pesan 50
+lembar". Terima stok +20 → section hilang otomatis (saldo 20 > titik 10),
+badge "Reorder" di baris hilang. Kosongkan reorderPoint lewat modal Atur
+→ dikonfirmasi di DB benar-benar `NULL` (bukan 0), reorderQty yang tidak
+disentuh tetap 50 — membuktikan `undefined` vs `null` ditangani terpisah
+dengan benar, bukan kebetulan berhasil.

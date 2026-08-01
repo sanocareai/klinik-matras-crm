@@ -50,17 +50,21 @@ inventoryRouter.get("/materials", requirePermission(P.INVENTORY_READ), async (re
   }
 });
 
-// POST /api/inventory/materials { code, name, unit, serviceLine? }
+// POST /api/inventory/materials { code, name, unit, serviceLine?, reorderPoint?, reorderQty? }
 inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { code, name, unit, serviceLine } = req.body;
+    const { code, name, unit, serviceLine, reorderPoint, reorderQty } = req.body;
     if (!code?.trim() || !name?.trim()) throw new InventoryError("Kode dan nama material wajib diisi");
     if (!VALID_UNITS.includes(unit)) throw new InventoryError("Satuan tidak valid");
     if (serviceLine && !["SERVICE", "UPGRADE"].includes(serviceLine)) {
       throw new InventoryError("Lini layanan tidak valid");
     }
     const material = await prisma.material.create({
-      data: { code: code.trim().toUpperCase(), name: name.trim(), unit, serviceLine: serviceLine || null },
+      data: {
+        code: code.trim().toUpperCase(), name: name.trim(), unit, serviceLine: serviceLine || null,
+        reorderPoint: reorderPoint != null && reorderPoint !== "" ? Number(reorderPoint) : null,
+        reorderQty: reorderQty != null && reorderQty !== "" ? Number(reorderQty) : null,
+      },
     });
     res.status(201).json(material);
   } catch (err) {
@@ -68,17 +72,22 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
   }
 });
 
-// PATCH /api/inventory/materials/:id { name?, active? } — TIDAK bisa ubah
-// code/unit setelah dibuat (ledger sudah mengacu ke satuan itu; ganti
-// satuan diam-diam akan membuat riwayat qty tidak bisa dibandingkan).
+// PATCH /api/inventory/materials/:id { name?, active?, reorderPoint?, reorderQty? }
+// TIDAK bisa ubah code/unit setelah dibuat (ledger sudah mengacu ke satuan
+// itu; ganti satuan diam-diam akan membuat riwayat qty tidak bisa
+// dibandingkan). reorderPoint/reorderQty kirim `null` eksplisit untuk
+// MEMATIKAN alert material itu (beda dari `undefined` yang berarti "tidak
+// diubah") — lihat catatan di schema.prisma.
 inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { name, active } = req.body;
+    const { name, active, reorderPoint, reorderQty } = req.body;
     const material = await prisma.material.update({
       where: { id: req.params.id },
       data: {
         ...(name?.trim() && { name: name.trim() }),
         ...(typeof active === "boolean" && { active }),
+        ...(reorderPoint !== undefined && { reorderPoint: reorderPoint === "" || reorderPoint === null ? null : Number(reorderPoint) }),
+        ...(reorderQty !== undefined && { reorderQty: reorderQty === "" || reorderQty === null ? null : Number(reorderQty) }),
       },
     });
     res.json(material);
@@ -94,10 +103,11 @@ inventoryRouter.get("/stock", requirePermission(P.INVENTORY_READ), async (req, r
   try {
     const balances = await prisma.$queryRaw`
       SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active,
+             m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
              COALESCE(SUM(sm.qty), 0)::float AS balance
       FROM materials m
       LEFT JOIN stock_movements sm ON sm.material_id = m.id
-      GROUP BY m.id, m.code, m.name, m.unit, m.active
+      GROUP BY m.id, m.code, m.name, m.unit, m.active, m.reorder_point, m.reorder_qty
       ORDER BY m.code ASC
     `;
     res.json(balances);

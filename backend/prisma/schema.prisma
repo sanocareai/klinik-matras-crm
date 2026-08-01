@@ -1239,6 +1239,16 @@ model Material {
   serviceLine ServiceLine? @map("service_line")
   active Boolean      @default(true)
 
+  // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
+  // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak
+  // relevan direstok). reorderPoint null = alert MATI untuk material itu,
+  // bukan "reorder di titik nol". Angka MANUAL diisi gudang, BUKAN dihitung
+  // otomatis dari histori pemakaian — v1 belum punya data konsumsi cukup
+  // untuk forecast yang jujur, mengarang formula akan lebih menyesatkan
+  // daripada tidak ada alert sama sekali.
+  reorderPoint Float? @map("reorder_point")
+  reorderQty   Float? @map("reorder_qty")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   movements StockMovement[]

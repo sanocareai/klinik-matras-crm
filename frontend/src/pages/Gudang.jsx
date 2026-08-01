@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ClipboardList, Loader2,
-  Package, Plus, RotateCcw, Scale, Trash2,
+  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BellRing, ClipboardList, Loader2,
+  Package, Plus, RotateCcw, Scale, Settings2, Trash2,
 } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -57,6 +57,8 @@ function AddMaterialModal({ open, onClose, onAdded }) {
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("PCS");
   const [serviceLine, setServiceLine] = useState("");
+  const [reorderPoint, setReorderPoint] = useState("");
+  const [reorderQty, setReorderQty] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -66,8 +68,11 @@ function AddMaterialModal({ open, onClose, onAdded }) {
     setBusy(true);
     setErr("");
     try {
-      await api.createMaterial({ code: code.trim(), name: name.trim(), unit, serviceLine: serviceLine || undefined });
-      setCode(""); setName(""); setUnit("PCS"); setServiceLine("");
+      await api.createMaterial({
+        code: code.trim(), name: name.trim(), unit, serviceLine: serviceLine || undefined,
+        reorderPoint: reorderPoint || undefined, reorderQty: reorderQty || undefined,
+      });
+      setCode(""); setName(""); setUnit("PCS"); setServiceLine(""); setReorderPoint(""); setReorderQty("");
       onAdded();
     } catch (e2) {
       setErr(e2.message);
@@ -106,6 +111,87 @@ function AddMaterialModal({ open, onClose, onAdded }) {
               <option value="UPGRADE">Upgrade</option>
             </select>
           </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-ink2">Titik Reorder (opsional)</label>
+            <input type="number" step="any" value={reorderPoint} onChange={(e) => setReorderPoint(e.target.value)}
+              placeholder="Alert mati kalau kosong"
+              className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-ink2">Jumlah Reorder (opsional)</label>
+            <input type="number" step="any" value={reorderQty} onChange={(e) => setReorderQty(e.target.value)}
+              placeholder="Saran jumlah pesan"
+              className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
+          </div>
+        </div>
+        {err && <p className="text-[13px] text-red">{err}</p>}
+        <div className="mt-2 flex justify-end gap-2">
+          <Button type="button" variant="neutral" onClick={onClose}>Batal</Button>
+          <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── Modal Atur Reorder ──────────────────────────────────────────────────
+// TERPISAH dari AddMaterialModal — material yang SUDAH ada perlu jalur edit
+// sendiri (PATCH), tidak lewat form tambah. Kirim `null` eksplisit saat
+// dikosongkan supaya alert benar-benar MATI, bukan "tidak diubah" (lihat
+// catatan di inventory.js PATCH /materials/:id).
+function ReorderModal({ open, onClose, material, onSaved }) {
+  const [reorderPoint, setReorderPoint] = useState("");
+  const [reorderQty, setReorderQty] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (material) {
+      setReorderPoint(material.reorderPoint ?? "");
+      setReorderQty(material.reorderQty ?? "");
+      setErr("");
+    }
+  }, [material]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await api.updateMaterial(material.materialId, {
+        reorderPoint: reorderPoint === "" ? null : Number(reorderPoint),
+        reorderQty: reorderQty === "" ? null : Number(reorderQty),
+      });
+      onSaved();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!material) return null;
+
+  return (
+    <Modal open={open} onOpenChange={onClose} title={`Atur Reorder — ${material.code}`}
+      description={`Saldo sekarang: ${formatQty(material.balance, material.unit)}`}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-ink2">
+            Titik Reorder ({UNIT_LABEL[material.unit]})
+          </label>
+          <input type="number" step="any" value={reorderPoint} onChange={(e) => setReorderPoint(e.target.value)}
+            placeholder="Kosongkan untuk matikan alert"
+            className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-ink2">
+            Jumlah Reorder Disarankan ({UNIT_LABEL[material.unit]})
+          </label>
+          <input type="number" step="any" value={reorderQty} onChange={(e) => setReorderQty(e.target.value)}
+            className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
         </div>
         {err && <p className="text-[13px] text-red">{err}</p>}
         <div className="mt-2 flex justify-end gap-2">
@@ -257,6 +343,7 @@ export default function Gudang() {
   const [error, setError] = useState("");
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [movementFor, setMovementFor] = useState(null);
+  const [reorderFor, setReorderFor] = useState(null);
 
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
@@ -327,6 +414,31 @@ export default function Gudang() {
       </PageHeader>
 
       <PageBody>
+        {(() => {
+          const needsReorder = stock.filter((m) => m.reorderPoint != null && m.balance <= m.reorderPoint);
+          if (needsReorder.length === 0) return null;
+          return (
+            <Card className="border-2 border-orange/30 bg-orangebg">
+              <CardHeader><CardTitle className="flex items-center gap-1.5"><BellRing className="h-4 w-4 text-orange" /> Perlu Reorder</CardTitle></CardHeader>
+              <div className="flex flex-col gap-2">
+                {needsReorder.map((m) => (
+                  <div key={m.materialId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-btn bg-surface px-4 py-3">
+                    <div className="min-w-[160px] flex-1">
+                      <div className="text-[13px] font-semibold text-ink">{m.code}</div>
+                      <div className="text-[12px] text-ink2">
+                        Saldo {formatQty(m.balance, m.unit)} · titik reorder {formatQty(m.reorderPoint, m.unit)}
+                      </div>
+                    </div>
+                    <Badge variant="orange">
+                      {m.reorderQty != null ? `Pesan ${formatQty(m.reorderQty, m.unit)}` : "Belum ada saran jumlah"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          );
+        })()}
+
         <Card>
           <CardHeader><CardTitle>Saldo Material</CardTitle></CardHeader>
           {stock.length === 0 ? (
@@ -341,11 +453,17 @@ export default function Gudang() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="text-[15px] font-bold text-ink">{formatQty(m.balance, m.unit)}</span>
+                    {m.reorderPoint != null && m.balance <= m.reorderPoint && <Badge variant="orange">Reorder</Badge>}
                     {!m.active && <Badge variant="neutral">Nonaktif</Badge>}
                     {canWrite && (
-                      <Button variant="neutral" className="h-8 px-3 text-xs" onClick={() => setMovementFor(m)}>
-                        Catat
-                      </Button>
+                      <>
+                        <Button variant="neutral" className="h-8 px-2 text-xs" title="Atur titik reorder" onClick={() => setReorderFor(m)}>
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="neutral" className="h-8 px-3 text-xs" onClick={() => setMovementFor(m)}>
+                          Catat
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -389,6 +507,7 @@ export default function Gudang() {
 
       <AddMaterialModal open={showAddMaterial} onClose={() => setShowAddMaterial(false)} onAdded={() => { setShowAddMaterial(false); load(); }} />
       <MovementModal open={!!movementFor} material={movementFor} onClose={() => setMovementFor(null)} onSaved={() => { setMovementFor(null); load(); }} />
+      <ReorderModal open={!!reorderFor} material={reorderFor} onClose={() => setReorderFor(null)} onSaved={() => { setReorderFor(null); load(); }} />
     </PageContainer>
   );
 }
