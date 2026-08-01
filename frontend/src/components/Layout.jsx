@@ -13,7 +13,7 @@ import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
 import { BRAND } from "@/lib/brand.js";
-import { isAdminUser } from "@/lib/roles.js";
+import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
@@ -275,7 +275,12 @@ export default function Layout({ user, onLogout, children }) {
     setMobileOpen(false);
   }
 
-  const roleLower = (user.role || "SALES").toLowerCase();
+  // Sama bug-nya dengan isAdmin di atas — sebelumnya `user.role` legacy
+  // langsung, jadi badge di pojok sidebar bisa nampilin "SALES" walau user
+  // itu sekarang juga punya role ADMIN lewat multi-role. ADMIN diprioritaskan
+  // kalau dipegang (paling relevan buat badge ringkas), baru role pertama.
+  const displayRole = isAdmin ? "ADMIN" : (rolesOf(user)[0] || "SALES");
+  const roleLower = displayRole.toLowerCase();
 
   return (
     <div className={`app-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -399,7 +404,7 @@ export default function Layout({ user, onLogout, children }) {
                 {!collapsed && (
                   <div className="sidebar-user-info">
                     <div className="sidebar-user-name">{user.name}</div>
-                    <span className={`role-badge ${roleLower}`}>{user.role}</span>
+                    <span className={`role-badge ${roleLower}`}>{displayRole}</span>
                   </div>
                 )}
                 {!collapsed && <MoreVertical size={15} className="sidebar-kebab-ic" />}

@@ -29,8 +29,7 @@ settingsRouter.get("/", (req, res) => {
 });
 
 // PATCH /api/settings — update pengaturan (admin only)
-settingsRouter.patch("/", (req, res) => {
-  if (req.user.role !== "ADMIN") return res.status(403).json({ error: "Hanya Admin" });
+settingsRouter.patch("/", requireAdmin, (req, res) => {
   const current = readSettings();
   const updated = { ...current, ...req.body };
   writeSettings(updated);

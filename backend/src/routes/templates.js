@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 
 export const templateRouter = express.Router();
 templateRouter.use(requireAuth);
@@ -20,7 +21,7 @@ templateRouter.use(requireAuth);
 //     pemiliknya (atau ADMIN) yang boleh mengedit/menghapus.
 
 function bisaKelola(tpl, user) {
-  if (user.role === "ADMIN") return true;
+  if (rolesOf(user).includes("ADMIN")) return true;
   return !tpl.isShared && tpl.authorId === user.id;
 }
 
@@ -50,7 +51,7 @@ templateRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "Nama dan isi template wajib diisi" });
   }
   try {
-    const shared = req.user.role === "ADMIN" && !!isShared;
+    const shared = rolesOf(req.user).includes("ADMIN") && !!isShared;
     const tpl = await prisma.messageTemplate.create({
       data: {
         nama: nama.trim(),
@@ -89,7 +90,7 @@ templateRouter.patch("/:id", async (req, res) => {
         ...(isi      !== undefined && { isi: isi.trim() }),
         // Ubah status shared HANYA boleh ADMIN — sales tidak bisa
         // "mempromosikan" template pribadinya jadi milik tim sendiri.
-        ...(isShared !== undefined && req.user.role === "ADMIN" && {
+        ...(isShared !== undefined && rolesOf(req.user).includes("ADMIN") && {
           isShared: !!isShared,
           authorId: isShared ? null : existing.authorId,
         }),

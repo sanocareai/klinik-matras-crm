@@ -7,6 +7,7 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
@@ -497,7 +498,7 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   // grup (Task 3d: grup tidak punya Customer/pipeline record, cuma chat-nya
   // saja yang dibuka; conversation.customer null utk GROUP, akses
   // .assignedSalesId di bawah akan crash kalau tidak di-guard).
-  if (req.user.role === "SALES" && !conversation.assignedToId && conversation.type !== "GROUP") {
+  if (rolesOf(req.user).includes("SALES") && !conversation.assignedToId && conversation.type !== "GROUP") {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data:  { assignedToId: req.user.id },
@@ -1015,7 +1016,7 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
     if (conv.assignedToId === req.user.id)
       return res.status(400).json({ error: "Percakapan ini sudah jadi lead kamu" });
 
-    const isAdmin          = req.user.role === "ADMIN";
+    const isAdmin          = rolesOf(req.user).includes("ADMIN");
     const lastMsg          = conv.messages[0] || null;
     const isUnanswered     = lastMsg?.direction === "INBOUND";
     const unansweredMinutes = isUnanswered
@@ -1182,7 +1183,7 @@ conversationRouter.patch("/:id", async (req, res) => {
   // endpoint sendiri menerima assignedToId dari SIAPA PUN yang login. Fitur
   // transfer sengaja admin-only (lihat POST /:id/takeover yang punya aturan
   // beda — SALES boleh ambil alih sendiri) — sekarang ditegakkan di sini juga.
-  if (assignedToId !== undefined && req.user.role !== "ADMIN") {
+  if (assignedToId !== undefined && !rolesOf(req.user).includes("ADMIN")) {
     return res.status(403).json({ error: "Hanya admin yang bisa transfer lead ke sales lain" });
   }
 

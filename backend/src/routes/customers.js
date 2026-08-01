@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import { dispatchLeadWon } from "../services/automationWebhook.js";
@@ -519,7 +520,7 @@ customerRouter.patch("/notes/:id", async (req, res) => {
     if (!note) return res.status(404).json({ error: "Catatan tidak ditemukan" });
 
     const isOwner = note.authorId === req.user.id;
-    const isAdmin = req.user.role === "ADMIN";
+    const isAdmin = rolesOf(req.user).includes("ADMIN");
     if (!isOwner && !isAdmin) return res.status(403).json({ error: "Tidak punya akses edit catatan ini" });
 
     const updated = await prisma.note.update({
@@ -540,7 +541,7 @@ customerRouter.delete("/notes/:id", async (req, res) => {
     if (!note) return res.status(404).json({ error: "Catatan tidak ditemukan" });
 
     const isOwner = note.authorId === req.user.id;
-    const isAdmin = req.user.role === "ADMIN";
+    const isAdmin = rolesOf(req.user).includes("ADMIN");
     if (!isOwner && !isAdmin) return res.status(403).json({ error: "Tidak punya akses hapus catatan ini" });
 
     await prisma.note.delete({ where: { id: req.params.id } });

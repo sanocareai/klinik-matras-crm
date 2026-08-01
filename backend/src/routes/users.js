@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ROLE_PERMISSIONS } from "../constants/permissions.js";
+import { rolesOf } from "../middleware/authorize.js";
 
 // Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
 // (constants/permissions.js), supaya daftar ini tidak pernah drift dari
@@ -37,8 +38,15 @@ const avatarUpload = multer({
 export const userRouter = express.Router();
 userRouter.use(requireAuth);
 
+// BUG (QA 1 Agustus 2026): SEBELUMNYA `req.user.role !== "ADMIN"` — field
+// legacy JWT, bukan `roles` array dari sistem multi-role (D-010). Bikin
+// user yang HANYA dapat ADMIN lewat halaman Pengguna & Peran (bukan field
+// legacy) ditolak 403 di endpoint ini walau UI-nya sendiri (Pengguna.jsx)
+// sudah benar mengizinkan mereka MEMBUKA halamannya — 403 baru muncul saat
+// submit, membingungkan. rolesOf() sama dengan yang dipakai requirePermission
+// di authorize.js, satu sumber kebenaran.
 function adminOnly(req, res, next) {
-  if (req.user.role !== "ADMIN") return res.status(403).json({ error: "Hanya Admin yang bisa melakukan aksi ini" });
+  if (!rolesOf(req.user).includes("ADMIN")) return res.status(403).json({ error: "Hanya Admin yang bisa melakukan aksi ini" });
   next();
 }
 
@@ -52,7 +60,7 @@ function adminOnly(req, res, next) {
 // pernah berbeda antara halaman login dan halaman Pengguna & Peran.
 userRouter.get("/", async (req, res) => {
   try {
-    const isAdmin = req.user.role === "ADMIN";
+    const isAdmin = rolesOf(req.user).includes("ADMIN");
     const [users, roleRows] = await Promise.all([
       prisma.user.findMany({
         select: {

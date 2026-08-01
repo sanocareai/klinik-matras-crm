@@ -4,6 +4,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import { buildConversationContext } from "../services/intelligence/replyReadiness.js";
 import { generateSuggestions } from "../services/replyAssistant/index.js";
@@ -82,7 +83,9 @@ replyAssistantRouter.post("/reply-suggestions", async (req, res) => {
 // GET /api/ai/reply-suggestions/quota — sisa kuota harian user.
 replyAssistantRouter.get("/reply-suggestions/quota", async (req, res) => {
   try {
-    const limit = dailyLimitFor(req.user.role);
+    // Multi-role (D-010): ADMIN diprioritaskan kalau dipegang — limit
+    // tertinggi, bukan role legacy tunggal yang bisa ketinggalan.
+    const limit = dailyLimitFor(rolesOf(req.user).includes("ADMIN") ? "ADMIN" : req.user.role);
     const used = await prisma.replySuggestionLog.count({
       where: { userId: req.user.id, blocked: false, createdAt: { gte: startOfTodayUTC() } },
     });
@@ -101,7 +104,7 @@ replyAssistantRouter.patch("/reply-suggestions/:id", async (req, res) => {
     const { status, feedback } = req.body || {};
     const row = await prisma.replySuggestionLog.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: "Log tidak ditemukan" });
-    if (row.userId !== req.user.id && req.user.role !== "ADMIN") {
+    if (row.userId !== req.user.id && !rolesOf(req.user).includes("ADMIN")) {
       return res.status(403).json({ error: "Tidak boleh mengubah log ini" });
     }
 
