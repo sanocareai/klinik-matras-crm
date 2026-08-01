@@ -40,9 +40,15 @@ function seed() {
       message: "DO-260802-011 (Depok). Driver menunggu 20 menit, perlu dijadwal ulang.",
       createdAt: jam(2), isRead: false, actionRequired: true, priority: "high" },
 
-    { id: "n5", type: "SALES_ORDER", refId: "RES-02082026-002",
-      title: "Order baru dikonfirmasi",
-      message: "Rizky A. — Upgrade Fondasi + Lapisan, Rp12.700.000.",
+    // ⚠️ refId di sini SENGAJA id database production ASLI (cmsa6iyr92y0njjl4jpnq53zw
+    // = order RES-01082026-006), bukan orderNumber yang enak dibaca manusia —
+    // Orders.jsx mencocokkan ke `Order.id`, bukan `Order.orderNumber` (lihat
+    // efek `?id=` di sana). refId human-readable akan membuat notifikasi ini
+    // TIDAK PERNAH menemukan order-nya, dan klik terasa "tidak ada respon"
+    // lagi — persis bug yang baru diperbaiki, cuma pindah tempat.
+    { id: "n5", type: "SALES_ORDER", refId: "cmsa6iyr92y0njjl4jpnq53zw",
+      title: "Order RES-01082026-006 dikonfirmasi",
+      message: "Ganti kain — menunggu dijadwalkan pickup.",
       createdAt: jam(3), isRead: false, actionRequired: false, priority: "normal" },
 
     { id: "n6", type: "WORK_ORDER", refId: "RES-01082026-001-U1",
@@ -55,9 +61,11 @@ function seed() {
       message: "Bengkel meminta 8 lembar Rebonded D50 untuk antrean besok.",
       createdAt: jam(7), isRead: false, actionRequired: true, priority: "normal" },
 
-    { id: "n8", type: "CUSTOMER", refId: "cus-0241",
+    // refId id Customer ASLI (sama alasannya dengan n5 di atas) — Customers.jsx
+    // mencocokkan ke `Customer.id`, bukan nama.
+    { id: "n8", type: "CUSTOMER", refId: "cmsap22d405e4k2zjxbeadbc3",
       title: "Pelanggan menandai komplain",
-      message: "Nadia P. — kasur terasa turun lagi setelah 2 minggu.",
+      message: "Dede Arsha — kasur terasa turun lagi setelah 2 minggu.",
       createdAt: jam(26), isRead: true, actionRequired: true, priority: "critical" },
 
     { id: "n9", type: "SYSTEM", refId: null,

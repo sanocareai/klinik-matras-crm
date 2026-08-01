@@ -35,13 +35,22 @@ export const NOTIF_WORKSPACES = {
 // Sales Inbox. Tiap tipe punya tujuannya sendiri, dibangun dari `refId`
 // notifikasi lewat `buildTargetUrl` di bawah.
 //
-// ⚠️ CATATAN KEJUJURAN (kondisi 2 Agustus 2026): dari semua halaman tujuan,
-// BARU /inbox yang benar-benar bisa membuka OBJEK tertentu dari URL
-// (`?conv=` — lihat pages/Inbox.jsx). Halaman lain saat ini mendarat di
-// daftarnya, dan parameter di URL belum dibaca siapa pun. Parameternya tetap
-// disertakan supaya tautannya sudah benar sejak sekarang dan halaman tujuan
-// tinggal membacanya — bukan supaya terlihat lebih pintar dari yang
-// sebenarnya. Jangan mengklaim ke user bahwa semua tipe sudah membuka detail.
+// ⚠️ CATATAN KEJUJURAN (diperbarui 2 Agustus 2026 setelah bug report "klik
+// notifikasi tidak ada respon"). Baru DUA dari enam yang benar-benar membuka
+// OBJEK-nya, bukan cuma mendarat di halaman daftar:
+//   SALES_MESSAGE → pages/Inbox.jsx        baca `?conv=` (sudah ada sebelumnya)
+//   CUSTOMER      → pages/Customers.jsx    baca `?id=` → buka CustomerDrawer
+//   SALES_ORDER   → pages/Orders.jsx       baca `?id=` → buka OrderTimelineDrawer
+// WORK_ORDER, QUALITY_CONTROL, LOW_STOCK, MATERIAL_REQUEST, DELIVERY_ISSUE
+// BELUM — halaman tujuannya (Bengkel/Gudang/Armada) tidak punya mekanisme
+// "buka satu objek" sama sekali saat ini (bukan cuma belum baca query param,
+// UI detail-per-itemnya sendiri belum ada). Klik notifikasi tipe itu akan
+// mendarat di papan/daftar workspace-nya — perbaikan yang nyata dibanding
+// sebelumnya (semua ke Sales Inbox), tapi belum "buka objek yang benar".
+// Parameternya tetap disertakan di URL supaya begitu detail view-nya
+// dibangun, tinggal ditambah pembaca `useSearchParams()` sama seperti dua
+// yang sudah ada di atas — jangan sampai kejujuran catatan ini kadaluarsa
+// begitu itu dikerjakan, PERBARUI daftar di atas.
 export const NOTIF_TYPES = {
   SALES_MESSAGE:    { workspace: "growth",    label: "Pesan baru",     path: (id) => `/inbox?conv=${id}` },
   CUSTOMER:         { workspace: "growth",    label: "Pelanggan",      path: (id) => `/customers?id=${id}` },

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Download } from "lucide-react";
 import { api } from "../api.js";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
@@ -31,6 +32,7 @@ function mapTypeTab(typeTab) {
 }
 
 export default function Customers() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState({ all: 0, endUser: 0, korporat: 0 });
@@ -56,6 +58,17 @@ export default function Customers() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const [drawerCustomerId, setDrawerCustomerId] = useState(null);
+
+  // Deep-link `?id=` (NotificationDrawer/Notifications — tipe CUSTOMER, lihat
+  // features/notifications/notificationTypes.js). CustomerDrawer fetch datanya
+  // SENDIRI dari customerId, jadi tidak perlu menunggu daftar pelanggan halaman
+  // ini selesai dimuat seperti Orders — buka langsung begitu param ada.
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id) return;
+    setDrawerCustomerId(id);
+    setSearchParams((prev) => { prev.delete("id"); return prev; }, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [showModal, setShowModal]   = useState(false);
   const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
   const [creating, setCreating]     = useState(false);

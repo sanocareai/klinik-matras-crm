@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
   AlertTriangle, Clock, MessageSquare, Package,
@@ -208,6 +208,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
 
 export default function Orders() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView]       = useState(() => localStorage.getItem("orders-view") || "board");
@@ -242,6 +243,20 @@ export default function Orders() {
   }, [debounced, fKategori, fBayar]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link `?id=` (dipakai NotificationDrawer/Notifications — SALES_ORDER,
+  // lihat features/notifications/notificationTypes.js). Dibongkar begitu
+  // datanya ada, bukan sebelumnya: order-nya belum tentu ada di `data.items`
+  // sampai fetch pertama selesai. `id` DIBUANG dari URL setelah dipakai —
+  // tanpa itu, refresh manual akan membuka timeline yang sama lagi, dan me-
+  // reload data yang sudah difilter dari notifikasi lama terasa aneh.
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id || !data?.items) return;
+    const order = data.items.find((o) => o.id === id);
+    if (order) setTimelineOrder(order);
+    setSearchParams((prev) => { prev.delete("id"); return prev; }, { replace: true });
+  }, [searchParams, data, setSearchParams]);
 
   function gantiView(v) {
     setView(v);
