@@ -21,7 +21,7 @@
 // mencetak kandidatnya di bawah supaya bisa diperiksa manusia.
 
 import { prisma } from "../src/db.js";
-import { createUnitsForOrder, findOrdersWithoutUnits, unitStatusFromOrderStatus }
+import { createUnitsForOrder, findOrdersWithoutUnits, unitStatusFromOrderStatus, parseOrderNotes }
   from "../src/services/unitProvisioning.js";
 
 const APPLY = process.argv.includes("--apply");
@@ -29,9 +29,25 @@ const APPLY = process.argv.includes("--apply");
 // Layanan yang jelas BUKAN kasur — order seperti ini tidak boleh dapat unit,
 // karena unitnya tidak akan pernah bisa melewati routing produksi kasur
 // (Uji Fondasi, Uji Berat Badan, Jahit Corner semuanya spesifik kasur).
-// Daftar ini dipakai untuk MEMPERINGATKAN, bukan memblokir otomatis —
-// keputusan akhir tetap di manusia yang membaca laporannya.
+//
+// ⚠️ DIPERIKSA DI DUA TEMPAT, dan itu perlu. Dry-run pertama terhadap data
+// production menemukan RES-01082026-005 dan -006 lolos filter: `layananName`
+// keduanya cuma tertulis "Ganti Kain", padahal objeknya BANTAL dan GULING —
+// petunjuknya ada di `keluhanCustomer` ("Ganti kain bantal / Kain bantal
+// rusak"). Memeriksa nama layanan saja akan membuat dua unit kasur hantu.
 const POLA_BUKAN_KASUR = /sofa|kursi|sandaran|divan|spanbon|bantal|guling|ongkos|buang kasur|potong ukuran/i;
+
+// Semua teks yang bisa mengungkap objek sebenarnya dari sebuah order.
+function petunjukObjek(order, layanan) {
+  const info = parseOrderNotes(order.notes);
+  return [
+    ...layanan,
+    info.keluhanCustomer,
+    // notes berformat teks polos (baris lawas) tidak punya struktur —
+    // ikutkan apa adanya supaya tidak ada petunjuk yang terlewat.
+    typeof order.notes === "string" && !order.notes.trim().startsWith("{") ? order.notes : null,
+  ].filter(Boolean).join(" | ");
+}
 
 async function main() {
   console.log(APPLY ? "=== MODE APPLY — akan menulis ke database ===" : "=== DRY-RUN — tidak ada yang diubah ===");
@@ -60,8 +76,9 @@ async function main() {
 
   for (const o of orders) {
     const layanan = layananPerOrder.get(o.id) || [];
-    const mencurigakan = layanan.some((l) => POLA_BUKAN_KASUR.test(l || ""));
-    (mencurigakan ? dicurigai : akanDibuat).push({ ...o, layanan });
+    const petunjuk = petunjukObjek(o, layanan);
+    const mencurigakan = POLA_BUKAN_KASUR.test(petunjuk);
+    (mencurigakan ? dicurigai : akanDibuat).push({ ...o, layanan, petunjuk });
   }
 
   console.log(`Order tanpa unit: ${orders.length}`);
@@ -70,9 +87,9 @@ async function main() {
   console.log("");
 
   if (dicurigai.length > 0) {
-    console.log("--- DILEWATI, layanannya bukan kasur (periksa manual) ---");
+    console.log("--- DILEWATI, objeknya kemungkinan bukan kasur (periksa manual) ---");
     for (const o of dicurigai) {
-      console.log(`  ${o.orderNumber || o.id.slice(0, 8)}  [${o.status}]  ${o.layanan.join(" | ")}`);
+      console.log(`  ${o.orderNumber || o.id.slice(0, 8)}  [${o.status}]  ${o.petunjuk}`);
     }
     console.log("");
   }
