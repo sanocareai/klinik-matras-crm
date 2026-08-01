@@ -262,36 +262,29 @@ function WorkspaceRail({ activeKey, atHub, userRoles, onNavigate, onLogout }) {
 // sebagai default aman — itu perilaku LAMA (satu-satunya nav sebelum perubahan
 // ini), jadi tidak ada regresi untuk halaman yang belum dipetakan eksplisit.
 //
-// ⚠️ /portal TIDAK boleh mengandalkan fungsi ini. Portal adalah HUB, bukan
-// divisi — ia berdiri DI ATAS kelima divisi. Karena fallback di bawah
-// mengembalikan "growth" untuk path apa pun yang tidak dikenal, /portal ikut
-// terbaca sebagai Growth dan sidebar CRM (Dashboard/Inbox/Pelanggan/…) muncul
-// di halaman hub — persis bug yang dilaporkan Gilang 1 Agustus 2026. Pemakai
-// wajib mengecek isPortalPath() DULU sebelum memakai hasil fungsi ini untuk
-// memutuskan tampilan.
+// ⚠️ /portal (hub MURNI) TIDAK boleh mengandalkan fungsi ini — kalau
+// dipaksakan, fallback "growth" di bawah membuat hub terbaca sebagai Growth
+// dan sidebar-nya ikut nyala di halaman yang bukan divisi mana pun. Pemakai
+// mengecek `pathname === "/portal"` (disebut `onHub` di komponen Layout)
+// DULU, baru pakai fungsi ini untuk path lainnya.
 //
 // /gudang SEKARANG milik "warehouse", bukan lagi "bengkel" — Gudang sudah
 // jadi workspace sendiri (SANSS, 1 Agustus 2026).
-function isPortalPath(pathname) {
-  return pathname === "/portal" || pathname.startsWith("/portal/");
-}
-
-// /portal (hub) TIDAK punya divisi aktif (rail-nya kosong, lihat komentar di
-// pemakaiannya). /portal/:key (command center — DivisionPage.jsx, ditambah
-// 1 Agustus 2026 revisi kedua) PUNYA divisi aktif: kuncinya diambil langsung
-// dari path, bukan lewat divisionFromPath (yang fallback ke "growth" dan akan
-// salah untuk keempat divisi lain).
-function portalDivisionKey(pathname) {
-  const m = /^\/portal\/([^/]+)/.exec(pathname);
-  return m ? m[1] : null;
-}
-
 function divisionFromPath(pathname) {
   if (pathname.startsWith("/gudang")) return "warehouse";
   if (pathname.startsWith("/bengkel")) return "bengkel";
   if (pathname.startsWith("/armada")) return "armada";
   if (pathname.startsWith("/kendali")) return "kendali";
   return "growth";
+}
+
+// /portal/:key (command center — DivisionPage.jsx) PUNYA divisi aktif:
+// kuncinya diambil LANGSUNG dari path, bukan lewat divisionFromPath (yang
+// fallback ke "growth" dan akan salah untuk keempat divisi lain — path
+// "/portal/bengkel" tidak cocok prefiks apa pun di divisionFromPath).
+function portalDivisionKey(pathname) {
+  const m = /^\/portal\/([^/]+)/.exec(pathname);
+  return m ? m[1] : null;
 }
 
 // Buat bunyi notifikasi pakai Web Audio API — tidak perlu file eksternal
@@ -316,14 +309,19 @@ function playNotifSound() {
 export default function Layout({ user, onLogout, children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const onPortal = isPortalPath(location.pathname);
   const onHub = location.pathname === "/portal";
-  const divisionKey = divisionFromPath(location.pathname);
-  const division = DIVISIONS[divisionKey];
-  const DivisionIcon = DIVISION_ICON[divisionKey];
-  // Rail: hub → tidak ada yang menyala; command center (/portal/:key) →
-  // divisi diambil dari path itu sendiri; halaman kerja biasa → divisionKey.
-  const railActiveKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionKey);
+  // Divisi yang lagi aktif — SATU fungsi ini dipakai untuk RAIL (ikon mana
+  // yang menyala) MAUPUN sidebar lebar (konten mana yang ditampilkan).
+  // Command center (/portal/:key) py kunci divisi LANGSUNG dari path-nya
+  // (portalDivisionKey) — kalau ini dilewatkan dan jatuh ke divisionFromPath
+  // biasa, path "/portal/bengkel" tidak cocok prefiks mana pun di sana dan
+  // fallback ke "growth", jadi sidebar Bengkel keliru menampilkan menu
+  // Growth. Baru kalau BUKAN command center, pakai divisionFromPath (halaman
+  // kerja asli: /inbox, /bengkel, /gudang, dst).
+  const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
+  const division = DIVISIONS[divisionKey || "growth"];
+  const DivisionIcon = DIVISION_ICON[divisionKey || "growth"];
+  const railActiveKey = divisionKey;
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
@@ -421,10 +419,12 @@ export default function Layout({ user, onLogout, children }) {
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 
-      {/* Backdrop untuk mobile sidebar — ikut dimatikan di /portal supaya
-          tidak pernah ada layar gelap menutupi halaman tanpa drawer di
-          baliknya (mis. drawer dibuka di /inbox lalu user pindah ke hub). */}
-      {mobileOpen && !onPortal && (
+      {/* Backdrop untuk mobile sidebar — ikut dimatikan di hub (/portal)
+          supaya tidak pernah ada layar gelap menutupi halaman tanpa drawer
+          di baliknya. Command center (/portal/:key) SEKARANG py sidebar
+          juga (lihat catatan di bawah), jadi backdrop-nya ikut aktif di
+          sana — cuma hub murni yang dikecualikan. */}
+      {mobileOpen && !onHub && (
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />
       )}
 
@@ -442,21 +442,23 @@ export default function Layout({ user, onLogout, children }) {
         onLogout={onLogout}
       />
 
-      {/* Sidebar detail — SEKARANG cuma MOBILE DRAWER, untuk SEMUA divisi
-          (revisi 1 Agustus 2026, kedua kalinya). SEBELUMNYA sidebar lebar ini
-          selalu tampil di desktop untuk Growth — Gilang minta itu dicabut:
-          "taskbar di kiri cuma dashboard per team, bukan operasi/tambah
-          task/job". Rail (WorkspaceRail, di atas) SUDAH memenuhi itu — cuma
-          5 ikon dashboard. Sidebar lebar ini isinya justru item OPERASIONAL
-          (Inbox/Pelanggan/Pipeline/Order/dst) — itu yang dipindah keluar dari
-          kolom kiri permanen, sekarang cuma bar horizontal di bawah topbar
-          (lihat app-content) untuk SEMUA divisi. Di desktop sidebar ini TIDAK
-          PERNAH tampil lagi, cuma jadi drawer mobile (dipicu hamburger).
-
-          DIKECUALIKAN DI /portal: halaman hub bukan divisi, jadi tidak py
-          menu untuk ditampilkan — drawer pun tidak perlu, kartu workspace di
-          halamannya sendiri yang jadi navigasi. */}
-      {!onPortal && mobileOpen && (
+      {/* Sidebar detail — revisi KETIGA 1 Agustus 2026. Percobaan sebelumnya
+          (cabut sidebar dari desktop, pindah ke bar horizontal) DIBATALKAN:
+          bar horizontal-nya rusak (Inbox blank, lihat catatan motion.div di
+          bawah) dan Gilang minta balik ke bentuk sidebar lebar seperti
+          semula — TAPI sekarang berlaku untuk SEMUA divisi, bukan cuma
+          Growth. Jadi sekarang: rail (78px) + sidebar lebar (244px) TAMPIL
+          BERDAMPINGAN di desktop untuk divisi mana pun yang sedang dibuka —
+          isi sidebar mengikuti `division` (dari divisionKey yang sudah benar
+          menghitung command center juga, lihat komentar di atas).
+          Di MOBILE, sidebar ini jadi drawer (rail disembunyikan di bawah lg) —
+          SELALU di-mount di DOM (bukan digantung ke `mobileOpen`) supaya CSS
+          `@media max-width:768px` yang mengatur slide in/out (transform)
+          bekerja konsisten; kalau di-mount kondisional ke mobileOpen, root
+          <div> ini tidak pernah ada saat pertama kali drawer coba dibuka di
+          beberapa race condition.
+          DIKECUALIKAN DI /portal (hub murni): halaman hub bukan divisi. */}
+      {!onHub && (
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
@@ -573,62 +575,16 @@ export default function Layout({ user, onLogout, children }) {
       )}
 
       <main className="app-content">
-        {/* showMobileMenu=false di /portal: drawer-nya memang tidak dirender
-            di sana, jadi tombol hamburger hanya akan jadi kontrol mati. */}
+        {/* showMobileMenu=false di hub murni: drawer-nya memang tidak
+            dirender di sana, jadi tombol hamburger hanya akan jadi kontrol
+            mati. Command center (/portal/:key) SEKARANG py drawer juga. */}
         <Topbar
           onToggleMobileMenu={() => setMobileOpen((v) => !v)}
-          showMobileMenu={!onPortal}
+          showMobileMenu={!onHub}
           unreadCount={unreadCount}
           user={user}
           onLogout={onLogout}
         />
-
-        {/* Nav horizontal — dulu cuma untuk divisi NON-Growth, SEKARANG untuk
-            SEMUA divisi (lihat catatan di sidebar drawer di atas: ini yang
-            menggantikan sidebar lebar Growth yang dicabut dari desktop).
-            Tanpa ini, halaman operasional (Inbox/Pelanggan/Pipeline/dst)
-            tidak akan terjangkau sama sekali dari desktop selain lewat
-            command center — bukan sekadar ubah tampilan.
-            Growth py ~13 item (jauh lebih banyak dari divisi lain yang cuma
-            1-3) — makanya container INI overflow-x-auto + item shrink-0,
-            supaya scroll ke samping alih-alih baris kedua yang mendorong
-            konten turun tak terduga. */}
-        {!onPortal && (() => {
-          const items = division.sections
-            .filter((s) => !s.adminOnly || isAdmin)
-            .flatMap((s) => s.items)
-            .filter((it) => !it.adminOnly || isAdmin);
-          if (items.length < 2) return null;
-          return (
-            <div className="hidden items-center gap-1.5 overflow-x-auto border-b border-[#DEE5EF] bg-white px-7 py-2.5 [scrollbar-width:none] lg:flex [&::-webkit-scrollbar]:hidden">
-              {items.map(({ to, label, Icon, badge }) => {
-                const active = location.pathname.startsWith(to);
-                const showBadge = !!(badge && unreadCount > 0);
-                return (
-                  <button
-                    key={to}
-                    type="button"
-                    onClick={() => navigate(to)}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex shrink-0 items-center gap-1.5 rounded-[11px] px-3 py-1.5 text-[12px] font-bold transition-colors",
-                      active
-                        ? "bg-[#E8F0FF] text-[#1457D9]"
-                        : "text-[#6E7E96] hover:bg-[#F4F7FF] hover:text-[#1457D9]"
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" strokeWidth={2} /> {label}
-                    {showBadge && (
-                      <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-red px-1 text-[9px] font-extrabold text-white">
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()}
 
         {/* Transisi antar halaman (catatan Gilang 1 Agustus 2026: "animasi
             setiap perpindahan agar lebih smooth"). Di-key oleh pathname —
@@ -638,11 +594,28 @@ export default function Layout({ user, onLogout, children }) {
             fade-in — mode default ("sync") akan tumpang tindih sesaat dan
             terlihat "kedip" karena kedua halaman punya latar putih penuh.
             Durasi 160ms konsisten dengan pill aktif sidebar (SidebarLink,
-            180ms) — motion Sano dipatok 150–200ms, jangan lebih lambat. */}
+            180ms) — motion Sano dipatok 150–200ms, jangan lebih lambat.
+
+            ⚠️ BUG NYATA yang ditemukan begitu ini dipasang: Inbox tampil
+            KOSONG TOTAL (cuma latar abu-abu). Sebabnya `.inbox-body` di
+            index.css pakai `height:100%`, yang butuh PARENT LANGSUNG-nya
+            (`.page-body`, flex:1 di dalam `.app-content` yang flex-column)
+            py tinggi pasti. motion.div TANPA style apa pun defaultnya
+            height:auto (block biasa) — jadi begitu dia disisipkan DI ANTARA
+            `.page-body` dan `.inbox-body`, rantai height:100% putus di situ:
+            `.inbox-body` menghitung 100% dari sebuah elemen yang tingginya
+            sendiri "auto" (=nol/tak terhingga menurut kontennya), hasilnya
+            grid 3-kolom Inbox kolaps. `h-full` di sini WAJIB ada supaya
+            motion.div ikut menyalurkan tinggi 100% itu — halaman non-Inbox
+            (Dashboard, Pelanggan, dst pakai PageContainer) tidak terpengaruh
+            karena kontennya tetap overflow normal ke .page-body yang
+            overflow-y:auto (h-full cuma menentukan tinggi BOX motion.div,
+            bukan meng-clip konten yang lebih tinggi darinya). */}
         <div className="page-body">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
+              className="h-full"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
