@@ -28,6 +28,7 @@ const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
 const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("./pages/Portal.jsx"));
+const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
@@ -161,6 +162,11 @@ export default function App() {
                 /dashboard) tanpa melihat layar pemilih — lihat Portal.jsx. */}
             <Route path="/"            element={<Navigate to="/portal" replace />} />
             <Route path="/portal"      element={<Portal />} />
+            {/* Command center per divisi (1 Agustus 2026) — perhentian ANTARA
+                kartu Portal dan halaman kerja asli. Role tunggal (5 sales)
+                TIDAK PERNAH lewat sini — Portal.jsx auto-skip langsung ke
+                portals[0].path untuk mereka, PRD §4. */}
+            <Route path="/portal/:key" element={<DivisionPage user={user} />} />
             <Route path="/bengkel"     element={<Bengkel />} />
             <Route path="/armada"      element={<Armada />} />
             <Route path="/kendali"     element={<Kendali />} />

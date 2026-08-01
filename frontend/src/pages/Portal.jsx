@@ -29,11 +29,19 @@ import { cn } from "@/lib/utils.js";
 //  2. Chip mengambang di hero juga dari data nyata, dan HILANG total kalau
 //     datanya tidak ada — bukan placeholder kosong.
 //
-// Klik kartu tetap LANGSUNG ke halaman kerja divisinya (/dashboard, /bengkel,
-// …). Halaman "command center" perantara di mockup (`.division-page`) SENGAJA
-// tidak dibangun: 6 modul per divisi di sana sebagian besar fitur yang belum
-// ada, dan halaman perantara menambah satu klik untuk sales yang tiap hari
-// cuma menuju Inbox.
+// ── UPDATE (1 Agustus 2026, revisi kedua) ──────────────────────────────────
+// Klik kartu SEKARANG berhenti dulu di command center (/portal/:key,
+// DivisionPage.jsx) — bukan langsung ke halaman kerja. Ini MEMBALIK keputusan
+// sebelumnya (skip command center) setelah Gilang eksplisit minta struktur
+// `.division-page` mockup juga ditiru. Isi command center-nya sendiri jujur
+// soal data (lihat komentar panjang di DivisionPage.jsx) — cuma URUTAN
+// navigasinya yang sekarang meniru mockup persis.
+//
+// Yang TETAP tidak berubah dari keputusan awal: role tunggal (5 sales) TIDAK
+// PERNAH melihat command center — auto-skip di bawah menuju portals[0].path
+// (halaman kerja asli) terjadi SEBELUM baris mana pun di sini yang bicara
+// soal command center. Command center cuma kelihatan oleh user yang punya
+// >1 portal (pada praktiknya: admin).
 
 export const PORTAL_ICONS = {
   growth: Users,
@@ -431,7 +439,7 @@ export default function Portal() {
               portal={portal}
               stat={summary?.[portal.key]}
               span={spanClassFor(i, portals.length)}
-              onOpen={(p) => navigate(p.path)}
+              onOpen={(p) => navigate(`/portal/${p.key}`)}
             />
           ))}
         </div>

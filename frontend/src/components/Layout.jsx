@@ -187,7 +187,7 @@ const RAIL_ITEMS = [
 // "di main menu sidebarnya itu dashboard masing-masing divisi"). Menu detail
 // CRM (Inbox/Pelanggan/Pipeline/…) TIDAK di sini — itu hanya milik Sales CRM
 // dan tampil sebagai sidebar kedua, lihat render di Layout.
-function WorkspaceRail({ activeKey, userRoles, onNavigate, onLogout }) {
+function WorkspaceRail({ activeKey, atHub, userRoles, onNavigate, onLogout }) {
   const navigate = useNavigate();
   const visible = RAIL_ITEMS.filter((it) => it.roles.some((r) => userRoles.includes(r)));
 
@@ -203,7 +203,13 @@ function WorkspaceRail({ activeKey, userRoles, onNavigate, onLogout }) {
         type="button"
         onClick={() => { navigate("/portal"); onNavigate?.(); }}
         title="SANSS Main Hub"
-        className="mb-6 grid h-[42px] w-[42px] place-items-center rounded-[14px] bg-gradient-to-br from-[#0E3B96] to-[#2F73F2] text-white shadow-[0_10px_24px_rgba(20,87,217,.22)]"
+        aria-current={atHub ? "page" : undefined}
+        // Cincin saat berada di hub — begitu tidak ada ikon divisi yang
+        // menyala, logo ini jadi satu-satunya penanda posisi di rail.
+        className={cn(
+          "mb-6 grid h-[42px] w-[42px] place-items-center rounded-[14px] bg-gradient-to-br from-[#0E3B96] to-[#2F73F2] text-white shadow-[0_10px_24px_rgba(20,87,217,.22)]",
+          atHub && "ring-2 ring-[#2F73F2] ring-offset-2"
+        )}
       >
         <img src="/logo-small.png" alt="" className="h-5 w-5 object-contain brightness-0 invert" />
       </button>
@@ -252,13 +258,34 @@ function WorkspaceRail({ activeKey, userRoles, onNavigate, onLogout }) {
   );
 }
 
-// Prefix path → kunci divisi. Path yang tidak cocok apa pun (termasuk
-// /portal sendiri) jatuh ke "growth" sebagai default aman — itu perilaku
-// LAMA (satu-satunya nav sebelum perubahan ini), jadi tidak ada regresi
-// untuk halaman yang belum dipetakan eksplisit di sini.
+// Prefix path → kunci divisi. Path yang tidak cocok apa pun jatuh ke "growth"
+// sebagai default aman — itu perilaku LAMA (satu-satunya nav sebelum perubahan
+// ini), jadi tidak ada regresi untuk halaman yang belum dipetakan eksplisit.
+//
+// ⚠️ /portal TIDAK boleh mengandalkan fungsi ini. Portal adalah HUB, bukan
+// divisi — ia berdiri DI ATAS kelima divisi. Karena fallback di bawah
+// mengembalikan "growth" untuk path apa pun yang tidak dikenal, /portal ikut
+// terbaca sebagai Growth dan sidebar CRM (Dashboard/Inbox/Pelanggan/…) muncul
+// di halaman hub — persis bug yang dilaporkan Gilang 1 Agustus 2026. Pemakai
+// wajib mengecek isPortalPath() DULU sebelum memakai hasil fungsi ini untuk
+// memutuskan tampilan.
 //
 // /gudang SEKARANG milik "warehouse", bukan lagi "bengkel" — Gudang sudah
 // jadi workspace sendiri (SANSS, 1 Agustus 2026).
+function isPortalPath(pathname) {
+  return pathname === "/portal" || pathname.startsWith("/portal/");
+}
+
+// /portal (hub) TIDAK punya divisi aktif (rail-nya kosong, lihat komentar di
+// pemakaiannya). /portal/:key (command center — DivisionPage.jsx, ditambah
+// 1 Agustus 2026 revisi kedua) PUNYA divisi aktif: kuncinya diambil langsung
+// dari path, bukan lewat divisionFromPath (yang fallback ke "growth" dan akan
+// salah untuk keempat divisi lain).
+function portalDivisionKey(pathname) {
+  const m = /^\/portal\/([^/]+)/.exec(pathname);
+  return m ? m[1] : null;
+}
+
 function divisionFromPath(pathname) {
   if (pathname.startsWith("/gudang")) return "warehouse";
   if (pathname.startsWith("/bengkel")) return "bengkel";
@@ -289,9 +316,14 @@ function playNotifSound() {
 export default function Layout({ user, onLogout, children }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const onPortal = isPortalPath(location.pathname);
+  const onHub = location.pathname === "/portal";
   const divisionKey = divisionFromPath(location.pathname);
   const division = DIVISIONS[divisionKey];
   const DivisionIcon = DIVISION_ICON[divisionKey];
+  // Rail: hub → tidak ada yang menyala; command center (/portal/:key) →
+  // divisi diambil dari path itu sendiri; halaman kerja biasa → divisionKey.
+  const railActiveKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionKey);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
@@ -399,14 +431,22 @@ export default function Layout({ user, onLogout, children }) {
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 
-      {/* Backdrop untuk mobile sidebar */}
-      {mobileOpen && (
+      {/* Backdrop untuk mobile sidebar — ikut dimatikan di /portal supaya
+          tidak pernah ada layar gelap menutupi halaman tanpa drawer di
+          baliknya (mis. drawer dibuka di /inbox lalu user pindah ke hub). */}
+      {mobileOpen && !onPortal && (
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />
       )}
 
       {/* Rail ikon — navigasi utama, SELALU tampil di desktop (semua divisi) */}
+      {/* activeKey null saat di Portal — hub bukan salah satu divisi, jadi
+          TIDAK boleh ada ikon divisi yang tersorot di rail. Kalau dibiarkan
+          memakai divisionKey, Growth akan menyala di halaman hub (efek dari
+          fallback divisionFromPath) dan seolah-olah user sudah berada di
+          dalam Sales CRM padahal belum memilih apa pun. */}
       <WorkspaceRail
-        activeKey={divisionKey}
+        activeKey={railActiveKey}
+        atHub={onHub}
         userRoles={rolesOf(user)}
         onNavigate={closeMobileMenu}
         onLogout={onLogout}
@@ -419,8 +459,14 @@ export default function Layout({ user, onLogout, children }) {
           topbar (lihat app-content) supaya tidak ada navigasi yang hilang.
           Di MOBILE sidebar ini tetap jadi drawer untuk SEMUA divisi — rail
           disembunyikan di bawah lg, jadi drawer ini satu-satunya jalan
-          berpindah halaman di HP. */}
-      {(divisionKey === "growth" || mobileOpen) && (
+          berpindah halaman di HP.
+
+          DIKECUALIKAN DI /portal (perbaikan 1 Agustus 2026): halaman hub
+          bukan divisi, jadi tidak punya menu divisi untuk ditampilkan. Di HP
+          pun drawer tidak diperlukan di sini — kartu workspace di halamannya
+          SENDIRI yang jadi navigasi, dan rail/menu profil tetap menyediakan
+          jalan keluar. */}
+      {!onPortal && (divisionKey === "growth" || mobileOpen) && (
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
@@ -559,14 +605,22 @@ export default function Layout({ user, onLogout, children }) {
       )}
 
       <main className="app-content">
-        <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} unreadCount={unreadCount} user={user} onLogout={onLogout} />
+        {/* showMobileMenu=false di /portal: drawer-nya memang tidak dirender
+            di sana, jadi tombol hamburger hanya akan jadi kontrol mati. */}
+        <Topbar
+          onToggleMobileMenu={() => setMobileOpen((v) => !v)}
+          showMobileMenu={!onPortal}
+          unreadCount={unreadCount}
+          user={user}
+          onLogout={onLogout}
+        />
 
         {/* Nav horizontal untuk divisi NON-Sales yang punya lebih dari satu
             halaman (mis. All Teams: Ringkasan/Order/Laporan). Tanpa ini,
             menghapus sidebar dari divisi tersebut akan MENGHILANGKAN akses ke
             halaman-halaman itu sama sekali — bukan sekadar mengubah tampilan.
             Hanya dirender kalau memang ada >1 item yang boleh dilihat user. */}
-        {divisionKey !== "growth" && (() => {
+        {!onPortal && divisionKey !== "growth" && (() => {
           const items = division.sections
             .filter((s) => !s.adminOnly || isAdmin)
             .flatMap((s) => s.items)

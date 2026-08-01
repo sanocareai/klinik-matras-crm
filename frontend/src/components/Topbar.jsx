@@ -4,8 +4,12 @@ import { Bell, ChevronRight, Menu as MenuIcon, Search, ChevronDown, LogOut } fro
 import { formatTanggalIndo, getInitials } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
+import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
 
 const ROUTE_LABELS = {
+  // Tanpa entri ini breadcrumb jatuh ke fallback `pathname.replace("/","")`
+  // dan menampilkan "portal" huruf kecil apa adanya.
+  "/portal":      ["Main Hub"],
   "/dashboard":   ["Dashboard"],
   "/inbox":       ["Operasional", "Inbox"],
   "/customers":   ["Data", "Pelanggan"],
@@ -22,24 +26,36 @@ const ROUTE_LABELS = {
 // navigasi bell → /inbox, dan onToggleMobileMenu TIDAK diubah. `user`/`onLogout`
 // adalah prop aditif (onLogout = handler yang sudah ada; TIDAK mengubah
 // state/flow autentikasi).
-export default function Topbar({ onToggleMobileMenu, unreadCount = 0, user, onLogout }) {
+// showMobileMenu: tombol hamburger disembunyikan di halaman yang memang tidak
+// punya drawer sidebar (saat ini: /portal). Default true supaya semua pemanggil
+// lama berperilaku persis seperti sebelumnya.
+export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unreadCount = 0, user, onLogout }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const crumbs = ROUTE_LABELS[pathname] || [pathname.replace("/", "")];
+  // /portal/:key (command center) py key DINAMIS, tidak bisa didaftar satu-
+  // satu di ROUTE_LABELS statis seperti path lain — dicocokkan terpisah di
+  // sini, dengan judul divisi ASLI (bukan slug key mentah seperti "bengkel").
+  const commandCenterKey = /^\/portal\/([^/]+)/.exec(pathname)?.[1];
+  const commandCenterTitle = commandCenterKey && DIVISION_CONTENT[commandCenterKey]?.title;
+  const crumbs = commandCenterTitle
+    ? ["Main Hub", commandCenterTitle]
+    : ROUTE_LABELS[pathname] || [pathname.replace("/", "")];
 
   return (
     <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur md:px-6">
       {/* Kiri: hamburger (mobile) + breadcrumb */}
       <div className="flex min-w-0 items-center gap-2">
-        <button
-          onClick={onToggleMobileMenu}
-          title="Buka menu"
-          aria-label="Buka menu"
-          className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint md:hidden"
-        >
-          <MenuIcon size={20} />
-        </button>
+        {showMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            title="Buka menu"
+            aria-label="Buka menu"
+            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint md:hidden"
+          >
+            <MenuIcon size={20} />
+          </button>
+        )}
         <nav className="flex min-w-0 items-center gap-1 text-[13.5px]">
           {crumbs.map((c, i) => (
             <React.Fragment key={i}>
