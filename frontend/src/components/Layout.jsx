@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils.js";
 // divisinya terasa sistem yang sama, bukan dua skema warna berbeda.
 const DIVISIONS = {
   growth: {
-    label: "CRM & Omnichannel",
+    label: "Growth",
     // Tanpa cssVar — default token (:root, tokens.css) sudah biru accent,
     // TIDAK di-override supaya identik persis dengan sebelumnya.
     accent: { text: "text-blue-600", bg: "bg-blue-50", dot: "bg-blue-600" },
@@ -215,7 +215,7 @@ export default function Layout({ user, onLogout, children }) {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     // tag: "pesan-baru" supaya notifikasi lama di-replace, tidak menumpuk
-    new Notification("Klinik Matras CRM", {
+    new Notification("Sano Hub", {
       body: jumlahBaru === 1
         ? "Ada 1 pesan baru masuk"
         : `Ada ${jumlahBaru} pesan baru masuk`,

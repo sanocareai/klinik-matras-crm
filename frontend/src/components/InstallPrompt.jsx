@@ -96,7 +96,7 @@ export default function InstallPrompt() {
         <Download size={18} />
       </div>
       <p className="install-prompt-text">
-        Install Klinik Matras CRM untuk akses lebih cepat
+        Install Sano Hub untuk akses lebih cepat
       </p>
       <button className="install-prompt-btn" onClick={handleInstall}>
         Install

@@ -149,13 +149,13 @@ export const ROLE_PERMISSIONS = {
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu
 // portal mana yang ditampilkan (PRD §4).
 export const PORTALS = [
-  // Label memakai istilah yang DIPAKAI TIM SEHARI-HARI, bukan istilah PRD.
-  // Gilang menyebut divisi sales sebagai "CRM & Omnichannel WhatsApp" — itu
-  // yang dipakai di UI. Key-nya tetap "growth" (identifier kode Inggris,
-  // label Indonesia — konvensi CLAUDE.md).
+  // Label SEMPAT "CRM & Omnichannel" (istilah tim sehari-hari) — diganti
+  // "Growth" (1 Agustus 2026, Gilang) supaya konsisten dengan penamaan
+  // divisi lain (Bengkel/Armada/Kendali, satu kata) dan tidak terasa
+  // seperti "masih CRM lama" begitu masuk ke Sano Hub. Key tetap "growth".
   {
     key: "growth",
-    label: "CRM & Omnichannel",
+    label: "Growth",
     description: "Chat WhatsApp, pelanggan, order, pipeline penjualan",
     path: "/dashboard",
     roles: ["ADMIN", "SALES"],

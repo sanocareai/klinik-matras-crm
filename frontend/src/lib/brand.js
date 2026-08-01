@@ -3,5 +3,5 @@
 // final). Dipakai di sidebar (Layout) & halaman Login.
 export const BRAND = {
   name: "Sano",
-  subtitle: "AI Commerce CRM",
+  subtitle: "Hub Operasional",
 };
