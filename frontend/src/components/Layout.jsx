@@ -351,6 +351,19 @@ export default function Layout({ user, onLogout, children }) {
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 
+      {/* Drawer notifikasi GLOBAL — di-mount di shell, bukan di Topbar, supaya
+          overlay & focus trap-nya berada di atas seluruh layout (termasuk
+          sidebar), bukan terjebak di dalam header setinggi 60px.
+          ⚠️ BUG NYATA (dilaporkan Gilang, 2 Agustus 2026): sebelumnya import
+          komponen ini ADA di file ini, tapi <NotificationDrawer /> TIDAK
+          PERNAH ditulis — cuma diimpor, tidak pernah dipakai. Bell membaca
+          drawerOpen dari store dan meng-togglenya dengan benar, tapi karena
+          komponen yang merender drawer itu sendiri tidak pernah mount, state
+          berubah tanpa ada apa pun di layar yang bereaksi. Klik lonceng
+          terlihat "tidak ada respon" — bukan karena state-nya salah, tapi
+          karena tidak ada yang mendengarkannya. */}
+      <NotificationDrawer />
+
       {/* Backdrop drawer mobile. Sidebar sekarang ADA di semua halaman
           (termasuk Main Hub — switcher-nya tinggal di sana), jadi tidak ada
           lagi pengecualian /portal seperti sebelumnya. */}
