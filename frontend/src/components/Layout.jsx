@@ -23,16 +23,29 @@ import { cn } from "@/lib/utils.js";
 // Bengkel/Armada/Kendali tetap menampilkan menu CRM (Inbox/Pelanggan/
 // Pipeline/dst), yang tidak relevan sama sekali di sana. Sekarang sidebar
 // ditentukan dari PATH aktif (divisionFromPath di bawah) — pindah divisi =
-// seluruh menu, warna aksen, dan badge di sidebar ikut berganti, bukan cuma
-// konten halaman. Warna aksen per divisi SATU SUMBER dengan Portal.jsx
-// (PORTAL_ACCENT) supaya kartu di halaman Portal dan sidebar di dalam
-// divisinya terasa sistem yang sama, bukan dua skema warna berbeda.
+// seluruh menu dan badge di sidebar ikut berganti, bukan cuma konten halaman.
+//
+// ⚠️ WARNA: sejak 1 Agustus 2026 SELURUH divisi memakai biru SANSS yang sama
+// (keputusan Gilang: "tiru persis file desain v4", dan v4 monokrom biru).
+// SEBELUMNYA tiap divisi punya aksen sendiri (growth biru, bengkel amber,
+// warehouse sky, armada emerald, kendali violet) yang juga mewarnai kartu di
+// Portal. Konsekuensi yang DISADARI saat mengambil keputusan ini: warna tidak
+// lagi jadi penanda "saya sedang di divisi mana" — sekarang penandanya tinggal
+// LABEL TEKS di badge divisi + ikon. Kalau suatu saat orientasi divisi terasa
+// hilang, kembalikan `accent` per divisi di bawah (dan PORTAL_ACCENT di
+// Portal.jsx), jangan menambal dengan warna di satu tempat saja.
+const DIVISION_ACCENT = {
+  text: "text-blue-700",
+  bg: "bg-blue-50",
+  dot: "bg-blue-700",
+};
+
 const DIVISIONS = {
   growth: {
     label: "Growth",
-    // Tanpa cssVar — default token (:root, tokens.css) sudah biru accent,
-    // TIDAK di-override supaya identik persis dengan sebelumnya.
-    accent: { text: "text-blue-600", bg: "bg-blue-50", dot: "bg-blue-600" },
+    // Tanpa cssVar — default token (:root, tokens.css) sudah biru SANSS
+    // (#1457D9), jadi tidak ada yang perlu di-override.
+    accent: DIVISION_ACCENT,
     sections: [
       {
         section: "OPERASIONAL",
@@ -95,8 +108,7 @@ const DIVISIONS = {
   bengkel: {
     label: "Production",
     accent: {
-      text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-600",
-      cssVar: { "--sidebar-accent": "#D97706", "--sidebar-accent-strong": "#B45309", "--sidebar-accent-bg": "rgba(217,119,6,0.10)" },
+      ...DIVISION_ACCENT,
     },
     sections: [
       {
@@ -112,8 +124,7 @@ const DIVISIONS = {
   warehouse: {
     label: "Warehouse",
     accent: {
-      text: "text-sky-600", bg: "bg-sky-50", dot: "bg-sky-600",
-      cssVar: { "--sidebar-accent": "#0284C7", "--sidebar-accent-strong": "#0369A1", "--sidebar-accent-bg": "rgba(2,132,199,0.10)" },
+      ...DIVISION_ACCENT,
     },
     sections: [
       {
@@ -127,8 +138,7 @@ const DIVISIONS = {
   armada: {
     label: "Delivery",
     accent: {
-      text: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-600",
-      cssVar: { "--sidebar-accent": "#059669", "--sidebar-accent-strong": "#047857", "--sidebar-accent-bg": "rgba(5,150,105,0.10)" },
+      ...DIVISION_ACCENT,
     },
     sections: [
       {
@@ -142,8 +152,7 @@ const DIVISIONS = {
   kendali: {
     label: "All Teams",
     accent: {
-      text: "text-violet-600", bg: "bg-violet-50", dot: "bg-violet-600",
-      cssVar: { "--sidebar-accent": "#7C3AED", "--sidebar-accent-strong": "#6D28D9", "--sidebar-accent-bg": "rgba(124,58,237,0.10)" },
+      ...DIVISION_ACCENT,
     },
     sections: [
       {

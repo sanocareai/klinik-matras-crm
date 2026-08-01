@@ -43,7 +43,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Klinik Matras" />
+    <meta name="apple-mobile-web-app-title" content="SANSS" />
     <script>
       // Capture beforeinstallprompt sebelum React mount supaya tidak terlewat
       window.addEventListener('beforeinstallprompt', function(e) {
@@ -51,22 +51,27 @@
         window.__pwaInstallEvent = e;
       });
     </script>
-    <title>Klinik Matras - CRM</title>
+    <title>SANSS — Sano Integrated Smart System</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-C_Gz73-z.js"></script>
+    <!-- TIDAK ADA <link> font ke Google Fonts.
+         Font UI SANSS (Manrope) + Inter + Geist Mono di-bundle lokal lewat
+         @fontsource di src/main.jsx. Sampai 1 Agustus 2026 di sini masih ada
+         stylesheet Inter dari fonts.googleapis.com — sisa sebelum Manrope
+         jadi font utama. Itu request render-blocking ke host pihak ketiga
+         untuk font yang SUDAH ikut di bundle (dan mengirim IP tiap user ke
+         Google). File desain v4 memang memakai @import Google Fonts; bagian
+         itu SENGAJA tidak ditiru, hasil visualnya identik. -->
+    <script type="module" crossorigin src="/assets/index-BgCxp6R8.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/vendor-query-lt1T2TzN.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-react-BobNSfI3.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-socket-dm1FmSOd.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-charts-CvJfyg1u.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-motion-e_NUjxXw.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BfDeOEsk.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-D250uYMB.css">
   <link rel="manifest" href="/manifest.webmanifest"></head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

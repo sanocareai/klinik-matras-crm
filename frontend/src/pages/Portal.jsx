@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus } from "lucide-react";
+import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { WORKSPACE_ART } from "@/features/portal/WorkspaceArt.jsx";
 import { cn } from "@/lib/utils.js";
 
 // Landing portal SANSS (PRD §4). Halaman AWAL setelah login.
@@ -14,11 +15,25 @@ import { cn } from "@/lib/utils.js";
 // mereka cuma punya role SALES → cuma satu portal → tetap mendarat langsung
 // di /dashboard seperti sebelumnya.
 //
-// REDESIGN SANSS (1 Agustus 2026, Gilang — referensi mockup enterprise
-// portal): hero biru gelap + grid kartu workspace. Angka di kartu diambil
-// dari GET /auth/portal-summary — ANGKA NYATA, bukan contoh. Mockup aslinya
-// memakai angka hardcode; itu sengaja TIDAK ditiru karena kartu yang
-// menampilkan angka palsu lebih berbahaya daripada kartu tanpa angka.
+// ─── TIRU PENUH FILE DESAIN v4 (1 Agustus 2026, keputusan Gilang) ──────────
+// Struktur & visual sekarang mengikuti docs/design-system/
+// SANSS-integrated-smart-system-v4.html section `.hub-page` SEPERSIS mungkin:
+// welcome line + date chip → `.hub-stage` putih → hero biru dengan ilustrasi
+// kasur → `.hub-intro` → grid kartu 12 kolom dengan ilustrasi SVG per divisi.
+//
+// DUA hal dari mockup yang SENGAJA TIDAK ditiru, keduanya soal kejujuran data:
+//  1. Mockup memakai angka hardcode (`24 lead`, `18 work order`, dst). Di sini
+//     angka SELALU dari GET /auth/portal-summary. Kartu yang belum punya
+//     angka menampilkan "Buka workspace", BUKAN angka contoh — kartu yang
+//     memajang angka palsu lebih berbahaya daripada kartu tanpa angka.
+//  2. Chip mengambang di hero juga dari data nyata, dan HILANG total kalau
+//     datanya tidak ada — bukan placeholder kosong.
+//
+// Klik kartu tetap LANGSUNG ke halaman kerja divisinya (/dashboard, /bengkel,
+// …). Halaman "command center" perantara di mockup (`.division-page`) SENGAJA
+// tidak dibangun: 6 modul per divisi di sana sebagian besar fitur yang belum
+// ada, dan halaman perantara menambah satu klik untuk sales yang tiap hari
+// cuma menuju Inbox.
 
 export const PORTAL_ICONS = {
   growth: Users,
@@ -28,106 +43,177 @@ export const PORTAL_ICONS = {
   kendali: Gauge,
 };
 
-// Aksen per workspace — SATU SUMBER dengan Layout.jsx (sidebar). Warna di
-// sini menentukan gradient header kartu; Layout memakai peta yang sama untuk
-// aksen sidebar supaya "masuk ke satu workspace = seluruh tampilan ikut
-// berubah warna" terasa satu sistem, bukan dua tempat yang bisa drift.
-export const PORTAL_ACCENT = {
-  growth:    { from: "from-blue-500",    to: "to-blue-700",    tint: "bg-blue-50",    text: "text-blue-700",    ring: "group-hover:ring-blue-300/60" },
-  bengkel:   { from: "from-amber-500",   to: "to-amber-700",   tint: "bg-amber-50",   text: "text-amber-700",   ring: "group-hover:ring-amber-300/60" },
-  warehouse: { from: "from-sky-500",     to: "to-sky-700",     tint: "bg-sky-50",     text: "text-sky-700",     ring: "group-hover:ring-sky-300/60" },
-  armada:    { from: "from-emerald-500", to: "to-emerald-700", tint: "bg-emerald-50", text: "text-emerald-700", ring: "group-hover:ring-emerald-300/60" },
-  kendali:   { from: "from-violet-500",  to: "to-violet-700",  tint: "bg-violet-50",  text: "text-violet-700",  ring: "group-hover:ring-violet-300/60" },
+// Lebar kartu per posisi, meniru `.division-grid` di mockup (12 kolom:
+// 3 kartu span-4 di baris pertama, 2 kartu span-6 di baris kedua).
+//
+// Daftar portal BERGANTUNG ROLE — user bisa melihat 1..5 kartu, bukan selalu
+// 5 seperti di mockup. Hardcode pola 5-kartu saja akan menyisakan kolom
+// menggantung untuk user lain (mis. 2 portal → 2 kartu sempit + sepertiga
+// baris kosong), jadi tiap jumlah punya pola yang menghabiskan 12 kolom.
+const SPAN_BY_COUNT = {
+  1: [12],
+  2: [6, 6],
+  3: [4, 4, 4],
+  4: [6, 6, 6, 6],
+  5: [4, 4, 4, 6, 6],
+};
+const SPAN_CLASS = {
+  4: "xl:col-span-4",
+  6: "xl:col-span-6",
+  12: "xl:col-span-12",
 };
 
-const FALLBACK_ACCENT = PORTAL_ACCENT.growth;
+function spanClassFor(index, total) {
+  const pattern = SPAN_BY_COUNT[total];
+  const span = pattern ? pattern[index] : 4;
+  return SPAN_CLASS[span] || SPAN_CLASS[4];
+}
 
-// ── Hero biru ──────────────────────────────────────────────────────────────
-// Panel gradient gelap dengan grid halus + "pill" statistik mengambang,
-// meniru struktur mockup. Pill hanya muncul kalau angkanya ADA (workspace
-// yang boleh dibuka user ini) — tidak pernah menampilkan placeholder kosong.
-function PortalHero({ userName, summary, onOpenDashboard }) {
-  const pills = [];
-  if (summary?.bengkel) pills.push({ tone: "emerald", text: `${summary.bengkel.value} unit dikerjakan` });
-  if (summary?.warehouse) pills.push({ tone: "amber", text: `${summary.warehouse.value} item di bawah minimum` });
-  if (pills.length === 0 && summary?.armada) pills.push({ tone: "emerald", text: `${summary.armada.value} job hari ini` });
+// Latar bergaris halus — dipakai hero, header kartu, dan visual kartu gelap.
+function gridBackground(color, size) {
+  return {
+    backgroundImage: `linear-gradient(${color} 1px, transparent 1px), linear-gradient(90deg, ${color} 1px, transparent 1px)`,
+    backgroundSize: `${size}px ${size}px`,
+  };
+}
 
+function todayText() {
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+}
+
+// ── Ilustrasi kasur di hero ────────────────────────────────────────────────
+// Port dari `.mattress` + `.art-orbit` di mockup. Murni dekoratif → seluruh
+// blok aria-hidden, dan disembunyikan di bawah lg persis seperti mockup
+// (`@media(max-width:860px){.hero-art{display:none}}`) supaya di HP ruang
+// terpakai untuk teks, bukan hiasan.
+function HeroArt({ chips }) {
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B2A6F] via-[#123C9E] to-[#1D4ED8] px-6 py-8 text-white sm:px-10 sm:py-12">
-      {/* Grid halus — murni dekoratif, aria-hidden supaya tidak dibaca screen reader */}
+    <div aria-hidden className="relative hidden h-[250px] place-items-center lg:grid">
+      <div className="absolute h-[180px] w-[330px] -rotate-[8deg] rounded-full border border-white/[0.18]" />
+      <div className="absolute h-[260px] w-[260px] rotate-[14deg] rounded-full border border-white/[0.18]" />
+
       <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.14]"
+        className="relative h-[150px] w-[330px] rounded-[32px]"
         style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px)",
-          backgroundSize: "46px 46px",
+          transform: "perspective(800px) rotateX(58deg) rotateZ(-16deg)",
+          background: "linear-gradient(145deg,#fff,#DDE9FF)",
+          boxShadow: "0 36px 50px rgba(4,20,52,.32), inset 0 -18px 26px rgba(56,113,222,.18)",
         }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/10 blur-3xl"
-      />
-
-      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        <div className="max-w-xl">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide backdrop-blur">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            SANSS Operations Platform
-          </span>
-
-          <h1 className="mt-5 text-[30px] font-bold leading-[1.12] tracking-tight sm:text-[42px]">
-            One integrated system<br className="hidden sm:block" /> for every SANO operation.
-          </h1>
-
-          <p className="mt-4 text-[14px] leading-relaxed text-white/75 sm:text-[15px]">
-            {userName ? `Halo, ${userName} — ` : ""}
-            dari lead, produksi, inventory, hingga pengiriman: setiap divisi bekerja dengan
-            data dan alur yang terhubung di SANSS.
-          </p>
-
-          <div className="mt-7 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => onOpenDashboard()}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-[14px] font-semibold text-[#123C9E] transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              Open integrated dashboard
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenDashboard("/orders")}
-              className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-white/15 px-5 text-[14px] font-semibold text-white backdrop-blur transition-colors hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              <Plus className="h-4 w-4" /> Buat order baru
-            </button>
-          </div>
-        </div>
-
-        {pills.length > 0 && (
-          <div className="flex flex-col items-start gap-3 lg:items-end">
-            {pills.map((p) => (
-              <span
-                key={p.text}
-                className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-lg"
-              >
-                <span className={cn("h-2 w-2 rounded-full", p.tone === "amber" ? "bg-amber-500" : "bg-emerald-500")} />
-                {p.text}
-              </span>
-            ))}
-          </div>
-        )}
+      >
+        <div className="absolute inset-[13px] rounded-[24px] border-2 border-dashed border-[rgba(20,87,217,.22)]" />
+        <span className="absolute bottom-[26px] right-[42px] rotate-[2deg] text-[20px] font-black tracking-[.12em] text-[#1457D9]">
+          SANO
+        </span>
       </div>
+
+      {chips.map((chip, i) => (
+        <span
+          key={chip.text}
+          className={cn(
+            "absolute flex items-center gap-2 rounded-[14px] bg-white/[0.93] px-3 py-2.5 text-[10px] font-extrabold text-[#10213D] shadow-[0_16px_35px_rgba(2,15,40,.22)]",
+            i === 0 ? "left-[18px] top-[28px]" : "bottom-[30px] right-[3px]"
+          )}
+        >
+          <span
+            className={cn(
+              "h-[9px] w-[9px] rounded-full",
+              chip.tone === "amber" ? "bg-[#C87912]" : "bg-[#0D9A6C]"
+            )}
+          />
+          {chip.text}
+        </span>
+      ))}
     </div>
   );
 }
 
-// ── Kartu satu workspace ───────────────────────────────────────────────────
-function WorkspaceCard({ portal, stat, onOpen }) {
-  const Icon = PORTAL_ICONS[portal.key] || Users;
-  const accent = PORTAL_ACCENT[portal.key] || FALLBACK_ACCENT;
+// ── Hero biru ──────────────────────────────────────────────────────────────
+function PortalHero({ summary, onOpenDashboard }) {
+  // Chip mengambang — maksimal 2 (posisinya di mockup memang cuma dua titik).
+  const chips = [];
+  if (summary?.bengkel) chips.push({ tone: "emerald", text: `${summary.bengkel.value} unit dikerjakan` });
+  if (summary?.warehouse) chips.push({ tone: "amber", text: `${summary.warehouse.value} item di bawah minimum` });
+  if (chips.length === 0 && summary?.armada) chips.push({ tone: "emerald", text: `${summary.armada.value} job hari ini` });
+  if (chips.length === 0 && summary?.growth) chips.push({ tone: "emerald", text: `${summary.growth.value} lead dalam proses` });
 
   return (
+    <section
+      className="relative isolate min-h-[320px] overflow-hidden rounded-[26px] px-6 py-8 text-white sm:px-10 sm:py-[38px] lg:grid lg:grid-cols-[minmax(0,1.02fr)_minmax(420px,.98fr)] lg:items-center"
+      style={{
+        background:
+          "radial-gradient(circle at 9% 18%, rgba(112,164,255,.48), transparent 31%), radial-gradient(circle at 82% 50%, rgba(68,128,246,.48), transparent 36%), linear-gradient(135deg, #071A3A, #1457D9)",
+      }}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.09]"
+        style={{
+          ...gridBackground("rgba(255,255,255,.5)", 42),
+          maskImage: "linear-gradient(90deg,#000,transparent 82%)",
+          WebkitMaskImage: "linear-gradient(90deg,#000,transparent 82%)",
+        }}
+      />
+
+      <div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.17] bg-white/[0.08] px-2.5 py-[7px] text-[10px] font-extrabold uppercase tracking-[.08em]">
+          <span className="h-[7px] w-[7px] rounded-full bg-[#65EAB9] shadow-[0_0_0_5px_rgba(101,234,185,.11)]" />
+          SANSS Operations Platform
+        </span>
+
+        <h2 className="mt-[18px] max-w-[620px] text-[35px] font-bold leading-[1.0] tracking-[-.055em] sm:text-[44px] xl:text-[58px]">
+          One integrated system for every SANO operation.
+        </h2>
+
+        <p className="mt-3 max-w-[560px] text-[15px] leading-[1.6] text-white/[0.72]">
+          Dari lead, produksi, inventory, hingga pengiriman—setiap divisi bekerja dengan data
+          dan alur yang terhubung di SANSS.
+        </p>
+
+        <div className="mt-[25px] flex flex-col gap-2.5 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => onOpenDashboard()}
+            className="rounded-[13px] bg-white px-4 py-3 text-[12px] font-extrabold text-[#0B2454] transition-transform hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          >
+            Open integrated dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenDashboard("/orders")}
+            className="inline-flex items-center justify-center gap-1.5 rounded-[13px] border border-white/20 bg-white/[0.08] px-4 py-3 text-[12px] font-extrabold text-white backdrop-blur transition-transform hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.4} /> Buat order baru
+          </button>
+        </div>
+      </div>
+
+      <HeroArt chips={chips} />
+    </section>
+  );
+}
+
+// ── Kartu satu workspace ───────────────────────────────────────────────────
+function WorkspaceCard({ portal, stat, span, onOpen }) {
+  const Icon = PORTAL_ICONS[portal.key] || Users;
+  const Art = WORKSPACE_ART[portal.key];
+
+  // Kartu "All Teams" memakai varian visual GELAP di mockup
+  // (`.division-card.dashboard-card`) — satu-satunya kartu yang beda, sebagai
+  // penanda bahwa ia ringkasan lintas divisi, bukan divisi itu sendiri.
+  const dark = portal.key === "kendali";
+
+  return (
+    // Mockup memakai <button> untuk kartu ini. DI SINI SENGAJA div+role:
+    // isi kartu mengandung <h4> dan <p> (flow content), dan menaruh itu di
+    // dalam <button> menghasilkan HTML tidak valid — judul kartu juga hilang
+    // dari daftar heading yang dipakai pengguna screen reader untuk melompat
+    // antar bagian. Perilaku keyboard-nya disamakan manual di onKeyDown
+    // (Enter + Space), jadi tidak ada yang berkurang dibanding <button>.
     <div
       role="button"
       tabIndex={0}
@@ -139,54 +225,91 @@ function WorkspaceCard({ portal, stat, onOpen }) {
         }
       }}
       className={cn(
-        "group flex cursor-pointer flex-col overflow-hidden rounded-2xl bg-surface shadow-card ring-1 ring-black/[0.04] transition-all duration-150",
-        "hover:-translate-y-1 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-        accent.ring
+        "group flex min-h-[342px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-[#DEE5EF] bg-white text-left",
+        "shadow-[0_10px_30px_rgba(15,40,85,.07)] transition-all duration-200",
+        "hover:-translate-y-[5px] hover:border-[#B7CBF4] hover:shadow-[0_20px_48px_rgba(15,40,85,.14)]",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2F73F2] focus-visible:ring-offset-2",
+        span
       )}
     >
-      {/* Header bergradient — pengganti ilustrasi di mockup. Sengaja BUKAN
-          file gambar: menambah 5 ilustrasi berarti 5 aset baru yang harus
-          di-maintain, sementara gradient+ikon sudah memberi pembeda visual
-          per workspace dengan biaya nol. */}
-      <div className={cn("relative h-28 bg-gradient-to-br", accent.from, accent.to)}>
+      {/* Visual atas — ilustrasi SVG per divisi */}
+      <div
+        className={cn(
+          "relative h-[176px] overflow-hidden border-b",
+          dark ? "border-[#0A285F]" : "border-[#E2EAF7]"
+        )}
+        style={
+          dark
+            ? { background: "linear-gradient(140deg,#0A285F,#174DBA 54%,#3768E7)" }
+            : { background: "linear-gradient(145deg,#F8FAFF 0%,#EDF3FF 48%,#DCE8FF 100%)" }
+        }
+      >
         <div
           aria-hidden
-          className="absolute inset-0 opacity-20"
+          className="absolute inset-0"
           style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.7) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
+            ...gridBackground(dark ? "rgba(255,255,255,.10)" : "rgba(30,86,190,.065)", 28),
+            maskImage: "linear-gradient(140deg,#000,transparent 82%)",
+            WebkitMaskImage: "linear-gradient(140deg,#000,transparent 82%)",
           }}
         />
-        <div aria-hidden className="absolute -bottom-8 -right-6 h-28 w-28 rounded-full bg-white/15" />
-        <div className="absolute left-5 top-5 flex h-11 w-11 items-center justify-center rounded-xl bg-white/95 shadow-sm">
-          <Icon className={cn("h-5 w-5", accent.text)} strokeWidth={2} />
-        </div>
-        <span className="absolute right-4 top-5 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+        <div
+          aria-hidden
+          className={cn(
+            "absolute -right-[70px] -top-[85px] h-[190px] w-[190px] rounded-full",
+            dark ? "bg-white/[0.08]" : "bg-[rgba(71,126,235,.10)]"
+          )}
+        />
+
+        {Art ? (
+          <div className="relative z-[1] h-full w-full [&>svg]:h-full [&>svg]:w-full">
+            <Art />
+          </div>
+        ) : (
+          // Divisi baru yang belum punya ilustrasi tetap tampil rapi (ikon
+          // besar di tengah), bukan kotak kosong.
+          <div className="relative z-[1] grid h-full w-full place-items-center">
+            <Icon className={cn("h-12 w-12", dark ? "text-white/80" : "text-[#2F73F2]")} strokeWidth={1.6} />
+          </div>
+        )}
+
+        <span
+          className={cn(
+            "absolute right-3.5 top-3.5 z-[3] inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[9px] font-extrabold uppercase tracking-[.06em] backdrop-blur",
+            dark
+              ? "border border-white/[0.18] bg-white/[0.14] text-white"
+              : "border border-white/80 bg-white/[0.82] text-[#0D9A6C] shadow-[0_8px_22px_rgba(16,48,104,.08)]"
+          )}
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-current" /> Active
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col p-5">
-        <h3 className="text-[16px] font-semibold leading-snug text-ink">{portal.label}</h3>
-        <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-ink2">{portal.description}</p>
+      {/* Isi kartu */}
+      <div className="flex min-h-[165px] flex-1 flex-col bg-white px-5 pb-[18px] pt-[19px]">
+        <h4 className="text-[18px] font-bold leading-[1.18] tracking-[-.035em] text-[#10213D]">
+          {portal.label}
+        </h4>
+        <p className="mt-[7px] max-w-[430px] text-[11px] leading-[1.55] text-[#6E7E96]">
+          {portal.description}
+        </p>
 
-        <div className="mt-5 flex items-end justify-between border-t border-border pt-4">
+        <div className="mt-auto flex items-end justify-between gap-4 pt-3.5">
           {stat ? (
             <div>
-              <div className="text-[26px] font-bold leading-none text-ink">{stat.value}</div>
-              <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">{stat.label}</div>
+              <strong className="block text-[22px] font-bold leading-none tracking-[-.045em] text-[#10213D]">
+                {stat.value}
+              </strong>
+              <span className="mt-[5px] block text-[8px] font-extrabold uppercase tracking-[.09em] text-[#6E7E96]">
+                {stat.label}
+              </span>
             </div>
           ) : (
-            <span className="text-[12px] text-ink3">Buka workspace</span>
+            <span className="text-[11px] text-[#6E7E96]">Buka workspace</span>
           )}
-          <span
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-full transition-colors",
-              accent.tint, accent.text
-            )}
-          >
-            <ArrowRight className="h-4 w-4" />
+
+          <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[13px] bg-[#F4F7FF] text-[#1457D9] transition-all group-hover:translate-x-[3px] group-hover:bg-[#E8F0FF]">
+            <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} />
           </span>
         </div>
       </div>
@@ -264,33 +387,54 @@ export default function Portal() {
 
   return (
     <PageContainer>
-      <PortalHero
-        userName={me?.name}
-        summary={summary}
-        onOpenDashboard={(path) => navigate(path || portals[0].path)}
-      />
-
-      <div className="mt-8 flex items-end justify-between">
+      {/* Baris sambutan + tanggal — `.welcome-line` di mockup */}
+      <div className="mb-[18px] flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-[20px] font-semibold tracking-tight text-ink">Choose your workspace</h2>
-          <p className="mt-1 text-[13px] text-ink2">
-            Masuk ke divisi untuk membuka modul dan aktivitas operasional terkait.
+          <h1 className="text-[22px] font-bold tracking-[-.035em] text-[#10213D] sm:text-[24px]">
+            Welcome to SANSS{me?.name ? `, ${me.name}` : ""} 👋
+          </h1>
+          <p className="mt-[5px] text-[12px] text-[#6E7E96]">
+            Pilih workspace untuk mulai mengelola operasional.
           </p>
         </div>
-        <span className="hidden shrink-0 text-[12px] font-medium text-accent sm:block">
-          {portals.length} workspace tersedia
-        </span>
+        <div className="hidden shrink-0 items-center gap-2 rounded-full border border-[#DEE5EF] bg-white px-3 py-2.5 text-[11px] font-bold text-[#657992] sm:inline-flex">
+          <Calendar className="h-[15px] w-[15px]" strokeWidth={1.9} />
+          <span>{todayText()}</span>
+        </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {portals.map((portal) => (
-          <WorkspaceCard
-            key={portal.key}
-            portal={portal}
-            stat={summary?.[portal.key]}
-            onOpen={(p) => navigate(p.path)}
-          />
-        ))}
+      {/* Panggung putih yang membungkus hero + grid — `.hub-stage` */}
+      <div className="rounded-[30px] border border-[rgba(222,229,239,.85)] bg-white p-3 shadow-[0_20px_55px_rgba(15,40,85,.10)] sm:p-5">
+        <PortalHero
+          summary={summary}
+          onOpenDashboard={(path) => navigate(path || portals[0].path)}
+        />
+
+        <div className="mx-1 mb-[15px] mt-[30px] flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="mb-[5px] text-[20px] font-bold tracking-[-.035em] text-[#10213D]">
+              Choose your workspace
+            </h3>
+            <p className="text-[11px] text-[#6E7E96]">
+              Masuk ke divisi untuk membuka modul dan aktivitas operasional terkait.
+            </p>
+          </div>
+          <span className="text-[10px] font-extrabold text-[#1457D9]">
+            {portals.length} workspace tersedia
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-[15px] md:grid-cols-2 xl:grid-cols-12">
+          {portals.map((portal, i) => (
+            <WorkspaceCard
+              key={portal.key}
+              portal={portal}
+              stat={summary?.[portal.key]}
+              span={spanClassFor(i, portals.length)}
+              onOpen={(p) => navigate(p.path)}
+            />
+          ))}
+        </div>
       </div>
     </PageContainer>
   );

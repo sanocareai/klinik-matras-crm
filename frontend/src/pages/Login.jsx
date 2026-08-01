@@ -26,6 +26,7 @@ export default function Login({ onLogin }) {
   const [showPass, setShowPass] = useState(false);
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
+  const [showResetHint, setShowResetHint] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -78,7 +79,11 @@ export default function Login({ onLogin }) {
             Connected operations workspace
           </span>
 
-          <h1 className="mt-7 text-[44px] font-bold leading-[1.08] tracking-tight xl:text-[52px]">
+          {/* Skala & tracking mengikuti `.login-copy h1` di file desain v4
+              (clamp 44→78px, letter-spacing -.058em, line-height .96).
+              Dinaikkan bertahap per breakpoint, BUKAN clamp(5.4vw): panel ini
+              lebarnya cuma 50% viewport, jadi patokan vw akan kebesaran. */}
+          <h1 className="mt-7 text-[44px] font-bold leading-[0.96] tracking-[-0.058em] lg:text-[52px] xl:text-[64px]">
             Sano Integrated<br />Smart System.
           </h1>
 
@@ -170,6 +175,32 @@ export default function Login({ onLogin }) {
                 </button>
               </div>
             </div>
+
+            {/* `.login-row` di file desain v4 punya DUA kontrol: checkbox
+                "Ingat saya" + "Lupa password?".
+                Checkbox SENGAJA TIDAK ditiru — token disimpan di localStorage
+                dan bertahan sampai user menekan Keluar, jadi "ingat saya"
+                sudah SELALU aktif. Checkbox di situ tidak akan mengubah apa
+                pun; kontrol yang tidak melakukan apa-apa lebih buruk daripada
+                kontrol yang tidak ada. Kalau nanti mau nyata, itu perubahan
+                sisi token (sessionStorage vs localStorage), bukan sekadar UI. */}
+            <div className="-mt-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowResetHint(true)}
+                className="text-[12px] font-bold text-accent transition-opacity hover:opacity-80"
+              >
+                Lupa password?
+              </button>
+            </div>
+
+            {showResetHint && (
+              <div className="rounded-xl bg-[#F4F7FF] px-4 py-3 text-[12px] leading-relaxed text-ink2">
+                Reset password dilakukan oleh admin. Hubungi admin SANO
+                (<span className="font-semibold text-ink">admin@klinikmatras.com</span>) untuk
+                mengatur ulang password akun Anda.
+              </div>
+            )}
 
             {error && (
               <div className="rounded-xl bg-redbg px-4 py-3 text-[13px] font-medium text-red">
