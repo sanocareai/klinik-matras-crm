@@ -6,6 +6,7 @@ import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
+import { createUnitsForOrder } from "../services/unitProvisioning.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -466,25 +467,53 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 
 // Catat order baru — value mulai 0, akan dihitung otomatis dari items
 // orderNumber di-generate otomatis berdasarkan category (jangan kirim dari frontend)
+//
+// SEJAK 1 Agustus 2026 endpoint ini JUGA membuat Unit (kasur fisik) untuk order
+// tersebut. Sebelumnya tidak ada jalur runtime mana pun yang membuat Unit, jadi
+// setiap order baru berhenti sebagai catatan komersial dan tidak pernah bisa
+// masuk ke bengkel/armada — lihat catatan panjang di services/unitProvisioning.js.
+//
+// `unitCount` OPSIONAL, default 1. SENGAJA BUKAN `quantity`: `quantity` adalah
+// jumlah barang yang dipesan (bisa 2 bantal / 2 guling), bukan jumlah kasur.
+// Klien lama yang tidak mengirim `unitCount` tetap benar untuk mayoritas order.
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, beratBadan, category } = req.body;
+  const { quantity, status, notes, beratBadan, category, unitCount } = req.body;
 
   const cat = category || "LAYANAN";
+
+  // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
+  // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
   const orderNumber = await generateOrderNumber(cat);
 
-  const order = await prisma.order.create({
-    data: {
-      customerId: req.params.id,
-      value: 0,
-      quantity: quantity ? Number(quantity) : 1,
-      status: status || "PENDING",
-      category: cat,
-      orderNumber,
-      notes,
-      ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
-    },
-    include: { items: true },
+  // Order + unit-unitnya lahir dalam SATU transaksi. Order tanpa unit persis
+  // keadaan yang sedang diperbaiki di sini; jangan biarkan kegagalan separuh
+  // jalan membuatnya lagi.
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.order.create({
+      data: {
+        customerId: req.params.id,
+        value: 0,
+        quantity: quantity ? Number(quantity) : 1,
+        status: status || "PENDING",
+        category: cat,
+        orderNumber,
+        notes,
+        ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
+      },
+      include: { items: true },
+    });
+
+    const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
+    if (jumlahUnit > 0) {
+      await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
+    }
+
+    return tx.order.findUnique({
+      where: { id: created.id },
+      include: { items: true, units: { orderBy: { seq: "asc" } } },
+    });
   });
+
   await syncCustomerOrderAggregate(req.params.id);
   res.status(201).json(order);
 });

@@ -11,6 +11,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { createUnitsForOrder } from "../services/unitProvisioning.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -462,6 +463,82 @@ orderRouter.patch("/weight-entries/:entryId", async (req, res) => {
 orderRouter.delete("/weight-entries/:entryId", async (req, res) => {
   try {
     await prisma.orderWeightEntry.delete({ where: { id: req.params.entryId } });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── UNIT (kasur fisik) PADA SEBUAH ORDER ───────────────────────────────────
+// Order dibuat dengan 1 unit secara default (lihat POST /customers/:id/orders).
+// Dua endpoint di bawah untuk mengoreksi jumlahnya: order berisi 2 kasur
+// ditambah unitnya di sini, order yang ternyata bukan kasur sama sekali
+// (ganti kain sofa, ongkos kirim) unit hantunya dihapus — tanpa perlu akses
+// database. Lihat services/unitProvisioning.js soal kenapa jumlah unit TIDAK
+// diturunkan dari Order.quantity.
+
+// GET /api/orders/:id/units — daftar unit milik order
+orderRouter.get("/:id/units", async (req, res) => {
+  try {
+    const units = await prisma.unit.findMany({
+      where: { orderId: req.params.id },
+      orderBy: { seq: "asc" },
+      include: { currentStage: { select: { code: true, labelId: true } } },
+    });
+    res.json(units);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/:id/units — tambah N unit ke order yang sudah ada
+orderRouter.post("/:id/units", async (req, res) => {
+  const count = req.body?.count === undefined ? 1 : Math.floor(Number(req.body.count));
+  if (!Number.isFinite(count) || count < 1 || count > 50) {
+    return res.status(400).json({ error: "Jumlah unit harus antara 1 dan 50" });
+  }
+  try {
+    const units = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: req.params.id } });
+      if (!order) return null;
+      return createUnitsForOrder(tx, { order, count });
+    });
+    if (units === null) return res.status(404).json({ error: "Order tidak ditemukan" });
+    res.status(201).json(units);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/orders/units/:unitId — hapus unit yang salah dibuat.
+//
+// DIJAGA KETAT dan sengaja: unit yang SUDAH punya jejak operasional tidak
+// boleh hilang. `unit_stage_logs` adalah ledger append-only (CLAUDE.md
+// sano-hub) — menghapus unitnya sama saja menghapus ledger lewat pintu
+// belakang. Begitu juga unit yang sudah masuk job atau sudah menyerap
+// material. Yang boleh dihapus hanya unit yang benar-benar belum tersentuh.
+orderRouter.delete("/units/:unitId", async (req, res) => {
+  try {
+    const unit = await prisma.unit.findUnique({
+      where: { id: req.params.unitId },
+      include: {
+        _count: { select: { stageLogs: true, jobUnits: true, qcFitTests: true, stockMovements: true } },
+      },
+    });
+    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    const jejak = unit._count;
+    const total = jejak.stageLogs + jejak.jobUnits + jejak.qcFitTests + jejak.stockMovements;
+    if (total > 0) {
+      return res.status(409).json({
+        error:
+          "Unit ini sudah punya jejak operasional (tahap produksi, job, QC, atau pemakaian material) " +
+          "dan tidak boleh dihapus. Batalkan unitnya lewat status, jangan dihapus.",
+        jejak,
+      });
+    }
+
+    await prisma.unit.delete({ where: { id: req.params.unitId } });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

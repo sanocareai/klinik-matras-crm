@@ -137,8 +137,12 @@ test("portal disaring sesuai role", () => {
   assert.deepEqual(portalsFor(sales).map((p) => p.key), ["growth"]);
   assert.deepEqual(portalsFor(worker).map((p) => p.key), ["bengkel"]);
   assert.deepEqual(portalsFor(driver).map((p) => p.key), ["armada"]);
+  // "warehouse" adalah workspace KE-5 (Gudang dikeluarkan dari Bengkel jadi
+  // portal sendiri). Test ini sempat tertinggal saat portal itu ditambahkan,
+  // jadi suite merah walau kodenya benar — dan suite merah yang dibiarkan
+  // membuat regresi berikutnya tidak kelihatan.
   assert.deepEqual(portalsFor(admin).map((p) => p.key),
-    ["growth", "bengkel", "armada", "kendali"]);
+    ["growth", "bengkel", "warehouse", "armada", "kendali"]);
   assert.deepEqual(portalsFor({ roles: [] }), []);
 });
 
