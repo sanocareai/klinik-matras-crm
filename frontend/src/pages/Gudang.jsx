@@ -442,7 +442,13 @@ export default function Gudang() {
         <Card>
           <CardHeader><CardTitle>Saldo Material</CardTitle></CardHeader>
           {stock.length === 0 ? (
-            <EmptyState icon={Package} title="Belum ada material" description="Tambahkan material lewat tombol di atas untuk mulai mencatat stok." />
+            <EmptyState
+              icon={Package}
+              title="Belum ada material"
+              description={canWrite
+                ? "Tambahkan material lewat tombol di atas untuk mulai mencatat stok."
+                : "Hanya tim Gudang yang bisa menambah material. Hubungi mereka untuk mulai mencatat stok."}
+            />
           ) : (
             <div className="flex flex-col gap-2">
               {stock.map((m) => (

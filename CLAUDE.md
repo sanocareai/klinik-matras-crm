@@ -583,8 +583,12 @@ prompt kerja untuk detail lengkap tiap poin). Ringkasan:
 - Pelanggan: card list (bukan tabel) di mobile
 - Pipeline: tab per stage di mobile
 - Touch target minimal 44x44px
-- ⚠️ Beberapa halaman masih terpotong (Pengaturan, Laporan, Pengguna & Peran)
-  — perbaikan dalam antrean
+- ✅ "Halaman terpotong (Pengaturan, Laporan, Pengguna & Peran)" SUDAH TIDAK
+  TERJADI — diverifikasi ulang 1 Agustus 2026 di viewport 375px: ketiganya
+  `scrollWidth === clientWidth` (tidak ada overflow horizontal sama sekali).
+  Halaman Sano Hub (Portal/Bengkel/Armada/Kendali/Gudang) juga bersih.
+  Cara cek ulang kalau ragu (jangan andalkan mata saja):
+  `document.documentElement.scrollWidth > document.documentElement.clientWidth`
 
 ### 🔄 PWA (Dalam Progress)
 - vite-plugin-pwa sudah atau akan diinstall
@@ -598,13 +602,29 @@ prompt kerja untuk detail lengkap tiap poin). Ringkasan:
 ## 9. YANG BELUM / ROADMAP
 
 ### 🔨 Sedang Dikerjakan / Antrean Bugfix
-- Fix bug LID (PRIORITAS TERTINGGI)
-- Mobile UI fixes: Pengaturan, Laporan, Pengguna & Peran terpotong
-- Inbox header nama customer overflow di mobile
-- Pipeline rigid di mobile
+- ~~Fix bug LID~~ — sudah ditangani, lihat seksi 5
+- ~~Mobile UI fixes: Pengaturan, Laporan, Pengguna & Peran terpotong~~ —
+  diverifikasi BERSIH 1 Agustus 2026 (lihat seksi 8 Mobile Responsiveness)
+- Inbox header nama customer overflow di mobile (belum diverifikasi ulang)
+- Pipeline rigid di mobile (belum diverifikasi ulang)
 - Notifikasi in-app (badge unread di icon 🔔 topbar)
 - Push notification Android (web-push + service worker)
-- Tab Pelanggan blank/crash (kemungkinan besar disebabkan bug LID)
+- Tab Pelanggan blank/crash — kemungkinan besar SUDAH HILANG karena bug LID
+  (penyebab yang diduga) sudah ditangani; perlu konfirmasi ulang
+
+### ⚠️ Utang teknis yang ditemukan QA 1 Agustus 2026 (sudah diperbaiki)
+Dicatat supaya polanya tidak terulang, BUKAN sebagai pekerjaan tersisa:
+- **Cek admin pakai field `role` legacy, bukan array `roles` multi-role
+  (D-010).** Ada di 7 file frontend + 8 titik backend (termasuk
+  `requireAdmin` di `middleware/auth.js` yang dipakai 6 route file).
+  Efeknya: user yang dapat ADMIN HANYA lewat halaman "Pengguna & Peran"
+  ditolak 403 walau backend permission system sudah mengakuinya.
+  **Aturan sekarang: JANGAN pernah cek `user.role === "ADMIN"` langsung.**
+  Pakai `isAdminUser()`/`rolesOf()` dari `frontend/src/lib/roles.js`, atau
+  `rolesOf()` dari `backend/src/middleware/authorize.js`.
+- ADMIN memang SENGAJA tidak punya `INVENTORY_WRITE` (lihat komentar di
+  `constants/permissions.js`) — itu bukan bug. Tapi UI harus jujur soal
+  itu, jangan menyuruh klik tombol yang memang tidak ditampilkan.
 
 ### 📋 Phase 3 — Belum Dimulai
 - Integrasi Instagram DM (Meta Graph API resmi)
