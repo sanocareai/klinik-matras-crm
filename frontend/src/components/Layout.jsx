@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog,
   LogOut, Package, ChevronLeft, ChevronRight, X, Link2, Sparkles, MoreVertical,
+  Wrench, Truck, Gauge, Grid3x3,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -13,66 +15,133 @@ import SidebarLink from "./SidebarLink.jsx";
 import { BRAND } from "@/lib/brand.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
+import { cn } from "@/lib/utils.js";
 
-// Seksi sidebar — adminOnly di level section = sembunyikan seluruh seksi untuk SALES
-const NAV_SECTIONS = [
-  {
-    section: "OPERASIONAL",
-    items: [
-      { to: "/dashboard", label: "Dashboard",  Icon: LayoutDashboard },
-      { to: "/inbox",     label: "Inbox",       Icon: MessageSquare, badge: true },
+// ─── SIDEBAR PER DIVISI (1 Agustus 2026, Gilang) ─────────────────────────────
+// SEBELUMNYA satu NAV_SECTIONS statis dipakai di SETIAP halaman — masuk ke
+// Bengkel/Armada/Kendali tetap menampilkan menu CRM (Inbox/Pelanggan/
+// Pipeline/dst), yang tidak relevan sama sekali di sana. Sekarang sidebar
+// ditentukan dari PATH aktif (divisionFromPath di bawah) — pindah divisi =
+// seluruh menu, warna aksen, dan badge di sidebar ikut berganti, bukan cuma
+// konten halaman. Warna aksen per divisi SATU SUMBER dengan Portal.jsx
+// (PORTAL_ACCENT) supaya kartu di halaman Portal dan sidebar di dalam
+// divisinya terasa sistem yang sama, bukan dua skema warna berbeda.
+const DIVISIONS = {
+  growth: {
+    label: "CRM & Omnichannel",
+    accent: { text: "text-blue-600", bg: "bg-blue-50", dot: "bg-blue-600" },
+    sections: [
+      {
+        section: "OPERASIONAL",
+        items: [
+          { to: "/dashboard", label: "Dashboard",  Icon: LayoutDashboard },
+          { to: "/inbox",     label: "Inbox",       Icon: MessageSquare, badge: true },
+        ],
+      },
+      {
+        section: "DATA",
+        items: [
+          { to: "/customers", label: "Pelanggan",     Icon: Users },
+          { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
+          // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
+          // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
+          { to: "/orders",    label: "Order",         Icon: ClipboardList },
+          { to: "/products",  label: "Galeri Produk", Icon: Package, adminOnly: true },
+        ],
+      },
+      {
+        section: "OUTREACH",
+        adminOnly: true,
+        items: [
+          { to: "/broadcast", label: "Broadcast & Campaign", Icon: Megaphone },
+          { to: "/tracking",  label: "Link Pelacakan",       Icon: Link2 },
+        ],
+      },
+      {
+        section: "ANALITIK",
+        adminOnly: true,
+        items: [
+          { to: "/laporan", label: "Laporan", Icon: BarChart3 },
+        ],
+      },
+      {
+        section: "AI & OTOMASI",
+        items: [
+          { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
+          { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
+        ],
+      },
+      {
+        // BUG YANG DIPERBAIKI: section ini SEBELUMNYA adminOnly di level SEKSI,
+        // jadi SELURUH seksi (termasuk link "Pengaturan" itu sendiri) hilang
+        // total dari sidebar SALES — akibatnya SALES tidak pernah bisa membuka
+        // halaman Pengaturan sama sekali, walau pages/Pengaturan.jsx SUDAH
+        // punya logika sendiri yang mempersempit tampilan SALES ke section
+        // "Template Pesan" doang (lihat SALES_ALLOWED_SECTIONS di sana) — logika
+        // itu tidak pernah kepakai karena pintu masuknya sudah tertutup di sini.
+        // "Pengguna & Peran" TETAP admin-only (item-level, seperti section lain
+        // yang campur admin+non-admin, mis. DATA/Galeri Produk).
+        section: "PENGATURAN",
+        items: [
+          { to: "/pengaturan", label: "Pengaturan",       Icon: Settings },
+          { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog, adminOnly: true },
+        ],
+      },
     ],
   },
-  {
-    section: "DATA",
-    items: [
-      { to: "/customers", label: "Pelanggan",     Icon: Users },
-      { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
-      // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
-      // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
-      { to: "/orders",    label: "Order",         Icon: ClipboardList },
-      { to: "/products",  label: "Galeri Produk", Icon: Package, adminOnly: true },
+  bengkel: {
+    label: "Produksi & Bengkel",
+    accent: { text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-600" },
+    sections: [
+      {
+        section: "BENGKEL",
+        items: [
+          { to: "/bengkel", label: "Papan Produksi", Icon: ClipboardList },
+          { to: "/gudang",  label: "Gudang",         Icon: Package },
+        ],
+      },
     ],
   },
-  {
-    section: "OUTREACH",
-    adminOnly: true,
-    items: [
-      { to: "/broadcast", label: "Broadcast & Campaign", Icon: Megaphone },
-      { to: "/tracking",  label: "Link Pelacakan",       Icon: Link2 },
+  armada: {
+    label: "Armada & Pengiriman",
+    accent: { text: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-600" },
+    sections: [
+      {
+        section: "ARMADA",
+        items: [
+          { to: "/armada", label: "Jadwal & Job", Icon: Truck },
+        ],
+      },
     ],
   },
-  {
-    section: "ANALITIK",
-    adminOnly: true,
-    items: [
-      { to: "/laporan", label: "Laporan", Icon: BarChart3 },
+  kendali: {
+    label: "Kendali",
+    accent: { text: "text-violet-600", bg: "bg-violet-50", dot: "bg-violet-600" },
+    sections: [
+      {
+        section: "KENDALI",
+        items: [
+          { to: "/kendali", label: "Ringkasan",  Icon: Gauge },
+          { to: "/orders",  label: "Order",      Icon: ClipboardList },
+          { to: "/laporan", label: "Laporan",    Icon: BarChart3, adminOnly: true },
+        ],
+      },
     ],
   },
-  {
-    section: "AI & OTOMASI",
-    items: [
-      { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
-      { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
-    ],
-  },
-  {
-    // BUG YANG DIPERBAIKI: section ini SEBELUMNYA adminOnly di level SEKSI,
-    // jadi SELURUH seksi (termasuk link "Pengaturan" itu sendiri) hilang
-    // total dari sidebar SALES — akibatnya SALES tidak pernah bisa membuka
-    // halaman Pengaturan sama sekali, walau pages/Pengaturan.jsx SUDAH
-    // punya logika sendiri yang mempersempit tampilan SALES ke section
-    // "Template Pesan" doang (lihat SALES_ALLOWED_SECTIONS di sana) — logika
-    // itu tidak pernah kepakai karena pintu masuknya sudah tertutup di sini.
-    // "Pengguna & Peran" TETAP admin-only (item-level, seperti section lain
-    // yang campur admin+non-admin, mis. DATA/Galeri Produk).
-    section: "PENGATURAN",
-    items: [
-      { to: "/pengaturan", label: "Pengaturan",       Icon: Settings },
-      { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog, adminOnly: true },
-    ],
-  },
-];
+};
+
+const DIVISION_ICON = { growth: Users, bengkel: Wrench, armada: Truck, kendali: Gauge };
+
+// Prefix path → kunci divisi. Path yang tidak cocok apa pun (termasuk
+// /portal sendiri) jatuh ke "growth" sebagai default aman — itu perilaku
+// LAMA (satu-satunya nav sebelum perubahan ini), jadi tidak ada regresi
+// untuk halaman yang belum dipetakan eksplisit di sini.
+function divisionFromPath(pathname) {
+  if (pathname.startsWith("/bengkel") || pathname.startsWith("/gudang")) return "bengkel";
+  if (pathname.startsWith("/armada")) return "armada";
+  if (pathname.startsWith("/kendali")) return "kendali";
+  return "growth";
+}
 
 // Buat bunyi notifikasi pakai Web Audio API — tidak perlu file eksternal
 function playNotifSound() {
@@ -94,6 +163,12 @@ function playNotifSound() {
 }
 
 export default function Layout({ user, onLogout, children }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const divisionKey = divisionFromPath(location.pathname);
+  const division = DIVISIONS[divisionKey];
+  const DivisionIcon = DIVISION_ICON[divisionKey];
+
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
   const [collapsed, setCollapsed]     = useState(
@@ -223,12 +298,40 @@ export default function Layout({ user, onLogout, children }) {
           </button>
         </div>
 
+        {/* Badge divisi + ganti divisi (1 Agustus 2026) — sidebar sekarang
+            berbeda per divisi (lihat DIVISIONS di atas); badge ini yang
+            memberi tahu SEDANG di divisi mana, dan jadi jalan pintas balik
+            ke Portal untuk ganti divisi tanpa lewat menu profil. Warna dot
+            & teks pakai aksen divisi (satu sumber dengan Portal.jsx). */}
+        <button
+          type="button"
+          onClick={() => navigate("/portal")}
+          title="Ganti divisi"
+          className={cn(
+            "mx-3 mb-2 flex items-center gap-2 rounded-btn px-2.5 py-2 text-left transition-colors hover:bg-hovertint",
+            collapsed && "justify-center px-0"
+          )}
+        >
+          <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", division.accent.bg)}>
+            <DivisionIcon className={cn("h-3.5 w-3.5", division.accent.text)} strokeWidth={2} />
+          </span>
+          {!collapsed && (
+            <>
+              <span className={cn("min-w-0 flex-1 truncate text-[12px] font-semibold", division.accent.text)}>
+                {division.label}
+              </span>
+              <Grid3x3 size={13} className="shrink-0 text-ink3" />
+            </>
+          )}
+        </button>
+
         {/* Navigation */}
         <nav className="sidebar-nav">
           {/* LayoutGroup: pill aktif geser mulus antar item (layoutId). Data nav,
-              role gating, dan kondisi badge unread TIDAK berubah. */}
+              role gating, dan kondisi badge unread TIDAK berubah — cuma sumbernya
+              sekarang `division.sections`, bukan array statis tunggal. */}
           <LayoutGroup>
-          {NAV_SECTIONS.map(({ section, adminOnly, items }) => {
+          {division.sections.map(({ section, adminOnly, items }) => {
             if (adminOnly && !isAdmin) return null;
             return (
               <div key={section} className="nav-section">
@@ -260,9 +363,10 @@ export default function Layout({ user, onLogout, children }) {
           </LayoutGroup>
         </nav>
 
-        {/* Kartu promo + bantuan (DS v2.1) — mengisi ruang kosong bawah
-            sidebar, pola sama dengan referensi. Disembunyikan saat collapsed. */}
-        <SidebarPromo collapsed={collapsed} />
+        {/* Kartu promo "Tanya Sano" (DS v2.1) — fitur AI CRM, HANYA relevan di
+            divisi Growth (Bengkel/Armada/Kendali tidak punya co-pilot sendiri
+            saat ini). Disembunyikan saat collapsed (perilaku lama). */}
+        {divisionKey === "growth" && <SidebarPromo collapsed={collapsed} />}
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
