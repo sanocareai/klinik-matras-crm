@@ -160,6 +160,89 @@ const DIVISIONS = {
 
 const DIVISION_ICON = { growth: Users, bengkel: Wrench, warehouse: Package, armada: Truck, kendali: Gauge };
 
+// Urutan + hak akses rail ikon (SANSS v4). HARUS cocok dengan PORTALS di
+// backend/src/constants/permissions.js — kalau tidak, rail menampilkan tombol
+// yang backend-nya menolak (atau menyembunyikan yang sebenarnya boleh).
+// Ini duplikasi yang disengaja & kecil: rail perlu tahu daftarnya SEBELUM
+// halaman apa pun fetch, dan blokir sebenarnya tetap ditegakkan backend.
+const RAIL_ITEMS = [
+  { key: "growth",    to: "/dashboard", label: "Sales CRM",           roles: ["ADMIN", "SALES"] },
+  { key: "bengkel",   to: "/bengkel",   label: "Production",          roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
+  { key: "warehouse", to: "/gudang",    label: "Warehouse",           roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
+  { key: "armada",    to: "/armada",    label: "Delivery",            roles: ["ADMIN", "DISPATCHER", "DRIVER"] },
+  { key: "kendali",   to: "/kendali",   label: "All Teams Dashboard", roles: ["ADMIN", "FINANCE"] },
+];
+
+// ── RAIL IKON (78px) — navigasi UTAMA SANSS ────────────────────────────────
+// Satu tombol = DASHBOARD satu divisi (instruksi Gilang 1 Agustus 2026:
+// "di main menu sidebarnya itu dashboard masing-masing divisi"). Menu detail
+// CRM (Inbox/Pelanggan/Pipeline/…) TIDAK di sini — itu hanya milik Sales CRM
+// dan tampil sebagai sidebar kedua, lihat render di Layout.
+function WorkspaceRail({ activeKey, userRoles, onNavigate, onLogout }) {
+  const navigate = useNavigate();
+  const visible = RAIL_ITEMS.filter((it) => it.roles.some((r) => userRoles.includes(r)));
+
+  const btn = "group relative flex h-12 w-13 items-center justify-center rounded-[15px] transition-colors";
+
+  return (
+    <aside
+      className="hidden w-[78px] shrink-0 flex-col items-center border-r border-[#DEE5EF] bg-white pb-4 pt-[18px] lg:flex"
+      aria-label="Navigasi utama SANSS"
+    >
+      {/* Logo → Main Hub (Portal) */}
+      <button
+        type="button"
+        onClick={() => { navigate("/portal"); onNavigate?.(); }}
+        title="SANSS Main Hub"
+        className="mb-6 grid h-[42px] w-[42px] place-items-center rounded-[14px] bg-gradient-to-br from-[#0E3B96] to-[#2F73F2] text-white shadow-[0_10px_24px_rgba(20,87,217,.22)]"
+      >
+        <img src="/logo-small.png" alt="" className="h-5 w-5 object-contain brightness-0 invert" />
+      </button>
+
+      <nav className="flex w-full flex-col items-center gap-2.5 px-3">
+        {visible.map((it) => {
+          const active = it.key === activeKey;
+          const Icon = DIVISION_ICON[it.key] || Users;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => { navigate(it.to); onNavigate?.(); }}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                btn,
+                active
+                  ? "bg-[#E8F0FF] text-[#1457D9]"
+                  : "text-[#7A8BA1] hover:bg-[#F4F7FF] hover:text-[#1457D9]"
+              )}
+            >
+              {/* Penanda aktif — batang kecil di tepi kiri rail */}
+              {active && (
+                <span className="absolute -left-3 h-6 w-1 rounded-r-lg bg-[#1457D9]" aria-hidden />
+              )}
+              <Icon className="h-[21px] w-[21px]" strokeWidth={1.9} />
+              <span className="pointer-events-none absolute left-[62px] z-40 whitespace-nowrap rounded-[9px] bg-[#071A3A] px-2.5 py-1.5 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {it.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto flex flex-col items-center gap-2.5">
+        <button
+          type="button"
+          onClick={onLogout}
+          title="Keluar"
+          className={cn(btn, "text-[#7A8BA1] hover:bg-[#FDECEF] hover:text-[#D4485A]")}
+        >
+          <LogOut className="h-5 w-5" strokeWidth={1.9} />
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 // Prefix path → kunci divisi. Path yang tidak cocok apa pun (termasuk
 // /portal sendiri) jatuh ke "growth" sebagai default aman — itu perilaku
 // LAMA (satu-satunya nav sebelum perubahan ini), jadi tidak ada regresi
@@ -312,6 +395,23 @@ export default function Layout({ user, onLogout, children }) {
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />
       )}
 
+      {/* Rail ikon — navigasi utama, SELALU tampil di desktop (semua divisi) */}
+      <WorkspaceRail
+        activeKey={divisionKey}
+        userRoles={rolesOf(user)}
+        onNavigate={closeMobileMenu}
+        onLogout={onLogout}
+      />
+
+      {/* Sidebar detail — HANYA untuk Sales CRM & Omnichannel (instruksi
+          Gilang 1 Agustus 2026: "sidebar crm yang sekarang itu hanya untuk
+          sales CRM & omni channel"). Divisi lain cukup rail + isi halaman;
+          menu mereka yang berjumlah >1 dipindah ke bar horizontal di bawah
+          topbar (lihat app-content) supaya tidak ada navigasi yang hilang.
+          Di MOBILE sidebar ini tetap jadi drawer untuk SEMUA divisi — rail
+          disembunyikan di bawah lg, jadi drawer ini satu-satunya jalan
+          berpindah halaman di HP. */}
+      {(divisionKey === "growth" || mobileOpen) && (
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
         {/* Brand + toggle collapse */}
         <div className="sidebar-brand">
@@ -447,9 +547,47 @@ export default function Layout({ user, onLogout, children }) {
           </div>
         )}
       </aside>
+      )}
 
       <main className="app-content">
         <Topbar onToggleMobileMenu={() => setMobileOpen((v) => !v)} unreadCount={unreadCount} user={user} onLogout={onLogout} />
+
+        {/* Nav horizontal untuk divisi NON-Sales yang punya lebih dari satu
+            halaman (mis. All Teams: Ringkasan/Order/Laporan). Tanpa ini,
+            menghapus sidebar dari divisi tersebut akan MENGHILANGKAN akses ke
+            halaman-halaman itu sama sekali — bukan sekadar mengubah tampilan.
+            Hanya dirender kalau memang ada >1 item yang boleh dilihat user. */}
+        {divisionKey !== "growth" && (() => {
+          const items = division.sections
+            .filter((s) => !s.adminOnly || isAdmin)
+            .flatMap((s) => s.items)
+            .filter((it) => !it.adminOnly || isAdmin);
+          if (items.length < 2) return null;
+          return (
+            <div className="hidden items-center gap-1.5 border-b border-[#DEE5EF] bg-white px-7 py-2.5 lg:flex">
+              {items.map(({ to, label, Icon }) => {
+                const active = location.pathname.startsWith(to);
+                return (
+                  <button
+                    key={to}
+                    type="button"
+                    onClick={() => navigate(to)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-[11px] px-3 py-1.5 text-[12px] font-bold transition-colors",
+                      active
+                        ? "bg-[#E8F0FF] text-[#1457D9]"
+                        : "text-[#6E7E96] hover:bg-[#F4F7FF] hover:text-[#1457D9]"
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" strokeWidth={2} /> {label}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         <div className="page-body">
           {children}
         </div>

@@ -39,9 +39,31 @@
   --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 16px 48px rgba(0, 0, 0, 0.12);
 
   /* ── ACCENT: SATU-SATUNYA warna dekoratif ─────────────────────────────── */
-  --accent:       #0071E3;
-  --accent-hover: #0060C0;
-  --accent-bg:    rgba(0, 113, 227, 0.10);
+  /* Diselaraskan dengan palet file desain SANSS v4 (Gilang): --blue-700
+     #1457D9 sebagai accent utama, --blue-800 #0E3B96 sebagai hover.
+     Sebelumnya biru Apple (#0071E3) — lebih terang & lebih cyan; palet SANSS
+     lebih pekat/royal, itu yang membedakan tampilannya dari default iOS. */
+  --accent:       #1457D9;
+  --accent-hover: #0E3B96;
+  --accent-bg:    rgba(20, 87, 217, 0.10);
+
+  /* ── PALET SANSS v4 (dari file desain) ────────────────────────────────────
+     Dipakai komponen SANSS baru (rail, hero, kartu workspace). Nama tangga
+     mengikuti file desain PERSIS supaya mudah dicocokkan saat membaca mockup. */
+  --blue-950: #071A3A;
+  --blue-900: #0B2454;
+  --blue-800: #0E3B96;
+  --blue-700: #1457D9;
+  --blue-600: #2F73F2;
+  --blue-500: #4E8BFF;
+  --blue-300: #AFC9FF;
+  --blue-200: #D1E0FF;
+  --blue-100: #E8F0FF;
+  --blue-50:  #F4F7FF;
+  --sanss-canvas: #EEF1F6;
+  --sanss-ink:    #10213D;
+  --sanss-muted:  #6E7E96;
+  --sanss-line:   #DEE5EF;
 
   /* ── AKSEN SIDEBAR PER DIVISI (Sano Hub, 1 Agustus 2026, keputusan
      eksplisit Gilang — MENGESAMPINGKAN "satu accent" di atas KHUSUS untuk
@@ -161,13 +183,13 @@
   --r-lg: 16px;  /* card */
   --r-xl: 20px;  /* container besar */
 
-  /* SANSS (1 Agustus 2026): Outfit Variable jadi font UTAMA di SEMUA
-     perangkat — geometric sans pengganti "Acme" komersial. Font sistem
-     (-apple-system dst) TIDAK lagi didahulukan: identitas visual SANSS
-     harus sama persis di Mac/Windows/Android, bukan ikut selera OS.
+  /* SANSS (1 Agustus 2026): Manrope Variable jadi font UTAMA di SEMUA
+     perangkat, mengikuti file desain Gilang. Fallback disamakan persis
+     dengan file itu (Avenir Next → Helvetica Neue → Arial). Font sistem
+     TIDAK didahulukan: identitas SANSS harus sama di Mac/Windows/Android.
      Self-hosted via @fontsource di main.jsx, tanpa CDN eksternal. */
-  --font-ui: "Outfit Variable", Outfit, "Inter Variable", Inter,
-             -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Manrope Variable", Manrope, "Avenir Next", "Helvetica Neue",
+             Arial, sans-serif;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
