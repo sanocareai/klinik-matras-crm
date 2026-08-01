@@ -95,7 +95,12 @@ body {
    div putih. Mekanik collapse/mobile-drawer TIDAK diubah (kelas dipertahankan,
    diatur di section lain). Logika nav tetap di Layout.jsx. */
 .sidebar {
-  width: 244px;
+  /* 248px expanded / 72px collapsed — refactor navigasi 2 Agustus 2026.
+     Rail ikon 78px yang dulu berdiri terpisah di kirinya SUDAH DIHAPUS, jadi
+     ini satu-satunya kolom navigasi. Transisi width supaya menyempit/melebar
+     tidak terasa melompat. */
+  width: 248px;
+  transition: width 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   background: linear-gradient(180deg, #FAFBFD 0%, #F4F7FC 100%);
   display: flex;
   flex-direction: column;
@@ -1839,11 +1844,29 @@ input:focus, select:focus, textarea:focus {
 
 /* ─── SIDEBAR COLLAPSED (desktop) ───────────────────────── */
 .sidebar-collapsed .sidebar {
-  width: 64px;
+  width: 72px;
 }
 .sidebar-collapsed .sidebar-brand {
   padding: 18px 12px; justify-content: center; gap: 0;
 }
+/* Tooltip item nav saat menyempit — muncul di KANAN sidebar. Dipasang di
+   .sidebar-link (position:relative) dan tidak boleh ikut ter-clip, makanya
+   .sidebar-nav dibiarkan overflow-x terlihat saat collapsed. */
+.nav-tooltip {
+  position: absolute; left: calc(100% + 10px); top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  z-index: 60; white-space: nowrap; pointer-events: none;
+  padding: 6px 9px; border-radius: 8px;
+  background: #071A3A; color: #fff;
+  font-size: 11px; font-weight: 700;
+  opacity: 0; transition: opacity 0.14s, transform 0.14s;
+}
+.sidebar-link:hover .nav-tooltip,
+.sidebar-link:focus-visible .nav-tooltip {
+  opacity: 1; transform: translateY(-50%) translateX(0);
+}
+.sidebar-collapsed .sidebar-nav { overflow-x: visible; }
+.sidebar-collapsed .sidebar-promo { display: none; }
 .sidebar-collapsed .sidebar-collapse-btn {
   margin-left: 0;
 }
@@ -2617,6 +2640,31 @@ input:focus, select:focus, textarea:focus {
 
 /* ── Tablet breakpoint (iPad, layar 769-1024px) ── */
 @media (max-width: 1024px) and (min-width: 769px) {
+  /* ── Sidebar jadi DRAWER di tablet juga (refactor navigasi 2 Agustus 2026).
+     Sebelumnya drawer cuma di ≤768px, jadi di tablet sidebar 248px tetap
+     mematok tempat dan menyisakan area konten yang sempit — persis keluhan
+     yang memicu refactor ini. Aturannya sengaja disalin dari blok mobile,
+     bukan digabung dengan mengubah batasnya jadi 1024px: blok mobile juga
+     mengatur Inbox/Pelanggan/Pipeline yang di tablet TIDAK boleh ikut
+     berubah jadi satu kolom. */
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 248px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 400;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+  }
+  /* Menyempitkan sidebar tidak relevan saat ia sudah jadi drawer. */
+  .sidebar-collapse-btn { display: none; }
+  .sidebar-close-mobile { display: flex; margin-left: auto; }
+  .sidebar-collapsed .sidebar { width: 248px; }
+  .app-content { width: 100%; }
+
   .kpi-grid       { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .kpi-mini-grid  { grid-template-columns: repeat(2, 1fr); }
   .stat-row       { grid-template-columns: repeat(2, 1fr) !important; gap: 12px; }

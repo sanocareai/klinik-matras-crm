@@ -150,6 +150,41 @@ authRouter.get("/portal-summary", requireAuth, async (req, res) => {
 
     const summary = {};
     for (const r of results) if (r) summary[r.key] = { value: r.value, label: r.label };
+
+    // Ringkasan KPI hero Sales CRM (3 angka, bukan 1) — dipakai
+    // pages/DivisionPage.jsx menggantikan hero yang dulu cuma mengulang nama
+    // workspace. Ditaruh di key TERPISAH, bukan menambah field ke summary[key],
+    // supaya konsumen lama (Portal.jsx membaca summary[portal.key]) tidak
+    // berubah bentuknya sama sekali.
+    //
+    // Angkanya NYATA, konsisten dengan aturan endpoint ini: label di frontend
+    // harus persis menggambarkan apa yang dihitung di sini, jangan diberi nama
+    // yang lebih menjanjikan daripada querinya.
+    if (allowed.has("growth")) {
+      const bataspFollowUp = new Date(Date.now() - 60 * 60 * 1000); // ambang takeover 60 menit
+      const [perluFollowUp, belumDibaca] = await Promise.all([
+        // Percakapan customer yang pesan masuknya menggantung >60 menit —
+        // ambang yang sama dengan aturan takeover di CLAUDE.md §7C.
+        prisma.conversation.count({
+          where: {
+            type: "INDIVIDUAL",
+            status: { not: "RESOLVED" },
+            unreadCount: { gt: 0 },
+            lastMessageAt: { lt: bataspFollowUp },
+          },
+        }).catch(() => null),
+        prisma.conversation.count({
+          where: { type: "INDIVIDUAL", status: { not: "RESOLVED" }, unreadCount: { gt: 0 } },
+        }).catch(() => null),
+      ]);
+
+      summary.growthKpi = {
+        leadDiproses: summary.growth?.value ?? null,
+        perluFollowUp,
+        belumDibaca,
+      };
+    }
+
     res.json(summary);
   } catch (err) {
     console.error("Portal summary error:", err.message);

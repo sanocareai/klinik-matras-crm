@@ -3,8 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog,
-  LogOut, Package, X, Link2, Sparkles, MoreVertical,
-  Wrench, Truck, Gauge, Grid3x3,
+  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
+  Wrench, Truck, Gauge,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -12,6 +12,7 @@ import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
+import WorkspaceSwitcher from "./WorkspaceSwitcher.jsx";
 import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
@@ -167,96 +168,14 @@ const DIVISIONS = {
   },
 };
 
-const DIVISION_ICON = { growth: Users, bengkel: Wrench, warehouse: Package, armada: Truck, kendali: Gauge };
-
-// Urutan + hak akses rail ikon (SANSS v4). HARUS cocok dengan PORTALS di
-// backend/src/constants/permissions.js — kalau tidak, rail menampilkan tombol
-// yang backend-nya menolak (atau menyembunyikan yang sebenarnya boleh).
-// Ini duplikasi yang disengaja & kecil: rail perlu tahu daftarnya SEBELUM
-// halaman apa pun fetch, dan blokir sebenarnya tetap ditegakkan backend.
-const RAIL_ITEMS = [
-  { key: "growth",    to: "/dashboard", label: "Sales CRM",           roles: ["ADMIN", "SALES"] },
-  { key: "bengkel",   to: "/bengkel",   label: "Production",          roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
-  { key: "warehouse", to: "/gudang",    label: "Warehouse",           roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
-  { key: "armada",    to: "/armada",    label: "Delivery",            roles: ["ADMIN", "DISPATCHER", "DRIVER"] },
-  { key: "kendali",   to: "/kendali",   label: "All Teams Dashboard", roles: ["ADMIN", "FINANCE"] },
-];
-
-// ── RAIL IKON (78px) — navigasi UTAMA SANSS ────────────────────────────────
-// Satu tombol = DASHBOARD satu divisi (instruksi Gilang 1 Agustus 2026:
-// "di main menu sidebarnya itu dashboard masing-masing divisi"). Menu detail
-// CRM (Inbox/Pelanggan/Pipeline/…) TIDAK di sini — itu hanya milik Sales CRM
-// dan tampil sebagai sidebar kedua, lihat render di Layout.
-function WorkspaceRail({ activeKey, atHub, userRoles, onNavigate, onLogout }) {
-  const navigate = useNavigate();
-  const visible = RAIL_ITEMS.filter((it) => it.roles.some((r) => userRoles.includes(r)));
-
-  const btn = "group relative flex h-12 w-13 items-center justify-center rounded-[15px] transition-colors";
-
-  return (
-    <aside
-      className="hidden w-[78px] shrink-0 flex-col items-center border-r border-[#DEE5EF] bg-white pb-4 pt-[18px] lg:flex"
-      aria-label="Navigasi utama SANSS"
-    >
-      {/* Logo → Main Hub (Portal) */}
-      <button
-        type="button"
-        onClick={() => { navigate("/portal"); onNavigate?.(); }}
-        title="SANSS Main Hub"
-        aria-current={atHub ? "page" : undefined}
-        // Cincin saat berada di hub — begitu tidak ada ikon divisi yang
-        // menyala, logo ini jadi satu-satunya penanda posisi di rail.
-        className={cn(
-          "mb-6 grid h-[42px] w-[42px] place-items-center rounded-[14px] bg-gradient-to-br from-[#0E3B96] to-[#2F73F2] text-white shadow-[0_10px_24px_rgba(20,87,217,.22)]",
-          atHub && "ring-2 ring-[#2F73F2] ring-offset-2"
-        )}
-      >
-        <img src="/logo-small.png" alt="" className="h-5 w-5 object-contain brightness-0 invert" />
-      </button>
-
-      <nav className="flex w-full flex-col items-center gap-2.5 px-3">
-        {visible.map((it) => {
-          const active = it.key === activeKey;
-          const Icon = DIVISION_ICON[it.key] || Users;
-          return (
-            <button
-              key={it.key}
-              type="button"
-              onClick={() => { navigate(it.to); onNavigate?.(); }}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                btn,
-                active
-                  ? "bg-[#E8F0FF] text-[#1457D9]"
-                  : "text-[#7A8BA1] hover:bg-[#F4F7FF] hover:text-[#1457D9]"
-              )}
-            >
-              {/* Penanda aktif — batang kecil di tepi kiri rail */}
-              {active && (
-                <span className="absolute -left-3 h-6 w-1 rounded-r-lg bg-[#1457D9]" aria-hidden />
-              )}
-              <Icon className="h-[21px] w-[21px]" strokeWidth={1.9} />
-              <span className="pointer-events-none absolute left-[62px] z-40 whitespace-nowrap rounded-[9px] bg-[#071A3A] px-2.5 py-1.5 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                {it.label}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="mt-auto flex flex-col items-center gap-2.5">
-        <button
-          type="button"
-          onClick={onLogout}
-          title="Keluar"
-          className={cn(btn, "text-[#7A8BA1] hover:bg-[#FDECEF] hover:text-[#D4485A]")}
-        >
-          <LogOut className="h-5 w-5" strokeWidth={1.9} />
-        </button>
-      </div>
-    </aside>
-  );
-}
+// ⚠️ RAIL IKON 78px SUDAH DIHAPUS (refactor navigasi 2 Agustus 2026).
+// Dulu ada DUA elemen navigasi berdampingan di desktop: rail ikon di paling
+// kiri + sidebar lebar di sebelahnya. Itu memakan ~322px lebar sebelum konten
+// dimulai, dan menyediakan jalan KEDUA ke tiap divisi yang tumpang tindih
+// dengan isi sidebar. Sekarang tinggal SATU sidebar yang bisa disempitkan,
+// dan perpindahan antar divisi lewat WorkspaceSwitcher di puncaknya.
+// Daftar workspace-nya sekarang tinggal di components/WorkspaceSwitcher.jsx —
+// jangan dihidupkan lagi di sini, cukup satu sumber.
 
 // Prefix path → kunci divisi. Path yang tidak cocok apa pun jatuh ke "growth"
 // sebagai default aman — itu perilaku LAMA (satu-satunya nav sebelum perubahan
@@ -320,12 +239,17 @@ export default function Layout({ user, onLogout, children }) {
   // kerja asli: /inbox, /bengkel, /gudang, dst).
   const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
   const division = DIVISIONS[divisionKey || "growth"];
-  const DivisionIcon = DIVISION_ICON[divisionKey || "growth"];
-  const railActiveKey = divisionKey;
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
   const [mobileOpen, setMobileOpen]   = useState(false);
+  // Sidebar menyempit (248px → 72px). Dikembalikan pada refactor navigasi
+  // 2 Agustus 2026: begitu rail ikon dihapus, menyempitkan sidebar jadi
+  // satu-satunya cara melebarkan area konten — dan itu memang salah satu
+  // keluhan yang memicu refactor ini.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("sidebar-collapsed") === "true"
+  );
   const prevUnread    = useRef(null); // null = belum ada data awal
   const lastSeenAt    = useRef(new Date().toISOString()); // timestamp polling terakhir
   const fetchUnreadRef = useRef(null); // ref ke fetchUnread terbaru untuk SSE callback
@@ -407,6 +331,13 @@ export default function Layout({ user, onLogout, children }) {
     setMobileOpen(false);
   }
 
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      localStorage.setItem("sidebar-collapsed", String(!v));
+      return !v;
+    });
+  }
+
   // Sama bug-nya dengan isAdmin di atas — sebelumnya `user.role` legacy
   // langsung, jadi badge di pojok sidebar bisa nampilin "SALES" walau user
   // itu sekarang juga punya role ADMIN lewat multi-role. ADMIN diprioritaskan
@@ -415,92 +346,79 @@ export default function Layout({ user, onLogout, children }) {
   const roleLower = displayRole.toLowerCase();
 
   return (
-    <div className="app-shell">
+    <div className={cn("app-shell", collapsed && "sidebar-collapsed")}>
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 
-      {/* Backdrop untuk mobile sidebar — ikut dimatikan di hub (/portal)
-          supaya tidak pernah ada layar gelap menutupi halaman tanpa drawer
-          di baliknya. Command center (/portal/:key) SEKARANG py sidebar
-          juga (lihat catatan di bawah), jadi backdrop-nya ikut aktif di
-          sana — cuma hub murni yang dikecualikan. */}
-      {mobileOpen && !onHub && (
+      {/* Backdrop drawer mobile. Sidebar sekarang ADA di semua halaman
+          (termasuk Main Hub — switcher-nya tinggal di sana), jadi tidak ada
+          lagi pengecualian /portal seperti sebelumnya. */}
+      {mobileOpen && (
         <div className="sidebar-backdrop" onClick={closeMobileMenu} />
       )}
 
-      {/* Rail ikon — navigasi utama, SELALU tampil di desktop (semua divisi) */}
-      {/* activeKey null saat di Portal — hub bukan salah satu divisi, jadi
-          TIDAK boleh ada ikon divisi yang tersorot di rail. Kalau dibiarkan
-          memakai divisionKey, Growth akan menyala di halaman hub (efek dari
-          fallback divisionFromPath) dan seolah-olah user sudah berada di
-          dalam Sales CRM padahal belum memilih apa pun. */}
-      <WorkspaceRail
-        activeKey={railActiveKey}
-        atHub={onHub}
-        userRoles={rolesOf(user)}
-        onNavigate={closeMobileMenu}
-        onLogout={onLogout}
-      />
-
-      {/* Sidebar detail — revisi KETIGA 1 Agustus 2026. Percobaan sebelumnya
-          (cabut sidebar dari desktop, pindah ke bar horizontal) DIBATALKAN:
-          bar horizontal-nya rusak (Inbox blank, lihat catatan motion.div di
-          bawah) dan Gilang minta balik ke bentuk sidebar lebar seperti
-          semula — TAPI sekarang berlaku untuk SEMUA divisi, bukan cuma
-          Growth. Jadi sekarang: rail (78px) + sidebar lebar (244px) TAMPIL
-          BERDAMPINGAN di desktop untuk divisi mana pun yang sedang dibuka —
-          isi sidebar mengikuti `division` (dari divisionKey yang sudah benar
-          menghitung command center juga, lihat komentar di atas).
-          Di MOBILE, sidebar ini jadi drawer (rail disembunyikan di bawah lg) —
+      {/* ── SATU-SATUNYA SIDEBAR (refactor navigasi 2 Agustus 2026) ─────────
+          Sebelumnya ada dua elemen berdampingan: rail ikon 78px + sidebar
+          244px. Rail sudah DIHAPUS. Sidebar ini sekarang:
+            · desktop  → 248px, bisa disempitkan jadi 72px (ikon + tooltip)
+            · ≤768px   → drawer geser, dipicu hamburger di topbar
           SELALU di-mount di DOM (bukan digantung ke `mobileOpen`) supaya CSS
-          `@media max-width:768px` yang mengatur slide in/out (transform)
-          bekerja konsisten; kalau di-mount kondisional ke mobileOpen, root
-          <div> ini tidak pernah ada saat pertama kali drawer coba dibuka di
-          beberapa race condition.
-          DIKECUALIKAN DI /portal (hub murni): halaman hub bukan divisi. */}
-      {!onHub && (
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} style={division.accent.cssVar || undefined}>
-        {/* Brand + toggle collapse */}
+          transform slide in/out bekerja konsisten. */}
+      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
+        {/* Brand — logo & nama BISA DIKLIK untuk kembali ke Main Hub. */}
         <div className="sidebar-brand">
-          <div className="sidebar-brand-icon">
-            <span className="sidebar-brand-inner">
-              <img src="/logo-small.png" alt="Logo" style={{ width: 20, height: 20, objectFit: "contain" }} />
-            </span>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sidebar-brand-name">{BRAND.name}</div>
-            <div className="sidebar-brand-sub">{BRAND.subtitle}</div>
-          </div>
-          {/* Tombol tutup — sidebar ini SEKARANG cuma drawer mobile (lihat
-              catatan render-nya di atas), jadi tidak ada lagi "tombol
-              collapse desktop" — cuma satu cara menutupnya. */}
+          <button
+            type="button"
+            onClick={() => { navigate("/portal"); closeMobileMenu(); }}
+            title="Kembali ke Main Hub"
+            aria-label="Kembali ke Main Hub"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-btn text-left transition-opacity hover:opacity-80"
+          >
+            <div className="sidebar-brand-icon">
+              <span className="sidebar-brand-inner">
+                <img src="/logo-small.png" alt="" style={{ width: 20, height: 20, objectFit: "contain" }} />
+              </span>
+            </div>
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="sidebar-brand-name">{BRAND.name}</span>
+                <span className="sidebar-brand-sub">{BRAND.subtitle}</span>
+              </span>
+            )}
+          </button>
+
+          {/* Tutup drawer — mobile saja (CSS menyembunyikannya di desktop) */}
           <button className="sidebar-close-mobile" onClick={closeMobileMenu} title="Tutup">
             <X size={16} />
           </button>
+
+          {/* Sempitkan/lebarkan — desktop saja */}
+          <button
+            className="sidebar-collapse-btn"
+            onClick={toggleCollapsed}
+            title={collapsed ? "Lebarkan sidebar" : "Sempitkan sidebar"}
+            aria-label={collapsed ? "Lebarkan sidebar" : "Sempitkan sidebar"}
+          >
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
         </div>
 
-        {/* Badge divisi + ganti divisi (1 Agustus 2026) — sidebar sekarang
-            berbeda per divisi (lihat DIVISIONS di atas); badge ini yang
-            memberi tahu SEDANG di divisi mana, dan jadi jalan pintas balik
-            ke Portal untuk ganti divisi tanpa lewat menu profil. Warna dot
-            & teks pakai aksen divisi (satu sumber dengan Portal.jsx). */}
-        <button
-          type="button"
-          onClick={() => navigate("/portal")}
-          title="Ganti divisi"
-          className="mx-3 mb-2 flex items-center gap-2 rounded-btn px-2.5 py-2 text-left transition-colors hover:bg-hovertint"
-        >
-          <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", division.accent.bg)}>
-            <DivisionIcon className={cn("h-3.5 w-3.5", division.accent.text)} strokeWidth={2} />
-          </span>
-          <span className={cn("min-w-0 flex-1 truncate text-[12px] font-semibold", division.accent.text)}>
-            {division.label}
-          </span>
-          <Grid3x3 size={13} className="shrink-0 text-ink3" />
-        </button>
+        {/* Pemilih workspace — MENGGANTIKAN rail ikon sekaligus tombol
+            "badge divisi" yang dulu juga melompat ke Main Hub. */}
+        <WorkspaceSwitcher
+          activeKey={onHub ? null : divisionKey}
+          collapsed={collapsed}
+          userRoles={rolesOf(user)}
+          onNavigate={closeMobileMenu}
+        />
 
-        {/* Navigation */}
+        {/* Navigation — menu DI DALAM workspace yang sedang dibuka.
+            Di Main Hub tidak dirender: hub bukan divisi, jadi tidak punya menu
+            operasional. Yang tampil di sana cuma brand + switcher + profil,
+            dan kartu workspace di halamannya sendiri yang jadi navigasi. */}
         <nav className="sidebar-nav">
+          {!onHub && (
+          <>
           {/* LayoutGroup: pill aktif geser mulus antar item (layoutId). Data nav,
               role gating, dan kondisi badge unread TIDAK berubah — cuma sumbernya
               sekarang `division.sections`, bukan array statis tunggal. */}
@@ -524,6 +442,7 @@ export default function Layout({ user, onLogout, children }) {
                       isAI={isAI}
                       showBadge={showBadge}
                       badgeCount={unreadCount}
+                      collapsed={collapsed}
                       onNavigate={closeMobileMenu}
                     />
                   );
@@ -532,12 +451,15 @@ export default function Layout({ user, onLogout, children }) {
             );
           })}
           </LayoutGroup>
+          </>
+          )}
         </nav>
 
         {/* Kartu promo "Tanya Sano" (DS v2.1) — fitur AI CRM, HANYA relevan di
-            divisi Growth (Bengkel/Armada/Kendali tidak punya co-pilot sendiri
-            saat ini). */}
-        {divisionKey === "growth" && <SidebarPromo />}
+            divisi Growth. Disembunyikan saat sidebar menyempit: kartunya butuh
+            lebar penuh untuk terbaca, dan memaksanya masuk 72px cuma jadi
+            kotak tanpa arti. */}
+        {!onHub && divisionKey === "growth" && !collapsed && <SidebarPromo />}
 
         {/* User footer — blok profil sekaligus trigger menu akun (Radix Menu).
             onLogout = handler logout yang SUDAH ADA (tidak diubah), dipanggil
@@ -546,15 +468,19 @@ export default function Layout({ user, onLogout, children }) {
           <Menu
             align="start"
             trigger={
-              <button className="sidebar-profile" type="button" title="Menu akun">
+              <button className="sidebar-profile" type="button" title={collapsed ? user.name : "Menu akun"}>
                 <div className="avatar avatar-sm sidebar-avatar">
                   {(user.name || "?")[0].toUpperCase()}
                 </div>
-                <div className="sidebar-user-info">
-                  <div className="sidebar-user-name">{user.name}</div>
-                  <span className={`role-badge ${roleLower}`}>{displayRole}</span>
-                </div>
-                <MoreVertical size={15} className="sidebar-kebab-ic" />
+                {!collapsed && (
+                  <>
+                    <div className="sidebar-user-info">
+                      <div className="sidebar-user-name">{user.name}</div>
+                      <span className={`role-badge ${roleLower}`}>{displayRole}</span>
+                    </div>
+                    <MoreVertical size={15} className="sidebar-kebab-ic" />
+                  </>
+                )}
               </button>
             }
           >
@@ -568,19 +494,19 @@ export default function Layout({ user, onLogout, children }) {
             pegang bundle terbaru (bukan basi dari service worker lama) tanpa
             perlu buka DevTools, tersedia untuk semua role (bukan cuma admin
             lewat Pengaturan, yang tidak bisa diakses SALES). */}
-        <div className="sidebar-version" title={typeof __BUILD_TIME__ !== "undefined" ? new Date(__BUILD_TIME__).toLocaleString("id-ID") : undefined}>
-          v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
-        </div>
+        {!collapsed && (
+          <div className="sidebar-version" title={typeof __BUILD_TIME__ !== "undefined" ? new Date(__BUILD_TIME__).toLocaleString("id-ID") : undefined}>
+            v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
+          </div>
+        )}
       </aside>
-      )}
 
       <main className="app-content">
-        {/* showMobileMenu=false di hub murni: drawer-nya memang tidak
-            dirender di sana, jadi tombol hamburger hanya akan jadi kontrol
-            mati. Command center (/portal/:key) SEKARANG py drawer juga. */}
+        {/* Hamburger SELALU tersedia sekarang — sidebar ada di semua halaman,
+            termasuk Main Hub, jadi tidak ada lagi kondisi "tombol tanpa
+            drawer di baliknya". */}
         <Topbar
           onToggleMobileMenu={() => setMobileOpen((v) => !v)}
-          showMobileMenu={!onHub}
           unreadCount={unreadCount}
           user={user}
           onLogout={onLogout}

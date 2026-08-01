@@ -37,7 +37,15 @@ export default function SidebarLink({
             />
           )}
           <Icon size={17} className={"nav-icon" + (isAI ? " nav-icon-ai" : "")} />
-          {!collapsed && <span className="nav-label">{label}</span>}
+          {collapsed ? (
+            // Tooltip saat sidebar menyempit (72px): tanpa ini item nav jadi
+            // deretan ikon tanpa nama. `title` di NavLink saja tidak cukup —
+            // tooltip bawaan browser lambat muncul (±1 detik) dan tidak
+            // terbaca screen reader sebagai label item.
+            <span className="nav-tooltip" role="tooltip">{label}</span>
+          ) : (
+            <span className="nav-label">{label}</span>
+          )}
           {isAI && !collapsed && !showBadge && (
             <span className="nav-ai-dot" aria-hidden="true" />
           )}

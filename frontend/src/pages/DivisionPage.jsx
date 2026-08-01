@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Activity, ListChecks, Loader2 } from "lucide-react";
+import { Activity, ListChecks, Loader2 } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -55,66 +55,86 @@ export default function DivisionPage({ user }) {
   const stat = summary?.[key];
   const visibleModules = content.modules.filter((m) => !m.adminOnly || isAdmin);
 
+  // KPI hero. Growth punya tiga angka (endpoint mengembalikan `growthKpi`);
+  // divisi lain baru punya satu angka nyata masing-masing, dan itu ditampilkan
+  // apa adanya — kartu kosong berisi tanda hubung lebih buruk daripada tidak
+  // ada kartu. Entri bernilai null DIBUANG, bukan dirender sebagai "0":
+  // "belum bisa dihitung" dan "nol" adalah dua hal berbeda.
+  const g = summary?.growthKpi;
+  const kpis = (
+    key === "growth" && g
+      ? [
+          { value: g.leadDiproses, label: "Lead sedang diproses" },
+          { value: g.perluFollowUp, label: "Perlu follow-up (>1 jam)" },
+          { value: g.belumDibaca, label: "Pesan belum dibaca" },
+        ]
+      : stat
+      ? [{ value: stat.value, label: stat.label }]
+      : []
+  ).filter((k) => k.value !== null && k.value !== undefined);
+
   return (
     <PageContainer>
-      {/* Breadcrumb — `.breadcrumb` mockup */}
-      <div className="mb-2.5 flex items-center gap-2 text-[10px] font-bold text-[#6E7E96]">
-        <span>SANSS</span>
-        <span>/</span>
-        <strong className="text-[#1457D9]">{content.short}</strong>
-      </div>
+      {/* Breadcrumb DI DALAM halaman SUDAH DIHAPUS (refactor navigasi
+          2 Agustus 2026). Mockup v4 memang punya remah "SANSS / Sales CRM" di
+          badan halaman, tapi aplikasi ini juga punya breadcrumb di topbar —
+          jadi nama workspace muncul dua kali berturut-turut hanya berjarak
+          beberapa piksel, plus sekali lagi di H1 di bawahnya. Yang bertahan
+          adalah yang di topbar (posisinya tetap di semua halaman, dan remah
+          "Main Hub"-nya bisa diklik). */}
 
-      {/* Header — judul + aksi, `.division-header` mockup */}
-      <div className="mb-[18px] flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="grid h-[52px] w-[52px] place-items-center rounded-2xl bg-[#E8F0FF] text-[#1457D9]">
-            <Icon className="h-6 w-6" strokeWidth={1.9} />
-          </div>
-          <div>
-            <h1 className="text-[27px] font-bold tracking-[-.04em] text-[#10213D]">{content.title}</h1>
-            <p className="mt-[5px] text-[11px] text-[#6E7E96]">{content.subtitle}</p>
-          </div>
+      {/* Header — judul halaman. Tombol "Back to hub" DIHAPUS pada refactor
+          navigasi 2 Agustus 2026: jalan ke Main Hub sudah ada tiga (logo
+          sidebar, item Main Hub di workspace switcher, remah breadcrumb), dan
+          tombol keempat di dalam area konten cuma menambah kebisingan tanpa
+          menambah kemampuan. */}
+      <div className="mb-[18px] flex items-center gap-3.5">
+        <div className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-2xl bg-[#E8F0FF] text-[#1457D9]">
+          <Icon className="h-6 w-6" strokeWidth={1.9} />
         </div>
-        <button
-          type="button"
-          onClick={() => navigate("/portal")}
-          className="inline-flex items-center gap-2 rounded-xl border border-[#DEE5EF] bg-white px-3 py-2.5 text-[11px] font-extrabold text-[#536981] transition-colors hover:bg-[#F4F7FF] hover:text-[#1457D9]"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.2} /> Back to hub
-        </button>
+        <div className="min-w-0">
+          <h1 className="text-[27px] font-bold tracking-[-.04em] text-[#10213D]">{content.title}</h1>
+          <p className="mt-[5px] text-[11px] text-[#6E7E96]">{content.subtitle}</p>
+        </div>
       </div>
 
-      {/* Hero gelap — `.division-hero` mockup, tanpa 4-KPI grid & klaim
-          kesehatan sistem (lihat catatan panjang di atas). */}
+      {/* Hero — RINGKASAN KPI, bukan pengulangan nama workspace.
+          Sebelum refactor 2 Agustus 2026 nama workspace muncul TIGA kali di
+          satu layar: breadcrumb, judul H1, dan judul hero ("Sales CRM command
+          center"). Judul hero itu yang dihapus — dua yang lain punya fungsi
+          berbeda (orientasi vs judul halaman), yang ketiga cuma gema.
+
+          ⚠️ ANGKANYA NYATA, dari GET /auth/portal-summary. Label di bawah
+          sengaja menggambarkan PERSIS apa yang dihitung backend (mis. "belum
+          dibaca", bukan "belum dibalas" — yang dihitung unreadCount) supaya
+          tidak ada kartu yang menjanjikan lebih dari datanya. */}
       <section
         className="relative overflow-hidden rounded-[24px] px-6 py-6 text-white sm:px-[25px] sm:py-[25px]"
         style={{ background: "linear-gradient(135deg, #071A3A, #1457D9)" }}
       >
         <div aria-hidden className="pointer-events-none absolute -right-[85px] -top-[110px] h-[260px] w-[260px] rounded-full border border-white/[0.13]" />
-        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="max-w-[720px]">
-            <h2 className="text-[20px] font-bold tracking-[-.035em] sm:text-[22px]">
-              {content.short} command center
-            </h2>
-            <p className="mt-[7px] text-[11px] leading-[1.6] text-white/[0.65]">
-              {content.heroLine}
-            </p>
-          </div>
+        <div className="relative">
+          <p className="max-w-[720px] text-[12px] leading-[1.6] text-white/[0.72]">
+            {content.heroLine}
+          </p>
 
-          {/* Satu angka nyata, kalau ada. Tidak ada apa pun kalau tidak —
-              bukan placeholder kosong yang berpura-pura punya data. */}
           {loadingSummary ? (
-            <div className="flex items-center gap-2 text-[11px] text-white/60">
+            <div className="mt-5 flex items-center gap-2 text-[11px] text-white/60">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat angka…
             </div>
-          ) : stat ? (
-            <div className="min-w-[170px] rounded-2xl border border-white/[0.13] bg-white/[0.08] px-4 py-3.5 backdrop-blur">
-              <span className="block text-[9px] font-extrabold uppercase tracking-[.08em] text-white/[0.58]">
-                {stat.label}
-              </span>
-              <strong className="mt-1.5 block text-[26px] leading-none tracking-[-.03em]">
-                {stat.value}
-              </strong>
+          ) : kpis.length > 0 ? (
+            <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {kpis.map((k) => (
+                <div
+                  key={k.label}
+                  className="rounded-2xl border border-white/[0.13] bg-white/[0.08] px-4 py-3.5 backdrop-blur"
+                >
+                  <strong className="block text-[26px] leading-none tracking-[-.03em]">{k.value}</strong>
+                  <span className="mt-2 block text-[9px] font-extrabold uppercase tracking-[.08em] text-white/[0.58]">
+                    {k.label}
+                  </span>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

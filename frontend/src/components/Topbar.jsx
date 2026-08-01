@@ -38,9 +38,17 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unre
   // sini, dengan judul divisi ASLI (bukan slug key mentah seperti "bengkel").
   const commandCenterKey = /^\/portal\/([^/]+)/.exec(pathname)?.[1];
   const commandCenterTitle = commandCenterKey && DIVISION_CONTENT[commandCenterKey]?.title;
+
+  // Breadcrumb sebagai daftar objek, bukan string — sejak refactor navigasi
+  // 2 Agustus 2026 remah "Main Hub" HARUS bisa diklik. `to` null = teks biasa.
   const crumbs = commandCenterTitle
-    ? ["Main Hub", commandCenterTitle]
-    : ROUTE_LABELS[pathname] || [pathname.replace("/", "")];
+    ? [{ text: "Main Hub", to: "/portal" }, { text: commandCenterTitle, to: null }]
+    : (ROUTE_LABELS[pathname] || [pathname.replace("/", "")]).map((text, i, arr) => ({
+        text,
+        // Halaman di DALAM sebuah workspace: remah pertama jadi jalan pulang
+        // ke Main Hub. Remah terakhir (halaman sekarang) tidak pernah link.
+        to: i === 0 && arr.length > 1 ? "/portal" : null,
+      }));
 
   return (
     <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur md:px-6">
@@ -51,7 +59,10 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unre
             onClick={onToggleMobileMenu}
             title="Buka menu"
             aria-label="Buka menu"
-            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint md:hidden"
+            // lg:hidden, BUKAN md:hidden — sidebar sekarang jadi drawer sampai
+            // 1024px (tablet ikut), jadi hamburger harus ada sepanjang rentang
+            // itu. Kalau tetap md:hidden, tablet punya drawer tanpa pemicu.
+            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint lg:hidden"
           >
             <MenuIcon size={20} />
           </button>
@@ -60,15 +71,25 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, unre
           {crumbs.map((c, i) => (
             <React.Fragment key={i}>
               {i > 0 && <ChevronRight size={13} className="shrink-0 text-ink3" />}
-              <span
-                className={
-                  i === crumbs.length - 1
-                    ? "truncate font-semibold text-ink"
-                    : "hidden truncate text-ink3 sm:inline"
-                }
-              >
-                {c}
-              </span>
+              {c.to ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(c.to)}
+                  className="hidden truncate rounded text-ink3 transition-colors hover:text-accent hover:underline sm:inline"
+                >
+                  {c.text}
+                </button>
+              ) : (
+                <span
+                  className={
+                    i === crumbs.length - 1
+                      ? "truncate font-semibold text-ink"
+                      : "hidden truncate text-ink3 sm:inline"
+                  }
+                >
+                  {c.text}
+                </span>
+              )}
             </React.Fragment>
           ))}
         </nav>
