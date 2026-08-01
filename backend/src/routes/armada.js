@@ -27,6 +27,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { geocodeAddress, routeLegs } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -152,6 +153,19 @@ function toDateOnly(input) {
   return new Date(`${input}T00:00:00.000Z`);
 }
 
+// Geocode alamat teks jadi lat/lng — BEST-EFFORT (FR-L-03 butuh koordinat
+// untuk hitung jarak antar-stop). Gagal geocode TIDAK PERNAH menggagalkan
+// simpan job; alamat teks tetap tersimpan dan deep link Maps di driver masih
+// jalan lewat pencarian teks (lihat mapsUrl() di DriverJobs.jsx).
+async function bestEffortGeocode(addressText) {
+  try {
+    return await geocodeAddress(addressText);
+  } catch (err) {
+    console.error("[armada] geocode gagal:", err.message);
+    return null;
+  }
+}
+
 // GET /api/armada/driver-group — grup WA yang ditugaskan menerima
 // dokumentasi (D-018). ADMIN only: menandai grup butuh CONVERSATION_READ
 // untuk melihat daftar grup yang ada, dan DISPATCHER TIDAK punya permission
@@ -235,7 +249,7 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
     const jobs = await prisma.job.findMany({
       where: { type, ...(targetDate ? { scheduledDate: targetDate } : { scheduledDate: null }) },
       include: jobInclude,
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
     });
 
     // Unit yang SUDAH terikat job aktif tipe ini — dikecualikan dari "available".
@@ -261,6 +275,80 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
   }
 });
 
+// PATCH /api/armada/route/reorder { driverId, date, type, jobIds: [...] }
+// FR-L-03: dispatcher urutkan stop SATU driver, SATU tanggal, SATU tipe
+// secara manual — bukan VRP otomatis (PRD §1.5 melarangnya untuk v1).
+// jobIds HARUS mencakup persis semua job aktif di grup itu (tidak kurang,
+// tidak lebih) — mencegah drag-drop parsial yang diam-diam menghapus urutan
+// job lain yang lupa disertakan klien.
+armadaRouter.patch("/route/reorder", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { driverId, date, type, jobIds } = req.body;
+    if (!driverId) throw new ArmadaError("driverId wajib diisi");
+    if (!date) throw new ArmadaError("date wajib diisi");
+    if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
+    if (!Array.isArray(jobIds) || jobIds.length === 0) throw new ArmadaError("jobIds wajib diisi");
+
+    const group = await prisma.job.findMany({
+      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES } },
+      select: { id: true },
+    });
+    const groupIds = new Set(group.map((j) => j.id));
+    const requestIds = new Set(jobIds);
+    if (groupIds.size !== requestIds.size || [...groupIds].some((id) => !requestIds.has(id))) {
+      throw new ArmadaError("jobIds harus mencakup persis semua job aktif driver ini di tanggal itu");
+    }
+
+    await prisma.$transaction(
+      jobIds.map((id, index) => prisma.job.update({ where: { id }, data: { sequence: index } }))
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/route/summary?driverId=&date=&type= — jarak/durasi antar
+// stop berurutan (FR-L-03). Rute HARUS sudah diurutkan (sequence bukan null)
+// sebelum dipanggil — kalau belum, kembalikan stops apa adanya tanpa legs
+// (bukan urutan createdAt yang tidak berarti sebagai rute).
+armadaRouter.get("/route/summary", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { driverId, date, type } = req.query;
+    if (!driverId) throw new ArmadaError("driverId wajib diisi");
+    if (!date) throw new ArmadaError("date wajib diisi");
+    if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
+
+    const jobs = await prisma.job.findMany({
+      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES } },
+      include: jobInclude,
+      orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
+    });
+
+    const geocoded = jobs.filter((j) => j.lat != null && j.lng != null);
+    let legs = [];
+    let totalDistanceMeters = 0;
+    let totalDurationSeconds = 0;
+    let legsError = null;
+    if (geocoded.length === jobs.length && jobs.length >= 2) {
+      try {
+        legs = await routeLegs(jobs.map((j) => ({ lat: j.lat, lng: j.lng })));
+        for (const leg of legs) {
+          if (leg) { totalDistanceMeters += leg.distanceMeters; totalDurationSeconds += leg.durationSeconds; }
+        }
+      } catch (err) {
+        legsError = err.message;
+      }
+    } else if (jobs.length >= 2) {
+      legsError = "Ada stop yang belum punya koordinat (geocode gagal atau alamat kosong) — jarak tidak bisa dihitung";
+    }
+
+    res.json({ jobs, legs, totalDistanceMeters, totalDurationSeconds, legsError });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // GET /api/armada/my-jobs?date=YYYY-MM-DD — driver sendiri, hari ini ±1
 // (PRD §9.3: "drivers read only jobs assigned to them, dated today ±1").
 armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res) => {
@@ -273,7 +361,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     const jobs = await prisma.job.findMany({
       where: { driverId: req.user.id, scheduledDate: { gte: from, lt: to } },
       include: jobInclude,
-      orderBy: [{ scheduledDate: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ scheduledDate: "asc" }, { sequence: "asc" }, { createdAt: "asc" }],
     });
     res.json({ jobs });
   } catch (err) {
@@ -320,6 +408,8 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
       );
     }
 
+    const geo = addressText ? await bestEffortGeocode(addressText) : null;
+
     const job = await prisma.job.create({
       data: {
         type,
@@ -328,6 +418,8 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
         driverId: driverId || null,
         timeWindow: timeWindow || null,
         addressText: addressText || null,
+        lat: geo?.lat ?? null,
+        lng: geo?.lng ?? null,
         accessNotes: accessNotes || null,
         status: deriveStatus(!!driverId, !!scheduledDate),
         units: { create: unitIds.map((unitId) => ({ unitId })) },
@@ -364,8 +456,16 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
     if (driverId !== undefined) data.driverId = driverId || null;
     if (timeWindow !== undefined) data.timeWindow = timeWindow;
-    if (addressText !== undefined) data.addressText = addressText;
     if (accessNotes !== undefined) data.accessNotes = accessNotes;
+    // Re-geocode HANYA kalau alamat teksnya benar-benar berubah — supaya
+    // PATCH lain (ganti driver, reschedule) tidak boros kuota Geocoding API
+    // untuk alamat yang sama persis.
+    if (addressText !== undefined && addressText !== existing.addressText) {
+      data.addressText = addressText;
+      const geo = addressText ? await bestEffortGeocode(addressText) : null;
+      data.lat = geo?.lat ?? null;
+      data.lng = geo?.lng ?? null;
+    }
 
     const nextDriverId = driverId !== undefined ? driverId : existing.driverId;
     const nextDate = scheduledDate !== undefined ? data.scheduledDate : existing.scheduledDate;

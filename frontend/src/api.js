@@ -137,6 +137,10 @@ export const api = {
   updateArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`, { method: "DELETE" }),
   getMyJobs: (date) => request(`/armada/my-jobs${date ? `?date=${date}` : ""}`),
+  // Rute (FR-L-03) — urutan stop manual per driver+tanggal+tipe + jarak/durasi
+  reorderArmadaRoute: (data) => request("/armada/route/reorder", { method: "PATCH", body: JSON.stringify(data) }),
+  getArmadaRouteSummary: (driverId, date, type) =>
+    request(`/armada/route/summary?driverId=${driverId}&date=${date}&type=${type}`),
   getArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`),
   uploadJobPhotos: (jobId, formData) => requestFormData(`/armada/jobs/${jobId}/photos`, formData),
   startArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/start`, { method: "POST" }),

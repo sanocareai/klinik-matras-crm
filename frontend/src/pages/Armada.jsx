@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle, Loader2, Package, Plus, Truck, User, X, MapPin, Trash2,
+  ArrowUp, ArrowDown, Navigation, Route,
 } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
@@ -45,8 +46,26 @@ const STATUS_BADGE = {
 };
 const EDITABLE_STATUSES = new Set(["UNSCHEDULED", "SCHEDULED", "ASSIGNED"]);
 
+function mapsUrl(job) {
+  if (job.lat && job.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
+  if (job.addressText) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.addressText)}`;
+  return null;
+}
+
+function formatDistance(m) {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+function formatDuration(s) {
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} mnt`;
+  return `${Math.floor(min / 60)} j ${min % 60} mnt`;
+}
+
 // ── Kartu satu job ───────────────────────────────────────────────────────
-function JobCard({ job, drivers, onChanged }) {
+// route: opsional — { index, isFirst, isLast, onMoveUp, onMoveDown, busy,
+// legToNext } — hanya diisi kalau job ini bagian dari grup driver+tanggal
+// yang punya >1 stop (FR-L-03: kontrol urutan rute manual).
+function JobCard({ job, drivers, onChanged, route }) {
   const [driverId, setDriverId] = useState(job.driverId || "");
   const [address, setAddress] = useState(job.addressText || "");
   const [busy, setBusy] = useState(false);
@@ -85,16 +104,46 @@ function JobCard({ job, drivers, onChanged }) {
   }
 
   const customer = job.units[0]?.unit?.order?.customer;
+  const maps = mapsUrl(job);
 
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
-          <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
+        <div className="flex min-w-0 items-start gap-2">
+          {route && (
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-inset text-[10px] font-bold text-ink2">
+              {route.index + 1}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
+            <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
+          </div>
         </div>
         <Badge variant={STATUS_BADGE[job.status]}>{STATUS_LABEL[job.status]}</Badge>
       </div>
+
+      {route && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button" onClick={route.onMoveUp} disabled={route.busy || route.isFirst}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-ink2 disabled:opacity-30"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button" onClick={route.onMoveDown} disabled={route.busy || route.isLast}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-ink2 disabled:opacity-30"
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+          </button>
+          {route.legToNext && (
+            <span className="text-[11px] text-ink3">
+              → {formatDistance(route.legToNext.distanceMeters)} · {formatDuration(route.legToNext.durationSeconds)} ke stop berikutnya
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="mt-2 flex flex-wrap gap-1">
         {job.units.map((ju) => (
@@ -147,7 +196,77 @@ function JobCard({ job, drivers, onChanged }) {
           )}
         </div>
       )}
+
+      {maps && (
+        <a href={maps} target="_blank" rel="noreferrer"
+          className="mt-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accentbg text-[11px] font-semibold text-accent">
+          <Navigation className="h-3 w-3" /> Navigasi
+        </a>
+      )}
     </Card>
+  );
+}
+
+// ── Grup job per driver — urutan rute manual (FR-L-03) ───────────────────
+// Kontrol urutan+jarak/durasi HANYA muncul kalau driver ini punya >1 job
+// aktif di tanggal itu (satu job saja tidak ada "rute" untuk diurutkan).
+function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const hasRoute = jobs.length > 1;
+  const jobIdsKey = jobs.map((j) => j.id).join(",");
+
+  useEffect(() => {
+    if (!hasRoute) { setSummary(null); return; }
+    let cancelled = false;
+    api.getArmadaRouteSummary(driverId, date, type).then((s) => { if (!cancelled) setSummary(s); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverId, date, type, jobIdsKey]);
+
+  async function move(index, dir) {
+    const next = jobs.map((j) => j.id);
+    const swapWith = index + dir;
+    if (swapWith < 0 || swapWith >= next.length) return;
+    [next[index], next[swapWith]] = [next[swapWith], next[index]];
+    setBusy(true);
+    try {
+      await api.reorderArmadaRoute({ driverId, date, type, jobIds: next });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-5">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <User className="h-4 w-4 text-ink3" /> {driverName}
+        </h3>
+        {hasRoute && summary && (
+          summary.legsError ? (
+            <span className="text-[11px] text-orange">{summary.legsError}</span>
+          ) : (
+            <span className="flex items-center gap-1 text-[11px] text-ink2">
+              <Route className="h-3 w-3" /> {formatDistance(summary.totalDistanceMeters)} · {formatDuration(summary.totalDurationSeconds)} total
+            </span>
+          )
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {jobs.map((job, i) => (
+          <JobCard
+            key={job.id} job={job} drivers={drivers} onChanged={onChanged}
+            route={hasRoute ? {
+              index: i, isFirst: i === 0, isLast: i === jobs.length - 1,
+              onMoveUp: () => move(i, -1), onMoveDown: () => move(i, 1), busy,
+              legToNext: summary?.legs?.[i] || null,
+            } : null}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -426,11 +545,36 @@ export default function Armada() {
               <p className="mt-1 text-sm text-ink2">Pilih unit lewat tombol "Buat Job".</p>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {board.jobs.map((job) => (
-                <JobCard key={job.id} job={job} drivers={drivers} onChanged={load} />
-              ))}
-            </div>
+            (() => {
+              const grouped = {};
+              const unassigned = [];
+              for (const job of board.jobs) {
+                if (job.driverId) (grouped[job.driverId] = grouped[job.driverId] || []).push(job);
+                else unassigned.push(job);
+              }
+              return (
+                <>
+                  {Object.entries(grouped).map(([driverId, jobs]) => (
+                    <DriverRouteGroup
+                      key={driverId} driverId={driverId} driverName={jobs[0].driver?.name || "Driver"}
+                      jobs={jobs} date={date} type={type} drivers={drivers} onChanged={load}
+                    />
+                  ))}
+                  {unassigned.length > 0 && (
+                    <div className="mb-5">
+                      {Object.keys(grouped).length > 0 && (
+                        <h3 className="mb-2 text-sm font-semibold text-ink2">Belum ada driver</h3>
+                      )}
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                        {unassigned.map((job) => (
+                          <JobCard key={job.id} job={job} drivers={drivers} onChanged={load} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()
           )}
 
           {board.available.length > 0 && (

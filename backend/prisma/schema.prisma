@@ -805,9 +805,10 @@ enum JobStatus {
   RESCHEDULED
 }
 
-// Job pickup/delivery — SENGAJA MINIMAL. PRD §11 Phase 1: penjadwalan manual,
-// TANPA dispatch board, TANPA route builder, TANPA vehicle capacity — itu
-// semua Phase 2. Jangan menambah field dispatch di sini "buat nanti".
+// Job pickup/delivery. PRD §11 Phase 1 tadinya TANPA dispatch board/route
+// builder/vehicle capacity — itu Phase 2. `sequence` di bawah adalah bagian
+// Phase 2 yang SUDAH digarap (FR-L-03: urutan stop manual + jarak/durasi
+// terhitung), vehicle capacity (FR-L-02, butuh entitas Vehicle) BELUM.
 model Job {
   id      String  @id @default(uuid()) @db.Uuid
   type    JobType
@@ -820,6 +821,12 @@ model Job {
   driverId String?    @map("driver_id")
   driver   User?      @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
   status   JobStatus  @default(UNSCHEDULED)
+
+  // Urutan stop dalam rute driver+tanggal+tipe hari itu (FR-L-03) — NULL
+  // sampai dispatcher mengurutkan lewat PATCH /armada/route/reorder. Bukan
+  // unique constraint: hanya perlu urutan RELATIF di dalam grup
+  // driver+scheduledDate+type yang sama, tidak lintas grup.
+  sequence Int? @map("sequence")
 
   // Snapshot alamat PER KUNJUNGAN, bukan tabel Address bersama — CRM ini
   // belum punya entitas Address (Customer cuma punya field "city"). PRD §5.1:
