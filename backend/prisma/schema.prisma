@@ -186,6 +186,7 @@ model User {
   paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
   stockMovements        StockMovement[]         @relation("StockMovementActor")
   routesAsDriver        Route[]                 @relation("RouteDriver")
+  podVerified           Job[]                   @relation("PodVerifier")
   routesCreated         Route[]                 @relation("RouteCreator")
   scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -868,6 +869,24 @@ model Job {
   arrivedAt   DateTime? @map("arrived_at")
   completedAt DateTime? @map("completed_at")
 
+  // Verifikasi Proof of Delivery (2 Agustus 2026, Tahap 4 Delivery). NULL =
+  // belum direview (turunan "Belum Lengkap" vs "Menunggu Verifikasi" dihitung
+  // di frontend dari ADA-TIDAKNYA proofPhotoUrls — tidak disimpan sebagai
+  // status terpisah supaya tidak ada dua sumber kebenaran soal "sudah ada
+  // fotonya belum").
+  //
+  // ⚠️ PENYIMPANGAN SADAR dari disiplin ledger (sama seperti ScopeRevision):
+  // ini KOLOM biasa, bukan tabel event append-only. Admin BISA meninjau ulang
+  // verdict (reject lalu verify lagi setelah driver diberi tahu perbaiki
+  // fotonya) — kolom cukup untuk v1. Kalau nanti butuh riwayat "siapa reject
+  // kapan, siapa verify kapan" karena ada sengketa, naikkan jadi tabel
+  // podVerifications terpisah, pola yang sama dengan PaymentVerification.
+  podStatus         PodStatus? @map("pod_status")
+  podVerifiedById   String?    @map("pod_verified_by")
+  podVerifiedBy     User?      @relation("PodVerifier", fields: [podVerifiedById], references: [id], onDelete: SetNull)
+  podVerifiedAt     DateTime?  @map("pod_verified_at")
+  podRejectionNote  String?    @map("pod_rejection_note")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
@@ -887,7 +906,17 @@ model Job {
   @@index([status, scheduledDate])   // papan Armada
   @@index([routeId, sequence])       // urutan stop dalam satu rute
   @@index([vehicleId])
+  @@index([podStatus])
   @@map("jobs")
+}
+
+// Hasil review Proof of Delivery. Bukan "lulus/gagal" biasa — REJECTED
+// berarti driver diminta memperbaiki bukti (foto ulang/tanda tangan ulang),
+// bukan pekerjaannya batal. Job tetap COMPLETED, hanya buktinya ditandai
+// perlu diperbaiki.
+enum PodStatus {
+  VERIFIED
+  REJECTED
 }
 
 // ─── ARMADA (PRD §5.1 Vehicle) ──────────────────────────────────────────────

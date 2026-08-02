@@ -36,6 +36,8 @@ const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
 const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
 const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"));
+const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
+const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -200,31 +202,16 @@ export default function App() {
             {/* Tahap 3: Vehicle & Route sudah ada di database (migrasi
                 20260802120000). Data NYATA — tidak ada badge "Contoh". */}
             <Route path="/armada/routes" element={<ArmadaRoutes />} />
-            <Route
-              path="/armada/tracking"
-              element={
-                <ArmadaPlaceholder
-                  title="Live Tracking"
-                  subtitle="Pantau posisi armada dan status perjalanan secara langsung."
-                  stage={4}
-                  description="Peta dan panel job aktif dibangun setelah Route Planner siap."
-                />
-              }
-            />
+            {/* SIMULASI, ditegaskan ketentuan — lihat catatan panjang di
+                features/armada/data/trackingMock.js. Bukan "belum sempat
+                dibuat nyata": driver belum pernah mengirim GPS sungguhan. */}
+            <Route path="/armada/tracking" element={<ArmadaTracking />} />
             {/* Tab Armada: data nyata. Tab Driver: tipis, lihat catatan
                 di ArmadaResources.jsx soal field yang belum ada di User. */}
             <Route path="/armada/resources" element={<ArmadaResources />} />
-            <Route
-              path="/armada/pod"
-              element={
-                <ArmadaPlaceholder
-                  title="Proof of Delivery"
-                  subtitle="Verifikasi foto, tanda tangan, dan checklist penyelesaian job."
-                  stage={4}
-                  description="Pengambilan foto & tanda tangan SUDAH berjalan di aplikasi driver. Halaman ini menjadi sisi verifikasinya, bukan sumber data baru."
-                />
-              }
-            />
+            {/* Sisi verifikasi atas foto/tanda tangan yang SUDAH diunggah
+                driver sejak Phase 2 — data nyata, lihat ArmadaPod.jsx. */}
+            <Route path="/armada/pod" element={<ArmadaPod />} />
             <Route
               path="/armada/issues"
               element={

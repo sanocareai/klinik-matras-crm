@@ -154,6 +154,11 @@ export const api = {
   setRouteJobs: (id, jobIds) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
+
+  // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)
+  getPodJobs: (status) => request(`/armada/pod${status ? `?status=${status}` : ""}`),
+  verifyPod: (jobId) => request(`/armada/pod/${jobId}/verify`, { method: "PATCH" }),
+  rejectPod: (jobId, note) => request(`/armada/pod/${jobId}/reject`, { method: "PATCH", body: JSON.stringify({ note }) }),
   getDrivers: () => request("/armada/drivers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>

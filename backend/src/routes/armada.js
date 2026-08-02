@@ -599,6 +599,97 @@ armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async
   }
 });
 
+// ─── PROOF OF DELIVERY — Delivery Tahap 4 ───────────────────────────────────
+//
+// SISI VERIFIKASI, bukan sumber data baru. Foto & tanda tangan sudah diisi
+// driver lewat POST /jobs/:id/complete (Phase 2) — endpoint di bawah cuma
+// membaca job yang SUDAH punya bukti, dan mencatat hasil tinjauan admin.
+//
+// EMPAT status di UI, DUA di database — turunannya:
+//   Belum Lengkap      → job belum COMPLETED, atau COMPLETED tanpa proofPhotoUrls
+//   Menunggu Verifikasi → COMPLETED + ada foto, podStatus masih NULL
+//   Terverifikasi        → podStatus = VERIFIED
+//   Ditolak               → podStatus = REJECTED
+// Dihitung DI SINI (backend), bukan diserahkan ke frontend menebak — supaya
+// filter status di query string dan status yang ditampilkan selalu konsisten.
+function derivePodStatus(job) {
+  if (job.status !== "COMPLETED" || job.proofPhotoUrls.length === 0) return "INCOMPLETE";
+  if (job.podStatus === "VERIFIED") return "VERIFIED";
+  if (job.podStatus === "REJECTED") return "REJECTED";
+  return "PENDING_REVIEW";
+}
+
+const PIC_INCLUDE_FOR_POD = {
+  ...jobInclude,
+  order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+  podVerifiedBy: { select: { id: true, name: true } },
+};
+
+armadaRouter.get("/pod", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { status } = req.query; // INCOMPLETE | PENDING_REVIEW | VERIFIED | REJECTED
+    // Basis query: hanya job yang PERNAH menyelesaikan kunjungan (COMPLETED)
+    // ATAU sedang berjalan tapi relevan dipantau — spesifikasi tab "Semua"
+    // termasuk "Belum Lengkap", jadi basisnya tidak dibatasi ke COMPLETED
+    // saja. Batasnya: job yang statusnya UNSCHEDULED murni (belum berangkat
+    // sama sekali) tidak relevan untuk halaman bukti serah terima.
+    const jobs = await prisma.job.findMany({
+      where: { status: { notIn: ["UNSCHEDULED"] } },
+      include: PIC_INCLUDE_FOR_POD,
+      orderBy: [{ completedAt: "desc" }, { scheduledDate: "desc" }],
+      take: 300,
+    });
+    const withDerived = jobs.map((j) => ({ ...j, derivedPodStatus: derivePodStatus(j) }));
+    const filtered = status ? withDerived.filter((j) => j.derivedPodStatus === status) : withDerived;
+    res.json({ jobs: filtered });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.patch("/pod/:jobId/verify", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
+    if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.status !== "COMPLETED") throw new ArmadaError("Job belum selesai — belum ada bukti untuk diverifikasi");
+    if (job.proofPhotoUrls.length === 0) throw new ArmadaError("Job ini belum punya foto bukti");
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        podStatus: "VERIFIED",
+        podVerifiedById: req.user.id,
+        podVerifiedAt: new Date(),
+        podRejectionNote: null, // verifikasi baru membersihkan catatan penolakan lama
+      },
+      include: PIC_INCLUDE_FOR_POD,
+    });
+    res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.patch("/pod/:jobId/reject", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { note } = req.body;
+    if (!note?.trim()) throw new ArmadaError("Alasan penolakan wajib diisi — driver perlu tahu apa yang harus diperbaiki");
+
+    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
+    if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.status !== "COMPLETED") throw new ArmadaError("Job belum selesai — belum ada bukti untuk ditinjau");
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: { podStatus: "REJECTED", podVerifiedById: req.user.id, podVerifiedAt: new Date(), podRejectionNote: note.trim() },
+      include: PIC_INCLUDE_FOR_POD,
+    });
+    res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { date, type } = req.query;
