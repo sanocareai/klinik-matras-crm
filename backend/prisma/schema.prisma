@@ -196,6 +196,9 @@ model User {
   materialIssuesCreated   MaterialIssue[]         @relation("MaterialIssueCreator")
   stockTransfersRequested StockTransfer[]         @relation("StockTransferRequester")
   stockTransfersApproved  StockTransfer[]         @relation("StockTransferApprover")
+  stockCountsAssigned     StockCount[]            @relation("StockCountAssignee")
+  stockCountsReviewed     StockCount[]            @relation("StockCountReviewer")
+  stockCountsCreated      StockCount[]            @relation("StockCountCreator")
   routesCreated           Route[]                 @relation("RouteCreator")
   scopeRevisionsMade      ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided   ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -1643,6 +1646,7 @@ model Material {
   goodsReceiptLines  GoodsReceiptLine[]
   materialIssueLines MaterialIssueLine[]
   stockTransferLines StockTransferLine[]
+  stockCountLines    StockCountLine[]
 
   @@index([active])
   @@map("materials")
@@ -1717,11 +1721,18 @@ model StockMovement {
   stockTransferId String?        @map("stock_transfer_id") @db.Uuid
   stockTransfer   StockTransfer? @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
 
+  // Warehouse Tahap 5 — jejak balik ke sesi Stock Count yang menghasilkan
+  // baris ADJUSTMENT ini (kalau lewat StockCount, bukan endpoint adjustment
+  // satu langkah yang sudah ada sejak v1).
+  stockCountId String?     @map("stock_count_id") @db.Uuid
+  stockCount   StockCount? @relation(fields: [stockCountId], references: [id], onDelete: SetNull)
+
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
   @@index([goodsReceiptId])
   @@index([materialIssueId])
   @@index([stockTransferId])
+  @@index([stockCountId])
   @@map("stock_movements")
 }
 
@@ -2101,4 +2112,121 @@ model StockTransferLine {
   @@index([stockTransferId])
   @@index([materialId])
   @@map("stock_transfer_lines")
+}
+
+// ─── STOCK COUNT / STOCK OPNAME (Warehouse Tahap 5) ─────────────────────────
+//
+// v1 SUDAH punya penyesuaian stok satu langkah: POST /inventory/movements/
+// adjustment menerima hasil hitung fisik, menghitung selisih dari saldo
+// ledger BERJALAN, dan mencatatnya sebagai satu baris ADJUSTMENT — itu
+// TIDAK DIUBAH, masih jalan untuk "hitung satu item, sesuaikan sekarang".
+// StockCount adalah DOKUMEN di depannya untuk sesi hitung yang terjadwal,
+// mencakup banyak item sekaligus, dan (opsional) BLIND COUNT — staf mengisi
+// countedQty TANPA melihat systemQty sampai submit.
+//
+// systemQty DISNAPSHOT SEKALI, saat Start Count (SCHEDULED → IN_PROGRESS) —
+// BUKAN dihitung ulang tiap saat. Itu yang membuat blind count berarti
+// (staf membandingkan terhadap DUNIA NYATA saat berjalan ke rak, bukan
+// terhadap ledger yang mungkin sudah berubah lagi) dan membuat "difference"
+// di layar review konsisten dengan angka yang sama sepanjang sesi.
+//
+// STOK TIDAK BERUBAH SAMPAI Complete Count — baris ADJUSTMENT baru ditulis
+// di langkah itu, satu per baris yang punya selisih. Baris tanpa selisih
+// TIDAK menghasilkan movement (tidak ada yang perlu disesuaikan). Disiplin
+// PRD §8.1 tetap utuh: stok tidak pernah ditulis sebelum benar-benar final.
+//
+// ⚠️ CAKUPAN YANG SENGAJA DIPANGKAS:
+//   · Difference VALUE (Rupiah) dari spesifikasi TIDAK dihitung — Material
+//     tidak punya kolom harga/costing (unitCost hanya tercatat PER
+//     PENERIMAAN di StockMovement, bukan atribut material). Menghitung
+//     nilai selisih tanpa baseline harga yang benar akan mengarang angka.
+//   · "Assigned Team" (jamak) disederhanakan jadi SATU assignedTo — tidak
+//     ada entitas tim/grup kerja di sistem ini.
+//   · Count Method (By Category/By Location/dst) HANYA label kategorisasi,
+//     BUKAN filter otomatis yang mengisi baris — item dipilih manual saat
+//     StockCount dibuat, sama pola dengan Goods Receipt/Material Issue.
+//   · Evidence (foto) TIDAK ADA upload — butuh storage terpisah, sama
+//     alasan dengan Goods Receipt Tahap 2B.
+enum CountType {
+  CYCLE_COUNT
+  FULL_STOCK_OPNAME
+}
+
+enum CountMethod {
+  BY_ITEM
+  BY_CATEGORY
+  BY_LOCATION
+  BY_BATCH
+  RANDOM_SAMPLING
+  FULL_WAREHOUSE
+}
+
+enum CountStatus {
+  SCHEDULED
+  IN_PROGRESS
+  WAITING_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+model StockCount {
+  id          String      @id @default(uuid()) @db.Uuid
+  countNumber String      @unique @map("count_number") // CC-DDMMYY-NN
+  countType   CountType   @map("count_type")
+  countMethod CountMethod @map("count_method")
+
+  scheduledDate DateTime? @map("scheduled_date") @db.Date
+  // Default true — spesifikasi eksplisit: "Staff tidak selalu melihat
+  // system quantity" saat hitung berjalan. Bisa dimatikan per sesi kalau
+  // memang tidak relevan (mis. hitung ulang setelah selisih diketahui).
+  blindCount    Boolean   @default(true) @map("blind_count")
+  notes         String?
+
+  status CountStatus @default(SCHEDULED)
+
+  assignedToId String? @map("assigned_to")
+  assignedTo   User?   @relation("StockCountAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  startedAt   DateTime? @map("started_at")
+  submittedAt DateTime? @map("submitted_at")
+
+  reviewedById String? @map("reviewed_by")
+  reviewedBy   User?   @relation("StockCountReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  completedAt DateTime? @map("completed_at")
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("StockCountCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines     StockCountLine[]
+  movements StockMovement[]
+
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id           String     @id @default(uuid()) @db.Uuid
+  stockCountId String     @map("stock_count_id") @db.Uuid
+  stockCount   StockCount @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  systemQty  Float? @map("system_qty") // snapshot SEKALI saat Start Count — bukan dihitung ulang
+  countedQty Float? @map("counted_qty") // diisi staf saat hitung berjalan
+
+  // WAJIB diisi kalau ada selisih (divalidasi di route, sama pola dengan
+  // WASTE/ADJUSTMENT di routes/inventory.js — selisih tanpa penjelasan
+  // bukan angka yang bisa dipertanggungjawabkan).
+  reason String?
+  notes  String?
+
+  @@index([stockCountId])
+  @@index([materialId])
+  @@map("stock_count_lines")
 }

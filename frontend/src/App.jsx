@@ -49,6 +49,7 @@ const WarehouseInventory   = lazy(() => import("./pages/warehouse/WarehouseInven
 const WarehouseGoodsReceipt = lazy(() => import("./pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("./pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("./pages/warehouse/WarehouseTransfers.jsx"));
+const WarehouseStockCount = lazy(() => import("./pages/warehouse/WarehouseStockCount.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -272,17 +273,11 @@ export default function App() {
                 per transfer, dua langkah (dispatch lalu receive) — lihat
                 schema.prisma. */}
             <Route path="/warehouse/transfers" element={<WarehouseTransfers />} />
-            <Route
-              path="/warehouse/stock-count"
-              element={
-                <WarehousePlaceholder
-                  title="Cycle Count & Stock Opname"
-                  subtitle="Penghitungan stok berkala dan rekonsiliasi selisih."
-                  phase={4}
-                  description="Backend sudah mencatat hasil opname sebagai satu baris ADJUSTMENT (POST /inventory/movements/adjustment) — Phase 4 menambah penjadwalan, blind count, dan review selisih."
-                />
-              }
-            />
+            {/* Tahap 5: DATA NYATA — sesi hitung terjadwal dengan blind
+                count opsional. systemQty disnapshot sekali saat Start
+                Count; stok baru berubah saat Complete Count menulis
+                ADJUSTMENT per baris berselisih. Lihat schema.prisma. */}
+            <Route path="/warehouse/stock-count" element={<WarehouseStockCount />} />
             <Route
               path="/warehouse/replenishment"
               element={

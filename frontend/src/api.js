@@ -266,6 +266,22 @@ export const api = {
   dispatchStockTransfer: (id) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST" }),
   receiveStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
   cancelStockTransfer: (id, reason) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Stock Count / Stock Opname (Warehouse Tahap 5)
+  getStockCounts: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/stock-counts${qs ? `?${qs}` : ""}`);
+  },
+  getStockCount: (id) => request(`/inventory/stock-counts/${id}`),
+  createStockCount: (data) => request("/inventory/stock-counts", { method: "POST", body: JSON.stringify(data) }),
+  updateStockCount: (id, data) => request(`/inventory/stock-counts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateStockCountLine: (id, lineId, data) =>
+    request(`/inventory/stock-counts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  startStockCount: (id) => request(`/inventory/stock-counts/${id}/start`, { method: "POST" }),
+  submitStockCount: (id) => request(`/inventory/stock-counts/${id}/submit`, { method: "POST" }),
+  recountStockCount: (id) => request(`/inventory/stock-counts/${id}/recount`, { method: "POST" }),
+  completeStockCount: (id) => request(`/inventory/stock-counts/${id}/complete`, { method: "POST" }),
+  cancelStockCount: (id, reason) => request(`/inventory/stock-counts/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

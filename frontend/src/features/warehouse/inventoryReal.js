@@ -165,6 +165,33 @@ export const LOCATION_TYPE_REAL = {
   DISPATCH_AREA:       "Dispatch Area",
 };
 
+// enum CountStatus/CountType/CountMethod — Stock Count (Tahap 5). Status
+// TIDAK punya "forward flow" generik seperti dokumen lain — transisinya
+// masing-masing lewat endpoint dengan efek samping berbeda (start=snapshot,
+// submit=validasi lengkap, complete=tulis ledger), jadi tidak ada array
+// FORWARD_FLOW di sini seperti RECEIPT_FORWARD_FLOW/ISSUE_FORWARD_FLOW.
+export const COUNT_STATUS_REAL = {
+  SCHEDULED:       { label: "Scheduled",       labelId: "Dijadwalkan",       tone: "neutral" },
+  IN_PROGRESS:     { label: "In Progress",     labelId: "Sedang Dihitung",   tone: "accent" },
+  WAITING_REVIEW:  { label: "Waiting Review",  labelId: "Menunggu Review",   tone: "orange" },
+  COMPLETED:       { label: "Completed",       labelId: "Selesai",           tone: "green" },
+  CANCELLED:       { label: "Cancelled",       labelId: "Dibatalkan",        tone: "neutral" },
+};
+
+export const COUNT_TYPE_REAL = {
+  CYCLE_COUNT:       { label: "Cycle Count",        labelId: "Hitung Berkala" },
+  FULL_STOCK_OPNAME: { label: "Full Stock Opname",  labelId: "Opname Penuh" },
+};
+
+export const COUNT_METHOD_REAL = {
+  BY_ITEM:          { label: "By Item" },
+  BY_CATEGORY:      { label: "By Category" },
+  BY_LOCATION:       { label: "By Location" },
+  BY_BATCH:          { label: "By Batch" },
+  RANDOM_SAMPLING:   { label: "Random Sampling" },
+  FULL_WAREHOUSE:    { label: "Full Warehouse" },
+};
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *
@@ -192,7 +219,16 @@ export const LOCATION_TYPE_REAL = {
  *     Kalau perlu material pengganti, batalkan permintaan lalu ajukan ulang
  *     dengan item yang benar — lebih jujur daripada field yang menyiratkan
  *     penggantian otomatis padahal tidak ada logikanya.
+ *   · Difference VALUE — Rupiah (Stock Count, Tahap 5) → Material tidak
+ *     punya kolom harga/costing (unitCost cuma tercatat PER PENERIMAAN di
+ *     StockMovement). Menghitung nilai selisih tanpa baseline harga yang
+ *     benar sama dengan mengarang angka.
+ *   · Assigned TEAM (jamak, Stock Count) → disederhanakan jadi satu
+ *     `assignedTo` — tidak ada entitas tim/grup kerja di sistem ini.
+ *   · Evidence foto (Stock Count) → tidak ada upload, sama alasan dengan
+ *     Goods Receipt Tahap 2B (butuh storage terpisah).
  */
 export const FIELDS_NOT_IN_BACKEND = [
-  "batch", "expiry", "barcode", "variant", "maximumStock", "substitutionItem", "stockByLocation",
+  "batch", "expiry", "barcode", "variant", "maximumStock", "substitutionItem",
+  "stockByLocation", "differenceValue", "assignedTeam", "evidencePhoto",
 ];
