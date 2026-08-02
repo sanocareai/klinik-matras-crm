@@ -166,33 +166,37 @@ model User {
   avatarUrl    String? // foto profil, path relatif "/uploads/avatars/xxx.jpg"
   createdAt    DateTime @default(now())
 
-  assignedCustomers     Customer[]              @relation("AssignedSales")
-  assignedConversations Conversation[]          @relation("AssignedAgent")
-  notes                 Note[]
-  salesTargets          SalesTarget[]
-  pushTokens            PushToken[]
-  sentMessages          Message[]               @relation("MessageSender")
-  firstResponderFor     Conversation[]          @relation("FirstResponder")
-  handoverEventsFrom    HandoverEvent[]         @relation("HandoverFrom")
-  handoverEventsTo      HandoverEvent[]         @relation("HandoverTo")
-  pipelineTransitions   PipelineTransition[]    @relation("PipelineTransitionActor")
-  orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
-  messageTemplates      MessageTemplate[]
-  unitStageLogs         UnitStageLog[]          @relation("UnitStageLogActor")
-  jobsAsDriver          Job[]                   @relation("JobDriver")
-  qcFitTests            QcFitTest[]             @relation("QcFitTestTester")
-  productionTargets     ProductionTarget[]      @relation("ProductionTargetCreator")
-  paymentsRecorded      Payment[]               @relation("PaymentRecorder")
-  paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
-  stockMovements        StockMovement[]         @relation("StockMovementActor")
-  routesAsDriver        Route[]                 @relation("RouteDriver")
-  podVerified           Job[]                   @relation("PodVerifier")
-  jobsRescheduled       Job[]                   @relation("JobRescheduler")
-  unitRevisionsCreated  UnitRevision[]          @relation("UnitRevisionCreator")
-  goodsReceiptsCreated  GoodsReceipt[]          @relation("GoodsReceiptCreator")
-  routesCreated         Route[]                 @relation("RouteCreator")
-  scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
-  scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
+  assignedCustomers       Customer[]              @relation("AssignedSales")
+  assignedConversations   Conversation[]          @relation("AssignedAgent")
+  notes                   Note[]
+  salesTargets            SalesTarget[]
+  pushTokens              PushToken[]
+  sentMessages            Message[]               @relation("MessageSender")
+  firstResponderFor       Conversation[]          @relation("FirstResponder")
+  handoverEventsFrom      HandoverEvent[]         @relation("HandoverFrom")
+  handoverEventsTo        HandoverEvent[]         @relation("HandoverTo")
+  pipelineTransitions     PipelineTransition[]    @relation("PipelineTransitionActor")
+  orderStatusChanges      OrderStatusTransition[] @relation("OrderStatusActor")
+  messageTemplates        MessageTemplate[]
+  unitStageLogs           UnitStageLog[]          @relation("UnitStageLogActor")
+  jobsAsDriver            Job[]                   @relation("JobDriver")
+  qcFitTests              QcFitTest[]             @relation("QcFitTestTester")
+  productionTargets       ProductionTarget[]      @relation("ProductionTargetCreator")
+  paymentsRecorded        Payment[]               @relation("PaymentRecorder")
+  paymentsVerified        PaymentVerification[]   @relation("PaymentVerifier")
+  stockMovements          StockMovement[]         @relation("StockMovementActor")
+  routesAsDriver          Route[]                 @relation("RouteDriver")
+  podVerified             Job[]                   @relation("PodVerifier")
+  jobsRescheduled         Job[]                   @relation("JobRescheduler")
+  unitRevisionsCreated    UnitRevision[]          @relation("UnitRevisionCreator")
+  goodsReceiptsCreated    GoodsReceipt[]          @relation("GoodsReceiptCreator")
+  materialIssuesRequested MaterialIssue[]         @relation("MaterialIssueRequester")
+  materialIssuesApproved  MaterialIssue[]         @relation("MaterialIssueApprover")
+  materialIssuesIssued    MaterialIssue[]         @relation("MaterialIssueIssuer")
+  materialIssuesCreated   MaterialIssue[]         @relation("MaterialIssueCreator")
+  routesCreated           Route[]                 @relation("RouteCreator")
+  scopeRevisionsMade      ScopeRevision[]         @relation("ScopeRevisionProposer")
+  scopeRevisionsDecided   ScopeRevision[]         @relation("ScopeRevisionDecider")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -1632,8 +1636,9 @@ model Material {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  movements         StockMovement[]
-  goodsReceiptLines GoodsReceiptLine[]
+  movements          StockMovement[]
+  goodsReceiptLines  GoodsReceiptLine[]
+  materialIssueLines MaterialIssueLine[]
 
   @@index([active])
   @@map("materials")
@@ -1696,9 +1701,16 @@ model StockMovement {
   goodsReceiptId String?       @map("goods_receipt_id") @db.Uuid
   goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
 
+  // Warehouse Tahap 3 — jejak balik ke Material Issue yang menghasilkan
+  // baris ISSUE ini. NULLABLE: movement ISSUE lama (lewat POST
+  // /movements/issue langsung ke unit) tidak punya dokumen alur approval.
+  materialIssueId String?        @map("material_issue_id") @db.Uuid
+  materialIssue   MaterialIssue? @relation(fields: [materialIssueId], references: [id], onDelete: SetNull)
+
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
   @@index([goodsReceiptId])
+  @@index([materialIssueId])
   @@map("stock_movements")
 }
 
@@ -1795,4 +1807,116 @@ model GoodsReceiptLine {
   @@index([goodsReceiptId])
   @@index([materialId])
   @@map("goods_receipt_lines")
+}
+
+// ─── MATERIAL ISSUE (Warehouse Tahap 3, 2 Agustus 2026) ─────────────────────
+//
+// KENAPA BARU SEKARANG. v1 inventory cuma punya POST /movements/issue —
+// SATU langkah, WAJIB unitId, langsung tercatat ke ledger. Itu masih benar
+// dan TIDAK DIUBAH (dipakai jalur "keluarkan material ke unit produksi
+// tertentu, sekarang juga"). Tapi Production sekarang minta material lewat
+// alur REQUEST → APPROVAL → PICKING → ISSUE, untuk kebutuhan yang belum
+// tentu terikat satu Unit (maintenance, sample, kebutuhan line produksi
+// umum) dan perlu di-approve dulu sebelum gudang mengeluarkan barang.
+//
+// INI SATU-SATUNYA TEMPAT "Reserved" JADI NYATA. Reserved BUKAN kolom
+// tersimpan — dihitung on-the-fly sebagai SUM(requestedQty) atas baris
+// MaterialIssueLine yang induknya berstatus APPROVED/READY_TO_PICK/PICKED
+// (lihat RESERVED_STATUSES di routes/goodsReceipt-sibling routes/
+// materialIssue.js, dan GET /inventory/stock yang menjumlahkannya). DRAFT
+// dan WAITING_APPROVAL BELUM mereservasi apa pun — itu masih permintaan,
+// bukan komitmen gudang. Begitu ISSUED, baris StockMovement ISSUE
+// ditulis dan reservasinya otomatis lepas (status sudah bukan salah satu
+// dari tiga di atas lagi) — tidak ada dua sumber kebenaran yang bisa beda.
+//
+// AMAN DILAKUKAN SEKARANG: stock_movements masih KOSONG di production,
+// tidak ada permintaan historis yang perlu direkonstruksi.
+enum IssueSourceType {
+  PRODUCTION_WORK_ORDER
+  MAINTENANCE_REQUEST
+  INTERNAL_REQUEST
+  SAMPLE_REQUEST
+  MANUAL
+}
+
+enum IssueStatus {
+  DRAFT
+  WAITING_APPROVAL
+  APPROVED
+  READY_TO_PICK
+  PICKED
+  ISSUED
+  CANCELLED
+}
+
+enum IssuePriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model MaterialIssue {
+  id          String          @id @default(uuid()) @db.Uuid
+  issueNumber String          @unique @map("issue_number") // MI-DDMMYY-NN
+  sourceType  IssueSourceType @map("source_type")
+
+  // String bebas, BUKAN FK — tidak ada sistem Work Order/Maintenance Ticket
+  // terpisah di v1. Sama pola dengan GoodsReceipt.sourceReference.
+  sourceReference String? @map("source_reference")
+  department      String?
+
+  // SetNull: staf resign, riwayat permintaan TETAP ada. Default pembuat
+  // record — kalau warehouse yang input atas nama orang lain, department
+  // (teks bebas) yang menjawab "dari mana", bukan field ini.
+  requestedById String? @map("requested_by")
+  requestedBy   User?   @relation("MaterialIssueRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  requiredDate DateTime?     @map("required_date") @db.Date
+  priority     IssuePriority @default(NORMAL)
+  notes        String?
+
+  status IssueStatus @default(DRAFT)
+
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("MaterialIssueApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime? @map("approved_at")
+
+  issuedById String?   @map("issued_by")
+  issuedBy   User?     @relation("MaterialIssueIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  issuedAt   DateTime? @map("issued_at")
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("MaterialIssueCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines     MaterialIssueLine[]
+  movements StockMovement[]
+
+  @@index([status])
+  @@index([requiredDate])
+  @@map("material_issues")
+}
+
+model MaterialIssueLine {
+  id              String        @id @default(uuid()) @db.Uuid
+  materialIssueId String        @map("material_issue_id") @db.Uuid
+  materialIssue   MaterialIssue @relation(fields: [materialIssueId], references: [id], onDelete: Cascade)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  requestedQty Float  @map("requested_qty") // INI yang dihitung sebagai Reserved selama APPROVED..PICKED
+  issuedQty    Float? @map("issued_qty") // diisi saat status ISSUED — INI yang jadi StockMovement
+
+  // v1: string bebas sama seperti StockMovement.location, BUKAN FK ke
+  // tabel lokasi (belum ada — lihat catatan di StockMovement).
+  sourceLocation String? @map("source_location")
+  notes          String?
+
+  @@index([materialIssueId])
+  @@index([materialId])
+  @@map("material_issue_lines")
 }

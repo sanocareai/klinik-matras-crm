@@ -169,12 +169,12 @@ export default function WarehouseInventory() {
                   <THead>
                     <TR>
                       <TH>Item Code</TH><TH>Item Name</TH><TH>Category</TH>
-                      <TH numeric>Available Stock</TH><TH numeric>Minimum</TH>
-                      <TH>Unit</TH><TH>Last Movement</TH><TH>Status</TH>
+                      <TH numeric>On Hand</TH><TH numeric>Reserved</TH><TH numeric>Available</TH>
+                      <TH numeric>Minimum</TH><TH>Unit</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={6} cols={8} />}
+                    {loading && <TableSkeletonRows rows={6} cols={9} />}
                     {!loading && terfilter?.map((r) => (
                       <TR key={r.materialId} clickable onClick={() => setSelected(r)}>
                         <TD className="font-semibold text-ink">{r.code}</TD>
@@ -182,18 +182,17 @@ export default function WarehouseInventory() {
                         <TD className="whitespace-nowrap text-ink2">
                           {r.category ? CATEGORY_REAL[r.category]?.label : <span className="text-ink3">—</span>}
                         </TD>
-                        <TD numeric className={r.balance <= 0 ? "font-bold text-red" : "font-semibold text-ink"}>
-                          {formatQty(r.balance, r.unit)}
+                        <TD numeric className="text-ink2">{r.balance}</TD>
+                        <TD numeric className={r.reserved > 0 ? "font-semibold text-orange" : "text-ink3"}>
+                          {r.reserved > 0 ? r.reserved : "—"}
+                        </TD>
+                        <TD numeric className={r.available <= 0 ? "font-bold text-red" : "font-semibold text-ink"}>
+                          {formatQty(r.available, r.unit)}
                         </TD>
                         <TD numeric className="text-ink3">
                           {r.reorderPoint != null ? r.reorderPoint : "—"}
                         </TD>
                         <TD className="text-ink2">{r.unit.toLowerCase()}</TD>
-                        <TD className="whitespace-nowrap text-ink3">
-                          {r.lastMovementAt
-                            ? new Date(r.lastMovementAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                            : "—"}
-                        </TD>
                         <TD><StatusBadge map={STOCK_STATUS_REAL} value={r.stockStatus} /></TD>
                       </TR>
                     ))}
@@ -215,7 +214,8 @@ export default function WarehouseInventory() {
                       </div>
                       <div className="mt-0.5 truncate text-[13px] text-ink">{r.name}</div>
                       <div className="mt-1 text-[11.5px] text-ink2">
-                        <strong className="text-ink">{formatQty(r.balance, r.unit)}</strong>
+                        <strong className="text-ink">{formatQty(r.available, r.unit)}</strong> available
+                        {r.reserved > 0 && ` · ${r.reserved} reserved`}
                         {r.reorderPoint != null && ` · minimum ${r.reorderPoint}`}
                         {r.category && ` · ${CATEGORY_REAL[r.category]?.label}`}
                       </div>

@@ -47,6 +47,7 @@ const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("./pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("./pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("./pages/warehouse/WarehouseGoodsReceipt.jsx"));
+const WarehouseMaterialIssue = lazy(() => import("./pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -260,17 +261,11 @@ export default function App() {
                 depan ledger. Putaway menulis stock_movements RECEIPT,
                 disiplin PRD §8.1 tetap utuh. Lihat schema.prisma. */}
             <Route path="/warehouse/goods-receipt" element={<WarehouseGoodsReceipt />} />
-            <Route
-              path="/warehouse/material-issue"
-              element={
-                <WarehousePlaceholder
-                  title="Material Issue"
-                  subtitle="Pengeluaran material untuk kebutuhan produksi."
-                  phase={3}
-                  description="Backend sudah bisa mengeluarkan material ke unit (POST /inventory/movements/issue) — Phase 3 menambah approval, picking, dan reservasi stok."
-                />
-              }
-            />
+            {/* Tahap 3: DATA NYATA — alur request → approval → picking →
+                issue di depan ledger. Reserved di Stock & Material sekarang
+                dihitung dari sini (APPROVED..PICKED). Confirm Issue menulis
+                stock_movements ISSUE, disiplin PRD §8.1 tetap utuh. */}
+            <Route path="/warehouse/material-issue" element={<WarehouseMaterialIssue />} />
             <Route
               path="/warehouse/transfers"
               element={

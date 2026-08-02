@@ -50,9 +50,11 @@ export const MOVEMENT_LABEL_REAL = {
 };
 
 /**
- * Status stok DITURUNKAN dari saldo ledger — tidak pernah disimpan sebagai
- * kolom (PRD §8.1). Disiplin yang sama dengan backend GET /inventory/stock
- * yang menghitung `balance` lewat SUM(qty), bukan membacanya.
+ * Status stok DITURUNKAN dari ANGKA YANG BENAR-BENAR BISA DIALOKASIKAN —
+ * `available` (balance − reserved), bukan `balance` mentah — sejak Tahap 3
+ * menambahkan Reserved (SUM permintaan Material Issue yang APPROVED..PICKED).
+ * Tidak pernah disimpan sebagai kolom (PRD §8.1); backend GET /inventory/stock
+ * sudah menghitung & mengembalikan `available` langsung.
  *
  * `reorderPoint` null = alert MATI untuk material itu (lihat catatan di
  * schema.prisma) — BUKAN "reorder di titik nol". Karena itu material tanpa
@@ -60,8 +62,9 @@ export const MOVEMENT_LABEL_REAL = {
  */
 export function deriveStockStatusReal(row) {
   if (!row.active) return "INACTIVE";
-  if (row.balance <= 0) return "OUT_OF_STOCK";
-  if (row.reorderPoint != null && row.balance <= row.reorderPoint) return "LOW_STOCK";
+  const available = row.available ?? row.balance;
+  if (available <= 0) return "OUT_OF_STOCK";
+  if (row.reorderPoint != null && available <= row.reorderPoint) return "LOW_STOCK";
   return "IN_STOCK";
 }
 
@@ -97,14 +100,42 @@ export const RECEIPT_SOURCE_REAL = {
   MANUAL:                     { label: "Manual Receipt",           labelId: "Input Manual" },
 };
 
+// enum IssueStatus & IssueSourceType/IssuePriority — Material Issue (Tahap
+// 3). Sama pola dengan RECEIPT_STATUS_REAL: urutan objek mengikuti
+// FORWARD_FLOW backend.
+export const ISSUE_STATUS_REAL = {
+  DRAFT:            { label: "Draft",            labelId: "Draft",             tone: "neutral" },
+  WAITING_APPROVAL: { label: "Waiting Approval", labelId: "Menunggu Approval", tone: "orange" },
+  APPROVED:         { label: "Approved",         labelId: "Disetujui",         tone: "accent" },
+  READY_TO_PICK:    { label: "Ready to Pick",    labelId: "Siap Diambil",      tone: "accent" },
+  PICKED:           { label: "Picked",           labelId: "Sudah Diambil",     tone: "accent" },
+  ISSUED:           { label: "Issued",           labelId: "Dikeluarkan",       tone: "green" },
+  CANCELLED:        { label: "Cancelled",        labelId: "Dibatalkan",        tone: "neutral" },
+};
+export const ISSUE_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "READY_TO_PICK", "PICKED", "ISSUED"];
+
+export const ISSUE_SOURCE_REAL = {
+  PRODUCTION_WORK_ORDER: { label: "Production Work Order", labelId: "Work Order Produksi" },
+  MAINTENANCE_REQUEST:   { label: "Maintenance Request",   labelId: "Permintaan Perawatan" },
+  INTERNAL_REQUEST:      { label: "Internal Request",      labelId: "Permintaan Internal" },
+  SAMPLE_REQUEST:        { label: "Sample Request",        labelId: "Permintaan Sampel" },
+  MANUAL:                { label: "Manual Issue",          labelId: "Input Manual" },
+};
+
+export const ISSUE_PRIORITY_REAL = {
+  LOW:    { label: "Low",    labelId: "Rendah",   tone: "neutral" },
+  NORMAL: { label: "Normal", labelId: "Normal",   tone: "accent" },
+  HIGH:   { label: "High",   labelId: "Tinggi",   tone: "orange" },
+  URGENT: { label: "Urgent", labelId: "Mendesak", tone: "red" },
+};
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *
  * Belum ada di backend, jadi TIDAK ditampilkan sebagai kolom/filter di
  * halaman berdata nyata (menampilkannya = kolom yang selalu kosong):
- *   · Reserved / Available terpisah → belum ada sistem reservasi stok sama
- *     sekali. Saldo ledger = on hand = available. Menyusul bersama alur
- *     Material Issue (Phase 3), yang memang jadi tempat stok dialokasikan.
+ *   · Reserved / Available SUDAH nyata sejak Tahap 3 — dihitung dari
+ *     Material Issue yang APPROVED..PICKED, lihat deriveStockStatusReal().
  *   · Lokasi rak/bin → `stock_movements.location` hari ini string bebas
  *     dengan default "GUDANG_UTAMA", BUKAN hierarki Warehouse→Zone→Rack→Bin.
  *     Butuh entitas lokasi tersendiri (Phase 4, bersama Stock Transfer).
@@ -115,7 +146,11 @@ export const RECEIPT_SOURCE_REAL = {
  *     kolomnya sama sekali.
  *   · Status OVER_STOCK/QUARANTINE/DAMAGED → tidak ada maximumStock maupun
  *     state karantina di ledger.
+ *   · Substitution Item (Material Issue) → sengaja tidak dibangun Tahap 3.
+ *     Kalau perlu material pengganti, batalkan permintaan lalu ajukan ulang
+ *     dengan item yang benar — lebih jujur daripada field yang menyiratkan
+ *     penggantian otomatis padahal tidak ada logikanya.
  */
 export const FIELDS_NOT_IN_BACKEND = [
-  "reserved", "location", "batch", "expiry", "barcode", "variant", "maximumStock",
+  "location", "batch", "expiry", "barcode", "variant", "maximumStock", "substitutionItem",
 ];

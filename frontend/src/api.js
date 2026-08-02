@@ -240,6 +240,19 @@ export const api = {
     request(`/inventory/goods-receipts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   putawayGoodsReceipt: (id, data = {}) => request(`/inventory/goods-receipts/${id}/putaway`, { method: "POST", body: JSON.stringify(data) }),
   rejectGoodsReceipt: (id, reason) => request(`/inventory/goods-receipts/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Material Issue (Warehouse Tahap 3)
+  getMaterialIssues: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/material-issues${qs ? `?${qs}` : ""}`);
+  },
+  getMaterialIssue: (id) => request(`/inventory/material-issues/${id}`),
+  createMaterialIssue: (data) => request("/inventory/material-issues", { method: "POST", body: JSON.stringify(data) }),
+  updateMaterialIssue: (id, data) => request(`/inventory/material-issues/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateMaterialIssueLine: (id, lineId, data) =>
+    request(`/inventory/material-issues/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
+  cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

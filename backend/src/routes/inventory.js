@@ -12,6 +12,7 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { RESERVED_STATUSES } from "./materialIssue.js";
 
 export const inventoryRouter = express.Router();
 inventoryRouter.use(requireAuth);
@@ -120,19 +121,32 @@ inventoryRouter.get("/stock", requirePermission(P.INVENTORY_READ), async (req, r
     // `category` & `lastMovementAt` ikut di-select (Tahap 2) supaya halaman
     // Stock & Material tidak perlu memanggil /materials terpisah lalu
     // menggabungkan dua daftar di frontend.
+    //
+    // `reserved` (Tahap 3) — SUM(requested_qty) dari material_issue_lines
+    // yang induknya berstatus APPROVED/READY_TO_PICK/PICKED. RESERVED_STATUSES
+    // diimpor dari routes/materialIssue.js supaya definisinya SATU tempat,
+    // tidak bisa drift antara file yang menghitung dan file yang menulis.
     const balances = await prisma.$queryRaw`
       SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active, m.category,
              m.service_line AS "serviceLine",
              m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
              COALESCE(SUM(sm.qty), 0)::float AS balance,
+             COALESCE(res.reserved, 0)::float AS reserved,
              MAX(sm.created_at) AS "lastMovementAt"
       FROM materials m
       LEFT JOIN stock_movements sm ON sm.material_id = m.id
+      LEFT JOIN (
+        SELECT mil.material_id, SUM(mil.requested_qty) AS reserved
+        FROM material_issue_lines mil
+        JOIN material_issues mi ON mi.id = mil.material_issue_id
+        WHERE mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[])
+        GROUP BY mil.material_id
+      ) res ON res.material_id = m.id
       GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
-               m.service_line, m.reorder_point, m.reorder_qty
+               m.service_line, m.reorder_point, m.reorder_qty, res.reserved
       ORDER BY m.code ASC
     `;
-    res.json(balances);
+    res.json(balances.map((b) => ({ ...b, available: b.balance - b.reserved })));
   } catch (err) {
     handleErr(err, res);
   }

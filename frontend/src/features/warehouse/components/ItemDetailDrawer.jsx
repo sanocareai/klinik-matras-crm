@@ -92,12 +92,16 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
             <div className="mt-3 rounded-btn border border-border p-3">
               <div className="text-[10px] font-bold uppercase tracking-wide text-ink3">Available Stock</div>
               <div className="mt-0.5 text-[24px] font-extrabold leading-none tabular-nums text-ink">
-                {formatQty(item.balance, item.unit)}
+                {formatQty(item.available, item.unit)}
               </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                <div className="flex justify-between"><dt className="text-ink3">On Hand</dt><dd className="font-semibold text-ink">{item.balance}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink3">Reserved</dt><dd className="font-semibold text-orange">{item.reserved}</dd></div>
+              </dl>
               <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink3">
-                Dihitung dari penjumlahan seluruh baris ledger, bukan angka tersimpan.
-                Belum ada sistem reservasi stok — jadi saldo ini sekaligus
-                <em> on hand</em> dan <em>available</em>.
+                On Hand dihitung dari penjumlahan seluruh baris ledger. Reserved
+                dari Material Issue yang sudah disetujui tapi belum dikeluarkan.
+                Available = On Hand − Reserved, tidak satu pun disimpan sebagai kolom.
               </p>
             </div>
 
