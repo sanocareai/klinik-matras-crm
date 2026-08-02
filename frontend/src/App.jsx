@@ -40,6 +40,7 @@ const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
 const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx"));
 const ArmadaIssues      = lazy(() => import("./pages/armada/ArmadaIssues.jsx"));
 const ArmadaReturns     = lazy(() => import("./pages/armada/ArmadaReturns.jsx"));
+const ArmadaDeliveryReport = lazy(() => import("./pages/armada/ArmadaDeliveryReport.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -227,17 +228,13 @@ export default function App() {
                 diantar ulang, diulang sampai customer bilang "yes". Model
                 UnitRevision baru, lihat catatan panjang di schema.prisma. */}
             <Route path="/armada/returns" element={<ArmadaReturns />} />
-            <Route
-              path="/armada/reports"
-              element={
-                <ArmadaPlaceholder
-                  title="Laporan Delivery"
-                  subtitle="Performa pengiriman, ketepatan waktu, dan produktivitas armada."
-                  stage={6}
-                  description="Laporan menunggu data operasional nyata terkumpul lebih dulu."
-                />
-              }
-            />
+            {/* Tahap 7: data nyata, bukan placeholder — tapi jobs MASIH KOSONG
+                di production saat ini, jadi tiap chart akan tampil kosong
+                sampai dispatcher benar-benar memakai modul ini. Lihat catatan
+                panjang di ArmadaDeliveryReport.jsx. "Ketepatan waktu" dari
+                spesifikasi TIDAK dibangun — timeWindow cuma teks bebas, tidak
+                ada kolom target waktu terstruktur untuk dibandingkan. */}
+            <Route path="/armada/reports" element={<ArmadaDeliveryReport />} />
             <Route path="/kendali"     element={<Kendali />} />
             <Route path="/gudang"      element={<Gudang />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />

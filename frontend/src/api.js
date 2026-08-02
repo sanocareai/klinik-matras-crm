@@ -172,6 +172,12 @@ export const api = {
   searchRevisionUnits: (q) => request(`/armada/revisions/units?q=${encodeURIComponent(q)}`),
   createRevision: (data) => request("/armada/revisions", { method: "POST", body: JSON.stringify(data) }),
   updateRevision: (id, data) => request(`/armada/revisions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Laporan Delivery (Delivery Tahap 7)
+  getDeliveryReportSummary: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/armada/reports/summary${qs ? `?${qs}` : ""}`);
+  },
   getDrivers: () => request("/armada/drivers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>

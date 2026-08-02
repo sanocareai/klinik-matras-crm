@@ -1400,3 +1400,58 @@ armadaRouter.patch("/revisions/:id", requirePermission(P.JOB_WRITE), async (req,
     handleErr(err, res);
   }
 });
+
+// ─── LAPORAN DELIVERY (Tahap 7) ─────────────────────────────────────────────
+//
+// `scheduledDate`/`Route.date` adalah kolom `@db.Date` (kalender murni, tanpa
+// jam) — BEDA dengan `createdAt` di analytics.js yang timestamp. Karena tidak
+// ada komponen jam, tidak ada ambiguitas zona waktu untuk kolom ini: "2026-08-02"
+// tersimpan sebagai tanggal itu sendiri, bukan sebuah instant yang bisa
+// bergeser hari tergantung zona container. Helper WIB di utils/wib.js SENGAJA
+// tidak dipakai di sini karena masalah yang diselesaikannya (instant UTC vs
+// kalender WIB) tidak berlaku untuk kolom tanpa komponen jam.
+//
+// ⚠️ KONTEKS PENTING: saat endpoint ini ditulis, tabel jobs MASIH KOSONG di
+// production (0 baris, sama seperti saat Vehicle/Route dibangun Tahap 3).
+// Setiap chart/tabel di halaman ini akan tampil kosong sampai dispatcher
+// benar-benar memakai modul Delivery — itu BUKAN bug, itu keadaan sebenarnya.
+armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const dateWhere = from && to ? { scheduledDate: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
+    const routeDateWhere = from && to ? { date: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
+
+    const [byStatus, byType, jobsForPod, routeByStatus, vehicleByStatus, driverGroups] = await Promise.all([
+      prisma.job.groupBy({ by: ["status"], where: dateWhere, _count: { _all: true } }),
+      prisma.job.groupBy({ by: ["type"], where: dateWhere, _count: { _all: true } }),
+      prisma.job.findMany({ where: { ...dateWhere, status: "COMPLETED" }, select: { status: true, podStatus: true, proofPhotoUrls: true } }),
+      prisma.route.groupBy({ by: ["status"], where: routeDateWhere, _count: { _all: true } }),
+      prisma.vehicle.groupBy({ by: ["status"], _count: { _all: true } }), // status ARMADA SEKARANG, sengaja tidak dibatasi rentang tanggal
+      prisma.job.groupBy({ by: ["driverId"], where: { ...dateWhere, status: "COMPLETED", driverId: { not: null } }, _count: { _all: true } }),
+    ]);
+
+    const podCounts = { INCOMPLETE: 0, PENDING_REVIEW: 0, VERIFIED: 0, REJECTED: 0 };
+    jobsForPod.forEach((j) => { podCounts[derivePodStatus(j)]++; });
+
+    const driverIds = driverGroups.map((g) => g.driverId);
+    const drivers = driverIds.length
+      ? await prisma.user.findMany({ where: { id: { in: driverIds } }, select: { id: true, name: true } })
+      : [];
+    const driverName = Object.fromEntries(drivers.map((d) => [d.id, d.name]));
+    const driverProductivity = driverGroups
+      .map((g) => ({ driverId: g.driverId, name: driverName[g.driverId] || "—", completed: g._count._all }))
+      .sort((a, b) => b.completed - a.completed);
+
+    res.json({
+      range: { from: from || null, to: to || null },
+      byStatus: byStatus.map((r) => ({ status: r.status, count: r._count._all })),
+      byType: byType.map((r) => ({ type: r.type, count: r._count._all })),
+      pod: podCounts,
+      byRouteStatus: routeByStatus.map((r) => ({ status: r.status, count: r._count._all })),
+      byVehicleStatus: vehicleByStatus.map((r) => ({ status: r.status, count: r._count._all })),
+      driverProductivity,
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
