@@ -44,6 +44,9 @@ const ArmadaDeliveryReport = lazy(() => import("./pages/armada/ArmadaDeliveryRep
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
+const WarehouseDashboard   = lazy(() => import("./pages/warehouse/WarehouseDashboard.jsx"));
+const WarehouseInventory   = lazy(() => import("./pages/warehouse/WarehouseInventory.jsx"));
+const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
@@ -236,7 +239,98 @@ export default function App() {
                 ada kolom target waktu terstruktur untuk dibandingkan. */}
             <Route path="/armada/reports" element={<ArmadaDeliveryReport />} />
             <Route path="/kendali"     element={<Kendali />} />
+            {/* ── WAREHOUSE (Tahap 1, 2 Agustus 2026) ──────────────────────
+                /gudang TIDAK di-redirect dan TIDAK diubah: ia satu-satunya
+                halaman Warehouse berdata NYATA (ledger stock_movements) dan
+                tetap dipakai sampai Tahap 2 menyambungkan struktur baru ke
+                backend yang sama. Sidebar tetap benar di /gudang karena
+                divisionFromPath() memetakan KEDUA prefiks ke "warehouse".
+                Menu sidebar sekarang menunjuk /warehouse/*; /gudang dijangkau
+                lewat tombol "Buka data nyata" di WarehouseInventory. */}
             <Route path="/gudang"      element={<Gudang />} />
+            <Route path="/warehouse"   element={<Navigate to="/warehouse/dashboard" replace />} />
+            <Route path="/warehouse/dashboard" element={<WarehouseDashboard />} />
+            {/* Data CONTOH — lihat catatan di WarehouseInventory.jsx. Angka
+                stok tetap TURUNAN (available = on hand − reserved), menjaga
+                disiplin PRD §8.1 supaya Tahap 2 tinggal menukar sumber data. */}
+            <Route path="/warehouse/inventory" element={<WarehouseInventory />} />
+            <Route
+              path="/warehouse/goods-receipt"
+              element={
+                <WarehousePlaceholder
+                  title="Goods Receipt"
+                  subtitle="Penerimaan barang dari supplier, produksi, atau retur."
+                  phase={2}
+                  description="Backend sudah punya pencatatan penerimaan (POST /inventory/movements/receipt) — Phase 2 membungkusnya jadi alur inspection & putaway."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/material-issue"
+              element={
+                <WarehousePlaceholder
+                  title="Material Issue"
+                  subtitle="Pengeluaran material untuk kebutuhan produksi."
+                  phase={3}
+                  description="Backend sudah bisa mengeluarkan material ke unit (POST /inventory/movements/issue) — Phase 3 menambah approval, picking, dan reservasi stok."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/transfers"
+              element={
+                <WarehousePlaceholder
+                  title="Stock Transfer"
+                  subtitle="Mutasi barang antar lokasi, rak, atau gudang."
+                  phase={4}
+                  description="Butuh entitas lokasi (Warehouse → Zone → Rack → Bin) lebih dulu; hari ini lokasi masih teks bebas di ledger."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/stock-count"
+              element={
+                <WarehousePlaceholder
+                  title="Cycle Count & Stock Opname"
+                  subtitle="Penghitungan stok berkala dan rekonsiliasi selisih."
+                  phase={4}
+                  description="Backend sudah mencatat hasil opname sebagai satu baris ADJUSTMENT (POST /inventory/movements/adjustment) — Phase 4 menambah penjadwalan, blind count, dan review selisih."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/replenishment"
+              element={
+                <WarehousePlaceholder
+                  title="Replenishment"
+                  subtitle="Saran restok berdasarkan minimum stock dan reorder point."
+                  phase={5}
+                  description="Material sudah punya reorderPoint & reorderQty di database — Phase 5 mengubahnya jadi saran restok yang bisa disetujui."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/adjustments"
+              element={
+                <WarehousePlaceholder
+                  title="Damaged, Return & Adjustment"
+                  subtitle="Barang rusak, retur, dan penyesuaian stok."
+                  phase={5}
+                  description="Backend sudah punya movement WASTE, RETURN, dan ADJUSTMENT — Phase 5 menyatukannya jadi satu alur dengan alasan wajib dan approval."
+                />
+              }
+            />
+            <Route
+              path="/warehouse/reports"
+              element={
+                <WarehousePlaceholder
+                  title="Warehouse Reports"
+                  subtitle="Nilai inventory, akurasi stok, dan pergerakan material."
+                  phase={6}
+                  description="Menunggu data operasional nyata terkumpul — tabel materials & stock_movements masih kosong di production."
+                />
+              }
+            />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />

@@ -42,7 +42,7 @@ export const NOTIF_WORKSPACES = {
 //   CUSTOMER      → pages/Customers.jsx    baca `?id=` → buka CustomerDrawer
 //   SALES_ORDER   → pages/Orders.jsx       baca `?id=` → buka OrderTimelineDrawer
 // WORK_ORDER, QUALITY_CONTROL, LOW_STOCK, MATERIAL_REQUEST, DELIVERY_ISSUE
-// BELUM — halaman tujuannya (Bengkel/Gudang/Armada) tidak punya mekanisme
+// BELUM — halaman tujuannya (Bengkel/Warehouse/Armada) tidak punya mekanisme
 // "buka satu objek" sama sekali saat ini (bukan cuma belum baca query param,
 // UI detail-per-itemnya sendiri belum ada). Klik notifikasi tipe itu akan
 // mendarat di papan/daftar workspace-nya — perbaikan yang nyata dibanding
@@ -57,8 +57,11 @@ export const NOTIF_TYPES = {
   SALES_ORDER:      { workspace: "growth",    label: "Order",          path: (id) => `/orders?id=${id}` },
   WORK_ORDER:       { workspace: "bengkel",   label: "Work order",     path: (id) => `/bengkel?unit=${id}` },
   QUALITY_CONTROL:  { workspace: "bengkel",   label: "Quality control",path: (id) => `/bengkel?qc=${id}` },
-  LOW_STOCK:        { workspace: "warehouse", label: "Stok menipis",   path: (id) => `/gudang?material=${id}` },
-  MATERIAL_REQUEST: { workspace: "warehouse", label: "Permintaan material", path: (id) => `/gudang?request=${id}` },
+  // Warehouse Tahap 1: tujuan dipindah dari /gudang ke /warehouse/*. Halaman
+  // lamanya masih hidup di /gudang, tapi daftar berfilter yang baru ada di
+  // sini — dan ke sinilah menu sidebar sekarang mengarah.
+  LOW_STOCK:        { workspace: "warehouse", label: "Stok menipis",   path: (id) => `/warehouse/inventory?item=${id}` },
+  MATERIAL_REQUEST: { workspace: "warehouse", label: "Permintaan material", path: (id) => `/warehouse/material-issue?request=${id}` },
   DELIVERY_ISSUE:   { workspace: "armada",    label: "Pengiriman",     path: (id) => `/armada?job=${id}` },
   SYSTEM:           { workspace: "system",    label: "Sistem",         path: () => `/notifications` },
 };

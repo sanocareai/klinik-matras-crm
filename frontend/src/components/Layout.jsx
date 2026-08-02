@@ -5,6 +5,7 @@ import {
   Megaphone, BarChart3, Zap, Settings, UserCog,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
+  ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -123,6 +124,23 @@ const DIVISIONS = {
   },
   // Workspace ke-5 (SANSS, 1 Agustus 2026) — Gudang dikeluarkan dari Bengkel
   // jadi workspace sendiri. Lihat alasannya di backend constants/permissions.js.
+  //
+  // ── DIPERLUAS 2 Agustus 2026, Warehouse Tahap 1 ─────────────────────────
+  // Sebelumnya satu menu ("Stok & Material" → /gudang). Sekarang sembilan,
+  // dengan prefiks route BARU /warehouse/* — bukan /gudang/*.
+  //
+  // KENAPA GANTI PREFIKS (padahal Delivery justru MEMPERTAHANKAN /armada/*):
+  // di Delivery, kunci workspace-nya memang "armada", jadi path dan kunci
+  // sudah cocok. Di sini TIDAK: kunci workspace, PORTALS backend,
+  // divisionContent, dan notificationTypes SEMUANYA sudah menyebut
+  // "warehouse" — cuma path-nya yang sendirian menyebut "gudang". Menyamakan
+  // sekarang MENGHILANGKAN ketidakcocokan itu, bukan menambah yang baru, dan
+  // ongkosnya nol: cuma ada SATU route lama untuk dialihkan (/gudang) dan
+  // tabel materials/stock_movements masih kosong di production.
+  //
+  // /gudang TIDAK dihapus — di-redirect ke /warehouse/inventory di App.jsx,
+  // dan halaman lamanya (pages/Gudang.jsx) TETAP UTUH sebagai satu-satunya
+  // halaman berdata NYATA sampai Tahap 2 menyambungkan backend.
   warehouse: {
     label: "Warehouse",
     accent: {
@@ -132,7 +150,15 @@ const DIVISIONS = {
       {
         section: "WAREHOUSE",
         items: [
-          { to: "/gudang", label: "Stok & Material", Icon: Package },
+          { to: "/warehouse/dashboard",     label: "Dashboard",         Icon: LayoutDashboard },
+          { to: "/warehouse/inventory",     label: "Stock & Material",  Icon: Package },
+          { to: "/warehouse/goods-receipt", label: "Goods Receipt",     Icon: ArrowDownToLine },
+          { to: "/warehouse/material-issue",label: "Material Issue",    Icon: ArrowUpFromLine },
+          { to: "/warehouse/transfers",     label: "Stock Transfer",    Icon: ArrowLeftRight },
+          { to: "/warehouse/stock-count",   label: "Cycle Count & Opname", Icon: Scale },
+          { to: "/warehouse/replenishment", label: "Replenishment",     Icon: TrendingUp },
+          { to: "/warehouse/adjustments",   label: "Damaged & Retur",   Icon: AlertTriangle },
+          { to: "/warehouse/reports",       label: "Reports",           Icon: BarChart3 },
         ],
       },
     ],
@@ -210,6 +236,10 @@ const DIVISIONS = {
 // /gudang SEKARANG milik "warehouse", bukan lagi "bengkel" — Gudang sudah
 // jadi workspace sendiri (SANSS, 1 Agustus 2026).
 function divisionFromPath(pathname) {
+  // /warehouse/* adalah prefiks BARU (Tahap 1); /gudang dipertahankan supaya
+  // link lama & halaman berdata nyata pages/Gudang.jsx tetap punya sidebar
+  // yang benar sampai dipensiunkan.
+  if (pathname.startsWith("/warehouse")) return "warehouse";
   if (pathname.startsWith("/gudang")) return "warehouse";
   if (pathname.startsWith("/bengkel")) return "bengkel";
   if (pathname.startsWith("/armada")) return "armada";
