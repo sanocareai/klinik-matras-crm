@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
-  Wrench, Truck, Gauge,
+  Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -137,6 +137,17 @@ const DIVISIONS = {
       },
     ],
   },
+  // ── DELIVERY & FULFILLMENT (diperluas 2 Agustus 2026, Tahap 1) ───────────
+  // Sebelumnya satu menu ("Jadwal & Job" → /armada). Sekarang sembilan, dan
+  // route-nya bersarang di bawah /armada/* — BUKAN /delivery/*, supaya satu
+  // divisi tidak punya dua nama: `divisionFromPath()` di bawah, PORTALS di
+  // backend, dan WorkspaceSwitcher semuanya sudah memakai "armada".
+  //
+  // /armada (tanpa sub-path) TIDAK dihapus — ia redirect ke /armada/dashboard
+  // di App.jsx, karena masih dirujuk PORTALS backend & divisionContent.js.
+  //
+  // Ikon semuanya dari lucide-react yang sudah terpasang; tidak ada library
+  // ikon baru.
   armada: {
     label: "Delivery",
     accent: {
@@ -144,9 +155,17 @@ const DIVISIONS = {
     },
     sections: [
       {
-        section: "ARMADA",
+        section: "DELIVERY & FULFILLMENT",
         items: [
-          { to: "/armada", label: "Jadwal & Job", Icon: Truck },
+          { to: "/armada/dashboard", label: "Dashboard",           Icon: LayoutDashboard },
+          { to: "/armada/jobs",      label: "Jadwal & Penugasan",  Icon: CalendarClock },
+          { to: "/armada/routes",    label: "Route Planner",       Icon: Route },
+          { to: "/armada/tracking",  label: "Live Tracking",       Icon: MapPin },
+          { to: "/armada/resources", label: "Driver & Armada",     Icon: Truck },
+          { to: "/armada/pod",       label: "Proof of Delivery",   Icon: ClipboardCheck },
+          { to: "/armada/issues",    label: "Kendala & Reschedule",Icon: AlertTriangle },
+          { to: "/armada/returns",   label: "Retur",               Icon: Undo2 },
+          { to: "/armada/reports",   label: "Laporan",             Icon: BarChart3 },
         ],
       },
     ],

@@ -32,6 +32,8 @@ const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
+const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
+const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
 
@@ -169,7 +171,101 @@ export default function App() {
                 portals[0].path untuk mereka, PRD §4. */}
             <Route path="/portal/:key" element={<DivisionPage user={user} />} />
             <Route path="/bengkel"     element={<Bengkel />} />
-            <Route path="/armada"      element={<Armada />} />
+            {/* ── DELIVERY & FULFILLMENT (Tahap 1) ─────────────────────────
+                /armada TETAP HIDUP sebagai redirect — masih dirujuk PORTALS di
+                backend (constants/permissions.js) dan divisionContent.js;
+                menghapusnya akan memutus kartu Portal & command center.
+
+                /armada/jobs memakai <Armada /> APA ADANYA. Halaman itu sudah
+                tersambung ke 19 endpoint NYATA (siklus job, upload foto bukti,
+                urutan rute, pencatatan pembayaran, antrean offline driver).
+                Tahap 1 TIDAK menyentuhnya — menggantinya dengan data dummy
+                akan jadi REGRESI fungsional, bukan penambahan.
+
+                Tujuh route sisanya memakai placeholder yang menyebut tahap
+                keberapa halamannya datang. Sidebar menampilkan sembilan menu
+                sekaligus, jadi menu yang menghasilkan 404 akan terbaca sebagai
+                sistem rusak. */}
+            <Route path="/armada"           element={<Navigate to="/armada/dashboard" replace />} />
+            <Route path="/armada/dashboard" element={<ArmadaDashboard />} />
+            <Route path="/armada/jobs"      element={<Armada />} />
+            <Route
+              path="/armada/routes"
+              element={
+                <ArmadaPlaceholder
+                  title="Route Planner"
+                  subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
+                  stage={3}
+                  description="Perencanaan rute bergantung pada entitas Vehicle & Route yang belum ada di database — lihat risiko R3 pada laporan audit."
+                />
+              }
+            />
+            <Route
+              path="/armada/tracking"
+              element={
+                <ArmadaPlaceholder
+                  title="Live Tracking"
+                  subtitle="Pantau posisi armada dan status perjalanan secara langsung."
+                  stage={4}
+                  description="Peta dan panel job aktif dibangun setelah Route Planner siap."
+                />
+              }
+            />
+            <Route
+              path="/armada/resources"
+              element={
+                <ArmadaPlaceholder
+                  title="Driver & Armada"
+                  subtitle="Kelola data driver, kendaraan, dan ketersediaannya."
+                  stage={3}
+                  description="Tab Armada membutuhkan entitas Vehicle di database, yang belum ada."
+                />
+              }
+            />
+            <Route
+              path="/armada/pod"
+              element={
+                <ArmadaPlaceholder
+                  title="Proof of Delivery"
+                  subtitle="Verifikasi foto, tanda tangan, dan checklist penyelesaian job."
+                  stage={4}
+                  description="Pengambilan foto & tanda tangan SUDAH berjalan di aplikasi driver. Halaman ini menjadi sisi verifikasinya, bukan sumber data baru."
+                />
+              }
+            />
+            <Route
+              path="/armada/issues"
+              element={
+                <ArmadaPlaceholder
+                  title="Kendala & Reschedule"
+                  subtitle="Tangani job bermasalah, jadwalkan ulang, dan eskalasi."
+                  stage={5}
+                  description="Job gagal beserta alasan dan fotonya sudah direkam backend hari ini."
+                />
+              }
+            />
+            <Route
+              path="/armada/returns"
+              element={
+                <ArmadaPlaceholder
+                  title="Retur"
+                  subtitle="Kelola pengambilan kembali produk dan pemeriksaan di gudang."
+                  stage={5}
+                  description="Alur retur menyambung ke modul Warehouse."
+                />
+              }
+            />
+            <Route
+              path="/armada/reports"
+              element={
+                <ArmadaPlaceholder
+                  title="Laporan Delivery"
+                  subtitle="Performa pengiriman, ketepatan waktu, dan produktivitas armada."
+                  stage={6}
+                  description="Laporan menunggu data operasional nyata terkumpul lebih dulu."
+                />
+              }
+            />
             <Route path="/kendali"     element={<Kendali />} />
             <Route path="/gudang"      element={<Gudang />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />

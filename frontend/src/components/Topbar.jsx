@@ -21,6 +21,19 @@ const ROUTE_LABELS = {
   "/automation":  ["AI & Otomasi", "Otomasi"],
   "/pengaturan":  ["Pengaturan"],
   "/pengguna":    ["Pengaturan", "Pengguna & Peran"],
+
+  // Delivery & Fulfillment (Tahap 1). Remah pertama "Delivery" bukan link ke
+  // sub-halaman mana pun — ia label divisi; remah pertama yang jadi tautan
+  // ke Main Hub ditangani logika `arr.length > 1` di bawah.
+  "/armada/dashboard": ["Delivery", "Dashboard"],
+  "/armada/jobs":      ["Delivery", "Jadwal & Penugasan"],
+  "/armada/routes":    ["Delivery", "Route Planner"],
+  "/armada/tracking":  ["Delivery", "Live Tracking"],
+  "/armada/resources": ["Delivery", "Driver & Armada"],
+  "/armada/pod":       ["Delivery", "Proof of Delivery"],
+  "/armada/issues":    ["Delivery", "Kendala & Reschedule"],
+  "/armada/returns":   ["Delivery", "Retur"],
+  "/armada/reports":   ["Delivery", "Laporan"],
   // Notification Center berdiri di atas semua workspace, seperti Main Hub —
   // jadi remahnya tunggal, tidak bersarang di bawah divisi mana pun.
   "/notifications": ["Notifikasi"],
