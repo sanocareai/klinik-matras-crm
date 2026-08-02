@@ -238,6 +238,73 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
 });
 
 // GET /api/armada/board?date=YYYY-MM-DD&type=PICKUP|DELIVERY
+// GET /api/armada/jobs — DAFTAR job dengan filter, untuk halaman
+// "Jadwal & Penugasan" (Delivery Tahap 2).
+//
+// TERPISAH dari GET /board dengan sengaja, bukan menggantikannya. /board
+// menjawab pertanyaan berbeda: "job tipe X pada tanggal Y, plus unit apa saja
+// yang masih bisa dijadwalkan" — bentuknya melayani papan penjadwalan per
+// driver dan TIDAK BISA menampilkan lintas-tipe atau lintas-tanggal (type
+// wajib diisi, tanggal tunggal). Endpoint ini menjawab "tunjukkan job yang
+// cocok dengan filter ini", yang dibutuhkan tampilan tabel.
+//
+// SEMUA filter opsional. Tanpa parameter apa pun ia mengembalikan job terbaru
+// — jangan diubah jadi wajib berfilter, halaman tabel membuka keadaan default
+// itu saat pertama dibuka.
+armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { type, status, driverId, date, from, to, q, take } = req.query;
+
+    // Rentang tanggal memakai batas WIB, BUKAN `new Date(x)` polos — container
+    // backend jalan di UTC, jadi batas polos menggeser jendela 7 jam dan job
+    // pagi hari terhitung di hari sebelumnya (CLAUDE.md §11).
+    let scheduledDate;
+    if (date) {
+      scheduledDate = toDateOnly(date);
+    } else if (from || to) {
+      scheduledDate = {};
+      if (from) scheduledDate.gte = toDateOnly(from);
+      // Batas EKSKLUSIF: `lte` pada kolom DATE membuang seluruh hari terakhir
+      // di beberapa kasus timezone. Lihat bug yang pernah terjadi di
+      // routes/analytics.js.
+      if (to) scheduledDate.lte = toDateOnly(to);
+    }
+
+    const cari = (q || "").trim();
+
+    const jobs = await prisma.job.findMany({
+      where: {
+        ...(type && { type }),
+        ...(status && { status }),
+        // "none" = job yang BELUM punya driver — ini yang dicari dispatcher
+        // tiap pagi, dan tidak bisa diungkapkan dengan driverId biasa.
+        ...(driverId === "none" ? { driverId: null } : driverId ? { driverId } : {}),
+        ...(scheduledDate !== undefined && { scheduledDate }),
+        ...(cari && {
+          OR: [
+            { addressText: { contains: cari, mode: "insensitive" } },
+            { order: { orderNumber: { contains: cari, mode: "insensitive" } } },
+            { order: { customer: { name: { contains: cari, mode: "insensitive" } } } },
+            { order: { customer: { phone: { contains: cari } } } },
+          ],
+        }),
+      },
+      include: {
+        ...jobInclude,
+        vehicle: { select: { id: true, plateNumber: true, type: true } },
+        route: { select: { id: true, code: true, status: true } },
+        order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+      },
+      orderBy: [{ scheduledDate: "desc" }, { sequence: "asc" }, { createdAt: "desc" }],
+      take: Math.min(Number(take) || 200, 500),
+    });
+
+    res.json({ jobs });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { date, type } = req.query;

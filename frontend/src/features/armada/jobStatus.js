@@ -1,0 +1,66 @@
+// Peta status & tipe job NYATA — dari enum backend (prisma/schema.prisma),
+// BUKAN dari data contoh.
+//
+// ⚠️ SENGAJA TERPISAH dari features/armada/data/deliveryMock.js. File itu
+// berisi status versi SPESIFIKASI (10 status, 4 tipe job) yang dipakai
+// dashboard contoh. File INI berisi yang benar-benar ada di database hari ini
+// (8 status, 2 tipe). Menggabungkannya akan membuat halaman berdata nyata
+// menampilkan pilihan filter yang tidak akan pernah cocok dengan baris mana
+// pun — filter yang selalu mengembalikan kosong terbaca sebagai sistem rusak.
+//
+// Kalau backend nanti menambah INSTALLATION/RETURN atau status baru,
+// tambahkan DI SINI dan hapus catatan selisihnya di bawah.
+
+// enum JobType — backend baru punya dua.
+export const JOB_TYPE_REAL = {
+  PICKUP:   { label: "Pengambilan" },
+  DELIVERY: { label: "Pengiriman" },
+};
+
+// enum JobStatus — PRD §6.3, apa adanya di schema.
+export const JOB_STATUS_REAL = {
+  UNSCHEDULED: { label: "Belum Dijadwalkan", tone: "neutral" },
+  SCHEDULED:   { label: "Terjadwal",         tone: "accent" },
+  ASSIGNED:    { label: "Driver Ditugaskan", tone: "accent" },
+  EN_ROUTE:    { label: "Menuju Lokasi",     tone: "accent" },
+  ARRIVED:     { label: "Tiba di Lokasi",    tone: "accent" },
+  COMPLETED:   { label: "Selesai",           tone: "green" },
+  FAILED:      { label: "Gagal",             tone: "red" },
+  RESCHEDULED: { label: "Dijadwalkan Ulang", tone: "orange" },
+};
+
+// Status yang dianggap masih berjalan — sama dengan ACTIVE_JOB_STATUSES di
+// backend/src/routes/armada.js. Dipakai tab "Aktif".
+export const ACTIVE_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
+
+/**
+ * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
+ *
+ * Belum ada di backend, jadi TIDAK ditampilkan sebagai filter di halaman
+ * berdata nyata (menampilkannya = filter yang selalu kosong):
+ *   · jobType INSTALLATION & RETURN
+ *   · status "Sedang Diproses" & "Dibatalkan"
+ *   · field `area`, `priority`, `slaStatus`
+ *
+ * Ketiganya ADA di data contoh dashboard karena di sana memang ilustrasi.
+ * Menambahkannya ke sistem nyata butuh migrasi enum + kolom baru — keputusan
+ * terpisah, bukan diselundupkan lewat UI.
+ */
+export const FIELDS_NOT_IN_BACKEND = ["area", "priority", "slaStatus"];
+
+/** Nama customer sebuah job — ada di dua tempat, tergantung endpoint. */
+export function customerOf(job) {
+  return (
+    job?.order?.customer?.name ||
+    job?.units?.[0]?.unit?.order?.customer?.name ||
+    null
+  );
+}
+
+export function orderNumberOf(job) {
+  return job?.order?.orderNumber || job?.units?.[0]?.unit?.order?.orderNumber || null;
+}
+
+export function unitCountOf(job) {
+  return job?.units?.length || 0;
+}

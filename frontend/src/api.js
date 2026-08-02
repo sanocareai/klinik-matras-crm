@@ -126,6 +126,17 @@ export const api = {
 
   // Armada — jadwal pickup & pengiriman (Sano Hub Phase 1)
   getArmadaBoard: (type, date) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}`),
+
+  // Daftar job berfilter untuk halaman "Jadwal & Penugasan" (Delivery Tahap 2).
+  // TERPISAH dari getArmadaBoard — board menjawab "job tipe X tanggal Y +
+  // unit yang masih bisa dijadwalkan", endpoint ini menjawab "job yang cocok
+  // filter ini" lintas tipe & tanggal.
+  getArmadaJobs: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")
+    ).toString();
+    return request(`/armada/jobs${qs ? `?${qs}` : ""}`);
+  },
   getDrivers: () => request("/armada/drivers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>

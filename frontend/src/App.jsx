@@ -33,6 +33,7 @@ const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
+const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -188,7 +189,12 @@ export default function App() {
                 sistem rusak. */}
             <Route path="/armada"           element={<Navigate to="/armada/dashboard" replace />} />
             <Route path="/armada/dashboard" element={<ArmadaDashboard />} />
-            <Route path="/armada/jobs"      element={<Armada />} />
+            {/* Tahap 2: halaman Jadwal & Penugasan membungkus <Armada /> —
+                mode "Papan" di dalamnya merender halaman lama APA ADANYA
+                (tempat job dibuat & driver ditugaskan, semuanya sudah jalan
+                dengan backend nyata), mode "Daftar" adalah tabel berfilter
+                yang baru. Menambah cara melihat, bukan mengganti cara kerja. */}
+            <Route path="/armada/jobs"      element={<ArmadaJobs />} />
             <Route
               path="/armada/routes"
               element={
