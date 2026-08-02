@@ -28,6 +28,7 @@ function handleErr(err, res) {
 }
 
 const VALID_UNITS = ["PCS", "METER", "M3", "SHEET", "SPOOL", "KG"];
+const VALID_CATEGORIES = ["RAW_MATERIAL", "WIP", "FINISHED_GOODS", "CONSUMABLE"];
 
 function parseQty(input, { allowNegative = false } = {}) {
   const qty = Number(input);
@@ -43,6 +44,11 @@ inventoryRouter.get("/materials", requirePermission(P.INVENTORY_READ), async (re
   try {
     const where = {};
     if (req.query.active === "true") where.active = true;
+    // Tahap 2: filter kategori. `category=none` menyaring item yang BELUM
+    // dikategorikan — sengaja bisa dicari, supaya katalog yang belum rapi
+    // bisa dibereskan alih-alih tersembunyi.
+    if (req.query.category === "none") where.category = null;
+    else if (req.query.category) where.category = req.query.category;
     const materials = await prisma.material.findMany({ where, orderBy: { code: "asc" } });
     res.json(materials);
   } catch (err) {
@@ -53,15 +59,19 @@ inventoryRouter.get("/materials", requirePermission(P.INVENTORY_READ), async (re
 // POST /api/inventory/materials { code, name, unit, serviceLine?, reorderPoint?, reorderQty? }
 inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { code, name, unit, serviceLine, reorderPoint, reorderQty } = req.body;
+    const { code, name, unit, serviceLine, category, reorderPoint, reorderQty } = req.body;
     if (!code?.trim() || !name?.trim()) throw new InventoryError("Kode dan nama material wajib diisi");
     if (!VALID_UNITS.includes(unit)) throw new InventoryError("Satuan tidak valid");
     if (serviceLine && !["SERVICE", "UPGRADE"].includes(serviceLine)) {
       throw new InventoryError("Lini layanan tidak valid");
     }
+    if (category && !VALID_CATEGORIES.includes(category)) {
+      throw new InventoryError("Kategori tidak valid");
+    }
     const material = await prisma.material.create({
       data: {
         code: code.trim().toUpperCase(), name: name.trim(), unit, serviceLine: serviceLine || null,
+        category: category || null,
         reorderPoint: reorderPoint != null && reorderPoint !== "" ? Number(reorderPoint) : null,
         reorderQty: reorderQty != null && reorderQty !== "" ? Number(reorderQty) : null,
       },
@@ -80,12 +90,18 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
 // diubah") — lihat catatan di schema.prisma.
 inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { name, active, reorderPoint, reorderQty } = req.body;
+    const { name, active, category, reorderPoint, reorderQty } = req.body;
+    if (category !== undefined && category !== null && category !== "" && !VALID_CATEGORIES.includes(category)) {
+      throw new InventoryError("Kategori tidak valid");
+    }
     const material = await prisma.material.update({
       where: { id: req.params.id },
       data: {
         ...(name?.trim() && { name: name.trim() }),
         ...(typeof active === "boolean" && { active }),
+        // Sama polanya dengan reorderPoint: kirim null/"" eksplisit untuk
+        // MENGOSONGKAN kategori, `undefined` berarti "tidak diubah".
+        ...(category !== undefined && { category: category === "" || category === null ? null : category }),
         ...(reorderPoint !== undefined && { reorderPoint: reorderPoint === "" || reorderPoint === null ? null : Number(reorderPoint) }),
         ...(reorderQty !== undefined && { reorderQty: reorderQty === "" || reorderQty === null ? null : Number(reorderQty) }),
       },
@@ -101,13 +117,19 @@ inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), as
 // GET /api/inventory/stock — saldo per material, dari agregat ledger.
 inventoryRouter.get("/stock", requirePermission(P.INVENTORY_READ), async (req, res) => {
   try {
+    // `category` & `lastMovementAt` ikut di-select (Tahap 2) supaya halaman
+    // Stock & Material tidak perlu memanggil /materials terpisah lalu
+    // menggabungkan dua daftar di frontend.
     const balances = await prisma.$queryRaw`
-      SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active,
+      SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active, m.category,
+             m.service_line AS "serviceLine",
              m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
-             COALESCE(SUM(sm.qty), 0)::float AS balance
+             COALESCE(SUM(sm.qty), 0)::float AS balance,
+             MAX(sm.created_at) AS "lastMovementAt"
       FROM materials m
       LEFT JOIN stock_movements sm ON sm.material_id = m.id
-      GROUP BY m.id, m.code, m.name, m.unit, m.active, m.reorder_point, m.reorder_qty
+      GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
+               m.service_line, m.reorder_point, m.reorder_qty
       ORDER BY m.code ASC
     `;
     res.json(balances);

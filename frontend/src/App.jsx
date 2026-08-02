@@ -250,9 +250,10 @@ export default function App() {
             <Route path="/gudang"      element={<Gudang />} />
             <Route path="/warehouse"   element={<Navigate to="/warehouse/dashboard" replace />} />
             <Route path="/warehouse/dashboard" element={<WarehouseDashboard />} />
-            {/* Data CONTOH — lihat catatan di WarehouseInventory.jsx. Angka
-                stok tetap TURUNAN (available = on hand − reserved), menjaga
-                disiplin PRD §8.1 supaya Tahap 2 tinggal menukar sumber data. */}
+            {/* Tahap 2: DATA NYATA — saldo dari GET /inventory/stock yang
+                menghitungnya lewat SUM(qty) atas ledger, sumber kebenaran yang
+                SAMA dengan halaman lama /gudang. Tidak ada badge "Contoh".
+                Termasuk detail item + tambah/ubah item. */}
             <Route path="/warehouse/inventory" element={<WarehouseInventory />} />
             <Route
               path="/warehouse/goods-receipt"

@@ -1586,13 +1586,38 @@ enum StockMovementType {
 // Katalog material — BUKAN ledger, boleh diedit (nama, status aktif).
 // `serviceLine` NULL = dipakai lintas lini (benang, plastik wrap); terisi =
 // khusus SERVICE atau UPGRADE (D-004: dua lini tidak boleh campur material).
+// Kategori item gudang (Warehouse Tahap 2, 2 Agustus 2026).
+//
+// KENAPA BARU SEKARANG: v1 katalog cuma membedakan material lewat
+// `serviceLine` (SERVICE/UPGRADE) — cukup saat isinya HANYA bahan baku
+// bengkel. Begitu gudang juga menyimpan barang setengah jadi dan produk
+// jadi, "lini layanan" tidak lagi bisa menjawab "ini barang jenis apa".
+//
+// AMAN DILAKUKAN SEKARANG: tabel `materials` masih KOSONG di production
+// (0 baris, diverifikasi langsung sebelum migrasi ini ditulis) — nol data
+// yang perlu ditebak kategorinya. Menunda sampai katalog terisi ratusan
+// item berarti menebak kategori untuk data lama, dan tebakan itu akan
+// masuk ke laporan nilai inventory per kategori.
+enum MaterialCategory {
+  RAW_MATERIAL // busa, kain, per, lem, benang, resleting, packaging
+  WIP // barang setengah jadi: cutting, quilting, mattress core
+  FINISHED_GOODS // kasur, bantal, guling, protector siap jual
+  CONSUMABLE // barang pakai habis & non-inventory: tools, ATK, kebersihan
+}
+
 model Material {
   id          String       @id @default(uuid()) @db.Uuid
   code        String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
   name        String
   unit        MaterialUnit
   serviceLine ServiceLine? @map("service_line")
-  active      Boolean      @default(true)
+
+  // NULLABLE dengan sengaja: material lama (kalau kelak ada yang dibuat
+  // sebelum kolom ini) tidak dipaksa masuk kategori tebakan. UI menampilkan
+  // "Tanpa kategori" apa adanya, bukan menyamarkannya jadi RAW_MATERIAL.
+  category MaterialCategory?
+
+  active Boolean @default(true)
 
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
   // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak
