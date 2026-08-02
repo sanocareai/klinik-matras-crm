@@ -185,6 +185,8 @@ model User {
   paymentsRecorded      Payment[]               @relation("PaymentRecorder")
   paymentsVerified      PaymentVerification[]   @relation("PaymentVerifier")
   stockMovements        StockMovement[]         @relation("StockMovementActor")
+  routesAsDriver        Route[]                 @relation("RouteDriver")
+  routesCreated         Route[]                 @relation("RouteCreator")
   scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
 
@@ -869,13 +871,127 @@ model Job {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
+  // Kendaraan & rute (2 Agustus 2026, Tahap 3 Delivery). Keduanya NULLABLE:
+  // job bisa dijadwalkan sebelum kendaraan/rutenya ditetapkan, dan itu justru
+  // keadaan yang dipantau papan dispatcher ("belum ada armada").
+  vehicleId String?   @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle?  @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  routeId   String?   @map("route_id") @db.Uuid
+  route     Route?    @relation(fields: [routeId], references: [id], onDelete: SetNull)
+
   units    JobUnit[]
   payments Payment[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
   @@index([status, scheduledDate])   // papan Armada
+  @@index([routeId, sequence])       // urutan stop dalam satu rute
+  @@index([vehicleId])
   @@map("jobs")
+}
+
+// ─── ARMADA (PRD §5.1 Vehicle) ──────────────────────────────────────────────
+//
+// Ditambahkan 2 Agustus 2026. Sebelumnya kendaraan tidak ada sama sekali di
+// sistem — dispatcher menugaskan driver, dan kendaraan diingat di kepala.
+// Akibatnya kapasitas tidak bisa dicek (FR-L-02) dan Route Planner tidak
+// mungkin dibangun.
+//
+// AMAN dilakukan sekarang: saat migrasi ini ditulis, tabel `jobs` masih KOSONG
+// (0 baris) — jadi tidak ada data yang perlu ditebak-tebak kendaraannya.
+// Menunda ini sampai job sudah banyak berarti harus menebak kendaraan untuk
+// ratusan job historis, dan tebakan itu akan masuk ke laporan utilisasi armada.
+enum VehicleStatus {
+  AVAILABLE
+  IN_USE
+  MAINTENANCE
+  INACTIVE
+}
+
+model Vehicle {
+  id          String @id @default(uuid()) @db.Uuid
+  plateNumber String @unique @map("plate_number")
+
+  // String bebas, BUKAN enum: armada bisa bertambah tipe (motor box, truk
+  // engkel) tanpa perlu migrasi enum tiap kali. Tidak ada logika aplikasi
+  // yang bercabang berdasarkan nilai ini — kapasitas yang dipakai, bukan tipe.
+  type String
+
+  // PRD §5.1: kapasitas dihitung SLOT, bukan jumlah kasur — king dan single
+  // memakan ruang berbeda di bak yang sama. Konversi ukuran→slot menyusul
+  // bersama Route Planner; kolom ini menyimpan kapasitas totalnya.
+  capacitySlots Int @map("capacity_slots")
+
+  status VehicleStatus @default(AVAILABLE)
+  active Boolean       @default(true)
+
+  mileageKm       Int?      @map("mileage_km")
+  nextServiceDate DateTime? @map("next_service_date") @db.Date
+  notes           String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  jobs   Job[]
+  routes Route[]
+
+  @@index([status])
+  @@map("vehicles")
+}
+
+// ─── RUTE (PRD §5.1 Route, FR-L-03) ─────────────────────────────────────────
+//
+// SEBELUM INI "rute" hanya IMPLISIT: sekumpulan job yang kebetulan punya
+// driver + tanggal + tipe yang sama, diurutkan kolom `sequence`
+// (lihat PATCH /armada/route/reorder). Bentuk itu tidak bisa menyimpan
+// STATUS — tidak ada tempat untuk "draft yang belum diterbitkan", padahal
+// Route Planner justru butuh dispatcher menyusun rencana dulu baru
+// menerbitkannya ke driver.
+//
+// `driverId`/`vehicleId` di sini adalah RENCANA. Job tetap punya driverId-nya
+// sendiri (yang SUDAH dipakai query "job saya hari ini" milik driver, dan
+// TIDAK diubah migrasi ini) — saat rute diterbitkan, nilai dari sini disalin
+// ke job-nya. Dua kolom, dua arti: rencana vs penugasan yang berlaku.
+enum RouteStatus {
+  DRAFT
+  PUBLISHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Route {
+  id   String   @id @default(uuid()) @db.Uuid
+  code String   @unique // terbaca manusia, mis. RTE-020826-01
+  date DateTime @db.Date
+
+  driverId String? @map("driver_id")
+  driver   User?   @relation("RouteDriver", fields: [driverId], references: [id], onDelete: SetNull)
+
+  vehicleId String?  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  status RouteStatus @default(DRAFT)
+
+  // Estimasi hasil perencanaan, BUKAN hasil pengukuran lapangan. Diisi
+  // dispatcher/kalkulasi jarak; realisasinya nanti dibaca dari job.
+  plannedDistanceKm  Decimal? @map("planned_distance_km") @db.Decimal(8, 2)
+  plannedDurationMin Int?     @map("planned_duration_min")
+
+  publishedAt DateTime? @map("published_at")
+  notes       String?
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("RouteCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  jobs Job[]
+
+  @@index([date, status]) // papan Route Planner per tanggal
+  @@index([driverId, date])
+  @@map("routes")
 }
 
 // Job membawa SEBAGIAN unit sebuah order, bukan selalu semuanya (D-006:
