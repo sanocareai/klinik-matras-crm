@@ -68,9 +68,10 @@ export const DIVISION_CONTENT = {
     subtitle: "Stok bahan baku, produk jadi, mutasi, replenishment, dan stock opname.",
     heroLine: "Workspace operasional untuk memantau saldo stok dan pergerakan material.",
     modules: [
-      // Tahap 1 Warehouse: Dashboard & Stock/Material sudah punya halaman
-      // sendiri di /warehouse/*. Sisanya tetap null ("Segera hadir") sampai
-      // phase-nya tiba — lihat WarehousePlaceholder.jsx untuk phase mana.
+      // Tahap 1-8 Warehouse selesai (2 Agustus 2026) — semua 6 kartu di
+      // bawah ini data NYATA. Dashboard masih memakai data contoh
+      // (KPI agregatnya belum ada endpoint tersendiri), lihat MockBadge
+      // di WarehouseDashboard.jsx.
       { title: "Dashboard",         description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
       { title: "Stock & Material",  description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
       { title: "Goods Receipt",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },

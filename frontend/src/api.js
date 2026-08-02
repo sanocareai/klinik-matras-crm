@@ -327,6 +327,12 @@ export const api = {
   linkReplenishmentReceipt: (id, goodsReceiptId) =>
     request(`/inventory/replenishment/${id}/link-receipt`, { method: "POST", body: JSON.stringify({ goodsReceiptId }) }),
   rejectReplenishmentRequest: (id, reason) => request(`/inventory/replenishment/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Warehouse Reports (Tahap 8)
+  getWarehouseReportSummary: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/reports/summary${qs ? `?${qs}` : ""}`);
+  },
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

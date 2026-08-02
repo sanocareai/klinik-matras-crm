@@ -52,7 +52,7 @@ const WarehouseTransfers = lazy(() => import("./pages/warehouse/WarehouseTransfe
 const WarehouseStockCount = lazy(() => import("./pages/warehouse/WarehouseStockCount.jsx"));
 const WarehouseAdjustments = lazy(() => import("./pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehouseReplenishment = lazy(() => import("./pages/warehouse/WarehouseReplenishment.jsx"));
-const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
+const WarehouseReports = lazy(() => import("./pages/warehouse/WarehouseReports.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
@@ -290,17 +290,11 @@ export default function App() {
                 ADJUSTMENT), dibungkus alur review sebelum ledger tersentuh.
                 Lihat schema.prisma. */}
             <Route path="/warehouse/adjustments" element={<WarehouseAdjustments />} />
-            <Route
-              path="/warehouse/reports"
-              element={
-                <WarehousePlaceholder
-                  title="Warehouse Reports"
-                  subtitle="Nilai inventory, akurasi stok, dan pergerakan material."
-                  phase={6}
-                  description="Menunggu data operasional nyata terkumpul — tabel materials & stock_movements masih kosong di production."
-                />
-              }
-            />
+            {/* Tahap 8, terakhir: DATA NYATA — murni agregasi read-only,
+                tanpa migrasi schema. Inventory Value tampil PARSIAL
+                (Material tidak punya kolom harga) — lihat catatan
+                panjang di routes/warehouseReports.js. */}
+            <Route path="/warehouse/reports" element={<WarehouseReports />} />
             <Route path="/dashboard"   element={<Dashboard user={user} />} />
             <Route path="/inbox"       element={<Inbox user={user} />} />
             <Route path="/customers"   element={<Customers />} />
