@@ -137,6 +137,23 @@ export const api = {
     ).toString();
     return request(`/armada/jobs${qs ? `?${qs}` : ""}`);
   },
+
+  // Kendaraan (Delivery Tahap 3)
+  getVehicles: (status) => request(`/armada/vehicles${status ? `?status=${status}` : ""}`),
+  createVehicle: (data) => request("/armada/vehicles", { method: "POST", body: JSON.stringify(data) }),
+  updateVehicle: (id, data) => request(`/armada/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Rute (Route Planner, Delivery Tahap 3)
+  getRoutes: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/armada/routes${qs ? `?${qs}` : ""}`);
+  },
+  getRoute: (id) => request(`/armada/routes/${id}`),
+  createRoute: (data) => request("/armada/routes", { method: "POST", body: JSON.stringify(data) }),
+  updateRoute: (id, data) => request(`/armada/routes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  setRouteJobs: (id, jobIds) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds }) }),
+  publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
+  cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
   getDrivers: () => request("/armada/drivers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>

@@ -253,7 +253,7 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
 // itu saat pertama dibuka.
 armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { type, status, driverId, date, from, to, q, take } = req.query;
+    const { type, status, driverId, routeId, date, from, to, q, take } = req.query;
 
     // Rentang tanggal memakai batas WIB, BUKAN `new Date(x)` polos — container
     // backend jalan di UTC, jadi batas polos menggeser jendela 7 jam dan job
@@ -279,6 +279,12 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         // "none" = job yang BELUM punya driver — ini yang dicari dispatcher
         // tiap pagi, dan tidak bisa diungkapkan dengan driverId biasa.
         ...(driverId === "none" ? { driverId: null } : driverId ? { driverId } : {}),
+        // routeId=none — job yang BELUM masuk rute mana pun. Ini panel kiri
+        // Route Planner: "job yang perlu dikelompokkan". Job yang statusnya
+        // sudah COMPLETED/FAILED/CANCELLED tidak relevan untuk itu, jadi
+        // pemanggil (frontend) menggabungkan ini dengan filter status=UNSCHEDULED
+        // atau SCHEDULED sendiri — endpoint ini tidak menebak maksudnya.
+        ...(routeId === "none" ? { routeId: null } : routeId ? { routeId } : {}),
         ...(scheduledDate !== undefined && { scheduledDate }),
         ...(cari && {
           OR: [
@@ -300,6 +306,294 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
     });
 
     res.json({ jobs });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// ─── ARMADA (Vehicle) — Delivery Tahap 3 ────────────────────────────────────
+// CRUD dasar. Permission memakai P.ROUTE_WRITE (bukan permission baru): fleet
+// management di sini SATU alur dengan perencanaan rute (dispatcher yang
+// menugaskan kendaraan ke rute juga yang menambahkan kendaraan baru). Kalau
+// nanti muncul role "fleet manager" terpisah dari dispatcher, pisahkan.
+
+armadaRouter.get("/vehicles", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { status } = req.query;
+    const vehicles = await prisma.vehicle.findMany({
+      where: { ...(status && { status }) },
+      orderBy: { plateNumber: "asc" },
+    });
+    res.json({ vehicles });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.post("/vehicles", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { plateNumber, type, capacitySlots, mileageKm, nextServiceDate, notes } = req.body;
+    if (!plateNumber?.trim()) throw new ArmadaError("Nomor polisi wajib diisi");
+    if (!type?.trim()) throw new ArmadaError("Tipe kendaraan wajib diisi");
+    const slots = Number(capacitySlots);
+    if (!Number.isFinite(slots) || slots < 1) throw new ArmadaError("Kapasitas slot harus angka minimal 1");
+
+    const vehicle = await prisma.vehicle.create({
+      data: {
+        plateNumber: plateNumber.trim().toUpperCase(),
+        type: type.trim(),
+        capacitySlots: slots,
+        mileageKm: mileageKm !== undefined ? Number(mileageKm) : null,
+        nextServiceDate: nextServiceDate ? toDateOnly(nextServiceDate) : null,
+        notes: notes?.trim() || null,
+      },
+    });
+    res.status(201).json(vehicle);
+  } catch (err) {
+    // Unique constraint plateNumber — pesan yang jelas, bukan "Server error".
+    if (err.code === "P2002") return res.status(409).json({ error: "Nomor polisi ini sudah terdaftar" });
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.patch("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { plateNumber, type, capacitySlots, status, active, mileageKm, nextServiceDate, notes } = req.body;
+    const vehicle = await prisma.vehicle.update({
+      where: { id: req.params.id },
+      data: {
+        ...(plateNumber !== undefined && { plateNumber: plateNumber.trim().toUpperCase() }),
+        ...(type !== undefined && { type: type.trim() }),
+        ...(capacitySlots !== undefined && { capacitySlots: Number(capacitySlots) }),
+        ...(status !== undefined && { status }),
+        ...(active !== undefined && { active }),
+        ...(mileageKm !== undefined && { mileageKm: mileageKm === null ? null : Number(mileageKm) }),
+        ...(nextServiceDate !== undefined && { nextServiceDate: nextServiceDate ? toDateOnly(nextServiceDate) : null }),
+        ...(notes !== undefined && { notes: notes?.trim() || null }),
+      },
+    });
+    res.json(vehicle);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "Nomor polisi ini sudah terdaftar" });
+    handleErr(err, res);
+  }
+});
+
+// ─── RUTE (Route) — Delivery Tahap 3, Route Planner ─────────────────────────
+//
+// DUA KOLOM DRIVER YANG BERBEDA ARTI (lihat schema.prisma):
+//   Route.driverId = RENCANA dispatcher, boleh berubah selama status DRAFT
+//   Job.driverId   = PENUGASAN YANG BERLAKU, dibaca aplikasi driver
+// Publish() adalah SATU-SATUNYA tempat nilai dari Route disalin ke Job-nya.
+// Sebelum publish, mengubah driver/kendaraan rute TIDAK mengubah apa pun yang
+// dilihat driver — itu justru gunanya "Save Draft" vs "Publish Route".
+
+function generateRouteCode(date) {
+  const d = new Date(date);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  return `RTE-${dd}${mm}${yy}`;
+}
+
+const routeInclude = {
+  driver: { select: { id: true, name: true } },
+  vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
+  jobs: {
+    include: jobInclude,
+    orderBy: { sequence: "asc" },
+  },
+};
+
+armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { date, status } = req.query;
+    const routes = await prisma.route.findMany({
+      where: {
+        ...(date && { date: toDateOnly(date) }),
+        ...(status && { status }),
+      },
+      include: routeInclude,
+      orderBy: [{ date: "desc" }, { createdAt: "asc" }],
+    });
+    res.json({ routes });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    res.json(route);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { date, driverId, vehicleId, notes } = req.body;
+    if (!date) throw new ArmadaError("Tanggal wajib diisi");
+    const targetDate = toDateOnly(date);
+
+    // Kode rute berurut per tanggal: RTE-DDMMYY-01, -02, dst. Dihitung dari
+    // jumlah rute yang SUDAH ADA di tanggal itu — cukup untuk volume rute
+    // harian yang realistis, tidak butuh tabel counter terpisah seperti
+    // OrderSequence (yang mengantisipasi ratusan order/hari).
+    const existing = await prisma.route.count({ where: { date: targetDate } });
+    const code = `${generateRouteCode(targetDate)}-${String(existing + 1).padStart(2, "0")}`;
+
+    const route = await prisma.route.create({
+      data: {
+        code,
+        date: targetDate,
+        driverId: driverId || null,
+        vehicleId: vehicleId || null,
+        notes: notes?.trim() || null,
+        createdById: req.user.id,
+      },
+      include: routeInclude,
+    });
+    res.status(201).json(route);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (route.status !== "DRAFT") {
+      throw new ArmadaError("Rute yang sudah diterbitkan tidak bisa diedit langsung — batalkan lalu buat rute baru");
+    }
+
+    const { driverId, vehicleId, notes } = req.body;
+    const updated = await prisma.route.update({
+      where: { id: req.params.id },
+      data: {
+        ...(driverId !== undefined && { driverId: driverId || null }),
+        ...(vehicleId !== undefined && { vehicleId: vehicleId || null }),
+        ...(notes !== undefined && { notes: notes?.trim() || null }),
+      },
+      include: routeInclude,
+    });
+    res.json(updated);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /routes/:id/jobs { jobIds: [...] } — susun ULANG ANGGOTA rute dari
+// nol setiap kali dipanggil (bukan tambah satu-satu). Ini pola yang SAMA
+// dengan PATCH /route/reorder yang sudah ada — dispatcher drag-drop di UI,
+// frontend mengirim urutan LENGKAP hasil akhirnya, bukan delta per langkah.
+// Job yang TIDAK ada di jobIds baru tapi sebelumnya milik rute ini DILEPAS
+// (routeId & sequence di-null-kan) — itu cara "keluarkan dari rute" di UI.
+armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (route.status !== "DRAFT") throw new ArmadaError("Rute yang sudah diterbitkan tidak bisa diubah anggotanya");
+
+    const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
+
+    await prisma.$transaction(async (tx) => {
+      // Lepas dulu job lama milik rute ini yang TIDAK ada di daftar baru.
+      await tx.job.updateMany({
+        where: { routeId: route.id, id: { notIn: jobIds } },
+        data: { routeId: null, sequence: null },
+      });
+      // Lalu tempel + urutkan yang baru. Satu per satu (bukan updateMany)
+      // karena tiap job butuh nilai `sequence` BERBEDA.
+      for (let i = 0; i < jobIds.length; i++) {
+        await tx.job.update({
+          where: { id: jobIds[i] },
+          data: { routeId: route.id, sequence: i + 1 },
+        });
+      }
+    });
+
+    const updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    res.json(updated);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /routes/:id/publish — DRAFT → PUBLISHED. Satu-satunya tempat rencana
+// (Route.driverId/vehicleId) disalin jadi penugasan berlaku (Job.driverId/
+// vehicleId) — sebelum ini driver TIDAK melihat job-job tsb di aplikasinya
+// sama sekali, walau sudah tersusun rapi di rute.
+armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: { jobs: true } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (route.status !== "DRAFT") throw new ArmadaError("Rute ini sudah diterbitkan");
+    if (route.jobs.length === 0) throw new ArmadaError("Rute belum punya job — tambahkan job dulu sebelum menerbitkan");
+    if (!route.driverId) throw new ArmadaError("Rute belum punya driver");
+
+    // Estimasi jarak/durasi — best-effort, SAMA pola dengan GET /route/summary:
+    // gagal geocode TIDAK BOLEH menggagalkan publish, cuma legsError terisi.
+    let plannedDistanceKm = null, plannedDurationMin = null;
+    const geocoded = route.jobs.filter((j) => j.lat != null && j.lng != null);
+    if (geocoded.length === route.jobs.length && route.jobs.length >= 2) {
+      try {
+        const legs = await routeLegs(
+          [...route.jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => ({ lat: j.lat, lng: j.lng }))
+        );
+        let meters = 0, seconds = 0;
+        for (const leg of legs) { if (leg) { meters += leg.distanceMeters; seconds += leg.durationSeconds; } }
+        plannedDistanceKm = meters > 0 ? Math.round((meters / 1000) * 100) / 100 : null;
+        plannedDurationMin = seconds > 0 ? Math.round(seconds / 60) : null;
+      } catch {
+        // Diamkan — publish tetap lanjut tanpa estimasi jarak.
+      }
+    }
+
+    const [updatedRoute] = await prisma.$transaction([
+      prisma.route.update({
+        where: { id: route.id },
+        data: { status: "PUBLISHED", publishedAt: new Date(), plannedDistanceKm, plannedDurationMin },
+        include: routeInclude,
+      }),
+      // Salin rencana → penugasan berlaku. deriveStatus: job yang sebelumnya
+      // UNSCHEDULED (belum py tanggal/driver) naik ke ASSIGNED sekarang juga
+      // punya driver+kendaraan; job yang sudah lebih maju (mis. sudah
+      // dijadwalkan manual sebelum masuk rute) status-nya TIDAK dimundurkan.
+      prisma.job.updateMany({
+        where: { routeId: route.id },
+        data: { driverId: route.driverId, vehicleId: route.vehicleId },
+      }),
+      prisma.job.updateMany({
+        where: { routeId: route.id, status: "UNSCHEDULED" },
+        data: { status: "ASSIGNED" },
+      }),
+    ]);
+
+    res.json(updatedRoute);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (["COMPLETED", "CANCELLED"].includes(route.status)) {
+      throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa dibatalkan`);
+    }
+    // Job-nya SENGAJA TIDAK dilepas dari rute (routeId dibiarkan menunjuk ke
+    // rute yang dibatalkan) — riwayat "rute ini pernah direncanakan lalu
+    // dibatalkan" tetap terbaca. Dispatcher yang menyusun ulang secara manual
+    // lewat rute baru, bukan sistem yang diam-diam melepaskannya.
+    const updated = await prisma.route.update({
+      where: { id: req.params.id }, data: { status: "CANCELLED" }, include: routeInclude,
+    });
+    res.json(updated);
   } catch (err) {
     handleErr(err, res);
   }

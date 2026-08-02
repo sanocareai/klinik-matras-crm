@@ -34,6 +34,8 @@ const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
+const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
+const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -195,17 +197,9 @@ export default function App() {
                 dengan backend nyata), mode "Daftar" adalah tabel berfilter
                 yang baru. Menambah cara melihat, bukan mengganti cara kerja. */}
             <Route path="/armada/jobs"      element={<ArmadaJobs />} />
-            <Route
-              path="/armada/routes"
-              element={
-                <ArmadaPlaceholder
-                  title="Route Planner"
-                  subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
-                  stage={3}
-                  description="Perencanaan rute bergantung pada entitas Vehicle & Route yang belum ada di database — lihat risiko R3 pada laporan audit."
-                />
-              }
-            />
+            {/* Tahap 3: Vehicle & Route sudah ada di database (migrasi
+                20260802120000). Data NYATA — tidak ada badge "Contoh". */}
+            <Route path="/armada/routes" element={<ArmadaRoutes />} />
             <Route
               path="/armada/tracking"
               element={
@@ -217,17 +211,9 @@ export default function App() {
                 />
               }
             />
-            <Route
-              path="/armada/resources"
-              element={
-                <ArmadaPlaceholder
-                  title="Driver & Armada"
-                  subtitle="Kelola data driver, kendaraan, dan ketersediaannya."
-                  stage={3}
-                  description="Tab Armada membutuhkan entitas Vehicle di database, yang belum ada."
-                />
-              }
-            />
+            {/* Tab Armada: data nyata. Tab Driver: tipis, lihat catatan
+                di ArmadaResources.jsx soal field yang belum ada di User. */}
+            <Route path="/armada/resources" element={<ArmadaResources />} />
             <Route
               path="/armada/pod"
               element={
