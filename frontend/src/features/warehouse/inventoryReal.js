@@ -129,6 +129,42 @@ export const ISSUE_PRIORITY_REAL = {
   URGENT: { label: "Urgent", labelId: "Mendesak", tone: "red" },
 };
 
+// enum TransferStatus & TransferType — Stock Transfer (Tahap 4). IN_TRANSIT
+// & COMPLETED SENGAJA tidak dicapai lewat PATCH status biasa seperti langkah
+// lain di FORWARD_FLOW — keduanya lewat /dispatch & /receive karena
+// dua-duanya menulis baris ledger.
+export const TRANSFER_STATUS_REAL = {
+  DRAFT:             { label: "Draft",              labelId: "Draft",              tone: "neutral" },
+  WAITING_APPROVAL:  { label: "Waiting Approval",   labelId: "Menunggu Approval",  tone: "orange" },
+  APPROVED:          { label: "Approved",           labelId: "Disetujui",          tone: "accent" },
+  PICKED:            { label: "Picked",             labelId: "Sudah Diambil",      tone: "accent" },
+  IN_TRANSIT:        { label: "In Transit",         labelId: "Dalam Perjalanan",   tone: "accent" },
+  COMPLETED:         { label: "Completed",          labelId: "Selesai",            tone: "green" },
+  CANCELLED:         { label: "Cancelled",          labelId: "Dibatalkan",         tone: "neutral" },
+};
+export const TRANSFER_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "PICKED", "IN_TRANSIT", "COMPLETED"];
+
+export const TRANSFER_TYPE_REAL = {
+  BIN_TO_BIN:               { label: "Bin to Bin",               labelId: "Antar Bin" },
+  ZONE_TO_ZONE:              { label: "Zone to Zone",             labelId: "Antar Zone" },
+  WAREHOUSE_TO_WAREHOUSE:    { label: "Warehouse to Warehouse",   labelId: "Antar Gudang" },
+  AVAILABLE_TO_QUARANTINE:   { label: "Available → Quarantine",   labelId: "Ke Karantina" },
+  QUARANTINE_TO_AVAILABLE:   { label: "Quarantine → Available",   labelId: "Dari Karantina" },
+  AVAILABLE_TO_DAMAGED:      { label: "Available → Damaged",      labelId: "Ke Area Rusak" },
+  RETURN_TO_WAREHOUSE:       { label: "Return to Warehouse",      labelId: "Retur ke Gudang" },
+};
+
+export const LOCATION_TYPE_REAL = {
+  RECEIVING_AREA:      "Receiving Area",
+  RAW_MATERIAL_AREA:   "Raw Material Area",
+  WIP_AREA:            "WIP Area",
+  FINISHED_GOODS_AREA: "Finished Goods Area",
+  QUARANTINE_AREA:     "Quarantine Area",
+  DAMAGED_AREA:        "Damaged Area",
+  RETURN_AREA:         "Return Area",
+  DISPATCH_AREA:       "Dispatch Area",
+};
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *
@@ -136,21 +172,27 @@ export const ISSUE_PRIORITY_REAL = {
  * halaman berdata nyata (menampilkannya = kolom yang selalu kosong):
  *   · Reserved / Available SUDAH nyata sejak Tahap 3 — dihitung dari
  *     Material Issue yang APPROVED..PICKED, lihat deriveStockStatusReal().
- *   · Lokasi rak/bin → `stock_movements.location` hari ini string bebas
- *     dengan default "GUDANG_UTAMA", BUKAN hierarki Warehouse→Zone→Rack→Bin.
- *     Butuh entitas lokasi tersendiri (Phase 4, bersama Stock Transfer).
+ *   · Lokasi rak/bin SUDAH nyata sejak Tahap 4 (Warehouse→StorageLocation)
+ *     — tapi HANYA dipakai Stock Transfer. GoodsReceiptLine.destinationLocation
+ *     & MaterialIssueLine.sourceLocation MASIH string bebas — menyambungkan
+ *     keduanya ke StorageLocation adalah pembersihan terpisah, bukan gap
+ *     fungsional yang mendesak (lihat catatan di schema.prisma model
+ *     StorageLocation).
  *   · Supplier per item → supplier tercatat PER PENERIMAAN di ledger, bukan
  *     atribut material. Drawer detail menampilkan supplier penerimaan
  *     TERAKHIR — itu yang benar-benar diketahui sistem.
  *   · Batch/lot, expiry, barcode, dimensi, variant, maximumStock → belum ada
  *     kolomnya sama sekali.
- *   · Status OVER_STOCK/QUARANTINE/DAMAGED → tidak ada maximumStock maupun
- *     state karantina di ledger.
+ *   · Status OVER_STOCK/QUARANTINE/DAMAGED (Stock & Material) → item bisa
+ *     DIPINDAHKAN ke lokasi bertipe Quarantine/Damaged lewat Transfer, tapi
+ *     status stok agregat (deriveStockStatusReal) tidak membaca lokasi —
+ *     saldo tetap dihitung lintas lokasi. Memisah saldo PER LOKASI adalah
+ *     perluasan terpisah, bukan bagian Tahap 4.
  *   · Substitution Item (Material Issue) → sengaja tidak dibangun Tahap 3.
  *     Kalau perlu material pengganti, batalkan permintaan lalu ajukan ulang
  *     dengan item yang benar — lebih jujur daripada field yang menyiratkan
  *     penggantian otomatis padahal tidak ada logikanya.
  */
 export const FIELDS_NOT_IN_BACKEND = [
-  "location", "batch", "expiry", "barcode", "variant", "maximumStock", "substitutionItem",
+  "batch", "expiry", "barcode", "variant", "maximumStock", "substitutionItem", "stockByLocation",
 ];

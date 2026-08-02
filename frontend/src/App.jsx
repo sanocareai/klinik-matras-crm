@@ -48,6 +48,7 @@ const WarehouseDashboard   = lazy(() => import("./pages/warehouse/WarehouseDashb
 const WarehouseInventory   = lazy(() => import("./pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("./pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("./pages/warehouse/WarehouseMaterialIssue.jsx"));
+const WarehouseTransfers = lazy(() => import("./pages/warehouse/WarehouseTransfers.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -266,17 +267,11 @@ export default function App() {
                 dihitung dari sini (APPROVED..PICKED). Confirm Issue menulis
                 stock_movements ISSUE, disiplin PRD §8.1 tetap utuh. */}
             <Route path="/warehouse/material-issue" element={<WarehouseMaterialIssue />} />
-            <Route
-              path="/warehouse/transfers"
-              element={
-                <WarehousePlaceholder
-                  title="Stock Transfer"
-                  subtitle="Mutasi barang antar lokasi, rak, atau gudang."
-                  phase={4}
-                  description="Butuh entitas lokasi (Warehouse → Zone → Rack → Bin) lebih dulu; hari ini lokasi masih teks bebas di ledger."
-                />
-              }
-            />
+            {/* Tahap 4: DATA NYATA — Warehouse/StorageLocation nyata
+                (seed WH-JKT + 8 lokasi per LocationType). Dua baris ledger
+                per transfer, dua langkah (dispatch lalu receive) — lihat
+                schema.prisma. */}
+            <Route path="/warehouse/transfers" element={<WarehouseTransfers />} />
             <Route
               path="/warehouse/stock-count"
               element={

@@ -253,6 +253,19 @@ export const api = {
     request(`/inventory/material-issues/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
   cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Stock Transfer (Warehouse Tahap 4)
+  getStorageLocations: () => request("/inventory/transfers/locations"),
+  getStockTransfers: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/transfers${qs ? `?${qs}` : ""}`);
+  },
+  getStockTransfer: (id) => request(`/inventory/transfers/${id}`),
+  createStockTransfer: (data) => request("/inventory/transfers", { method: "POST", body: JSON.stringify(data) }),
+  updateStockTransfer: (id, data) => request(`/inventory/transfers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  dispatchStockTransfer: (id) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST" }),
+  receiveStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
+  cancelStockTransfer: (id, reason) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

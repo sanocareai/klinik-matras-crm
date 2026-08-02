@@ -194,6 +194,8 @@ model User {
   materialIssuesApproved  MaterialIssue[]         @relation("MaterialIssueApprover")
   materialIssuesIssued    MaterialIssue[]         @relation("MaterialIssueIssuer")
   materialIssuesCreated   MaterialIssue[]         @relation("MaterialIssueCreator")
+  stockTransfersRequested StockTransfer[]         @relation("StockTransferRequester")
+  stockTransfersApproved  StockTransfer[]         @relation("StockTransferApprover")
   routesCreated           Route[]                 @relation("RouteCreator")
   scopeRevisionsMade      ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided   ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -1586,6 +1588,7 @@ enum StockMovementType {
   RETURN // sisa material kembali ke gudang
   WASTE // terbuang/rusak, WAJIB alasan
   ADJUSTMENT // hasil stock opname, WAJIB alasan (FR-I-06)
+  TRANSFER // Warehouse Tahap 4 — perpindahan antar StorageLocation, dua baris per StockTransfer (keluar+masuk), net 0 di saldo total
 }
 
 // Katalog material — BUKAN ledger, boleh diedit (nama, status aktif).
@@ -1639,6 +1642,7 @@ model Material {
   movements          StockMovement[]
   goodsReceiptLines  GoodsReceiptLine[]
   materialIssueLines MaterialIssueLine[]
+  stockTransferLines StockTransferLine[]
 
   @@index([active])
   @@map("materials")
@@ -1707,10 +1711,17 @@ model StockMovement {
   materialIssueId String?        @map("material_issue_id") @db.Uuid
   materialIssue   MaterialIssue? @relation(fields: [materialIssueId], references: [id], onDelete: SetNull)
 
+  // Warehouse Tahap 4 — jejak balik ke Stock Transfer. Satu transfer
+  // menghasilkan DUA baris (keluar di asal, masuk di tujuan) yang
+  // sama-sama menempel ke id ini.
+  stockTransferId String?        @map("stock_transfer_id") @db.Uuid
+  stockTransfer   StockTransfer? @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
+
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
   @@index([goodsReceiptId])
   @@index([materialIssueId])
+  @@index([stockTransferId])
   @@map("stock_movements")
 }
 
@@ -1919,4 +1930,175 @@ model MaterialIssueLine {
   @@index([materialIssueId])
   @@index([materialId])
   @@map("material_issue_lines")
+}
+
+// ─── LOKASI PENYIMPANAN (Warehouse Tahap 4, 2 Agustus 2026) ─────────────────
+//
+// KENAPA BARU SEKARANG. `StockMovement.location` (sejak v1) sengaja string
+// bebas berdefault "GUDANG_UTAMA" — cukup selama tidak ada fitur yang benar-
+// benar butuh MEMBANDINGKAN dua lokasi (mis. "apakah tujuan sama dengan
+// asal?"). Stock Transfer butuh perbandingan itu, jadi string bebas tidak
+// lagi cukup — perlu entitas nyata dengan identitas, bukan dua string yang
+// kebetulan sama karakternya.
+//
+// HIERARKI SEDERHANA (Warehouse → Zone → Rack → Bin) disatukan jadi SATU
+// tabel StorageLocation dengan kolom zone/rack/bin, BUKAN tiga tabel
+// terpisah — YAGNI, tidak ada kebutuhan nyata query "semua Rack di semua
+// Zone lintas Warehouse" yang butuh Rack jadi entitas sendiri. `code` adalah
+// representasi manusia lengkapnya (mis. "RAW-MATERIAL/RACK-A/BIN-A01"),
+// dipakai juga sebagai nilai `StockMovement.location` yang ditulis Transfer
+// — supaya riwayat pergerakan tetap terbaca tanpa join ke tabel ini.
+//
+// ⚠️ SENGAJA TIDAK MENYENTUH GoodsReceiptLine/MaterialIssueLine — keduanya
+// masih location string bebas. Menyambungkannya ke StorageLocation adalah
+// pembersihan terpisah, bukan bagian Tahap 4 (tidak ada gap fungsional
+// yang mendesak di sana, beda dengan Transfer yang sama sekali belum ada).
+//
+// AMAN DILAKUKAN SEKARANG: stock_movements masih KOSONG di production.
+enum LocationType {
+  RECEIVING_AREA
+  RAW_MATERIAL_AREA
+  WIP_AREA
+  FINISHED_GOODS_AREA
+  QUARANTINE_AREA
+  DAMAGED_AREA
+  RETURN_AREA
+  DISPATCH_AREA
+}
+
+model Warehouse {
+  id      String  @id @default(uuid()) @db.Uuid
+  code    String  @unique // mis. "WH-JKT"
+  name    String
+  address String?
+  active  Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  locations StorageLocation[]
+
+  @@map("warehouses")
+}
+
+model StorageLocation {
+  id          String    @id @default(uuid()) @db.Uuid
+  warehouseId String    @map("warehouse_id") @db.Uuid
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  zone String // mis. "RAW-MATERIAL" — juga label seksi gudang
+  rack String?
+  bin  String?
+
+  locationType LocationType @map("location_type")
+  active       Boolean      @default(true)
+
+  // Representasi manusia lengkap: "<zone>/<rack>/<bin>" (bagian yang NULL
+  // dilewati). Dibuat sekali saat lokasi dibuat — dipakai sebagai nilai
+  // StockMovement.location string yang sudah ada, supaya movement history
+  // tetap terbaca tanpa join.
+  code String @unique
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  transfersFrom StockTransfer[] @relation("TransferSource")
+  transfersTo   StockTransfer[] @relation("TransferDestination")
+
+  @@index([warehouseId])
+  @@map("storage_locations")
+}
+
+// ─── STOCK TRANSFER (Warehouse Tahap 4) ─────────────────────────────────────
+//
+// DUA BARIS LEDGER PER LINE, DITULIS DI DUA LANGKAH BERBEDA — bukan satu
+// langkah seperti Goods Receipt/Material Issue:
+//   1. Confirm Dispatch (PICKED → IN_TRANSIT): tulis movement TRANSFER
+//      NEGATIF di lokasi asal sebesar qtySent. Barang "meninggalkan" saldo
+//      lokasi asal SAAT ITU JUGA — mencerminkan kenyataan fisik (barang di
+//      truk, bukan lagi di rak asal).
+//   2. Confirm Receipt (IN_TRANSIT → COMPLETED): tulis movement TRANSFER
+//      POSITIF di lokasi tujuan sebesar qtyReceived (BISA beda dari
+//      qtySent — itulah `difference` yang diminta spesifikasi).
+//
+// Konsekuensi JUJUR dari desain ini: total saldo material se-gudang
+// (SUM(qty) tanpa peduli lokasi — cara GET /inventory/stock menghitung
+// hari ini) akan TURUN SEMENTARA selama status IN_TRANSIT, baru kembali
+// utuh setelah receipt dikonfirmasi. Itu BUKAN bug — barang yang sedang di
+// perjalanan memang tidak bisa dialokasikan ke permintaan mana pun sampai
+// benar-benar tiba.
+//
+// ⚠️ KETERBATASAN YANG DIAKUI: Reserved (Tahap 3) HANYA menghitung dari
+// Material Issue yang APPROVED..PICKED — Transfer yang APPROVED/PICKED
+// TIDAK ikut mengurangi Available. Secara teori dua permintaan (satu
+// Material Issue, satu Stock Transfer) bisa sama-sama "disetujui" atas
+// stok yang sama sebelum salah satunya benar-benar dieksekusi. Menyatukan
+// keduanya butuh keputusan desain sendiri (satu tabel reservasi generik
+// vs union query) — ditunda, bukan diselesaikan tergesa-gesa di sini.
+enum TransferType {
+  BIN_TO_BIN
+  ZONE_TO_ZONE
+  WAREHOUSE_TO_WAREHOUSE
+  AVAILABLE_TO_QUARANTINE
+  QUARANTINE_TO_AVAILABLE
+  AVAILABLE_TO_DAMAGED
+  RETURN_TO_WAREHOUSE
+}
+
+enum TransferStatus {
+  DRAFT
+  WAITING_APPROVAL
+  APPROVED
+  PICKED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+model StockTransfer {
+  id             String       @id @default(uuid()) @db.Uuid
+  transferNumber String       @unique @map("transfer_number") // TRF-DDMMYY-NN
+  transferType   TransferType @map("transfer_type")
+
+  sourceLocationId String          @map("source_location_id") @db.Uuid
+  sourceLocation   StorageLocation @relation("TransferSource", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+
+  destinationLocationId String          @map("destination_location_id") @db.Uuid
+  destinationLocation   StorageLocation @relation("TransferDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+
+  status TransferStatus @default(DRAFT)
+
+  requestedById String?   @map("requested_by")
+  requestedBy   User?     @relation("StockTransferRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedById  String?   @map("approved_by")
+  approvedBy    User?     @relation("StockTransferApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime? @map("approved_at")
+
+  dispatchedAt DateTime? @map("dispatched_at")
+  receivedAt   DateTime? @map("received_at")
+  notes        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines     StockTransferLine[]
+  movements StockMovement[]
+
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id              String        @id @default(uuid()) @db.Uuid
+  stockTransferId String        @map("stock_transfer_id") @db.Uuid
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  qtySent     Float   @map("qty_sent")
+  qtyReceived Float?  @map("qty_received") // diisi saat Confirm Receipt — selisih dari qtySent dihitung di UI, tidak disimpan
+  notes       String?
+
+  @@index([stockTransferId])
+  @@index([materialId])
+  @@map("stock_transfer_lines")
 }
