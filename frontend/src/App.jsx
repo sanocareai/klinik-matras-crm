@@ -39,6 +39,7 @@ const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"
 const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
 const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx"));
 const ArmadaIssues      = lazy(() => import("./pages/armada/ArmadaIssues.jsx"));
+const ArmadaReturns     = lazy(() => import("./pages/armada/ArmadaReturns.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -219,23 +220,13 @@ export default function App() {
                 badge "Contoh". Category/Priority/Reported By dari spesifikasi
                 sengaja tidak dibangun, lihat catatan di ArmadaIssues.jsx. */}
             <Route path="/armada/issues" element={<ArmadaIssues />} />
-            {/* Retur TETAP placeholder: dicek langsung ke schema.prisma —
-                tidak ada entitas retur pelanggan sama sekali (RETURN cuma
-                ada sebagai StockMovementType untuk material gudang). Ini
-                keputusan skema tersendiri (mirip Vehicle/Route Tahap 3),
-                bukan sekadar kolom tambahan — sengaja ditunda ke tahap
-                berikutnya daripada terburu-buru menebak struktur. */}
-            <Route
-              path="/armada/returns"
-              element={
-                <ArmadaPlaceholder
-                  title="Retur"
-                  subtitle="Kelola pengambilan kembali produk dan pemeriksaan di gudang."
-                  stage={6}
-                  description="Belum ada entitas retur pelanggan di database — perlu keputusan skema tersendiri (mirip Vehicle/Route), bukan cuma kolom tambahan."
-                />
-              }
-            />
+            {/* Tahap 6: "Retur" BUKAN refund/replace/reject seperti asumsi
+                spesifikasi awal — dikonfirmasi langsung ke Gilang. Kasur yang
+                sudah diantar tapi teksturnya kurang pas (trial 7/30 hari)
+                atau kena klaim garansi (10/20 tahun) dibawa kembali, direvisi,
+                diantar ulang, diulang sampai customer bilang "yes". Model
+                UnitRevision baru, lihat catatan panjang di schema.prisma. */}
+            <Route path="/armada/returns" element={<ArmadaReturns />} />
             <Route
               path="/armada/reports"
               element={

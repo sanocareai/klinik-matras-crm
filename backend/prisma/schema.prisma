@@ -188,6 +188,7 @@ model User {
   routesAsDriver        Route[]                 @relation("RouteDriver")
   podVerified           Job[]                   @relation("PodVerifier")
   jobsRescheduled       Job[]                   @relation("JobRescheduler")
+  unitRevisionsCreated  UnitRevision[]          @relation("UnitRevisionCreator")
   routesCreated         Route[]                 @relation("RouteCreator")
   scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -646,6 +647,7 @@ model Unit {
   productionTargets ProductionTarget[]
   stockMovements    StockMovement[]
   scopeRevisions    ScopeRevision[]
+  revisions         UnitRevision[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -921,8 +923,9 @@ model Job {
   routeId   String?  @map("route_id") @db.Uuid
   route     Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
 
-  units    JobUnit[]
-  payments Payment[]
+  units         JobUnit[]
+  payments      Payment[]
+  revisionLinks UnitRevision[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -940,6 +943,73 @@ model Job {
 enum PodStatus {
   VERIFIED
   REJECTED
+}
+
+// ─── REVISI (Delivery Tahap 6, disebut "Retur" di menu) ────────────────────
+//
+// KOREKSI PENTING (2 Agustus 2026): fitur di spesifikasi bernama "Retur"
+// dengan model refund/replace/reject — itu BUKAN cara bisnis ini bekerja.
+// Konfirmasi langsung dari Gilang: kalau kasur sudah diantar lalu customer
+// merasa TEKSTURNYA kurang pas (trial kenyamanan 7/30 hari — lihat §16.8
+// CLAUDE.md), tim BAWA LAGI kasurnya dan REVISI (adjust lapisan/racikan) —
+// diulang sampai customer bilang "yes", BUKAN dikembalikan uangnya. Sano
+// Care juga punya garansi amblas 10-20 tahun yang jalur klaimnya SAMA:
+// bawa kembali, revisi, antar ulang.
+//
+// Karena itu bisa terjadi BERKALI-KALI untuk satu Unit yang sama (revisi
+// pertama belum pas, revisi kedua baru "yes"), ini TABEL, bukan kolom di
+// Unit — riwayat tiap percobaan tetap terlihat, konsisten dengan prinsip
+// ledger (Aturan #2) yang dipakai unit_stage_logs.
+//
+// jobId SENGAJA pointer tunggal, bukan tabel/relasi kompleks: dispatcher
+// membuat Job pickup/delivery SEPERTI BIASA lewat halaman Jadwal &
+// Penugasan (JobUnit yang menghubungkan Job↔Unit sudah ada), lalu
+// menempelkan job yang sedang menangani revisi ini di sini — bukan
+// membangun ulang mesin dispatch yang sudah ada.
+enum RevisionTrigger {
+  KENYAMANAN // trial period comfort — customer minta tekstur diubah
+  GARANSI // klaim garansi amblas/kempes
+}
+
+enum RevisionStatus {
+  REQUESTED // baru diajukan, belum ada job jemput
+  PICKUP_SCHEDULED // job jemput sudah dibuat & ditempelkan (jobId terisi)
+  IN_REWORK // unit sudah di tangan tim, sedang direvisi
+  READY_REDELIVER // revisi selesai, siap diantar ulang
+  REDELIVERED // sudah diantar ulang, menunggu konfirmasi customer
+  CONFIRMED // customer bilang "yes" — selesai
+  CANCELLED // dibatalkan (customer berubah pikiran, dst)
+}
+
+model UnitRevision {
+  id     String @id @default(uuid()) @db.Uuid
+  unitId String @map("unit_id") @db.Uuid
+  // Restrict: unit yang punya riwayat revisi tidak boleh terhapus diam-diam.
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  trigger   RevisionTrigger
+  complaint String // keluhan/alasan customer, wajib diisi saat pengajuan
+
+  status RevisionStatus @default(REQUESTED)
+
+  // Job pickup/delivery yang SEDANG menangani revisi ini — SetNull karena
+  // job bisa dihapus/diganti tanpa menghapus riwayat revisinya.
+  jobId String? @map("job_id") @db.Uuid
+  job   Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  note        String? // catatan tim (apa yang direvisi, hasil inspeksi, dst)
+  confirmedAt DateTime? @map("confirmed_at")
+
+  // SetNull: staf resign, riwayat revisi TETAP ada.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("UnitRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([unitId])
+  @@index([status])
+  @@map("unit_revisions")
 }
 
 // ─── ARMADA (PRD §5.1 Vehicle) ──────────────────────────────────────────────

@@ -1282,3 +1282,121 @@ armadaRouter.post("/payments/:id/verify", requirePermission(P.PAYMENT_WRITE), as
     handleErr(err, res);
   }
 });
+
+// ─── REVISI (Delivery Tahap 6, "Retur" di menu) ─────────────────────────────
+//
+// Lihat catatan panjang di schema.prisma di atas model UnitRevision untuk
+// kenapa ini BUKAN refund/replace/reject: kasur dibawa kembali, direvisi,
+// diantar ulang — diulang sampai customer puas, atau sampai klaim garansi
+// selesai ditangani. jobId cuma pointer ke Job pickup/delivery yang dibuat
+// dispatcher SEPERTI BIASA lewat Jadwal & Penugasan — tidak ada mesin
+// dispatch baru di sini.
+
+const unitRevisionInclude = {
+  unit: {
+    select: {
+      id: true, unitCode: true, merk: true, ukuran: true,
+      order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+    },
+  },
+  job: { select: { id: true, type: true, status: true, scheduledDate: true, driver: { select: { id: true, name: true } } } },
+  createdBy: { select: { id: true, name: true } },
+};
+
+// GET /api/armada/revisions?status=&trigger=
+armadaRouter.get("/revisions", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { status, trigger } = req.query;
+    const revisions = await prisma.unitRevision.findMany({
+      where: { ...(status && { status }), ...(trigger && { trigger }) },
+      include: unitRevisionInclude,
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    res.json({ revisions });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/revisions/units?q= — cari unit yang SUDAH terkirim, untuk
+// pemilih di form pengajuan revisi. Hanya status DELIVERED — mengajukan
+// revisi atas kasur yang belum sampai ke customer tidak masuk akal.
+armadaRouter.get("/revisions/units", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim();
+    if (q.length < 2) return res.json({ units: [] });
+    const units = await prisma.unit.findMany({
+      where: {
+        status: "DELIVERED",
+        OR: [
+          { unitCode: { contains: q, mode: "insensitive" } },
+          { order: { orderNumber: { contains: q, mode: "insensitive" } } },
+          { order: { customer: { name: { contains: q, mode: "insensitive" } } } },
+        ],
+      },
+      select: {
+        id: true, unitCode: true, merk: true, ukuran: true,
+        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+      },
+      take: 20,
+    });
+    res.json({ units });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/revisions — ajukan revisi baru untuk sebuah unit.
+armadaRouter.post("/revisions", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { unitId, trigger, complaint } = req.body;
+    if (!unitId) throw new ArmadaError("Unit wajib dipilih");
+    if (!["KENYAMANAN", "GARANSI"].includes(trigger)) throw new ArmadaError("Jenis revisi tidak valid");
+    if (!complaint?.trim()) throw new ArmadaError("Keluhan/alasan wajib diisi");
+
+    const unit = await prisma.unit.findUnique({ where: { id: unitId } });
+    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    if (unit.status !== "DELIVERED") throw new ArmadaError("Hanya unit yang sudah terkirim yang bisa diajukan revisi");
+
+    const revision = await prisma.unitRevision.create({
+      data: { unitId, trigger, complaint: complaint.trim(), createdById: req.user.id },
+      include: unitRevisionInclude,
+    });
+    res.status(201).json(revision);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /api/armada/revisions/:id — perbarui status/job/catatan. CONFIRMED
+// otomatis mengisi confirmedAt; CANCELLED wajib catatan alasan.
+armadaRouter.patch("/revisions/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.unitRevision.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Revisi tidak ditemukan" });
+
+    const { status, jobId, note } = req.body;
+    const data = {};
+    if (jobId !== undefined) data.jobId = jobId || null;
+    if (note !== undefined) data.note = note || null;
+    if (status) {
+      const VALID = ["REQUESTED", "PICKUP_SCHEDULED", "IN_REWORK", "READY_REDELIVER", "REDELIVERED", "CONFIRMED", "CANCELLED"];
+      if (!VALID.includes(status)) throw new ArmadaError("Status tidak valid");
+      if (status === "CANCELLED" && !note?.trim() && !existing.note?.trim()) {
+        throw new ArmadaError("Alasan pembatalan wajib diisi");
+      }
+      data.status = status;
+      data.confirmedAt = status === "CONFIRMED" ? new Date() : existing.confirmedAt;
+    }
+
+    const revision = await prisma.unitRevision.update({
+      where: { id: req.params.id },
+      data,
+      include: unitRevisionInclude,
+    });
+    res.json(revision);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
