@@ -166,42 +166,48 @@ model User {
   avatarUrl    String? // foto profil, path relatif "/uploads/avatars/xxx.jpg"
   createdAt    DateTime @default(now())
 
-  assignedCustomers       Customer[]              @relation("AssignedSales")
-  assignedConversations   Conversation[]          @relation("AssignedAgent")
-  notes                   Note[]
-  salesTargets            SalesTarget[]
-  pushTokens              PushToken[]
-  sentMessages            Message[]               @relation("MessageSender")
-  firstResponderFor       Conversation[]          @relation("FirstResponder")
-  handoverEventsFrom      HandoverEvent[]         @relation("HandoverFrom")
-  handoverEventsTo        HandoverEvent[]         @relation("HandoverTo")
-  pipelineTransitions     PipelineTransition[]    @relation("PipelineTransitionActor")
-  orderStatusChanges      OrderStatusTransition[] @relation("OrderStatusActor")
-  messageTemplates        MessageTemplate[]
-  unitStageLogs           UnitStageLog[]          @relation("UnitStageLogActor")
-  jobsAsDriver            Job[]                   @relation("JobDriver")
-  qcFitTests              QcFitTest[]             @relation("QcFitTestTester")
-  productionTargets       ProductionTarget[]      @relation("ProductionTargetCreator")
-  paymentsRecorded        Payment[]               @relation("PaymentRecorder")
-  paymentsVerified        PaymentVerification[]   @relation("PaymentVerifier")
-  stockMovements          StockMovement[]         @relation("StockMovementActor")
-  routesAsDriver          Route[]                 @relation("RouteDriver")
-  podVerified             Job[]                   @relation("PodVerifier")
-  jobsRescheduled         Job[]                   @relation("JobRescheduler")
-  unitRevisionsCreated    UnitRevision[]          @relation("UnitRevisionCreator")
-  goodsReceiptsCreated    GoodsReceipt[]          @relation("GoodsReceiptCreator")
-  materialIssuesRequested MaterialIssue[]         @relation("MaterialIssueRequester")
-  materialIssuesApproved  MaterialIssue[]         @relation("MaterialIssueApprover")
-  materialIssuesIssued    MaterialIssue[]         @relation("MaterialIssueIssuer")
-  materialIssuesCreated   MaterialIssue[]         @relation("MaterialIssueCreator")
-  stockTransfersRequested StockTransfer[]         @relation("StockTransferRequester")
-  stockTransfersApproved  StockTransfer[]         @relation("StockTransferApprover")
-  stockCountsAssigned     StockCount[]            @relation("StockCountAssignee")
-  stockCountsReviewed     StockCount[]            @relation("StockCountReviewer")
-  stockCountsCreated      StockCount[]            @relation("StockCountCreator")
-  routesCreated           Route[]                 @relation("RouteCreator")
-  scopeRevisionsMade      ScopeRevision[]         @relation("ScopeRevisionProposer")
-  scopeRevisionsDecided   ScopeRevision[]         @relation("ScopeRevisionDecider")
+  assignedCustomers         Customer[]               @relation("AssignedSales")
+  assignedConversations     Conversation[]           @relation("AssignedAgent")
+  notes                     Note[]
+  salesTargets              SalesTarget[]
+  pushTokens                PushToken[]
+  sentMessages              Message[]                @relation("MessageSender")
+  firstResponderFor         Conversation[]           @relation("FirstResponder")
+  handoverEventsFrom        HandoverEvent[]          @relation("HandoverFrom")
+  handoverEventsTo          HandoverEvent[]          @relation("HandoverTo")
+  pipelineTransitions       PipelineTransition[]     @relation("PipelineTransitionActor")
+  orderStatusChanges        OrderStatusTransition[]  @relation("OrderStatusActor")
+  messageTemplates          MessageTemplate[]
+  unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
+  jobsAsDriver              Job[]                    @relation("JobDriver")
+  qcFitTests                QcFitTest[]              @relation("QcFitTestTester")
+  productionTargets         ProductionTarget[]       @relation("ProductionTargetCreator")
+  paymentsRecorded          Payment[]                @relation("PaymentRecorder")
+  paymentsVerified          PaymentVerification[]    @relation("PaymentVerifier")
+  stockMovements            StockMovement[]          @relation("StockMovementActor")
+  routesAsDriver            Route[]                  @relation("RouteDriver")
+  podVerified               Job[]                    @relation("PodVerifier")
+  jobsRescheduled           Job[]                    @relation("JobRescheduler")
+  unitRevisionsCreated      UnitRevision[]           @relation("UnitRevisionCreator")
+  goodsReceiptsCreated      GoodsReceipt[]           @relation("GoodsReceiptCreator")
+  materialIssuesRequested   MaterialIssue[]          @relation("MaterialIssueRequester")
+  materialIssuesApproved    MaterialIssue[]          @relation("MaterialIssueApprover")
+  materialIssuesIssued      MaterialIssue[]          @relation("MaterialIssueIssuer")
+  materialIssuesCreated     MaterialIssue[]          @relation("MaterialIssueCreator")
+  stockTransfersRequested   StockTransfer[]          @relation("StockTransferRequester")
+  stockTransfersApproved    StockTransfer[]          @relation("StockTransferApprover")
+  stockCountsAssigned       StockCount[]             @relation("StockCountAssignee")
+  stockCountsReviewed       StockCount[]             @relation("StockCountReviewer")
+  stockCountsCreated        StockCount[]             @relation("StockCountCreator")
+  damagedStockReported      DamagedStockRecord[]     @relation("DamagedStockReporter")
+  damagedStockResolved      DamagedStockRecord[]     @relation("DamagedStockResolver")
+  returnRecordsCreated      ReturnRecord[]           @relation("ReturnRecordCreator")
+  stockAdjustmentsRequested StockAdjustmentRequest[] @relation("StockAdjustmentRequester")
+  stockAdjustmentsApproved  StockAdjustmentRequest[] @relation("StockAdjustmentApprover")
+  stockAdjustmentsPosted    StockAdjustmentRequest[] @relation("StockAdjustmentPoster")
+  routesCreated             Route[]                  @relation("RouteCreator")
+  scopeRevisionsMade        ScopeRevision[]          @relation("ScopeRevisionProposer")
+  scopeRevisionsDecided     ScopeRevision[]          @relation("ScopeRevisionDecider")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -1642,11 +1648,14 @@ model Material {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  movements          StockMovement[]
-  goodsReceiptLines  GoodsReceiptLine[]
-  materialIssueLines MaterialIssueLine[]
-  stockTransferLines StockTransferLine[]
-  stockCountLines    StockCountLine[]
+  movements               StockMovement[]
+  goodsReceiptLines       GoodsReceiptLine[]
+  materialIssueLines      MaterialIssueLine[]
+  stockTransferLines      StockTransferLine[]
+  stockCountLines         StockCountLine[]
+  damagedStockRecords     DamagedStockRecord[]
+  returnRecords           ReturnRecord[]
+  stockAdjustmentRequests StockAdjustmentRequest[]
 
   @@index([active])
   @@map("materials")
@@ -1727,12 +1736,23 @@ model StockMovement {
   stockCountId String?     @map("stock_count_id") @db.Uuid
   stockCount   StockCount? @relation(fields: [stockCountId], references: [id], onDelete: SetNull)
 
+  // Warehouse Tahap 6 — jejak balik ke masing-masing dokumen resolusi.
+  damagedStockRecordId     String?                 @map("damaged_stock_record_id") @db.Uuid
+  damagedStockRecord       DamagedStockRecord?     @relation(fields: [damagedStockRecordId], references: [id], onDelete: SetNull)
+  returnRecordId           String?                 @map("return_record_id") @db.Uuid
+  returnRecord             ReturnRecord?           @relation(fields: [returnRecordId], references: [id], onDelete: SetNull)
+  stockAdjustmentRequestId String?                 @map("stock_adjustment_request_id") @db.Uuid
+  stockAdjustmentRequest   StockAdjustmentRequest? @relation(fields: [stockAdjustmentRequestId], references: [id], onDelete: SetNull)
+
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
   @@index([goodsReceiptId])
   @@index([materialIssueId])
   @@index([stockTransferId])
   @@index([stockCountId])
+  @@index([damagedStockRecordId])
+  @@index([returnRecordId])
+  @@index([stockAdjustmentRequestId])
   @@map("stock_movements")
 }
 
@@ -2011,8 +2031,9 @@ model StorageLocation {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  transfersFrom StockTransfer[] @relation("TransferSource")
-  transfersTo   StockTransfer[] @relation("TransferDestination")
+  transfersFrom       StockTransfer[]      @relation("TransferSource")
+  transfersTo         StockTransfer[]      @relation("TransferDestination")
+  damagedStockRecords DamagedStockRecord[]
 
   @@index([warehouseId])
   @@map("storage_locations")
@@ -2229,4 +2250,221 @@ model StockCountLine {
   @@index([stockCountId])
   @@index([materialId])
   @@map("stock_count_lines")
+}
+
+// ─── DAMAGED, RETURN & ADJUSTMENT (Warehouse Tahap 6) ───────────────────────
+//
+// KETIGANYA MEMAKAI TIPE MOVEMENT YANG SUDAH ADA sejak v1 (WASTE, RETURN,
+// ADJUSTMENT) — TIDAK ADA enum StockMovementType baru di tahap ini. Bedanya
+// dengan endpoint satu-langkah yang sudah ada (POST /movements/waste,
+// /return, /adjustment — TIDAK diubah, tetap jalan untuk koreksi cepat):
+// tiga dokumen di bawah membungkus KEPUTUSAN yang perlu ditinjau dulu
+// sebelum ledger benar-benar ditulis, sama disiplinnya dengan Goods
+// Receipt/Material Issue/Stock Transfer/Stock Count.
+//
+// ⚠️ KONSEKUENSI YANG DIAKUI (sama keterbatasan dengan Tahap 4): sistem ini
+// TIDAK punya saldo "per lokasi/status" — SUM(qty) selalu lintas lokasi.
+// Jadi melaporkan barang rusak (DamagedStockRecord) TIDAK otomatis
+// mengurangi saldo "tersedia" — barang itu masih terhitung on-hand sampai
+// resolusi akhirnya benar-benar mengeluarkannya (Dispose/Return to
+// Supplier). Ini BUKAN bug, ini jujur soal apa yang benar-benar diketahui
+// sistem: "dilaporkan rusak" dan "sudah dikeluarkan dari stok" adalah DUA
+// fakta berbeda, dan cuma yang kedua yang mengubah angka.
+//
+// ⚠️ TIDAK MENYENTUH reservasi (Reserved, Tahap 3-4). Ketiga dokumen ini
+// resolusi atas stok yang SUDAH ADA, bukan permintaan alokasi ke masa
+// depan — beda semantik dengan Material Issue/Stock Transfer, jadi tidak
+// perlu (dan tidak seharusnya) ikut mengurangi Available.
+
+enum DamageCategory {
+  TORN
+  WET
+  CONTAMINATED
+  DEFORMED
+  PACKAGING_DAMAGE
+  EXPIRED
+  PRODUCTION_DEFECT
+  DELIVERY_DAMAGE
+  OTHER
+}
+
+enum DamagedStockStatus {
+  REPORTED
+  UNDER_INSPECTION
+  RESOLVED
+}
+
+// Cuma DISPOSE & RETURN_TO_SUPPLIER yang menulis movement (WASTE) — barang
+// benar-benar keluar dari sistem. REWORK & RESTORE_TO_AVAILABLE TIDAK
+// menulis apa pun: barangnya tidak pernah dianggap keluar dari saldo.
+enum DamagedResolution {
+  RETURN_TO_SUPPLIER
+  REWORK
+  DISPOSE
+  RESTORE_TO_AVAILABLE
+}
+
+model DamagedStockRecord {
+  id           String @id @default(uuid()) @db.Uuid
+  recordNumber String @unique @map("record_number") // DMG-DDMMYY-NN
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  qty        Float
+
+  damageCategory DamageCategory @map("damage_category")
+
+  // Opsional & informasional — "Move to Damaged Area" tercatat sebagai
+  // penanda lokasi, BUKAN transfer ledger otomatis. Kalau barangnya
+  // benar-benar perlu dipindah rak, itu Stock Transfer terpisah (Tahap 4).
+  locationId String?          @map("location_id") @db.Uuid
+  location   StorageLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  status DamagedStockStatus @default(REPORTED)
+
+  reportedById String?  @map("reported_by")
+  reportedBy   User?    @relation("DamagedStockReporter", fields: [reportedById], references: [id], onDelete: SetNull)
+  reportedAt   DateTime @default(now()) @map("reported_at")
+
+  resolution     DamagedResolution? @map("resolution")
+  resolutionNote String?            @map("resolution_note")
+  resolvedById   String?            @map("resolved_by")
+  resolvedBy     User?              @relation("DamagedStockResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt     DateTime?          @map("resolved_at")
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  movements StockMovement[]
+
+  @@index([status])
+  @@map("damaged_stock_records")
+}
+
+enum ReturnType {
+  CUSTOMER_RETURN
+  DELIVERY_RETURN
+  PRODUCTION_RETURN
+  SUPPLIER_RETURN
+}
+
+enum ReturnRecordStatus {
+  CREATED
+  RECEIVED
+  INSPECTION
+  COMPLETED
+  CANCELLED
+}
+
+// Cuma RETURN_TO_AVAILABLE yang menulis movement (RETURN, positif — barang
+// benar-benar masuk stok terpakai). Lima resolusi lain TIDAK: QUARANTINE/
+// REWORK barang tidak dianggap keluar (masih ditinjau), RETURN_TO_SUPPLIER/
+// DISPOSE barang TIDAK PERNAH dianggap masuk stok (ditolak langsung, sama
+// prinsipnya dengan rejectedQty di Goods Receipt), REPLACE_PRODUCT
+// penggantinya jalan lewat Goods Receipt/Material Issue terpisah.
+enum ReturnResolution {
+  RETURN_TO_AVAILABLE
+  QUARANTINE
+  REWORK
+  RETURN_TO_SUPPLIER
+  DISPOSE
+  REPLACE_PRODUCT
+}
+
+model ReturnRecord {
+  id           String     @id @default(uuid()) @db.Uuid
+  returnNumber String     @unique @map("return_number") // RTN-DDMMYY-NN
+  returnType   ReturnType @map("return_type")
+
+  // String bebas — sama pola dengan GoodsReceipt.sourceReference. Bisa
+  // menunjuk Order/Delivery Job/PO, tapi lintas modul yang formatnya
+  // beda-beda, bukan FK tunggal yang jujur.
+  reference String?
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  qty        Float
+  condition  String? // catatan kondisi fisik barang retur
+
+  status ReturnRecordStatus @default(CREATED)
+
+  inspectionNote String?           @map("inspection_note")
+  resolution     ReturnResolution?
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("ReturnRecordCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  receivedAt  DateTime? @map("received_at")
+  inspectedAt DateTime? @map("inspected_at")
+  completedAt DateTime? @map("completed_at")
+  notes       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  movements StockMovement[]
+
+  @@index([status])
+  @@map("return_records")
+}
+
+enum AdjustmentRequestType {
+  POSITIVE
+  NEGATIVE
+  COUNT_DIFFERENCE
+  DAMAGE
+  EXPIRY
+  DATA_CORRECTION
+  CONVERSION
+  OTHER
+}
+
+enum AdjustmentRequestStatus {
+  DRAFT
+  WAITING_APPROVAL
+  APPROVED
+  POSTED
+  CANCELLED
+}
+
+// Beda dengan POST /inventory/movements/adjustment (satu langkah, langsung
+// tertulis — dipakai Stock Count Tahap 5 & koreksi cepat Gudang.jsx): ini
+// WAJIB approval sebelum ledger tersentuh. Spesifikasi minta "high-value
+// adjustment perlu approval" — Material tidak punya kolom harga (lihat
+// catatan Tahap 5), jadi TIDAK bisa jujur membedakan "tinggi" vs "rendah"
+// nilainya. Keputusannya: SEMUA request lewat dokumen ini wajib approval,
+// tanpa kecuali — lebih aman daripada ambang nilai yang diam-diam salah.
+model StockAdjustmentRequest {
+  id               String                @id @default(uuid()) @db.Uuid
+  adjustmentNumber String                @unique @map("adjustment_number") // ADJ-DDMMYY-NN
+  adjustmentType   AdjustmentRequestType @map("adjustment_type")
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  beforeQty     Float @map("before_qty") // snapshot saldo ledger SAAT REQUEST DIBUAT
+  adjustmentQty Float @map("adjustment_qty") // delta (+/-); afterQty = beforeQty + adjustmentQty, dihitung di UI
+
+  reason String // WAJIB — tidak ada default, form menolak kosong
+
+  status AdjustmentRequestStatus @default(DRAFT)
+
+  requestedById String?   @map("requested_by")
+  requestedBy   User?     @relation("StockAdjustmentRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedById  String?   @map("approved_by")
+  approvedBy    User?     @relation("StockAdjustmentApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime? @map("approved_at")
+  postedById    String?   @map("posted_by")
+  postedBy      User?     @relation("StockAdjustmentPoster", fields: [postedById], references: [id], onDelete: SetNull)
+  postedAt      DateTime? @map("posted_at")
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  movements StockMovement[]
+
+  @@index([status])
+  @@map("stock_adjustment_requests")
 }

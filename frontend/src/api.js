@@ -282,6 +282,38 @@ export const api = {
   recountStockCount: (id) => request(`/inventory/stock-counts/${id}/recount`, { method: "POST" }),
   completeStockCount: (id) => request(`/inventory/stock-counts/${id}/complete`, { method: "POST" }),
   cancelStockCount: (id, reason) => request(`/inventory/stock-counts/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Damaged Stock (Warehouse Tahap 6)
+  getDamagedStock: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/damaged-stock${qs ? `?${qs}` : ""}`);
+  },
+  getDamagedStockRecord: (id) => request(`/inventory/damaged-stock/${id}`),
+  createDamagedStockRecord: (data) => request("/inventory/damaged-stock", { method: "POST", body: JSON.stringify(data) }),
+  requestDamagedStockInspection: (id) => request(`/inventory/damaged-stock/${id}/inspect`, { method: "PATCH" }),
+  resolveDamagedStock: (id, data) => request(`/inventory/damaged-stock/${id}/resolve`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Returns (Warehouse Tahap 6)
+  getReturns: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/returns${qs ? `?${qs}` : ""}`);
+  },
+  getReturnRecord: (id) => request(`/inventory/returns/${id}`),
+  createReturnRecord: (data) => request("/inventory/returns", { method: "POST", body: JSON.stringify(data) }),
+  updateReturnRecord: (id, data) => request(`/inventory/returns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  completeReturnRecord: (id, resolution) => request(`/inventory/returns/${id}/complete`, { method: "POST", body: JSON.stringify({ resolution }) }),
+  cancelReturnRecord: (id, reason) => request(`/inventory/returns/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Stock Adjustment review-gated (Warehouse Tahap 6)
+  getAdjustmentRequests: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/adjustments${qs ? `?${qs}` : ""}`);
+  },
+  getAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}`),
+  createAdjustmentRequest: (data) => request("/inventory/adjustments", { method: "POST", body: JSON.stringify(data) }),
+  updateAdjustmentRequest: (id, data) => request(`/inventory/adjustments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  postAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}/post`, { method: "POST" }),
+  cancelAdjustmentRequest: (id, reason) => request(`/inventory/adjustments/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

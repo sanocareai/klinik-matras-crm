@@ -192,6 +192,78 @@ export const COUNT_METHOD_REAL = {
   FULL_WAREHOUSE:    { label: "Full Warehouse" },
 };
 
+// ── Damaged Stock, Returns, Stock Adjustment (Tahap 6) ──────────────────
+// Ketiganya memakai movement yang SUDAH ADA (WASTE/RETURN/ADJUSTMENT) —
+// lihat catatan panjang di schema.prisma. Cuma resolusi tertentu yang
+// menulis ledger; sisanya murni status/riwayat.
+export const DAMAGE_CATEGORY_REAL = {
+  TORN:              { label: "Torn" },
+  WET:               { label: "Wet" },
+  CONTAMINATED:      { label: "Contaminated" },
+  DEFORMED:          { label: "Deformed" },
+  PACKAGING_DAMAGE:  { label: "Packaging Damage" },
+  EXPIRED:           { label: "Expired" },
+  PRODUCTION_DEFECT: { label: "Production Defect" },
+  DELIVERY_DAMAGE:   { label: "Delivery Damage" },
+  OTHER:             { label: "Other" },
+};
+export const DAMAGED_STATUS_REAL = {
+  REPORTED:         { label: "Reported",         labelId: "Dilaporkan",    tone: "orange" },
+  UNDER_INSPECTION: { label: "Under Inspection",  labelId: "Diperiksa",     tone: "accent" },
+  RESOLVED:         { label: "Resolved",          labelId: "Selesai",      tone: "green" },
+};
+// Cuma dua yang menulis ledger (WASTE) — ditandai di label supaya jelas
+// di UI, bukan disembunyikan sebagai detail implementasi.
+export const DAMAGED_RESOLUTION_REAL = {
+  RETURN_TO_SUPPLIER:   { label: "Return to Supplier", writesLedger: true },
+  REWORK:                { label: "Rework",             writesLedger: false },
+  DISPOSE:               { label: "Dispose",            writesLedger: true },
+  RESTORE_TO_AVAILABLE:  { label: "Restore to Available", writesLedger: false },
+};
+
+export const RETURN_TYPE_REAL = {
+  CUSTOMER_RETURN:  { label: "Customer Return" },
+  DELIVERY_RETURN:  { label: "Delivery Return" },
+  PRODUCTION_RETURN:{ label: "Production Return" },
+  SUPPLIER_RETURN:  { label: "Supplier Return" },
+};
+export const RETURN_STATUS_REAL = {
+  CREATED:    { label: "Created",    labelId: "Dibuat",    tone: "neutral" },
+  RECEIVED:   { label: "Received",   labelId: "Diterima",  tone: "accent" },
+  INSPECTION: { label: "Inspection", labelId: "Pemeriksaan", tone: "orange" },
+  COMPLETED:  { label: "Completed",  labelId: "Selesai",   tone: "green" },
+  CANCELLED:  { label: "Cancelled",  labelId: "Dibatalkan", tone: "neutral" },
+};
+export const RETURN_FORWARD_FLOW = ["CREATED", "RECEIVED", "INSPECTION", "COMPLETED"];
+// Cuma RETURN_TO_AVAILABLE yang menulis ledger (RETURN, positif).
+export const RETURN_RESOLUTION_REAL = {
+  RETURN_TO_AVAILABLE: { label: "Return to Available", writesLedger: true },
+  QUARANTINE:           { label: "Quarantine",          writesLedger: false },
+  REWORK:                { label: "Rework",              writesLedger: false },
+  RETURN_TO_SUPPLIER:    { label: "Return to Supplier",  writesLedger: false },
+  DISPOSE:               { label: "Dispose",             writesLedger: false },
+  REPLACE_PRODUCT:       { label: "Replace Product",     writesLedger: false },
+};
+
+export const ADJUSTMENT_TYPE_REAL = {
+  POSITIVE:         { label: "Positive Adjustment" },
+  NEGATIVE:         { label: "Negative Adjustment" },
+  COUNT_DIFFERENCE: { label: "Count Difference" },
+  DAMAGE:           { label: "Damage" },
+  EXPIRY:           { label: "Expiry" },
+  DATA_CORRECTION:  { label: "Data Correction" },
+  CONVERSION:       { label: "Conversion" },
+  OTHER:            { label: "Other" },
+};
+export const ADJUSTMENT_STATUS_REAL = {
+  DRAFT:            { label: "Draft",            labelId: "Draft",             tone: "neutral" },
+  WAITING_APPROVAL: { label: "Waiting Approval",  labelId: "Menunggu Approval", tone: "orange" },
+  APPROVED:         { label: "Approved",          labelId: "Disetujui",        tone: "accent" },
+  POSTED:           { label: "Posted",            labelId: "Diposting",        tone: "green" },
+  CANCELLED:        { label: "Cancelled",         labelId: "Dibatalkan",       tone: "neutral" },
+};
+export const ADJUSTMENT_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "POSTED"];
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *

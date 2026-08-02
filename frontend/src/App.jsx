@@ -50,6 +50,7 @@ const WarehouseGoodsReceipt = lazy(() => import("./pages/warehouse/WarehouseGood
 const WarehouseMaterialIssue = lazy(() => import("./pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("./pages/warehouse/WarehouseTransfers.jsx"));
 const WarehouseStockCount = lazy(() => import("./pages/warehouse/WarehouseStockCount.jsx"));
+const WarehouseAdjustments = lazy(() => import("./pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -289,17 +290,11 @@ export default function App() {
                 />
               }
             />
-            <Route
-              path="/warehouse/adjustments"
-              element={
-                <WarehousePlaceholder
-                  title="Damaged, Return & Adjustment"
-                  subtitle="Barang rusak, retur, dan penyesuaian stok."
-                  phase={5}
-                  description="Backend sudah punya movement WASTE, RETURN, dan ADJUSTMENT — Phase 5 menyatukannya jadi satu alur dengan alasan wajib dan approval."
-                />
-              }
-            />
+            {/* Tahap 6: DATA NYATA — 3 sub-fitur (Damaged/Returns/
+                Adjustment) memakai movement yang SUDAH ADA (WASTE/RETURN/
+                ADJUSTMENT), dibungkus alur review sebelum ledger tersentuh.
+                Lihat schema.prisma. */}
+            <Route path="/warehouse/adjustments" element={<WarehouseAdjustments />} />
             <Route
               path="/warehouse/reports"
               element={
