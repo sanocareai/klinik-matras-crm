@@ -51,6 +51,7 @@ const WarehouseMaterialIssue = lazy(() => import("./pages/warehouse/WarehouseMat
 const WarehouseTransfers = lazy(() => import("./pages/warehouse/WarehouseTransfers.jsx"));
 const WarehouseStockCount = lazy(() => import("./pages/warehouse/WarehouseStockCount.jsx"));
 const WarehouseAdjustments = lazy(() => import("./pages/warehouse/WarehouseAdjustments.jsx"));
+const WarehouseReplenishment = lazy(() => import("./pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -279,17 +280,11 @@ export default function App() {
                 Count; stok baru berubah saat Complete Count menulis
                 ADJUSTMENT per baris berselisih. Lihat schema.prisma. */}
             <Route path="/warehouse/stock-count" element={<WarehouseStockCount />} />
-            <Route
-              path="/warehouse/replenishment"
-              element={
-                <WarehousePlaceholder
-                  title="Replenishment"
-                  subtitle="Saran restok berdasarkan minimum stock dan reorder point."
-                  phase={5}
-                  description="Material sudah punya reorderPoint & reorderQty di database — Phase 5 mengubahnya jadi saran restok yang bisa disetujui."
-                />
-              }
-            />
+            {/* Tahap 7: DATA NYATA — saran dihitung on-the-fly dari
+                available ≤ reorderPoint (Material.reorderQty sudah ada
+                sejak v1, tinggal dipakai). Selesai = menaut ke Goods
+                Receipt yang sudah ada, tidak menulis ledger sendiri. */}
+            <Route path="/warehouse/replenishment" element={<WarehouseReplenishment />} />
             {/* Tahap 6: DATA NYATA — 3 sub-fitur (Damaged/Returns/
                 Adjustment) memakai movement yang SUDAH ADA (WASTE/RETURN/
                 ADJUSTMENT), dibungkus alur review sebelum ledger tersentuh.

@@ -77,7 +77,7 @@ export const DIVISION_CONTENT = {
       { title: "Material Issue",    description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: "/warehouse/material-issue" },
       { title: "Stock Transfer",    description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: "/warehouse/transfers" },
       { title: "Cycle Count",       description: "Jadwal stock opname dan rekonsiliasi selisih.", icon: CalendarClock, path: "/warehouse/stock-count" },
-      { title: "Replenishment",     description: "Saran pembelian berdasarkan minimum stock dan kebutuhan produksi.", icon: TrendingUp, path: null },
+      { title: "Replenishment",     description: "Saran pembelian berdasarkan minimum stock dan kebutuhan produksi.", icon: TrendingUp, path: "/warehouse/replenishment" },
     ],
   },
   armada: {

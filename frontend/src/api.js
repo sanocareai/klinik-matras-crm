@@ -314,6 +314,19 @@ export const api = {
   updateAdjustmentRequest: (id, data) => request(`/inventory/adjustments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   postAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}/post`, { method: "POST" }),
   cancelAdjustmentRequest: (id, reason) => request(`/inventory/adjustments/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+
+  // Replenishment (Warehouse Tahap 7)
+  getReplenishmentSuggestions: () => request("/inventory/replenishment/suggestions"),
+  getReplenishmentRequests: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/replenishment${qs ? `?${qs}` : ""}`);
+  },
+  getReplenishmentRequest: (id) => request(`/inventory/replenishment/${id}`),
+  createReplenishmentRequest: (data) => request("/inventory/replenishment", { method: "POST", body: JSON.stringify(data) }),
+  updateReplenishmentRequest: (id, data) => request(`/inventory/replenishment/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  linkReplenishmentReceipt: (id, goodsReceiptId) =>
+    request(`/inventory/replenishment/${id}/link-receipt`, { method: "POST", body: JSON.stringify({ goodsReceiptId }) }),
+  rejectReplenishmentRequest: (id, reason) => request(`/inventory/replenishment/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

@@ -205,6 +205,8 @@ model User {
   stockAdjustmentsRequested StockAdjustmentRequest[] @relation("StockAdjustmentRequester")
   stockAdjustmentsApproved  StockAdjustmentRequest[] @relation("StockAdjustmentApprover")
   stockAdjustmentsPosted    StockAdjustmentRequest[] @relation("StockAdjustmentPoster")
+  replenishmentsRequested   ReplenishmentRequest[]   @relation("ReplenishmentRequester")
+  replenishmentsApproved    ReplenishmentRequest[]   @relation("ReplenishmentApprover")
   routesCreated             Route[]                  @relation("RouteCreator")
   scopeRevisionsMade        ScopeRevision[]          @relation("ScopeRevisionProposer")
   scopeRevisionsDecided     ScopeRevision[]          @relation("ScopeRevisionDecider")
@@ -1656,6 +1658,7 @@ model Material {
   damagedStockRecords     DamagedStockRecord[]
   returnRecords           ReturnRecord[]
   stockAdjustmentRequests StockAdjustmentRequest[]
+  replenishmentRequests   ReplenishmentRequest[]
 
   @@index([active])
   @@map("materials")
@@ -1818,8 +1821,9 @@ model GoodsReceipt {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  lines     GoodsReceiptLine[]
-  movements StockMovement[]
+  lines                 GoodsReceiptLine[]
+  movements             StockMovement[]
+  replenishmentRequests ReplenishmentRequest[]
 
   @@index([status])
   @@index([expectedDate])
@@ -2467,4 +2471,98 @@ model StockAdjustmentRequest {
 
   @@index([status])
   @@map("stock_adjustment_requests")
+}
+
+// ─── REPLENISHMENT (Warehouse Tahap 7) ──────────────────────────────────────
+//
+// KENAPA GRATIS SEKARANG. Material.reorderPoint & reorderQty sudah ada
+// SEJAK v1 (PRD FR-I-05) tapi belum pernah benar-benar dipakai jadi
+// saran — cuma alarm senyap. Tahap ini mengubahnya jadi permintaan yang
+// bisa ditinjau: reorderPoint = pemicu ("kapan"), reorderQty = jawaban
+// spesifikasi "Suggested Quantity" ("berapa"). TIDAK ADA "Maximum Stock"
+// yang dikarang — field itu tidak pernah ada di Material, dan
+// reorderQty SUDAH menjawab pertanyaan yang sama secara jujur.
+//
+// SARAN (suggestion) TIDAK PERNAH DISIMPAN sebagai baris — dihitung
+// on-the-fly (GET /replenishment/suggestions: available ≤ reorderPoint),
+// sama disiplin dengan saldo stok itu sendiri. Baru jadi baris NYATA
+// (ReplenishmentRequest) begitu seseorang mengklik "Create Request".
+//
+// TIDAK PERNAH MENULIS stock_movements SENDIRI — barang yang benar-benar
+// tiba dicatat lewat Goods Receipt (Tahap 2B) seperti biasa. Selesainya
+// sebuah replenishment adalah MENAUTKAN ke GoodsReceipt yang sudah ada
+// (goodsReceiptId, diisi manual — sama pola dengan UnitRevision.jobId di
+// modul Delivery), BUKAN menduplikasi pencatatan penerimaan.
+//
+// "In Progress" dari spesifikasi DILEBUR ke ORDERED — replenishment yang
+// sudah dipesan MEMANG "berjalan" sampai barangnya tiba; status terpisah
+// untuk itu tidak menambah informasi apa pun yang ORDERED belum punya.
+enum ReplenishmentSource {
+  MINIMUM_STOCK_RULE
+  REORDER_POINT
+  PRODUCTION_FORECAST
+  SALES_DEMAND
+  MANUAL_REQUEST
+  LOCATION_REFILL
+}
+
+enum ReplenishmentStatus {
+  DRAFT
+  WAITING_APPROVAL
+  APPROVED
+  ORDERED
+  COMPLETED
+  REJECTED
+}
+
+model ReplenishmentRequest {
+  id            String              @id @default(uuid()) @db.Uuid
+  requestNumber String              @unique @map("request_number") // RP-DDMMYY-NN
+  source        ReplenishmentSource
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  // Snapshot SAAT REQUEST DIBUAT — sama pola dengan
+  // StockAdjustmentRequest.beforeQty. Material.reorderPoint bisa diubah
+  // gudang kapan pun; angka di request TETAP mencerminkan kondisi saat
+  // permintaan diajukan, bukan diam-diam ikut berubah.
+  currentStockSnapshot Float  @map("current_stock_snapshot")
+  minimumStockSnapshot Float? @map("minimum_stock_snapshot")
+
+  // Default dari Material.reorderQty saat dibuat — BOLEH diedit (spesifikasi:
+  // "Review quantity" adalah langkah eksplisit sebelum approval).
+  suggestedQty Float @map("suggested_qty")
+
+  requiredDate DateTime?     @map("required_date") @db.Date
+  // Reuse IssuePriority (Tahap 3) — bentuknya identik (LOW/NORMAL/HIGH/
+  // URGENT), tidak ada alasan mendefinisikan enum kembar.
+  priority     IssuePriority @default(NORMAL)
+  // String bebas — sama pola dengan GoodsReceipt.supplier. Tidak ada
+  // entitas Supplier terpisah di sistem ini.
+  supplier     String?
+
+  status ReplenishmentStatus @default(DRAFT)
+
+  requestedById  String?   @map("requested_by")
+  requestedBy    User?     @relation("ReplenishmentRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedById   String?   @map("approved_by")
+  approvedBy     User?     @relation("ReplenishmentApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime? @map("approved_at")
+  orderedAt      DateTime? @map("ordered_at")
+  rejectedReason String?   @map("rejected_reason")
+
+  // Penanda "sudah benar-benar tiba" — menaut ke GoodsReceipt yang
+  // menciptakan movement RECEIPT-nya. SetNull: GoodsReceipt boleh
+  // dihapus/diubah tanpa menghapus riwayat permintaan ini.
+  goodsReceiptId String?       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([materialId])
+  @@map("replenishment_requests")
 }

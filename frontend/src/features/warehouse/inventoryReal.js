@@ -264,6 +264,26 @@ export const ADJUSTMENT_STATUS_REAL = {
 };
 export const ADJUSTMENT_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "POSTED"];
 
+// Replenishment (Tahap 7). "In Progress" dari spesifikasi DILEBUR ke
+// ORDERED — lihat catatan panjang di schema.prisma.
+export const REPLENISHMENT_SOURCE_REAL = {
+  MINIMUM_STOCK_RULE:  { label: "Minimum Stock Rule" },
+  REORDER_POINT:       { label: "Reorder Point" },
+  PRODUCTION_FORECAST: { label: "Production Forecast" },
+  SALES_DEMAND:        { label: "Sales Demand" },
+  MANUAL_REQUEST:      { label: "Manual Request" },
+  LOCATION_REFILL:     { label: "Location Refill" },
+};
+export const REPLENISHMENT_STATUS_REAL = {
+  DRAFT:            { label: "Draft",            labelId: "Draft",             tone: "neutral" },
+  WAITING_APPROVAL: { label: "Waiting Approval",  labelId: "Menunggu Approval", tone: "orange" },
+  APPROVED:         { label: "Approved",          labelId: "Disetujui",        tone: "accent" },
+  ORDERED:          { label: "Ordered",           labelId: "Dipesan",          tone: "accent" },
+  COMPLETED:        { label: "Completed",         labelId: "Selesai",          tone: "green" },
+  REJECTED:         { label: "Rejected",          labelId: "Ditolak",          tone: "red" },
+};
+export const REPLENISHMENT_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "ORDERED"];
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *
