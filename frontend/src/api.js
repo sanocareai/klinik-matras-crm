@@ -159,6 +159,10 @@ export const api = {
   getPodJobs: (status) => request(`/armada/pod${status ? `?status=${status}` : ""}`),
   verifyPod: (jobId) => request(`/armada/pod/${jobId}/verify`, { method: "PATCH" }),
   rejectPod: (jobId, note) => request(`/armada/pod/${jobId}/reject`, { method: "PATCH", body: JSON.stringify({ note }) }),
+
+  // Kendala & Reschedule (Delivery Tahap 5)
+  getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
+  rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),
   getDrivers: () => request("/armada/drivers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>

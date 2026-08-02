@@ -166,16 +166,16 @@ model User {
   avatarUrl    String? // foto profil, path relatif "/uploads/avatars/xxx.jpg"
   createdAt    DateTime @default(now())
 
-  assignedCustomers     Customer[]      @relation("AssignedSales")
-  assignedConversations Conversation[]  @relation("AssignedAgent")
+  assignedCustomers     Customer[]              @relation("AssignedSales")
+  assignedConversations Conversation[]          @relation("AssignedAgent")
   notes                 Note[]
   salesTargets          SalesTarget[]
   pushTokens            PushToken[]
-  sentMessages          Message[]       @relation("MessageSender")
-  firstResponderFor     Conversation[]  @relation("FirstResponder")
-  handoverEventsFrom    HandoverEvent[] @relation("HandoverFrom")
-  handoverEventsTo      HandoverEvent[] @relation("HandoverTo")
-  pipelineTransitions   PipelineTransition[] @relation("PipelineTransitionActor")
+  sentMessages          Message[]               @relation("MessageSender")
+  firstResponderFor     Conversation[]          @relation("FirstResponder")
+  handoverEventsFrom    HandoverEvent[]         @relation("HandoverFrom")
+  handoverEventsTo      HandoverEvent[]         @relation("HandoverTo")
+  pipelineTransitions   PipelineTransition[]    @relation("PipelineTransitionActor")
   orderStatusChanges    OrderStatusTransition[] @relation("OrderStatusActor")
   messageTemplates      MessageTemplate[]
   unitStageLogs         UnitStageLog[]          @relation("UnitStageLogActor")
@@ -187,6 +187,7 @@ model User {
   stockMovements        StockMovement[]         @relation("StockMovementActor")
   routesAsDriver        Route[]                 @relation("RouteDriver")
   podVerified           Job[]                   @relation("PodVerifier")
+  jobsRescheduled       Job[]                   @relation("JobRescheduler")
   routesCreated         Route[]                 @relation("RouteCreator")
   scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -451,7 +452,7 @@ model Message {
   // info ini cuma di-console.warn lalu dibuang, jadi begitu log server
   // ke-reset (mis. redeploy) kita PERMANEN kehilangan info tipe apa yang
   // sebenarnya masuk, padahal itu pesan sungguhan yang tidak terbaca di CRM.
-  rawType        String?
+  rawType String?
 
   // Sales yang kirim pesan OUTBOUND ini dari CRM (web/app) — null untuk
   // pesan INBOUND (dari customer) dan pesan lama sebelum field ini ada.
@@ -637,7 +638,7 @@ model Unit {
   currentStage   RoutingStage? @relation(fields: [currentStageId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   stageLogs         UnitStageLog[]
   jobUnits          JobUnit[]
@@ -769,20 +770,20 @@ enum BlockReason {
 //
 // TIDAK ADA UPDATE/DELETE dari kode aplikasi. Koreksi = baris baru.
 model UnitStageLog {
-  id     String         @id @default(uuid()) @db.Uuid
-  unitId String         @map("unit_id") @db.Uuid
-  unit   Unit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  stageId String        @map("stage_id") @db.Uuid
-  stage   RoutingStage  @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  id      String         @id @default(uuid()) @db.Uuid
+  unitId  String         @map("unit_id") @db.Uuid
+  unit    Unit           @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  stageId String         @map("stage_id") @db.Uuid
+  stage   RoutingStage   @relation(fields: [stageId], references: [id], onDelete: Restrict)
   action  StageLogAction
 
   // SetNull: pekerja resign, riwayat produksinya TETAP ada.
   actorId String? @map("actor_id")
   actor   User?   @relation("UnitStageLogActor", fields: [actorId], references: [id], onDelete: SetNull)
 
-  startedAt        DateTime? @map("started_at")
-  endedAt          DateTime? @map("ended_at")
-  durationSeconds  Int?      @map("duration_seconds")
+  startedAt       DateTime? @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationSeconds Int?      @map("duration_seconds")
 
   blockReason BlockReason? @map("block_reason")
   note        String?
@@ -829,9 +830,9 @@ model Job {
   scheduledDate DateTime? @map("scheduled_date") @db.Date
   timeWindow    String?   @map("time_window")
 
-  driverId String?    @map("driver_id")
-  driver   User?      @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
-  status   JobStatus  @default(UNSCHEDULED)
+  driverId String?   @map("driver_id")
+  driver   User?     @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  status   JobStatus @default(UNSCHEDULED)
 
   // Urutan stop dalam rute driver+tanggal+tipe hari itu (FR-L-03) — NULL
   // sampai dispatcher mengurutkan lewat PATCH /armada/route/reorder. Bukan
@@ -850,8 +851,8 @@ model Job {
   accessNotes String? @map("access_notes")
 
   // FR-D-07: setiap kegagalan WAJIB alasan + foto, tanpa kecuali.
-  failureReason     String?  @map("failure_reason")
-  failurePhotoUrls  String[] @default([]) @map("failure_photo_urls")
+  failureReason    String?  @map("failure_reason")
+  failurePhotoUrls String[] @default([]) @map("failure_photo_urls")
 
   // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) saat
   // job BERHASIL — bukti serah terima, terpisah dari failurePhotoUrls.
@@ -881,30 +882,52 @@ model Job {
   // fotonya) — kolom cukup untuk v1. Kalau nanti butuh riwayat "siapa reject
   // kapan, siapa verify kapan" karena ada sengketa, naikkan jadi tabel
   // podVerifications terpisah, pola yang sama dengan PaymentVerification.
-  podStatus         PodStatus? @map("pod_status")
-  podVerifiedById   String?    @map("pod_verified_by")
-  podVerifiedBy     User?      @relation("PodVerifier", fields: [podVerifiedById], references: [id], onDelete: SetNull)
-  podVerifiedAt     DateTime?  @map("pod_verified_at")
-  podRejectionNote  String?    @map("pod_rejection_note")
+  podStatus        PodStatus? @map("pod_status")
+  podVerifiedById  String?    @map("pod_verified_by")
+  podVerifiedBy    User?      @relation("PodVerifier", fields: [podVerifiedById], references: [id], onDelete: SetNull)
+  podVerifiedAt    DateTime?  @map("pod_verified_at")
+  podRejectionNote String?    @map("pod_rejection_note")
+
+  // Reschedule setelah gagal (2 Agustus 2026, Tahap 5 Delivery — Kendala &
+  // Reschedule). SEBELUM INI: job berstatus FAILED adalah JALAN BUNTU —
+  // PATCH /jobs/:id menolak apa pun selain UNSCHEDULED/SCHEDULED/ASSIGNED,
+  // jadi tidak ada cara menjadwalkan ulang job yang gagal tanpa membuat job
+  // baru dari nol (kehilangan jejak kegagalan aslinya). Ini gap fungsional
+  // NYATA, bukan penyempurnaan kosmetik.
+  //
+  // rescheduleReason MENJAWAB "kenapa dijadwalkan ulang" — TERPISAH dari
+  // failureReason ("kenapa gagal") karena dua pertanyaan berbeda: gagal bisa
+  // karena "pelanggan tidak di tempat", dijadwalkan ulang karena "pelanggan
+  // minta besok siang". Menimpa failureReason akan menghapus jejak kegagalan
+  // aslinya.
+  rescheduleReason            String?   @map("reschedule_reason")
+  rescheduledAt               DateTime? @map("rescheduled_at")
+  rescheduledById             String?   @map("rescheduled_by")
+  rescheduledBy               User?     @relation("JobRescheduler", fields: [rescheduledById], references: [id], onDelete: SetNull)
+  // FR: konfirmasi pelanggan atas jadwal baru. Boolean, BUKAN dianggap benar
+  // secara default — dispatcher harus secara sadar mencentangnya, dan itu
+  // sengaja bisa TIDAK dicentang (jadwal baru diajukan tapi belum sempat
+  // dikonfirmasi ke pelanggan, mis. rencana internal dulu).
+  customerConfirmedReschedule Boolean   @default(false) @map("customer_confirmed_reschedule")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Kendaraan & rute (2 Agustus 2026, Tahap 3 Delivery). Keduanya NULLABLE:
   // job bisa dijadwalkan sebelum kendaraan/rutenya ditetapkan, dan itu justru
   // keadaan yang dipantau papan dispatcher ("belum ada armada").
-  vehicleId String?   @map("vehicle_id") @db.Uuid
-  vehicle   Vehicle?  @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  routeId   String?   @map("route_id") @db.Uuid
-  route     Route?    @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  vehicleId String?  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  routeId   String?  @map("route_id") @db.Uuid
+  route     Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
 
   units    JobUnit[]
   payments Payment[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
-  @@index([status, scheduledDate])   // papan Armada
-  @@index([routeId, sequence])       // urutan stop dalam satu rute
+  @@index([status, scheduledDate]) // papan Armada
+  @@index([routeId, sequence]) // urutan stop dalam satu rute
   @@index([vehicleId])
   @@index([podStatus])
   @@map("jobs")
@@ -959,7 +982,7 @@ model Vehicle {
   notes           String?
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   jobs   Job[]
   routes Route[]
@@ -1014,7 +1037,7 @@ model Route {
   createdBy   User?   @relation("RouteCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   jobs Job[]
 
@@ -1048,17 +1071,17 @@ model JobUnit {
 // (D-011) tetap mengisi keduanya (orderId diturunkan dari job.orderId saat
 // dicatat, bukan diminta manual ke driver).
 model Payment {
-  id    String        @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  orderId String  @map("order_id")
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   jobId String? @map("job_id") @db.Uuid
   job   Job?    @relation(fields: [jobId], references: [id], onDelete: Restrict)
 
   amount        Int // Rupiah, integer
   method        PaymentMethod
-  proofPhotoUrl String? @map("proof_photo_url")
+  proofPhotoUrl String?       @map("proof_photo_url")
 
   // Restrict, BUKAN SetNull: siapa yang mencatat penerimaan uang adalah inti
   // jejak audit ini — kalau pencatatnya (driver) dihapus, baris ini justru
@@ -1156,17 +1179,17 @@ enum PreferenceOverride {
 // educationGiven WAJIB true kalau override terisi, dipaksakan CHECK
 // constraint di database (lihat migration.sql), bukan cuma validasi kode.
 model QcFitTest {
-  id     String @id @default(uuid()) @db.Uuid
-  unitId String @map("unit_id") @db.Uuid
-  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  id      String       @id @default(uuid()) @db.Uuid
+  unitId  String       @map("unit_id") @db.Uuid
+  unit    Unit         @relation(fields: [unitId], references: [id], onDelete: Cascade)
   stageId String       @map("stage_id") @db.Uuid
   stage   RoutingStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
 
   verdict           FitVerdict
-  referenceWeightKg Int                @map("reference_weight_kg")
+  referenceWeightKg Int        @map("reference_weight_kg")
 
   customerPreferenceOverride PreferenceOverride? @map("customer_preference_override")
-  educationGiven              Boolean             @default(false) @map("education_given")
+  educationGiven             Boolean             @default(false) @map("education_given")
 
   testedById String? @map("tested_by_id")
   testedBy   User?   @relation("QcFitTestTester", fields: [testedById], references: [id], onDelete: SetNull)
@@ -1269,8 +1292,8 @@ model ScopeRevision {
   // tagihan.
   orderItemId String? @map("order_item_id")
 
-  createdById String? @map("created_by")
-  createdBy   User?   @relation("ScopeRevisionProposer", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("ScopeRevisionProposer", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([unitId, createdAt])
@@ -1483,10 +1506,10 @@ enum MaterialUnit {
 }
 
 enum StockMovementType {
-  RECEIPT    // masuk dari supplier (FR-I-01)
-  ISSUE      // keluar, dipakai ke unit produksi (FR-P-08)
-  RETURN     // sisa material kembali ke gudang
-  WASTE      // terbuang/rusak, WAJIB alasan
+  RECEIPT // masuk dari supplier (FR-I-01)
+  ISSUE // keluar, dipakai ke unit produksi (FR-P-08)
+  RETURN // sisa material kembali ke gudang
+  WASTE // terbuang/rusak, WAJIB alasan
   ADJUSTMENT // hasil stock opname, WAJIB alasan (FR-I-06)
 }
 
@@ -1494,12 +1517,12 @@ enum StockMovementType {
 // `serviceLine` NULL = dipakai lintas lini (benang, plastik wrap); terisi =
 // khusus SERVICE atau UPGRADE (D-004: dua lini tidak boleh campur material).
 model Material {
-  id     String       @id @default(uuid()) @db.Uuid
-  code   String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
-  name   String
-  unit   MaterialUnit
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
+  name        String
+  unit        MaterialUnit
   serviceLine ServiceLine? @map("service_line")
-  active Boolean      @default(true)
+  active      Boolean      @default(true)
 
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
   // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak

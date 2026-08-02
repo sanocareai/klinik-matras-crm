@@ -38,6 +38,7 @@ const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
 const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"));
 const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
 const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx"));
+const ArmadaIssues      = lazy(() => import("./pages/armada/ArmadaIssues.jsx"));
 const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
@@ -212,25 +213,26 @@ export default function App() {
             {/* Sisi verifikasi atas foto/tanda tangan yang SUDAH diunggah
                 driver sejak Phase 2 — data nyata, lihat ArmadaPod.jsx. */}
             <Route path="/armada/pod" element={<ArmadaPod />} />
-            <Route
-              path="/armada/issues"
-              element={
-                <ArmadaPlaceholder
-                  title="Kendala & Reschedule"
-                  subtitle="Tangani job bermasalah, jadwalkan ulang, dan eskalasi."
-                  stage={5}
-                  description="Job gagal beserta alasan dan fotonya sudah direkam backend hari ini."
-                />
-              }
-            />
+            {/* Tahap 5: job GAGAL (failureReason + failurePhotoUrls sudah
+                direkam driver sejak Phase 2) sekarang bisa dijadwalkan ulang
+                lewat sini — sebelumnya jalan buntu. Data nyata, tidak ada
+                badge "Contoh". Category/Priority/Reported By dari spesifikasi
+                sengaja tidak dibangun, lihat catatan di ArmadaIssues.jsx. */}
+            <Route path="/armada/issues" element={<ArmadaIssues />} />
+            {/* Retur TETAP placeholder: dicek langsung ke schema.prisma —
+                tidak ada entitas retur pelanggan sama sekali (RETURN cuma
+                ada sebagai StockMovementType untuk material gudang). Ini
+                keputusan skema tersendiri (mirip Vehicle/Route Tahap 3),
+                bukan sekadar kolom tambahan — sengaja ditunda ke tahap
+                berikutnya daripada terburu-buru menebak struktur. */}
             <Route
               path="/armada/returns"
               element={
                 <ArmadaPlaceholder
                   title="Retur"
                   subtitle="Kelola pengambilan kembali produk dan pemeriksaan di gudang."
-                  stage={5}
-                  description="Alur retur menyambung ke modul Warehouse."
+                  stage={6}
+                  description="Belum ada entitas retur pelanggan di database — perlu keputusan skema tersendiri (mirip Vehicle/Route), bukan cuma kolom tambahan."
                 />
               }
             />

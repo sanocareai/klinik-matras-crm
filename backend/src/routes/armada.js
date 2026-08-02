@@ -625,6 +625,86 @@ const PIC_INCLUDE_FOR_POD = {
   podVerifiedBy: { select: { id: true, name: true } },
 };
 
+// ─── KENDALA & RESCHEDULE — Delivery Tahap 5 ────────────────────────────────
+//
+// ⚠️ CAKUPAN JUJUR: spesifikasi minta kolom Category, Priority, Reported By,
+// Current Owner, dan tab Escalated/Resolved — TIDAK SATU PUN itu ada
+// strukturnya di sistem (tidak ada ticketing/ownership terpisah dari job
+// itu sendiri). Membangun dropdown kategori atau status eskalasi yang tidak
+// pernah benar-benar ditentukan siapa pun sama dengan checklist POD yang
+// tidak pernah dicentang siapa pun di Tahap 4 — jadi TIDAK dibangun.
+//
+// Yang NYATA dan dibangun: daftar job GAGAL (failureReason + failurePhotoUrls
+// sudah wajib diisi driver sejak Phase 2), dan kemampuan BARU menjadwalkan
+// ulangnya — itu satu-satunya bagian yang sebelumnya benar-benar buntu.
+function deriveIssueStatus(job) {
+  if (job.status === "FAILED") return job.rescheduleReason ? "RESCHEDULED" : "OPEN";
+  // Job yang sudah lewat dari FAILED (SCHEDULED/ASSIGNED/dst setelah
+  // di-reschedule) tapi PERNAH gagal — riwayatnya tetap relevan ditelusuri.
+  if (job.rescheduleReason) return "RESCHEDULED";
+  return null;
+}
+
+armadaRouter.get("/issues", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { status } = req.query; // OPEN | RESCHEDULED
+    const jobs = await prisma.job.findMany({
+      where: { OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }] },
+      include: {
+        ...jobInclude,
+        order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+        rescheduledBy: { select: { id: true, name: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 300,
+    });
+    const withDerived = jobs.map((j) => ({ ...j, issueStatus: deriveIssueStatus(j) }));
+    const filtered = status ? withDerived.filter((j) => j.issueStatus === status) : withDerived;
+    res.json({ jobs: filtered });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /issues/:jobId/reschedule — satu-satunya jalan keluar dari status
+// FAILED. Menetapkan tanggal/driver/kendaraan baru dan MENYALAKAN JOB
+// KEMBALI (deriveStatus) — dipakai fungsi yang SAMA dengan PATCH /jobs/:id
+// biasa, supaya job yang dijadwalkan ulang masuk alur normal (start/arrive/
+// complete) tanpa perlu mengubah guard status di endpoint lain.
+armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
+    if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.status !== "FAILED") throw new ArmadaError("Hanya job berstatus Gagal yang bisa dijadwalkan ulang lewat sini");
+
+    const { scheduledDate, timeWindow, driverId, vehicleId, reason, customerConfirmed } = req.body;
+    if (!scheduledDate) throw new ArmadaError("Tanggal baru wajib diisi");
+    if (!reason?.trim()) throw new ArmadaError("Alasan reschedule wajib diisi");
+
+    const nextDate = toDateOnly(scheduledDate);
+    const nextDriverId = driverId || null;
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        scheduledDate: nextDate,
+        timeWindow: timeWindow || null,
+        driverId: nextDriverId,
+        vehicleId: vehicleId || null,
+        status: deriveStatus(!!nextDriverId, !!nextDate),
+        rescheduleReason: reason.trim(),
+        rescheduledById: req.user.id,
+        rescheduledAt: new Date(),
+        customerConfirmedReschedule: !!customerConfirmed,
+      },
+      include: jobInclude,
+    });
+    res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 armadaRouter.get("/pod", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { status } = req.query; // INCOMPLETE | PENDING_REVIEW | VERIFIED | REJECTED
