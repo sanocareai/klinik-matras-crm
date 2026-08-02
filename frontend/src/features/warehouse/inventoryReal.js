@@ -74,6 +74,29 @@ export function formatQty(qty, unit) {
   return `${rounded} ${UNIT_LABEL[unit] || unit}`;
 }
 
+// enum ReceiptStatus & ReceiptSourceType — Goods Receipt (Tahap 2B). Urutan
+// objeknya SENGAJA berurutan mengikuti FORWARD_FLOW backend, dipakai juga
+// untuk membangun daftar "langkah berikutnya yang sah" di UI.
+export const RECEIPT_STATUS_REAL = {
+  DRAFT:              { label: "Draft",             labelId: "Draft",             tone: "neutral" },
+  SCHEDULED:          { label: "Scheduled",         labelId: "Dijadwalkan",       tone: "accent" },
+  ARRIVED:            { label: "Arrived",           labelId: "Tiba",              tone: "accent" },
+  INSPECTION:         { label: "Inspection",        labelId: "Pemeriksaan",       tone: "orange" },
+  READY_FOR_PUTAWAY:  { label: "Ready for Putaway", labelId: "Siap Ditempatkan",  tone: "accent" },
+  COMPLETED:          { label: "Completed",         labelId: "Selesai",           tone: "green" },
+  REJECTED:           { label: "Rejected",          labelId: "Ditolak",           tone: "red" },
+};
+export const RECEIPT_FORWARD_FLOW = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];
+
+export const RECEIPT_SOURCE_REAL = {
+  PURCHASE_ORDER:             { label: "Purchase Order",           labelId: "Pesanan Pembelian" },
+  SUPPLIER_DELIVERY:          { label: "Supplier Delivery",        labelId: "Kiriman Supplier" },
+  PRODUCTION_RETURN:          { label: "Production Return",        labelId: "Retur Produksi" },
+  CUSTOMER_RETURN:            { label: "Customer Return",          labelId: "Retur Pelanggan" },
+  INTER_WAREHOUSE_TRANSFER:   { label: "Inter-Warehouse Transfer", labelId: "Transfer Antar Gudang" },
+  MANUAL:                     { label: "Manual Receipt",           labelId: "Input Manual" },
+};
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *

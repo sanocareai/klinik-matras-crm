@@ -227,6 +227,19 @@ export const api = {
   returnStock: (data) => request("/inventory/movements/return", { method: "POST", body: JSON.stringify(data) }),
   wasteStock: (data) => request("/inventory/movements/waste", { method: "POST", body: JSON.stringify(data) }),
   adjustStock: (data) => request("/inventory/movements/adjustment", { method: "POST", body: JSON.stringify(data) }),
+
+  // Goods Receipt (Warehouse Tahap 2B)
+  getGoodsReceipts: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/goods-receipts${qs ? `?${qs}` : ""}`);
+  },
+  getGoodsReceipt: (id) => request(`/inventory/goods-receipts/${id}`),
+  createGoodsReceipt: (data) => request("/inventory/goods-receipts", { method: "POST", body: JSON.stringify(data) }),
+  updateGoodsReceipt: (id, data) => request(`/inventory/goods-receipts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateGoodsReceiptLine: (id, lineId, data) =>
+    request(`/inventory/goods-receipts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  putawayGoodsReceipt: (id, data = {}) => request(`/inventory/goods-receipts/${id}/putaway`, { method: "POST", body: JSON.stringify(data) }),
+  rejectGoodsReceipt: (id, reason) => request(`/inventory/goods-receipts/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 

@@ -189,6 +189,7 @@ model User {
   podVerified           Job[]                   @relation("PodVerifier")
   jobsRescheduled       Job[]                   @relation("JobRescheduler")
   unitRevisionsCreated  UnitRevision[]          @relation("UnitRevisionCreator")
+  goodsReceiptsCreated  GoodsReceipt[]          @relation("GoodsReceiptCreator")
   routesCreated         Route[]                 @relation("RouteCreator")
   scopeRevisionsMade    ScopeRevision[]         @relation("ScopeRevisionProposer")
   scopeRevisionsDecided ScopeRevision[]         @relation("ScopeRevisionDecider")
@@ -1631,7 +1632,8 @@ model Material {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  movements StockMovement[]
+  movements         StockMovement[]
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@index([active])
   @@map("materials")
@@ -1686,7 +1688,111 @@ model StockMovement {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  // Warehouse Tahap 2B (2 Agustus 2026) — jejak balik ke dokumen goods
+  // receipt yang MENGHASILKAN baris RECEIPT ini. NULLABLE: movement RECEIPT
+  // lama (sebelum GoodsReceipt ada) dan movement non-RECEIPT tidak punya
+  // dokumen sumber. SetNull, bukan Restrict: menghapus draft GoodsReceipt
+  // yang batal TIDAK BOLEH menghapus jejak stok yang sudah kadung tercatat.
+  goodsReceiptId String?       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
+  @@index([goodsReceiptId])
   @@map("stock_movements")
+}
+
+// ─── GOODS RECEIPT (Warehouse Tahap 2B, 2 Agustus 2026) ────────────────────
+//
+// KENAPA BARU SEKARANG. v1 inventory (routes/inventory.js) cuma punya
+// POST /movements/receipt — SATU langkah, langsung tercatat ke ledger. Itu
+// cukup untuk "barang sudah di tangan, catat sekarang", tapi tidak bisa
+// menjawab "supplier X mau kirim apa besok?" — pertanyaan itu butuh
+// mencatat EKSPEKTASI sebelum barangnya benar-benar tiba, dan sebelum
+// pengiriman diinspeksi (diterima penuh/sebagian/ditolak).
+//
+// PRINSIP INTI: dokumen ini TIDAK PERNAH menyimpan angka stok. Ia menyimpan
+// STATUS PROSES (draft → dijadwalkan → tiba → inspeksi → siap ditempatkan →
+// selesai). Baris StockMovement RECEIPT baru ditulis saat putaway
+// dikonfirmasi (POST /goods-receipts/:id/putaway) — disiplin PRD §8.1
+// ("stok tidak pernah disimpan, selalu dihitung dari ledger") TIDAK
+// dilanggar sedikit pun oleh penambahan ini.
+//
+// AMAN DILAKUKAN SEKARANG: tabel materials & stock_movements masih KOSONG
+// di production — tidak ada goods receipt historis yang perlu direkonstruksi
+// dari ledger yang sudah telanjur tertulis satu langkah.
+enum ReceiptSourceType {
+  PURCHASE_ORDER
+  SUPPLIER_DELIVERY
+  PRODUCTION_RETURN
+  CUSTOMER_RETURN
+  INTER_WAREHOUSE_TRANSFER
+  MANUAL
+}
+
+enum ReceiptStatus {
+  DRAFT
+  SCHEDULED
+  ARRIVED
+  INSPECTION
+  READY_FOR_PUTAWAY
+  COMPLETED
+  REJECTED
+}
+
+model GoodsReceipt {
+  id            String            @id @default(uuid()) @db.Uuid
+  receiptNumber String            @unique @map("receipt_number") // GR-DDMMYY-NN
+  sourceType    ReceiptSourceType @map("source_type")
+
+  // String bebas, BUKAN FK — tidak ada sistem Purchase Order di v1. Nomor PO/
+  // referensi internal dicatat apa adanya, sama seperti `supplier` di ledger.
+  sourceReference String? @map("source_reference")
+  supplier        String?
+
+  expectedDate DateTime? @map("expected_date") @db.Date
+  receivedDate DateTime? @map("received_date") @db.Date
+  deliveryNote String?   @map("delivery_note")
+  notes        String?
+
+  status ReceiptStatus @default(DRAFT)
+
+  // SetNull: dispatcher/gudang resign, riwayat penerimaan TETAP ada.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("GoodsReceiptCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines     GoodsReceiptLine[]
+  movements StockMovement[]
+
+  @@index([status])
+  @@index([expectedDate])
+  @@map("goods_receipts")
+}
+
+// Baris rencana per material dalam satu goods receipt. TIDAK menyimpan
+// saldo — cuma "berapa yang direncanakan/diterima/diterima BAIK/ditolak",
+// murni untuk membandingkan ekspektasi vs kenyataan sebelum putaway menulis
+// baris ledger yang sebenarnya.
+model GoodsReceiptLine {
+  id             String       @id @default(uuid()) @db.Uuid
+  goodsReceiptId String       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  orderedQty  Float? @map("ordered_qty") // NULL kalau tidak ada PO acuan (mis. retur produksi)
+  receivedQty Float? @map("received_qty") // diisi saat status ARRIVED
+  acceptedQty Float? @map("accepted_qty") // diisi saat inspeksi — INI yang jadi StockMovement
+  rejectedQty Float? @map("rejected_qty")
+
+  condition String? // catatan kondisi fisik saat inspeksi
+  notes     String?
+
+  @@index([goodsReceiptId])
+  @@index([materialId])
+  @@map("goods_receipt_lines")
 }

@@ -73,7 +73,7 @@ export const DIVISION_CONTENT = {
       // phase-nya tiba — lihat WarehousePlaceholder.jsx untuk phase mana.
       { title: "Dashboard",         description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
       { title: "Stock & Material",  description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
-      { title: "Goods Receipt",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: null },
+      { title: "Goods Receipt",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },
       { title: "Material Issue",    description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: null },
       { title: "Stock Transfer",    description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: null },
       { title: "Cycle Count",       description: "Jadwal stock opname dan rekonsiliasi selisih.", icon: CalendarClock, path: null },

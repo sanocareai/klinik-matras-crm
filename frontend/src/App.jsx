@@ -46,6 +46,7 @@ const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("./pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("./pages/warehouse/WarehouseInventory.jsx"));
+const WarehouseGoodsReceipt = lazy(() => import("./pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const WarehousePlaceholder = lazy(() => import("./pages/warehouse/WarehousePlaceholder.jsx"));
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
@@ -255,17 +256,10 @@ export default function App() {
                 SAMA dengan halaman lama /gudang. Tidak ada badge "Contoh".
                 Termasuk detail item + tambah/ubah item. */}
             <Route path="/warehouse/inventory" element={<WarehouseInventory />} />
-            <Route
-              path="/warehouse/goods-receipt"
-              element={
-                <WarehousePlaceholder
-                  title="Goods Receipt"
-                  subtitle="Penerimaan barang dari supplier, produksi, atau retur."
-                  phase={2}
-                  description="Backend sudah punya pencatatan penerimaan (POST /inventory/movements/receipt) — Phase 2 membungkusnya jadi alur inspection & putaway."
-                />
-              }
-            />
+            {/* Tahap 2B: DATA NYATA — dokumen proses (DRAFT..COMPLETED) di
+                depan ledger. Putaway menulis stock_movements RECEIPT,
+                disiplin PRD §8.1 tetap utuh. Lihat schema.prisma. */}
+            <Route path="/warehouse/goods-receipt" element={<WarehouseGoodsReceipt />} />
             <Route
               path="/warehouse/material-issue"
               element={
