@@ -7,6 +7,7 @@ import { loadCustomerContext, buildCustomerIntelligence } from "../services/inte
 import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
+import { syncOrderStatus } from "../services/orderStatusSync.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -506,6 +507,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
     const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
     if (jumlahUnit > 0) {
       await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
+      await syncOrderStatus(tx, created.id);
     }
 
     return tx.order.findUnique({

@@ -12,6 +12,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
+import { syncOrderStatus } from "../services/orderStatusSync.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -56,8 +57,15 @@ async function syncOrderValue(orderId) {
 
 // PATCH /api/orders/:id — edit order (status, paymentStatus, notes, qty, orderNumber)
 // value TIDAK bisa diubah langsung dari sini — dikontrol oleh items
+//
+// STATUS (Integrasi Fase 1, D-006): tidak lagi field bebas-tulis. Default-nya
+// DIHITUNG dari status unit (lihat services/orderStatusSync.js). Mengirim
+// `status` di body di sini berarti OVERRIDE MANUAL (mengunci, tercatat siapa/
+// kapan/kenapa lewat statusOverrideNote) — dipakai untuk kasus di luar pola
+// normal (order dibatalkan, dst). Kirim `releaseStatusOverride: true` untuk
+// melepas kunci dan kembali ke hitungan otomatis.
 orderRouter.patch("/:id", async (req, res) => {
-  const { status, paymentStatus, quantity, notes, orderNumber,
+  const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal } = req.body;
   try {
     // Update + catat riwayat status dalam SATU transaksi, supaya tidak pernah
@@ -75,7 +83,15 @@ orderRouter.patch("/:id", async (req, res) => {
       const updated = await tx.order.update({
         where: { id: req.params.id },
         data: {
-          ...(status            !== undefined && { status }),
+          ...(status !== undefined && {
+            status, statusLocked: true,
+            statusOverrideById: req.user?.id || null,
+            statusOverrideAt: new Date(),
+            statusOverrideNote: statusOverrideNote || null,
+          }),
+          ...(releaseStatusOverride === true && {
+            statusLocked: false, statusOverrideById: null, statusOverrideAt: null, statusOverrideNote: null,
+          }),
           ...(paymentStatus     !== undefined && { paymentStatus }),
           ...(quantity          !== undefined && { quantity: Number(quantity) }),
           ...(notes             !== undefined && { notes }),
@@ -103,6 +119,17 @@ orderRouter.patch("/:id", async (req, res) => {
             toStatus:    status,
             changedById: req.user?.id || null,
           },
+        });
+      }
+
+      // Lepas override -> langsung hitung ulang di transaksi yang sama,
+      // supaya respons yang dikirim ke klien sudah status yang benar
+      // (bukan status lama yang baru "terkunci" sesaat lalu).
+      if (releaseStatusOverride === true) {
+        await syncOrderStatus(tx, updated.id);
+        return tx.order.findUniqueOrThrow({
+          where: { id: updated.id },
+          include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
         });
       }
 
@@ -501,7 +528,9 @@ orderRouter.post("/:id/units", async (req, res) => {
     const units = await prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: req.params.id } });
       if (!order) return null;
-      return createUnitsForOrder(tx, { order, count });
+      const created = await createUnitsForOrder(tx, { order, count });
+      await syncOrderStatus(tx, order.id);
+      return created;
     });
     if (units === null) return res.status(404).json({ error: "Order tidak ditemukan" });
     res.status(201).json(units);

@@ -76,8 +76,16 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
   const isLayanan = !order.category || order.category === "LAYANAN";
 
   const [editing, setEditing]             = useState(false);
-  const [status, setStatus]               = useState(order.status);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
+
+  // Status Order (Integrasi Fase 1, D-006): TIDAK LAGI field bebas-tulis di
+  // form edit biasa — dihitung otomatis dari status unit. "Override" adalah
+  // aksi terpisah & eksplisit (mengunci + tercatat siapa/kapan/kenapa),
+  // bukan efek samping menyimpan perubahan merk/catatan/dsb.
+  const [overriding, setOverriding]           = useState(false);
+  const [overrideStatus, setOverrideStatus]   = useState(order.status);
+  const [overrideNote, setOverrideNote]       = useState("");
+  const [overrideBusy, setOverrideBusy]       = useState(false);
   const [merkKasur, setMerkKasur]         = useState(info.merkKasur);
   const [ukuran, setUkuran]               = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
@@ -121,7 +129,6 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
       const finalMerk = isLayanan ? merkKasur : "Sano";
 
       await api.updateOrder(order.id, {
-        status,
         paymentStatus,
         notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       });
@@ -171,9 +178,25 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
     }
   }
 
+  async function applyOverride() {
+    setOverrideBusy(true);
+    try {
+      await api.updateOrder(order.id, { status: overrideStatus, statusOverrideNote: overrideNote.trim() || undefined });
+      setOverriding(false);
+      onRefresh();
+    } catch (err) { alert(err.message); } finally { setOverrideBusy(false); }
+  }
+
+  async function releaseOverride() {
+    setOverrideBusy(true);
+    try {
+      await api.updateOrder(order.id, { releaseStatusOverride: true });
+      onRefresh();
+    } catch (err) { alert(err.message); } finally { setOverrideBusy(false); }
+  }
+
   function handleCancel() {
     const inf = parseNotes(order.notes);
-    setStatus(order.status);
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
@@ -258,42 +281,74 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
         </div>
       )}
 
-      {/* Status Pengerjaan + Status Pembayaran */}
+      {/* Status Pengerjaan + Status Pembayaran.
+          Status Pengerjaan DIHITUNG OTOMATIS dari status unit di Bengkel
+          (Integrasi Fase 1, D-006) — ikut unit yang PALING TERTINGGAL, jadi
+          tidak pernah bilang "selesai" padahal ada kasur yang belum sampai.
+          "Override" adalah aksi terpisah & eksplisit, bukan dropdown bebas
+          seperti sebelumnya — supaya orang tidak diam-diam mengunci status
+          cuma karena tidak sadar itu mengunci hitungan otomatis. */}
       <div style={{ marginBottom: 8 }}>
         <span style={metaLabel}>Status</span>
-        {editing ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} style={selStyleFull}>
-              {ORDER_STATUSES.map((s) => (
-                <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-              ))}
-            </select>
-            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} style={selStyleFull}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
+            {ORDER_STATUS_LABELS[order.status] || order.status}
+          </span>
+          {editing ? (
+            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} style={selStyle}>
               {PAYMENT_STATUSES.map((s) => (
                 <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s] || s}</option>
               ))}
             </select>
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
-              {ORDER_STATUS_LABELS[order.status] || order.status}
-            </span>
+          ) : (
             <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"] }}>
               {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
             </span>
-            <select
-              value={order.status}
-              onChange={async (e) => {
-                try { await api.updateOrder(order.id, { status: e.target.value }); onRefresh(); }
-                catch (err) { alert(err.message); }
-              }}
-              style={{ ...selStyle, fontSize: 11 }}
-            >
-              {ORDER_STATUSES.map((s) => (
-                <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-              ))}
-            </select>
+          )}
+          {order.statusLocked ? (
+            <>
+              <span style={{ fontSize: 10.5, color: "#92400e", background: "#fef3c7", padding: "2px 7px", borderRadius: 6 }}>
+                🔒 Override manual{order.statusOverrideBy?.name ? ` oleh ${order.statusOverrideBy.name}` : ""}
+              </span>
+              <button className="btn btn-ghost btn-sm" disabled={overrideBusy} onClick={releaseOverride}>
+                Lepas Override
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setOverrideStatus(order.status); setOverrideNote(""); setOverriding((v) => !v); }}>
+              Override Status
+            </button>
+          )}
+        </div>
+
+        {order.statusLocked && order.statusOverrideNote && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>"{order.statusOverrideNote}"</p>
+        )}
+
+        {overriding && (
+          <div style={{ marginTop: 6, padding: 8, background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <p style={{ margin: "0 0 6px", fontSize: 11, color: "var(--text-muted)" }}>
+              Untuk kasus di luar pola normal (order dibatalkan, dsb) — status akan TERKUNCI ke pilihan ini
+              sampai dilepas lagi, tidak lagi ikut hitungan otomatis dari unit.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+              <select value={overrideStatus} onChange={(e) => setOverrideStatus(e.target.value)} style={selStyleFull}>
+                {ORDER_STATUSES.map((s) => (
+                  <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+                ))}
+              </select>
+              <input
+                value={overrideNote} onChange={(e) => setOverrideNote(e.target.value)}
+                placeholder="Alasan override (opsional)"
+                style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)" }}
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-primary btn-sm" disabled={overrideBusy} onClick={applyOverride}>
+                  {overrideBusy ? "..." : "Terapkan"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setOverriding(false)}>Batal</button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -27,6 +27,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
 import { geocodeAddress, routeLegs } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
@@ -1064,6 +1065,7 @@ armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (
           where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
           data: { status: "IN_TRANSIT_OUT" },
         });
+        await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
     });
     res.json(await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude }));
@@ -1116,6 +1118,7 @@ armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), asyn
         where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
         data: { status: job.type === "PICKUP" ? "RECEIVED" : "DELIVERED" },
       });
+      await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
@@ -1178,6 +1181,7 @@ armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (r
           where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" },
           data: { status: "READY_FOR_DELIVERY" },
         });
+        await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
       return j;
     });

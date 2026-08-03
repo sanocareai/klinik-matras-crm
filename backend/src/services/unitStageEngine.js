@@ -19,6 +19,7 @@ import { prisma } from "../db.js";
 import {
   buildUnitPath, getNextStage, isLastStage, isLastIntakeStage, findComfortLayerModule,
 } from "../lib/domain/routing.js";
+import { syncOrderStatus } from "./orderStatusSync.js";
 
 class StageTransitionError extends Error {
   constructor(message, statusCode = 400) {
@@ -207,6 +208,7 @@ export async function startStage(unitId, { actorId } = {}) {
       data.status = "IN_PRODUCTION";
     }
     await tx.unit.update({ where: { id: unitId }, data });
+    if (data.status) await syncOrderStatus(tx, unit.orderId);
 
     return { log, stage: targetStage };
   });
@@ -266,6 +268,7 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note } 
       });
       if (unit.status === "RECEIVED" || unit.status === "AWAITING_PICKUP") {
         await tx.unit.update({ where: { id: unitId }, data: { status: "IN_PRODUCTION" } });
+        await syncOrderStatus(tx, unit.orderId);
       }
     }
 
@@ -333,6 +336,7 @@ async function advanceUnitPastStage(tx, unitId, stage) {
     // tahap terakhir (bukan null) supaya "tahap terakhir yang dilalui" masih
     // bisa dibaca dari unit tanpa query ke ledger.
     await tx.unit.update({ where: { id: unitId }, data: { status: "READY_FOR_DELIVERY" } });
+    await syncOrderStatus(tx, unit.orderId);
   } else {
     const next = getNextStage(path, stage.id);
     await tx.unit.update({ where: { id: unitId }, data: { currentStageId: next.id } });

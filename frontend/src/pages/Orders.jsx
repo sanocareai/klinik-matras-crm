@@ -54,6 +54,12 @@ const isMandek = (o) =>
 // buka percakapan customer dulu (sebelumnya satu-satunya jalur ubah status
 // ada di drawer profil pelanggan / chat). stopPropagation supaya klik select
 // tidak ikut memicu aksi lain di kartu/baris (mis. buka timeline).
+//
+// Integrasi Fase 1 (D-006): Order.status sekarang DIHITUNG OTOMATIS dari
+// status unit di Bengkel (weakest-link). Memilih status di sini TETAP
+// berfungsi — tapi sekarang berarti OVERRIDE MANUAL (mengunci, tidak lagi
+// ikut hitungan otomatis) sampai dilepas dari drawer profil pelanggan >
+// tab Order. Kunci 🔒 menandai order yang sedang di-override.
 function StatusSelect({ order, onChange, className }) {
   const tone = STATUS_TONE[order.status] || { chip: "bg-inset text-ink2" };
   return (
@@ -61,6 +67,7 @@ function StatusSelect({ order, onChange, className }) {
       value={order.status}
       onChange={(e) => onChange(order, e.target.value)}
       onClick={(e) => e.stopPropagation()}
+      title={order.statusLocked ? "Status di-override manual — ikut hitungan otomatis lagi lewat drawer profil pelanggan" : "Status dihitung otomatis dari unit"}
       aria-label={`Ubah status order ${order.orderNumber || ""}`}
       className={cn(
         "cursor-pointer appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold uppercase",
@@ -69,7 +76,9 @@ function StatusSelect({ order, onChange, className }) {
       )}
     >
       {SEMUA_STATUS.map((s) => (
-        <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
+        <option key={s} value={s}>
+          {order.statusLocked && s === order.status ? "🔒 " : ""}{ORDER_STATUS_LABELS[s] || s}
+        </option>
       ))}
     </select>
   );

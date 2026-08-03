@@ -177,6 +177,7 @@ model User {
   handoverEventsTo          HandoverEvent[]          @relation("HandoverTo")
   pipelineTransitions       PipelineTransition[]     @relation("PipelineTransitionActor")
   orderStatusChanges        OrderStatusTransition[]  @relation("OrderStatusActor")
+  orderStatusOverrides      Order[]                  @relation("OrderStatusOverrider")
   messageTemplates          MessageTemplate[]
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
@@ -577,6 +578,16 @@ model Order {
   customerId      String
   customer        Customer      @relation(fields: [customerId], references: [id])
   status          OrderStatus   @default(PENDING)
+  // D-006, Integrasi Fase 1 — status DIHITUNG dari status unit terkait
+  // (weakest-link: unit paling tertinggal yang menentukan), bukan ditulis
+  // manual lagi. Lihat services/orderStatusSync.js. Kalau statusLocked=true,
+  // sync BERHENTI menyentuh status ini — dikunci oleh override manusia
+  // (kasus di luar pola normal: dibatalkan, dst), sampai dilepas lagi.
+  statusLocked       Boolean   @default(false) @map("status_locked")
+  statusOverrideById String?   @map("status_override_by")
+  statusOverrideBy   User?     @relation("OrderStatusOverrider", fields: [statusOverrideById], references: [id], onDelete: SetNull)
+  statusOverrideAt   DateTime? @map("status_override_at")
+  statusOverrideNote String?   @map("status_override_note")
   paymentStatus   PaymentStatus @default(BELUM_BAYAR)
   category        OrderCategory @default(LAYANAN)
   value           Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
@@ -610,10 +621,8 @@ model Order {
 // di satu status — karena itu Order.status akhirnya jadi TURUNAN dari unit,
 // bukan sumber kebenaran (D-006).
 //
-// PHASE 0: tabel ini dibuat dan di-backfill, tapi BELUM dipakai UI mana pun.
-// Order.status masih ditulis manual persis seperti hari ini. Peralihan ke
-// status turunan terjadi di Phase 1, setelah unit benar-benar bergerak lewat
-// tahap produksi.
+// UPDATE (Integrasi Fase 1): peralihan ke status turunan SUDAH terjadi —
+// lihat statusLocked dkk di atas dan services/orderStatusSync.js.
 //
 // BELUM ADA DI SINI, sengaja (jangan tambahkan sebelum fase-nya tiba):
 //   - current_stage_id  → menyusul bersama migrasi routing_stages
