@@ -31,6 +31,8 @@ const Portal        = lazy(() => import("./pages/Portal.jsx"));
 const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
+const ProductionWorkOrders = lazy(() => import("./pages/bengkel/ProductionWorkOrders.jsx"));
+const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
@@ -187,7 +189,58 @@ export default function App() {
                 TIDAK PERNAH lewat sini — Portal.jsx auto-skip langsung ke
                 portals[0].path untuk mereka, PRD §4. */}
             <Route path="/portal/:key" element={<DivisionPage user={user} />} />
+            {/* Papan Produksi harian (D-014) — TIDAK diubah, tetap layar
+                utama kepala produksi. Lima menu di bawahnya menambah cara
+                MELIHAT & menindak, bukan mengganti alur harian ini. */}
             <Route path="/bengkel"     element={<Bengkel />} />
+            {/* Tahap 1: DATA NYATA — seluruh unit, lebih lebar dari papan
+                harian. Kolom Layanan/Tahap kosong untuk unit hasil backfill,
+                lihat catatan di features/bengkel/unitStatus.js. */}
+            <Route path="/bengkel/work-orders" element={<ProductionWorkOrders />} />
+            <Route
+              path="/bengkel/qc"
+              element={
+                <BengkelPlaceholder
+                  title="QC Inspection"
+                  subtitle="Uji berat badan, verdict QC, dan catatan mutu per unit."
+                  phase={3}
+                  description="Backend sudah punya recordQcFitTest + POST /units/:id/stages/:stageId/qc dan tabel qc_fit_tests — Tahap 3 menyambungkan UI-nya."
+                />
+              }
+            />
+            <Route
+              path="/bengkel/scope-revisions"
+              element={
+                <BengkelPlaceholder
+                  title="Revisi Lingkup"
+                  subtitle="Usulan perubahan layanan di tengah pengerjaan, beserta persetujuannya."
+                  phase={4}
+                  description="Backend sudah punya GET/POST/PATCH /scope-revisions lengkap dengan alur propose & decide — Tahap 4 menyambungkan UI-nya."
+                />
+              }
+            />
+            <Route
+              path="/bengkel/material-requests"
+              element={
+                <BengkelPlaceholder
+                  title="Material Request"
+                  subtitle="Permintaan material produksi ke gudang."
+                  phase={5}
+                  description="Alur ini SUDAH JALAN dari sisi gudang (Warehouse Tahap 3, Material Issue dengan sourceType PRODUCTION_WORK_ORDER) — Tahap 5 memberi produksi pintu masuknya sendiri."
+                />
+              }
+            />
+            <Route
+              path="/bengkel/reports"
+              element={
+                <BengkelPlaceholder
+                  title="Laporan Produksi"
+                  subtitle="Throughput, durasi per tahap, dan tingkat kelulusan QC."
+                  phase={6}
+                  description="Menunggu unit_stage_logs terisi — tabelnya masih 0 baris karena belum ada unit yang melewati stage engine."
+                />
+              }
+            />
             {/* ── DELIVERY & FULFILLMENT (Tahap 1) ─────────────────────────
                 /armada TETAP HIDUP sebagai redirect — masih dirujuk PORTALS di
                 backend (constants/permissions.js) dan divisionContent.js;

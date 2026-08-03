@@ -49,13 +49,18 @@ export const DIVISION_CONTENT = {
     title: "Production Operations",
     subtitle: "Perencanaan produksi, work order, quality control, dan kapasitas.",
     heroLine: "Workspace operasional untuk memantau tahap pengerjaan work order dan kapasitas produksi.",
-    // Cuma "Production Board" yang punya halaman nyata sejauh ini — lima
-    // modul lain fiktif dari mockup, sengaja tetap ditampilkan (non-aktif)
-    // supaya arah roadmap divisi ini kelihatan, bukan diam-diam disembunyikan.
+    // Production Tahap 1 (2 Agustus 2026): Work Order jadi halaman nyata.
+    //
+    // Capacity Planning, Product Recipe, dan Maintenance TETAP null dan
+    // memang TIDAK direncanakan — tidak ada entitas mesin, BOM, maupun
+    // jadwal perawatan di sistem ini, dan tidak ada alur bisnis berjalan
+    // yang membutuhkannya. Ketiganya tetap ditampilkan (non-aktif) supaya
+    // jujur bahwa mockup pernah menyebutkannya, bukan supaya terlihat
+    // seolah sedang dikerjakan.
     modules: [
-      { title: "Production Board",  description: "Pantau semua work order berdasarkan tahap pengerjaan.", icon: ClipboardList, path: "/bengkel" },
-      { title: "Material Request",  description: "Ajukan dan pantau kebutuhan material dari warehouse.", icon: Boxes, path: null },
-      { title: "QC Inspection",     description: "Checklist kualitas, defect log, dan approval produk.", icon: ScanLine, path: null },
+      { title: "Production Board",  description: "Papan harian: target hari ini dan tahap yang selesai.", icon: ClipboardList, path: "/bengkel" },
+      { title: "Work Order",        description: "Seluruh unit kasur beserta status dan tahap pengerjaannya.", icon: Boxes, path: "/bengkel/work-orders" },
+      { title: "QC Inspection",     description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: null },
       { title: "Capacity Planning", description: "Rencana kapasitas mesin, tim, dan shift produksi.", icon: BarChart3, path: null },
       { title: "Product Recipe",    description: "Bill of material dan standar konstruksi tiap tipe kasur.", icon: Boxes, path: null },
       { title: "Maintenance",       description: "Jadwal perawatan mesin dan laporan downtime.", icon: Wrench, path: null },

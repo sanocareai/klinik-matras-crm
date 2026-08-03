@@ -229,3 +229,65 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
     handleErr(err, res);
   }
 });
+
+// GET /api/production/work-orders?status=&serviceLine=&q=&stage=
+// DAFTAR SELURUH unit, untuk halaman "Work Order" (Production Tahap 1).
+//
+// BEDA DENGAN /board: papan harian sengaja SEMPIT — cuma unit berstatus
+// RECEIVED/IN_PRODUCTION, karena itu yang relevan dikerjakan hari ini.
+// Endpoint ini LEBAR: seluruh unit apa pun statusnya, supaya kepala
+// produksi bisa menelusuri "kasur si A sekarang di mana" tanpa harus tahu
+// unit itu sedang di bengkel atau tidak. Menambah cara MELIHAT, tidak
+// mengubah cara papan harian bekerja.
+//
+// ⚠️ KENYATAAN DATA (diverifikasi langsung di production sebelum endpoint
+// ini ditulis): 199 unit ada, TAPI `service_id`, `service_line`, dan
+// `current_stage_id` NULL di SELURUHNYA — unit di-backfill dari Order
+// (lihat catatan "PHASE 0" di schema.prisma), belum satu pun pernah masuk
+// stage engine. Jadi kolom Tahap/Layanan akan kosong sampai unit benar-
+// benar diadopsi ke engine (Tahap 2). Itu keadaan sebenarnya, bukan bug —
+// UI menampilkannya apa adanya, bukan menebak.
+productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const { status, serviceLine, q } = req.query;
+    const where = {
+      ...(status && { status }),
+      ...(serviceLine && { serviceLine }),
+      ...(q?.trim() && {
+        OR: [
+          { unitCode: { contains: q.trim(), mode: "insensitive" } },
+          { order: { orderNumber: { contains: q.trim(), mode: "insensitive" } } },
+          { order: { customer: { name: { contains: q.trim(), mode: "insensitive" } } } },
+        ],
+      }),
+    };
+
+    const units = await prisma.unit.findMany({
+      where,
+      include: {
+        currentStage: { select: { id: true, code: true, labelId: true, phase: true } },
+        service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
+        order: {
+          select: {
+            id: true, orderNumber: true, status: true,
+            customer: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take: 500,
+    });
+
+    // Hitungan per status untuk seluruh katalog (TIDAK ikut filter status —
+    // supaya angka di tab tidak berubah-ubah saat tab dipindah, pola yang
+    // sama dengan tab berhitung di halaman lain).
+    const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
+
+    res.json({
+      units,
+      statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});

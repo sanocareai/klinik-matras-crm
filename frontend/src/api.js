@@ -111,6 +111,12 @@ export const api = {
 
   // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
   getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
+  // Daftar SELURUH unit (Production Tahap 1) — lebih lebar dari /board yang
+  // sengaja cuma menampilkan unit yang ada di bengkel hari ini.
+  getWorkOrders: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/work-orders${qs ? `?${qs}` : ""}`);
+  },
   setProductionTargets: (unitIds, { date, note } = {}) =>
     request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
   removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),

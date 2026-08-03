@@ -6,6 +6,7 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
+  Boxes, ScanLine,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -108,6 +109,21 @@ const DIVISIONS = {
       },
     ],
   },
+  // ── PRODUCTION OPERATIONS (diperluas 2 Agustus 2026, Tahap 1) ───────────
+  // Sebelumnya satu menu ("Papan Produksi"). Sekarang enam.
+  //
+  // ⚠️ MODUL INI KEBALIKAN dari Delivery & Warehouse. Di dua modul itu,
+  // schema-nya yang belum ada dan harus dibangun. Di sini schema + stage
+  // engine SUDAH LENGKAP sejak awal (12 routing_stages & 6 service_catalog
+  // ter-seed, unitStageEngine.js punya start/complete/fail/skip/QC) — yang
+  // belum ada cuma UI-nya. Jadi tahap-tahap berikutnya sebagian besar
+  // MENYAMBUNGKAN endpoint yang sudah ditulis, bukan migrasi baru.
+  //
+  // Capacity Planning, Product Recipe, dan Maintenance dari mockup SENGAJA
+  // TIDAK dimasukkan ke sidebar: tidak ada entitas mesin, BOM, maupun
+  // jadwal perawatan di sistem ini, dan tidak ada alur bisnis berjalan yang
+  // membutuhkannya. Ketiganya tetap jadi kartu "Segera hadir" di Portal —
+  // menampilkannya di sidebar akan menyiratkan janji yang belum tentu ditepati.
   bengkel: {
     label: "Production",
     accent: {
@@ -117,7 +133,12 @@ const DIVISIONS = {
       {
         section: "PRODUCTION",
         items: [
-          { to: "/bengkel", label: "Papan Produksi", Icon: ClipboardList },
+          { to: "/bengkel",                 label: "Papan Produksi",  Icon: ClipboardList },
+          { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
+          { to: "/bengkel/qc",              label: "QC Inspection",   Icon: ScanLine },
+          { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
+          { to: "/bengkel/material-requests", label: "Material Request", Icon: ArrowUpFromLine },
+          { to: "/bengkel/reports",         label: "Laporan",         Icon: BarChart3 },
         ],
       },
     ],
