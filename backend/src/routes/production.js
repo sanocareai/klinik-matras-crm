@@ -377,3 +377,90 @@ productionRouter.get("/material-usage", requirePermission(P.UNIT_READ), async (r
     handleErr(err, res);
   }
 });
+
+// GET /api/production/report?from=&to= — Laporan Produksi (Tahap 6).
+// Throughput, durasi per tahap, tingkat kelulusan QC. Rentang default 30
+// hari terakhir kalau from/to tidak dikirim (konsisten dengan Laporan CRM
+// lain — sentinel lebar dipakai HANYA kalau salah satu sengaja dikosongkan
+// oleh UI, bukan default diam-diam).
+//
+// SEMUA angka di sini DIHITUNG dari unit_stage_logs/qc_fit_tests, ledger
+// yang SAMA dipakai stage engine — tidak ada tabel ringkasan terpisah yang
+// bisa drift. Jujur: unit_stage_logs masih 0 baris di production sampai
+// unit pertama diadopsi ke engine (lihat unitStatus.js).
+productionRouter.get("/report", requirePermission(P.DASHBOARD_READ), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const mulai = from ? startOfDayWIB(from) : new Date(Date.now() - 30 * 86_400_000);
+    const selesai = to ? endOfDayExclusiveWIB(to) : new Date();
+
+    // Throughput — unit menyelesaikan tahap FINISH per hari (WIB), sinyal
+    // "berapa kasur benar-benar rampung", bukan sekadar tahap apapun selesai.
+    const throughputRows = await prisma.$queryRaw`
+      SELECT to_char(date_trunc('day', l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+             COUNT(*)::int AS count
+      FROM unit_stage_logs l
+      JOIN routing_stages s ON s.id = l.stage_id
+      WHERE l.action = 'COMPLETE' AND s.phase = 'FINISH'
+        AND l.created_at >= ${mulai} AND l.created_at < ${selesai}
+      GROUP BY 1 ORDER BY 1
+    `;
+
+    // Durasi per tahap — rata-rata durationSeconds dari log COMPLETE (satu-
+    // satunya action yang mengisi kolom itu, lihat unitStageEngine.js
+    // finishStageInternal). Diagregasi atas SELURUH rentang, bukan per hari.
+    const durationGroups = await prisma.unitStageLog.groupBy({
+      by: ["stageId"],
+      where: {
+        action: "COMPLETE", durationSeconds: { not: null },
+        createdAt: { gte: mulai, lt: selesai },
+      },
+      _avg: { durationSeconds: true },
+      _count: { _all: true },
+    });
+    const stageIds = durationGroups.map((g) => g.stageId);
+    const stages = stageIds.length
+      ? await prisma.routingStage.findMany({ where: { id: { in: stageIds } }, select: { id: true, code: true, labelId: true, phase: true } })
+      : [];
+    const stageById = Object.fromEntries(stages.map((s) => [s.id, s]));
+    const stageDuration = durationGroups
+      .map((g) => ({
+        stage: stageById[g.stageId],
+        avgHours: g._avg.durationSeconds != null ? g._avg.durationSeconds / 3600 : null,
+        sampleCount: g._count._all,
+      }))
+      .filter((g) => g.stage)
+      .sort((a, b) => (a.stage.phase + a.stage.code).localeCompare(b.stage.phase + b.stage.code));
+
+    // Tingkat kelulusan QC — "lulus" = verdict PAS ATAU override customer
+    // (D-005/D-009), persis definisi "lulus" di recordQcFitTest sendiri.
+    const [totalQc, passedQc, byVerdictRaw] = await Promise.all([
+      prisma.qcFitTest.count({ where: { createdAt: { gte: mulai, lt: selesai } } }),
+      prisma.qcFitTest.count({
+        where: {
+          createdAt: { gte: mulai, lt: selesai },
+          OR: [{ verdict: "PAS" }, { customerPreferenceOverride: { not: null } }],
+        },
+      }),
+      prisma.qcFitTest.groupBy({
+        by: ["verdict"],
+        where: { createdAt: { gte: mulai, lt: selesai } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    res.json({
+      range: { from: mulai.toISOString(), to: selesai.toISOString() },
+      throughput: throughputRows,
+      stageDuration,
+      qc: {
+        total: totalQc,
+        passed: passedQc,
+        passRate: totalQc > 0 ? passedQc / totalQc : null,
+        byVerdict: byVerdictRaw.map((v) => ({ verdict: v.verdict, count: v._count._all })),
+      },
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});

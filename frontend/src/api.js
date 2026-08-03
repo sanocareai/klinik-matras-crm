@@ -133,6 +133,11 @@ export const api = {
   getScopeRevisionSummary: (id) => request(`/scope-revisions/${id}/summary`),
   proposeScopeRevision: (unitId, formData) => requestFormData(`/scope-revisions/units/${unitId}`, formData),
   decideScopeRevision: (id, formData) => requestFormData(`/scope-revisions/${id}/decision`, formData, "PATCH"),
+  // Laporan Produksi (Tahap 6) — throughput, durasi per tahap, kelulusan QC.
+  getProductionReport: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/report${qs ? `?${qs}` : ""}`);
+  },
   setProductionTargets: (unitIds, { date, note } = {}) =>
     request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
   removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),

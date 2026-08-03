@@ -36,7 +36,7 @@ const ProductionUnitDetail = lazy(() => import("./pages/bengkel/ProductionUnitDe
 const ProductionQcQueue    = lazy(() => import("./pages/bengkel/ProductionQcQueue.jsx"));
 const ProductionMaterialUsage = lazy(() => import("./pages/bengkel/ProductionMaterialUsage.jsx"));
 const ProductionScopeRevisions = lazy(() => import("./pages/bengkel/ProductionScopeRevisions.jsx"));
-const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
+const ProductionLaporan = lazy(() => import("./pages/bengkel/ProductionLaporan.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
@@ -217,17 +217,11 @@ export default function App() {
                 Gudang (StockMovement.unitId), dicatat langsung tanpa alur
                 dokumen/approval karena gudang & bengkel satu ruangan. */}
             <Route path="/bengkel/materials" element={<ProductionMaterialUsage />} />
-            <Route
-              path="/bengkel/reports"
-              element={
-                <BengkelPlaceholder
-                  title="Laporan Produksi"
-                  subtitle="Throughput, durasi per tahap, dan tingkat kelulusan QC."
-                  phase={6}
-                  description="Menunggu unit_stage_logs terisi — tabelnya masih 0 baris karena belum ada unit yang melewati stage engine."
-                />
-              }
-            />
+            {/* Tahap 6: DATA NYATA — dihitung dari unit_stage_logs/qc_fit_tests
+                yang sama dipakai stage engine, bukan tabel ringkasan terpisah.
+                Tampil kosong sampai unit pertama diadopsi ke engine — jujur,
+                bukan bug. */}
+            <Route path="/bengkel/reports" element={<ProductionLaporan />} />
             {/* ── DELIVERY & FULFILLMENT (Tahap 1) ─────────────────────────
                 /armada TETAP HIDUP sebagai redirect — masih dirujuk PORTALS di
                 backend (constants/permissions.js) dan divisionContent.js;
