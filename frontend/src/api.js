@@ -117,6 +117,8 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/work-orders${qs ? `?${qs}` : ""}`);
   },
+  // Antrean QC (Production Tahap 3) — unit yang currentStage-nya gerbang QC.
+  getQcQueue: () => request("/production/qc-queue"),
   setProductionTargets: (unitIds, { date, note } = {}) =>
     request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
   removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),

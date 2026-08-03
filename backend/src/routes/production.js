@@ -291,3 +291,45 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     handleErr(err, res);
   }
 });
+
+// GET /api/production/qc-queue — unit yang currentStage-nya gerbang QC
+// (requiresQc=true), untuk halaman QC Inspection (Production Tahap 3).
+//
+// TIDAK ADA tabel/kolom baru untuk "antrean QC" — status per unit DIHITUNG
+// dari log TERAKHIR unit+tahap itu, persis logika resolveCurrentTarget di
+// unitStageEngine.js (READY = belum di-START, IN_PROGRESS = sedang
+// berjalan siap diputuskan, BLOCKED = percobaan QC sebelumnya gagal dan
+// belum di-restart). Query kecil (unit di bengkel jumlahnya puluhan, bukan
+// ribuan) jadi lookup log per unit di sini aman tanpa index tambahan.
+productionRouter.get("/qc-queue", requirePermission(P.QC_WRITE), async (req, res) => {
+  try {
+    const units = await prisma.unit.findMany({
+      where: { currentStage: { requiresQc: true } },
+      include: {
+        currentStage: { select: { id: true, code: true, labelId: true, requiresPhoto: true } },
+        service: { select: { id: true, labelId: true, serviceLine: true } },
+        order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const lastLogs = await prisma.unitStageLog.findMany({
+      where: { OR: units.map((u) => ({ unitId: u.id, stageId: u.currentStageId })) },
+      orderBy: { createdAt: "desc" },
+    });
+    const lastByUnit = {};
+    for (const log of lastLogs) {
+      if (!lastByUnit[log.unitId]) lastByUnit[log.unitId] = log; // sudah urut desc, yang pertama ketemu = terbaru
+    }
+
+    const withState = units.map((u) => {
+      const last = lastByUnit[u.id];
+      const qcState = !last ? "READY" : last.action === "START" ? "IN_PROGRESS" : last.action === "FAIL" ? "BLOCKED" : "READY";
+      return { ...u, qcState };
+    });
+
+    res.json({ units: withState });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});

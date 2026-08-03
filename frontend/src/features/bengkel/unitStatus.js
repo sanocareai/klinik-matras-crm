@@ -55,6 +55,17 @@ export const BLOCK_REASON_REAL = {
   OTHER:                      { label: "Lainnya" },
 };
 
+// enum FitVerdict & PreferenceOverride (D-005, D-009) — Uji Berat Badan.
+export const FIT_VERDICT_REAL = {
+  TERLALU_KERAS: { label: "Terlalu Keras", tone: "red" },
+  PAS:           { label: "Pas",            tone: "green" },
+  TERLALU_EMPUK: { label: "Terlalu Empuk",  tone: "red" },
+};
+export const PREFERENCE_OVERRIDE_REAL = {
+  LEBIH_KERAS: { label: "Pelanggan Minta Lebih Keras" },
+  LEBIH_EMPUK: { label: "Pelanggan Minta Lebih Empuk" },
+};
+
 /**
  * KENYATAAN DATA YANG HARUS DIINGAT — ditulis di sini supaya tidak hilang.
  *

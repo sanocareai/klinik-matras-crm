@@ -60,7 +60,7 @@ export const DIVISION_CONTENT = {
     modules: [
       { title: "Production Board",  description: "Papan harian: target hari ini dan tahap yang selesai.", icon: ClipboardList, path: "/bengkel" },
       { title: "Work Order",        description: "Seluruh unit kasur beserta status dan tahap pengerjaannya.", icon: Boxes, path: "/bengkel/work-orders" },
-      { title: "QC Inspection",     description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: null },
+      { title: "QC Inspection",     description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: "/bengkel/qc" },
       { title: "Capacity Planning", description: "Rencana kapasitas mesin, tim, dan shift produksi.", icon: BarChart3, path: null },
       { title: "Product Recipe",    description: "Bill of material dan standar konstruksi tiap tipe kasur.", icon: Boxes, path: null },
       { title: "Maintenance",       description: "Jadwal perawatan mesin dan laporan downtime.", icon: Wrench, path: null },

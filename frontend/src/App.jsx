@@ -33,6 +33,7 @@ const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const ProductionWorkOrders = lazy(() => import("./pages/bengkel/ProductionWorkOrders.jsx"));
 const ProductionUnitDetail = lazy(() => import("./pages/bengkel/ProductionUnitDetail.jsx"));
+const ProductionQcQueue    = lazy(() => import("./pages/bengkel/ProductionQcQueue.jsx"));
 const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
@@ -203,17 +204,9 @@ export default function App() {
                 sejak Phase 0. Termasuk adopsi unit backfill (tetapkan
                 layanan) supaya bisa masuk alur tahap. */}
             <Route path="/bengkel/units/:id" element={<ProductionUnitDetail />} />
-            <Route
-              path="/bengkel/qc"
-              element={
-                <BengkelPlaceholder
-                  title="QC Inspection"
-                  subtitle="Uji berat badan, verdict QC, dan catatan mutu per unit."
-                  phase={3}
-                  description="Backend sudah punya recordQcFitTest + POST /units/:id/stages/:stageId/qc dan tabel qc_fit_tests — Tahap 3 menyambungkan UI-nya."
-                />
-              }
-            />
+            {/* Tahap 3: DATA NYATA — daftar triase unit di gerbang QC.
+                Aksi mencatat verdict tetap di halaman Detail Unit. */}
+            <Route path="/bengkel/qc" element={<ProductionQcQueue />} />
             <Route
               path="/bengkel/scope-revisions"
               element={

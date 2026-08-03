@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, STAGE_LOG_STATUS, BLOCK_REASON_REAL,
+  FIT_VERDICT_REAL, PREFERENCE_OVERRIDE_REAL,
 } from "@/features/bengkel/unitStatus.js";
 
 // Detail Unit — Production Tahap 2. Menyambungkan UI ke stage engine yang
@@ -41,6 +42,12 @@ export default function ProductionUnitDetail() {
   const [blockReason, setBlockReason] = useState("MATERIAL_SHORTAGE");
   const [uploading, setUploading] = useState(false);
 
+  // Uji Berat Badan (D-009) — gerbang QC di jalur tahap.
+  const [verdict, setVerdict] = useState("PAS");
+  const [referenceWeightKg, setReferenceWeightKg] = useState("");
+  const [preferenceOverride, setPreferenceOverride] = useState("");
+  const [educationGiven, setEducationGiven] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     setError("");
@@ -48,6 +55,7 @@ export default function ProductionUnitDetail() {
       .then((d) => {
         setData(d);
         setMode(null); setPhotos([]); setNote("");
+        setVerdict("PAS"); setReferenceWeightKg(""); setPreferenceOverride(""); setEducationGiven(false);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -122,6 +130,21 @@ export default function ProductionUnitDetail() {
     setBusy(true); setError("");
     try {
       await api.failUnitStage(unit.id, current.stage.id, { blockReason, note });
+      load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function catatQc() {
+    setBusy(true); setError("");
+    try {
+      await api.recordQcFitTest(unit.id, current.stage.id, {
+        verdict,
+        referenceWeightKg: Number(referenceWeightKg),
+        customerPreferenceOverride: preferenceOverride || null,
+        educationGiven,
+        note,
+        photoUrls: photos,
+      });
       load();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
@@ -250,11 +273,54 @@ export default function ProductionUnitDetail() {
               </div>
             ) : current.status === "IN_PROGRESS" ? (
               isQcGate ? (
-                <p className="rounded-btn bg-orangebg px-2.5 py-2 text-[11.5px] text-ink">
-                  Tahap ini gerbang <strong>Uji Berat Badan</strong> — dicatat lewat layar QC
-                  (verdict, berat acuan, override customer), belum tersedia di halaman ini.
-                  Lihat menu <strong>QC Inspection</strong>.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-[12px] text-ink2">Uji Berat Badan: <strong>{current.stage.labelId}</strong></p>
+
+                  <label className="block text-[11.5px] font-semibold text-ink2">Verdict *</label>
+                  <select value={verdict} onChange={(e) => setVerdict(e.target.value)}
+                    className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
+                    {Object.entries(FIT_VERDICT_REAL).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+
+                  <label className="block text-[11.5px] font-semibold text-ink2">Berat Acuan (kg) *</label>
+                  <input type="number" min="1" value={referenceWeightKg} onChange={(e) => setReferenceWeightKg(e.target.value)}
+                    className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent" />
+
+                  <label className="block text-[11.5px] font-semibold text-ink2">Override Preferensi Customer</label>
+                  <select value={preferenceOverride} onChange={(e) => setPreferenceOverride(e.target.value)}
+                    className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
+                    <option value="">Tidak ada — ikuti rekomendasi</option>
+                    {Object.entries(PREFERENCE_OVERRIDE_REAL).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  {preferenceOverride && (
+                    <label className="flex items-center gap-1.5 text-[11.5px] text-ink2">
+                      <input type="checkbox" checked={educationGiven} onChange={(e) => setEducationGiven(e.target.checked)} />
+                      Edukasi risiko sudah diberikan ke customer (D-009, wajib)
+                    </label>
+                  )}
+
+                  <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border text-[12px] font-medium text-ink2 hover:border-accent hover:text-accent">
+                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                    {photos.length > 0 ? `${photos.length} foto siap` : "Ambil / Pilih Foto"}
+                    <input type="file" accept="image/*" capture="environment" multiple hidden onChange={handlePhotos} disabled={uploading} />
+                  </label>
+                  {photos.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {photos.map((u) => <img key={u} src={u} alt="" className="h-12 w-12 rounded object-cover" />)}
+                    </div>
+                  )}
+                  {needsPhoto && photos.length === 0 && <p className="text-[11px] text-orange">Tahap ini wajib foto</p>}
+
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Catatan (opsional)"
+                    className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
+
+                  <Button
+                    className="w-full" onClick={catatQc}
+                    disabled={busy || !referenceWeightKg || (needsPhoto && photos.length === 0) || (!!preferenceOverride && !educationGiven)}
+                  >
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Simpan Hasil QC
+                  </Button>
+                </div>
               ) : mode === "fail" ? (
                 <div className="space-y-2">
                   <label className="block text-[11.5px] font-semibold text-ink2">Alasan Hambatan *</label>
