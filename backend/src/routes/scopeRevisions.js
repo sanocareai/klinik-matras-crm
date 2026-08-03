@@ -15,7 +15,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import {
   proposeScopeRevision, decideScopeRevision, buildCustomerSummary, ScopeRevisionError,
@@ -51,7 +51,7 @@ function kirimError(res, err, pesanDefault) {
 // GET /api/scope-revisions?status=PENDING — papan "menunggu jawaban customer".
 // Boleh dibaca siapa pun yang boleh mengajukan ATAU memutuskan; pembatasannya
 // di dua permission itu, bukan daftar role ad-hoc.
-scopeRevisionRouter.get("/", async (req, res) => {
+scopeRevisionRouter.get("/", requireAnyPermission(P.SCOPE_REVISION_PROPOSE, P.SCOPE_REVISION_DECIDE), async (req, res) => {
   try {
     const { status, unitId, orderId } = req.query;
     const revisions = await prisma.scopeRevision.findMany({
@@ -81,7 +81,7 @@ scopeRevisionRouter.get("/", async (req, res) => {
 // GET /api/scope-revisions/:id/summary — ringkasan siap kirim ke customer
 // (FR-R-03). CS menyalin ini ke WhatsApp; pengirimannya TETAP manual, PRD §7.8
 // eksplisit: revisi scope butuh manusia, bukan template otomatis.
-scopeRevisionRouter.get("/:id/summary", async (req, res) => {
+scopeRevisionRouter.get("/:id/summary", requireAnyPermission(P.SCOPE_REVISION_PROPOSE, P.SCOPE_REVISION_DECIDE), async (req, res) => {
   try {
     res.json(await buildCustomerSummary(req.params.id));
   } catch (err) {

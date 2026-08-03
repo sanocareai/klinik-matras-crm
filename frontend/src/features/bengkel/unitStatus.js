@@ -66,6 +66,21 @@ export const PREFERENCE_OVERRIDE_REAL = {
   LEBIH_EMPUK: { label: "Pelanggan Minta Lebih Empuk" },
 };
 
+// enum ScopeRevisionStatus & ScopeRevisionVia (PRD §7.4, D-008) — Revisi
+// Lingkup (Production Tahap 4).
+export const SCOPE_REVISION_STATUS_REAL = {
+  PENDING:  { label: "Menunggu Jawaban", tone: "orange" },
+  APPROVED: { label: "Disetujui",        tone: "green" },
+  REJECTED: { label: "Ditolak",          tone: "red" },
+  PARTIAL:  { label: "Setuju Sebagian",  tone: "accent" },
+};
+export const SCOPE_REVISION_VIA_REAL = {
+  WHATSAPP: { label: "WhatsApp" },
+  TELEPON:  { label: "Telepon" },
+  LANGSUNG: { label: "Langsung" },
+  LAINNYA:  { label: "Lainnya" },
+};
+
 /**
  * KENYATAAN DATA YANG HARUS DIINGAT — ditulis di sini supaya tidak hilang.
  *

@@ -49,13 +49,13 @@ async function request(path, options = {}) {
 }
 
 // Khusus untuk upload file (multipart/form-data — tanpa Content-Type header agar boundary otomatis)
-async function requestFormData(path, formData) {
+async function requestFormData(path, formData, method = "POST") {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
     const res = await fetch(`${BASE}${path}`, {
-      method: "POST",
+      method,
       signal: controller.signal,
       headers: authHeaders(),
       body: formData,
@@ -124,6 +124,15 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/material-usage${qs ? `?${qs}` : ""}`);
   },
+  // Revisi Lingkup (Tahap 4) — usulan perubahan layanan/harga di tengah
+  // pengerjaan. Propose & decide keduanya multipart (upload foto/bukti).
+  getScopeRevisions: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/scope-revisions${qs ? `?${qs}` : ""}`);
+  },
+  getScopeRevisionSummary: (id) => request(`/scope-revisions/${id}/summary`),
+  proposeScopeRevision: (unitId, formData) => requestFormData(`/scope-revisions/units/${unitId}`, formData),
+  decideScopeRevision: (id, formData) => requestFormData(`/scope-revisions/${id}/decision`, formData, "PATCH"),
   setProductionTargets: (unitIds, { date, note } = {}) =>
     request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
   removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),

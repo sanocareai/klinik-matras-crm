@@ -35,6 +35,7 @@ const ProductionWorkOrders = lazy(() => import("./pages/bengkel/ProductionWorkOr
 const ProductionUnitDetail = lazy(() => import("./pages/bengkel/ProductionUnitDetail.jsx"));
 const ProductionQcQueue    = lazy(() => import("./pages/bengkel/ProductionQcQueue.jsx"));
 const ProductionMaterialUsage = lazy(() => import("./pages/bengkel/ProductionMaterialUsage.jsx"));
+const ProductionScopeRevisions = lazy(() => import("./pages/bengkel/ProductionScopeRevisions.jsx"));
 const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
@@ -208,17 +209,10 @@ export default function App() {
             {/* Tahap 3: DATA NYATA — daftar triase unit di gerbang QC.
                 Aksi mencatat verdict tetap di halaman Detail Unit. */}
             <Route path="/bengkel/qc" element={<ProductionQcQueue />} />
-            <Route
-              path="/bengkel/scope-revisions"
-              element={
-                <BengkelPlaceholder
-                  title="Revisi Lingkup"
-                  subtitle="Usulan perubahan layanan di tengah pengerjaan, beserta persetujuannya."
-                  phase={4}
-                  description="Backend sudah punya GET/POST/PATCH /scope-revisions lengkap dengan alur propose & decide — Tahap 4 menyambungkan UI-nya."
-                />
-              }
-            />
+            {/* Tahap 4: DATA NYATA — mengajukan ada di Detail Unit (D-008,
+                PRODUCTION_LEAD/QC_LEAD); memutuskan ada di sini (SALES/ADMIN).
+                Dua permission terpisah sengaja tidak dicampur satu form. */}
+            <Route path="/bengkel/scope-revisions" element={<ProductionScopeRevisions />} />
             {/* Tahap 5: DATA NYATA — ledger stock_movements yang sama dengan
                 Gudang (StockMovement.unitId), dicatat langsung tanpa alur
                 dokumen/approval karena gudang & bengkel satu ruangan. */}

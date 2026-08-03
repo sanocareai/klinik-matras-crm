@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
+import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -13,8 +14,12 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, STAGE_LOG_STATUS, BLOCK_REASON_REAL,
-  FIT_VERDICT_REAL, PREFERENCE_OVERRIDE_REAL,
+  FIT_VERDICT_REAL, PREFERENCE_OVERRIDE_REAL, SCOPE_REVISION_STATUS_REAL,
 } from "@/features/bengkel/unitStatus.js";
+
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+}
 
 // Detail Unit — Production Tahap 2. Menyambungkan UI ke stage engine yang
 // SUDAH LENGKAP sejak Phase 0 (unitStageEngine.js) — start/complete/fail/
@@ -57,6 +62,23 @@ export default function ProductionUnitDetail() {
   const [materialBusy, setMaterialBusy] = useState(false);
   const [materialError, setMaterialError] = useState("");
 
+  // Revisi Lingkup (Production Tahap 4) — dua permission terpisah (D-008):
+  // PRODUCTION_LEAD/QC_LEAD MENGAJUKAN di sini; SALES/ADMIN MEMUTUSKAN di
+  // halaman "Revisi Lingkup" (bukan di sini) — satu orang tidak boleh
+  // mengarang delta harga sekaligus menyetujuinya sendiri.
+  const myRoles = rolesOf(currentUser());
+  const canProposeRevision = myRoles.some((r) => ["PRODUCTION_LEAD", "QC_LEAD"].includes(r));
+  const canDecideRevision = myRoles.some((r) => ["SALES", "ADMIN"].includes(r));
+  const canSeeRevisions = canProposeRevision || canDecideRevision;
+  const [scopeRevisions, setScopeRevisions] = useState(null);
+  const [scopeReason, setScopeReason] = useState("");
+  const [scopeDelta, setScopeDelta] = useState("");
+  const [scopeToServiceId, setScopeToServiceId] = useState("");
+  const [scopeNote, setScopeNote] = useState("");
+  const [scopePhotos, setScopePhotos] = useState([]);
+  const [scopeBusy, setScopeBusy] = useState(false);
+  const [scopeError, setScopeError] = useState("");
+
   const load = useCallback(() => {
     setLoading(true);
     setError("");
@@ -74,13 +96,19 @@ export default function ProductionUnitDetail() {
     api.getUnitMaterials(id).then(setMaterialUsage).catch((e) => setMaterialError(e.message));
   }, [id]);
 
-  useEffect(() => { load(); loadMaterials(); }, [load, loadMaterials]);
+  const loadScopeRevisions = useCallback(() => {
+    if (!canSeeRevisions) return;
+    api.getScopeRevisions({ unitId: id }).then(setScopeRevisions).catch((e) => setScopeError(e.message));
+  }, [id, canSeeRevisions]);
+
+  useEffect(() => { load(); loadMaterials(); loadScopeRevisions(); }, [load, loadMaterials, loadScopeRevisions]);
   useEffect(() => {
     api.getMaterials({ active: true }).then(setMaterialCatalog).catch(() => {});
+    // Katalog layanan dipakai DUA tempat: adopsi unit backfill (needsService)
+    // DAN dropdown "ubah ke layanan" saat mengajukan Revisi Lingkup — jadi
+    // dimuat sekali di awal, bukan bersyarat.
+    api.getServiceCatalog().then((d) => setServices(d.services)).catch(() => {});
   }, []);
-  useEffect(() => {
-    if (data?.needsService) api.getServiceCatalog().then((d) => setServices(d.services)).catch(() => {});
-  }, [data?.needsService]);
 
   if (loading && !data) {
     return (
@@ -173,6 +201,29 @@ export default function ProductionUnitDetail() {
       setMaterialId(""); setMaterialQty(""); setMaterialNote("");
       loadMaterials();
     } catch (e) { setMaterialError(e.message); } finally { setMaterialBusy(false); }
+  }
+
+  function handleScopePhotos(e) {
+    const files = Array.from(e.target.files || []);
+    setScopePhotos((p) => [...p, ...files]);
+    e.target.value = "";
+  }
+
+  async function ajukanRevisi() {
+    if (!scopeReason.trim() || scopeDelta === "") return;
+    setScopeBusy(true); setScopeError("");
+    try {
+      const compressed = await Promise.all(scopePhotos.map((f) => compressImage(f)));
+      const fd = new FormData();
+      fd.append("reason", scopeReason.trim());
+      fd.append("deltaAmount", scopeDelta);
+      if (scopeToServiceId) fd.append("toServiceId", scopeToServiceId);
+      if (scopeNote.trim()) fd.append("note", scopeNote.trim());
+      compressed.forEach((f) => fd.append("photos", f));
+      await api.proposeScopeRevision(unit.id, fd);
+      setScopeReason(""); setScopeDelta(""); setScopeToServiceId(""); setScopeNote(""); setScopePhotos([]);
+      loadScopeRevisions();
+    } catch (e) { setScopeError(e.message); } finally { setScopeBusy(false); }
   }
 
   async function lewatiTahap() {
@@ -333,6 +384,97 @@ export default function ProductionUnitDetail() {
               <p className="px-4 py-3 text-[12px] text-ink3">Belum ada bahan dicatat untuk unit ini.</p>
             )}
           </Card>
+
+          {canSeeRevisions && (() => {
+            const pending = scopeRevisions?.find((r) => r.status === "PENDING");
+            const history = scopeRevisions?.filter((r) => r.status !== "PENDING") || [];
+            return (
+              <Card className="overflow-hidden">
+                <CardHeader>
+                  <CardTitle>Revisi Lingkup</CardTitle>
+                  <CardDescription>Temuan bongkar yang mengubah harga/layanan — butuh jawaban customer.</CardDescription>
+                </CardHeader>
+
+                {scopeError && <div className="mx-4 mb-2 rounded-btn bg-redbg px-2.5 py-2 text-[11.5px] text-red">{scopeError}</div>}
+
+                {pending ? (
+                  <div className="border-b border-line bg-orangebg px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="orange">Menunggu Jawaban Customer</Badge>
+                    </div>
+                    <p className="mt-1.5 text-[12px] text-ink">{pending.reason}</p>
+                    <p className="mt-0.5 text-[11.5px] text-ink2">
+                      Selisih Rp{pending.deltaAmount.toLocaleString("id-ID")}
+                      {pending.toService && ` · Ke ${pending.toService.labelId}`}
+                      {" · "}{pending.createdBy?.name || "—"}
+                    </p>
+                    {canDecideRevision && (
+                      <p className="mt-1.5 text-[11px] text-ink3">
+                        Keputusan dicatat di halaman <strong>Revisi Lingkup</strong>, bukan di sini.
+                      </p>
+                    )}
+                  </div>
+                ) : canProposeRevision ? (
+                  <div className="space-y-2 border-b border-line px-4 py-3">
+                    <textarea
+                      value={scopeReason} onChange={(e) => setScopeReason(e.target.value)} rows={2}
+                      placeholder="Temuan saat bongkar — kenapa harga/layanan perlu berubah *"
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                    />
+                    <input
+                      type="number" value={scopeDelta} onChange={(e) => setScopeDelta(e.target.value)}
+                      placeholder="Selisih harga (Rupiah, boleh negatif) *"
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                    />
+                    <select
+                      value={scopeToServiceId} onChange={(e) => setScopeToServiceId(e.target.value)}
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
+                    >
+                      <option value="">Tidak ganti layanan</option>
+                      {services.map((s) => <option key={s.id} value={s.id}>{s.labelId}</option>)}
+                    </select>
+                    <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border text-[12px] font-medium text-ink2 hover:border-accent hover:text-accent">
+                      <Camera size={15} />
+                      {scopePhotos.length > 0 ? `${scopePhotos.length} foto dipilih` : "Foto Temuan (opsional)"}
+                      <input type="file" accept="image/*" capture="environment" multiple hidden onChange={handleScopePhotos} />
+                    </label>
+                    <textarea
+                      value={scopeNote} onChange={(e) => setScopeNote(e.target.value)} rows={2}
+                      placeholder="Catatan tambahan (opsional)"
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                    />
+                    <Button size="sm" className="w-full" onClick={ajukanRevisi} disabled={scopeBusy || !scopeReason.trim() || scopeDelta === ""}>
+                      {scopeBusy && <Loader2 size={14} className="animate-spin" />} Ajukan Revisi
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="border-b border-line px-4 py-3 text-[12px] text-ink3">Tidak ada revisi yang menunggu jawaban.</p>
+                )}
+
+                {history.length > 0 ? (
+                  <ul className="divide-y divide-line">
+                    {history.map((r) => (
+                      <li key={r.id} className="px-4 py-2.5 text-[12px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-ink2">{r.reason}</span>
+                          <Badge variant={SCOPE_REVISION_STATUS_REAL[r.status]?.tone || "neutral"}>
+                            {SCOPE_REVISION_STATUS_REAL[r.status]?.label || r.status}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 text-ink3">
+                          Selisih Rp{r.deltaAmount.toLocaleString("id-ID")}
+                          {r.toService && ` · Ke ${r.toService.labelId}`}
+                          {r.decidedBy && ` · ${r.decidedBy.name}`}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : !pending && (
+                  <p className="px-4 py-3 text-[12px] text-ink3">Belum pernah ada revisi lingkup untuk unit ini.</p>
+                )}
+              </Card>
+            );
+          })()}
         </div>
 
         <div className="space-y-4">
