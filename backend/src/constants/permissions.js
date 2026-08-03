@@ -45,6 +45,11 @@ export const PERMISSIONS = {
   SCOPE_REVISION_DECIDE: "scope_revision:decide",   // sales & admin
   INVENTORY_READ: "inventory:read",
   INVENTORY_WRITE: "inventory:write",
+  // Catat bahan baku dipakai untuk SATU unit spesifik (busa/lem/kain saat
+  // mengerjakan tahap). SENGAJA dipisah dari INVENTORY_WRITE — lantai
+  // produksi tidak butuh (dan tidak boleh) akses goods receipt/stock
+  // opname/transfer gudang, cuma "bahan ini saya pakai untuk unit ini".
+  UNIT_MATERIAL_WRITE: "unit:material:write",
 
   // --- Armada (pickup & delivery) ---
   JOB_READ: "job:read",
@@ -111,12 +116,12 @@ export const ROLE_PERMISSIONS = {
   // Lantai produksi: tahu kasur siapa dan harus diapakan, TIDAK tahu nomor
   // telepon customer maupun harga.
   PRODUCTION_WORKER: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE,
     P.CUSTOMER_READ, P.ORDER_READ,
   ],
 
   PRODUCTION_LEAD: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_PROPOSE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE, P.UNIT_MATERIAL_WRITE, P.SCOPE_REVISION_PROPOSE,
     P.CUSTOMER_READ, P.ORDER_READ,
     P.INVENTORY_READ,
     P.DASHBOARD_READ,
@@ -129,7 +134,7 @@ export const ROLE_PERMISSIONS = {
   ],
 
   WAREHOUSE: [
-    P.INVENTORY_READ, P.INVENTORY_WRITE,
+    P.INVENTORY_READ, P.INVENTORY_WRITE, P.UNIT_MATERIAL_WRITE,
     P.UNIT_READ,
   ],
 

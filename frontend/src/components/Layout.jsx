@@ -137,7 +137,7 @@ const DIVISIONS = {
           { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
           { to: "/bengkel/qc",              label: "QC Inspection",   Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
-          { to: "/bengkel/material-requests", label: "Material Request", Icon: ArrowUpFromLine },
+          { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
           { to: "/bengkel/reports",         label: "Laporan",         Icon: BarChart3 },
         ],
       },

@@ -10,7 +10,7 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { RESERVED_STATUSES } from "./materialIssue.js";
 
@@ -41,7 +41,13 @@ function parseQty(input, { allowNegative = false } = {}) {
 // ── Katalog material ────────────────────────────────────────────────────
 
 // GET /api/inventory/materials?active=true
-inventoryRouter.get("/materials", requirePermission(P.INVENTORY_READ), async (req, res) => {
+//
+// Sengaja terima INVENTORY_READ ATAU UNIT_MATERIAL_WRITE (bukan cuma yang
+// pertama) — lantai produksi butuh daftar ini untuk memilih bahan saat
+// mencatat pemakaian per unit (Production Tahap 5), tapi tidak punya (dan
+// tidak seharusnya punya) akses baca gudang penuh (goods receipt, stock
+// opname, dst).
+inventoryRouter.get("/materials", requireAnyPermission(P.INVENTORY_READ, P.UNIT_MATERIAL_WRITE), async (req, res) => {
   try {
     const where = {};
     if (req.query.active === "true") where.active = true;

@@ -243,3 +243,79 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
     handleEngineError(err, res);
   }
 });
+
+// ── Bahan baku per unit (Production Tahap 5) ───────────────────────────
+//
+// TIDAK ADA tabel baru — memakai stock_movements yang sama dengan Gudang
+// (StockMovement.unitId sudah ada sejak schema Warehouse, tinggal dipakai).
+// Sengaja TIDAK lewat alur dokumen MaterialIssue (approval/picking/issuing)
+// — itu didesain untuk gudang yang terpisah dari produksi. Di sini gudang
+// dan bengkel satu ruangan yang sama, jadi cukup catat langsung "bahan X
+// dipakai untuk unit Y", ledger append-only sama seperti sisi Gudang.
+//
+// KOREKSI = baris baru, bukan UPDATE (Aturan #2, sama seperti seluruh
+// stock_movements lain) — supaya "aslinya salah ketik apa" tetap terlihat,
+// bukan menghilang diam-diam. qty positif = pemakaian tambahan (ISSUE,
+// ledger negatif); qty negatif = koreksi mengurangi (RETURN, ledger
+// positif, mengembalikan sebagian ke stok).
+unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const movements = await prisma.stockMovement.findMany({
+      where: { unitId: req.params.id, type: { in: ["ISSUE", "RETURN"] } },
+      select: {
+        id: true, type: true, qty: true, note: true, createdAt: true,
+        material: { select: { id: true, code: true, name: true, unit: true } },
+        createdBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const totalsByMaterial = {};
+    for (const m of movements) {
+      const key = m.material.id;
+      totalsByMaterial[key] ??= { material: m.material, netQty: 0 };
+      totalsByMaterial[key].netQty += Number(m.qty);
+    }
+    const totals = Object.values(totalsByMaterial).map((t) => ({
+      material: t.material, usedQty: -t.netQty,
+    }));
+
+    res.json({ movements, totals });
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), async (req, res) => {
+  try {
+    const { materialId, note } = req.body;
+    const rawQty = Number(req.body.qty);
+    if (!materialId) return res.status(400).json({ error: "Bahan wajib dipilih" });
+    if (!Number.isFinite(rawQty) || rawQty === 0) {
+      return res.status(400).json({ error: "Jumlah wajib diisi dan tidak boleh nol" });
+    }
+
+    const material = await prisma.material.findUnique({ where: { id: materialId } });
+    if (!material) return res.status(404).json({ error: "Bahan tidak ditemukan" });
+    if (!material.active) return res.status(400).json({ error: "Bahan ini sudah nonaktif" });
+
+    const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
+    // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).
+    const type = rawQty > 0 ? "ISSUE" : "RETURN";
+    const ledgerQty = -rawQty;
+
+    const movement = await prisma.stockMovement.create({
+      data: {
+        materialId, type, qty: ledgerQty, unitId: unit.id,
+        note: note || null, createdById: req.user.id,
+      },
+      include: { material: { select: { id: true, code: true, name: true, unit: true } } },
+    });
+    res.status(201).json(movement);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});

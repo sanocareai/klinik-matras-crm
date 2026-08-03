@@ -119,6 +119,11 @@ export const api = {
   },
   // Antrean QC (Production Tahap 3) — unit yang currentStage-nya gerbang QC.
   getQcQueue: () => request("/production/qc-queue"),
+  // Bahan Produksi (Tahap 5) — daftar lintas order seluruh pemakaian bahan.
+  getMaterialUsage: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/material-usage${qs ? `?${qs}` : ""}`);
+  },
   setProductionTargets: (unitIds, { date, note } = {}) =>
     request("/production/targets", { method: "POST", body: JSON.stringify({ unitIds, date, note }) }),
   removeProductionTarget: (targetId) => request(`/production/targets/${targetId}`, { method: "DELETE" }),
@@ -360,6 +365,11 @@ export const api = {
   recordQcFitTest: (unitId, stageId, data) =>
     request(`/units/${unitId}/stages/${stageId}/qc`, { method: "POST", body: JSON.stringify(data) }),
   uploadUnitPhotos: (unitId, formData) => requestFormData(`/units/${unitId}/photos`, formData),
+  // Bahan baku per unit (Production Tahap 5) — ledger stock_movements yang
+  // sama dengan Gudang, tidak lewat alur dokumen MaterialIssue.
+  getUnitMaterials: (unitId) => request(`/units/${unitId}/materials`),
+  addUnitMaterial: (unitId, { materialId, qty, note } = {}) =>
+    request(`/units/${unitId}/materials`, { method: "POST", body: JSON.stringify({ materialId, qty, note }) }),
 
   // Conversations
   // Terima string status (cara lama, tetap didukung) ATAU objek

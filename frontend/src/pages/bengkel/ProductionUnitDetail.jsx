@@ -48,6 +48,15 @@ export default function ProductionUnitDetail() {
   const [preferenceOverride, setPreferenceOverride] = useState("");
   const [educationGiven, setEducationGiven] = useState(false);
 
+  // Bahan Digunakan (Production Tahap 5).
+  const [materialCatalog, setMaterialCatalog] = useState([]);
+  const [materialUsage, setMaterialUsage] = useState(null);
+  const [materialId, setMaterialId] = useState("");
+  const [materialQty, setMaterialQty] = useState("");
+  const [materialNote, setMaterialNote] = useState("");
+  const [materialBusy, setMaterialBusy] = useState(false);
+  const [materialError, setMaterialError] = useState("");
+
   const load = useCallback(() => {
     setLoading(true);
     setError("");
@@ -61,7 +70,14 @@ export default function ProductionUnitDetail() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadMaterials = useCallback(() => {
+    api.getUnitMaterials(id).then(setMaterialUsage).catch((e) => setMaterialError(e.message));
+  }, [id]);
+
+  useEffect(() => { load(); loadMaterials(); }, [load, loadMaterials]);
+  useEffect(() => {
+    api.getMaterials({ active: true }).then(setMaterialCatalog).catch(() => {});
+  }, []);
   useEffect(() => {
     if (data?.needsService) api.getServiceCatalog().then((d) => setServices(d.services)).catch(() => {});
   }, [data?.needsService]);
@@ -147,6 +163,16 @@ export default function ProductionUnitDetail() {
       });
       load();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function catatBahan() {
+    if (!materialId || !materialQty) return;
+    setMaterialBusy(true); setMaterialError("");
+    try {
+      await api.addUnitMaterial(unit.id, { materialId, qty: Number(materialQty), note: materialNote });
+      setMaterialId(""); setMaterialQty(""); setMaterialNote("");
+      loadMaterials();
+    } catch (e) { setMaterialError(e.message); } finally { setMaterialBusy(false); }
   }
 
   async function lewatiTahap() {
@@ -248,6 +274,65 @@ export default function ProductionUnitDetail() {
               </ul>
             </Card>
           )}
+
+          <Card className="overflow-hidden">
+            <CardHeader>
+              <CardTitle>Bahan Digunakan</CardTitle>
+              <CardDescription>Dicatat langsung dari sini — stok gudang berkurang otomatis.</CardDescription>
+            </CardHeader>
+
+            {materialError && <div className="mx-4 mb-2 rounded-btn bg-redbg px-2.5 py-2 text-[11.5px] text-red">{materialError}</div>}
+
+            <div className="flex flex-wrap items-end gap-2 border-b border-line px-4 py-3">
+              <select
+                value={materialId} onChange={(e) => setMaterialId(e.target.value)}
+                className="h-9 min-w-[160px] flex-1 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
+              >
+                <option value="">Pilih bahan…</option>
+                {materialCatalog.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>)}
+              </select>
+              <input
+                type="number" step="any" value={materialQty} onChange={(e) => setMaterialQty(e.target.value)}
+                placeholder="Jumlah (- utk koreksi)"
+                className="h-9 w-[150px] rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              />
+              <input
+                type="text" value={materialNote} onChange={(e) => setMaterialNote(e.target.value)}
+                placeholder="Catatan (opsional)"
+                className="h-9 min-w-[140px] flex-1 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+              />
+              <Button size="sm" onClick={catatBahan} disabled={materialBusy || !materialId || !materialQty}>
+                {materialBusy && <Loader2 size={14} className="animate-spin" />} Catat
+              </Button>
+            </div>
+
+            {materialUsage?.totals.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2.5">
+                {materialUsage.totals.map((t) => (
+                  <Badge key={t.material.id} variant="accent">{t.material.name}: {t.usedQty} {t.material.unit}</Badge>
+                ))}
+              </div>
+            )}
+
+            {materialUsage?.movements.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {materialUsage.movements.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between px-4 py-2 text-[12px]">
+                    <div className="min-w-0">
+                      <span className="font-semibold text-ink">{m.material.name}</span>
+                      <span className="ml-2 text-ink3">{m.createdBy?.name || "—"}</span>
+                      {m.note && <p className="text-[11px] text-ink3">{m.note}</p>}
+                    </div>
+                    <Badge variant={m.type === "ISSUE" ? "accent" : "orange"} className="shrink-0">
+                      {m.type === "ISSUE" ? "" : "-"}{Math.abs(Number(m.qty))} {m.material.unit}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-3 text-[12px] text-ink3">Belum ada bahan dicatat untuk unit ini.</p>
+            )}
+          </Card>
         </div>
 
         <div className="space-y-4">

@@ -34,6 +34,7 @@ const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const ProductionWorkOrders = lazy(() => import("./pages/bengkel/ProductionWorkOrders.jsx"));
 const ProductionUnitDetail = lazy(() => import("./pages/bengkel/ProductionUnitDetail.jsx"));
 const ProductionQcQueue    = lazy(() => import("./pages/bengkel/ProductionQcQueue.jsx"));
+const ProductionMaterialUsage = lazy(() => import("./pages/bengkel/ProductionMaterialUsage.jsx"));
 const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
@@ -218,17 +219,10 @@ export default function App() {
                 />
               }
             />
-            <Route
-              path="/bengkel/material-requests"
-              element={
-                <BengkelPlaceholder
-                  title="Material Request"
-                  subtitle="Permintaan material produksi ke gudang."
-                  phase={5}
-                  description="Alur ini SUDAH JALAN dari sisi gudang (Warehouse Tahap 3, Material Issue dengan sourceType PRODUCTION_WORK_ORDER) — Tahap 5 memberi produksi pintu masuknya sendiri."
-                />
-              }
-            />
+            {/* Tahap 5: DATA NYATA — ledger stock_movements yang sama dengan
+                Gudang (StockMovement.unitId), dicatat langsung tanpa alur
+                dokumen/approval karena gudang & bengkel satu ruangan. */}
+            <Route path="/bengkel/materials" element={<ProductionMaterialUsage />} />
             <Route
               path="/bengkel/reports"
               element={
