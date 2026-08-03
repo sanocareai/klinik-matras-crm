@@ -32,6 +32,7 @@ const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("./pages/Notifications.jsx"));
 const Bengkel       = lazy(() => import("./pages/Bengkel.jsx"));
 const ProductionWorkOrders = lazy(() => import("./pages/bengkel/ProductionWorkOrders.jsx"));
+const ProductionUnitDetail = lazy(() => import("./pages/bengkel/ProductionUnitDetail.jsx"));
 const BengkelPlaceholder   = lazy(() => import("./pages/bengkel/BengkelPlaceholder.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
@@ -197,6 +198,11 @@ export default function App() {
                 harian. Kolom Layanan/Tahap kosong untuk unit hasil backfill,
                 lihat catatan di features/bengkel/unitStatus.js. */}
             <Route path="/bengkel/work-orders" element={<ProductionWorkOrders />} />
+            {/* Tahap 2: DATA NYATA — halaman ini yang menyambungkan UI ke
+                stage engine (start/complete/fail/skip) yang sudah lengkap
+                sejak Phase 0. Termasuk adopsi unit backfill (tetapkan
+                layanan) supaya bisa masuk alur tahap. */}
+            <Route path="/bengkel/units/:id" element={<ProductionUnitDetail />} />
             <Route
               path="/bengkel/qc"
               element={

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ClipboardList, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -34,6 +35,7 @@ const TABS = [
 ];
 
 export default function ProductionWorkOrders() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("");
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
@@ -156,7 +158,7 @@ export default function ProductionWorkOrders() {
                   <TBody>
                     {loading && <TableSkeletonRows rows={8} cols={8} />}
                     {!loading && rows?.map((u) => (
-                      <TR key={u.id}>
+                      <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
                         <TD className="font-semibold text-ink">{u.unitCode}</TD>
                         <TD className="text-ink2">{u.order?.orderNumber || "—"}</TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
@@ -183,19 +185,25 @@ export default function ProductionWorkOrders() {
 
               <ul className="divide-y divide-line lg:hidden">
                 {!loading && rows?.map((u) => (
-                  <li key={u.id} className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[12.5px] font-semibold text-ink">{u.unitCode}</span>
-                      <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"} className="ml-auto shrink-0">
-                        {UNIT_STATUS_REAL[u.status]?.label || u.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-0.5 truncate text-[13px] text-ink">{u.order?.customer?.name || "—"}</div>
-                    <div className="mt-0.5 truncate text-[11px] text-ink2">
-                      {u.order?.orderNumber || "—"}
-                      {(u.merk || u.ukuran) && ` · ${[u.merk, u.ukuran].filter(Boolean).join(" ")}`}
-                      {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
-                    </div>
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/bengkel/units/${u.id}`)}
+                      className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[12.5px] font-semibold text-ink">{u.unitCode}</span>
+                        <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"} className="ml-auto shrink-0">
+                          {UNIT_STATUS_REAL[u.status]?.label || u.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 truncate text-[13px] text-ink">{u.order?.customer?.name || "—"}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-ink2">
+                        {u.order?.orderNumber || "—"}
+                        {(u.merk || u.ukuran) && ` · ${[u.merk, u.ukuran].filter(Boolean).join(" ")}`}
+                        {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
+                      </div>
+                    </button>
                   </li>
                 ))}
               </ul>

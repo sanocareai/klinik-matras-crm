@@ -36,6 +36,25 @@ export const STAGE_PHASE_REAL = {
   FINISH: { label: "Finishing" },
 };
 
+// Status per tahap di timeline (Production Tahap 2) — DITURUNKAN dari
+// unit_stage_logs (lihat GET /units/:id/timeline), bukan kolom tersimpan.
+export const STAGE_LOG_STATUS = {
+  NOT_STARTED: { label: "Belum Dimulai", tone: "neutral" },
+  IN_PROGRESS: { label: "Sedang Berjalan", tone: "accent" },
+  BLOCKED:     { label: "Terhambat",      tone: "red" },
+  DONE:        { label: "Selesai",        tone: "green" },
+  SKIPPED:     { label: "Dilewati",       tone: "neutral" },
+};
+
+// enum BlockReason (PRD §6.2) — WAJIB diisi saat menggagalkan tahap.
+export const BLOCK_REASON_REAL = {
+  MATERIAL_SHORTAGE:          { label: "Bahan Habis" },
+  AWAITING_CUSTOMER_APPROVAL: { label: "Menunggu Persetujuan Pelanggan" },
+  MACHINE_DOWN:               { label: "Mesin Rusak" },
+  QUALITY_ISSUE:              { label: "Masalah Kualitas" },
+  OTHER:                      { label: "Lainnya" },
+};
+
 /**
  * KENYATAAN DATA YANG HARUS DIINGAT — ditulis di sini supaya tidak hilang.
  *

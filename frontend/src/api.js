@@ -342,8 +342,15 @@ export const api = {
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
 
-  // Unit — detail & aksi tahap
+  // Unit — detail & aksi tahap (Production Tahap 2)
   getUnitStatus: (unitId) => request(`/units/${unitId}`),
+  getUnitTimeline: (unitId) => request(`/units/${unitId}/timeline`),
+  startUnitStage: (unitId) => request(`/units/${unitId}/stages/start`, { method: "POST" }),
+  completeUnitStage: (unitId, stageId, { photoUrls, note } = {}) =>
+    request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
+  skipUnitStage: (unitId, note) => request(`/units/${unitId}/stages/skip`, { method: "POST", body: JSON.stringify({ note }) }),
+  setUnitService: (unitId, serviceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId }) }),
+  getServiceCatalog: () => request("/master-data/service-catalog"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
     request(`/units/${unitId}/stages/${stageId}/fail`, {
       method: "POST", body: JSON.stringify({ blockReason, note }),

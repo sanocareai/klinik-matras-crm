@@ -14,6 +14,7 @@ import {
   startStage, completeStage, failStage, skipStage, recordQcFitTest, getUnitStatus,
   StageTransitionError,
 } from "../services/unitStageEngine.js";
+import { buildUnitPath } from "../lib/domain/routing.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
@@ -178,6 +179,67 @@ unitRouter.get("/:id", requirePermission(P.UNIT_READ), async (req, res) => {
     res.json(status);
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "Unit tidak ditemukan" });
+    handleEngineError(err, res);
+  }
+});
+
+// GET /api/units/:id/timeline — jalur PENUH + riwayat ledger, untuk halaman
+// detail unit (Production Tahap 2). BEDA dari GET /:id (getUnitStatus, dipakai
+// kiosk): itu cuma tahu tahap yang harus ditindak SEKARANG, ini menyusun
+// SELURUH tahap jalur beserta status masing-masing — untuk manusia yang
+// ingin melihat progres dari awal, bukan cuma "apa selanjutnya".
+//
+// Status per tahap DIHITUNG dari log yang sama (unit_stage_logs), TIDAK ada
+// sumber kebenaran kedua — kalau log kosong untuk suatu tahap, tahap itu
+// NOT_STARTED, apa adanya (bukan ditebak "mestinya sudah lewat").
+unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const unit = await prisma.unit.findUnique({
+      where: { id: req.params.id },
+      include: {
+        service: true,
+        currentStage: true,
+        order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } } } },
+        qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
+      },
+    });
+    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    const [intakeStages, finishStages, moduleMappings, logs] = await Promise.all([
+      prisma.routingStage.findMany({ where: { phase: "INTAKE", active: true } }),
+      prisma.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
+      unit.serviceId
+        ? prisma.serviceCatalogModule.findMany({ where: { serviceId: unit.serviceId }, orderBy: { sequence: "asc" }, include: { stage: true } })
+        : Promise.resolve([]),
+      prisma.unitStageLog.findMany({
+        where: { unitId: unit.id },
+        include: { actor: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+
+    const path = buildUnitPath(intakeStages, moduleMappings.map((m) => m.stage), finishStages);
+    const logsByStage = {};
+    for (const log of logs) (logsByStage[log.stageId] ??= []).push(log);
+
+    const timeline = path.map((stage) => {
+      const stageLogs = logsByStage[stage.id] || [];
+      const last = stageLogs[stageLogs.length - 1] || null;
+      let status = "NOT_STARTED";
+      if (last) {
+        if (last.action === "START") status = "IN_PROGRESS";
+        else if (last.action === "FAIL") status = "BLOCKED";
+        else if (last.action === "COMPLETE") status = "DONE";
+        else if (last.action === "SKIP") status = "SKIPPED";
+      }
+      return { stage, status, logs: stageLogs, isCurrent: unit.currentStageId === stage.id };
+    });
+
+    res.json({
+      unit, path: timeline, qcFitTests: unit.qcFitTests,
+      needsService: !unit.serviceId,
+    });
+  } catch (err) {
     handleEngineError(err, res);
   }
 });
