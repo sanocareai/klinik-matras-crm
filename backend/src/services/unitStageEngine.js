@@ -20,6 +20,7 @@ import {
   buildUnitPath, getNextStage, isLastStage, isLastIntakeStage, findComfortLayerModule,
 } from "../lib/domain/routing.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
+import { suggestDeliveryJob } from "./deliveryHandoff.js";
 
 class StageTransitionError extends Error {
   constructor(message, statusCode = 400) {
@@ -337,6 +338,7 @@ async function advanceUnitPastStage(tx, unitId, stage) {
     // bisa dibaca dari unit tanpa query ke ledger.
     await tx.unit.update({ where: { id: unitId }, data: { status: "READY_FOR_DELIVERY" } });
     await syncOrderStatus(tx, unit.orderId);
+    await suggestDeliveryJob(tx, unitId);
   } else {
     const next = getNextStage(path, stage.id);
     await tx.unit.update({ where: { id: unitId }, data: { currentStageId: next.id } });
