@@ -171,10 +171,15 @@ export default function PelangganScreen({ navigation }) {
     });
   }
 
-  // Daftar sales utk picker — role SALES saja (ADMIN tidak "menangani" chat
-  // sebagai sales), sama pola exclude-ADMIN yang dipakai cs-performance.
+  // Daftar sales utk picker — role SALES lewat kolom lama ATAU peran
+  // tambahan SALES (D-010, mis. admin/leader yang kadang turun tangan
+  // jualan sendiri — lihat Pengguna & Peran). GET /users sudah balikin
+  // array `roles` gabungan (lihat backend/src/routes/users.js), jadi
+  // dicek dari situ, bukan cuma exclude-ADMIN pola lama.
   useEffect(() => {
-    api.getUsers().then((list) => setSalesUsers((list || []).filter((u) => u.role !== "ADMIN"))).catch(() => {});
+    api.getUsers().then((list) => setSalesUsers((list || []).filter((u) =>
+      (Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role]).includes("SALES")
+    ))).catch(() => {});
   }, []);
 
   // Muat 1 halaman List view. targetPage dikirim eksplisit (bukan dari state

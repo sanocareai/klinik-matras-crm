@@ -24,6 +24,20 @@ function buildDateWhere(from, to, field = "createdAt") {
   return { [field]: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } };
 }
 
+// Peran EFEKTIF (D-010, aditif): beberapa admin/leader (mis. Novi) KADANG
+// turun tangan pegang percakapan & closing sendiri, walau peran utamanya
+// (kolom `User.role` lama) tetap ADMIN. Sistem multi-role (UserRole, lihat
+// POST/DELETE /api/users/:id/roles, UI di Pengguna & Peran) sudah bisa
+// memberi peran TAMBAHAN "SALES" ke akun begitu — tapi laporan sales di
+// bawah ini sebelumnya hanya membaca kolom `role` tunggal, jadi admin yang
+// sudah diberi peran tambahan SALES tetap tidak pernah muncul di
+// Laporan Sales / Target Sales. Helper ini mengembalikan Set userId yang
+// punya peran SALES lewat pemberian tambahan (bukan cuma kolom `role`).
+async function grantedSalesUserIds() {
+  const rows = await prisma.userRole.findMany({ where: { role: "SALES" }, select: { userId: true } });
+  return new Set(rows.map((r) => r.userId));
+}
+
 // Periode sebelumnya dengan PANJANG SAMA, tepat bersambung sebelum `from`.
 // Contoh: 1-30 Juni (30 hari) → periode sebelumnya 2-31 Mei (30 hari).
 function buildPrevRange(from, to) {
@@ -454,11 +468,15 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
     const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
 
-    const users = await prisma.user.findMany({
-      where: { role: { not: "ADMIN" } },
-      select: { id: true, name: true, avatarUrl: true },
+    const grantedSalesIds = await grantedSalesUserIds();
+    const usersRaw = await prisma.user.findMany({
+      select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });
+    // "not ADMIN" seperti sebelumnya (semua role non-admin tetap ikut,
+    // termasuk PRODUCTION_LEAD dkk kalau kebetulan ada — perilaku lama
+    // dipertahankan), DITAMBAH admin yang sudah diberi peran tambahan SALES.
+    const users = usersRaw.filter((u) => u.role !== "ADMIN" || grantedSalesIds.has(u.id));
 
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
@@ -1032,10 +1050,14 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
     const startOfMonth = startOfMonthWIB(year, month);
     const endOfMonth   = endOfMonthExclusiveWIB(year, month); // exclusive
 
-    const salesUsers = await prisma.user.findMany({
-      where: { role: "SALES" },
+    const grantedSalesIds = await grantedSalesUserIds();
+    const salesUsersRaw = await prisma.user.findMany({
+      select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });
+    // role === SALES seperti sebelumnya, DITAMBAH admin/leader yang sudah
+    // diberi peran tambahan SALES (lihat catatan grantedSalesUserIds di atas).
+    const salesUsers = salesUsersRaw.filter((u) => u.role === "SALES" || grantedSalesIds.has(u.id));
 
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
