@@ -210,14 +210,36 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
     setEditing(false);
   }
 
+  // Order yang sudah punya unit/job/pembayaran TIDAK BISA dihapus permanen
+  // (RESTRICT di backend, lihat routes/orders.js) — riwayat produksi/uang
+  // tidak boleh hilang diam-diam. Kalau delete ditolak (409) karena itu,
+  // tawarkan "Batalkan" sebagai alternatif: order & unit-nya (kalau belum
+  // disentuh bengkel) ditandai CANCELLED, bukan dihapus — aman untuk kasus
+  // salah input, tapi backend TETAP menolak kalau unitnya sudah mulai
+  // dikerjakan/sudah ada pembayaran (itu bukan lagi salah input murni).
   async function handleDelete() {
-    if (!confirm("Hapus order ini? Semua item & data terkait juga akan dihapus.")) return;
+    if (!confirm("Hapus order ini secara permanen? Semua item & data terkait juga akan dihapus.")) return;
     setDeleting(true);
     try {
       await api.deleteOrder(order.id);
       onDelete(order.id);
     } catch (err) {
-      alert(err.message);
+      if (err.status === 409) {
+        const lanjut = confirm(
+          `${err.message}\n\nMau ditandai "Dibatalkan" saja (bukan dihapus permanen — nilainya tidak dihitung lagi tapi riwayatnya tetap tersimpan)?`
+        );
+        if (lanjut) {
+          const alasan = prompt("Alasan pembatalan (opsional):", "Salah input") || "";
+          try {
+            await api.cancelOrder(order.id, alasan);
+            onRefresh();
+          } catch (err2) {
+            alert(err2.message);
+          }
+        }
+      } else {
+        alert(err.message);
+      }
       setDeleting(false);
     }
   }

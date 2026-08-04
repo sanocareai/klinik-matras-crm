@@ -404,6 +404,83 @@ orderRouter.delete("/:id", async (req, res) => {
   }
 });
 
+// POST /api/orders/:id/cancel — "hapus" yang aman untuk order yang sudah
+// punya unit/job/pembayaran (RESTRICT di atas menolak hard-delete-nya).
+//
+// Order & unit TIDAK DIHAPUS (riwayat tetap ada untuk ditelusuri), cuma
+// ditandai CANCELLED — sama seperti PATCH /:id { status } (D-006, statusLocked
+// menang mutlak dari sync otomatis), plus unit-unitnya ikut ditandai
+// CANCELLED dalam transaksi yang sama.
+//
+// TETAP DITOLAK kalau ada unit yang SUDAH mulai dikerjakan bengkel
+// (currentStageId terisi), sudah ada pembayaran, penjadwalan pickup/
+// pengiriman, atau revisi lingkup kerja — itu bukan lagi "salah input murni",
+// ada uang/jadwal/pekerjaan fisik nyata yang perlu ditangani manusia secara
+// sadar lewat admin/Kendali, bukan tombol otomatis dari drawer Pelanggan.
+orderRouter.post("/:id/cancel", async (req, res) => {
+  const { reason } = req.body;
+  try {
+    const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (order.status === "CANCELLED") return res.json(order);
+
+    const [units, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
+      prisma.unit.findMany({
+        where: { orderId: req.params.id },
+        select: { id: true, status: true, currentStageId: true, unitCode: true },
+      }),
+      prisma.job.count({ where: { orderId: req.params.id } }),
+      prisma.payment.count({ where: { orderId: req.params.id } }),
+      prisma.scopeRevision.count({ where: { orderId: req.params.id } }),
+    ]);
+    const inFlightUnits = units.filter(
+      (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
+    );
+
+    const blockers = [];
+    if (inFlightUnits.length > 0) {
+      blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
+    }
+    if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
+    if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
+    if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
+
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        error: `Order tidak bisa dibatalkan otomatis karena sudah ada ${blockers.join(", ")} — butuh penanganan manual admin/Kendali, bukan sekadar salah input.`,
+      });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (units.length > 0) {
+        await tx.unit.updateMany({
+          where: { id: { in: units.map((u) => u.id) }, status: { not: "CANCELLED" } },
+          data: { status: "CANCELLED" },
+        });
+      }
+      const result = await tx.order.update({
+        where: { id: req.params.id },
+        data: {
+          status: "CANCELLED", statusLocked: true,
+          statusOverrideById: req.user?.id || null,
+          statusOverrideAt: new Date(),
+          statusOverrideNote: reason?.trim() || "Dibatalkan — salah input",
+        },
+      });
+      await tx.orderStatusTransition.create({
+        data: { orderId: result.id, fromStatus: order.status, toStatus: "CANCELLED", changedById: req.user?.id || null },
+      });
+      return result;
+    });
+
+    await syncCustomerOrderAggregate(updated.customerId);
+    res.json(updated);
+  } catch (err) {
+    console.error("cancel order error:", err);
+    res.status(500).json({ error: "Gagal membatalkan order" });
+  }
+});
+
 // PATCH /api/orders/:id/complaint — tandai order sebagai komplain
 // Hanya bisa kalau status order sudah DELIVERED
 orderRouter.patch("/:id/complaint", async (req, res) => {

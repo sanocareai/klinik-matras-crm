@@ -37,7 +37,10 @@ async function request(path, options = {}) {
       const text = await res.text();
       let msg = "Terjadi kesalahan";
       try { msg = JSON.parse(text).error || msg; } catch {}
-      throw new Error(msg);
+      // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
+      // membedakan "diblokir karena ada data terkait" (409) dari error lain
+      // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
+      throw Object.assign(new Error(msg), { status: res.status });
     }
     return res.json();
   } catch (err) {
@@ -508,6 +511,13 @@ export const api = {
   getOrderPayments: (orderId) => api.getPayments({ orderId }),
   deleteOrder: (orderId) =>
     request(`/orders/${orderId}`, { method: "DELETE" }),
+  // Alternatif hapus permanen — untuk order yang sudah punya unit/job/
+  // pembayaran (delete permanen ditolak backend, lihat routes/orders.js).
+  // Order & unit yang BELUM disentuh bengkel (currentStage kosong) ditandai
+  // CANCELLED (statusLocked, riwayat tetap ada); kalau ada unit yang SUDAH
+  // mulai dikerjakan, backend menolak dan minta dibatalkan manual di Kendali.
+  cancelOrder: (orderId, reason) =>
+    request(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   markOrderComplaint: (orderId, data) =>
     request(`/orders/${orderId}/complaint`, { method: "PATCH", body: JSON.stringify(data) }),
   addWeightEntry: (orderId, data) =>
