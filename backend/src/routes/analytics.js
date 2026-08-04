@@ -490,7 +490,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       const [
         handled, replied, resolved, stalledRaw,
         stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
-        paidRaw, orderingCustomers, takeoverRaw, neverReplied,
+        neverReplied, paidRaw, orderingCustomers, takeoverRaw,
       ] = await Promise.all([
         prisma.conversation.count({ where: mine }),
         // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
