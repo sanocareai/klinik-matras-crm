@@ -93,7 +93,7 @@ async function request(path, options = {}) {
 // ekstensi nama file — lihat backend/src/routes/conversations.js), jadi aman.
 // fields: object string key-value tambahan (caption, sendAs, dst) — dikirim
 // sebagai form field biasa lewat `parameters`.
-async function uploadFile(path, file, fields) {
+async function uploadFile(path, file, fields, fieldName = "file") {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000); // media bisa besar — 2 menit
 
@@ -102,7 +102,7 @@ async function uploadFile(path, file, fields) {
     const result = await fileRef.upload(`${serverUrl}/api${path}`, {
       httpMethod: "POST",
       uploadType: UploadType.MULTIPART,
-      fieldName: "file",
+      fieldName,
       mimeType: file.type,
       parameters: fields,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -335,6 +335,17 @@ export const api = {
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,
   // cuma dipakai untuk prefill form, sama seperti send-product di chat).
   getProducts: () => request("/products"),
+  // Buat produk baru — sales sekarang juga boleh (sebelumnya admin-only di
+  // web, mobile belum punya sama sekali). Backend membatasi edit/hapus
+  // HANYA ke pembuatnya sendiri (lihat routes/products.js#requireOwnerOrAdmin),
+  // create-nya sendiri terbuka untuk semua user login.
+  createProduct: (data) => request("/products", { method: "POST", body: JSON.stringify(data) }),
+  // file = { uri, name, type } dari expo-image-picker, SATU per panggilan —
+  // endpoint web menerima array lewat multer.array("images"), tapi
+  // File.upload() (expo-file-system) di New Architecture cuma bisa kirim 1
+  // file per request (lihat catatan uploadFile di atas), jadi dipanggil
+  // berkali-kali (1x per foto) alih-alih 1 request multi-file.
+  uploadProductImage: (productId, file) => uploadFile(`/products/${productId}/images`, file, {}, "images"),
   // Kirim foto produk langsung ke chat — endpoint & payload SAMA PERSIS
   // dengan web (frontend/src/components/ProductPicker.jsx), dipakai
   // components/ProductPicker.js mobile (gap yang diperbaiki 26 Jul 2026:

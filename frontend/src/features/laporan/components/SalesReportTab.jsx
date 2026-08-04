@@ -40,10 +40,11 @@ function toneRespons(menit) {
 }
 
 const KOLOM = [
-  { k: "handled",    label: "Ditangani",  title: "Percakapan yang di-assign ke orang ini pada periode terpilih" },
+  { k: "handledOwn", label: "Ditangani",  title: "Percakapan yang DIA KLAIM/PEGANG SENDIRI dari awal pada periode terpilih (tidak termasuk warisan Ambil Alih)" },
+  { k: "handledTakeover", label: "Warisan", title: "Percakapan yang berpindah ke dia lewat Ambil/Ambil Alih dari sales lain — bukan tanggung jawab penanganan asli dia" },
   { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
   { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
-  { k: "slaBreach",  label: "SLA >1j",    title: "Jumlah percakapan yang balasan pertamanya lebih dari 60 menit" },
+  { k: "slaBreach",  label: "SLA >1j",    title: "Balasan pertama >60 menit, DITAMBAH percakapan yang ditutup (RESOLVED) tanpa satu pun balasan sama sekali — supaya lead yang diabaikan total sampai ditutup tidak lolos dari radar" },
   { k: "qualified",  label: "Qualified*", title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Qualified (tidak mengikuti rentang tanggal)" },
   { k: "quoted",     label: "Quoted*",    title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Quoted (tidak mengikuti rentang tanggal)" },
   { k: "orderingCustomers", label: "Order-in", title: "Pelanggan yang membuat order DI DALAM periode terpilih" },
@@ -66,7 +67,7 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
   const konversiList = aktif.map((r) => r.orderConversionRate).filter((v) => v != null).sort((a, b) => a - b);
   const median = konversiList.length > 0 ? konversiList[Math.floor(konversiList.length / 2)] : null;
 
-  const maxHandled = Math.max(1, ...rows.map((r) => r.handled));
+  const maxHandled = Math.max(1, ...rows.map((r) => r.handledOwn));
   const maxNilai   = Math.max(1, ...rows.map((r) => r.grossValue));
   const maxRespons = Math.max(1, ...rows.map((r) => r.avgResponseMinutes || 0));
 
@@ -131,7 +132,10 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
             )}
             {total?.slaBreach > 0 && (
               <>Pada periode terpilih ada <strong>{total.slaBreach} percakapan</strong> yang
-              balasan pertamanya lewat 60 menit. </>
+              balasan pertamanya lewat 60 menit{total?.neverReplied > 0 && (
+                <> (termasuk <strong>{total.neverReplied}</strong> yang ditutup tanpa
+                dibalas sama sekali)</>
+              )}. </>
             )}
             Ini kebocoran lead yang paling murah untuk diperbaiki.
           </p>
@@ -153,7 +157,10 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-ink">{r.name}</p>
                   <p className="text-xs text-ink3">
-                    {r.handled} percakapan · {formatDuration(r.avgResponseMinutes)}
+                    {r.handledOwn} percakapan · {formatDuration(r.avgResponseMinutes)}
+                    {r.handledTakeover > 0 && (
+                      <span className="ml-1.5">· +{r.handledTakeover} warisan takeover</span>
+                    )}
                     {r.stalled > 0 && (
                       <span className="ml-1.5 font-semibold text-orange">· {r.stalled} menggantung</span>
                     )}
@@ -240,12 +247,26 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
 
       {/* ── Beban vs hasil ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <ChartCard index={6} title="Beban Percakapan" description="Siapa memegang paling banyak">
+        <ChartCard
+          index={6} title="Beban Percakapan"
+          description="Percakapan yang diklaim/dipegang sendiri sejak awal — tidak termasuk warisan Ambil Alih"
+        >
           <div className="flex flex-col gap-2.5">
-            {rows.filter((r) => r.handled > 0).map((r) => (
-              <BarRow key={r.userId} label={r.name} value={r.handled} max={maxHandled} display={`${r.handled}`} />
+            {rows.filter((r) => r.handledOwn > 0 || r.handledTakeover > 0).map((r) => (
+              <BarRow
+                key={r.userId} label={r.name} value={r.handledOwn} max={maxHandled}
+                display={`${r.handledOwn}`}
+                sub={r.handledTakeover > 0 ? `+${r.handledTakeover} warisan takeover` : undefined}
+              />
             ))}
           </div>
+          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
+            "Warisan takeover" = percakapan yang berpindah ke orang ini lewat
+            Ambil/Ambil Alih dari sales lain (biasanya lead mangkrak yang
+            sudah dingin) — sengaja dipisah supaya sales yang rajin
+            membersihkan chat mangkrak tidak tampak "paling sibuk" padahal
+            beban itu bukan hasil penanganannya sendiri sejak awal.
+          </p>
         </ChartCard>
 
         <ChartCard index={7} title="Nilai Penjualan" description="Hasil dari beban di sebelah">
@@ -290,7 +311,8 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-surface px-3 py-2.5 font-semibold text-ink">
                       {r.name}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handled}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.handledTakeover}</td>
                     <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", r.stalled > 0 ? "text-orange" : "text-ink3")}>
                       {r.stalled}
                     </td>
@@ -323,7 +345,8 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
                 <tfoot>
                   <tr className="border-t-2 border-line font-bold">
                     <td className="sticky left-0 z-10 bg-surface px-3 py-2.5 text-ink">Total tim</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.handled}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.handledOwn}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{total.handledTakeover}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-orange">{total.stalled}</td>
                     {/* Rata-rata respons tim SENGAJA em-dash: merata-ratakan
                         rata-rata per orang tanpa membobot jumlah percakapan

@@ -426,6 +426,21 @@ analyticsRouter.get("/business-summary", async (req, res) => {
 // "Dibalas" = ada MINIMAL SATU pesan OUTBOUND di percakapan itu. Ini yang
 // membedakan sales yang benar-benar merespons dari yang cuma "kebagian"
 // percakapan — masalah nyata yang jadi alasan fitur takeover dibuat.
+//
+// REVISI 4 Agustus 2026 — `assignedToId` BERPINDAH TANGAN saat "Ambil"/
+// "Ambil Alih" dipakai (lihat routes/conversations.js), jadi memakainya
+// mentah-mentah untuk `handled` ("Beban Percakapan") menghitung riwayat
+// percakapan orang lain yang diwarisi lewat takeover sebagai milik penuh
+// pengambil-alih — sales yang rajin membersihkan chat mangkrak (biasanya
+// lead dingin yang sudah gagal duluan) tampak PALING SIBUK dan PALING
+// RENDAH closing rate-nya, padahal itu bukan performa dia. Sekarang
+// dipecah: `handled` tetap "beban SEKARANG" (dipakai untuk operasional/
+// antrean), `handledOwn` = bagian yang dia pegang sejak klaim pertama
+// (dipakai untuk menilai performa), `handledTakeover` = sisanya (warisan).
+// Lihat query HandoverEvent di bawah. Metrik waktu respons pertama juga
+// dipindah dari `assignedToId` ke `Conversation.firstResponderId`
+// (immutable, tidak ikut berpindah saat takeover) supaya kecepatan
+// membalas tetap menempel ke orang yang benar-benar mengetik balasannya.
 analyticsRouter.get("/sales-report", async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -475,7 +490,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       const [
         handled, replied, resolved, stalledRaw,
         stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
-        paidRaw, orderingCustomers,
+        paidRaw, orderingCustomers, takeoverRaw, neverReplied,
       ] = await Promise.all([
         prisma.conversation.count({ where: mine }),
         // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
@@ -544,23 +559,31 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         }),
 
         // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
-        // pertama), DIBATASI percakapan yang dibuat dalam rentang. JOIN ke
-        // Conversation supaya grup WA internal & percakapan sales lain tidak
-        // ikut terhitung.
+        // pertama), DIBATASI percakapan yang dibuat dalam rentang.
+        //
+        // ATRIBUSI DIPERBAIKI: JOIN memakai `c."firstResponderId"` (siapa
+        // yang SUNGGUHAN mengirim balasan pertama, diset SEKALI dan tidak
+        // pernah berubah — lihat model Conversation di schema.prisma), BUKAN
+        // `c."assignedToId"` (bisa berpindah tangan lewat "Ambil Alih").
+        // Sebelumnya field ini dipakai, jadi kalau sales A membalas cepat
+        // lalu percakapan di-takeover sales B (mis. lanjut chat basa-basi
+        // berbulan-bulan kemudian), waktu respons A yang sebenarnya cepat
+        // malah tercatat sebagai milik B — mencemari rata-rata B dengan
+        // performa orang lain.
         prisma.$queryRaw`
           SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
                  COUNT(*)::int AS sample
           FROM (
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
             FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-            WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
               AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
             GROUP BY 1
           ) i
           JOIN (
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
             FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-            WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
               AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
             GROUP BY 1
           ) o ON i."conversationId" = o."conversationId"
@@ -568,27 +591,48 @@ analyticsRouter.get("/sales-report", async (req, res) => {
 
         // SLA breach = percakapan (dibuat dalam rentang) yang respons
         // pertamanya > 60 menit. Ambang 60 menit mengikuti aturan takeover
-        // yang sudah dipakai di Inbox.
+        // yang sudah dipakai di Inbox. Sama seperti di atas, dihitung dari
+        // `firstResponderId` — siapa yang benar-benar terlambat membalas.
         prisma.$queryRaw`
           SELECT COUNT(*)::int AS n FROM (
             SELECT i."conversationId"
             FROM (
               SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
               FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
                 AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
               GROUP BY 1
             ) i
             JOIN (
               SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
               FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+              WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
                 AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
               GROUP BY 1
             ) o ON i."conversationId" = o."conversationId"
             WHERE o."createdAt" > i."createdAt"
               AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
           ) t`,
+
+        // BUG YANG DIPERBAIKI (5 Agustus 2026): `respRaw`/SLA breach di atas
+        // memakai INNER JOIN inbound↔outbound — percakapan yang TIDAK
+        // PERNAH dibalas sama sekali (tidak ada pesan OUTBOUND) otomatis
+        // TIDAK IKUT terhitung sama sekali, bukannya dianggap "sangat
+        // terlambat". Kalau percakapan itu masih OPEN itu tertutup oleh
+        // `stalled` di atas (last message inbound & >60 menit, status
+        // != RESOLVED) — TAPI begitu ditandai RESOLVED (oleh siapa pun,
+        // termasuk auto-resolve), ia lolos dari stalled JUGA (excluded by
+        // status filter), jadi lolos dari SEMUA sinyal: avg respons, SLA
+        // breach, dan menggantung. Sales yang mengabaikan lead lalu
+        // percakapannya ditutup begitu saja tidak pernah tercatat sebagai
+        // pelanggaran apa pun. Dihitung terpisah di sini dan digabung ke
+        // `slaBreach` supaya tidak ada celah "menghilang" dari radar.
+        //
+        // Diatribusikan ke `assignedToId` (bukan `firstResponderId`, yang
+        // NULL untuk percakapan begini — tidak ada yang pernah membalas).
+        prisma.conversation.count({
+          where: { ...mine, status: "RESOLVED", messages: { none: { direction: "OUTBOUND" } } },
+        }),
 
         // Berapa customer PINDAH ke COMPLETED (dulu PAID, dihapus dari
         // pipeline — lihat schema.prisma enum PipelineStage) di dalam
@@ -615,6 +659,33 @@ analyticsRouter.get("/sales-report", async (req, res) => {
             orders: { some: { ...buildDateWhere(from, to), status: { not: "CANCELLED" } } },
           },
         }),
+
+        // Dari `handled` (percakapan yang SEKARANG dia pegang, dibuat dalam
+        // rentang), berapa yang datang lewat AMBIL/AMBIL ALIH dari orang lain
+        // — bukan dia yang klaim/pegang dari awal. HandoverEvent dicatat
+        // SETIAP kali assignedToId berpindah (lihat routes/conversations.js
+        // takeover & transfer), jadi event TERAKHIR per percakapan selalu
+        // mencerminkan siapa pemilik SEKARANG. Kalau event terakhir itu
+        // punya fromUserId (artinya pindah tangan dari seseorang, bukan
+        // klaim pertama dari percakapan yang belum ber-pemilik), percakapan
+        // ini "beban warisan", bukan tanggung jawab asli dia.
+        //
+        // BUG YANG DIPERBAIKI: sebelumnya `handled` dipakai apa adanya
+        // sebagai "Beban Percakapan" di Laporan — sales yang rajin
+        // Ambil Alih chat mangkrak (biasanya lead dingin yang sudah gagal
+        // duluan) angkanya jadi TERTINGGI, padahal bukan dia yang aktif
+        // menangani sejak awal, dan closing rate-nya wajar rendah karena
+        // yang dia warisi memang sudah sulit dikonversi.
+        prisma.$queryRaw`
+          SELECT COUNT(*)::int AS n
+          FROM "Conversation" c
+          WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+            AND (
+              SELECT he."fromUserId" FROM "HandoverEvent" he
+              WHERE he."conversationId" = c.id
+              ORDER BY he."createdAt" DESC LIMIT 1
+            ) IS NOT NULL`,
       ]);
 
       const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
@@ -629,12 +700,26 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         userId: u.id, name: u.name, avatarUrl: u.avatarUrl,
 
         // Aktivitas
+        // `handled` = total percakapan yang SEKARANG dia pegang (beban kerja
+        // saat ini, termasuk warisan takeover — berguna untuk tahu antrean
+        // riil). `handledOwn` = bagian dari situ yang dia pegang dari awal
+        // (klaim pertama, bukan pindahan) — inilah yang mencerminkan
+        // performa penanganan sendiri. `handledTakeover` = sisanya (warisan
+        // dari Ambil/Ambil Alih orang lain). UI "Beban Percakapan" dan
+        // leaderboard HARUS memakai `handledOwn`, bukan `handled` mentah.
         handled, replied, resolved,
+        handledTakeover: takeoverRaw[0]?.n || 0,
+        handledOwn: handled - (takeoverRaw[0]?.n || 0),
         stalled: stalledRaw[0]?.n || 0,
         replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
         avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
         respondedSample: respRaw[0]?.sample || 0,
-        slaBreach: slaBreach[0]?.n || 0,
+        // `neverReplied` = percakapan yang RESOLVED tanpa satu pun balasan
+        // (lihat catatan query di atas) — digabung ke slaBreach supaya
+        // selalu ikut tampil di kolom "SLA >1j" yang sudah ada, tapi juga
+        // diekspos terpisah untuk UI yang mau menyorotnya secara eksplisit.
+        neverReplied: neverReplied || 0,
+        slaBreach: (slaBreach[0]?.n || 0) + (neverReplied || 0),
 
         // POSISI SAAT INI (bukan aliran periode) — sengaja tidak difilter
         // tanggal, dan UI WAJIB melabelinya begitu.
@@ -692,14 +777,16 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     // menjumlahkan rata-rata, kesalahan klasik di laporan seperti ini).
     const t = rows.reduce((a, r) => ({
       handled: a.handled + r.handled, replied: a.replied + r.replied,
+      handledOwn: a.handledOwn + r.handledOwn, handledTakeover: a.handledTakeover + r.handledTakeover,
       stalled: a.stalled + r.stalled,
       orders: a.orders + r.orders, grossValue: a.grossValue + r.grossValue,
       collectedValue: a.collectedValue + r.collectedValue,
       paidCustomers: a.paidCustomers + r.paidCustomers,
       orderingCustomers: a.orderingCustomers + r.orderingCustomers,
-      slaBreach: a.slaBreach + r.slaBreach, complaints: a.complaints + r.complaints,
+      slaBreach: a.slaBreach + r.slaBreach, neverReplied: a.neverReplied + r.neverReplied,
+      complaints: a.complaints + r.complaints,
       target: a.target + r.target,
-    }), { handled: 0, replied: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, slaBreach: 0, complaints: 0, target: 0 });
+    }), { handled: 0, replied: 0, handledOwn: 0, handledTakeover: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, slaBreach: 0, neverReplied: 0, complaints: 0, target: 0 });
 
     res.json({
       periodeTarget: { year, month },

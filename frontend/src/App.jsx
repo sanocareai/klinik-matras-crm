@@ -339,7 +339,7 @@ export default function App() {
             <Route path="/laporan"     element={<Laporan />} />
             <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
             <Route path="/pengguna"    element={<Pengguna user={user} />} />
-            <Route path="/products"    element={<Products />} />
+            <Route path="/products"    element={<Products user={user} />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
             <Route path="/copilot"     element={<CoPilot />} />
             {/* Notification Center — kejadian LINTAS workspace. Sengaja BUKAN

@@ -4,10 +4,49 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { prisma } from "../db.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 
 export const productRouter = express.Router();
 productRouter.use(requireAuth);
+
+// Sales sekarang boleh menambah produk Galeri sendiri (sebelumnya
+// admin-only) supaya tidak perlu minta admin tiap kali ada produk/varian
+// baru. TAPI edit/hapus produk tetap dibatasi: admin boleh apa saja, sales
+// hanya boleh produk buatannya SENDIRI (createdById) — supaya sales tidak
+// bisa mengubah harga/foto produk orang lain (termasuk katalog resmi admin).
+async function requireOwnerOrAdmin(req, res, next) {
+  if (rolesOf(req.user).includes("ADMIN")) return next();
+  try {
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) return res.status(404).json({ error: "Produk tidak ditemukan" });
+    if (product.createdById !== req.user.id) {
+      return res.status(403).json({ error: "Produk ini dibuat orang lain — hanya admin atau pembuatnya yang bisa mengubah/menghapus" });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// Sama seperti di atas, tapi untuk route bergantung pada :id GAMBAR
+// (image), bukan :id PRODUK — perlu 1 join tambahan untuk cari pemiliknya.
+async function requireImageOwnerOrAdmin(req, res, next) {
+  if (rolesOf(req.user).includes("ADMIN")) return next();
+  try {
+    const image = await prisma.productImage.findUnique({
+      where: { id: req.params.imageId },
+      include: { product: true },
+    });
+    if (!image) return res.status(404).json({ error: "Gambar tidak ditemukan" });
+    if (image.product.createdById !== req.user.id) {
+      return res.status(403).json({ error: "Produk ini dibuat orang lain — hanya admin atau pembuatnya yang bisa mengubah/menghapus" });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url));
 const productsDir = path.join(__dirname, "../../data/products");
@@ -45,10 +84,16 @@ productRouter.get("/", async (req, res) => {
   }
 });
 
-// ── GET /api/products/all — termasuk non-aktif (admin) ──────────────────────
-productRouter.get("/all", requireAdmin, async (req, res) => {
+// ── GET /api/products/all — termasuk non-aktif ───────────────────────────────
+// Admin melihat SEMUA produk (buatan siapa pun). Sales hanya melihat produk
+// buatannya SENDIRI di sini (dipakai halaman "Produk Saya") — daftar aktif
+// biasa (GET /) sudah menampilkan produk semua orang yang aktif, jadi endpoint
+// ini tidak perlu membocorkan draft/non-aktif milik sales lain.
+productRouter.get("/all", async (req, res) => {
   try {
+    const isAdmin = rolesOf(req.user).includes("ADMIN");
     const products = await prisma.product.findMany({
+      where: isAdmin ? {} : { createdById: req.user.id },
       include: { images: { orderBy: { sortOrder: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
@@ -58,8 +103,8 @@ productRouter.get("/all", requireAdmin, async (req, res) => {
   }
 });
 
-// ── POST /api/products — buat produk baru (admin) ───────────────────────────
-productRouter.post("/", requireAdmin, async (req, res) => {
+// ── POST /api/products — buat produk baru (semua user login, termasuk sales) ─
+productRouter.post("/", async (req, res) => {
   const { name, description, category, price, priceUnit } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Nama produk wajib diisi" });
   try {
@@ -72,6 +117,7 @@ productRouter.post("/", requireAdmin, async (req, res) => {
         price: price ? parseInt(price) : null,
         priceUnit: priceUnit?.trim() || null,
         sortOrder: count,
+        createdById: req.user.id,
       },
       include: { images: true },
     });
@@ -81,8 +127,8 @@ productRouter.post("/", requireAdmin, async (req, res) => {
   }
 });
 
-// ── PATCH /api/products/:id — update produk (admin) ─────────────────────────
-productRouter.patch("/:id", requireAdmin, async (req, res) => {
+// ── PATCH /api/products/:id — update produk (admin, atau sales pembuatnya) ──
+productRouter.patch("/:id", requireOwnerOrAdmin, async (req, res) => {
   const { name, description, category, price, priceUnit, active, sortOrder } = req.body;
   const data = {};
   if (name !== undefined)        data.name        = name.trim();
@@ -105,8 +151,8 @@ productRouter.patch("/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// ── DELETE /api/products/:id — hapus produk (admin) ─────────────────────────
-productRouter.delete("/:id", requireAdmin, async (req, res) => {
+// ── DELETE /api/products/:id — hapus produk (admin, atau sales pembuatnya) ──
+productRouter.delete("/:id", requireOwnerOrAdmin, async (req, res) => {
   try {
     const images = await prisma.productImage.findMany({ where: { productId: req.params.id } });
     for (const img of images) {
@@ -121,8 +167,8 @@ productRouter.delete("/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// ── POST /api/products/:id/images — upload gambar (admin) ───────────────────
-productRouter.post("/:id/images", requireAdmin, upload.array("images", 10), async (req, res) => {
+// ── POST /api/products/:id/images — upload gambar (admin, atau sales pembuatnya) ─
+productRouter.post("/:id/images", requireOwnerOrAdmin, upload.array("images", 10), async (req, res) => {
   try {
     const product = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!product) return res.status(404).json({ error: "Produk tidak ditemukan" });
@@ -149,8 +195,8 @@ productRouter.post("/:id/images", requireAdmin, upload.array("images", 10), asyn
   }
 });
 
-// ── PATCH /api/products/images/:imageId — update label/urutan (admin) ───────
-productRouter.patch("/images/:imageId", requireAdmin, async (req, res) => {
+// ── PATCH /api/products/images/:imageId — update label/urutan (admin, atau sales pembuatnya) ─
+productRouter.patch("/images/:imageId", requireImageOwnerOrAdmin, async (req, res) => {
   const { label, sortOrder } = req.body;
   const data = {};
   if (label !== undefined)     data.label     = label?.trim() || null;
@@ -166,8 +212,8 @@ productRouter.patch("/images/:imageId", requireAdmin, async (req, res) => {
   }
 });
 
-// ── DELETE /api/products/images/:imageId — hapus gambar (admin) ─────────────
-productRouter.delete("/images/:imageId", requireAdmin, async (req, res) => {
+// ── DELETE /api/products/images/:imageId — hapus gambar (admin, atau sales pembuatnya) ─
+productRouter.delete("/images/:imageId", requireImageOwnerOrAdmin, async (req, res) => {
   try {
     const image = await prisma.productImage.findUnique({ where: { id: req.params.imageId } });
     if (!image) return res.status(404).json({ error: "Gambar tidak ditemukan" });

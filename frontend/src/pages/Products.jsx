@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Upload, ChevronUp, ChevronDown, Package, Tag } from "lucide-react";
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
+import { isAdminUser } from "../lib/roles.js";
 
 const KATEGORI_OPTIONS = ["Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
 
@@ -12,8 +13,13 @@ function formatHarga(price, priceUnit) {
 }
 
 // ── ProductEditor ─────────────────────────────────────────────────────────────
-function ProductEditor({ product, onSaved, onDeleted }) {
+// `canEdit` = admin, ATAU produk ini buatan sendiri (createdById === user.id).
+// Backend (requireOwnerOrAdmin di routes/products.js) sudah menegakkan aturan
+// yang sama — pengecekan di sini murni UX supaya sales tidak perlu klik dulu
+// baru tahu ditolak 403, bukan satu-satunya lapisan keamanan.
+function ProductEditor({ product, canEdit, onSaved, onDeleted }) {
   const isNew = !product?.id;
+  const readOnly = !isNew && !canEdit;
   const [form, setForm] = useState({
     name:        product?.name        || "",
     description: product?.description || "",
@@ -113,16 +119,22 @@ function ProductEditor({ product, onSaved, onDeleted }) {
     <div className="product-editor">
       <div className="product-editor-header">
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-          {isNew ? "Produk Baru" : "Edit Produk"}
+          {isNew ? "Produk Baru" : readOnly ? "Lihat Produk" : "Edit Produk"}
         </h3>
-        {!isNew && (
+        {!isNew && !readOnly && (
           <button onClick={handleDelete} className="btn btn-danger btn-sm">
             <Trash2 size={13} /> Hapus
           </button>
         )}
       </div>
 
-      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+      {readOnly && (
+        <p style={{ margin: "12px 20px 0", fontSize: 12, color: "var(--text-muted)" }}>
+          Produk ini dibuat orang lain — hanya admin atau pembuatnya yang bisa mengubah/menghapus.
+        </p>
+      )}
+
+      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12, opacity: readOnly ? 0.6 : 1, pointerEvents: readOnly ? "none" : "auto" }}>
         <div className="form-group">
           <label className="form-label">Nama Produk *</label>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -180,12 +192,12 @@ function ProductEditor({ product, onSaved, onDeleted }) {
       </div>
 
       {/* Upload gambar */}
-      <div style={{ borderTop: "1px solid var(--border)", padding: "16px 20px" }}>
+      <div style={{ borderTop: "1px solid var(--border)", padding: "16px 20px", opacity: readOnly ? 0.6 : 1, pointerEvents: readOnly ? "none" : "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>
             Foto Produk ({images.length})
           </span>
-          <button onClick={() => fileRef.current?.click()} disabled={uploading || isNew}
+          <button onClick={() => fileRef.current?.click()} disabled={uploading || isNew || readOnly}
             className="btn btn-secondary btn-sm">
             <Upload size={13} /> {uploading ? "Mengupload..." : "Upload Foto"}
           </button>
@@ -201,7 +213,7 @@ function ProductEditor({ product, onSaved, onDeleted }) {
         )}
 
         {/* Dropzone */}
-        {!isNew && (
+        {!isNew && !readOnly && (
           <div
             className={`upload-zone ${dragOver ? "drag-over" : ""}`}
             style={{ marginBottom: images.length ? 12 : 0 }}
@@ -284,7 +296,8 @@ function ProductCard({ product, isActive, onClick }) {
 }
 
 // ── Main Products Page ────────────────────────────────────────────────────────
-export default function Products() {
+export default function Products({ user }) {
+  const admin = isAdminUser(user);
   const [products, setProducts]   = useState([]);
   const [selected, setSelected]   = useState(null); // produk yang sedang diedit
   const [isNew, setIsNew]         = useState(false);
@@ -327,6 +340,13 @@ export default function Products() {
             <Plus size={13} /> Tambah
           </button>
         </div>
+        {!admin && (
+          <p style={{ margin: "0 16px 10px", fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.4 }}>
+            Menampilkan produk buatan Anda sendiri. Produk aktif buatan sales
+            lain tetap muncul di picker galeri saat kirim chat, hanya tidak
+            dikelola di sini.
+          </p>
+        )}
         <div className="products-list">
           {loading && <p className="empty">Memuat...</p>}
           {!loading && products.length === 0 && (
@@ -348,6 +368,7 @@ export default function Products() {
         {(selected || isNew) ? (
           <ProductEditor
             product={isNew ? null : selected}
+            canEdit={isNew || admin || selected?.createdById === user?.id}
             onSaved={handleSaved}
             onDeleted={handleDeleted}
           />

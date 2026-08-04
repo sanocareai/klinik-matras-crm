@@ -220,6 +220,32 @@ body {
   color: #fff; font-weight: 700; flex-shrink: 0;
   box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(32,100,183,0.22);
 }
+
+/* ─── SIDEBAR — MODE GELAP ────────────────────────────────────────────────
+   BUG (ditemukan 4 Agustus 2026): blok "Wave 1.1 — Elevated Light" di atas
+   ditulis dengan hex mentah (gradient, border, hover) alih-alih variabel
+   tema (--sidebar-bg dkk SUDAH benar dark-aware lewat tokens.css, cuma
+   tidak pernah dipakai di sini) — akibatnya sidebar tetap panel putih terang
+   walau seluruh halaman lain sudah gelap. Override di bawah TIDAK mengubah
+   tampilan Terang sama sekali (hanya aktif di bawah [data-theme="dark"]). */
+[data-theme="dark"] .sidebar {
+  background: var(--bg-surface);
+  border-right-color: var(--hairline);
+  box-shadow: 1px 0 0 rgba(0,0,0,0.4), 4px 0 24px -18px rgba(0,0,0,0.6);
+}
+[data-theme="dark"] .sidebar-brand { border-bottom-color: var(--hairline); }
+[data-theme="dark"] .sidebar-brand-inner { background: var(--bg-inset); }
+[data-theme="dark"] .sidebar-section-label { color: var(--text-tertiary); }
+[data-theme="dark"] .sidebar-link:hover { background: var(--bg-hover); }
+[data-theme="dark"] .nav-pill {
+  background: var(--bg-inset);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px -6px rgba(0,0,0,0.5);
+}
+[data-theme="dark"] .sidebar-footer { border-top-color: var(--hairline); }
+[data-theme="dark"] .sidebar-profile:hover { background: var(--bg-hover); }
+[data-theme="dark"] .sidebar-profile .sidebar-avatar {
+  box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 3.5px rgba(96,145,250,0.35);
+}
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-name { font-size: 13px; font-weight: 650; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-kebab-ic { margin-left: auto; color: var(--text-muted); flex-shrink: 0; }
@@ -3181,6 +3207,184 @@ input:focus, select:focus, textarea:focus {
 .session-unknown-banner select {
   font-size: 12.5px; padding: 3px 8px; border-radius: 6px;
   border: 1px solid #FCA5A5; background: white; color: #991B1B; font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MODE GELAP — SAPUAN GLOBAL (5 Agustus 2026)
+   ═══════════════════════════════════════════════════════════════════════
+   Seluruh file di atas ini ditulis SEBELUM migrasi design-system (dark
+   mode) mulai — banyak panel/kartu/sidebar/modal/divider/badge netral
+   pakai warna hex mentah ("white", "#f8fafc", "#e5e7eb", dst) alih-alih
+   variabel tema, jadi tetap terang walau tema disetel Gelap. Blok ini
+   TIDAK mengubah tampilan Terang sama sekali (hanya aktif di bawah
+   [data-theme="dark"]) — pola sama seperti perbaikan .sidebar sebelumnya.
+
+   SENGAJA TIDAK disentuh di sini (butuh desain warna dark tersendiri per
+   kasus, bukan swap 1:1 ke token netral — resiko menghapus makna warna):
+   - Badge/tag/alert BERWARNA semantik: .tag-*, .role-badge.sales,
+     .session-badge, .first-responder-badge*, .stage-btn.active-*,
+     .health-alert.*, .inline-feedback-*, .wa-status-dot-wrap.*,
+     .lead-badge.ads, .session-unknown-banner, .estimate-card,
+     .msg-preview, .conv-flag-*, .picker-caption-preview
+   - Elemen yang MEMANG dirancang gelap/berwarna di kedua tema:
+     .chat-selection-toolbar, .nav-tooltip, .media-viewer-*,
+     bubble.out (WA outbound tetap warna accent) beserta turunannya
+     (.bubble-quote, .ack-tick, .audio-player-btn di dalamnya)
+   Kalau area ini juga dirasa kurang pas di mode gelap, itu gelombang
+   migrasi terpisah — beri tahu, jangan asumsikan "belum" berarti "lupa".
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Panel/kartu/sidebar statis: literal "white" → var(--bg-surface) ── */
+[data-theme="dark"] .conversation-list,
+[data-theme="dark"] .customer-panel,
+[data-theme="dark"] .chat-header,
+[data-theme="dark"] .chat-input,
+[data-theme="dark"] .chat-textarea,
+[data-theme="dark"] .chat-input-area,
+[data-theme="dark"] .panel-edit-btn,
+[data-theme="dark"] .table-wrap,
+[data-theme="dark"] .drawer-panel,
+[data-theme="dark"] .kpi-mini,
+[data-theme="dark"] .wizard-sidebar,
+[data-theme="dark"] .wizard-step-circle,
+[data-theme="dark"] .automation-sidebar,
+[data-theme="dark"] .workflow-card,
+[data-theme="dark"] .toggle::after,
+[data-theme="dark"] .ai-sidebar,
+[data-theme="dark"] .ai-chat-header,
+[data-theme="dark"] .ai-chat-footer,
+[data-theme="dark"] .ai-bubble.ai,
+[data-theme="dark"] .kb-sidebar,
+[data-theme="dark"] .laporan-tabs,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .settings-sidebar,
+[data-theme="dark"] .settings-card,
+[data-theme="dark"] .settings-mobile-select,
+[data-theme="dark"] .chat-dots-dropdown,
+[data-theme="dark"] .attach-sheet,
+[data-theme="dark"] .template-picker-popup,
+[data-theme="dark"] .emoji-picker-popup,
+[data-theme="dark"] .products-sidebar,
+[data-theme="dark"] .product-editor,
+[data-theme="dark"] .product-picker-panel,
+[data-theme="dark"] .product-picker-header,
+[data-theme="dark"] .picker-kat-btn,
+[data-theme="dark"] .media-gallery-tab,
+[data-theme="dark"] .status-select,
+[data-theme="dark"] .emoji-mart-loading,
+[data-theme="dark"] .media-preview-modal,
+[data-theme="dark"] .media-quality-toggle,
+[data-theme="dark"] .msg-select-checkbox,
+[data-theme="dark"] .toast-notif,
+[data-theme="dark"] .conv-context-menu,
+[data-theme="dark"] .transfer-picker-row,
+[data-theme="dark"] .chart-card {
+  background: var(--bg-surface);
+}
+
+/* ── Hover subtle di atas panel: rgba abu-abu → var(--bg-hover) ── */
+[data-theme="dark"] .search-clear-btn:hover,
+[data-theme="dark"] .conv-context-menu button:hover,
+[data-theme="dark"] .transfer-picker-row:hover:not(:disabled),
+[data-theme="dark"] .panel-edit-btn:hover,
+[data-theme="dark"] .drawer-close:hover,
+[data-theme="dark"] .stage-btn:not([class*="active"]):hover,
+[data-theme="dark"] .wizard-campaign-item:hover,
+[data-theme="dark"] .automation-item:hover,
+[data-theme="dark"] .ai-model-item:hover,
+[data-theme="dark"] .kb-doc-item:hover,
+[data-theme="dark"] .settings-nav-item:hover,
+[data-theme="dark"] .chat-dots-dropdown button:hover,
+[data-theme="dark"] .emoji-picker-item:hover,
+[data-theme="dark"] .chat-action-btn:hover,
+[data-theme="dark"] .product-card:hover,
+[data-theme="dark"] .toast-notif-inner:hover,
+[data-theme="dark"] .toast-notif-close:hover,
+[data-theme="dark"] .topbar-hamburger:hover,
+[data-theme="dark"] .chat-back-btn:hover,
+[data-theme="dark"] .chat-info-btn:hover,
+[data-theme="dark"] .profile-copy-btn:hover,
+[data-theme="dark"] .media-gallery-doc-item:hover,
+[data-theme="dark"] .install-prompt-close:hover {
+  background: var(--bg-hover);
+}
+
+/* ── "Aktif/terpilih" pucat biru (#eff6ff/#f0f9ff) → var(--accent-bg) ── */
+[data-theme="dark"] .wizard-campaign-item.active,
+[data-theme="dark"] .automation-item.active,
+[data-theme="dark"] .ai-model-item.active,
+[data-theme="dark"] .kb-doc-item.active,
+[data-theme="dark"] .settings-nav-item.active,
+[data-theme="dark"] .product-card.active,
+[data-theme="dark"] .template-item:hover,
+[data-theme="dark"] .picker-product-item:hover {
+  background: var(--accent-bg);
+}
+
+/* ── Background netral statis (badge abu netral, thumb placeholder,
+     divider chip) → var(--bg-inset) ── */
+[data-theme="dark"] .first-responder-badge,
+[data-theme="dark"] .order-item,
+[data-theme="dark"] .attach-item-icon,
+[data-theme="dark"] .intent-bar-wrap,
+[data-theme="dark"] .product-card-thumb,
+[data-theme="dark"] .product-editor-header,
+[data-theme="dark"] .product-image-item,
+[data-theme="dark"] .ai-chat-area,
+[data-theme="dark"] .picker-product-thumb,
+[data-theme="dark"] .picker-image-item,
+[data-theme="dark"] .date-divider-pill,
+[data-theme="dark"] .media-gallery-doc-item,
+[data-theme="dark"] .media-preview-thumb,
+[data-theme="dark"] .toggle,
+[data-theme="dark"] .attach-sheet-handle,
+[data-theme="dark"] .products-main,
+[data-theme="dark"] .cs-table th,
+[data-theme="dark"] .reply-strip,
+[data-theme="dark"] .preview-doc,
+[data-theme="dark"] .wa-session-card {
+  background: var(--bg-inset);
+}
+/* Track tombol audio bubble MASUK (bukan .bubble.out — itu tetap warna
+   accent di kedua tema) — hitam 8% nyaris tidak kelihatan di atas kartu
+   gelap, dibalik jadi putih translucent seperti versi .bubble.out. */
+[data-theme="dark"] .bubble.in .audio-player-btn { background: rgba(255,255,255,0.12); }
+
+/* ── Border/divider (#f3f4f6, #e5e7eb, #cbd5e1) → var(--hairline) ── */
+[data-theme="dark"] .conv-simple-item,
+[data-theme="dark"] .conversation-item,
+[data-theme="dark"] .cs-table td,
+[data-theme="dark"] .wizard-campaign-item,
+[data-theme="dark"] .wizard-step-circle,
+[data-theme="dark"] .wizard-step-line,
+[data-theme="dark"] .automation-item,
+[data-theme="dark"] .ai-model-item,
+[data-theme="dark"] .kb-doc-item,
+[data-theme="dark"] .template-item,
+[data-theme="dark"] .product-card,
+[data-theme="dark"] .picker-product-item,
+[data-theme="dark"] .drawer-panel .drawer-close,
+[data-theme="dark"] .upload-zone,
+[data-theme="dark"] .funnel-arrow,
+[data-theme="dark"] .workflow-arrow {
+  border-color: var(--hairline);
+}
+[data-theme="dark"] .funnel-arrow,
+[data-theme="dark"] .workflow-arrow { color: var(--text-tertiary); }
+
+/* ── Teks abu gelap-mentah → token teks (kalau dibiarkan, nyaris tidak
+     terbaca di atas kartu gelap) ── */
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .conversation-item.unread .last-message,
+[data-theme="dark"] .mobile-bottom-sheet .customer-panel {
+  color: var(--text-primary);
+}
+[data-theme="dark"] .attach-item-label,
+[data-theme="dark"] .first-responder-badge {
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .attach-grid-title {
+  color: var(--text-tertiary);
 }
 
 /* Focus states — keyboard accessible di seluruh Inbox */

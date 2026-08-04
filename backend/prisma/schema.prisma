@@ -211,6 +211,7 @@ model User {
   routesCreated             Route[]                  @relation("RouteCreator")
   scopeRevisionsMade        ScopeRevision[]          @relation("ScopeRevisionProposer")
   scopeRevisionsDecided     ScopeRevision[]          @relation("ScopeRevisionDecider")
+  productsCreated           Product[]                @relation("ProductCreator")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -538,6 +539,15 @@ model Product {
   images      ProductImage[]
   active      Boolean        @default(true)
   sortOrder   Int            @default(0)
+
+  // Sales sekarang boleh menambah produk sendiri (sebelumnya admin-only).
+  // NULL = dibuat sebelum kolom ini ada, atau admin (tidak perlu dibedakan
+  // untuk admin karena admin selalu boleh edit/hapus produk apa pun).
+  // Dipakai untuk membatasi sales HANYA boleh edit/hapus produk buatannya
+  // sendiri — lihat requireOwnerOrAdmin di routes/products.js.
+  createdById String?
+  createdBy   User?          @relation("ProductCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 }

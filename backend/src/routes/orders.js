@@ -359,15 +359,48 @@ orderRouter.get("/:id/timeline", async (req, res) => {
 });
 
 // DELETE /api/orders/:id — hapus order beserta items & weightEntries (cascade via FK)
+//
+// CATATAN: cascade FK cuma berlaku untuk OrderItem/OrderWeightEntry/
+// OrderStatusTransition. Unit, Job, Payment, dan ScopeRevision sengaja
+// RESTRICT (lihat komentar di schema.prisma model Unit) — order yang sudah
+// masuk produksi/pembayaran TIDAK BOLEH terhapus diam-diam. Sebelumnya error
+// P2003 dari Prisma bocor mentah-mentah ke `alert()` di frontend ("Invalid
+// `prisma.order.delete()` invocation..."), sales melihat pesan teknis yang
+// tidak dimengerti. Sekarang dicek dulu supaya pesannya jelas dalam
+// Bahasa Indonesia.
 orderRouter.delete("/:id", async (req, res) => {
   try {
+    const [unitCount, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
+      prisma.unit.count({ where: { orderId: req.params.id } }),
+      prisma.job.count({ where: { orderId: req.params.id } }),
+      prisma.payment.count({ where: { orderId: req.params.id } }),
+      prisma.scopeRevision.count({ where: { orderId: req.params.id } }),
+    ]);
+
+    const blockers = [];
+    if (unitCount > 0) blockers.push(`${unitCount} unit produksi`);
+    if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
+    if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
+    if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
+
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        error: `Order tidak bisa dihapus karena sudah punya ${blockers.join(", ")} yang terkait. Hubungi admin/Kendali jika order ini benar-benar perlu dibatalkan.`,
+      });
+    }
+
     // customerId diambil SEBELUM delete — setelah dihapus tidak ada lagi
     // jalan untuk tahu order ini tadinya milik customer mana.
     const existing = await prisma.order.delete({ where: { id: req.params.id } });
     await syncCustomerOrderAggregate(existing.customerId);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.code === "P2025") return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (err.code === "P2003") {
+      return res.status(409).json({ error: "Order tidak bisa dihapus karena masih ada data terkait (unit/pembayaran/penjadwalan). Hubungi admin/Kendali." });
+    }
+    console.error("delete order error:", err);
+    res.status(500).json({ error: "Gagal menghapus order" });
   }
 });
 

@@ -66,7 +66,9 @@ const DIVISIONS = {
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
           { to: "/orders",    label: "Order",         Icon: ClipboardList },
-          { to: "/products",  label: "Galeri Produk", Icon: Package, adminOnly: true },
+          // Sales sekarang boleh tambah produk sendiri (backend routes/products.js
+          // membatasi edit/hapus HANYA ke produk buatannya sendiri, admin bebas).
+          { to: "/products",  label: "Galeri Produk", Icon: Package },
         ],
       },
       {

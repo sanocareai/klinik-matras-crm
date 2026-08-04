@@ -10,10 +10,11 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, FlatList, ScrollView,
 } from "react-native";
 import { Image } from "expo-image";
-import { X, Search, Package, Check, ChevronLeft, SendHorizonal } from "lucide-react-native";
+import { X, Search, Package, Check, ChevronLeft, SendHorizonal, Plus } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import PressableScale from "./PressableScale";
+import AddProductModal from "./AddProductModal";
 
 const KATEGORI_ALL = "Semua";
 const KATEGORI_OPTIONS = [KATEGORI_ALL, "Upgrade", "Matras Baru", "Garansi", "Servis", "Info", "Lainnya"];
@@ -49,6 +50,7 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
   const [selected, setSelected] = useState(null);
   const [checkedIds, setCheckedIds] = useState([]);
   const [includePrice, setIncludePrice] = useState(true);
+  const [showAddProduct, setShowAddProduct] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -83,6 +85,15 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
     onSend({ productId: selected.id, imageIds: checkedIds, includePrice });
   }
 
+  // Produk baru langsung ditambahkan ke daftar (tanpa refetch) dan dibuka
+  // di layar detail — supaya sales bisa langsung pilih foto & kirim tanpa
+  // harus keluar-masuk picker lagi.
+  function handleProductCreated(product) {
+    setProducts((prev) => [product, ...prev]);
+    setShowAddProduct(false);
+    selectProduct(product);
+  }
+
   const filtered = products.filter((p) => {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
     const matchKat = kategori === KATEGORI_ALL || p.category === kategori;
@@ -108,15 +119,22 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
 
         {!selected ? (
           <>
-            <View style={styles.searchWrap}>
-              <Search size={16} color={tokens.color.textMuted} strokeWidth={2} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Cari produk…"
-                placeholderTextColor={tokens.color.textMuted}
-                value={search}
-                onChangeText={setSearch}
-              />
+            <View style={styles.searchRow}>
+              <View style={[styles.searchWrap, { flex: 1 }]}>
+                <Search size={16} color={tokens.color.textMuted} strokeWidth={2} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Cari produk…"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={search}
+                  onChangeText={setSearch}
+                />
+              </View>
+              {/* Sales sekarang boleh tambah produk sendiri — gap yang
+                  diperbaiki 4 Agustus 2026, lihat AddProductModal.js */}
+              <PressableScale style={styles.addBtn} onPress={() => setShowAddProduct(true)}>
+                <Plus size={18} color="#fff" strokeWidth={2.4} />
+              </PressableScale>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.katWrap} contentContainerStyle={styles.katContent}>
               {KATEGORI_OPTIONS.map((k) => {
@@ -226,6 +244,12 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
           </View>
         )}
       </View>
+
+      <AddProductModal
+        visible={showAddProduct}
+        onClose={() => setShowAddProduct(false)}
+        onCreated={handleProductCreated}
+      />
     </Modal>
   );
 }
@@ -239,12 +263,20 @@ function createStyles(tokens) {
     },
     headerBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
     headerTitle: { flex: 1, textAlign: "center", fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary },
+    searchRow: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      marginHorizontal: 16, marginTop: 12, marginBottom: 8,
+    },
     searchWrap: {
       flexDirection: "row", alignItems: "center", gap: 8,
-      marginHorizontal: 16, marginTop: 12, marginBottom: 8, backgroundColor: tokens.color.card,
+      backgroundColor: tokens.color.card,
       borderRadius: tokens.radius.pill, paddingHorizontal: 14, paddingVertical: 10, ...tokens.shadow.soft,
     },
     searchInput: { flex: 1, fontSize: 14, color: tokens.color.textPrimary },
+    addBtn: {
+      width: 38, height: 38, borderRadius: 19, backgroundColor: tokens.color.accent,
+      alignItems: "center", justifyContent: "center",
+    },
     katWrap: { flexGrow: 0, marginBottom: 8 },
     katContent: { paddingHorizontal: 16, gap: 8 },
     katChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: tokens.radius.chip, backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border },

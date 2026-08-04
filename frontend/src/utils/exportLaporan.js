@@ -199,14 +199,15 @@ function sheetPipeline({ periode, funnel, velocity }) {
 function sheetSales({ periode, report }) {
   const sb = new SheetBuilder();
   judul(sb, "LAPORAN SALES", periode);
-  sb.row(["Atribusi: percakapan yang di-assign ke sales (Conversation.assignedToId)"]);
+  sb.row(["Atribusi: percakapan yang SEKARANG di-assign ke sales (Conversation.assignedToId)"]);
+  sb.row(["\"Ditangani Sendiri\" = klaim pertama sejak awal; \"Warisan Takeover\" = pindah dari sales lain lewat Ambil/Ambil Alih — dipisah supaya beban kerja tidak salah atribusi (lihat backend routes/analytics.js)"]);
   if (report?.periodeTarget) {
     sb.row([`Kolom target memakai target bulan ${report.periodeTarget.month}/${report.periodeTarget.year}`]);
   }
   sb.blank();
 
   const HEAD = [
-    "Sales", "Percakapan Ditangani", "Dibalas", "Menggantung", "Avg Respons (mnt)",
+    "Sales", "Ditangani Sendiri", "Warisan Takeover", "Dibalas", "Menggantung", "Avg Respons (mnt)",
     "SLA >60mnt", "Qualified (kini)", "Quoted (kini)", "Pelanggan Order", "Konversi %",
     "Pindah ke Paid", "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
     "Komplain", "% Komplain",
@@ -215,7 +216,7 @@ function sheetSales({ periode, report }) {
 
   (report?.rows || []).forEach((r) => sb.row([
     r.name,
-    num(r.handled), num(r.replied), num(r.stalled),
+    num(r.handledOwn), num(r.handledTakeover), num(r.replied), num(r.stalled),
     num(r.avgResponseMinutes), num(r.slaBreach),
     num(r.funnel?.QUALIFIED), num(r.funnel?.QUOTED),
     num(r.orderingCustomers), pct(r.orderConversionRate),
@@ -229,7 +230,7 @@ function sheetSales({ periode, report }) {
   if (t) {
     sb.row([
       "TOTAL TIM",
-      num(t.handled), num(t.replied), num(t.stalled),
+      num(t.handledOwn), num(t.handledTakeover), num(t.replied), num(t.stalled),
       "—", num(t.slaBreach), "—", "—",
       num(t.orderingCustomers), pct(t.orderConversionRate),
       num(t.paidCustomers),
@@ -242,7 +243,7 @@ function sheetSales({ periode, report }) {
     // menghasilkan angka yang salah. Sengaja "—".
   }
 
-  const ws = sb.build([16, 20, 10, 13, 17, 12, 16, 15, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
+  const ws = sb.build([16, 16, 16, 10, 13, 17, 12, 16, 15, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
   // Autofilter di baris header tabel — ini SATU-SATUNYA bantuan navigasi yang
   // benar-benar bertahan di community edition (freeze pane tidak).
   const headRow = sb.aoa.findIndex((r) => r[0] === "Sales");
