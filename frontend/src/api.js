@@ -565,7 +565,10 @@ export const api = {
   getTrackingLinkStats: (id) => request(`/tracking/links/${id}/stats`),
 
   // Users
-  getUsers: () => request("/users"),
+  // Default: hanya user AKTIF (dipakai semua picker assign/transfer sales).
+  // Pengguna.jsx (satu-satunya tempat yang perlu kelola akun nonaktif)
+  // memanggil dengan { includeInactive: true }.
+  getUsers: (params) => request("/users" + buildQuery(params)),
   getMe: () => request("/users/me"),
   updateMe: (data) =>
     request("/users/me", { method: "PATCH", body: JSON.stringify(data) }),

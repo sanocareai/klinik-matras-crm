@@ -36,6 +36,18 @@ authRouter.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return res.status(401).json({ error: "Email atau password salah" });
 
+    // Akun nonaktif (mis. sudah resign) — dicek SETELAH password benar,
+    // supaya pesannya tidak jadi oracle "email ini terdaftar" untuk akun
+    // nonaktif. JWT lama yang mungkin masih beredar (berlaku 7 hari) TIDAK
+    // otomatis ikut dicabut oleh pengecekan ini — requireAuth di
+    // middleware/auth.js cuma verifikasi tanda tangan token, tidak query DB
+    // tiap request (murah, tapi berarti sesi yang SUDAH berjalan tetap
+    // jalan sampai token-nya kedaluwarsa). Dampaknya kecil untuk kasus
+    // resign (bukan pemecatan darurat) — cukup untuk mencegah login BARU.
+    if (user.active === false) {
+      return res.status(403).json({ error: "Akun ini sudah dinonaktifkan. Hubungi admin kalau ini keliru." });
+    }
+
     const roles = await loadRoles(user);
 
     const token = jwt.sign(

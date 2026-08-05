@@ -469,7 +469,13 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
 
     const grantedSalesIds = await grantedSalesUserIds();
+    // active: true — sales yang sudah dinonaktifkan (mis. resign) hilang
+    // dari baris per-sales di sini, TAPI order/percakapan yang pernah dia
+    // tangani tetap ada di database dan tetap dihitung penuh di angka
+    // company-wide (/overview, /business-summary — tidak scoped per-user).
+    // Lihat catatan `active` di schema.prisma User.
     const usersRaw = await prisma.user.findMany({
+      where: { active: true },
       select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });
@@ -1051,7 +1057,10 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
     const endOfMonth   = endOfMonthExclusiveWIB(year, month); // exclusive
 
     const grantedSalesIds = await grantedSalesUserIds();
+    // active: true — sama seperti /sales-report, sales nonaktif hilang dari
+    // widget Target Sales, tapi order historisnya tidak hilang dari mana pun.
     const salesUsersRaw = await prisma.user.findMany({
+      where: { active: true },
       select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });

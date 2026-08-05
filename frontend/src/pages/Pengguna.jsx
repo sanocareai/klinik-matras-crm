@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText, Check,
+  MessageSquare, Users, FileText, Check, UserX, UserCheck,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
@@ -88,7 +88,11 @@ export default function Pengguna({ user: currentUser }) {
   async function loadUsers() {
     setLoading(true);
     try {
-      const data = await api.getUsers();
+      // includeInactive: true — halaman ini satu-satunya tempat admin perlu
+      // lihat & bisa mengaktifkan-kembali akun nonaktif (mis. sales resign).
+      // Semua picker assign/transfer lain SENGAJA tidak kirim ini, jadi
+      // otomatis cuma dapat akun aktif tanpa perlu diubah satu-satu.
+      const data = await api.getUsers({ includeInactive: true });
       setUsers(data);
     } catch (e) {
       showFeedback("error", "Gagal memuat daftar pengguna: " + e.message);
@@ -171,6 +175,31 @@ export default function Pengguna({ user: currentUser }) {
       setRoleEditError(err.message);
     } finally {
       setRoleBusy(null);
+    }
+  }
+
+  // Nonaktifkan/aktifkan — alternatif yang AMAN dari hapus permanen untuk
+  // akun yang resign: tidak bisa login lagi & hilang dari picker assign/
+  // Laporan (lihat catatan backend routes/users.js), tapi customer/
+  // percakapan yang sudah tertaut ke dia TIDAK dilepas otomatis — cuma
+  // diberi peringatan di sini supaya admin sadar perlu di-assign ulang.
+  async function handleToggleActive(u) {
+    const menonaktifkan = u.active !== false;
+    if (menonaktifkan) {
+      const n = u._count?.assignedCustomers || 0;
+      const pesan = n > 0
+        ? `Nonaktifkan "${u.name}"? Dia tidak akan bisa login lagi.\n\n⚠️ Masih ada ${n} pelanggan yang ditugaskan ke dia — data itu TIDAK dilepas otomatis, cuma tidak akan muncul lagi di pilihan assign baru. Anda perlu assign ulang pelanggan itu ke sales aktif secara manual lewat drawer Pelanggan.`
+        : `Nonaktifkan "${u.name}"? Dia tidak akan bisa login lagi.`;
+      if (!confirm(pesan)) return;
+    }
+    try {
+      const updated = await api.updateUser(u.id, { active: !menonaktifkan });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...updated } : x)));
+      showFeedback("success", menonaktifkan
+        ? `"${u.name}" dinonaktifkan.`
+        : `"${u.name}" diaktifkan kembali.`);
+    } catch (err) {
+      showFeedback("error", err.message);
     }
   }
 
@@ -261,8 +290,9 @@ export default function Pengguna({ user: currentUser }) {
             <tbody>
               {users.map((u) => {
                 const isMe = u.id === currentUser?.id;
+                const nonaktif = u.active === false;
                 return (
-                  <tr key={u.id}>
+                  <tr key={u.id} style={nonaktif ? { opacity: 0.55 } : undefined}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <Avatar name={u.name || u.email} src={u.avatarUrl} size="sm" />
@@ -270,6 +300,7 @@ export default function Pengguna({ user: currentUser }) {
                           <div style={{ fontWeight: 700, fontSize: 14 }}>
                             {u.name}
                             {isMe && <span style={{ marginLeft: 6, fontSize: 10, background: "#ede9fe", color: "#5b21b6", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Anda</span>}
+                            {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "#f3f4f6", color: "#6b7280", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{u.email}</div>
                         </div>
@@ -311,6 +342,14 @@ export default function Pengguna({ user: currentUser }) {
                           <Key size={13} /> Reset PW
                         </button>
                         {!isMe && (
+                          <button className="btn btn-ghost btn-sm"
+                            style={{ color: nonaktif ? "var(--color-success)" : "var(--color-warning)" }}
+                            title={nonaktif ? "Aktifkan Kembali" : "Nonaktifkan (mis. resign)"}
+                            onClick={() => handleToggleActive(u)}>
+                            {nonaktif ? <UserCheck size={13} /> : <UserX size={13} />}
+                          </button>
+                        )}
+                        {!isMe && (
                           <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }}
                             title="Hapus Pengguna" onClick={() => setShowDelete(u)}>
                             <Trash2 size={13} />
@@ -338,14 +377,16 @@ export default function Pengguna({ user: currentUser }) {
         <div className="user-card-list">
           {users.map((u) => {
             const isMe = u.id === currentUser?.id;
+            const nonaktif = u.active === false;
             return (
-              <div key={u.id} className="user-card">
+              <div key={u.id} className="user-card" style={nonaktif ? { opacity: 0.55 } : undefined}>
                 <div className="user-card-header">
                   <Avatar name={u.name || u.email} src={u.avatarUrl} size="sm" />
                   <div className="user-card-info">
                     <div className="user-card-name">
                       {u.name}
                       {isMe && <span className="user-card-you">Anda</span>}
+                      {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "#f3f4f6", color: "#6b7280", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
                     </div>
                     <div className="user-card-email">{u.email}</div>
                   </div>
@@ -366,6 +407,13 @@ export default function Pengguna({ user: currentUser }) {
                   <button className="btn btn-ghost btn-sm" onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
                     <Key size={13} /> Reset PW
                   </button>
+                  {!isMe && (
+                    <button className="btn btn-ghost btn-sm"
+                      style={{ color: nonaktif ? "var(--color-success)" : "var(--color-warning)" }}
+                      onClick={() => handleToggleActive(u)}>
+                      {nonaktif ? <UserCheck size={13} /> : <UserX size={13} />} {nonaktif ? "Aktifkan" : "Nonaktifkan"}
+                    </button>
+                  )}
                   {!isMe && (
                     <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }}
                       onClick={() => setShowDelete(u)}>

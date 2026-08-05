@@ -29,13 +29,15 @@ import {
 
 const DEBOUNCE_MS = 300;
 
+// "Milik Saya" di depan — filter yang paling sering dipakai sales sendiri
+// sebelumnya di ujung, mengharuskan scroll tab tiap buka Inbox.
 const TABS = [
+  { key: "MINE", label: "Milik Saya" },
   { key: "ALL", label: "Semua" },
   { key: "UNREAD", label: "Belum Dibaca" },
   { key: "OPEN", label: "Terbuka" },
   { key: "PENDING", label: "Pending" },
   { key: "CLOSED", label: "Selesai" },
-  { key: "MINE", label: "Milik Saya" },
 ];
 
 const EMPTY_STATE = {

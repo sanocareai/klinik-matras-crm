@@ -166,6 +166,18 @@ model User {
   avatarUrl    String? // foto profil, path relatif "/uploads/avatars/xxx.jpg"
   createdAt    DateTime @default(now())
 
+  // Nonaktifkan (mis. sales resign) TANPA menghapus baris User — riwayat
+  // (percakapan yang pernah dia tangani, order yang teratribusi, dst) HARUS
+  // tetap utuh untuk laporan periode lama (lihat CLAUDE.md soal RESTRICT di
+  // Unit/Order — prinsip yang sama: jangan hilangkan jejak data demi
+  // "membersihkan" tampilan). User nonaktif: tidak bisa login (auth.js),
+  // tidak muncul lagi di picker assign/transfer atau baris per-sales di
+  // Laporan (routes/users.js GET / default exclude, routes/analytics.js),
+  // TAPI order/transaksi historisnya tetap dihitung penuh di angka
+  // company-wide (Dashboard/Ringkasan) karena endpoint itu agregat dari
+  // Order/Customer langsung, tidak difilter per-user.
+  active       Boolean  @default(true)
+
   assignedCustomers         Customer[]               @relation("AssignedSales")
   assignedConversations     Conversation[]           @relation("AssignedAgent")
   notes                     Note[]

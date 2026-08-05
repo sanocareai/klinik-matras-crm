@@ -58,16 +58,26 @@ function adminOnly(req, res, next) {
 // multi-role. Logika fallback ini SAMA PERSIS dengan loadRoles() di
 // auth.js — harus tetap sinkron, supaya "role apa yang berlaku" tidak
 // pernah berbeda antara halaman login dan halaman Pengguna & Peran.
+// `?includeInactive=true` — HANYA dipakai halaman Pengguna & Peran (admin
+// perlu melihat & bisa mengaktifkan-kembali akun nonaktif). Semua pemanggil
+// lain (picker assign/transfer sales, filter Pelanggan, dst) sengaja TIDAK
+// mengirim param ini, jadi otomatis dapat daftar aktif saja tanpa perlu
+// diubah satu-satu — user nonaktif (mis. sales resign) tidak bisa dipilih
+// lagi untuk tugas BARU, tapi baris yang sudah tertaut ke mereka
+// sebelumnya tetap utuh (lihat catatan `active` di schema.prisma).
 userRouter.get("/", async (req, res) => {
   try {
     const isAdmin = rolesOf(req.user).includes("ADMIN");
+    const includeInactive = req.query.includeInactive === "true";
     const [users, roleRows] = await Promise.all([
       prisma.user.findMany({
+        where: includeInactive ? {} : { active: true },
         select: {
           id: true,
           name: true,
           email: isAdmin,
           role: true,
+          active: true,
           avatarUrl: true,
           createdAt: true,
           _count: {
@@ -260,22 +270,40 @@ userRouter.post("/me/change-password", async (req, res) => {
   }
 });
 
-// PATCH /:id — update user oleh admin (nama, role)
+// PATCH /:id — update user oleh admin (nama, role, aktif/nonaktif)
+//
+// `active: false` = "nonaktifkan" (mis. sales resign) — TIDAK menghapus
+// User atau melepas assignedCustomers/assignedConversations yang sudah ada
+// (riwayat siapa pernah pegang apa tetap utuh, lihat catatan schema.prisma).
+// Efeknya: tidak bisa login lagi (auth.js), dan hilang dari daftar default
+// GET /users (dipakai semua picker assign/transfer) serta baris per-sales
+// di Laporan (routes/analytics.js) — TAPI baris Customer/Conversation yang
+// SUDAH tertaut ke dia tetap menampilkan namanya, cuma tidak bisa dipilih
+// lagi untuk tugas baru. `assignedCustomersCount` dikembalikan supaya admin
+// langsung tahu berapa pelanggan yang mungkin perlu di-assign ulang.
 userRouter.patch("/:id", adminOnly, async (req, res) => {
   try {
     if (req.params.id === req.user.id) {
       return res.status(400).json({ error: "Gunakan endpoint /me untuk update profil sendiri" });
     }
-    const { name, role } = req.body;
+    const { name, role, active } = req.body;
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: {
         ...(name?.trim() && { name: name.trim() }),
         ...(role && { role }),
+        ...(active !== undefined && { active: !!active }),
       },
-      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
+      select: {
+        id: true, name: true, email: true, role: true, active: true, avatarUrl: true, createdAt: true,
+        _count: { select: { assignedCustomers: true, assignedConversations: true } },
+      },
     });
-    res.json(updated);
+    res.json({
+      ...updated,
+      assignedCustomersCount: updated._count.assignedCustomers,
+      assignedConversationsCount: updated._count.assignedConversations,
+    });
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "User tidak ditemukan" });
     res.status(500).json({ error: err.message });
