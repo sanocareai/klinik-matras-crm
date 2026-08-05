@@ -51,6 +51,8 @@ export default function RevenueOverview({ range, className }) {
   const points = q.data?.points || [];
   const granularity = q.data?.granularity || "day";
   const total = q.data?.total || 0;
+  const totalOrders = q.data?.totalOrders || 0;
+  const aov = q.data?.aov || 0;
 
   // Delta = separuh akhir vs separuh awal rentang. Dihitung di frontend dari
   // deret yang SUDAH ada, bukan request kedua — cukup akurat untuk indikator
@@ -81,19 +83,32 @@ export default function RevenueOverview({ range, className }) {
         <p className="t-secondary py-16 text-center">Gagal memuat data penjualan.</p>
       ) : (
         <>
-          <p className="t-caption">Total Revenue</p>
-          <p className="t-metric mt-1">{formatRupiah(total)}</p>
-          <div className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
-            {delta != null && (
-              <span className={cn(
-                "inline-flex items-center gap-0.5 text-[13px] font-semibold tabular-nums",
-                naik ? "text-green" : "text-red"
-              )}>
-                <Arrow size={13} strokeWidth={2.5} />
-                {naik ? "+" : ""}{delta.toFixed(1)}%
-              </span>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="t-caption">Total Revenue</p>
+              <p className="t-metric mt-1">{formatRupiah(total)}</p>
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
+                {delta != null && (
+                  <span className={cn(
+                    "inline-flex items-center gap-0.5 text-[13px] font-semibold tabular-nums",
+                    naik ? "text-green" : "text-red"
+                  )}>
+                    <Arrow size={13} strokeWidth={2.5} />
+                    {naik ? "+" : ""}{delta.toFixed(1)}%
+                  </span>
+                )}
+                <span className="t-secondary text-[11px]">{formatRangeText(range)}</span>
+              </div>
+            </div>
+            {/* AOV di sini (bukan cuma di Laporan) — naik/turunnya Revenue
+                di atas seringkali dijelaskan oleh AOV, bukan jumlah order. */}
+            {totalOrders > 0 && (
+              <div className="text-right">
+                <p className="t-caption">AOV</p>
+                <p className="mt-1 text-[19px] font-bold tabular-nums text-ink">{formatRupiahShort(aov)}</p>
+                <p className="t-secondary mt-1 text-[11px]">{totalOrders} order</p>
+              </div>
             )}
-            <span className="t-secondary text-[11px]">{formatRangeText(range)}</span>
           </div>
 
           {total === 0 ? (

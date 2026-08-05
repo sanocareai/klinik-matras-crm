@@ -1174,7 +1174,23 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
 
     const points = fillBuckets(win, Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)])));
     const total = points.reduce((s, p) => s + p.value, 0);
-    res.json({ granularity: win.harian ? "day" : "month", points, total });
+
+    // AOV ditambahkan di sini (bukan cuma di Laporan) — kartu "Sales Overview"
+    // di Dashboard sebelumnya cuma nunjukkin Total Revenue mentah, padahal
+    // penjelasan NAIK/TURUNnya revenue seringkali bukan dari jumlah order,
+    // tapi dari nilai rata-rata per order. Query terpisah (bukan reuse
+    // `points`) karena butuh COUNT, bukan cuma SUM — win.mulai/selesai yang
+    // SAMA supaya AOV selalu sepadan dengan Total Revenue di atasnya.
+    const orderCountAgg = await prisma.order.aggregate({
+      where: { status: { not: "CANCELLED" }, createdAt: { gte: win.mulai, lt: win.selesai } },
+      _count: { _all: true },
+    });
+    const totalOrders = orderCountAgg._count._all;
+
+    res.json({
+      granularity: win.harian ? "day" : "month", points, total,
+      totalOrders, aov: totalOrders > 0 ? Math.round(total / totalOrders) : 0,
+    });
   } catch (err) {
     console.error("revenue-series error:", err);
     res.status(500).json({ error: "Gagal memuat deret pendapatan" });
