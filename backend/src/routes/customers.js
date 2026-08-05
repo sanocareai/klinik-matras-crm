@@ -12,6 +12,62 @@ import { syncOrderStatus } from "../services/orderStatusSync.js";
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
 
+// Sama persis dengan logika filter di GET / (diekstrak supaya
+// POST /bulk-reassign bisa memakai kriteria yang SAMA tanpa duplikasi yang
+// bisa drift — "pilih semua yang cocok filter ini" harus benar-benar
+// berarti filter yang sama dengan yang sedang dilihat user).
+function buildCustomerWhere(query) {
+  const { search, stage, source, sales, salesId, city, customerType, quickChip } = query;
+  const where = {};
+  if (stage)  where.pipelineStage = stage;
+  if (source) where.leadSource    = source;
+  if (sales)  where.assignedSalesId = sales;
+  if (salesId) where.conversations = { some: { assignedToId: salesId } };
+  if (city) where.city = city;
+  if (customerType) where.customerType = customerType;
+  if (search) {
+    where.OR = [
+      { name:            { contains: search, mode: "insensitive" } },
+      { phone:           { contains: search } },
+      { instagramHandle: { contains: search, mode: "insensitive" } },
+      { email:           { contains: search, mode: "insensitive" } },
+    ];
+  }
+  if (quickChip === "vip") where.orderValue = { gte: 5_000_000 };
+  if (quickChip === "no-order") where.orderCount = 0;
+  if (quickChip === "inactive") {
+    const cutoff = new Date(Date.now() - 30 * 86_400_000);
+    where.NOT = { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: cutoff } } } };
+  }
+  return where;
+}
+
+// POST /api/customers/bulk-reassign — pindahkan SEMUA pelanggan yang cocok
+// filter (bukan cuma yang termuat di 1 halaman) ke sales lain sekaligus.
+// Dipakai skenario "sales resign, 190 pelanggannya perlu dipindah" — bulk
+// assign yang sudah ada di frontend (loop api.updateCustomer per id) cuma
+// masuk akal untuk baris yang KELIHATAN di halaman aktif (puluhan), bukan
+// ratusan lintas halaman. `updateMany` di sini satu query DB, bukan ratusan
+// request bolak-balik dari browser.
+customerRouter.post("/bulk-reassign", async (req, res) => {
+  const { toSalesId, filters } = req.body;
+  if (!toSalesId) return res.status(400).json({ error: "toSalesId wajib diisi" });
+  try {
+    const target = await prisma.user.findUnique({ where: { id: toSalesId }, select: { id: true, active: true } });
+    if (!target) return res.status(404).json({ error: "Sales tujuan tidak ditemukan" });
+    if (target.active === false) {
+      return res.status(400).json({ error: "Sales tujuan sudah nonaktif — pilih sales yang masih aktif" });
+    }
+
+    const where = buildCustomerWhere(filters || {});
+    const result = await prisma.customer.updateMany({ where, data: { assignedSalesId: toSalesId } });
+    res.json({ count: result.count });
+  } catch (err) {
+    console.error("bulk-reassign error:", err);
+    res.status(500).json({ error: "Gagal memindahkan pelanggan" });
+  }
+});
+
 // Buat pelanggan baru secara manual (wajib isi minimal phone atau instagramHandle)
 customerRouter.post("/", async (req, res) => {
   const { name, phone, instagramHandle, city, email, leadSource } = req.body;
@@ -105,45 +161,18 @@ const SORT_FIELDS = {
 // orders penuh lagi), cuma tanpa skip/take dan bentuk respons array polos.
 customerRouter.get("/", async (req, res) => {
   try {
-    const {
-      search, stage, source, sales, salesId, city, customerType, quickChip,
-      sortKey, sortDir,
-    } = req.query;
+    const { sortKey, sortDir } = req.query;
     const isPaginated = req.query.page !== undefined;
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
 
-    const where = {};
-    if (stage)  where.pipelineStage = stage;
-    if (source) where.leadSource    = source;
-    if (sales)  where.assignedSalesId = sales;
-    // ?salesId= — BEDA dari ?sales= di atas: ?sales= filter Customer.assignedSalesId
+    // ?salesId= — BEDA dari ?sales=: ?sales= filter Customer.assignedSalesId
     // (kepemilikan LEAD/pipeline). ?salesId= filter lewat conversation yang
     // DITANGANI sales itu (Conversation.assignedToId — definisi take-over),
     // dipakai filter "Sales:" di tab Pelanggan mobile (lihat
-    // mobile/src/screens/PelangganScreen.js).
-    if (salesId) where.conversations = { some: { assignedToId: salesId } };
-    if (city) where.city = city;
-    if (customerType) where.customerType = customerType;
-    if (search) {
-      where.OR = [
-        { name:            { contains: search, mode: "insensitive" } },
-        { phone:           { contains: search } },
-        { instagramHandle: { contains: search, mode: "insensitive" } },
-        { email:           { contains: search, mode: "insensitive" } },
-      ];
-    }
-    // Quick chip — SEKARANG query Postgres biasa (WHERE kolom denormalized),
-    // dulu ini filter client-side atas array yang sudah di-fetch penuh.
-    if (quickChip === "vip") where.orderValue = { gte: 5_000_000 };
-    if (quickChip === "no-order") where.orderCount = 0;
-    if (quickChip === "inactive") {
-      const cutoff = new Date(Date.now() - 30 * 86_400_000);
-      // Cocok utk 2 kasus: TIDAK PERNAH chat sama sekali, ATAU pesan
-      // terakhirnya lebih dari 30 hari lalu — `some` di relasi kosong = false,
-      // NOT false = true, jadi customer tanpa conversation individual pun ikut.
-      where.NOT = { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: cutoff } } } };
-    }
+    // mobile/src/screens/PelangganScreen.js). Keduanya ditangani di
+    // buildCustomerWhere() di atas (dipakai bersama POST /bulk-reassign).
+    const where = buildCustomerWhere(req.query);
 
     const orderByField = SORT_FIELDS[sortKey] || "updatedAt";
     const orderByDir = sortDir === "asc" ? "asc" : "desc";

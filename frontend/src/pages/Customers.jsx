@@ -56,6 +56,10 @@ export default function Customers() {
 
   const [selected, setSelected] = useState(new Set());
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  // true = "pilih SEMUA yang cocok filter aktif" (lintas halaman, lihat
+  // BulkActionBar), bukan cuma baris yang tercentang di `selected`
+  // (baris-baris itu cuma representasi visual halaman ini saat mode ini aktif).
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
 
   const [drawerCustomerId, setDrawerCustomerId] = useState(null);
 
@@ -93,19 +97,27 @@ export default function Customers() {
     api.getCustomerCities().then(setCities).catch(() => {});
   }, []);
 
+  // Kriteria filter AKTIF, terpisah dari page/sort — persis bentuk yang
+  // diterima buildCustomerWhere() di backend (routes/customers.js), dipakai
+  // juga oleh bulk-reassign supaya "pilih semua yang cocok filter ini"
+  // benar-benar filter yang SAMA dengan yang sedang dilihat user.
+  const activeFilters = useMemo(() => ({
+    search: search || undefined,
+    stage: filterStage || undefined,
+    source: filterSource || undefined,
+    sales: filterSales || undefined,
+    city: filterCity || undefined,
+    customerType: mapTypeTab(typeTab),
+    quickChip: quickChip || undefined,
+  }), [search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
       const res = await api.getCustomers({
         page, limit: pageSize,
-        search: search || undefined,
-        stage: filterStage || undefined,
-        source: filterSource || undefined,
-        sales: filterSales || undefined,
-        city: filterCity || undefined,
-        customerType: mapTypeTab(typeTab),
-        quickChip: quickChip || undefined,
+        ...activeFilters,
         sortKey, sortDir,
       });
       setItems(res.items);
@@ -116,16 +128,22 @@ export default function Customers() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip, sortKey, sortDir]);
+  }, [page, pageSize, activeFilters, sortKey, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
   // Seleksi baris tidak relevan lintas halaman/filter — kosongkan begitu
   // salah satu berubah supaya tidak ada checkbox "hantu" yang menunjuk
-  // pelanggan yang sudah tidak terlihat di halaman ini.
-  useEffect(() => { setSelected(new Set()); }, [page, search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip]);
+  // pelanggan yang sudah tidak terlihat di halaman ini. selectAllMatching
+  // ikut direset karena "semua yang cocok filter LAMA" tidak lagi berarti
+  // apa-apa begitu filternya berubah.
+  useEffect(() => { setSelected(new Set()); setSelectAllMatching(false); }, [page, activeFilters]);
 
-  const salesUsers = useMemo(() => users.filter((u) => u.role === "SALES"), [users]);
+  // role SALES lewat kolom lama ATAU peran tambahan SALES (D-010, mis.
+  // admin/leader yang kadang turun tangan jualan sendiri).
+  const salesUsers = useMemo(() => users.filter((u) =>
+    (Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role]).includes("SALES")
+  ), [users]);
 
   function toggleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -216,13 +234,23 @@ export default function Customers() {
     }
   }
 
-  // Bulk assign sales — dipanggil per-id lewat endpoint yang sudah ada
-  // (api.updateCustomer), bukan endpoint bulk baru. Wajar untuk puluhan
-  // baris terpilih sekaligus (yang dipilih ada di 1 halaman), bukan
-  // seluruh 1.320+ pelanggan.
+  // Bulk assign sales — DUA jalur:
+  // - selectAllMatching: SEMUA pelanggan yang cocok filter aktif (lintas
+  //   halaman, bisa ratusan) → 1 request ke POST /customers/bulk-reassign
+  //   (updateMany di DB langsung, lihat catatan di routes/customers.js).
+  // - selected biasa: cuma baris yang tercentang di halaman ini (wajar
+  //   puluhan) → loop api.updateCustomer per id seperti sebelumnya.
   async function handleBulkAssign(salesId) {
     setBulkAssigning(true);
     try {
+      if (selectAllMatching) {
+        const { count } = await api.bulkReassignCustomers(activeFilters, salesId);
+        setSelected(new Set());
+        setSelectAllMatching(false);
+        await load();
+        alert(`${count} pelanggan berhasil dipindahkan.`);
+        return;
+      }
       const results = await Promise.allSettled(
         [...selected].map((id) => api.updateCustomer(id, { assignedSalesId: salesId }))
       );
@@ -230,6 +258,8 @@ export default function Customers() {
       setSelected(new Set());
       await load();
       if (failed > 0) alert(`${failed} pelanggan gagal di-assign, sisanya berhasil.`);
+    } catch (err) {
+      alert("Gagal memindahkan pelanggan: " + err.message);
     } finally {
       setBulkAssigning(false);
     }
@@ -278,11 +308,19 @@ export default function Customers() {
 
         {selected.size > 0 && (
           <BulkActionBar
-            count={selected.size}
+            count={selectAllMatching ? total : selected.size}
+            selectAllMatching={selectAllMatching}
+            // Tawaran "pilih semua yang cocok filter" cuma masuk akal kalau
+            // seluruh baris DI HALAMAN INI sudah tercentang (kalau baru
+            // sebagian, "pilih semua" belum tentu maksud user) DAN memang
+            // ada lebih banyak di halaman lain.
+            canSelectAllMatching={!selectAllMatching && selected.size === items.length && total > items.length}
+            totalMatching={total}
             salesUsers={salesUsers}
             busy={bulkAssigning}
             onAssign={handleBulkAssign}
-            onClear={() => setSelected(new Set())}
+            onSelectAllMatching={() => setSelectAllMatching(true)}
+            onClear={() => { setSelected(new Set()); setSelectAllMatching(false); }}
           />
         )}
 

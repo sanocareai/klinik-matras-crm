@@ -471,6 +471,11 @@ export const api = {
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),
+  // Pindahkan SEMUA pelanggan yang cocok `filters` (bukan cuma satu halaman)
+  // ke sales lain sekaligus — 1 request, bukan ratusan api.updateCustomer.
+  // `filters` pakai nama query param yang SAMA dengan getCustomers.
+  bulkReassignCustomers: (filters, toSalesId) =>
+    request("/customers/bulk-reassign", { method: "POST", body: JSON.stringify({ filters, toSalesId }) }),
   getCustomerCities: () => request("/customers/meta/cities"),
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (data) =>
