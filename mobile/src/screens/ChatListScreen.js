@@ -4,11 +4,12 @@
 // (TanStack useInfiniteQuery, cursor pagination) — list yang tampil disaring
 // ulang di sini lewat filter/search AKTIF SEKARANG (pola sama dengan
 // frontend/src/features/inbox/components/ConversationList/index.jsx).
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
   RefreshControl, ActivityIndicator, ScrollView, Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -21,11 +22,29 @@ import { useAuth } from "../context/AuthContext";
 import { lightHaptic } from "../lib/haptics";
 import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
+import ReorderFiltersModal from "../components/ReorderFiltersModal";
 import { InboxListSkeleton } from "../components/SkeletonLoader";
 import { useConversations } from "../hooks/useConversations";
 import {
   useConversationStore, useOrderedIds, useFilter, useConvSearchQuery,
 } from "../store/conversationStore";
+
+// Urutan tab tersimpan per-perangkat (bukan per-akun) — pola sama dengan
+// preferensi tema web (localStorage). Diatur lewat ReorderFiltersModal
+// (tekan-tahan salah satu tab), bukan drag inline — lihat catatan panjang
+// di ReorderFiltersModal.js soal kenapa (ScrollView tab ini sudah punya
+// gesture pan sendiri untuk scroll, drag-reorder inline berisiko bentrok
+// gesture tanpa perangkat asli untuk diuji langsung).
+const TAB_ORDER_KEY = "sano-inbox-tab-order";
+
+function validOrder(parsed, defaultOrder) {
+  if (!Array.isArray(parsed)) return null;
+  const validKeys = new Set(defaultOrder);
+  if (parsed.length !== defaultOrder.length) return null;
+  if (!parsed.every((k) => validKeys.has(k))) return null;
+  if (new Set(parsed).size !== defaultOrder.length) return null;
+  return parsed;
+}
 
 const DEBOUNCE_MS = 300;
 
@@ -105,6 +124,26 @@ export default function ChatListScreen({ navigation }) {
   const [counts, setCounts] = useState({});
   const debounceRef = useRef(null);
   const listRef = useRef(null);
+
+  // Urutan tab filter — lihat catatan TAB_ORDER_KEY di atas.
+  const defaultTabOrder = useMemo(() => TABS.map((t) => t.key), []);
+  const [tabOrder, setTabOrder] = useState(defaultTabOrder);
+  const [reorderModalVisible, setReorderModalVisible] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(TAB_ORDER_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const valid = validOrder(JSON.parse(raw), defaultTabOrder);
+        if (valid) setTabOrder(valid);
+      } catch { /* data tersimpan rusak — abaikan, pakai default */ }
+    }).catch(() => {});
+  }, [defaultTabOrder]);
+
+  function handleChangeTabOrder(next) {
+    setTabOrder(next);
+    AsyncStorage.setItem(TAB_ORDER_KEY, JSON.stringify(next)).catch(() => {});
+  }
 
   // GAP (fix): dulu tidak ada mode pilih-banyak ala WhatsApp (tap avatar
   // beberapa chat → header berubah jadi bar aksi). Aksi bar SENGAJA dibatasi
@@ -313,7 +352,9 @@ export default function ChatListScreen({ navigation }) {
         style={styles.tabsWrap}
         contentContainerStyle={styles.tabsContent}
       >
-        {TABS.map((t) => {
+        {tabOrder.map((key) => {
+          const t = TABS.find((x) => x.key === key);
+          if (!t) return null;
           const active = filter === t.key;
           const count = counts[
             t.key === "ALL" ? "semua" : t.key === "UNREAD" ? "belumDibaca" :
@@ -335,6 +376,9 @@ export default function ChatListScreen({ navigation }) {
                   useConversationStore.getState().setFilter(t.key);
                 }
               }}
+              // Tekan-tahan tab mana pun → buka pengatur urutan (lihat
+              // catatan TAB_ORDER_KEY di atas soal kenapa bukan drag inline).
+              onLongPress={() => { lightHaptic(); setReorderModalVisible(true); }}
             >
               <Text style={[styles.pillText, active && styles.pillTextActive]}>{t.label}</Text>
               {count > 0 && (
@@ -346,6 +390,14 @@ export default function ChatListScreen({ navigation }) {
           );
         })}
       </ScrollView>
+
+      <ReorderFiltersModal
+        visible={reorderModalVisible}
+        tabs={TABS}
+        order={tabOrder}
+        onChangeOrder={handleChangeTabOrder}
+        onClose={() => setReorderModalVisible(false)}
+      />
 
       {/* Daftar percakapan */}
       {isLoading && visibleIds.length === 0 ? (
