@@ -80,6 +80,9 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
   const funnelUtama = funnel.filter((f) => f.count > 0);
   const funnelMax = Math.max(1, ...funnelUtama.map((f) => f.count));
 
+  const agingRows = uang?.outstandingAging || [];
+  const agingMax  = Math.max(1, ...agingRows.map((r) => r.value));
+
   return (
     <div className="flex flex-col gap-5">
       {/* ── 1. UANG ────────────────────────────────────────────────────── */}
@@ -114,6 +117,30 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           sub="AOV — nilai penjualan / jumlah order"
         />
       </div>
+
+      {/* Aging piutang — "Belum Lunas" di atas satu angka gabungan, tidak
+          bisa membedakan piutang yang baru kemarin (wajar) dari yang sudah
+          sebulan menunggak (butuh ditagih). Umur dihitung dari createdAt
+          order sampai SEKARANG, bukan relatif ke periode laporan yang
+          dipilih — piutang 40 hari tetap "40 hari" apa pun rentang di atas. */}
+      {agingRows.some((r) => r.value > 0) && (
+        <ChartCard
+          index={3.5}
+          title="Aging Piutang"
+          description="Order belum lunas, dikelompokkan berdasarkan sudah berapa lama menunggak"
+        >
+          <div className="flex flex-col gap-2.5">
+            {agingRows.map((r) => (
+              <BarRow
+                key={r.label} label={r.label} value={r.value} max={agingMax}
+                display={formatRupiahShort(r.value)}
+                sub={`${r.count} order`}
+                tone={r.label === ">30 hari" ? "red" : r.label === "7-30 hari" ? "orange" : "accent"}
+              />
+            ))}
+          </div>
+        </ChartCard>
+      )}
 
       {/* Peringatan kualitas data pembayaran. Rasio lunas yang sangat rendah
           hampir selalu berarti `paymentStatus` order TIDAK dirawat tim, bukan

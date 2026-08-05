@@ -303,7 +303,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       statusGroups, categoryGroups,
       cityGroups, complaintCount,
       paidCustomers, totalCustomers, customersWithOrders, repeatCustomers, paidTanpaOrder,
-      revenueRaw, customerRaw,
+      revenueRaw, customerRaw, outstandingOrders,
     ] = await Promise.all([
       prisma.order.aggregate({ where: orderWhere, _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
       prisma.order.aggregate({ where: { ...orderWhere, paymentStatus: "LUNAS" }, _count: { _all: true }, _sum: { value: true } }),
@@ -370,11 +370,36 @@ analyticsRouter.get("/business-summary", async (req, res) => {
             FROM "Customer"
             WHERE "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`,
+
+      // Aging piutang — order yang belum LUNAS, dikelompokkan berdasarkan
+      // SEBERAPA LAMA sudah menunggak (dari createdAt sampai SEKARANG, bukan
+      // dari kapan order dibuat relatif ke rentang tanggal laporan — piutang
+      // yang sudah 40 hari menunggak tetap "40 hari" apa pun periode yang
+      // sedang dilihat). Diambil mentah (bukan groupBy DB) dan di-bucket di
+      // JS karena bucket-nya berbasis usia relatif ke NOW(), bukan kolom
+      // tetap yang bisa di-GROUP BY langsung.
+      prisma.order.findMany({
+        where: { ...orderWhere, paymentStatus: { not: "LUNAS" } },
+        select: { value: true, createdAt: true },
+      }),
     ]);
 
     const gross     = orderAgg._sum.value || 0;
     const collected = lunasAgg._sum.value || 0;
     const totalOrders = orderAgg._count._all;
+
+    // Bucket: <7 hari / 7-30 hari / >30 hari sejak order dibuat. Piutang
+    // yang makin lama menunggak makin butuh ditindaklanjuti — angka gabungan
+    // `outstandingValue` tidak bisa membedakan "baru kemarin, wajar belum
+    // dibayar" dari "sudah sebulan, ini masalah".
+    const agingNow = Date.now();
+    const aging = { under7: { count: 0, value: 0 }, d7to30: { count: 0, value: 0 }, over30: { count: 0, value: 0 } };
+    for (const o of outstandingOrders) {
+      const umurHari = (agingNow - new Date(o.createdAt).getTime()) / 86_400_000;
+      const bucket = umurHari < 7 ? aging.under7 : umurHari < 30 ? aging.d7to30 : aging.over30;
+      bucket.count += 1;
+      bucket.value += o.value || 0;
+    }
 
     res.json({
       granularity: win.harian ? "day" : "month",
@@ -387,6 +412,12 @@ analyticsRouter.get("/business-summary", async (req, res) => {
         // hilang dari laporan padahal paling dicari owner.
         outstandingValue: gross - collected,
         collectedRate: gross > 0 ? Math.round((collected / gross) * 100) : null,
+        // Rincian umur piutang — lihat catatan bucket di atas.
+        outstandingAging: [
+          { label: "<7 hari",   count: aging.under7.count, value: aging.under7.value },
+          { label: "7-30 hari", count: aging.d7to30.count, value: aging.d7to30.value },
+          { label: ">30 hari",  count: aging.over30.count, value: aging.over30.value },
+        ],
         totalOrders,
         // AOV — nilai rata-rata per order. Naik/turunnya AOV menjelaskan
         // perubahan revenue yang tidak terjelaskan oleh jumlah order.
