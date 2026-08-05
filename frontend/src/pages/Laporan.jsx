@@ -33,6 +33,7 @@ export default function Laporan() {
   const [salesReport, setSalesReport] = useState(null);
   const [funnel, setFunnel]     = useState([]);
   const [velocity, setVelocity] = useState(null);
+  const [respTimeSeries, setRespTimeSeries] = useState(null);
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -46,7 +47,7 @@ export default function Laporan() {
     if (setengahJadi) return;
     setLoading(true);
     try {
-      const [ov, sm, pf, fn, sr, vl] = await Promise.all([
+      const [ov, sm, pf, fn, sr, vl, rts] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getBusinessSummary(params),
         api.getAnalyticsPerformance(params),
@@ -60,12 +61,14 @@ export default function Laporan() {
         // Pipeline tetap tampil (corong jalan) dan widget kecepatan jatuh ke
         // empty state, bukan menggagalkan seluruh halaman Laporan.
         api.getAnalyticsPipelineVelocity(params).catch(() => null),
+        api.getResponseTimeSeries(params).catch(() => null),
       ]);
       setOverview(ov);
       setSummary(sm);
       setPerf(pf);
       setSalesReport(sr);
       setVelocity(vl);
+      setRespTimeSeries(rts);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
         (fn || []).map((item) => ({
@@ -161,6 +164,7 @@ export default function Laporan() {
               <TabsContent value="Sales">
                 <SalesReportTab
                   report={salesReport}
+                  respTimeSeries={respTimeSeries}
                   grossTotalPerusahaan={summary?.uang?.grossValue}
                   onExport={handleExport}
                 />

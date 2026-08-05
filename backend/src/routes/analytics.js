@@ -1226,6 +1226,111 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
   }
 });
 
+// ── GET /analytics/response-time-series?from=&to= ──────────────────────────
+// Tren TIM (bukan per-sales — lihat /sales-report untuk itu) dari waktu
+// respons pertama & pelanggaran SLA, dari waktu ke waktu. Sebelumnya cuma
+// ada ANGKA satu periode (di /sales-report, /performance) — tidak kelihatan
+// apakah tim membaik atau memburuk dari waktu ke waktu, cuma snapshot.
+//
+// Sama seperti /sales-report (lihat catatan panjang di situ soal takeover):
+// waktu respons dihitung dari INBOUND pertama → OUTBOUND pertama per
+// percakapan (bukan per-sales, jadi tidak perlu firstResponderId di sini).
+// SLA breach = balasan pertama >60 menit, DITAMBAH percakapan yang RESOLVED
+// tanpa satu pun balasan (celah yang sama yang diperbaiki 5 Agustus 2026 di
+// /sales-report — lihat catatan di situ) supaya lead yang diabaikan total
+// sampai ditutup tidak lolos dari tren ini juga.
+//
+// avgResponseMinutes BUKAN diisi 0 untuk bucket kosong (beda dari
+// fillBuckets biasa) — 0 menit berarti "dibalas instan", padahal artinya
+// "tidak ada data hari itu". null supaya frontend merender celah di garis,
+// bukan turun ke nol yang menyesatkan.
+analyticsRouter.get("/response-time-series", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const win = seriesWindow(from, to);
+
+    const respRows = win.harian
+      ? await prisma.$queryRaw`
+          SELECT to_char(date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                 AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60)::float AS avg_minutes,
+                 COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60)::int AS sla_breach
+          FROM "Conversation" c
+          JOIN (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m WHERE m.direction = 'INBOUND' GROUP BY 1
+          ) i ON i."conversationId" = c.id
+          JOIN (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
+          ) o ON o."conversationId" = c.id
+          WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+            AND o."createdAt" > i."createdAt"
+          GROUP BY 1 ORDER BY 1`
+      : await prisma.$queryRaw`
+          SELECT to_char(date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                 AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60)::float AS avg_minutes,
+                 COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60)::int AS sla_breach
+          FROM "Conversation" c
+          JOIN (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m WHERE m.direction = 'INBOUND' GROUP BY 1
+          ) i ON i."conversationId" = c.id
+          JOIN (
+            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+            FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
+          ) o ON o."conversationId" = c.id
+          WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+            AND o."createdAt" > i."createdAt"
+          GROUP BY 1 ORDER BY 1`;
+
+    const neverRepliedRows = win.harian
+      ? await prisma.$queryRaw`
+          SELECT to_char(date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                 COUNT(*)::int AS n
+          FROM "Conversation" c
+          WHERE c."type" = 'INDIVIDUAL' AND c.status = 'RESOLVED'
+            AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+            AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
+          GROUP BY 1 ORDER BY 1`
+      : await prisma.$queryRaw`
+          SELECT to_char(date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                 COUNT(*)::int AS n
+          FROM "Conversation" c
+          WHERE c."type" = 'INDIVIDUAL' AND c.status = 'RESOLVED'
+            AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+            AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
+          GROUP BY 1 ORDER BY 1`;
+
+    const avgMap = {};
+    const slaMap = {};
+    for (const r of respRows) {
+      avgMap[r.bucket] = r.avg_minutes != null ? Number(r.avg_minutes) : null;
+      slaMap[r.bucket] = (slaMap[r.bucket] || 0) + (r.sla_breach || 0);
+    }
+    for (const r of neverRepliedRows) {
+      slaMap[r.bucket] = (slaMap[r.bucket] || 0) + Number(r.n);
+    }
+
+    // Bucket kosong untuk slaBreach WAJAR 0 (fillBuckets biasa) — tidak ada
+    // data berarti tidak ada pelanggaran. avgResponseMinutes TIDAK boleh
+    // ikut fillBuckets (default 0 salah, lihat catatan di atas) — dipetakan
+    // manual dari urutan bucket yang SAMA (fillBuckets dengan map kosong
+    // cuma dipakai untuk dapat daftar nama bucket-nya, bukan nilainya).
+    const slaBreachSeries = fillBuckets(win, slaMap);
+    const avgResponseSeries = slaBreachSeries.map((p) => ({
+      bucket: p.bucket, value: avgMap[p.bucket] ?? null,
+    }));
+
+    res.json({
+      granularity: win.harian ? "day" : "month",
+      avgResponseSeries, slaBreachSeries,
+    });
+  } catch (err) {
+    console.error("response-time-series error:", err);
+    res.status(500).json({ error: "Gagal memuat tren waktu respons" });
+  }
+});
+
 // ── GET /analytics/pipeline-velocity?from=&to= ─────────────────────────────
 // Sisi WAKTU dari pipeline — pembaca pertama tabel pipeline_transitions.
 // /pipeline-funnel menjawab "berapa banyak di stage X SEKARANG"; endpoint ini

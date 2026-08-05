@@ -1,11 +1,37 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Download, AlertTriangle, Info } from "lucide-react";
+import {
+  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import dayjs from "dayjs";
 import Avatar from "../../../components/Avatar.jsx";
 import { formatRupiah, formatRupiahShort, formatDuration } from "@/utils/format.js";
+import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
+
+// Tooltip khusus tren respons/SLA — dua series beda satuan (menit vs
+// jumlah pelanggaran), jadi tidak bisa reuse ChartTip revenue yang cuma 1 nilai.
+function RespTrendTip({ active, payload, label, granularity }) {
+  if (!active || !payload?.length) return null;
+  const avg = payload.find((p) => p.dataKey === "avgMinutes")?.value;
+  const sla = payload.find((p) => p.dataKey === "slaBreach")?.value;
+  return (
+    <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
+      <p className="t-caption mb-1">{granularity === "day" ? formatTanggalPendek(label) : label}</p>
+      {avg != null && (
+        <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
+          <span className="h-2 w-2 rounded-full bg-accent" /> Avg respons: {Math.round(avg)} mnt
+        </p>
+      )}
+      <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-red">
+        <span className="h-2 w-2 rounded-full bg-red" /> SLA breach: {sla ?? 0}
+      </p>
+    </div>
+  );
+}
 
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
 // Pengganti tab "Performa CS" lama (4 kolom: percakapan, closing rate, avg
@@ -55,9 +81,23 @@ const KOLOM = [
   { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
 ];
 
-export default function SalesReportTab({ report, grossTotalPerusahaan, onExport }) {
+export default function SalesReportTab({ report, respTimeSeries, grossTotalPerusahaan, onExport }) {
   const rows  = report?.rows || [];
   const total = report?.total;
+
+  // Gabung dua deret (avg respons per bucket, SLA breach per bucket) jadi
+  // satu array utk ComposedChart — keduanya SUDAH bucket yang sama & urutan
+  // yang sama dari backend (lihat /analytics/response-time-series), jadi
+  // cukup zip berdasarkan index, tidak perlu join by key.
+  const trendData = useMemo(() => {
+    const avgPts = respTimeSeries?.avgResponseSeries || [];
+    const slaPts = respTimeSeries?.slaBreachSeries || [];
+    return avgPts.map((p, i) => ({
+      bucket: p.bucket, avgMinutes: p.value, slaBreach: slaPts[i]?.value ?? 0,
+    }));
+  }, [respTimeSeries]);
+  const trendGranularity = respTimeSeries?.granularity || "day";
+  const trendTickX = (v) => (trendGranularity === "day" ? dayjs(v).format("D MMM") : v);
 
   const aktif = rows.filter((r) => r.handled > 0);
   // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,
@@ -241,6 +281,52 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
             Sampel dihitung hanya dari percakapan yang benar-benar sudah dibalas,
             jadi sales yang tidak membalas sama sekali TIDAK membuat angkanya
             terlihat bagus — cek kolom “Menggantung”.
+          </p>
+        </ChartCard>
+      )}
+
+      {/* ── Tren waktu respons & SLA (TIM, dari waktu ke waktu) ─────────
+          Beda dari kartu di atas: itu snapshot SATU periode per-sales;
+          ini tren TIM sepanjang periode, supaya kelihatan membaik/memburuk
+          dari waktu ke waktu, bukan cuma angka sekarang. */}
+      {trendData.length > 0 && (
+        <ChartCard
+          index={6}
+          title="Tren Waktu Respons & Pelanggaran SLA"
+          description="Rata-rata waktu respons (garis) & jumlah pelanggaran SLA >60 menit (batang) tim, dari waktu ke waktu"
+        >
+          <ResponsiveContainer width="100%" height={230}>
+            <ComposedChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
+              <XAxis
+                dataKey="bucket" tickFormatter={trendTickX}
+                tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
+                axisLine={false} tickLine={false} dy={6}
+                interval="preserveStartEnd" minTickGap={28}
+              />
+              <YAxis
+                yAxisId="menit" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
+                axisLine={false} tickLine={false} width={42}
+                label={{ value: "menit", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--text-tertiary)" }}
+              />
+              <YAxis
+                yAxisId="sla" orientation="right" allowDecimals={false}
+                tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
+                axisLine={false} tickLine={false} width={30}
+              />
+              <Tooltip content={<RespTrendTip granularity={trendGranularity} />} cursor={{ fill: "var(--bg-hover)" }} />
+              <Bar yAxisId="sla" dataKey="slaBreach" fill="var(--red)" fillOpacity={0.35} radius={[3, 3, 0, 0]} />
+              <Line
+                yAxisId="menit" type="monotone" dataKey="avgMinutes"
+                stroke="var(--blue-600)" strokeWidth={2.5} dot={false}
+                connectNulls={false} activeDot={{ r: 4 }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
+            Garis terputus = periode tanpa data respons (bukan 0 menit).
+            Pelanggaran SLA termasuk percakapan yang ditutup tanpa satu pun
+            balasan — lihat catatan di kolom "SLA &gt;1j" pada tabel di bawah.
           </p>
         </ChartCard>
       )}
