@@ -70,6 +70,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       monthlyCustomersRaw,
       channelBreakdownRaw,
       customersWithOrdersCount,
+      repeatCustomersCount,
     ] = await Promise.all([
       prisma.customer.count({ where: custWhere }),
       prevRange ? prisma.customer.count({ where: { createdAt: prevRange } }) : Promise.resolve(null),
@@ -165,6 +166,9 @@ analyticsRouter.get("/overview", async (req, res) => {
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }),
+
+      // Repeat order — lihat catatan sama di /business-summary.
+      prisma.customer.count({ where: { ...custWhere, orderCount: { gte: 2 } } }),
     ]);
 
     // BUG YANG DIPERBAIKI (26 Jul 2026): dulu `prev === 0 && curr > 0` →
@@ -186,6 +190,10 @@ analyticsRouter.get("/overview", async (req, res) => {
       totalCustomers,
       growthCustomers: growth(totalCustomers, totalCustomersPrev),
       customersWithOrders: customersWithOrdersCount,
+      repeatCustomers: repeatCustomersCount,
+      // Dari pelanggan yang pernah order, berapa persen order LAGI.
+      repeatRate: customersWithOrdersCount > 0
+        ? Math.round((repeatCustomersCount / customersWithOrdersCount) * 1000) / 10 : null,
 
       // Order
       totalOrders: orderAgg._count._all,
@@ -294,7 +302,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       orderAgg, lunasAgg, dpAgg,
       statusGroups, categoryGroups,
       cityGroups, complaintCount,
-      paidCustomers, totalCustomers, customersWithOrders, paidTanpaOrder,
+      paidCustomers, totalCustomers, customersWithOrders, repeatCustomers, paidTanpaOrder,
       revenueRaw, customerRaw,
     ] = await Promise.all([
       prisma.order.aggregate({ where: orderWhere, _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
@@ -310,6 +318,13 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["COMPLETED", "REVIEWED"] } } }),
       prisma.customer.count({ where: custWhere }),
       prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
+      // Repeat order — customer dengan >=2 order (CANCELLED sudah
+      // dikecualikan di kolom denormalized ini, lihat customerOrderAggregate.js,
+      // konsisten dengan customersWithOrders di atas). Indikator loyalitas:
+      // AOV/Total Revenue bisa naik cuma karena lebih banyak pelanggan BARU,
+      // padahal yang lebih murah didapat & lebih menandakan puas adalah
+      // pelanggan LAMA yang balik order lagi.
+      prisma.customer.count({ where: { ...custWhere, orderCount: { gte: 2 } } }),
 
       // PEMERIKSAAN INTEGRITAS: customer ditandai Completed/Already Reviewed
       // TAPI tidak punya satu pun order. Ini mustahil secara bisnis — kalau
@@ -385,8 +400,13 @@ analyticsRouter.get("/business-summary", async (req, res) => {
         totalCustomers,
         paidCustomers,
         customersWithOrders,
-        paidRate:  totalCustomers > 0 ? Math.round((paidCustomers / totalCustomers) * 1000) / 10 : null,
-        orderRate: totalCustomers > 0 ? Math.round((customersWithOrders / totalCustomers) * 1000) / 10 : null,
+        repeatCustomers,
+        paidRate:   totalCustomers > 0 ? Math.round((paidCustomers / totalCustomers) * 1000) / 10 : null,
+        orderRate:  totalCustomers > 0 ? Math.round((customersWithOrders / totalCustomers) * 1000) / 10 : null,
+        // Dari pelanggan yang PERNAH order, berapa persen order LAGI —
+        // penyebutnya customersWithOrders (bukan totalCustomers), karena
+        // yang belum pernah order sama sekali tidak relevan untuk "repeat".
+        repeatRate: customersWithOrders > 0 ? Math.round((repeatCustomers / customersWithOrders) * 1000) / 10 : null,
       },
 
       // Beban produksi per status order — ini antrean kerja tim, bukan

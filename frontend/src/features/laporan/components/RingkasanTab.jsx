@@ -228,6 +228,17 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                   <span className="ml-1 font-normal text-ink3">({summary?.komplain?.count || 0})</span>
                 </span>
               </div>
+              {/* Repeat order — dari yang PERNAH order, berapa persen order
+                  LAGI. Indikator loyalitas yang tidak kelihatan dari AOV/
+                  Total Revenue sendirian (keduanya bisa naik cuma dari
+                  pelanggan baru). */}
+              <div className="mt-1.5 flex items-baseline justify-between">
+                <span className="text-xs text-ink3">Repeat order</span>
+                <span className="text-[13px] font-semibold tabular-nums text-ink2">
+                  {konversi?.repeatRate != null ? `${konversi.repeatRate}%` : "—"}
+                  <span className="ml-1 font-normal text-ink3">({konversi?.repeatCustomers || 0} pelanggan)</span>
+                </span>
+              </div>
             </div>
           </div>
         </ChartCard>

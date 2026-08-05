@@ -78,7 +78,12 @@ export default function Dashboard({ user }) {
         {/* DS v2.4: Sales Overview, Deal Pipeline, Top Performing Reps
             SATU periode — semuanya menerima `range` yang sama dari date
             picker di header. Pilih satu tanggal, ketiganya ikut berubah. */}
-        <RevenueOverview range={range} />
+        <RevenueOverview
+          range={range}
+          repeatRate={ov?.repeatRate}
+          repeatCustomers={ov?.repeatCustomers}
+          customersWithOrders={ov?.customersWithOrders}
+        />
 
         {/* ── Dua kolom: corong + leaderboard ── */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">

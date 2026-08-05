@@ -39,7 +39,7 @@ function ChartTip({ active, payload, label, granularity }) {
 // lewat prop `range` — sama seperti Deal Pipeline & Top Performing Reps.
 // Sebelumnya memilih tanggal di satu kartu TIDAK mengubah kartu lain, padahal
 // ketiganya menampilkan data tentang "periode yang sama" di mata pengguna.
-export default function RevenueOverview({ range, className }) {
+export default function RevenueOverview({ range, className, repeatRate, repeatCustomers, customersWithOrders }) {
   const params = useMemo(() => toApiParams(range), [range]);
 
   const q = useQuery({
@@ -107,6 +107,16 @@ export default function RevenueOverview({ range, className }) {
                 <p className="t-caption">AOV</p>
                 <p className="mt-1 text-[19px] font-bold tabular-nums text-ink">{formatRupiahShort(aov)}</p>
                 <p className="t-secondary mt-1 text-[11px]">{totalOrders} order</p>
+              </div>
+            )}
+            {/* Repeat Order Rate — indikator loyalitas: Revenue/AOV bisa naik
+                cuma dari pelanggan BARU, padahal pelanggan LAMA yang balik
+                order lagi lebih murah didapat & lebih menandakan puas. */}
+            {customersWithOrders > 0 && repeatRate != null && (
+              <div className="text-right">
+                <p className="t-caption">Repeat Order</p>
+                <p className="mt-1 text-[19px] font-bold tabular-nums text-ink">{repeatRate}%</p>
+                <p className="t-secondary mt-1 text-[11px]">{repeatCustomers} dari {customersWithOrders} pelanggan</p>
               </div>
             )}
           </div>
