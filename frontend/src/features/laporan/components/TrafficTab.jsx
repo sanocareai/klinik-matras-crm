@@ -68,6 +68,11 @@ export default function TrafficTab({ traffic }) {
   const daily = traffic?.daily || [];
   const heatmap = traffic?.heatmap || [];
   const anomali = daily.filter((d) => d.status !== "normal");
+  // Hari yang BENAR-BENAR dinilai (punya baseline, bukan hari berjalan) —
+  // dibedakan dari "0 anomali" supaya "0 spike · 0 drop" tidak dibaca sebagai
+  // "semuanya normal" padahal sebabnya periode terlalu pendek untuk baseline
+  // (butuh histori 7 hari sebelum `from`, lihat catatan backend/analytics.js).
+  const hariDinilai = daily.filter((d) => d.baseline != null && !d.partial).length;
 
   // Recharts butuh field terpisah utk menggambar pita baseline sebagai area
   // bertumpuk (lower + tinggi pita), bukan dua garis terpisah.
@@ -105,7 +110,10 @@ export default function TrafficTab({ traffic }) {
         <KpiCard
           index={1} label="Hari Tidak Normal"
           numericValue={anomali.length}
-          sub={`${anomali.filter((a) => a.status === "spike").length} spike · ${anomali.filter((a) => a.status === "drop").length} drop`}
+          sub={hariDinilai === 0
+            ? "Belum cukup histori pembanding — pilih periode yang lebih panjang"
+            : `${anomali.filter((a) => a.status === "spike").length} spike · ${anomali.filter((a) => a.status === "drop").length} drop, dari ${hariDinilai} hari yang dinilai`}
+          tooltip="Dibandingkan rata-rata 7 hari SEBELUM hari itu (tidak termasuk hari itu sendiri) ± 2 standar deviasi. Di luar rentang itu → ditandai Spike (lebih ramai dari biasa) atau Drop (lebih sepi). Hari yang sedang berjalan tidak pernah dinilai — datanya belum lengkap."
         />
         <KpiCard
           index={2} label="Jam Tersibuk"

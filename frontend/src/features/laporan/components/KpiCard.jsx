@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, Minus, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { useCountUp } from "@/hooks/useCountUp.js";
 import Sparkline from "./Sparkline.jsx";
+import InfoTooltip from "./InfoTooltip.jsx";
 
 // KPI card Laporan Analitik — gaya dashboard SaaS modern (referensi:
 // Ultraleads/Edaca): card bersih TANPA border (DS v2), label+titik menu "..."
@@ -17,7 +18,7 @@ import Sparkline from "./Sparkline.jsx";
 // (bg-blue-50) sebagai penanda "ini KPI utama tab ini", teksnya SELALU warna
 // gelap normal — tidak ada cabang warna teks terpisah lagi.
 export default function KpiCard({
-  label, numericValue, format, growth, sparkline, hero = false, sub, index = 0,
+  label, numericValue, format, growth, sparkline, hero = false, sub, index = 0, tooltip,
 }) {
   const animated = useCountUp(numericValue);
   const displayValue = format ? format(animated) : Math.round(animated).toLocaleString("id-ID");
@@ -35,8 +36,14 @@ export default function KpiCard({
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] font-medium text-ink3">{label}</p>
-        <MoreHorizontal size={16} className="text-ink3" />
+        <span className="flex items-center gap-1.5">
+          <p className="text-[13px] font-medium text-ink3">{label}</p>
+          {tooltip && <InfoTooltip text={tooltip} />}
+        </span>
+        {/* Titik-tiga dekoratif SENGAJA disembunyikan saat ada tooltip —
+            dua ikon kecil berdempetan di pojok kanan (⋯ dan info) terlihat
+            berantakan dan tidak ada yang tahu titik-tiga itu tidak bisa diklik. */}
+        {!tooltip && <MoreHorizontal size={16} className="text-ink3" />}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
