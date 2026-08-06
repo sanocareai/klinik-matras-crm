@@ -2,6 +2,9 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { KNOWN_SESSIONS } from "../services/wahaClient.js";
+// Batas hari WIB — WAJIB, jangan `setHours(0,0,0,0)` polos (lihat catatan
+// panjang di utils/wib.js & CLAUDE.md §11).
+import { startOfDayWIB, endOfDayExclusiveWIB, nowPartsWIB } from "../utils/wib.js";
 
 export const dashboardRouter = express.Router();
 dashboardRouter.use(requireAuth);
@@ -19,22 +22,29 @@ dashboardRouter.get("/recent-conversations", async (req, res) => {
   res.json(conversations);
 });
 
-// Awal periode "today"/"week"/"month" (waktu server, bukan UTC murni) —
-// dipakai widget "Distribusi Chat CS-1 vs CS-2".
+// Awal periode "today"/"week"/"month" menurut kalender WIB — dipakai widget
+// "Distribusi Chat CS-1 vs CS-2".
+//
+// BUG YANG DIPERBAIKI (6 Agustus 2026): versi lama pakai `new Date()` +
+// `setHours(0,0,0,0)` / `new Date(y, m, 1)` — itu waktu SERVER, dan container
+// backend jalan di UTC (diverifikasi: `date` → UTC, getTimezoneOffset() → 0).
+// Jadi "hari ini" mulai jam 00:00 UTC = 07:00 WIB, dan SEMUA lead yang masuk
+// jam 00:00-07:00 WIB terhitung di HARI SEBELUMNYA. Di data produksi itu
+// 166 lead (~8,5% dari total) salah bucket. Ini kelas bug yang sama persis
+// dengan yang sudah pernah diperbaiki di routes/analytics.js — sekarang
+// dipakaikan helper WIB yang sama supaya tidak ada dua definisi "hari ini"
+// yang bertentangan di satu aplikasi.
 function sessionDistributionPeriodStart(period) {
-  const now = new Date();
+  const { year, month, day } = nowPartsWIB();
+  const hariIni = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   if (period === "week") {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 6); // 7 hari termasuk hari ini
-    start.setHours(0, 0, 0, 0);
-    return start;
+    // 7 hari TERMASUK hari ini → mundur 6 hari dari awal hari ini (WIB).
+    return new Date(startOfDayWIB(hariIni).getTime() - 6 * 86_400_000);
   }
   if (period === "month") {
-    return new Date(now.getFullYear(), now.getMonth(), 1);
+    return startOfDayWIB(`${year}-${String(month).padStart(2, "0")}-01`);
   }
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  return start;
+  return startOfDayWIB(hariIni);
 }
 
 // Widget "Distribusi Chat CS-1 vs CS-2" — READ ONLY, tidak menyentuh logic
@@ -94,12 +104,17 @@ dashboardRouter.get("/session-distribution", async (req, res) => {
 // "Total Lead" existing. READ ONLY, sessionId sama seperti di atas
 // (dari Conversation individual pertama milik customer).
 dashboardRouter.get("/leads-detail", async (req, res) => {
+  // Batas hari WIB — sama seperti session-distribution di atas.
+  // `new Date("2026-08-06T00:00:00")` (tanpa sufiks Z) di Node diparse
+  // sebagai waktu LOKAL = UTC di container, jadi drill-down "lead tanggal X"
+  // dulu menampilkan jendela 07:00 WIB hari X sampai 07:00 WIB hari X+1.
   const dateParam = req.query.date;
-  const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(`${dateParam}T00:00:00`) : new Date();
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const { year, month, day } = nowPartsWIB();
+  const tanggal = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+    ? dateParam
+    : `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const start = startOfDayWIB(tanggal);
+  const end = endOfDayExclusiveWIB(tanggal);
 
   const sessionFilter = ["CS-1", "CS-2"].includes(req.query.session) ? req.query.session : "all";
 

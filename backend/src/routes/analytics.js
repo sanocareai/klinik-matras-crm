@@ -1362,6 +1362,205 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
   }
 });
 
+// ── GET /analytics/traffic?from=&to= ───────────────────────────────────────
+// LAPORAN TRAFFIC LEAD — "kapan lead masuk, dan apakah kami ada di sana saat
+// itu". Menjawab pertanyaan yang TIDAK terjawab endpoint lain: /overview cuma
+// kasih total lead periode, /response-time-series cuma tren waktu.
+//
+// DEFINISI "LEAD" DI SINI (penting, jangan diubah diam-diam): 1 lead = 1 baris
+// Customer BARU. Customer dibuat otomatis saat pesan WA masuk dari nomor yang
+// belum terdaftar (routes/webhooks.js upsert by phone). Jadi ini "nomor WA unik
+// yang pertama kali chat", TERMASUK salah sambung/spam/supplier — belum ada
+// mekanisme menandai lead sampah. Angka di sini akan sedikit lebih tinggi dari
+// "calon pembeli sungguhan".
+//
+// DETEKSI SPIKE — baseline statistik, bukan ambang persen yang dikarang:
+// tiap hari dibandingkan dengan rata-rata bergerak 7 hari SEBELUMNYA (trailing,
+// TIDAK termasuk hari itu sendiri — kalau ikut, hari yang melonjak akan
+// menaikkan baseline-nya sendiri dan lonjakannya jadi tersamar) ± 2 standar
+// deviasi. Keunggulan dibanding "naik >30%": otomatis menyesuaikan skala bisnis
+// (tidak perlu diatur ulang saat volume tumbuh) dan tidak menuduh "drop" untuk
+// hari yang memang selalu sepi.
+analyticsRouter.get("/traffic", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    // Traffic SELALU harian — "spike" itu konsep harian; bucket bulanan
+    // membuat lonjakan 1 hari lenyap ditelan rata-rata sebulan.
+    const sekarang = nowPartsWIB();
+    const mulai   = from ? startOfDayWIB(from) : startOfMonthWIB(sekarang.year, sekarang.month);
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
+    const panjangMs = selesai - mulai;
+
+    // Ditarik mundur 7 hari supaya hari-hari PERTAMA di rentang juga punya
+    // baseline (kalau tidak, minggu pertama selalu "tidak ada pembanding").
+    const WARMUP_HARI = 7;
+    const warmup = new Date(mulai.getTime() - WARMUP_HARI * 86_400_000);
+    const prevMulai = new Date(mulai.getTime() - panjangMs);
+
+    const [dailyRaw, volHeatRaw, respHeatRaw, prevCount, sourceGroups] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+               COUNT(*)::int AS value
+        FROM "Customer"
+        WHERE "createdAt" >= ${warmup} AND "createdAt" < ${selesai}
+        GROUP BY 1 ORDER BY 1`,
+
+      // Heatmap VOLUME: kapan lead masuk (hari-dalam-minggu × jam WIB).
+      prisma.$queryRaw`
+        SELECT EXTRACT(dow  FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS dow,
+               EXTRACT(hour FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS jam,
+               COUNT(*)::int AS n
+        FROM "Customer"
+        WHERE "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+        GROUP BY 1, 2`,
+
+      // Heatmap RESPONS: seberapa cepat dibalas, di-bucket menurut jam pesan
+      // PERTAMA customer masuk (bukan jam balasan) — itu yang menjawab
+      // "kalau customer chat jam segini, berapa lama dia menunggu".
+      prisma.$queryRaw`
+        SELECT EXTRACT(dow  FROM i.ts AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS dow,
+               EXTRACT(hour FROM i.ts AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS jam,
+               COUNT(*)::int AS n,
+               AVG(EXTRACT(EPOCH FROM (o.ts - i.ts)) / 60)::float AS avg_minutes,
+               COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (o.ts - i.ts)) / 60 > 60)::int AS sla_breach
+        FROM (SELECT "conversationId" cid, MIN("createdAt") ts FROM "Message" WHERE direction = 'INBOUND'  GROUP BY 1) i
+        JOIN (SELECT "conversationId" cid, MIN("createdAt") ts FROM "Message" WHERE direction = 'OUTBOUND' GROUP BY 1) o ON o.cid = i.cid
+        JOIN "Conversation" c ON c.id = i.cid
+        WHERE c."type" = 'INDIVIDUAL' AND o.ts > i.ts
+          AND i.ts >= ${mulai} AND i.ts < ${selesai}
+        GROUP BY 1, 2`,
+
+      prisma.customer.count({ where: { createdAt: { gte: prevMulai, lt: mulai } } }),
+
+      prisma.customer.groupBy({
+        by: ["leadSource", "leadSourceConfirmed"],
+        where: { createdAt: { gte: mulai, lt: selesai } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // ── Deret harian + baseline + flag spike ──────────────────────────────
+    const countByDay = Object.fromEntries(dailyRaw.map((r) => [r.bucket, Number(r.value)]));
+    const semuaHari = [];
+    for (let t = warmup.getTime(); t < selesai.getTime(); t += 86_400_000) {
+      const b = namaBucketWIB(new Date(t), true);
+      semuaHari.push({ bucket: b, value: countByDay[b] || 0 });
+    }
+    // Nama bucket hari pertama yang BOLEH dilaporkan (sebelum ini = warm-up
+    // yang cuma dipakai menghitung baseline). String ISO "YYYY-MM-DD" aman
+    // dibandingkan secara leksikografis.
+    const bucketMulai = namaBucketWIB(mulai, true);
+
+    const daily = [];
+    for (let i = 0; i < semuaHari.length; i++) {
+      const d = semuaHari[i];
+      if (d.bucket < bucketMulai) continue; // masih warm-up, tidak dilaporkan
+      const window = semuaHari.slice(Math.max(0, i - WARMUP_HARI), i).map((x) => x.value);
+      let baseline = null, upper = null, lower = null, status = "normal";
+      if (window.length >= 4) { // butuh minimal 4 hari supaya SD tidak omong kosong
+        const mean = window.reduce((s, v) => s + v, 0) / window.length;
+        const varians = window.reduce((s, v) => s + (v - mean) ** 2, 0) / window.length;
+        const sd = Math.sqrt(varians);
+        baseline = Math.round(mean * 10) / 10;
+        upper = Math.round((mean + 2 * sd) * 10) / 10;
+        lower = Math.round(Math.max(0, mean - 2 * sd) * 10) / 10;
+        if (d.value > upper) status = "spike";
+        else if (d.value < lower) status = "drop";
+      }
+      daily.push({
+        bucket: d.bucket, value: d.value, baseline, upper, lower, status,
+        deltaPct: baseline > 0 ? Math.round(((d.value - baseline) / baseline) * 100) : null,
+      });
+    }
+
+    // ── Heatmap 7×24 ─────────────────────────────────────────────────────
+    const volCell  = {};
+    for (const r of volHeatRaw)  volCell[`${r.dow}-${r.jam}`] = Number(r.n);
+    const respCell = {};
+    for (const r of respHeatRaw) {
+      respCell[`${r.dow}-${r.jam}`] = {
+        n: Number(r.n),
+        avgMinutes: r.avg_minutes != null ? Math.round(Number(r.avg_minutes)) : null,
+        slaBreach: Number(r.sla_breach),
+      };
+    }
+    const heatmap = [];
+    for (let dow = 0; dow < 7; dow++) {
+      for (let jam = 0; jam < 24; jam++) {
+        const rc = respCell[`${dow}-${jam}`];
+        heatmap.push({
+          dow, jam,
+          leads: volCell[`${dow}-${jam}`] || 0,
+          responded: rc?.n || 0,
+          avgMinutes: rc?.avgMinutes ?? null,
+          slaBreach: rc?.slaBreach || 0,
+        });
+      }
+    }
+
+    // ── Agregat per JAM (lintas hari) → jam sibuk & jam rawan ────────────
+    const perJam = Array.from({ length: 24 }, (_, jam) => ({ jam, leads: 0, responded: 0, totalMenit: 0, slaBreach: 0 }));
+    for (const c of heatmap) {
+      const p = perJam[c.jam];
+      p.leads += c.leads;
+      p.slaBreach += c.slaBreach;
+      if (c.avgMinutes != null && c.responded > 0) {
+        p.responded += c.responded;
+        p.totalMenit += c.avgMinutes * c.responded; // rata-rata TERBOBOT, bukan rata-rata dari rata-rata
+      }
+    }
+    const hourly = perJam.map((p) => ({
+      jam: p.jam, leads: p.leads, responded: p.responded, slaBreach: p.slaBreach,
+      avgMinutes: p.responded > 0 ? Math.round(p.totalMenit / p.responded) : null,
+    }));
+
+    const totalLeads = hourly.reduce((s, h) => s + h.leads, 0);
+    const busiestHours = [...hourly].sort((a, b) => b.leads - a.leads).slice(0, 3);
+    // Jam RAWAN = respons terburuk, TAPI dibatasi jam yang volumenya berarti
+    // (>=5% rata-rata per jam). Tanpa filter ini, jam 03:00 dengan 2 chat
+    // yang kebetulan telat akan selalu menang — bukan masalah nyata.
+    const ambangVolume = Math.max(3, (totalLeads / 24) * 0.05);
+    const riskiestHours = hourly
+      .filter((h) => h.avgMinutes != null && h.leads >= ambangVolume)
+      .sort((a, b) => b.avgMinutes - a.avgMinutes)
+      .slice(0, 3);
+
+    // ── Kualitas atribusi ────────────────────────────────────────────────
+    // Lead dianggap "teridentifikasi" kalau sumbernya BUKAN default
+    // WHATSAPP_DIRECT-belum-dikonfirmasi. Di produksi angka ini ~1% —
+    // ditampilkan apa adanya sebagai masalah KUALITAS DATA, bukan disamarkan
+    // jadi donut satu irisan yang terlihat seperti insight.
+    let teridentifikasi = 0;
+    const bySource = {};
+    for (const g of sourceGroups) {
+      const n = g._count._all;
+      const src = g.leadSource || "OTHER";
+      bySource[src] = (bySource[src] || 0) + n;
+      if (src !== "WHATSAPP_DIRECT" || g.leadSourceConfirmed) teridentifikasi += n;
+    }
+
+    res.json({
+      totalLeads,
+      prevTotalLeads: prevCount,
+      growthPct: prevCount > 0 ? Math.round(((totalLeads - prevCount) / prevCount) * 100) : null,
+      daily,
+      heatmap,
+      hourly,
+      busiestHours,
+      riskiestHours,
+      atribusi: {
+        total: totalLeads,
+        teridentifikasi,
+        rate: totalLeads > 0 ? Math.round((teridentifikasi / totalLeads) * 1000) / 10 : null,
+        bySource: Object.entries(bySource).map(([source, count]) => ({ source, count })),
+      },
+    });
+  } catch (err) {
+    console.error("traffic error:", err);
+    res.status(500).json({ error: "Gagal memuat laporan traffic" });
+  }
+});
+
 // ── GET /analytics/pipeline-velocity?from=&to= ─────────────────────────────
 // Sisi WAKTU dari pipeline — pembaca pertama tabel pipeline_transitions.
 // /pipeline-funnel menjawab "berapa banyak di stage X SEKARANG"; endpoint ini
