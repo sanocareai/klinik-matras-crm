@@ -11,13 +11,14 @@ import PercakapanTab from "@/features/laporan/components/PercakapanTab.jsx";
 import PenjualanTab from "@/features/laporan/components/PenjualanTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
 import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
+import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: workbook export (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
 // "Performa CS" → "Sales": tab ini bukan lagi tabel performa 4 kolom, tapi
 // laporan penjualan per orang (beban percakapan → funnel → uang). Lihat
 // features/laporan/components/SalesReportTab.jsx.
-const TABS = ["Ringkasan", "Percakapan", "Penjualan", "Pipeline", "Sales"];
+const TABS = ["Ringkasan", "Traffic", "Percakapan", "Penjualan", "Pipeline", "Sales"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -34,6 +35,7 @@ export default function Laporan() {
   const [funnel, setFunnel]     = useState([]);
   const [velocity, setVelocity] = useState(null);
   const [respTimeSeries, setRespTimeSeries] = useState(null);
+  const [traffic, setTraffic] = useState(null);
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -47,7 +49,7 @@ export default function Laporan() {
     if (setengahJadi) return;
     setLoading(true);
     try {
-      const [ov, sm, pf, fn, sr, vl, rts] = await Promise.all([
+      const [ov, sm, pf, fn, sr, vl, rts, tr] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getBusinessSummary(params),
         api.getAnalyticsPerformance(params),
@@ -62,6 +64,7 @@ export default function Laporan() {
         // empty state, bukan menggagalkan seluruh halaman Laporan.
         api.getAnalyticsPipelineVelocity(params).catch(() => null),
         api.getResponseTimeSeries(params).catch(() => null),
+        api.getTrafficReport(params).catch(() => null),
       ]);
       setOverview(ov);
       setSummary(sm);
@@ -69,6 +72,7 @@ export default function Laporan() {
       setSalesReport(sr);
       setVelocity(vl);
       setRespTimeSeries(rts);
+      setTraffic(tr);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
         (fn || []).map((item) => ({
@@ -147,6 +151,10 @@ export default function Laporan() {
                   summary={summary} overview={overview} perf={perf}
                   funnel={funnel} onGoTab={setTab}
                 />
+              </TabsContent>
+
+              <TabsContent value="Traffic">
+                <TrafficTab traffic={traffic} />
               </TabsContent>
 
               <TabsContent value="Percakapan">

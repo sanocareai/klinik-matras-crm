@@ -1450,6 +1450,11 @@ analyticsRouter.get("/traffic", async (req, res) => {
     // yang cuma dipakai menghitung baseline). String ISO "YYYY-MM-DD" aman
     // dibandingkan secara leksikografis.
     const bucketMulai = namaBucketWIB(mulai, true);
+    // Hari BERJALAN (WIB) belum lengkap — jam-jam sisanya belum terjadi, jadi
+    // angkanya pasti lebih rendah dari hari penuh. Tanpa penanda ini "hari ini"
+    // hampir SELALU ditandai "drop" tiap kali laporan dibuka siang hari, yang
+    // terbaca sebagai alarm palsu.
+    const bucketHariIni = `${sekarang.year}-${String(sekarang.month).padStart(2, "0")}-${String(sekarang.day).padStart(2, "0")}`;
 
     const daily = [];
     for (let i = 0; i < semuaHari.length; i++) {
@@ -1467,9 +1472,13 @@ analyticsRouter.get("/traffic", async (req, res) => {
         if (d.value > upper) status = "spike";
         else if (d.value < lower) status = "drop";
       }
+      // Hari berjalan: tetap tampilkan angkanya, TAPI jangan divonis
+      // spike/drop — pembandingnya tidak setara (hari belum selesai).
+      const partial = d.bucket === bucketHariIni;
+      if (partial) status = "normal";
       daily.push({
-        bucket: d.bucket, value: d.value, baseline, upper, lower, status,
-        deltaPct: baseline > 0 ? Math.round(((d.value - baseline) / baseline) * 100) : null,
+        bucket: d.bucket, value: d.value, baseline, upper, lower, status, partial,
+        deltaPct: baseline > 0 && !partial ? Math.round(((d.value - baseline) / baseline) * 100) : null,
       });
     }
 
