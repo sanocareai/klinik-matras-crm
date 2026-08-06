@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -237,13 +238,26 @@ export default function TrafficTab({ traffic }) {
             ))}
           </div>
         </div>
-        {/* position:fixed + koordinat dari getBoundingClientRect — supaya
-            tooltip tidak ikut ter-clip oleh container overflow-x-auto di atas
-            (kotak paling kanan akan terpotong kalau pakai absolute di dalam). */}
-        {hover && (
+        {/* BUG YANG DIPERBAIKI: tooltip dulu dirender di dalam ChartCard dan
+            tertutup card di bawahnya. Penyebabnya BUKAN z-index kurang tinggi —
+            ChartCard memakai animasi `fade-rise` yang meninggalkan
+            `transform: translateY(0)` (fill-mode `both`). Transform non-none
+            membuat elemen jadi CONTAINING BLOCK untuk position:fixed SEKALIGUS
+            stacking context baru, jadi tooltip terkurung di dalam card itu dan
+            z-50-nya cuma bersaing DI DALAM card — card berikutnya tetap menang.
+            Portal ke document.body melepasnya dari semua stacking context
+            ancestor, sekalian membuat koordinat fixed-nya benar-benar relatif
+            viewport (sesuai getBoundingClientRect). */}
+        {hover && createPortal(
           <div
-            className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full rounded-btn bg-surface px-3 py-2 shadow-popover"
-            style={{ left: hover.x, top: hover.y - 8 }}
+            className="pointer-events-none fixed z-[1200] rounded-btn bg-surface px-3 py-2 shadow-popover"
+            style={
+              // Dibalik ke BAWAH kotak kalau ruang di atas tidak cukup —
+              // baris "Min" di layar pendek tooltipnya akan kepotong tepi atas.
+              hover.y < 150
+                ? { left: hover.x, top: hover.y + 30, transform: "translateX(-50%)" }
+                : { left: hover.x, top: hover.y - 8, transform: "translate(-50%, -100%)" }
+            }
           >
             <p className="t-caption mb-1">
               {hover.nama}, {String(hover.cell.jam).padStart(2, "0")}:00–{String(hover.cell.jam).padStart(2, "0")}:59 WIB
@@ -268,7 +282,8 @@ export default function TrafficTab({ traffic }) {
                 dari {hover.cell.responded} percakapan yang dibalas
               </p>
             )}
-          </div>
+          </div>,
+          document.body
         )}
 
         <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
