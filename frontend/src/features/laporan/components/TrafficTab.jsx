@@ -58,6 +58,11 @@ function TrafficTip({ active, payload, label }) {
 
 export default function TrafficTab({ traffic }) {
   const [mode, setMode] = useState("volume"); // "volume" | "respons"
+  // Tooltip heatmap dibuat sendiri, BUKAN atribut `title` bawaan browser:
+  // `title` baru muncul setelah jeda ~1-2 detik, tidak bisa distyle, dan di
+  // beberapa browser tidak muncul sama sekali di elemen kecil tanpa teks —
+  // itu sebabnya detail kotak terasa "tidak ada".
+  const [hover, setHover] = useState(null); // { cell, nama, x, y }
 
   const daily = traffic?.daily || [];
   const heatmap = traffic?.heatmap || [];
@@ -214,15 +219,17 @@ export default function TrafficTab({ traffic }) {
               <div key={dow} className="mt-[2px] flex items-center gap-[2px]">
                 <div className="w-9 shrink-0 text-[10px] font-medium text-ink2">{nama}</div>
                 {Array.from({ length: 24 }, (_, jam) => {
-                  const c = cellByKey[`${dow}-${jam}`] || { leads: 0, avgMinutes: null, slaBreach: 0 };
+                  const c = cellByKey[`${dow}-${jam}`] || { dow, jam, leads: 0, responded: 0, avgMinutes: null, slaBreach: 0 };
                   const style = mode === "volume" ? selVolume(c.leads, maxLeadSel) : selRespons(c.avgMinutes);
-                  const judul = mode === "volume"
-                    ? `${nama} ${String(jam).padStart(2, "0")}:00 — ${c.leads} lead`
-                    : `${nama} ${String(jam).padStart(2, "0")}:00 — ${c.avgMinutes != null ? formatDuration(c.avgMinutes) : "tidak ada data"}${c.slaBreach ? ` · ${c.slaBreach} lewat SLA` : ""}`;
                   return (
                     <div
-                      key={jam} title={judul} style={style}
-                      className="h-6 flex-1 rounded-[3px]"
+                      key={jam} style={style}
+                      className="h-6 flex-1 cursor-help rounded-[3px] transition-[outline] hover:outline hover:outline-2 hover:outline-ink"
+                      onMouseEnter={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setHover({ cell: c, nama, x: r.left + r.width / 2, y: r.top });
+                      }}
+                      onMouseLeave={() => setHover(null)}
                     />
                   );
                 })}
@@ -230,6 +237,40 @@ export default function TrafficTab({ traffic }) {
             ))}
           </div>
         </div>
+        {/* position:fixed + koordinat dari getBoundingClientRect — supaya
+            tooltip tidak ikut ter-clip oleh container overflow-x-auto di atas
+            (kotak paling kanan akan terpotong kalau pakai absolute di dalam). */}
+        {hover && (
+          <div
+            className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full rounded-btn bg-surface px-3 py-2 shadow-popover"
+            style={{ left: hover.x, top: hover.y - 8 }}
+          >
+            <p className="t-caption mb-1">
+              {hover.nama}, {String(hover.cell.jam).padStart(2, "0")}:00–{String(hover.cell.jam).padStart(2, "0")}:59 WIB
+            </p>
+            <p className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-ink">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              {hover.cell.leads} lead masuk
+            </p>
+            <p className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ink2">
+              <span className="h-2 w-2 rounded-full bg-red" />
+              {hover.cell.avgMinutes != null
+                ? <>Respons {formatDuration(hover.cell.avgMinutes)}</>
+                : <>Belum ada data respons</>}
+            </p>
+            {hover.cell.slaBreach > 0 && (
+              <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-red">
+                {hover.cell.slaBreach}× lewat SLA 60 menit
+              </p>
+            )}
+            {hover.cell.responded > 0 && (
+              <p className="t-secondary mt-0.5 whitespace-nowrap text-[10.5px]">
+                dari {hover.cell.responded} percakapan yang dibalas
+              </p>
+            )}
+          </div>
+        )}
+
         <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
           Arahkan kursor ke kotak untuk detail. Bandingkan dua mode: kotak
           <strong> gelap</strong> di Volume tapi <strong>merah</strong> di Waktu Respons =

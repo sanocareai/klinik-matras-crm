@@ -99,10 +99,15 @@ export default function Laporan() {
     setExporting(true);
     try {
       const { exportLaporanWorkbook } = await import("../utils/exportLaporan.js");
+      // `tab` menentukan isi file — tiap tab punya sheet-nya sendiri, tidak
+      // lagi menulis semua sheet apa pun tab yang dibuka (lihat catatan bug
+      // di utils/exportLaporan.js#SHEET_PER_TAB). Nama file ikut menyebut
+      // tab-nya supaya beberapa file export tidak tertukar di folder Download.
       exportLaporanWorkbook({
+        tab,
         periode: formatRangeText(range),
-        namaFile: `laporan-klinik-matras-${namaFile(range)}`,
-        summary, overview, perf, funnel, velocity, salesReport,
+        namaFile: `laporan-${tab.toLowerCase()}-${namaFile(range)}`,
+        summary, overview, perf, funnel, velocity, salesReport, traffic,
       });
     } catch (e) {
       alert(e.message || "Gagal membuat file export.");
@@ -125,7 +130,7 @@ export default function Laporan() {
             <RefreshCw size={14} /> Refresh
           </button>
           <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
-            <Download size={14} /> {exporting ? "Menyiapkan…" : "Export Excel"}
+            <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
           </button>
           <DateRangePicker value={range} onChange={setRange} />
         </div>
