@@ -30,7 +30,7 @@ function todayStr() {
 // "gradasi biru terang→gelap" yang diminta: satu keluarga warna, tapi barisnya
 // tidak terlihat rata/monoton. Angka & delta tetap yang membawa informasi.
 export default function Dashboard({ user }) {
-  const [range, setRange] = useState(() => makeRange("last_30_days"));
+  const [range, setRange] = useState(() => makeRange("today"));
   const [leadsModal, setLeadsModal] = useState(null);
   const d = useDashboardData(range);
 
