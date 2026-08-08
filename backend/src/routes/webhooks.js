@@ -10,7 +10,7 @@ import { broadcast } from "./sse.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
-import { matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE } from "../services/leadAttribution.js";
+import { matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag } from "../services/leadAttribution.js";
 
 export const webhookRouter = express.Router();
 
@@ -431,35 +431,49 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   let pendingClickId = null;
 
   if (!existingCustomer) {
-    // Lapis 1: COCOKKAN TEKS PESAN PERTAMA ke campaign — paling kuat, jadi
-    // dicoba paling awal. Link pelacakan mengirim customer ke
+    // Lapis 0: TAG "(ref: ...)" dari website sanomatrassehat.com — Google
+    // Search & PMax mendarat di website dulu, bukan langsung ke WA seperti
+    // TrackedLink, jadi kalau website berhasil menempelkan tag ke pesan
+    // (lihat leadAttribution.js), ini sinyal PALING EKSPLISIT yang ada —
+    // dicek duluan sebelum tebakan/kemiripan teks di lapis-lapis di bawah.
+    const { tag: refTag } = extractRefTag(text);
+    if (refTag) {
+      detectedSource = leadSourceFromRefTag(refTag) || "WHATSAPP_DIRECT";
+      detectedDetail = `Website - ${refTag}`;
+      console.log("[attribution] Lapis 0 tag website:", refTag);
+    }
+
+    // Lapis 1: COCOKKAN TEKS PESAN PERTAMA ke campaign — dicoba kalau Lapis
+    // 0 belum kena. Link pelacakan mengirim customer ke
     // wa.me/<nomor>?text=<prefilledMessage>, jadi pesan pertamanya secara
     // harfiah ADALAH teks kampanye. Deterministik: tidak ada lomba waktu,
     // dan langsung tahu campaign-nya yang mana (bukan cuma platformnya).
     // Aturan & kasus "menyerah" ada di services/leadAttribution.js.
-    const activeLinks = await prisma.trackedLink.findMany({
-      where: { active: true },
-      select: { id: true, name: true, category: true, prefilledMessage: true },
-    });
-    const campaign = matchCampaignByMessage(text, activeLinks);
-    if (campaign) {
-      detectedSource = CATEGORY_TO_LEAD_SOURCE[campaign.category] || "OTHER";
-      detectedDetail = campaign.name;
-      console.log("[attribution] Lapis 1 cocok teks campaign:", campaign.name);
-
-      // Tandai satu klik yang belum ter-match DARI LINK INI supaya angka
-      // konversi di halaman Link Pelacakan tetap hidup. Dibatasi 7 hari
-      // biar tidak menyambar klik lama yang tidak berhubungan. Kalau tidak
-      // ada kliknya sama sekali itu WAJAR — iklan "Click to WhatsApp" Meta
-      // melompati redirect /r/ kita, jadi lead-nya kena tapi kliknya tidak
-      // pernah tercatat.
-      const seminggu = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const klik = await prisma.clickEvent.findFirst({
-        where: { trackedLinkId: campaign.id, matchedCustomerId: null, createdAt: { gte: seminggu } },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
+    if (detectedSource === "WHATSAPP_DIRECT") {
+      const activeLinks = await prisma.trackedLink.findMany({
+        where: { active: true },
+        select: { id: true, name: true, category: true, prefilledMessage: true },
       });
-      pendingClickId = klik?.id || null;
+      const campaign = matchCampaignByMessage(text, activeLinks);
+      if (campaign) {
+        detectedSource = CATEGORY_TO_LEAD_SOURCE[campaign.category] || "OTHER";
+        detectedDetail = campaign.name;
+        console.log("[attribution] Lapis 1 cocok teks campaign:", campaign.name);
+
+        // Tandai satu klik yang belum ter-match DARI LINK INI supaya angka
+        // konversi di halaman Link Pelacakan tetap hidup. Dibatasi 7 hari
+        // biar tidak menyambar klik lama yang tidak berhubungan. Kalau tidak
+        // ada kliknya sama sekali itu WAJAR — iklan "Click to WhatsApp" Meta
+        // melompati redirect /r/ kita, jadi lead-nya kena tapi kliknya tidak
+        // pernah tercatat.
+        const seminggu = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const klik = await prisma.clickEvent.findFirst({
+          where: { trackedLinkId: campaign.id, matchedCustomerId: null, createdAt: { gte: seminggu } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true },
+        });
+        pendingClickId = klik?.id || null;
+      }
     }
 
     // Lapis 2: referral Meta Ads dari payload mentah (GOWS mungkin expose di Info.CtwaContext)
@@ -580,7 +594,11 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   }
   const mediaType = parsedMedia.mediaType;
   let mediaUrl = null;
-  const content = parsedMedia.content;
+  // Buang tag "(ref: ...)" (lihat Lapis 0 di atas + leadAttribution.js)
+  // dari teks yang benar-benar TERSIMPAN & tampil ke sales -- sudah
+  // dipakai buat menentukan sumber lead di atas, tugasnya di sini selesai,
+  // jangan sampai sales melihat kode aneh nempel di akhir chat customer.
+  const content = extractRefTag(parsedMedia.content).cleaned;
 
   if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = mediaInfo?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";

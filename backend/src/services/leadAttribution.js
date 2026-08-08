@@ -73,3 +73,39 @@ export const CATEGORY_TO_LEAD_SOURCE = {
   WEBSITE_ORGANIC: "WEBSITE_ORGANIC",
   OTHER: "OTHER",
 };
+
+// ─── Tag "(ref: ...)" dari website sanomatrassehat.com ─────────────────────
+//
+// Google Search & PMax mendarat di WEBSITE dulu (bukan langsung ke
+// WhatsApp seperti TrackedLink), jadi jejak "dari campaign mana" akan
+// hilang begitu customer pindah ke WA — KECUALI website-nya sendiri
+// menempelkan tag ke pesan yang dikirim. Lihat utils/attribution.ts di
+// repo SANO-WEB: kalau pengunjung datang dari iklan (ada utm_source/
+// gclid/fbclid di URL), tombol WA di situs menambahkan
+// " (ref: google-cpc-namacampaign)" di akhir pesan prefilled.
+//
+// Ini sinyal PALING KUAT yang tersedia (eksplisit, bukan tebakan/
+// kemiripan teks) — makanya dicek PALING AWAL, sebelum Lapis 1
+// (pencocokan teks ke TrackedLink).
+const REF_TAG_PATTERN = /\s*\(ref:\s*([a-z0-9-]+)\)\s*$/i;
+
+/**
+ * Pisahkan tag "(ref: ...)" dari teks pesan asli.
+ * @returns {{ cleaned: string, tag: string|null }} cleaned = teks TANPA
+ *   tag (ini yang disimpan/ditampilkan ke sales, bukan teks mentahnya —
+ *   supaya chat tidak kelihatan aneh ada kode nempel di akhir kalimat).
+ */
+export function extractRefTag(text) {
+  const asli = String(text || "");
+  const match = REF_TAG_PATTERN.exec(asli);
+  if (!match) return { cleaned: asli, tag: null };
+  return { cleaned: asli.slice(0, match.index).trimEnd(), tag: match[1].toLowerCase() };
+}
+
+/** Tag ref (mis. "google-cpc-brand") -> LeadSource. Prefix source yang menentukan. */
+export function leadSourceFromRefTag(tag) {
+  if (!tag) return null;
+  if (tag.startsWith("google")) return "GOOGLE_ADS";
+  if (tag.startsWith("meta")) return "META_ADS";
+  return "OTHER";
+}
