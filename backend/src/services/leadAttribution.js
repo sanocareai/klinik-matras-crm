@@ -74,32 +74,94 @@ export const CATEGORY_TO_LEAD_SOURCE = {
   OTHER: "OTHER",
 };
 
-// ─── Tag "(ref: ...)" dari website sanomatrassehat.com ─────────────────────
+// ─── Tag dari website sanomatrassehat.com ───────────────────────────────
 //
 // Google Search & PMax mendarat di WEBSITE dulu (bukan langsung ke
 // WhatsApp seperti TrackedLink), jadi jejak "dari campaign mana" akan
 // hilang begitu customer pindah ke WA — KECUALI website-nya sendiri
 // menempelkan tag ke pesan yang dikirim. Lihat utils/attribution.ts di
-// repo SANO-WEB: kalau pengunjung datang dari iklan (ada utm_source/
-// gclid/fbclid di URL), tombol WA di situs menambahkan
-// " (ref: google-cpc-namacampaign)" di akhir pesan prefilled.
+// repo SANO-WEB (terpisah): kalau pengunjung datang dari iklan (ada
+// utm_source/gclid/fbclid di URL), tombol WA di situs menambahkan tag
+// ke akhir pesan prefilled.
 //
 // Ini sinyal PALING KUAT yang tersedia (eksplisit, bukan tebakan/
-// kemiripan teks) — makanya dicek PALING AWAL, sebelum Lapis 1
-// (pencocokan teks ke TrackedLink).
-const REF_TAG_PATTERN = /\s*\(ref:\s*([a-z0-9-]+)\)\s*$/i;
+// kemiripan teks) — makanya dicek PALING AWAL di webhooks.js, sebelum
+// Lapis 1 (pencocokan teks ke TrackedLink).
+//
+// TAK TERLIHAT (zero-width Unicode), bukan lagi teks kasat mata
+// "(ref: ...)" — customer sempat lihat versi lama itu di kotak chat WA
+// sebelum kirim. Encoding & alasannya HARUS SELALU DISAMAKAN MANUAL
+// dengan utils/attribution.ts di SANO-WEB (repo terpisah, tidak ada
+// package bersama) — kalau salah satu diubah, yang lain ikut diubah.
+//
+// SENGAJA pakai String.fromCharCode(kode hex), BUKAN karakter invisible
+// ditempel langsung di source — alasan sama dengan sisi website: karakter
+// literal gampang rusak lewat editor/git/encoding, dan mustahil diperiksa
+// dengan mata.
+const REF_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789-";
+const BIT0 = String.fromCharCode(0x200b);                                     // ZERO WIDTH SPACE     -> bit 0
+const BIT1 = String.fromCharCode(0x200c);                                     // ZERO WIDTH NON-JOINER -> bit 1
+const START_MARK = String.fromCharCode(0x200d) + String.fromCharCode(0x200d); // ZERO WIDTH JOINER x2 -> penanda mulai
+const END_MARK = String.fromCharCode(0x2060) + String.fromCharCode(0x2060);   // WORD JOINER x2       -> penanda selesai
+
+// Pola LAMA (teks kasat mata "(ref: ...)") — dipertahankan sebagai jaring
+// cadangan SAJA, murah dan tidak mengganggu apa pun kalau tidak pernah
+// cocok. Kemungkinan realistis kena: tab browser lama yang masih memuat
+// versi website SEBELUM tag disembunyikan.
+const LEGACY_VISIBLE_PATTERN = /\s*\(ref:\s*([a-z0-9-]+)\)\s*$/i;
 
 /**
- * Pisahkan tag "(ref: ...)" dari teks pesan asli.
+ * Pisahkan tag referral (format tak-terlihat ATAU pola lama kasat mata)
+ * dari teks pesan asli.
+ *
+ * ⚠️ RAPUH BY DESIGN (disepakati bersama, bukan kelalaian): kalau customer
+ * menghapus SEMUA teks prefilled lalu mengetik ulang dari nol, tag ini
+ * ikut hilang tanpa jejak — datanya nitip DI DALAM teks yang dihapus,
+ * tidak ada encoding yang bisa selamat dari itu. Kalau customer cuma
+ * NAMBAH di belakang (paling umum), tag tetap aman — marker dicari DI
+ * MANA SAJA dalam teks, tidak diwajibkan persis di ujung kalimat.
+ *
  * @returns {{ cleaned: string, tag: string|null }} cleaned = teks TANPA
- *   tag (ini yang disimpan/ditampilkan ke sales, bukan teks mentahnya —
- *   supaya chat tidak kelihatan aneh ada kode nempel di akhir kalimat).
+ *   marker apa pun (ini yang disimpan/ditampilkan ke sales).
  */
 export function extractRefTag(text) {
   const asli = String(text || "");
-  const match = REF_TAG_PATTERN.exec(asli);
-  if (!match) return { cleaned: asli, tag: null };
-  return { cleaned: asli.slice(0, match.index).trimEnd(), tag: match[1].toLowerCase() };
+
+  const start = asli.indexOf(START_MARK);
+  if (start !== -1) {
+    const end = asli.indexOf(END_MARK, start + START_MARK.length);
+    if (end !== -1) {
+      const payload = asli.slice(start + START_MARK.length, end);
+      const cleaned = (asli.slice(0, start) + asli.slice(end + END_MARK.length)).trim();
+
+      if (payload.length > 0 && payload.length % 6 === 0) {
+        let tag = "";
+        let valid = true;
+        for (let i = 0; i < payload.length && valid; i += 6) {
+          let bits = "";
+          for (const ch of payload.slice(i, i + 6)) {
+            if (ch === BIT0) bits += "0";
+            else if (ch === BIT1) bits += "1";
+            else { valid = false; break; }
+          }
+          if (!valid) break;
+          const idx = parseInt(bits, 2);
+          if (idx >= REF_ALPHABET.length) { valid = false; break; }
+          tag += REF_ALPHABET[idx];
+        }
+        if (valid) return { cleaned, tag };
+      }
+      // Marker ketemu tapi payload rusak/tidak valid -- tetap buang
+      // marker-nya dari teks tersimpan (jangan sampai sales lihat
+      // karakter zero-width nyasar), tapi jangan mengarang tag.
+      return { cleaned, tag: null };
+    }
+  }
+
+  const match = LEGACY_VISIBLE_PATTERN.exec(asli);
+  if (match) return { cleaned: asli.slice(0, match.index).trimEnd(), tag: match[1].toLowerCase() };
+
+  return { cleaned: asli, tag: null };
 }
 
 /** Tag ref (mis. "google-cpc-brand") -> LeadSource. Prefix source yang menentukan. */

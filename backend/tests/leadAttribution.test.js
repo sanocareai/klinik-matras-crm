@@ -76,9 +76,56 @@ test("link dengan prefilledMessage kosong tidak pernah cocok dengan apa pun", ()
   assert.equal(matchCampaignByMessage("halo mau tanya kasur", rusak), null);
 });
 
-// --- tag "(ref: ...)" dari website (PMax/Search -> website -> WA) ---------
+// --- tag referral dari website (PMax/Search -> website -> WA) -------------
+//
+// Format AKTIF sekarang: zero-width Unicode (tak terlihat sama sekali di
+// WhatsApp). Helper encode di bawah ini SENGAJA meniru persis skema di
+// utils/attribution.ts (SANO-WEB) -- kalau salah satu diubah, yang lain
+// harus ikut diubah, dan tes ini yang pertama gagal kalau lupa.
+const TEST_REF_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789-";
+const TEST_BIT0 = String.fromCharCode(0x200b);
+const TEST_BIT1 = String.fromCharCode(0x200c);
+const TEST_START = String.fromCharCode(0x200d) + String.fromCharCode(0x200d);
+const TEST_END = String.fromCharCode(0x2060) + String.fromCharCode(0x2060);
 
-test("extractRefTag: pisahkan tag dari pesan, sisakan teks asli tanpa tag", () => {
+function encodeInvisibleTagForTest(tag) {
+  let payload = "";
+  for (const ch of tag) {
+    const idx = TEST_REF_ALPHABET.indexOf(ch);
+    if (idx === -1) continue;
+    const bits = idx.toString(2).padStart(6, "0");
+    for (const bit of bits) payload += bit === "1" ? TEST_BIT1 : TEST_BIT0;
+  }
+  return TEST_START + payload + TEST_END;
+}
+
+test("extractRefTag (tak terlihat): round-trip encode->decode kembalikan tag yang sama", () => {
+  const pesan = `Halo Sano, saya tertarik konsultasi${encodeInvisibleTagForTest("google-cpc-brand")}`;
+  const { cleaned, tag } = extractRefTag(pesan);
+  assert.equal(tag, "google-cpc-brand");
+  assert.equal(cleaned, "Halo Sano, saya tertarik konsultasi");
+});
+
+test("extractRefTag (tak terlihat): customer NAMBAH teks setelah tag -> tetap kena", () => {
+  // Ini skenario yang tadinya BOCOR di versi kasat mata (regex diwajibkan
+  // pas di ujung kalimat) -- kursor WA default di akhir teks, jadi
+  // customer yang mengetik tambahan taruh teksnya SETELAH tag.
+  const pesan = `Halo Sano, saya tertarik konsultasi${encodeInvisibleTagForTest("google-pmax")} kasur saya juga amblas`;
+  const { cleaned, tag } = extractRefTag(pesan);
+  assert.equal(tag, "google-pmax");
+  assert.equal(cleaned, "Halo Sano, saya tertarik konsultasi kasur saya juga amblas");
+});
+
+test("extractRefTag (tak terlihat): marker ketemu tapi payload rusak -> tag null, marker tetap dibuang", () => {
+  const rusak = `Halo Sano${TEST_START}xxx${TEST_END}`; // payload bukan kelipatan 6 / karakter bukan bit
+  const { cleaned, tag } = extractRefTag(rusak);
+  assert.equal(tag, null);
+  assert.equal(cleaned, "Halo Sano"); // marker tetap dibersihkan, jangan sampai nyasar ke chat
+});
+
+test("extractRefTag: pola LAMA kasat mata \"(ref: ...)\" tetap jadi jaring cadangan", () => {
+  // Bukan lagi jalur utama, tapi murah dipertahankan untuk tab browser
+  // lama yang mungkin masih memuat versi website sebelum tag disembunyikan.
   const { cleaned, tag } = extractRefTag("Halo Sano, saya tertarik konsultasi (ref: google-cpc-brand)");
   assert.equal(cleaned, "Halo Sano, saya tertarik konsultasi");
   assert.equal(tag, "google-cpc-brand");
