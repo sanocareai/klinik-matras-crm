@@ -339,6 +339,37 @@ export async function getSessionStatus(session = WAHA_SESSION) {
   return res.json();
 }
 
+/**
+ * Daftar nomor WA yang BENAR-BENAR terdaftar & jalan di WAHA.
+ *
+ * Dipakai halaman Link Pelacakan untuk memperingatkan kalau sebuah link
+ * iklan mengarah ke nomor yang tidak ada. Ini pernah kejadian nyata:
+ * WAHA_BUSINESS_NUMBER masih berisi nomor contoh "6281234567890" sisa
+ * setup awal, jadi setiap link yang targetPhone-nya kosong diam-diam
+ * melempar pengklik iklan ke nomor yang tidak pernah ada. Customer tidak
+ * pernah sampai, tapi di laporan terlihat seperti "iklannya tidak
+ * konversi" — bukan seperti kerusakan teknis.
+ *
+ * @returns {Promise<string[]|null>} daftar nomor, atau NULL kalau WAHA
+ *   tidak bisa dihubungi. NULL ≠ array kosong: array kosong berarti
+ *   "tidak ada nomor terdaftar" (semua link memang salah), sedangkan NULL
+ *   berarti "tidak bisa diperiksa" — pemanggil TIDAK BOLEH menuduh link
+ *   salah hanya karena WAHA sedang mati.
+ */
+export async function listSessionNumbers() {
+  try {
+    const res = await fetch(`${WAHA_BASE_URL}/api/sessions`, { headers: headers() });
+    if (!res.ok) return null;
+    const sessions = await res.json();
+    if (!Array.isArray(sessions)) return null;
+    return sessions
+      .map((s) => cleanPhoneNumber(s?.me?.id))
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
 // ─── DETEKSI LID — SATU SUMBER KEBENARAN ─────────────────────────────────────
 // LID (Local ID WhatsApp) adalah angka ~15 digit yang BUKAN nomor telepon.
 // Kalau LID lolos ke chatId kirim, pesan masuk ke alamat yang tidak ada:

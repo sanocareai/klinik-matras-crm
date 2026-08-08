@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { listSessionNumbers } from "../services/wahaClient.js";
 
 // ── Router publik: GET /r/:slug (redirect ke WhatsApp) ──────────────────────
 export const trackingRedirectRouter = express.Router();
@@ -44,13 +45,32 @@ trackingRouter.get("/links", async (req, res) => {
         _count: { select: { clicks: true } },
       },
     });
+
+    // Nomor yang benar-benar terdaftar di WAHA — untuk memperingatkan link
+    // yang mengarah ke nomor tidak ada (lihat listSessionNumbers). null =
+    // WAHA tidak bisa dihubungi, JANGAN tuduh link-nya salah.
+    const nomorTerdaftar = await listSessionNumbers();
+    const fallbackPhone = process.env.WAHA_BUSINESS_NUMBER || "";
+
     // Hitung jumlah klik yang berhasil dicocokkan ke customer (konversi)
     const result = await Promise.all(links.map(async (link) => {
       const converted = await prisma.clickEvent.count({
         where: { trackedLinkId: link.id, matchedCustomerId: { not: null } },
       });
+
+      // targetPhone kosong = pakai WAHA_BUSINESS_NUMBER dari .env
+      const effectivePhone = link.targetPhone || fallbackPhone;
+      let phoneStatus = "TIDAK_DIKETAHUI";
+      if (nomorTerdaftar) {
+        if (!effectivePhone) phoneStatus = "KOSONG";
+        else phoneStatus = nomorTerdaftar.includes(effectivePhone) ? "OK" : "TIDAK_TERDAFTAR";
+      }
+
       return {
         ...link,
+        effectivePhone,
+        phoneFromFallback: !link.targetPhone,
+        phoneStatus,
         totalClicks:   link._count.clicks,
         totalConverted: converted,
         convRate:      link._count.clicks > 0
@@ -93,8 +113,20 @@ trackingRouter.post("/links", async (req, res) => {
 });
 
 // PATCH /api/tracking/links/:id — update link
+//
+// SLUG BOLEH DIUBAH, TAPI SADARI RISIKONYA. Slug adalah alamat yang sudah
+// dipublikasikan ke Google Ads/Meta. Kalau link sudah terpasang di iklan
+// yang berjalan lalu slug-nya diganti, URL lama TIDAK error — dia diam-diam
+// jatuh ke redirect fallback tanpa mencatat klik dan tanpa pesan prefilled.
+// Customer tetap sampai ke WhatsApp, jadi dari luar terlihat normal, tapi
+// atribusi campaign itu mati total tanpa ada yang sadar.
+//
+// Karena itu penggantian slug pada link YANG SUDAH PERNAH DIKLIK wajib
+// disertai `confirmSlugChange: true` — biar tidak pernah terjadi karena
+// tidak sengaja. Link yang belum pernah diklik (baru dibuat, belum
+// dipasang di mana-mana) bebas diganti.
 trackingRouter.patch("/links/:id", async (req, res) => {
-  const { name, category, prefilledMessage, targetPhone, active } = req.body;
+  const { name, category, prefilledMessage, targetPhone, active, slug: rawSlug, confirmSlugChange } = req.body;
   const data = {};
   if (name !== undefined)             data.name             = name.trim();
   if (category !== undefined)         data.category         = category;
@@ -103,12 +135,35 @@ trackingRouter.patch("/links/:id", async (req, res) => {
   if (active !== undefined)           data.active           = !!active;
 
   try {
-    const link = await prisma.trackedLink.update({
+    const existing = await prisma.trackedLink.findUnique({
       where: { id: req.params.id },
-      data,
+      include: { _count: { select: { clicks: true } } },
     });
+    if (!existing) return res.status(404).json({ error: "Link tidak ditemukan" });
+
+    if (rawSlug !== undefined) {
+      const slug = slugify(String(rawSlug).trim());
+      if (!slug) return res.status(400).json({ error: "Slug tidak valid" });
+      if (slug !== existing.slug) {
+        if (existing._count.clicks > 0 && !confirmSlugChange) {
+          return res.status(409).json({
+            error: `Link ini sudah diklik ${existing._count.clicks}x — kemungkinan sudah terpasang di iklan yang berjalan. `
+                 + `Mengganti slug akan mematikan pelacakan dari iklan itu tanpa pesan error. `
+                 + `Pastikan URL di platform iklan ikut diperbarui, lalu ulangi dengan konfirmasi.`,
+            needsConfirmation: true,
+            totalClicks: existing._count.clicks,
+          });
+        }
+        data.slug = slug;
+      }
+    }
+
+    const link = await prisma.trackedLink.update({ where: { id: req.params.id }, data });
     res.json(link);
   } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: "Slug itu sudah dipakai link lain, pilih yang berbeda" });
+    }
     res.status(500).json({ error: err.message });
   }
 });

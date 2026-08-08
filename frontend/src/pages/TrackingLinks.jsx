@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link2, Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, ExternalLink } from "lucide-react";
+import { Link2, Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, ExternalLink, Pencil, AlertTriangle } from "lucide-react";
 import { api } from "../api.js";
 
 const KATEGORI_OPTIONS = [
@@ -39,6 +39,12 @@ export default function TrackingLinks() {
   });
   const [saving, setSaving]         = useState(false);
   const [newLinkUrl, setNewLinkUrl] = useState(null);
+
+  // Edit link yang sudah ada — form TERPISAH dari form buat baru, supaya
+  // "Buat Link Baru" dan "Edit" tidak bisa kebuka bersamaan dan tertukar.
+  const [editingLink, setEditingLink] = useState(null);
+  const [editForm, setEditForm]       = useState(null);
+  const [editSaving, setEditSaving]   = useState(false);
 
   useEffect(() => {
     load();
@@ -92,6 +98,55 @@ export default function TrackingLinks() {
     });
   }
 
+  function openEdit(link) {
+    setShowForm(false);
+    setEditingLink(link);
+    setEditForm({
+      name: link.name, category: link.category,
+      prefilledMessage: link.prefilledMessage, targetPhone: link.targetPhone || "",
+      slug: link.slug,
+    });
+  }
+
+  async function handleSaveEdit(e, confirmSlugChange = false) {
+    e?.preventDefault();
+    if (!editForm.name.trim()) return alert("Nama link wajib diisi");
+    setEditSaving(true);
+    try {
+      const payload = {
+        name: editForm.name.trim(),
+        category: editForm.category,
+        prefilledMessage: editForm.prefilledMessage.trim() || PESAN_DEFAULT,
+        targetPhone: editForm.targetPhone.trim() || null,
+        slug: editForm.slug.trim(),
+      };
+      if (confirmSlugChange) payload.confirmSlugChange = true;
+      const updated = await api.updateTrackingLink(editingLink.id, payload);
+      setLinks((prev) => prev.map((l) => (l.id === editingLink.id ? { ...l, ...updated } : l)));
+      setEditingLink(null);
+      setEditForm(null);
+    } catch (err) {
+      // Slug diganti pada link yang sudah pernah diklik — backend sengaja
+      // menolak dulu (409) supaya penggantiannya tidak pernah kejadian
+      // tanpa sengaja. Tawarkan konfirmasi di sini (api.js cuma meneruskan
+      // .status, bukan body lengkap, jadi cek lewat pesannya).
+      if (err.status === 409 && /sudah diklik/.test(err.message || "")) {
+        if (confirm(`${err.message}\n\nLanjutkan ganti slug?`)) {
+          return handleSaveEdit(null, true);
+        }
+      } else {
+        alert(err.message);
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  const PHONE_WARNING = {
+    TIDAK_TERDAFTAR: "Nomor ini TIDAK terdaftar di WhatsApp manapun — pengklik iklan akan mendarat di nomor yang tidak ada.",
+    KOSONG: "Tidak ada nomor tujuan sama sekali (nomor default juga kosong).",
+  };
+
   return (
     <div style={{ padding: "24px", maxWidth: 960, margin: "0 auto" }}>
       {/* Header — dulu flex row TANPA flexWrap, pasangan judul+subjudul
@@ -107,7 +162,7 @@ export default function TrackingLinks() {
             Buat link khusus per channel iklan untuk melacak sumber lead secara otomatis
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setShowForm((v) => !v); setNewLinkUrl(null); }}>
+        <button className="btn btn-primary" onClick={() => { setShowForm((v) => !v); setNewLinkUrl(null); setEditingLink(null); setEditForm(null); }}>
           <Plus size={14} /> {showForm ? "Tutup Form" : "Buat Link Baru"}
         </button>
       </div>
@@ -182,6 +237,77 @@ export default function TrackingLinks() {
         </div>
       )}
 
+      {/* Form edit link — link+slug SUDAH dipublikasikan ke iklan, jadi ganti
+          slug pada link yang sudah pernah diklik minta konfirmasi eksplisit
+          (lihat handleSaveEdit). */}
+      {editingLink && editForm && (
+        <div className="card" style={{ padding: 20, marginBottom: 20, borderLeft: "3px solid var(--color-primary)" }}>
+          <h4 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700 }}>Edit Link — {editingLink.name}</h4>
+          <form onSubmit={handleSaveEdit} style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Nama Link *</label>
+                <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Kategori *</label>
+                <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                  {KATEGORI_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">
+                Slug (/r/...) {editingLink.totalClicks > 0 && (
+                  <span style={{ color: "var(--color-danger, #dc2626)", fontWeight: 600 }}>
+                    — sudah diklik {editingLink.totalClicks}x, kemungkinan sudah live di iklan
+                  </span>
+                )}
+              </label>
+              <input
+                value={editForm.slug}
+                onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                style={{ fontFamily: "monospace" }}
+              />
+              {editingLink.totalClicks > 0 && editForm.slug.trim() !== editingLink.slug && (
+                <p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--color-danger, #dc2626)" }}>
+                  ⚠️ URL lama akan langsung mati (redirect ke nomor default TANPA tercatat) sampai lo update
+                  URL-nya di platform iklan juga.
+                </p>
+              )}
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Pesan Pre-filled</label>
+              <input
+                value={editForm.prefilledMessage}
+                onChange={(e) => setEditForm({ ...editForm, prefilledMessage: e.target.value })}
+                placeholder={PESAN_DEFAULT}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Nomor WA Tujuan (kosongkan untuk pakai nomor default)</label>
+              <input
+                value={editForm.targetPhone}
+                onChange={(e) => setEditForm({ ...editForm, targetPhone: e.target.value })}
+                placeholder="628xxx (tanpa tanda +)"
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" className="btn btn-secondary" onClick={() => { setEditingLink(null); setEditForm(null); }}>
+                Batal
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={editSaving}>
+                {editSaving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Tabel link */}
       {loading ? (
         <p className="empty">Memuat...</p>
@@ -203,7 +329,7 @@ export default function TrackingLinks() {
           <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle, #f9fafb)" }}>
-                {["Nama", "Kategori", "Klik", "Jadi Lead", "Conv Rate", "Link", "Aktif", ""].map((h) => (
+                {["Nama", "Kategori", "Nomor Tujuan", "Klik", "Jadi Lead", "Conv Rate", "Link", "Aktif", ""].map((h) => (
                   <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 12,
                     fontWeight: 600, color: "var(--text-muted)" }}>{h}</th>
                 ))}
@@ -225,6 +351,19 @@ export default function TrackingLinks() {
                         padding: "2px 8px", borderRadius: 99 }}>
                         {KATEGORI_LABEL[link.category] || link.category}
                       </span>
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ fontSize: 12.5, fontFamily: "monospace" }}>
+                        {link.effectivePhone || "—"}
+                        {link.phoneFromFallback && <span style={{ color: "var(--text-muted)" }}> (default)</span>}
+                      </div>
+                      {PHONE_WARNING[link.phoneStatus] && (
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 4, marginTop: 3,
+                          fontSize: 11, color: "var(--color-danger, #dc2626)", maxWidth: 220 }}>
+                          <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <span>{PHONE_WARNING[link.phoneStatus]}</span>
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "10px 14px", fontWeight: 700 }}>
                       {link.totalClicks ?? 0}
@@ -262,10 +401,15 @@ export default function TrackingLinks() {
                       </button>
                     </td>
                     <td style={{ padding: "10px 14px" }}>
-                      <button onClick={() => handleDelete(link)} className="btn-icon"
-                        style={{ color: "var(--color-danger)" }} title="Hapus">
-                        <Trash2 size={14} />
-                      </button>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => openEdit(link)} className="btn-icon" title="Edit link">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDelete(link)} className="btn-icon"
+                          style={{ color: "var(--color-danger)" }} title="Hapus">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
