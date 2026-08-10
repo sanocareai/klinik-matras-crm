@@ -358,41 +358,78 @@ orderRouter.get("/:id/timeline", async (req, res) => {
   }
 });
 
-// DELETE /api/orders/:id — hapus order beserta items & weightEntries (cascade via FK)
+// DELETE /api/orders/:id — hapus order beserta items & weightEntries (cascade
+// via FK), DAN unit-unitnya KALAU DAN HANYA KALAU semua unit itu masih benar-
+// benar "hantu" (belum disentuh divisi manapun).
 //
-// CATATAN: cascade FK cuma berlaku untuk OrderItem/OrderWeightEntry/
-// OrderStatusTransition. Unit, Job, Payment, dan ScopeRevision sengaja
-// RESTRICT (lihat komentar di schema.prisma model Unit) — order yang sudah
-// masuk produksi/pembayaran TIDAK BOLEH terhapus diam-diam. Sebelumnya error
-// P2003 dari Prisma bocor mentah-mentah ke `alert()` di frontend ("Invalid
-// `prisma.order.delete()` invocation..."), sales melihat pesan teknis yang
-// tidak dimengerti. Sekarang dicek dulu supaya pesannya jelas dalam
-// Bahasa Indonesia.
+// ⚠️ REVISI (10 Agustus 2026) dari perilaku SEBELUMNYA yang memblokir hapus
+// begitu SATU unit pun ada (`unitCount > 0`). Itu ternyata memblokir hampir
+// SEMUA order — POST /customers/:id/orders SELALU membuat 1 unit default
+// (lihat services/unitProvisioning.js), jadi order yang baru saja salah
+// diinput (belum disentuh Bengkel/Armada/Gudang sama sekali) TETAP tidak bisa
+// dihapus, padahal seharusnya bisa. Sekarang dicek LINTAS DIVISI secara
+// nyata — bukan sekadar "ada unit atau tidak":
+//   - Bengkel : UnitStageLog (ledger tahap), QcFitTest, UnitRevision
+//   - Armada  : Job (pickup/pengiriman) — level order, dan JobUnit — level unit
+//   - Gudang  : StockMovement (material yang sudah diserap unit)
+//   - Kasir   : Payment
+//   - Kendali : ScopeRevision (revisi lingkup/harga)
+// ProductionTarget SENGAJA tidak dihitung sebagai blocker — Cascade murni
+// (target harian, bukan riwayat/ledger), ikut terhapus otomatis bersama unit.
+//
+// Kalau SEMUA bersih → unit + order dihapus permanen dalam satu transaksi.
+// Kalau ADA jejak → tetap ditolak KERAS (append-only ledger tidak boleh
+// hilang lewat pintu belakang, sama seperti insiden pipeline_transitions di
+// CLAUDE.md §5) — pesannya sekarang membedakan "sudah mulai dikerjakan tapi
+// belum ada job/pembayaran/revisi" (bisa coba Batalkan Order, lihat POST
+// /:id/cancel) dari "sudah ada uang/jadwal/revisi nyata" (wajib admin/Kendali).
 orderRouter.delete("/:id", async (req, res) => {
   try {
-    const [unitCount, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
-      prisma.unit.count({ where: { orderId: req.params.id } }),
+    const [units, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
+      prisma.unit.findMany({
+        where: { orderId: req.params.id },
+        select: {
+          id: true,
+          _count: { select: { stageLogs: true, jobUnits: true, qcFitTests: true, stockMovements: true, revisions: true } },
+        },
+      }),
       prisma.job.count({ where: { orderId: req.params.id } }),
       prisma.payment.count({ where: { orderId: req.params.id } }),
       prisma.scopeRevision.count({ where: { orderId: req.params.id } }),
     ]);
 
+    const unitFootprint = units.reduce((n, u) =>
+      n + u._count.stageLogs + u._count.jobUnits + u._count.qcFitTests + u._count.stockMovements + u._count.revisions, 0);
+
     const blockers = [];
-    if (unitCount > 0) blockers.push(`${unitCount} unit produksi`);
+    if (unitFootprint > 0) blockers.push(`${unitFootprint} jejak operasional di unit (tahap produksi/QC/material/revisi)`);
     if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
     if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
     if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
 
     if (blockers.length > 0) {
+      const hanyaUnitTersentuh = unitFootprint > 0 && jobCount === 0 && paymentCount === 0 && scopeRevisionCount === 0;
       return res.status(409).json({
-        error: `Order tidak bisa dihapus karena sudah punya ${blockers.join(", ")} yang terkait. Hubungi admin/Kendali jika order ini benar-benar perlu dibatalkan.`,
+        error: `Order tidak bisa dihapus permanen karena sudah punya ${blockers.join(", ")} yang terkait.` +
+          (hanyaUnitTersentuh
+            ? " Coba \"Batalkan Order\" — riwayat produksinya tetap tersimpan tapi order ditandai batal."
+            : " Ada uang/jadwal/revisi nyata yang perlu ditangani manusia — hubungi admin/Kendali."),
       });
     }
 
     // customerId diambil SEBELUM delete — setelah dihapus tidak ada lagi
     // jalan untuk tahu order ini tadinya milik customer mana.
-    const existing = await prisma.order.delete({ where: { id: req.params.id } });
-    await syncCustomerOrderAggregate(existing.customerId);
+    const customerId = await prisma.$transaction(async (tx) => {
+      // Unit-unit di sini SUDAH dipastikan bersih (unitFootprint === 0) —
+      // hapus dulu supaya FK Restrict (Unit→Order) tidak menggagalkan
+      // penghapusan Order di baris berikutnya.
+      if (units.length > 0) {
+        await tx.unit.deleteMany({ where: { orderId: req.params.id } });
+      }
+      const existing = await tx.order.delete({ where: { id: req.params.id } });
+      return existing.customerId;
+    });
+    await syncCustomerOrderAggregate(customerId);
     res.json({ ok: true });
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "Order tidak ditemukan" });
