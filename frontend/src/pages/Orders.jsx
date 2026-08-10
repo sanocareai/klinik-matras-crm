@@ -18,6 +18,9 @@ import { badgeVariants } from "@/components/ui/badge.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
+import DateRangePicker from "../components/DateRangePicker.jsx";
+import { makeRange, toApiParams } from "../lib/dateRange.js";
+import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 
 // ═══ HALAMAN ORDER ════════════════════════════════════════════════════════
 // Kenapa halaman TERSENDIRI, bukan tab di Pelanggan:
@@ -227,6 +230,9 @@ export default function Orders() {
   const [fBayar, setFBayar]   = useState("");
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
+  // Filter tanggal order DIBUAT (Order.createdAt) — default "Hari ini",
+  // konsisten dengan Dashboard & Pipeline.
+  const [range, setRange] = useState(() => makeRange("today"));
 
   // Debounce pencarian — tiap ketikan tidak boleh jadi satu request.
   useEffect(() => {
@@ -241,6 +247,7 @@ export default function Orders() {
         search: debounced || undefined,
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
+        ...toApiParams(range),
       });
       setData(res);
     } catch (e) {
@@ -249,7 +256,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fBayar]);
+  }, [debounced, fKategori, fBayar, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -375,6 +382,7 @@ export default function Orders() {
         }
         actions={
           <>
+            <DateRangePicker value={range} onChange={setRange} />
             <div className="relative">
               <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
               <input
@@ -428,6 +436,7 @@ export default function Orders() {
       />
 
       <PageBody>
+       <PageErrorBoundary label="Orders">
         {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
             sering dicari dan paling mudah hilang dari pandangan. */}
         {!loading && items.length > 0 && (
@@ -612,6 +621,7 @@ export default function Orders() {
             ini akan punya riwayat yang tepat.
           </p>
         )}
+       </PageErrorBoundary>
       </PageBody>
 
       <OrderTimelineDrawer

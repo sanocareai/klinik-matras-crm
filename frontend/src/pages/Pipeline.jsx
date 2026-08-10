@@ -10,6 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { cn } from "@/lib/utils.js";
 import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
 import { rolesOf } from "@/lib/roles.js";
+import DateRangePicker from "../components/DateRangePicker.jsx";
+import { makeRange, toApiParams } from "../lib/dateRange.js";
+import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -46,6 +49,11 @@ export default function Pipeline() {
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [loading, setLoading] = useState(true);
   const [moveMenu, setMoveMenu] = useState(null); // ID card yang menu-nya terbuka
+  // Filter tanggal pelanggan MASUK (Customer.createdAt) — default "Hari ini",
+  // sama seperti Dashboard. "Semua" (all_time) dipakai kalau ingin lihat
+  // seluruh papan tanpa batas tanggal, karena kebanyakan deal di pipeline
+  // dibuat di hari-hari sebelumnya, bukan hari ini.
+  const [range, setRange] = useState(() => makeRange("today"));
   // Berapa kartu yang sudah "dibuka" per kolom (paging lokal, bukan request
   // baru — board sudah ada seluruhnya di memori).
   const [limitKolom, setLimitKolom] = useState({});
@@ -59,7 +67,10 @@ export default function Pipeline() {
   async function loadBoard() {
     setLoading(true);
     try {
-      const [b, u] = await Promise.all([api.getPipelineBoard(), api.getUsers()]);
+      const [b, u] = await Promise.all([
+        api.getPipelineBoard(toApiParams(range)),
+        api.getUsers(),
+      ]);
       setBoard(b);
       setUsers(u);
     } catch (err) {
@@ -69,7 +80,7 @@ export default function Pipeline() {
     }
   }
 
-  useEffect(() => { loadBoard(); }, []);
+  useEffect(() => { loadBoard(); }, [range]);
 
   // Filter di-memo per board/filter supaya tidak dihitung ulang tiap render
   // (8 kolom × ribuan kartu × beberapa kali per interaksi drag = terasa).
@@ -193,6 +204,7 @@ export default function Pipeline() {
         }
         actions={
           <>
+            <DateRangePicker value={range} onChange={setRange} />
             {/* Pencarian di dalam board — tanpa ini satu-satunya cara menemukan
                 customer di kolom berisi ribuan kartu adalah scroll manual. */}
             <div className="relative">
@@ -243,6 +255,7 @@ export default function Pipeline() {
       />
 
       <PageBody>
+       <PageErrorBoundary label="Pipeline">
         {loading ? (
           <div className="flex gap-3 overflow-hidden">
             {STAGES.slice(0, 5).map((s) => (
@@ -351,6 +364,7 @@ export default function Pipeline() {
             </div>
           </>
         )}
+       </PageErrorBoundary>
       </PageBody>
     </PageContainer>
   );

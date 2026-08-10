@@ -330,15 +330,21 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
           {order.statusLocked ? (
             <>
               <span style={{ fontSize: 10.5, color: "#92400e", background: "#fef3c7", padding: "2px 7px", borderRadius: 6 }}>
-                🔒 Override manual{order.statusOverrideBy?.name ? ` oleh ${order.statusOverrideBy.name}` : ""}
+                🔒 Diubah manual{order.statusOverrideBy?.name ? ` oleh ${order.statusOverrideBy.name}` : ""}
               </span>
               <button className="btn btn-ghost btn-sm" disabled={overrideBusy} onClick={releaseOverride}>
-                Lepas Override
+                Kembalikan ke Otomatis
               </button>
             </>
           ) : (
+            // Label SEBELUMNYA "Override Status" — istilah teknis yang bikin
+            // tombol ini terlihat seperti fitur khusus admin, padahal ini
+            // SATU-SATUNYA cara mengubah status order (D-006: status normal
+            // dihitung otomatis dari unit Bengkel, bukan dropdown bebas).
+            // Sales di Inbox mengira status "tidak bisa diedit" karena tidak
+            // mengenali kata "Override" sebagai tombol ubah status.
             <button className="btn btn-ghost btn-sm" onClick={() => { setOverrideStatus(order.status); setOverrideNote(""); setOverriding((v) => !v); }}>
-              Override Status
+              Ubah Status
             </button>
           )}
         </div>
@@ -350,8 +356,9 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
         {overriding && (
           <div style={{ marginTop: 6, padding: 8, background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>
             <p style={{ margin: "0 0 6px", fontSize: 11, color: "var(--text-muted)" }}>
-              Untuk kasus di luar pola normal (order dibatalkan, dsb) — status akan TERKUNCI ke pilihan ini
-              sampai dilepas lagi, tidak lagi ikut hitungan otomatis dari unit.
+              Status normal dihitung otomatis dari unit di Bengkel. Mengubahnya di sini akan
+              MENGUNCI status ke pilihan ini sampai dilepas lagi ("Kembalikan ke Otomatis") —
+              dipakai untuk kasus di luar pola normal (order dibatalkan, dsb).
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
               <select value={overrideStatus} onChange={(e) => setOverrideStatus(e.target.value)} style={selStyleFull}>

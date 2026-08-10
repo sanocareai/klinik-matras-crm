@@ -610,7 +610,7 @@ export const api = {
     request("/settings/sales-targets", { method: "PUT", body: JSON.stringify(data) }),
 
   // Pipeline
-  getPipelineBoard: () => request("/pipeline/board"),
+  getPipelineBoard: (params) => request("/pipeline/board" + buildQuery(params)),
 
   // Broadcast
   getBroadcastCampaigns: () => request("/broadcast/campaigns"),

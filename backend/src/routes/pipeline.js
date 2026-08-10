@@ -1,14 +1,26 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+// Batas hari WIB — WAJIB, jangan `new Date(from)` polos (lihat CLAUDE.md §11
+// & catatan panjang di utils/wib.js — container backend jalan di UTC).
+import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 
 export const pipelineRouter = express.Router();
 pipelineRouter.use(requireAuth);
 
-// GET /api/pipeline/board — pelanggan dikelompokkan per pipeline stage
+// GET /api/pipeline/board?from=&to= — pelanggan dikelompokkan per pipeline
+// stage. `from`/`to` (opsional) memfilter Customer.createdAt — TANPA filter,
+// papan menampilkan SEMUA pelanggan di tiap stage (perilaku lama, dipakai
+// kalau frontend tidak mengirim tanggal sama sekali).
 pipelineRouter.get("/board", async (req, res) => {
   try {
+    const { from, to } = req.query;
+    const where = (from && to)
+      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }
+      : {};
+
     const customers = await prisma.customer.findMany({
+      where,
       include: {
         orders: true,
         assignedSales: { select: { id: true, name: true } },
