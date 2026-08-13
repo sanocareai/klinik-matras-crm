@@ -1536,9 +1536,15 @@ analyticsRouter.get("/traffic", async (req, res) => {
 
     // ── Kualitas atribusi ────────────────────────────────────────────────
     // Lead dianggap "teridentifikasi" kalau sumbernya BUKAN default
-    // WHATSAPP_DIRECT-belum-dikonfirmasi. Di produksi angka ini ~1% —
-    // ditampilkan apa adanya sebagai masalah KUALITAS DATA, bukan disamarkan
-    // jadi donut satu irisan yang terlihat seperti insight.
+    // WHATSAPP_DIRECT-belum-dikonfirmasi. Angkanya ditampilkan apa adanya
+    // sebagai ukuran KUALITAS DATA, bukan disamarkan jadi donut satu irisan
+    // yang terlihat seperti insight.
+    //
+    // Riwayat: angka ini pernah ~1% karena atribusi Meta CTWA tidak pernah
+    // kena (path payload salah) dan tag website belum ada. Setelah keduanya
+    // dibereskan + backfill 13 Agt 2026, jadi ~63%. Sisa WHATSAPP_DIRECT
+    // adalah lead yang memang tidak berjejak teknis (mis. lihat profil IG
+    // lalu ketik nomor manual) — hanya bisa ditutup lewat konfirmasi sales.
     let teridentifikasi = 0;
     const bySource = {};
     for (const g of sourceGroups) {
