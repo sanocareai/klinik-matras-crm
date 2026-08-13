@@ -366,6 +366,7 @@ model Customer {
   orders        Order[]
 
   pipelineTransitions PipelineTransition[]
+  broadcastTargets    BroadcastTarget[]
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
   @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
@@ -2613,4 +2614,107 @@ model ReplenishmentRequest {
   @@index([status])
   @@index([materialId])
   @@map("replenishment_requests")
+}
+
+// ─── Broadcast / Campaign ──────────────────────────────────────────────────
+//
+// KENAPA PINDAH KE DATABASE (sebelumnya data/campaigns.json + antrean
+// setTimeout di memori). Versi lama punya 3 cacat yang membuatnya TIDAK
+// BISA dipakai untuk campaign nyata:
+//
+//  1. Antrean hidup di memori proses. Backend restart (deploy, crash,
+//     `docker compose up`) = SEMUA jadwal kirim yang belum jalan lenyap
+//     tanpa jejak, dan campaign nyangkut status "BERJALAN" selamanya.
+//  2. Tidak ada catatan SIAPA sudah dikirimi apa — cuma angka sentCount.
+//     Akibatnya: tidak bisa lanjut dari titik terakhir, tidak bisa cegah
+//     kirim dobel, dan campaign-nya MUSTAHIL diukur (tidak tahu siapa yang
+//     dikirimi lalu jadi order).
+//  3. Tidak ada batas harian sama sekali — sekali tekan kirim, seluruh
+//     target masuk antrean. Untuk nomor WA yang jadi satu-satunya pintu
+//     masuk ribuan lead iklan, itu risiko banned yang tidak sepadan.
+//
+// Dengan tabel: antrean = baris MENUNGGU di DB, jadi restart aman (worker
+// tinggal lanjut), kuota harian bisa dihitung dari sentAt, dan tiap kiriman
+// punya jejak permanen yang bisa disambungkan ke Order untuk ukur hasil.
+
+enum BroadcastStatus {
+  DRAFT // masih disusun, belum pernah dikirim
+  BERJALAN // worker sedang/akan mengirim sesuai kuota harian
+  JEDA // dihentikan sementara oleh admin, sisa target tetap tersimpan
+  SELESAI // semua target sudah TERKIRIM/GAGAL/DILEWATI
+}
+
+enum BroadcastTargetStatus {
+  MENUNGGU // belum dikirim — inilah "antrean" yang tahan restart
+  TERKIRIM
+  GAGAL // WAHA menolak/error; pesan error disimpan di kolom error
+  DILEWATI // sengaja tidak dikirim (mis. customer opt-out setelah target dibuat)
+}
+
+model BroadcastCampaign {
+  id      String          @id @default(cuid())
+  name    String
+  message String // boleh mengandung {{nama}}
+  status  BroadcastStatus @default(DRAFT)
+
+  // Batas kirim per hari. Ini pengaman utama terhadap banned WhatsApp:
+  // worker BERHENTI begitu jumlah TERKIRIM hari ini (WIB) menyentuh angka
+  // ini, lalu lanjut lagi besok pagi dengan sendirinya.
+  dailyCap Int @default(50) @map("daily_cap")
+
+  // Filter target yang dipakai saat target dibuat — disimpan apa adanya
+  // untuk jejak audit ("campaign ini dulu menyasar siapa"), BUKAN dibaca
+  // ulang saat kirim (targetnya sudah dibekukan jadi baris BroadcastTarget).
+  filters Json?
+
+  // Tag yang otomatis ditempel ke Customer begitu pesannya TERKIRIM.
+  // Dipakai campaign 17 Agustus: "Reactivation Merdeka".
+  tagOnSend String? @map("tag_on_send")
+
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  finishedAt  DateTime? @map("finished_at")
+
+  targets BroadcastTarget[]
+
+  @@index([status])
+  @@map("broadcast_campaigns")
+}
+
+model BroadcastTarget {
+  id         String            @id @default(cuid())
+  campaignId String            @map("campaign_id")
+  campaign   BroadcastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String            @map("customer_id")
+  customer   Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Nomor DIBEKUKAN saat target dibuat, tidak dibaca ulang dari Customer
+  // waktu kirim — kalau nomornya diubah di tengah campaign, yang terkirim
+  // tetap nomor yang memang disetujui admin waktu review.
+  phone String
+
+  status BroadcastTargetStatus @default(MENUNGGU)
+  sentAt DateTime?             @map("sent_at")
+  error  String?
+
+  // Urutan kirim, ditetapkan saat target dibekukan. WAJIB kolom sendiri:
+  // seluruh target dibuat dalam satu batch insert, jadi createdAt-nya
+  // kembar sampai milidetik dan TIDAK bisa dipakai mengurutkan. Urutannya
+  // penting — target diurutkan dari yang paling baru berinteraksi, karena
+  // merekalah yang paling ingat Sano dan paling kecil kemungkinan melapor
+  // spam. Kalau urutan ini kacau, pengaman itu ikut hilang.
+  urutan Int @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Satu orang HANYA boleh masuk sekali per campaign — pertahanan terakhir
+  // terhadap kirim dobel walau tombol "Mulai Kirim" ditekan berkali-kali.
+  @@unique([campaignId, customerId])
+  // Query terpanas worker: "ambil 1 target MENUNGGU dari campaign ini".
+  @@index([campaignId, status])
+  // Menghitung kuota terpakai hari ini.
+  @@index([sentAt])
+  @@map("broadcast_targets")
 }

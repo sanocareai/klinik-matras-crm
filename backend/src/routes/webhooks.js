@@ -14,6 +14,7 @@ import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
   extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
 } from "../services/leadAttribution.js";
+import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
 
 export const webhookRouter = express.Router();
 
@@ -570,6 +571,21 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   }
 
   maybeFetchProfilePicture(phone, sessionName, existingCustomer);
+
+  // ── Permintaan berhenti dikirimi broadcast ("STOP", "berhenti", dst) ──
+  // Ditandai sebagai tag di Customer, lalu dihormati DUA kali oleh
+  // broadcast: saat menyusun target, DAN sekali lagi tepat sebelum kirim
+  // (lihat routes/broadcast.js). Ini bukan sekadar sopan santun — laporan
+  // spam dari orang yang sudah minta berhenti adalah penyebab paling cepat
+  // sebuah nomor WhatsApp bisnis dimatikan, dan nomor ini adalah satu-
+  // satunya pintu masuk seluruh lead iklan.
+  if (apakahMintaBerhenti(text) && !customer.tags?.includes(TAG_OPT_OUT)) {
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data:  { tags: { push: TAG_OPT_OUT } },
+    }).catch((e) => console.warn("[optout] Gagal menandai:", e.message));
+    console.log(`[optout] ${phone} minta berhenti dikirimi broadcast`);
+  }
 
   // Jika Lapis 2 berhasil, tandai klik sudah dicocokkan ke customer ini
   if (pendingClickId) {

@@ -17,7 +17,7 @@ import { orderRouter }      from "./routes/orders.js";
 import { dashboardRouter }  from "./routes/dashboard.js";
 import { userRouter }       from "./routes/users.js";
 import { pipelineRouter }   from "./routes/pipeline.js";
-import { broadcastRouter }  from "./routes/broadcast.js";
+import { broadcastRouter, mulaiWorkerBroadcast }  from "./routes/broadcast.js";
 import { automationRouter } from "./routes/automation.js";
 import { aiRouter }         from "./routes/ai.js";
 import { replyAssistantRouter } from "./routes/replyAssistant.js";
@@ -155,4 +155,8 @@ server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
   logStatusMcp();
   startReconciliationJob();
+  // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
+  // ulang tiap restart — dia tinggal melanjutkan target yang masih
+  // MENUNGGU, tidak mengulang yang sudah TERKIRIM.
+  mulaiWorkerBroadcast();
 });

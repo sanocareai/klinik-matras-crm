@@ -622,10 +622,20 @@ export const api = {
     request(`/broadcast/campaigns/${id}`, { method: "DELETE" }),
   getBroadcastEstimate: (params) => request("/broadcast/estimate" + buildQuery(params)),
   getBroadcastHealthCheck: () => request("/broadcast/health-check"),
-  sendBroadcastCampaign: (id) =>
-    request(`/broadcast/campaigns/${id}/send`, { method: "POST" }),
-  testBroadcastCampaign: (id) =>
-    request(`/broadcast/campaigns/${id}/test`, { method: "POST" }),
+  // Menyiapkan target DIPISAH dari menjalankan campaign — supaya admin bisa
+  // memeriksa daftar penerima final sebelum satu pesan pun terkirim.
+  prepareBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}/prepare`, { method: "POST" }),
+  startBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}/start`, { method: "POST" }),
+  pauseBroadcastCampaign: (id) =>
+    request(`/broadcast/campaigns/${id}/pause`, { method: "POST" }),
+  // Kirim uji ke nomor yang DITENTUKAN admin (versi lama diam-diam mengirim
+  // ke 3 pelanggan asli pertama di database).
+  testBroadcastCampaign: (id, phone) =>
+    request(`/broadcast/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({ phone }) }),
+  getBroadcastTargets: (id, params) =>
+    request(`/broadcast/campaigns/${id}/targets` + buildQuery(params)),
 
   // Automation — Workflows
   getWorkflows: () => request("/automation/workflows"),
