@@ -155,14 +155,34 @@ test("extractRefTag: teks kosong/null tidak melempar error", () => {
   assert.equal(extractRefTag(undefined).tag, null);
 });
 
-test("leadSourceFromRefTag: prefix google/meta -> LeadSource yang sesuai", () => {
+test("leadSourceFromRefTag: source+medium berbayar -> LeadSource iklan yang sesuai", () => {
   assert.equal(leadSourceFromRefTag("google-cpc-brand"), "GOOGLE_ADS");
   assert.equal(leadSourceFromRefTag("google-pmax"), "GOOGLE_ADS");
   assert.equal(leadSourceFromRefTag("meta-cpc"), "META_ADS");
+  assert.equal(leadSourceFromRefTag("ig-cpc"), "META_ADS");
 });
 
-test("leadSourceFromRefTag: prefix lain -> OTHER (bukan dikarang jadi salah satu platform)", () => {
+test("leadSourceFromRefTag: medium TIDAK berbayar -> jangan diklaim sebagai belanja iklan", () => {
+  // Ini kasus yang sebelumnya salah: prefix "google" dulu SELALU jadi
+  // GOOGLE_ADS apapun medium-nya. Klik organik yang kebetulan bawa
+  // utm_source=google tidak boleh dihitung sebagai biaya iklan.
+  assert.equal(leadSourceFromRefTag("google-organic"), "WEBSITE_ORGANIC");
+  assert.equal(leadSourceFromRefTag("meta-organic"), "WEBSITE_ORGANIC");
+});
+
+test("leadSourceFromRefTag: ig-social -> INSTAGRAM (bukan OTHER)", () => {
+  assert.equal(leadSourceFromRefTag("ig-social"), "INSTAGRAM");
+  assert.equal(leadSourceFromRefTag("instagram-social"), "INSTAGRAM");
+});
+
+test("leadSourceFromRefTag: medium referral -> REFERRAL", () => {
+  assert.equal(leadSourceFromRefTag("teman-referral"), "REFERRAL");
+  assert.equal(leadSourceFromRefTag("referral-whatsapp"), "REFERRAL");
+});
+
+test("leadSourceFromRefTag: prefix lain (mis. tiktok) -> OTHER (bukan dikarang jadi salah satu platform)", () => {
   assert.equal(leadSourceFromRefTag("tiktok-ads"), "OTHER");
+  assert.equal(leadSourceFromRefTag("tiktok-organic"), "OTHER");
 });
 
 test("leadSourceFromRefTag: tidak ada tag -> null", () => {

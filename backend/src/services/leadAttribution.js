@@ -164,11 +164,35 @@ export function extractRefTag(text) {
   return { cleaned: asli, tag: null };
 }
 
-/** Tag ref (mis. "google-cpc-brand") -> LeadSource. Prefix source yang menentukan. */
+// Tag berbentuk "<source>-<medium>[-<campaign>]" (lihat getRefTag di
+// SANO-WEB). SEBELUM INI mapping cuma cek prefix source ("startsWith
+// google" -> GOOGLE_ADS APAPUN medium-nya) -- artinya tag hipotetis
+// "google-organic" (orang yang klik hasil pencarian organik, bukan
+// iklan, tapi kebetulan lewat link ber-UTM source=google) akan SALAH
+// dihitung sebagai belanja iklan. Sekarang medium ikut menentukan:
+// hanya medium "berbayar" yang boleh mengklaim *_ADS.
+const MEDIUM_BERBAYAR = new Set(["cpc", "ppc", "paid", "display", "pmax"]);
+
+/** Tag ref (mis. "google-cpc-brand", "ig-social") -> LeadSource. */
 export function leadSourceFromRefTag(tag) {
   if (!tag) return null;
-  if (tag.startsWith("google")) return "GOOGLE_ADS";
-  if (tag.startsWith("meta")) return "META_ADS";
+  const [source = "", medium = ""] = tag.split("-");
+  const dibayar = MEDIUM_BERBAYAR.has(medium);
+
+  if (source === "google") return dibayar ? "GOOGLE_ADS" : "WEBSITE_ORGANIC";
+  if (source === "meta" || source === "facebook" || source === "fb") {
+    return dibayar ? "META_ADS" : "WEBSITE_ORGANIC";
+  }
+  if (source === "ig" || source === "instagram") {
+    return dibayar ? "META_ADS" : "INSTAGRAM";
+  }
+  if (source === "referral" || medium === "referral") return "REFERRAL";
+
+  // TikTok & sumber lain di luar daftar: TIDAK ADA nilai enum TikTok di
+  // LeadSource (schema.prisma) -- jangan dikarang jadi salah satu
+  // platform yang memang ada. Tag mentahnya tetap utuh di
+  // leadSourceDetail ("Website - tiktok-organic" dst) supaya sales
+  // masih lihat sumber aslinya walau dibucket OTHER.
   return "OTHER";
 }
 
