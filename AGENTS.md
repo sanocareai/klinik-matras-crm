@@ -1172,3 +1172,44 @@ broadcast anti-ban rate limiter, handover queue, AI Playground BYOK, Customer 36
 
 **GrowthCircle.id (komunitas):** OpenClaw + Hermes Agent — AI untuk follow-up, 
 handover, closing. Bukan sekadar FAQ bot. Ini inspirasi untuk Phase 4 AI Agent.
+---
+
+## 18. MCP SERVER READ-ONLY (/mcp) — akses baca CRM untuk Claude
+
+Ditambahkan 13 Agustus 2026. Panduan lengkap: `docs/MCP-SERVER.md`.
+Kode: `backend/src/mcp/` (index.js = router/transport, security.js = token +
+rate limit + masking, tools.js = 12 tool baca). Tes: `backend/tests/mcp.test.js`.
+
+**Apa ini:** endpoint MCP (Model Context Protocol) di `POST /mcp`, di-mount ke
+backend Express yang SUDAH ADA — bukan service/container terpisah — supaya
+Claude bisa MENJAWAB pertanyaan soal data CRM (pelanggan, order, pipeline,
+percakapan, produk) tanpa bisa mengubah apa pun. Transport: Streamable HTTP
+(`@modelcontextprotocol/sdk`), mode STATELESS.
+
+**⚠️ ATURAN YANG TIDAK BOLEH DIKOMPROMIKAN:**
+
+1. **SEMUA tool read-only.** Tidak ada create/update/delete/upsert/$executeRaw/
+   $transaction. TIDAK ADA pengiriman pesan WhatsApp — jangan pernah import
+   `services/wahaClient.js` di `src/mcp/`. `tests/mcp.test.js` memindai
+   `tools.js` dan GAGAL kalau pola terlarang itu muncul; jangan matikan tesnya.
+2. **Auth = Bearer token dari env `MCP_API_TOKEN`**, BUKAN JWT user. Kalau env
+   kosong, seluruh `/mcp` menjawab 503 (fail-closed) — lupa isi env tidak
+   pernah berarti data terbuka. Rotasi = ganti nilai + restart backend.
+3. **Nomor HP & email pelanggan DI-MASK default** (`628****0076`), pakai
+   `maskPhone()`/`maskEmail()` dari `src/mcp/security.js`. Tiap tool yang
+   mengembalikan kontak wajib punya param opsional `unmask`.
+4. **Rate limit 60 req/menit per IP** (`MCP_RATE_LIMIT_PER_MIN`). Kunci limit
+   dari `X-Forwarded-For` karena di belakang nginx `req.ip` selalu 127.0.0.1.
+
+**nginx:** TIDAK perlu diubah — `/mcp` ikut `proxy_pass http://localhost:4000`
+yang sudah ada. `proxy_buffering off` baru relevan kalau suatu hari pindah ke
+mode stateful/SSE panjang — diskusikan dulu, jangan diedit sendiri.
+
+**Mounting:** `app.use("/mcp", mcpRouter)` di `src/index.js` HARUS di atas
+`express.static` + catch-all `app.get("*")`. Kalau di bawah, request /mcp
+dijawab index.html React, bukan JSON-RPC.
+
+**Menyambungkan ke Claude:** Claude Code/Desktop bisa langsung (custom header
+Authorization). Connector di claude.ai kemungkinan menuntut OAuth — kalau
+begitu, tambahkan lapisan OAuth di depan `/mcp`, JANGAN "sementara" membuka
+endpoint tanpa auth untuk tes.

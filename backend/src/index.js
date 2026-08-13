@@ -44,6 +44,7 @@ import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
 import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
+import { mcpRouter, logStatusMcp } from "./mcp/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +121,11 @@ app.use("/api/events",     sseRouter);
 app.use("/api/admin",      adminRouter);
 app.use("/api/master-data", masterDataRouter);
 
+// MCP server READ-ONLY untuk Claude.ai (lihat src/mcp/index.js).
+// WAJIB di atas express.static + catch-all "*" di bawah — kalau di bawah,
+// request /mcp akan dijawab index.html React, bukan JSON-RPC.
+app.use("/mcp", mcpRouter);
+
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // Redirect publik tracking link — HARUS di atas static files agar tidak ditangkap React SPA
@@ -147,5 +153,6 @@ const server = http.createServer(app);
 initSocket(server);
 server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
+  logStatusMcp();
   startReconciliationJob();
 });
