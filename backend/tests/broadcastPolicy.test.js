@@ -13,7 +13,7 @@ import {
   JAM_MULAI_WIB, JAM_SELESAI_WIB, JEDA_MINIMUM_MS, SAPAAN_CADANGAN,
   TAG_OPT_OUT,
 } from "../src/services/broadcastPolicy.js";
-import { susunFilterTarget } from "../src/routes/broadcast.js";
+import { susunFilterTarget, belumDibalas } from "../src/routes/broadcast.js";
 
 // Pembantu: bikin Date dari jam WIB tertentu (WIB = UTC+7).
 function jamWIB(jam, menit = 0) {
@@ -132,29 +132,31 @@ test("filter target SELALU mengecualikan yang minta berhenti", () => {
   assert.deepEqual(where.phone, { not: null });
 });
 
-test("dua saringan percakapan DIGABUNG lewat AND, tidak saling menimpa", () => {
-  // Ini bug nyata yang sempat ada: keduanya menulis ke where.conversations,
-  // sehingga yang kedua menimpa yang pertama dan satu saringan HILANG
-  // diam-diam — target jadi lebih luas dari yang disetujui admin.
-  const where = susunFilterTarget({ tidakAktifSejakHari: 30, kecualikanChatAktif: true });
-  assert.equal(Array.isArray(where.AND), true, "harus pakai AND, bukan satu properti");
-  assert.equal(where.AND.length, 2, "kedua saringan harus tetap ada");
-  assert.equal(where.conversations, undefined, "jangan ada assignment langsung yang bisa tertimpa");
-
-  const punyaSaringanDingin = where.AND.some((k) => k.conversations?.none?.messages);
-  const punyaSaringanAktif  = where.AND.some((k) => k.conversations?.none?.status);
-  assert.ok(punyaSaringanDingin, "saringan 'tidak aktif sejak N hari' hilang");
-  assert.ok(punyaSaringanAktif, "saringan 'kecualikan chat aktif' hilang");
-});
-
-test("kecualikan chat aktif menyaring status OPEN dan PENDING", () => {
-  const where = susunFilterTarget({ kecualikanChatAktif: true });
-  const saringan = where.AND.find((k) => k.conversations?.none?.status);
-  assert.deepEqual(saringan.conversations.none.status, { in: ["OPEN", "PENDING"] });
+test("saringan 'tidak aktif sejak N hari' dibungkus AND, bukan properti lepas", () => {
+  const where = susunFilterTarget({ tidakAktifSejakHari: 30 });
+  assert.equal(Array.isArray(where.AND), true);
+  assert.ok(where.AND.some((k) => k.conversations?.none?.messages),
+    "saringan 'tidak aktif sejak N hari' hilang");
+  assert.equal(where.conversations, undefined,
+    "jangan di-assign langsung — gampang tertimpa saringan percakapan lain");
 });
 
 test("tanpa saringan percakapan, tidak ada klausa AND yang menggantung", () => {
   const where = susunFilterTarget({ stage: "NEW" });
   assert.equal(where.AND, undefined);
   assert.equal(where.pipelineStage, "NEW");
+});
+
+test("'belum dibalas' memakai arah pesan terakhir, BUKAN status percakapan", () => {
+  // Kenapa ini penting: di produksi Conversation.status praktis tidak pernah
+  // diurus (2.453 OPEN : 30 RESOLVED, diperiksa 14 Agt 2026). Kalau saringan
+  // memakai status, 436 dari 439 kontak ikut terbuang dan fitur ini terlihat
+  // rusak. Arah pesan terakhir ditulis otomatis oleh alur pesan, jadi selalu
+  // mencerminkan keadaan sebenarnya.
+  assert.equal(belumDibalas({ arahPesanTerakhir: "INBOUND" }), true,
+    "customer menulis terakhir = kita masih berutang balasan");
+  assert.equal(belumDibalas({ arahPesanTerakhir: "OUTBOUND" }), false,
+    "kita yang menulis terakhir = urusan sudah ditutup dari sisi kita");
+  assert.equal(belumDibalas({ arahPesanTerakhir: null }), false,
+    "belum ada pesan sama sekali bukan berarti berutang balasan");
 });

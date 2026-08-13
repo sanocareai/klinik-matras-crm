@@ -417,10 +417,11 @@ export default function Broadcast() {
                     style={{ marginTop: 3 }}
                   />
                   <span style={{ fontSize: 13.5 }}>
-                    Kecualikan chat yang sedang berjalan
+                    Kecualikan yang belum dibalas sales
                     <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      Pelanggan yang percakapannya masih Open/Pending sedang ditangani sales —
-                      mengirimi mereka promo massal merusak percakapan yang sedang jalan.
+                      Pelanggan yang pesan terakhirnya belum kita jawab. Mengirimi mereka promo
+                      massal padahal pertanyaannya menggantung adalah cara tercepat mengundang
+                      komplain.
                     </span>
                   </span>
                 </label>
@@ -593,7 +594,7 @@ export default function Broadcast() {
                     {terpilih.size ? `±${Math.ceil(terpilih.size / form.dailyCap)} hari` : "—"}
                   </div>
                   <div><strong>Tag setelah terkirim:</strong> {form.tagOnSend || "—"}</div>
-                  <div><strong>Chat yang sedang berjalan:</strong>{" "}
+                  <div><strong>Yang belum dibalas sales:</strong>{" "}
                     {form.filters.kecualikanChatAktif ? "dikecualikan" : "IKUT DIKIRIMI"}
                   </div>
                 </div>

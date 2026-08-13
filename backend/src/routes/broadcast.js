@@ -47,7 +47,7 @@ broadcastRouter.use(requireAuth);
  * terkirim ke orang lain — makanya sengaja satu fungsi, bukan disalin.
  */
 export function susunFilterTarget(filters = {}) {
-  const { stage, source, tag, tidakAktifSejakHari, sudahOrder, kecualikanChatAktif } = filters;
+  const { stage, source, tag, tidakAktifSejakHari, sudahOrder } = filters;
   const where = {
     // Wajib punya nomor. String kosong juga tidak berguna untuk kirim.
     phone: { not: null },
@@ -78,20 +78,29 @@ export function susunFilterTarget(filters = {}) {
     });
   }
 
-  // Kecualikan orang yang percakapannya MASIH BERJALAN (OPEN/PENDING).
-  // Beda dari "tidak aktif sejak N hari": itu soal kapan terakhir dia chat,
-  // ini soal apakah urusannya sudah selesai. Orang yang sedang ditangani
-  // sales — misalnya lagi tawar-menawar harga — tidak boleh tiba-tiba
-  // disodori promo massal; itu merusak percakapan yang sedang berjalan.
-  if (kecualikanChatAktif) {
-    syaratPercakapan.push({
-      conversations: { none: { status: { in: ["OPEN", "PENDING"] } } },
-    });
-  }
-
   if (syaratPercakapan.length) where.AND = syaratPercakapan;
 
   return where;
+}
+
+/**
+ * Apakah urusan dengan pelanggan ini BELUM SELESAI — pesan terakhir datang
+ * dari dia dan belum pernah dibalas sales?
+ *
+ * ⚠️ SENGAJA TIDAK MEMAKAI Conversation.status. Di produksi status itu
+ * praktis tidak pernah diurus: 2.453 OPEN berbanding 30 RESOLVED (diperiksa
+ * 14 Agt 2026). Artinya "OPEN" cuma berarti percakapannya ADA, bukan sedang
+ * ditangani — memakainya sebagai saringan akan membuang 436 dari 439 kontak
+ * dan membuat fitur ini terlihat rusak.
+ *
+ * Arah pesan terakhir adalah sinyal yang benar-benar hidup karena ditulis
+ * otomatis oleh alur pesan itu sendiri, bukan bergantung pada disiplin
+ * seseorang menekan tombol "selesai". Dan maknanya tepat: mengirim promo
+ * massal ke orang yang pertanyaannya belum kita jawab adalah cara tercepat
+ * mengundang komplain.
+ */
+export function belumDibalas(kandidat) {
+  return kandidat.arahPesanTerakhir === "INBOUND";
 }
 
 // ─── Worker ────────────────────────────────────────────────────────────────
@@ -367,8 +376,12 @@ broadcastRouter.get("/estimate", async (req, res) => {
       // dinyalakan.
       kecualikanChatAktif: req.query.kecualikanChatAktif !== "false",
     };
-    const count = await prisma.customer.count({ where: susunFilterTarget(filters) });
-    res.json({ count });
+    // Lewat ambilKandidat (bukan prisma.count) supaya saringan "belum
+    // dibalas" — yang tidak bisa dinyatakan di klausa where — ikut terhitung.
+    // Kalau di sini pakai count langsung, admin melihat angka yang lebih
+    // besar dari jumlah yang benar-benar dikirimi.
+    const kandidat = await ambilKandidat(filters);
+    res.json({ count: kandidat.length });
   } catch (err) {
     console.error("[broadcast] estimate gagal:", err.message);
     res.status(500).json({ error: "Gagal menghitung target" });
@@ -395,14 +408,18 @@ async function ambilKandidat(filters = {}) {
       // yang sama sekali tidak berarti "orangnya baru saja aktif".
       conversations: {
         where: { channel: "WHATSAPP" },
-        select: { lastMessageAt: true, status: true },
+        select: {
+          lastMessageAt: true,
+          // Arah pesan TERAKHIR — dasar saringan "belum dibalas".
+          messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true } },
+        },
         orderBy: { lastMessageAt: "desc" },
         take: 1,
       },
     },
   });
 
-  return customers
+  const kandidat = customers
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -411,11 +428,17 @@ async function ambilKandidat(filters = {}) {
       orderCount: c.orderCount,
       tags: c.tags,
       terakhirInteraksi: c.conversations[0]?.lastMessageAt || null,
-      statusPercakapan: c.conversations[0]?.status || null,
+      arahPesanTerakhir: c.conversations[0]?.messages[0]?.direction || null,
     }))
     // Paling baru berinteraksi duluan — mereka paling ingat Sano, jadi
     // paling kecil kemungkinan menganggap pesannya spam.
     .sort((a, b) => (b.terakhirInteraksi?.getTime() || 0) - (a.terakhirInteraksi?.getTime() || 0));
+
+  // Saringan ini dikerjakan DI SINI, bukan di klausa where, karena "arah
+  // pesan terakhir" tidak bisa dinyatakan sebagai filter Prisma. Karena
+  // /estimate, /preview-targets, dan /prepare semuanya lewat fungsi ini,
+  // angka yang DILIHAT admin dijamin sama dengan yang DIKIRIMI.
+  return filters.kecualikanChatAktif ? kandidat.filter((k) => !belumDibalas(k)) : kandidat;
 }
 
 // GET /api/broadcast/preview-targets — daftar kandidat + recency, supaya
