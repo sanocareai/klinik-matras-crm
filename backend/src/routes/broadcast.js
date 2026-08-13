@@ -30,7 +30,7 @@ import { sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback } from "./conversations.js";
 import {
   awalHariWIB, dalamJamKirim, sisaWaktuKirimMs,
-  jedaAntarPesanMs, acakJeda, susunPesan, TAG_OPT_OUT,
+  jedaAntarPesanMs, acakJeda, susunPesan, TAG_OPT_OUT, TAG_BROADCAST,
 } from "../services/broadcastPolicy.js";
 
 export const broadcastRouter = express.Router();
@@ -47,7 +47,7 @@ broadcastRouter.use(requireAuth);
  * terkirim ke orang lain — makanya sengaja satu fungsi, bukan disalin.
  */
 export function susunFilterTarget(filters = {}) {
-  const { stage, source, tag, tidakAktifSejakHari, sudahOrder } = filters;
+  const { stage, source, tag, tidakAktifSejakHari, sudahOrder, kecualikanChatAktif } = filters;
   const where = {
     // Wajib punya nomor. String kosong juga tidak berguna untuk kirim.
     phone: { not: null },
@@ -61,15 +61,35 @@ export function susunFilterTarget(filters = {}) {
   if (sudahOrder === true) where.orderCount = { gt: 0 };
   if (sudahOrder === false) where.orderCount = 0;
 
-  // "Kontak dingin" = tidak ada pesan masuk sejak N hari terakhir.
-  // Dipakai campaign reaktivasi: yang BARU SAJA chat tidak perlu (dan tidak
-  // pantas) diblast promo — mereka sedang diurus sales.
+  // Dua syarat di bawah SAMA-SAMA menyaring lewat relasi `conversations`.
+  // Ditumpuk ke dalam AND, BUKAN di-assign berurutan ke where.conversations
+  // — kalau di-assign, yang kedua menimpa yang pertama dan salah satu
+  // saringan hilang diam-diam (target jadi lebih luas dari yang disetujui
+  // admin, dan tidak ada tanda apa pun bahwa itu terjadi).
+  const syaratPercakapan = [];
+
+  // "Kontak dingin" = tidak ada pesan MASUK sejak N hari terakhir.
   if (tidakAktifSejakHari) {
     const batas = new Date(Date.now() - Number(tidakAktifSejakHari) * 86_400_000);
-    where.conversations = {
-      none: { messages: { some: { direction: "INBOUND", createdAt: { gte: batas } } } },
-    };
+    syaratPercakapan.push({
+      conversations: {
+        none: { messages: { some: { direction: "INBOUND", createdAt: { gte: batas } } } },
+      },
+    });
   }
+
+  // Kecualikan orang yang percakapannya MASIH BERJALAN (OPEN/PENDING).
+  // Beda dari "tidak aktif sejak N hari": itu soal kapan terakhir dia chat,
+  // ini soal apakah urusannya sudah selesai. Orang yang sedang ditangani
+  // sales — misalnya lagi tawar-menawar harga — tidak boleh tiba-tiba
+  // disodori promo massal; itu merusak percakapan yang sedang berjalan.
+  if (kecualikanChatAktif) {
+    syaratPercakapan.push({
+      conversations: { none: { status: { in: ["OPEN", "PENDING"] } } },
+    });
+  }
+
+  if (syaratPercakapan.length) where.AND = syaratPercakapan;
 
   return where;
 }
@@ -165,11 +185,17 @@ async function kirimSatuTarget(target, campaign) {
     data: { status: "TERKIRIM", sentAt: new Date(), error: null },
   });
 
-  if (campaign.tagOnSend && !customer.tags.includes(campaign.tagOnSend)) {
+  // Tandai penerima. TAG_BROADCAST selalu dipasang (dipakai chip "Broadcast"
+  // di Inbox supaya sales bisa menggarap penerima blast sebagai satu antrean
+  // tersendiri), tagOnSend opsional per kampanye (dipakai mengukur hasil
+  // kampanye tertentu).
+  const tagBaru = [TAG_BROADCAST, campaign.tagOnSend]
+    .filter((t) => t && !customer.tags.includes(t));
+  if (tagBaru.length) {
     await prisma.customer.update({
       where: { id: customer.id },
-      data: { tags: { push: campaign.tagOnSend } },
-    }).catch(() => {});
+      data: { tags: { push: tagBaru } },
+    }).catch((e) => console.warn("[broadcast] Gagal menandai pelanggan:", e.message));
   }
 
   return "TERKIRIM";
@@ -336,12 +362,85 @@ broadcastRouter.get("/estimate", async (req, res) => {
       tag: req.query.tag || undefined,
       tidakAktifSejakHari: req.query.tidakAktifSejakHari || undefined,
       sudahOrder: req.query.sudahOrder === "true" ? true : req.query.sudahOrder === "false" ? false : undefined,
+      // Default AKTIF — mengecualikan chat yang sedang berjalan adalah
+      // perilaku yang diinginkan; harus sengaja dimatikan, bukan sengaja
+      // dinyalakan.
+      kecualikanChatAktif: req.query.kecualikanChatAktif !== "false",
     };
     const count = await prisma.customer.count({ where: susunFilterTarget(filters) });
     res.json({ count });
   } catch (err) {
     console.error("[broadcast] estimate gagal:", err.message);
     res.status(500).json({ error: "Gagal menghitung target" });
+  }
+});
+
+/**
+ * Ambil kandidat target LENGKAP dengan kapan terakhir mereka berinteraksi,
+ * sudah diurutkan dari yang paling baru.
+ *
+ * Dipakai bersama oleh /preview-targets (admin melihat & memilih) dan
+ * /prepare (yang benar-benar membekukan). Satu sumber supaya daftar yang
+ * DILIHAT admin persis sama dengan yang DIKIRIMI.
+ */
+async function ambilKandidat(filters = {}) {
+  const customers = await prisma.customer.findMany({
+    where: susunFilterTarget(filters),
+    select: {
+      id: true, name: true, phone: true, pipelineStage: true,
+      orderCount: true, tags: true,
+      // lastMessageAt percakapan = kapan TERAKHIR benar-benar ada interaksi.
+      // Sengaja TIDAK memakai Customer.updatedAt: kolom itu ikut berubah
+      // setiap sales mengedit data (ganti nama, pindah stage) — perubahan
+      // yang sama sekali tidak berarti "orangnya baru saja aktif".
+      conversations: {
+        where: { channel: "WHATSAPP" },
+        select: { lastMessageAt: true, status: true },
+        orderBy: { lastMessageAt: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  return customers
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      pipelineStage: c.pipelineStage,
+      orderCount: c.orderCount,
+      tags: c.tags,
+      terakhirInteraksi: c.conversations[0]?.lastMessageAt || null,
+      statusPercakapan: c.conversations[0]?.status || null,
+    }))
+    // Paling baru berinteraksi duluan — mereka paling ingat Sano, jadi
+    // paling kecil kemungkinan menganggap pesannya spam.
+    .sort((a, b) => (b.terakhirInteraksi?.getTime() || 0) - (a.terakhirInteraksi?.getTime() || 0));
+}
+
+// GET /api/broadcast/preview-targets — daftar kandidat + recency, supaya
+// admin bisa MEMILIH sendiri siapa yang dikirimi (10 dulu, 30 dulu, dst)
+// alih-alih hanya menerima angka total.
+broadcastRouter.get("/preview-targets", async (req, res) => {
+  try {
+    const filters = {
+      stage: req.query.stage || undefined,
+      source: req.query.source || undefined,
+      tag: req.query.tag || undefined,
+      tidakAktifSejakHari: req.query.tidakAktifSejakHari || undefined,
+      sudahOrder: req.query.sudahOrder === "true" ? true : req.query.sudahOrder === "false" ? false : undefined,
+      kecualikanChatAktif: req.query.kecualikanChatAktif !== "false",
+    };
+    const semua = await ambilKandidat(filters);
+    res.json({
+      total: semua.length,
+      // Dibatasi supaya payload tidak jadi ribuan baris; admin memilih dari
+      // yang paling atas (paling baru berinteraksi) yang memang didahulukan.
+      data: semua.slice(0, Math.min(Number(req.query.limit) || 300, 1000)),
+    });
+  } catch (err) {
+    console.error("[broadcast] preview-targets gagal:", err.message);
+    res.status(500).json({ error: "Gagal memuat kandidat target" });
   }
 });
 
@@ -372,35 +471,25 @@ broadcastRouter.post("/campaigns/:id/prepare", async (req, res) => {
       return res.status(409).json({ error: "Kampanye sudah pernah dijalankan — buat kampanye baru" });
     }
 
-    const customers = await prisma.customer.findMany({
-      where: susunFilterTarget(campaign.filters || {}),
-      select: {
-        id: true,
-        phone: true,
-        // lastMessageAt percakapan = kapan TERAKHIR benar-benar ada
-        // interaksi. Sengaja TIDAK memakai Customer.updatedAt: kolom itu
-        // ikut berubah setiap sales mengedit data (ganti nama, pindah
-        // stage) — perubahan yang sama sekali tidak berarti "orangnya
-        // baru saja aktif".
-        conversations: {
-          where: { channel: "WHATSAPP" },
-          select: { lastMessageAt: true },
-          orderBy: { lastMessageAt: "desc" },
-          take: 1,
-        },
-      },
-    });
+    // customerIds = admin memilih sendiri di layar "Pilih Kontak".
+    // batas = ambil N teratas saja (paling baru berinteraksi duluan).
+    // Kalau dua-duanya kosong, pakai seluruh hasil filter.
+    const { customerIds, batas } = req.body || {};
 
-    if (customers.length === 0) return res.status(400).json({ error: "Tidak ada kontak yang cocok dengan filter" });
+    let kandidat = await ambilKandidat(campaign.filters || {});
 
-    // Paling terakhir berinteraksi dikirimi DULUAN — mereka paling ingat
-    // Sano, jadi paling kecil kemungkinan menganggap pesannya spam.
-    const urut = customers
-      .map((c) => ({ ...c, terakhir: c.conversations[0]?.lastMessageAt?.getTime() || 0 }))
-      .sort((a, b) => b.terakhir - a.terakhir);
+    if (Array.isArray(customerIds) && customerIds.length > 0) {
+      const dipilih = new Set(customerIds);
+      kandidat = kandidat.filter((c) => dipilih.has(c.id));
+    }
+    if (batas && Number(batas) > 0) {
+      kandidat = kandidat.slice(0, Number(batas));
+    }
+
+    if (kandidat.length === 0) return res.status(400).json({ error: "Tidak ada kontak yang cocok dengan filter" });
 
     await prisma.broadcastTarget.createMany({
-      data: urut.map((c, i) => ({
+      data: kandidat.map((c, i) => ({
         campaignId: campaign.id,
         customerId: c.id,
         phone: c.phone,

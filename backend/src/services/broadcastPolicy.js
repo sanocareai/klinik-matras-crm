@@ -88,6 +88,16 @@ export function acakJeda(jedaMs, acak = Math.random) {
 // kirim (orang bisa minta berhenti setelah targetnya terlanjur dibuat).
 export const TAG_OPT_OUT = "Stop Broadcast";
 
+// Tag UNIVERSAL yang dipasang ke SETIAP penerima broadcast, apa pun
+// kampanyenya — terpisah dari BroadcastCampaign.tagOnSend yang bebas
+// diketik admin per kampanye.
+//
+// Kenapa perlu dua-duanya: tag per-kampanye ("Reactivation Merdeka") dipakai
+// mengukur hasil kampanye TERTENTU, sedangkan tag universal ini yang dipakai
+// chip "Broadcast" di Inbox. Kalau Inbox bergantung pada tag bebas-ketik,
+// filternya rusak begitu admin mengganti nama tag atau lupa mengisinya.
+export const TAG_BROADCAST = "Broadcast";
+
 const KATA_OPT_OUT = [
   "stop", "berhenti", "unsubscribe", "unsub",
   "jangan kirim", "jangan dikirim", "hapus nomor", "hapus nomer",

@@ -193,11 +193,17 @@ conversationRouter.get("/counts", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor, unread } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?tag=... — saring percakapan berdasarkan tag pelanggannya. Dipakai
+  // chip "Broadcast" di Inbox: setelah kampanye mengirim, penerimanya
+  // otomatis diberi tag (BroadcastCampaign.tagOnSend), sehingga sales bisa
+  // memisahkan "orang yang baru saja kita blast" dari chat masuk biasa dan
+  // menggarapnya sebagai satu antrean tersendiri.
+  if (tag) where.customer = { tags: { has: tag } };
   // ?unread=true — dipakai chip "Belum Dibaca" di Inbox mobile (lihat
   // mobile/src/screens/ChatListScreen.js). Sama persis definisi yang
   // dipakai badge unread-count di bawah (unread=true), bukan hitungan baru.

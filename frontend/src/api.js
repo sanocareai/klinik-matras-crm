@@ -402,6 +402,8 @@ export const api = {
       if (statusOrParams.status)       params.set("status", statusOrParams.status);
       if (statusOrParams.search)       params.set("search", statusOrParams.search);
       if (statusOrParams.assignedToId) params.set("assignedToId", statusOrParams.assignedToId);
+      // Filter tag pelanggan — dipakai chip "Broadcast" di Inbox.
+      if (statusOrParams.tag)          params.set("tag", statusOrParams.tag);
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
@@ -624,8 +626,15 @@ export const api = {
   getBroadcastHealthCheck: () => request("/broadcast/health-check"),
   // Menyiapkan target DIPISAH dari menjalankan campaign — supaya admin bisa
   // memeriksa daftar penerima final sebelum satu pesan pun terkirim.
-  prepareBroadcastCampaign: (id) =>
-    request(`/broadcast/campaigns/${id}/prepare`, { method: "POST" }),
+  // Daftar kandidat + kapan terakhir berinteraksi, untuk layar "Pilih Kontak".
+  getBroadcastPreviewTargets: (params) =>
+    request("/broadcast/preview-targets" + buildQuery(params)),
+  // body opsional: { customerIds: [...] } atau { batas: 30 }
+  prepareBroadcastCampaign: (id, body) =>
+    request(`/broadcast/campaigns/${id}/prepare`, {
+      method: "POST",
+      body: JSON.stringify(body || {}),
+    }),
   startBroadcastCampaign: (id) =>
     request(`/broadcast/campaigns/${id}/start`, { method: "POST" }),
   pauseBroadcastCampaign: (id) =>

@@ -11,7 +11,9 @@ import {
   komponenWIB, awalHariWIB, dalamJamKirim, sisaWaktuKirimMs,
   jedaAntarPesanMs, acakJeda, susunPesan, apakahMintaBerhenti,
   JAM_MULAI_WIB, JAM_SELESAI_WIB, JEDA_MINIMUM_MS, SAPAAN_CADANGAN,
+  TAG_OPT_OUT,
 } from "../src/services/broadcastPolicy.js";
+import { susunFilterTarget } from "../src/routes/broadcast.js";
 
 // Pembantu: bikin Date dari jam WIB tertentu (WIB = UTC+7).
 function jamWIB(jam, menit = 0) {
@@ -120,4 +122,39 @@ test("nama kosong pakai sapaan cadangan, JANGAN sampai jadi 'Halo ,'", () => {
   // langsung terbaca sebagai blast mesin.
   assert.equal(susunPesan("Halo {{nama}}, apa kabar?", null), `Halo ${SAPAAN_CADANGAN}, apa kabar?`);
   assert.equal(susunPesan("Halo {{nama}}!", "   "), `Halo ${SAPAAN_CADANGAN}!`);
+});
+
+// --- Penyusunan filter target --------------------------------------------
+
+test("filter target SELALU mengecualikan yang minta berhenti", () => {
+  const where = susunFilterTarget({});
+  assert.deepEqual(where.NOT, { tags: { has: TAG_OPT_OUT } });
+  assert.deepEqual(where.phone, { not: null });
+});
+
+test("dua saringan percakapan DIGABUNG lewat AND, tidak saling menimpa", () => {
+  // Ini bug nyata yang sempat ada: keduanya menulis ke where.conversations,
+  // sehingga yang kedua menimpa yang pertama dan satu saringan HILANG
+  // diam-diam — target jadi lebih luas dari yang disetujui admin.
+  const where = susunFilterTarget({ tidakAktifSejakHari: 30, kecualikanChatAktif: true });
+  assert.equal(Array.isArray(where.AND), true, "harus pakai AND, bukan satu properti");
+  assert.equal(where.AND.length, 2, "kedua saringan harus tetap ada");
+  assert.equal(where.conversations, undefined, "jangan ada assignment langsung yang bisa tertimpa");
+
+  const punyaSaringanDingin = where.AND.some((k) => k.conversations?.none?.messages);
+  const punyaSaringanAktif  = where.AND.some((k) => k.conversations?.none?.status);
+  assert.ok(punyaSaringanDingin, "saringan 'tidak aktif sejak N hari' hilang");
+  assert.ok(punyaSaringanAktif, "saringan 'kecualikan chat aktif' hilang");
+});
+
+test("kecualikan chat aktif menyaring status OPEN dan PENDING", () => {
+  const where = susunFilterTarget({ kecualikanChatAktif: true });
+  const saringan = where.AND.find((k) => k.conversations?.none?.status);
+  assert.deepEqual(saringan.conversations.none.status, { in: ["OPEN", "PENDING"] });
+});
+
+test("tanpa saringan percakapan, tidak ada klausa AND yang menggantung", () => {
+  const where = susunFilterTarget({ stage: "NEW" });
+  assert.equal(where.AND, undefined);
+  assert.equal(where.pipelineStage, "NEW");
 });

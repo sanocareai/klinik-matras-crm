@@ -1,19 +1,27 @@
 import React, { useEffect, useState } from "react";
 import { Reorder } from "framer-motion";
-import { UserCheck } from "lucide-react";
+import { UserCheck, Megaphone } from "lucide-react";
 import { useFilter, useConversationStore } from "../../stores/conversationStore.js";
 
 const TAB_DEFS = {
-  MINE:    { label: "Milik Saya" },
-  ALL:     { label: "Semua" },
-  OPEN:    { label: "Terbuka" },
-  PENDING: { label: "Pending" },
-  CLOSED:  { label: "Selesai" },
+  MINE:      { label: "Milik Saya" },
+  ALL:       { label: "Semua" },
+  OPEN:      { label: "Terbuka" },
+  PENDING:   { label: "Pending" },
+  CLOSED:    { label: "Selesai" },
+  // Penerima broadcast — supaya sales bisa fokus menggarap orang yang baru
+  // saja dikirimi pesan kampanye sebagai satu antrean tersendiri.
+  BROADCAST: { label: "Broadcast" },
 };
 
 // "Milik Saya" di depan (permintaan eksplisit: filter yang paling sering
 // dipakai sales sendiri tidak seharusnya di ujung, mengharuskan scroll tab).
-const DEFAULT_ORDER = ["MINE", "ALL", "OPEN", "PENDING", "CLOSED"];
+//
+// Catatan: menambah key baru di sini otomatis membuat urutan tersimpan di
+// localStorage pengguna lama dianggap tidak valid (jumlah key beda), dan
+// bacaUrutan() jatuh ke DEFAULT_ORDER ini — yaitu justru perilaku yang
+// diinginkan: semua orang langsung melihat tab baru.
+const DEFAULT_ORDER = ["MINE", "ALL", "OPEN", "PENDING", "CLOSED", "BROADCAST"];
 
 const STORAGE_KEY = "sano-inbox-filter-order";
 
@@ -70,6 +78,7 @@ export default function FilterTabs() {
           whileDrag={{ scale: 1.06, boxShadow: "0 4px 14px rgba(0,0,0,0.16)", zIndex: 1 }}
         >
           {key === "MINE" && <UserCheck size={12} style={{ marginRight: 3 }} />}
+          {key === "BROADCAST" && <Megaphone size={12} style={{ marginRight: 3 }} />}
           {TAB_DEFS[key].label}
         </Reorder.Item>
       ))}

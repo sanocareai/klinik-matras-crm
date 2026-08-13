@@ -3,7 +3,18 @@ import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users } from "luci
 import { api } from "../api.js";
 import { PIPELINE_STAGES, LEAD_SOURCES } from "../utils/format.js";
 
-const STEPS = ["Pesan", "Target", "Pengiriman", "Review"];
+const STEPS = ["Pesan", "Target", "Pilih Kontak", "Pengiriman", "Review"];
+
+/** "3 hari lalu", "2 bulan lalu" — supaya recency langsung terbaca. */
+function jarakWaktu(iso) {
+  if (!iso) return "belum pernah";
+  const hari = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (hari <= 0) return "hari ini";
+  if (hari === 1) return "kemarin";
+  if (hari < 30) return `${hari} hari lalu`;
+  const bulan = Math.floor(hari / 30);
+  return bulan === 1 ? "1 bulan lalu" : `${bulan} bulan lalu`;
+}
 
 const STATUS_BADGE = {
   DRAFT: "badge-pending",
@@ -48,7 +59,10 @@ function WizardStepsBar({ step }) {
 const FORM_KOSONG = {
   name: "",
   message: "",
-  filters: { tidakAktifSejakHari: 30 },
+  // kecualikanChatAktif default true — chat yang sedang ditangani sales
+  // tidak boleh diblast promo. Harus sengaja dimatikan, bukan sengaja
+  // dinyalakan.
+  filters: { tidakAktifSejakHari: 30, kecualikanChatAktif: true },
   dailyCap: 30,
   tagOnSend: "",
 };
@@ -63,6 +77,11 @@ export default function Broadcast() {
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testPhone, setTestPhone] = useState("");
+  // Kandidat + pilihan manual (langkah "Pilih Kontak")
+  const [kandidat, setKandidat] = useState(null);
+  const [totalKandidat, setTotalKandidat] = useState(0);
+  const [terpilih, setTerpilih] = useState(() => new Set());
+  const [memuatKandidat, setMemuatKandidat] = useState(false);
 
   const muatCampaigns = useCallback(() => {
     api.getBroadcastCampaigns().then(setCampaigns).catch(() => {});
@@ -88,6 +107,36 @@ export default function Broadcast() {
     }, 500);
     return () => clearTimeout(t);
   }, [form.filters, step]);
+
+  // Kandidat dimuat saat masuk langkah "Pilih Kontak". Semua tercentang
+  // secara default supaya perilakunya sama dengan sebelum fitur ini ada —
+  // admin tinggal MENGURANGI, bukan harus mencentang ratusan satu per satu.
+  useEffect(() => {
+    if (step !== 3) return;
+    setMemuatKandidat(true);
+    api.getBroadcastPreviewTargets(form.filters)
+      .then((hasil) => {
+        setKandidat(hasil.data);
+        setTotalKandidat(hasil.total);
+        setTerpilih(new Set(hasil.data.map((k) => k.id)));
+      })
+      .catch(() => setKandidat([]))
+      .finally(() => setMemuatKandidat(false));
+  }, [step, form.filters]);
+
+  function toggleKontak(id) {
+    setTerpilih((prev) => {
+      const baru = new Set(prev);
+      if (baru.has(id)) baru.delete(id); else baru.add(id);
+      return baru;
+    });
+  }
+
+  /** Ambil N teratas (paling baru berinteraksi) — "10 dulu", "30 dulu". */
+  function ambilTeratas(n) {
+    if (!kandidat) return;
+    setTerpilih(new Set(kandidat.slice(0, n).map((k) => k.id)));
+  }
 
   function setFilter(key, val) {
     setForm((f) => ({ ...f, filters: { ...f.filters, [key]: val === "" ? undefined : val } }));
@@ -148,7 +197,7 @@ export default function Broadcast() {
   async function handleMulai() {
     if (!activeCampaign) return alert("Simpan draft terlebih dahulu");
     const konfirmasi = window.confirm(
-      `Siapkan dan mulai kirim ke ±${estimate?.count ?? "?"} kontak?\n\n` +
+      `Siapkan dan mulai kirim ke ${terpilih.size} kontak yang dipilih?\n\n` +
       `Maksimal ${form.dailyCap} pesan/hari, hanya jam 08:00–20:00 WIB.\n` +
       `Kampanye bisa dijeda kapan saja.`
     );
@@ -161,7 +210,12 @@ export default function Broadcast() {
       // kegagalan.
       const sudahPunyaTarget = (activeCampaign.totalTargets || 0) > 0;
       if (!sudahPunyaTarget) {
-        const hasil = await api.prepareBroadcastCampaign(activeCampaign.id);
+        // Kirim daftar id yang BENAR-BENAR dicentang admin — bukan sekadar
+        // hasil filter — supaya yang terkirim persis sama dengan yang
+        // dilihat dan disetujui di layar sebelumnya.
+        const hasil = await api.prepareBroadcastCampaign(activeCampaign.id, {
+          customerIds: Array.from(terpilih),
+        });
         if (!window.confirm(`${hasil.prepared} kontak siap dikirimi. Lanjut kirim sekarang?`)) {
           setBusy(false);
           muatCampaigns();
@@ -274,8 +328,14 @@ export default function Broadcast() {
               </div>
               {form.message && (
                 <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Preview:</div>
-                  <div className="msg-preview">
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                    Preview (persis seperti yang dilihat pelanggan):
+                  </div>
+                  {/* whiteSpace: pre-wrap WAJIB — tanpa ini semua baris baru
+                      dan spasi runtuh jadi satu paragraf panjang, sehingga
+                      preview tidak menggambarkan bentuk pesan yang sebenarnya
+                      terkirim (daftar promo jadi berdempetan). */}
+                  <div className="msg-preview" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                     {form.message.replace(/\{\{\s*nama\s*\}\}/gi, "Budi")}
                     <div className="msg-preview-meta">15:30 ✓✓</div>
                   </div>
@@ -346,11 +406,116 @@ export default function Broadcast() {
                   <option value="false">Belum pernah order</option>
                 </select>
               </div>
+
+              <div className="form-group">
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    disabled={terkunci}
+                    checked={form.filters.kecualikanChatAktif !== false}
+                    onChange={(e) => setFilter("kecualikanChatAktif", e.target.checked)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span style={{ fontSize: 13.5 }}>
+                    Kecualikan chat yang sedang berjalan
+                    <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      Pelanggan yang percakapannya masih Open/Pending sedang ditangani sales —
+                      mengirimi mereka promo massal merusak percakapan yang sedang jalan.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 
-          {/* Step 3 — Pengiriman */}
+          {/* Step 3 — Pilih Kontak */}
           {step === 3 && (
+            <div>
+              <h3 style={{ marginTop: 0 }}>Pilih Kontak</h3>
+
+              {memuatKandidat && (
+                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Memuat kandidat...</p>
+              )}
+
+              {!memuatKandidat && kandidat && (
+                <>
+                  <div className="estimate-card" style={{ marginBottom: 14 }}>
+                    <div className="estimate-count">{terpilih.size}</div>
+                    <div>
+                      <div className="estimate-label">kontak dipilih untuk dikirimi</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        dari {totalKandidat} yang cocok filter
+                        {totalKandidat > kandidat.length && ` (ditampilkan ${kandidat.length} teratas)`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12.5, color: "var(--text-muted)", alignSelf: "center", marginRight: 4 }}>
+                      Ambil cepat:
+                    </span>
+                    {[10, 30, 50, 100].filter((n) => n <= kandidat.length).map((n) => (
+                      <button key={n} className="btn btn-ghost btn-sm" onClick={() => ambilTeratas(n)}>
+                        {n} teratas
+                      </button>
+                    ))}
+                    <button className="btn btn-ghost btn-sm"
+                      onClick={() => setTerpilih(new Set(kandidat.map((k) => k.id)))}>
+                      Semua
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setTerpilih(new Set())}>
+                      Kosongkan
+                    </button>
+                  </div>
+
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>
+                    Diurutkan dari yang <strong>paling baru berinteraksi</strong> — mereka paling ingat
+                    Sano, jadi paling kecil kemungkinan menganggap pesan ini spam.
+                  </p>
+
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, maxHeight: 360, overflowY: "auto" }}>
+                    {kandidat.length === 0 && (
+                      <div style={{ padding: 16, fontSize: 13, color: "var(--text-muted)" }}>
+                        Tidak ada kontak yang cocok. Longgarkan filter di langkah sebelumnya.
+                      </div>
+                    )}
+                    {kandidat.map((k) => (
+                      <label
+                        key={k.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
+                          borderBottom: "1px solid var(--border)", cursor: "pointer", fontSize: 13,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={terpilih.has(k.id)}
+                          onChange={() => toggleKontak(k.id)}
+                        />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontWeight: 600 }}>{k.name || "(tanpa nama)"}</span>
+                          <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: 12 }}>
+                            {k.phone}
+                          </span>
+                        </span>
+                        {k.orderCount > 0 && (
+                          <span className="badge badge-resolved" style={{ fontSize: 10.5 }}>
+                            {k.orderCount}x order
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11.5, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {jarakWaktu(k.terakhirInteraksi)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Step 4 — Pengiriman */}
+          {step === 4 && (
             <div>
               <h3 style={{ marginTop: 0 }}>Pengaturan Pengiriman</h3>
 
@@ -415,19 +580,22 @@ export default function Broadcast() {
             </div>
           )}
 
-          {/* Step 4 — Review */}
-          {step === 4 && (
+          {/* Step 5 — Review */}
+          {step === 5 && (
             <div>
               <h3 style={{ marginTop: 0 }}>Review &amp; Kirim</h3>
               <div className="chart-card" style={{ margin: 0, padding: 20 }}>
                 <div style={{ display: "grid", gap: 12, fontSize: 13.5 }}>
                   <div><strong>Nama Kampanye:</strong> {form.name || "—"}</div>
-                  <div><strong>Target:</strong> {estimate?.count ?? "—"} kontak</div>
+                  <div><strong>Target:</strong> {terpilih.size} kontak dipilih</div>
                   <div><strong>Batas harian:</strong> {form.dailyCap} pesan/hari (08:00–20:00 WIB)</div>
                   <div><strong>Perkiraan selesai:</strong>{" "}
-                    {estimate?.count ? `±${Math.ceil(estimate.count / form.dailyCap)} hari` : "—"}
+                    {terpilih.size ? `±${Math.ceil(terpilih.size / form.dailyCap)} hari` : "—"}
                   </div>
                   <div><strong>Tag setelah terkirim:</strong> {form.tagOnSend || "—"}</div>
+                  <div><strong>Chat yang sedang berjalan:</strong>{" "}
+                    {form.filters.kecualikanChatAktif ? "dikecualikan" : "IKUT DIKIRIMI"}
+                  </div>
                 </div>
               </div>
 
@@ -462,9 +630,9 @@ export default function Broadcast() {
           <button className="btn btn-ghost" onClick={handleSaveDraft} disabled={saving}>
             {saving ? "Menyimpan..." : "Simpan Draft"}
           </button>
-          {step < 4 ? (
+          {step < 5 ? (
             <button className="btn btn-primary" onClick={() => setStep((s) => s + 1)}
-              disabled={step === 1 && (!form.name || !form.message)}>
+              disabled={(step === 1 && (!form.name || !form.message)) || (step === 3 && terpilih.size === 0)}>
               Lanjut →
             </button>
           ) : berjalan ? (

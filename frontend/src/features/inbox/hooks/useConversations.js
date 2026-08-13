@@ -11,8 +11,14 @@ function filterToStatus(filter) {
   if (filter === "OPEN") return "OPEN";
   if (filter === "PENDING") return "PENDING";
   if (filter === "CLOSED") return "RESOLVED";
-  return undefined; // 'ALL' | 'MINE'
+  return undefined; // 'ALL' | 'MINE' | 'BROADCAST'
 }
+
+// Tag universal yang dipasang backend ke SETIAP penerima broadcast — lihat
+// backend/src/services/broadcastPolicy.js#TAG_BROADCAST. Sengaja bukan tag
+// per-kampanye yang bebas diketik admin: kalau filter Inbox bergantung ke
+// nama tag bebas, dia rusak begitu admin ganti nama atau lupa mengisinya.
+export const TAG_BROADCAST = "Broadcast";
 
 // Fase F: backend sekarang benar-benar dukung cursor pagination
 // (GET /conversations?cursor=&limit= → { data, nextCursor }) — lihat
@@ -21,10 +27,14 @@ function filterToStatus(filter) {
 export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   const status = filterToStatus(filter);
   const assignedToId = filter === "MINE" ? userId : undefined;
+  // Chip "Broadcast": tampilkan HANYA pelanggan yang sudah dikirimi pesan
+  // kampanye, supaya sales bisa menggarapnya sebagai satu antrean sendiri
+  // dan tidak tercampur chat masuk biasa.
+  const tag = filter === "BROADCAST" ? TAG_BROADCAST : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId }],
-    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, cursor: pageParam || undefined }),
+    queryKey: ["conversations", { status, search, assignedToId, tag }],
+    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });
