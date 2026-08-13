@@ -319,6 +319,23 @@ model Customer {
   assignedSales           User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
   leadSourceDetail        String? // detail tambahan: nama link/campaign/ad headline
   leadSourceConfirmed     Boolean       @default(false) // true = dikoreksi manual oleh sales
+
+  // ── Atribusi iklan Meta Click-to-WhatsApp (CTWA) ──────────────────────
+  // Iklan CTWA melompat LANGSUNG ke WhatsApp tanpa lewat website, jadi tag
+  // tak-terlihat dari sanomatrassehat.com tidak pernah kepasang. Satu-satunya
+  // jejak adalah contextInfo di payload WAHA (engine GOWS mengirimnya —
+  // lihat services/leadAttribution.js extractCtwaContext).
+  //
+  // ctwaClid = Click ID dari Meta, unik per klik iklan. Disimpan di KOLOM
+  // SENDIRI (bukan cuma diselipkan ke leadSourceDetail) supaya bisa
+  // di-query untuk kirim balik data konversi ke Meta Conversions API nanti
+  // — itu yang membuat Meta bisa mengoptimalkan iklan ke orang yang
+  // BENAR-BENAR closing, bukan sekadar yang chat.
+  ctwaClid                String?       @map("ctwa_clid")
+  // URL postingan/kreatif yang dipakai iklannya (mis. link post Instagram).
+  // Berguna untuk tahu kreatif MANA yang menghasilkan lead, karena payload
+  // WA tidak membawa nama campaign.
+  ctwaSourceUrl           String?       @map("ctwa_source_url")
   customerType            CustomerType  @default(END_USER)
   healthStatus            HealthStatus?
   profilePictureUrl       String? // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)

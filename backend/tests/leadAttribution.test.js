@@ -9,7 +9,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { matchCampaignByMessage, extractRefTag, leadSourceFromRefTag } from "../src/services/leadAttribution.js";
+import {
+  matchCampaignByMessage, extractRefTag, leadSourceFromRefTag,
+  extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
+} from "../src/services/leadAttribution.js";
 
 const LINKS = [
   { id: "g1", name: "Google - Brand", category: "GOOGLE_ADS", prefilledMessage: "Halo Sano, saya mau konsultasi" },
@@ -165,4 +168,96 @@ test("leadSourceFromRefTag: prefix lain -> OTHER (bukan dikarang jadi salah satu
 test("leadSourceFromRefTag: tidak ada tag -> null", () => {
   assert.equal(leadSourceFromRefTag(null), null);
   assert.equal(leadSourceFromRefTag(""), null);
+});
+
+// --- Iklan Meta Click-to-WhatsApp (CTWA) ---------------------------------
+//
+// Struktur payload di bawah DISALIN DARI LOG PRODUCTION ASLI (13 Agt 2026),
+// bukan karangan — versi kode SEBELUMNYA gagal total justru karena path-nya
+// ditebak dari dokumentasi dan ternyata tidak pernah ada di payload nyata.
+// Kalau WAHA/WhatsApp mengubah bentuk payload, tes inilah yang harus gagal
+// duluan, bukan diam-diam berhenti mengatribusi ribuan lead.
+const PAYLOAD_CTWA_ASLI = {
+  id: "false_628xxx@c.us_ABC123",
+  from: "628xxx@c.us",
+  _data: {
+    Info: { Chat: "628xxx@c.us", Type: "text", PushName: "Budi" },
+    Message: {
+      extendedTextMessage: {
+        text: "Halo, saya mau tanya kasur",
+        contextInfo: {
+          conversionSource: "FB_Ads",
+          entryPointConversionSource: "ctwa_ad",
+          entryPointConversionApp: "facebook",
+          entryPointConversionDelaySeconds: 24,
+          ctwaSignals: "all,all",
+          externalAdReply: {
+            sourceURL: "https://www.instagram.com/p/DXWbO-EAOeT/",
+            ctwaClid: "AfhKBK8ZBWyKw3p49jW-KFh_rNlyzXmCKW0eSdHULJZt8",
+            containsCtwaFlowsAutoReply: false,
+          },
+        },
+      },
+    },
+  },
+};
+
+test("CTWA: baca konteks iklan dari struktur payload production yang nyata", () => {
+  const ctwa = extractCtwaContext(PAYLOAD_CTWA_ASLI);
+  assert.ok(ctwa, "harus terdeteksi");
+  assert.equal(ctwa.clid, "AfhKBK8ZBWyKw3p49jW-KFh_rNlyzXmCKW0eSdHULJZt8");
+  assert.equal(ctwa.sourceUrl, "https://www.instagram.com/p/DXWbO-EAOeT/");
+  assert.equal(ctwa.conversionSource, "FB_Ads");
+  assert.equal(ctwa.app, "facebook");
+});
+
+test("CTWA: konteks iklan -> META_ADS", () => {
+  assert.equal(leadSourceFromCtwa(extractCtwaContext(PAYLOAD_CTWA_ASLI)), "META_ADS");
+});
+
+test("CTWA: keterangan berisi platform + kreatif yang dipakai", () => {
+  const detail = ctwaDetail(extractCtwaContext(PAYLOAD_CTWA_ASLI));
+  assert.equal(detail, "Meta CTWA - facebook - instagram.com/p/DXWbO-EAOeT");
+});
+
+test("CTWA: tipe pesan SELAIN extendedTextMessage tetap kebaca", () => {
+  // Iklan dengan gambar/video masuk sebagai imageMessage/videoMessage —
+  // kalau tipe pesannya di-hardcode, lead dari kreatif visual hilang diam-diam.
+  const payloadGambar = {
+    _data: { Message: { imageMessage: { contextInfo: {
+      conversionSource: "FB_Ads",
+      externalAdReply: { ctwaClid: "Afh_gambar_123", sourceURL: "https://fb.com/ad/9" },
+    } } } },
+  };
+  const ctwa = extractCtwaContext(payloadGambar);
+  assert.equal(ctwa?.clid, "Afh_gambar_123");
+  assert.equal(leadSourceFromCtwa(ctwa), "META_ADS");
+});
+
+test("CTWA: pesan REPLY biasa TIDAK dianggap iklan", () => {
+  // contextInfo juga muncul saat orang me-reply chat. Tanpa penjagaan ini,
+  // setiap balasan customer akan salah dilabeli iklan Meta berbayar —
+  // dan angka belanja iklan jadi omong kosong.
+  const payloadReply = {
+    _data: { Message: { extendedTextMessage: { contextInfo: {
+      stanzaId: "ABC", participant: "628xxx@c.us",
+      quotedMessage: { conversation: "pesan sebelumnya" },
+    } } } },
+  };
+  assert.equal(extractCtwaContext(payloadReply), null);
+  assert.equal(leadSourceFromCtwa(null), null);
+});
+
+test("CTWA: ada contextInfo tapi BUKAN penanda iklan -> menyerah, jangan klaim META_ADS", () => {
+  // Entry point non-iklan (QR code, link profil) tidak boleh dihitung
+  // sebagai iklan berbayar — lebih baik jatuh ke lapis berikutnya.
+  const bukanIklan = { conversionSource: "qr_code", entryPoint: "profile_link", clid: null };
+  assert.equal(leadSourceFromCtwa(bukanIklan), null);
+});
+
+test("CTWA: payload polos / kosong tidak melempar error", () => {
+  assert.equal(extractCtwaContext({}), null);
+  assert.equal(extractCtwaContext(null), null);
+  assert.equal(extractCtwaContext({ _data: { Message: null } }), null);
+  assert.equal(ctwaDetail(null), null);
 });

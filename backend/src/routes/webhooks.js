@@ -10,7 +10,10 @@ import { broadcast } from "./sse.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
-import { matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag } from "../services/leadAttribution.js";
+import {
+  matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
+  extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
+} from "../services/leadAttribution.js";
 
 export const webhookRouter = express.Router();
 
@@ -429,6 +432,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   let detectedSource = "WHATSAPP_DIRECT";
   let detectedDetail = null;
   let pendingClickId = null;
+  let ctwaClid = null;
+  let ctwaSourceUrl = null;
 
   if (!existingCustomer) {
     // Lapis 0: TAG "(ref: ...)" dari website sanomatrassehat.com — Google
@@ -441,6 +446,25 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       detectedSource = leadSourceFromRefTag(refTag) || "WHATSAPP_DIRECT";
       detectedDetail = `Website - ${refTag}`;
       console.log("[attribution] Lapis 0 tag website:", refTag);
+    }
+
+    // Lapis 0b: IKLAN META CLICK-TO-WHATSAPP — sekuat Lapis 0 (sama-sama
+    // penanda eksplisit dari platformnya, bukan tebakan), dan SALING LEPAS:
+    // CTWA melompat langsung ke WA tanpa menyentuh website, jadi kalau yang
+    // ini kena, Lapis 0 pasti tidak kena, begitu pula sebaliknya.
+    //
+    // clid & sourceUrl SELALU disimpan begitu terbaca — walaupun leadSource
+    // tidak jadi diubah — supaya jejak "klik iklan mana" tidak hilang.
+    const ctwa = extractCtwaContext(payload);
+    if (ctwa) {
+      ctwaClid = ctwa.clid;
+      ctwaSourceUrl = ctwa.sourceUrl;
+      const sumberCtwa = leadSourceFromCtwa(ctwa);
+      if (sumberCtwa && detectedSource === "WHATSAPP_DIRECT") {
+        detectedSource = sumberCtwa;
+        detectedDetail = ctwaDetail(ctwa);
+        console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid?.slice(0, 16));
+      }
     }
 
     // Lapis 1: COCOKKAN TEKS PESAN PERTAMA ke campaign — dicoba kalau Lapis
@@ -535,6 +559,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         leadSource:          detectedSource,
         leadSourceDetail:    detectedDetail,
         leadSourceConfirmed: false,
+        ctwaClid,
+        ctwaSourceUrl,
       },
     });
   } catch (e) {

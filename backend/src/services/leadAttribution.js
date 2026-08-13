@@ -171,3 +171,83 @@ export function leadSourceFromRefTag(tag) {
   if (tag.startsWith("meta")) return "META_ADS";
   return "OTHER";
 }
+
+// ─── Iklan Meta Click-to-WhatsApp (CTWA) ────────────────────────────────
+//
+// Iklan CTWA melompat LANGSUNG dari Meta ke WhatsApp — TIDAK lewat
+// website — jadi tag tak-terlihat dari sanomatrassehat.com tidak pernah
+// kepasang. Sebelum ini seluruh trafik CTWA jatuh ke WHATSAPP_DIRECT dan
+// terbaca seolah "organik".
+//
+// PATH-nya diverifikasi dari payload production ASLI (13 Agt 2026), BUKAN
+// dari dokumentasi/tebakan — versi lama kode mencari di `_data.conversionSource`
+// & `_data.Info.CtwaContext` yang MEMANG TIDAK PERNAH ADA, itu sebabnya
+// tidak pernah kena sekalipun. Yang benar (engine GOWS):
+//
+//   _data.Message.<tipePesan>.contextInfo.conversionSource         = "FB_Ads"
+//   _data.Message.<tipePesan>.contextInfo.entryPointConversionSource = "ctwa_ad"
+//   _data.Message.<tipePesan>.contextInfo.entryPointConversionApp    = "facebook"
+//   _data.Message.<tipePesan>.contextInfo.externalAdReply.ctwaClid   = "Afh..."
+//   _data.Message.<tipePesan>.contextInfo.externalAdReply.sourceURL  = "https://instagram.com/p/..."
+//
+// <tipePesan> tidak selalu "extendedTextMessage" (bisa imageMessage dst),
+// jadi ditelusuri per-kunci, bukan di-hardcode satu tipe.
+
+// contextInfo JUGA muncul di pesan biasa yang me-REPLY chat lain (isinya
+// quotedMessage/stanzaId). Penanda di bawah ini yang membedakan "ini dari
+// iklan" vs "ini cuma reply" — tanpa ini setiap reply akan salah dilabeli
+// iklan Meta.
+const PENANDA_IKLAN_CTWA = /fb_ads|ig_ads|ctwa_ad/i;
+
+/**
+ * Ambil konteks iklan CTWA dari payload WAHA.
+ * @returns {{clid, sourceUrl, conversionSource, app, entryPoint}|null}
+ */
+export function extractCtwaContext(payload) {
+  const wadah = [payload?._data?.Message, payload?._data?.RawMessage];
+  for (const msg of wadah) {
+    if (!msg || typeof msg !== "object") continue;
+    for (const tipe of Object.keys(msg)) {
+      const ctx = msg[tipe]?.contextInfo;
+      if (!ctx || typeof ctx !== "object") continue;
+
+      const clid = ctx.externalAdReply?.ctwaClid || null;
+      const conversionSource = ctx.conversionSource || null;
+      const entryPoint = ctx.entryPointConversionSource || null;
+      if (!clid && !conversionSource && !entryPoint) continue; // reply biasa
+
+      return {
+        clid,
+        sourceUrl: ctx.externalAdReply?.sourceURL || null,
+        conversionSource,
+        app: ctx.entryPointConversionApp || null,
+        entryPoint,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Konteks CTWA -> LeadSource. Sengaja HANYA mengklaim META_ADS kalau
+ * penandanya benar-benar iklan — kalau contextInfo ada tapi bukan iklan
+ * (mis. entry point dari QR code / link profil), kembalikan null supaya
+ * jatuh ke lapis berikutnya, BUKAN dikarang jadi iklan berbayar.
+ */
+export function leadSourceFromCtwa(ctwa) {
+  if (!ctwa) return null;
+  if (ctwa.clid) return "META_ADS"; // clid hanya lahir dari klik iklan
+  const penanda = `${ctwa.conversionSource || ""} ${ctwa.entryPoint || ""}`;
+  return PENANDA_IKLAN_CTWA.test(penanda) ? "META_ADS" : null;
+}
+
+/** Keterangan singkat untuk kolom leadSourceDetail di CRM. */
+export function ctwaDetail(ctwa) {
+  if (!ctwa) return null;
+  const bagian = ["Meta CTWA"];
+  if (ctwa.app) bagian.push(ctwa.app);
+  if (ctwa.sourceUrl) {
+    bagian.push(String(ctwa.sourceUrl).replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, ""));
+  }
+  return bagian.join(" - ");
+}
