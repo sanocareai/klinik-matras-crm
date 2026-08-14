@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users, MessageSquare, X, ExternalLink } from "lucide-react";
+import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users, MessageSquare, X, ExternalLink, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { PIPELINE_STAGES, LEAD_SOURCES } from "../utils/format.js";
@@ -344,6 +344,24 @@ export default function Broadcast() {
     }
   }
 
+  async function handleHapusCampaign(c) {
+    const punyaRiwayat = (c.sentCount || 0) > 0;
+    const pesan = punyaRiwayat
+      ? `"${c.name}" sudah mengirim ke ${c.sentCount} orang. Menghapus kampanye ini MENGHILANGKAN catatan ` +
+        `"pernah dikirimi campaign ini" untuk mereka semua (pesannya sendiri tetap ada di riwayat chat ` +
+        `masing-masing, cuma catatan campaign-nya yang hilang). Lanjutkan?`
+      : `Hapus draft "${c.name}"?`;
+    if (!window.confirm(pesan)) return;
+
+    try {
+      await api.deleteBroadcastCampaign(c.id);
+      setCampaigns((prev) => prev.filter((x) => x.id !== c.id));
+      if (activeCampaign?.id === c.id) handleNewCampaign();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   async function handleJeda() {
     setBusy(true);
     try {
@@ -489,19 +507,33 @@ export default function Broadcast() {
               key={c.id}
               className={`wizard-campaign-item ${activeCampaign?.id === c.id ? "active" : ""}`}
               onClick={() => handleSelectCampaign(c)}
+              style={{ display: "flex", alignItems: "flex-start", gap: 6 }}
             >
-              <div className="wizard-campaign-name">{c.name}</div>
-              <div className="wizard-campaign-meta">
-                <span className={`badge ${STATUS_BADGE[c.status] || "badge-pending"}`}>{c.status}</span>
-                {c.totalTargets > 0 && (
-                  <span style={{ marginLeft: 6, fontSize: 11 }}>
-                    {c.sentCount}/{c.totalTargets}
-                    {c.failedCount > 0 && (
-                      <span style={{ color: "var(--color-danger)" }}> · {c.failedCount} gagal</span>
-                    )}
-                  </span>
-                )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="wizard-campaign-name">{c.name}</div>
+                <div className="wizard-campaign-meta">
+                  <span className={`badge ${STATUS_BADGE[c.status] || "badge-pending"}`}>{c.status}</span>
+                  {c.totalTargets > 0 && (
+                    <span style={{ marginLeft: 6, fontSize: 11 }}>
+                      {c.sentCount}/{c.totalTargets}
+                      {c.failedCount > 0 && (
+                        <span style={{ color: "var(--color-danger)" }}> · {c.failedCount} gagal</span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
+              {c.status !== "BERJALAN" && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title="Hapus kampanye"
+                  onClick={(e) => { e.stopPropagation(); handleHapusCampaign(c); }}
+                  style={{ padding: "2px 6px", color: "var(--color-danger, #dc2626)" }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>

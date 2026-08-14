@@ -520,12 +520,32 @@ broadcastRouter.patch("/campaigns/:id", async (req, res) => {
 });
 
 // DELETE /api/broadcast/campaigns/:id
+//
+// ⚠️ BroadcastTarget punya onDelete: Cascade ke campaign — menghapus
+// campaign MENGHAPUS SELURUH riwayat siapa sudah dikirimi apa, termasuk
+// yang berstatus TERKIRIM. Untuk campaign yang masih BERJALAN itu bahaya
+// ganda: bukan cuma kehilangan riwayat, tapi worker bisa saja SEDANG di
+// tengah proses kirim saat baris campaign-nya hilang. Wajib dijeda dulu.
 broadcastRouter.delete("/campaigns/:id", async (req, res) => {
   try {
-    await prisma.broadcastCampaign.delete({ where: { id: req.params.id } });
-    res.json({ ok: true });
-  } catch {
-    res.status(404).json({ error: "Kampanye tidak ditemukan" });
+    const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
+    if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
+    if (campaign.status === "BERJALAN") {
+      return res.status(409).json({ error: "Kampanye sedang berjalan — jeda dulu sebelum menghapus" });
+    }
+
+    const terkirim = await prisma.broadcastTarget.count({
+      where: { campaignId: campaign.id, status: "TERKIRIM" },
+    });
+
+    await prisma.broadcastCampaign.delete({ where: { id: campaign.id } });
+    // Pesan yang SUDAH terkirim ke pelanggan tetap ada di riwayat chat
+    // masing-masing (tabel Message tidak ikut terhapus) — yang hilang
+    // cuma catatan "ini bagian dari campaign X", bukan pesannya sendiri.
+    res.json({ ok: true, terkirimIkutTerhapusDariRiwayatCampaign: terkirim });
+  } catch (err) {
+    console.error("[broadcast] hapus campaign gagal:", err.message);
+    res.status(500).json({ error: "Gagal menghapus kampanye" });
   }
 });
 
