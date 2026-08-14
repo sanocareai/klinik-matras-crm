@@ -1412,12 +1412,21 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     });
 
     const hasil = await Promise.all(grup.map(async (g) => {
+      // ⚠️ BUG YANG DIPERBAIKI (ketahuan saat verifikasi manual di
+      // production, 14 Agt 2026): `...where` di-spread SETELAH
+      // `leadSourceDetail: g.leadSourceDetail`, jadi `where.leadSourceDetail`
+      // (yang isinya cuma `{ not: null }`) MENIMPA nilai spesifik itu lagi.
+      // Akibatnya query won/totalValue TIDAK PERNAH benar-benar tersaring
+      // per detail — semua baris menghitung seluruh customer ber-detail
+      // apa pun, sehingga angkanya identik di setiap baris tanpa ada error
+      // yang kelihatan. `where` sekarang di-spread DULU, baru
+      // leadSourceDetail spesifik menimpanya.
       const [won, orderAgg] = await Promise.all([
         prisma.customer.count({
-          where: { leadSourceDetail: g.leadSourceDetail, pipelineStage: "COMPLETED", ...where },
+          where: { ...where, leadSourceDetail: g.leadSourceDetail, pipelineStage: "COMPLETED" },
         }),
         prisma.order.aggregate({
-          where: { customer: { leadSourceDetail: g.leadSourceDetail, ...where }, status: { not: "CANCELLED" } },
+          where: { customer: { ...where, leadSourceDetail: g.leadSourceDetail }, status: { not: "CANCELLED" } },
           _sum: { value: true },
         }),
       ]);
