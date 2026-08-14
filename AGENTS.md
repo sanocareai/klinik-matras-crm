@@ -1295,3 +1295,28 @@ CTWA (`ctwa_source_url` = URL kreatif IG/FB), BUKAN TrackedLink. Cakupan CTWA
 masih sebagian (aktif sejak 13 Agt 2026) dan tool WAJIB menyatakannya di output —
 jangan sajikan angka parsial seolah lengkap. Kalau nanti TrackedLink mulai
 dipakai, tool ini perlu diperluas.
+
+**⚠️ ATURAN DRAF AI ≠ ATURAN SALES MANUSIA (temuan 14 Agt 2026).**
+`violations()` dibangun untuk membatasi DRAF AI. Sebagian aturannya TIDAK
+berlaku untuk sales manusia — menyebut harga ke pelanggan itu memang TUGAS
+sales. `audit_balasan_sales` karena itu memisahkan hasil jadi 3 lewat
+`RUANG_LINGKUP_ATURAN` di `toolsChat.js`:
+- `pelanggaran` (siapa pun): warranty, medical, certainty — dasar §16.8 yang
+  menyebut "Sano" (brand), bukan "AI".
+- `perluTinjau` (tergantung konteks): delivery, discount, freebie — bisa SAH
+  kalau sesuai paket/promo resmi.
+- `aturanKhususAi`: price — dasar Fase 4 yang menulis eksplisit "yang tidak
+  boleh dijanjikan AI". Default TIDAK dihitung sebagai pelanggaran sales.
+
+Bukan teori: audit 30 hari data production awalnya melaporkan 629
+"pelanggaran", 420 di antaranya kategori price yang ternyata sales sedang
+menjelaskan promo resmi. Yang tersisa sebagai pelanggaran nyata: 93 klaim
+"garansi 20 tahun" flat — itu memang melanggar §16.8 (garansi 2 tingkat).
+**JANGAN gabungkan ketiga kelompok itu jadi satu angka.**
+
+**⚠️ Skor engagement pernah salah kalibrasi.** Versi pertama membuat
+percakapan dangkal langsung mentok 100 → distribusi production 165 TINGGI /
+0 SEDANG / 35 RENDAH, tidak bisa dipakai memprioritaskan. Sudah diperbaiki
+(138/27/35) dan dikunci tes di `tests/mcp-chat.test.js`. Kalau menyetel ulang
+bobotnya, jalankan tes itu DAN cek ulang distribusinya di production — jangan
+menilai dari satu contoh percakapan saja.

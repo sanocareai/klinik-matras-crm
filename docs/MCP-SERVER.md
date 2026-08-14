@@ -274,6 +274,43 @@ berbeda:
 (mis. sales menyalin ulang kalimat pelanggan yang menyebut harga). Tool selalu
 mengembalikan kutipannya — baca dulu sebelum dipakai menegur orang.
 
+#### ⚠️ Aturan draf AI ≠ aturan sales manusia (jangan disamakan)
+
+`violations()` dirancang untuk membatasi **draf AI**. Sebagian aturannya TIDAK
+berlaku untuk sales manusia — menyebut harga ke pelanggan itu memang tugas
+sales. Menyamakan keduanya membuat laporan audit menuduh orang yang sedang
+bekerja benar. Karena itu `audit_balasan_sales` memisahkan hasilnya jadi 3
+(lihat `RUANG_LINGKUP_ATURAN` di `toolsChat.js`):
+
+| Kelompok | Kategori | Dasar |
+|---|---|---|
+| **`pelanggaran`** — berlaku untuk siapa pun | `warranty`, `medical`, `certainty` | CLAUDE.md §16.8 menyebut **"Sano"** (brand), bukan "AI" — jadi mengikat semua orang. Soal akurasi klaim & risiko hukum. |
+| **`perluTinjau`** — tergantung konteks | `delivery`, `discount`, `freebie` | Bisa SAH: "pengerjaan 3 hari" memang benar untuk Paket Premium, dan promo resmi yang sedang berjalan bukan pelanggaran. |
+| **`aturanKhususAi`** — bukan pelanggaran sales | `price` | CLAUDE.md Fase 4 menulis eksplisit *"Yang TIDAK boleh dijanjikan **AI**"*. Default TIDAK dihitung; set `termasukAturanKhususAi=true` kalau memang ingin melihatnya. |
+
+Ini bukan teori — waktu diuji ke data production (30 hari), 629 "pelanggaran"
+versi awal ternyata 420 di antaranya kategori `price`, dan kutipannya
+menunjukkan sales sedang menjelaskan promo resmi. Setelah dipisah, yang
+tersisa sebagai pelanggaran sungguhan: **93 klaim "garansi 20 tahun" flat** —
+dan itu memang melanggar §16.8 (garansi ada 2 tingkat: Standard 10 tahun /
+Premium 20 tahun).
+
+#### Skor engagement (`kualitas_engagement`)
+
+Dihitung dari **pola balas chat saja** — sengaja terpisah dari skor CRM
+(relasi/peluang beli) yang juga memperhitungkan order & pipeline, supaya dua
+sudut pandang itu tidak saling menyamarkan. Komponennya: kedalaman dialog
+(giliran balas), berapa kali pelanggan merespons, kecepatan balasnya, dan
+ghosting. Ambang: TINGGI ≥65, SEDANG 35-64, RENDAH <35.
+
+⚠️ Bobotnya pernah salah kalibrasi (14 Agt 2026): versi pertama membuat
+percakapan dangkal langsung mentok 100, hasilnya 165 TINGGI / **0 SEDANG** /
+35 RENDAH di production — tidak bisa dipakai memprioritaskan. Sekarang
+menanjak (138/27/35). Ada tes yang mengunci ini di `tests/mcp-chat.test.js`
+("dialog dangkal wajib SEDANG", "skor wajib menanjak") — **kalau menyetel
+ulang bobotnya, jalankan tes itu dan cek ulang distribusinya di production**,
+jangan cuma lihat satu contoh.
+
 ### Batas jumlah data (penting saat membaca hasil)
 
 Production punya ~76.000 pesan, jadi tool yang menyisir pesan **dibatasi**:
