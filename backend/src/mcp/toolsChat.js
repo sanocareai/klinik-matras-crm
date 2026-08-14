@@ -125,6 +125,10 @@ export function hitungMetrikPercakapan(pesan = [], { slaMenit = SLA_BALAS_PERTAM
   const rataBalasCustomerMenit = jedaCustomer.length
     ? Math.round(jedaCustomer.reduce((a, b) => a + b, 0) / jedaCustomer.length)
     : null;
+  // Berapa KALI customer merespons balasan CS (bukan cuma "pernah" atau tidak)
+  // — pembeda antara yang menjawab sekali lalu diam dengan yang benar-benar
+  // terlibat bolak-balik.
+  const jumlahBalasanCustomer = jedaCustomer.length;
 
   const terakhir = urut[urut.length - 1] || null;
   // Customer pernah membalas SETELAH CS menjawab = dialog benar-benar 2 arah.
@@ -145,6 +149,7 @@ export function hitungMetrikPercakapan(pesan = [], { slaMenit = SLA_BALAS_PERTAM
     slaBalasPertamaTerlampaui: balasPertamaMenit != null && balasPertamaMenit > slaMenit,
     tidakPernahDibalas: masuk.length > 0 && keluar.length === 0,
     rataBalasCustomerMenit,
+    jumlahBalasanCustomer,
     pernahBalasSetelahDijawab,
     ghosting,
     ditinggalSetelahBalasPertama,
@@ -157,28 +162,42 @@ export function hitungMetrikPercakapan(pesan = [], { slaMenit = SLA_BALAS_PERTAM
 // Sengaja terpisah dari skor CRM (health/opportunity) supaya dua sudut pandang
 // itu tidak saling menyamarkan: customer bisa bernilai besar tapi chatnya
 // dingin, atau sebaliknya.
+// KALIBRASI (dikoreksi 14 Agt 2026 setelah diuji ke data production): versi
+// pertama memberi 8 poin per giliran + 25 poin sekali-balas, sehingga hampir
+// semua percakapan yang pernah dibalas langsung mentok 100. Hasilnya distribusi
+// terbelah dua (165 TINGGI / 0 SEDANG / 35 RENDAH) — tidak berguna untuk
+// memprioritaskan siapa yang layak dikejar. Sekarang bobotnya dibuat menanjak
+// supaya dialog dangkal (balas sekali lalu diam) benar-benar jatuh ke SEDANG,
+// bukan ikut TINGGI bersama percakapan yang sungguh-sungguh berlanjut.
 export function skorEngagement(m) {
   const alasan = [];
   let skor = 0;
 
-  const poinGiliran = Math.min(40, m.giliranBalas * 8);
+  // Kedalaman dialog — butuh ~10 pergantian arah untuk poin penuh.
+  const poinGiliran = Math.min(40, m.giliranBalas * 4);
   if (poinGiliran > 0) {
     skor += poinGiliran;
     alasan.push(`${m.giliranBalas} giliran balas (dialog 2 arah)`);
   }
-  if (m.pernahBalasSetelahDijawab) {
-    skor += 25;
-    alasan.push("Customer membalas setelah dijawab CS");
+
+  // Konsistensi — BERAPA KALI customer merespons, bukan sekadar pernah/tidak.
+  const poinKonsistensi = Math.min(25, (m.jumlahBalasanCustomer ?? 0) * 5);
+  if (poinKonsistensi > 0) {
+    skor += poinKonsistensi;
+    alasan.push(`Customer merespons balasan CS ${m.jumlahBalasanCustomer}x`);
   }
+
   if (m.rataBalasCustomerMenit != null) {
-    if (m.rataBalasCustomerMenit <= 15) { skor += 15; alasan.push("Balas sangat cepat (<=15 menit)"); }
-    else if (m.rataBalasCustomerMenit <= 60) { skor += 10; alasan.push("Balas cepat (<=1 jam)"); }
+    if (m.rataBalasCustomerMenit <= 15) { skor += 20; alasan.push("Balas sangat cepat (<=15 menit)"); }
+    else if (m.rataBalasCustomerMenit <= 60) { skor += 15; alasan.push("Balas cepat (<=1 jam)"); }
+    else if (m.rataBalasCustomerMenit <= 360) { skor += 10; }
     else if (m.rataBalasCustomerMenit <= 24 * 60) { skor += 5; }
   }
-  if (!m.ghosting && m.pesanKeluar > 0) {
-    skor += 20;
-  } else if (m.ghosting) {
+
+  if (m.ghosting) {
     alasan.push("Ghosting — tidak pernah merespons balasan CS");
+  } else if (m.pesanKeluar > 0) {
+    skor += 15;
   }
   if (m.tidakPernahDibalas) alasan.push("Belum pernah dibalas CS sama sekali");
 

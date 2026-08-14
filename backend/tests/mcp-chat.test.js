@@ -108,16 +108,38 @@ test("percakapan kosong tidak melempar error", () => {
 
 // ── Skor engagement ─────────────────────────────────────────────────────────
 test("dialog dalam & responsif skornya TINGGI, monolog tak dibalas RENDAH", () => {
-  const bagus = skorEngagement(hitungMetrikPercakapan([
-    pesan("INBOUND", 0), pesan("OUTBOUND", 5), pesan("INBOUND", 10),
-    pesan("OUTBOUND", 15), pesan("INBOUND", 20), pesan("OUTBOUND", 25),
-  ]));
+  // 5 kali bolak-balik penuh — percakapan yang benar-benar berlanjut.
+  const bagus = skorEngagement(hitungMetrikPercakapan(
+    Array.from({ length: 10 }, (_, i) => pesan(i % 2 ? "OUTBOUND" : "INBOUND", i * 5)),
+  ));
   assert.equal(bagus.kategori, "TINGGI");
   assert.ok(bagus.skor >= 65);
 
   const buruk = skorEngagement(hitungMetrikPercakapan([pesan("INBOUND", 0), pesan("INBOUND", 5)]));
   assert.equal(buruk.kategori, "RENDAH");
   assert.ok(buruk.alasan.some((a) => /belum pernah dibalas/i.test(a)));
+});
+
+// KALIBRASI — mengunci perbaikan 14 Agt 2026. Versi pertama membuat percakapan
+// dangkal langsung mentok 100, sehingga di production 165 dari 200 masuk
+// TINGGI dan SEDANG kosong sama sekali; skornya jadi tidak bisa dipakai
+// memprioritaskan siapa yang layak dikejar.
+test("dialog DANGKAL (balas sekali lalu diam) jatuh ke SEDANG, bukan TINGGI", () => {
+  const dangkal = skorEngagement(hitungMetrikPercakapan([
+    pesan("INBOUND", 0), pesan("OUTBOUND", 5), pesan("INBOUND", 10), pesan("OUTBOUND", 15),
+  ]));
+  assert.equal(dangkal.kategori, "SEDANG",
+    `dialog 4 pesan seharusnya SEDANG, dapat ${dangkal.kategori} (skor ${dangkal.skor})`);
+});
+
+test("skor menanjak seiring kedalaman dialog — bukan langsung mentok", () => {
+  const skorUntuk = (n) =>
+    skorEngagement(hitungMetrikPercakapan(
+      Array.from({ length: n }, (_, i) => pesan(i % 2 ? "OUTBOUND" : "INBOUND", i * 5)),
+    )).skor;
+  const s2 = skorUntuk(2), s4 = skorUntuk(4), s8 = skorUntuk(8), s16 = skorUntuk(16);
+  assert.ok(s2 < s4 && s4 < s8 && s8 <= s16, `skor tidak menanjak: ${s2}/${s4}/${s8}/${s16}`);
+  assert.ok(s4 < 65, `dialog 4 pesan tidak boleh sudah TINGGI (skor ${s4})`);
 });
 
 test("skor selalu di rentang 0-100 dan selalu punya alasan yang bisa dijelaskan", () => {
