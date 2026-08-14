@@ -656,6 +656,9 @@ export const api = {
     request(`/broadcast/campaigns/${id}/images`, { method: "DELETE", body: JSON.stringify({ image }) }),
   getBroadcastTargets: (id, params) =>
     request(`/broadcast/campaigns/${id}/targets` + buildQuery(params)),
+  // Cuplikan chat terakhir seorang kandidat — dipakai popup di "Pilih Kontak".
+  getBroadcastContactChat: (customerId) =>
+    request(`/broadcast/contacts/${customerId}/chat`),
 
   // Automation — Workflows
   getWorkflows: () => request("/automation/workflows"),

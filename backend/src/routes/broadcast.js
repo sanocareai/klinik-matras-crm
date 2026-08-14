@@ -577,6 +577,42 @@ broadcastRouter.get("/preview-targets", async (req, res) => {
   }
 });
 
+// GET /api/broadcast/contacts/:customerId/chat — cuplikan chat terakhir.
+//
+// Dipakai popup di layar "Pilih Kontak": sebelum mencentang seseorang,
+// admin bisa melihat percakapan terakhirnya. Ini penting karena keputusan
+// "layak diblast atau tidak" sering tidak bisa disimpulkan dari filter —
+// mis. orang yang terakhir kali komplain, atau yang sudah bilang tidak
+// tertarik, sebaiknya dilewati walau secara data memenuhi syarat.
+broadcastRouter.get("/contacts/:customerId/chat", async (req, res) => {
+  try {
+    const conversation = await prisma.conversation.findFirst({
+      where: { customerId: req.params.customerId, channel: "WHATSAPP", type: "INDIVIDUAL" },
+      orderBy: { lastMessageAt: "desc" },
+      select: { id: true, sessionId: true, status: true },
+    });
+    if (!conversation) return res.json({ conversationId: null, sesi: null, messages: [] });
+
+    const messages = await prisma.message.findMany({
+      where: { conversationId: conversation.id },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      select: { id: true, direction: true, content: true, mediaType: true, createdAt: true },
+    });
+
+    res.json({
+      conversationId: conversation.id,
+      sesi: conversation.sessionId,
+      status: conversation.status,
+      // Dibalik jadi urutan kronologis supaya terbaca seperti chat biasa.
+      messages: messages.reverse(),
+    });
+  } catch (err) {
+    console.error("[broadcast] preview chat gagal:", err.message);
+    res.status(500).json({ error: "Gagal memuat cuplikan chat" });
+  }
+});
+
 // GET /api/broadcast/health-check — rasio outbound:inbound 7 hari terakhir.
 // Rasio tinggi = pola akun makin mirip penyebar spam di mata WhatsApp.
 broadcastRouter.get("/health-check", async (_req, res) => {

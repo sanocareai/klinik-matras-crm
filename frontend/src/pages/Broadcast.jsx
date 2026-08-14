@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users } from "lucide-react";
+import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users, MessageSquare, X, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { PIPELINE_STAGES, LEAD_SOURCES } from "../utils/format.js";
 
@@ -115,6 +116,8 @@ export default function Broadcast() {
   const [memuatKandidat, setMemuatKandidat] = useState(false);
   const [cariKontak, setCariKontak] = useState("");
   const [mengunggah, setMengunggah] = useState(false);
+  // Popup cuplikan chat: { kontak, data, memuat }
+  const [intipChat, setIntipChat] = useState(null);
 
   const muatCampaigns = useCallback(() => {
     api.getBroadcastCampaigns().then(setCampaigns).catch(() => {});
@@ -194,6 +197,16 @@ export default function Broadcast() {
       alert(err.message);
     } finally {
       setMengunggah(false);
+    }
+  }
+
+  async function bukaIntipChat(kontak) {
+    setIntipChat({ kontak, data: null, memuat: true });
+    try {
+      const data = await api.getBroadcastContactChat(kontak.id);
+      setIntipChat({ kontak, data, memuat: false });
+    } catch {
+      setIntipChat({ kontak, data: { messages: [] }, memuat: false });
     }
   }
 
@@ -325,6 +338,114 @@ export default function Broadcast() {
   return (
     <div className="wizard-layout" style={{ height: "calc(100dvh - 56px)" }}>
       <style>{GAYA_INPUT_KONTRAS}</style>
+
+      {/* Popup cuplikan chat — dibuka dari layar "Pilih Kontak" */}
+      {intipChat && (
+        <div
+          onClick={() => setIntipChat(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--card-bg, #fff)", borderRadius: 12, width: "min(560px, 100%)",
+              maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+            }}
+          >
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "12px 16px",
+              borderBottom: "1px solid var(--border)",
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>
+                  {intipChat.kontak.name || "(tanpa nama)"}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  {intipChat.kontak.phone}
+                  {intipChat.data?.sesi && ` · ${intipChat.data.sesi}`}
+                  {` · terakhir ${jarakWaktu(intipChat.kontak.terakhirInteraksi)}`}
+                </div>
+              </div>
+              {intipChat.data?.conversationId && (
+                <Link
+                  to={`/inbox?conv=${intipChat.data.conversationId}`}
+                  className="btn btn-ghost btn-sm"
+                  title="Buka percakapan penuh di Inbox"
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <ExternalLink size={13} /> Buka di Inbox
+                </Link>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={() => setIntipChat(null)} title="Tutup">
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ padding: 14, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {intipChat.memuat && (
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Memuat chat...</p>
+              )}
+              {!intipChat.memuat && intipChat.data?.messages?.length === 0 && (
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+                  Belum ada pesan di percakapan ini.
+                </p>
+              )}
+              {intipChat.data?.messages?.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    alignSelf: m.direction === "OUTBOUND" ? "flex-end" : "flex-start",
+                    maxWidth: "82%",
+                    background: m.direction === "OUTBOUND" ? "var(--primary, #2563eb)" : "var(--bg, #f1f5f9)",
+                    color: m.direction === "OUTBOUND" ? "#fff" : "var(--text-primary, #111827)",
+                    borderRadius: 10, padding: "7px 11px", fontSize: 13, whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {m.content || (m.mediaType ? `[${m.mediaType}]` : "[pesan kosong]")}
+                  <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 3 }}>
+                    {new Date(m.createdAt).toLocaleString("id-ID", {
+                      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setTerpilih((prev) => {
+                    const baru = new Set(prev);
+                    baru.delete(intipChat.kontak.id);
+                    return baru;
+                  });
+                  setIntipChat(null);
+                }}
+              >
+                Jangan kirimi orang ini
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setTerpilih((prev) => new Set(prev).add(intipChat.kontak.id));
+                  setIntipChat(null);
+                }}
+              >
+                Kirimi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="wizard-sidebar">
         <div className="wizard-sidebar-header">
           Broadcast &amp; Campaign
@@ -657,6 +778,18 @@ export default function Broadcast() {
                             {k.phone}
                           </span>
                         </span>
+                        {/* type="button" WAJIB: tombol ini berada di dalam
+                            <label>, tanpa itu klik akan diteruskan ke
+                            checkbox dan malah mengubah centang. */}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          title="Lihat chat terakhir"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); bukaIntipChat(k); }}
+                          style={{ padding: "2px 6px" }}
+                        >
+                          <MessageSquare size={13} />
+                        </button>
                         {k.orderCount > 0 && (
                           <span className="badge badge-resolved" style={{ fontSize: 10.5 }}>
                             {k.orderCount}x order
