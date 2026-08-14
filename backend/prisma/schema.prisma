@@ -2676,6 +2676,17 @@ model BroadcastCampaign {
   // pola akun — lihat peringatan di UI langkah Pengiriman.
   images String[] @default([])
 
+  // true = beberapa gambar digabung jadi SATU gambar kisi sebelum dikirim.
+  //
+  // Album WhatsApp asli tidak bisa dipakai: WAHA di server ini bertier CORE
+  // dan tidak punya endpoint album (diperiksa 14 Agt 2026). Menggabung
+  // sendiri adalah satu-satunya cara memunculkan tampilan kisi — lihat
+  // services/kolaseGambar.js untuk untung-ruginya.
+  //
+  // Default false karena untuk desain promo yang penuh tulisan, digabung
+  // justru membuat teksnya mengecil dan susah dibaca di HP.
+  kolase Boolean @default(false)
+
   // Batas kirim per hari. Ini pengaman utama terhadap banned WhatsApp:
   // worker BERHENTI begitu jumlah TERKIRIM hari ini (WIB) menyentuh angka
   // ini, lalu lanjut lagi besok pagi dengan sendirinya.

@@ -60,6 +60,10 @@ function WizardStepsBar({ step }) {
 const FORM_KOSONG = {
   name: "",
   message: "",
+  // Gambar hidup di form (bukan cuma di activeCampaign) supaya bisa
+  // diunggah SEBELUM draft pertama disimpan.
+  images: [],
+  kolase: false,
   // kecualikanChatAktif default true — chat yang sedang ditangani sales
   // tidak boleh diblast promo. Harus sengaja dimatikan, bukan sengaja
   // dinyalakan.
@@ -183,16 +187,24 @@ export default function Broadcast() {
     return (k.name || "").toLowerCase().includes(q) || (k.phone || "").includes(q);
   });
 
+  // Unggah TIDAK menuntut draft tersimpan. Kalau kampanyenya sudah ada,
+  // gambar langsung ditempelkan ke kampanye itu; kalau belum, path-nya
+  // ditahan di form dan ikut tersimpan saat draft pertama dibuat.
   async function handleUnggahGambar(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = ""; // supaya file yang sama bisa dipilih lagi setelah dihapus
     if (!files.length) return;
-    if (!activeCampaign) return alert("Simpan draft dulu sebelum menambah gambar");
     setMengunggah(true);
     try {
-      const updated = await api.uploadBroadcastImages(activeCampaign.id, files);
-      setActiveCampaign((prev) => ({ ...prev, images: updated.images }));
-      muatCampaigns();
+      if (activeCampaign) {
+        const updated = await api.uploadBroadcastImages(activeCampaign.id, files);
+        setActiveCampaign((prev) => ({ ...prev, images: updated.images }));
+        setForm((f) => ({ ...f, images: updated.images }));
+        muatCampaigns();
+      } else {
+        const { images } = await api.uploadBroadcastImagesLepas(files);
+        setForm((f) => ({ ...f, images: [...(f.images || []), ...images] }));
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -211,9 +223,16 @@ export default function Broadcast() {
   }
 
   async function handleHapusGambar(gambar) {
+    // Belum ada kampanye -> gambar masih hidup di form saja, cukup dibuang
+    // dari state (berkasnya sudah di server tapi tidak pernah dipakai).
+    if (!activeCampaign) {
+      setForm((f) => ({ ...f, images: (f.images || []).filter((g) => g !== gambar) }));
+      return;
+    }
     try {
       const updated = await api.deleteBroadcastImage(activeCampaign.id, gambar);
       setActiveCampaign((prev) => ({ ...prev, images: updated.images }));
+      setForm((f) => ({ ...f, images: updated.images }));
     } catch (err) {
       alert(err.message);
     }
@@ -238,6 +257,8 @@ export default function Broadcast() {
       filters: c.filters || {},
       dailyCap: c.dailyCap ?? 30,
       tagOnSend: c.tagOnSend || "",
+      images: c.images || [],
+      kolase: c.kolase === true,
     });
     setStep(1);
   }
@@ -271,7 +292,10 @@ export default function Broadcast() {
       const hasil = await api.testBroadcast({
         phone: testPhone.trim(),
         message: form.message,
-        images: activeCampaign?.images || [],
+        // Ambil dari form, BUKAN dari activeCampaign — gambar bisa sudah
+        // diunggah walau draftnya belum pernah disimpan.
+        images: form.images || [],
+        kolase: form.kolase === true,
       });
       alert(`Pesan uji terkirim ke ${hasil.sentTo} lewat ${hasil.sesi}`);
     } catch (err) {
@@ -292,22 +316,23 @@ export default function Broadcast() {
 
     setBusy(true);
     try {
-      // Kalau target sudah pernah disiapkan, prepare akan menolak — itu
-      // wajar saat melanjutkan campaign yang dijeda, jadi jangan dianggap
-      // kegagalan.
-      const sudahPunyaTarget = (activeCampaign.totalTargets || 0) > 0;
-      if (!sudahPunyaTarget) {
-        // Kirim daftar id yang BENAR-BENAR dicentang admin — bukan sekadar
-        // hasil filter — supaya yang terkirim persis sama dengan yang
-        // dilihat dan disetujui di layar sebelumnya.
-        const hasil = await api.prepareBroadcastCampaign(activeCampaign.id, {
-          customerIds: Array.from(terpilih),
-        });
-        if (!window.confirm(`${hasil.prepared} kontak siap dikirimi. Lanjut kirim sekarang?`)) {
-          setBusy(false);
-          muatCampaigns();
-          return;
-        }
+      // SELALU susun ulang target dari centang yang sekarang.
+      //
+      // Sebelumnya di sini ada guard "kalau target sudah ada, lewati
+      // prepare" — itu bug: admin yang kembali dan mengurangi pilihan
+      // jadi 1 orang tetap mengirim ke daftar lama (300 orang), tanpa
+      // peringatan apa pun. Backend yang memutuskan apa yang boleh
+      // diubah: yang sudah TERKIRIM dipertahankan, sisanya disusun ulang.
+      const hasil = await api.prepareBroadcastCampaign(activeCampaign.id, {
+        customerIds: Array.from(terpilih),
+      });
+      const catatanTerkirim = hasil.sudahTerkirim
+        ? `\n\n(${hasil.sudahTerkirim} orang sudah pernah dikirimi di kampanye ini dan tidak akan diulang.)`
+        : "";
+      if (!window.confirm(`${hasil.prepared} kontak siap dikirimi. Lanjut kirim sekarang?${catatanTerkirim}`)) {
+        setBusy(false);
+        muatCampaigns();
+        return;
       }
       await api.startBroadcastCampaign(activeCampaign.id);
       muatCampaigns();
@@ -527,12 +552,11 @@ export default function Broadcast() {
                 <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>
                   Dikirim <strong>sebelum</strong> pesan teks, supaya teksnya tidak terpotong
                   jadi caption "Baca selengkapnya".
-                  {!activeCampaign && " Simpan draft dulu untuk bisa menambah gambar."}
                 </p>
 
-                {activeCampaign?.images?.length > 0 && (
+                {form.images?.length > 0 && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                    {activeCampaign.images.map((g) => (
+                    {form.images.map((g) => (
                       <div key={g} style={{ position: "relative" }}>
                         <img
                           src={g}
@@ -560,7 +584,7 @@ export default function Broadcast() {
                     type="file"
                     accept="image/*"
                     multiple
-                    disabled={!activeCampaign || mengunggah}
+                    disabled={mengunggah}
                     onChange={handleUnggahGambar}
                     style={{ fontSize: 13 }}
                   />
@@ -568,10 +592,37 @@ export default function Broadcast() {
                 {mengunggah && (
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>Mengunggah...</p>
                 )}
-                {activeCampaign?.images?.length > 0 && (
-                  <p style={{ fontSize: 12, color: "var(--color-warning, #b45309)", margin: "6px 0 0" }}>
-                    ⚠️ {activeCampaign.images.length} gambar + 1 teks = {activeCampaign.images.length + 1} pesan
-                    per penerima. WhatsApp menghitung semuanya saat menilai pola akun — pertimbangkan
+
+                {form.images?.length > 1 && (
+                  <div style={{ marginTop: 10 }}>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={terkunci}
+                        checked={form.kolase === true}
+                        onChange={(e) => setForm((f) => ({ ...f, kolase: e.target.checked }))}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span style={{ fontSize: 13.5 }}>
+                        Gabung jadi satu kolase (kisi)
+                        <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                          Album WhatsApp asli tidak bisa dipakai (butuh WAHA versi berbayar), jadi
+                          kisinya disusun jadi satu gambar. Untungnya cuma 1 pesan, bukan {form.images.length}.
+                          Ruginya: penerima tidak bisa menekan satu foto untuk melihat penuh, dan
+                          tulisan di desain jadi lebih kecil. <strong>Coba "Kirim Uji" dulu</strong> untuk
+                          membandingkan sebelum memutuskan.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {form.images?.length > 0 && (
+                  <p style={{ fontSize: 12, color: "var(--color-warning, #b45309)", margin: "8px 0 0" }}>
+                    ⚠️ {form.kolase && form.images.length > 1
+                      ? "1 kolase + 1 teks = 2 pesan per penerima."
+                      : `${form.images.length} gambar + 1 teks = ${form.images.length + 1} pesan per penerima.`}
+                    {" "}WhatsApp menghitung semuanya saat menilai pola akun — pertimbangkan
                     menurunkan batas harian.
                   </p>
                 )}

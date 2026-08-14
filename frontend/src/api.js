@@ -644,6 +644,13 @@ export const api = {
   // menyimpan draft apa pun.
   testBroadcast: ({ phone, message, images }) =>
     request("/broadcast/test", { method: "POST", body: JSON.stringify({ phone, message, images }) }),
+  // Unggah gambar TANPA kampanye — supaya admin tidak dipaksa menyimpan
+  // draft dulu hanya untuk menempelkan desain promo.
+  uploadBroadcastImagesLepas: (files) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("images", f);
+    return requestFormData("/broadcast/images", fd);
+  },
   uploadBroadcastImages: (id, files) => {
     const fd = new FormData();
     for (const f of files) fd.append("images", f);

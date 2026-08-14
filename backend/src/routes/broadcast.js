@@ -33,7 +33,9 @@
 import express from "express";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
+import { buatKolase, jalurKolase, hapusKolase } from "../services/kolaseGambar.js";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendText, sendMedia } from "../services/wahaClient.js";
@@ -160,6 +162,31 @@ const TICK_MS = 15_000;
 let bolehKirimSetelah = 0; // timestamp; jaga jarak antar pesan
 let workerJalan = false;
 
+/**
+ * Gambar apa yang sebenarnya dikirim untuk kampanye ini.
+ *
+ * Kalau opsi kolase menyala DAN gambarnya lebih dari satu, semuanya
+ * digabung jadi SATU berkas kisi. Kolasenya dibuat sekali lalu dipakai
+ * ulang untuk semua penerima — bukan dibangun ulang tiap orang, karena
+ * itu pemborosan CPU yang sia-sia untuk hasil yang identik.
+ */
+async function gambarUntukDikirim(campaign) {
+  const gambar = campaign.images || [];
+  if (!campaign.kolase || gambar.length < 2) return gambar;
+
+  const berkas = path.join(__dirname, "../../uploads", `kolase-${campaign.id}.jpg`);
+  if (!fs.existsSync(berkas)) {
+    const dibuat = await buatKolase(gambar, campaign.id).catch((e) => {
+      console.warn("[broadcast] Gagal membuat kolase:", e.message);
+      return null;
+    });
+    // Gagal bikin kolase JANGAN membatalkan kampanye — jatuh kembali ke
+    // mengirim gambar satu per satu, yang tetap benar walau bukan kisi.
+    if (!dibuat) return gambar;
+  }
+  return [jalurKolase(campaign.id)];
+}
+
 /** Berapa pesan sudah TERKIRIM hari ini (WIB) untuk campaign tsb. */
 async function terkirimHariIni(campaignId) {
   return prisma.broadcastTarget.count({
@@ -237,13 +264,22 @@ async function kirimSatuTarget(target, campaign) {
   }
 
   const isiPesan = susunPesan(campaign.message, customer.name);
+  const daftarGambar = await gambarUntukDikirim(campaign);
 
   // Gambar promo dikirim DULU, teks belakangan (alasannya di schema.prisma).
   // Kalau salah satu gambar gagal, hentikan target ini — jangan lanjut
   // mengirim teks yang mengacu ke gambar yang tidak pernah sampai.
-  for (const gambar of campaign.images || []) {
+  //
+  // Tiap gambar LANGSUNG dicatat ke Message begitu terkirim, dengan urutan
+  // yang sama seperti pengirimannya. Sebelumnya gambar tidak dicatat sama
+  // sekali dan baru muncul di CRM ketika webhook gema (fromMe) tiba —
+  // datangnya tidak menentu, jadi di CRM urutannya bisa teracak
+  // (gambar > teks > gambar) walau di WhatsApp sudah benar. externalId
+  // dari WAHA dipakai supaya webhook gema itu dikenali sebagai pesan yang
+  // sama dan tidak tersimpan dua kali.
+  for (const gambar of daftarGambar) {
     try {
-      await sendMedia(
+      const hasil = await sendMedia(
         target.phone,
         {
           mimetype: tebakMime(gambar),
@@ -254,6 +290,17 @@ async function kirimSatuTarget(target, campaign) {
         },
         "", "media", sesi,
       );
+
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          content: "",
+          mediaUrl: gambar,
+          mediaType: "IMAGE",
+          externalId: hasil?.id || null,
+        },
+      }).catch((e) => console.warn("[broadcast] Gambar terkirim tapi gagal dicatat:", e.message));
     } catch (err) {
       await prisma.broadcastTarget.update({
         where: { id: target.id },
@@ -409,7 +456,7 @@ broadcastRouter.get("/campaigns", async (_req, res) => {
 // POST /api/broadcast/campaigns
 broadcastRouter.post("/campaigns", async (req, res) => {
   try {
-    const { name, message, filters, dailyCap, tagOnSend } = req.body;
+    const { name, message, filters, dailyCap, tagOnSend, images, kolase } = req.body;
     if (!name?.trim() || !message?.trim()) {
       return res.status(400).json({ error: "Nama dan pesan wajib diisi" });
     }
@@ -420,6 +467,12 @@ broadcastRouter.post("/campaigns", async (req, res) => {
         filters: filters || {},
         dailyCap: Math.max(1, Math.min(Number(dailyCap) || 50, 500)),
         tagOnSend: tagOnSend?.trim() || null,
+        // Gambar bisa sudah diunggah SEBELUM draft disimpan (lihat
+        // POST /broadcast/images) — di sini path-nya baru "dimiliki"
+        // kampanye. Disaring ke /uploads/ saja supaya body request tidak
+        // bisa menunjuk berkas sembarangan di server.
+        images: Array.isArray(images) ? images.filter((g) => typeof g === "string" && g.startsWith("/uploads/")) : [],
+        kolase: kolase === true,
         createdById: req.user.id,
       },
     });
@@ -433,25 +486,32 @@ broadcastRouter.post("/campaigns", async (req, res) => {
 // PATCH /api/broadcast/campaigns/:id
 broadcastRouter.patch("/campaigns/:id", async (req, res) => {
   try {
-    const { name, message, filters, dailyCap, tagOnSend, status } = req.body;
+    const { name, message, filters, dailyCap, tagOnSend, status, images, kolase } = req.body;
     const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
     if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
 
-    // Isi pesan & target TIDAK boleh diubah setelah campaign mulai jalan —
-    // sebagian orang sudah menerima versi lama, mengubahnya di tengah bikin
-    // dua kelompok penerima menerima janji berbeda tanpa jejak.
-    const sudahJalan = campaign.status !== "DRAFT";
+    // Isi pesan, gambar & target TIDAK boleh diubah selagi kampanye
+    // BERJALAN — sebagian orang sudah menerima versi lama, mengubahnya di
+    // tengah jalan bikin dua kelompok penerima menerima janji berbeda
+    // tanpa jejak. Status JEDA boleh diubah: itu justru gunanya menjeda.
+    const terkunci = campaign.status === "BERJALAN";
     const data = {};
     if (name !== undefined) data.name = name.trim();
     if (dailyCap !== undefined) data.dailyCap = Math.max(1, Math.min(Number(dailyCap) || 50, 500));
     if (tagOnSend !== undefined) data.tagOnSend = tagOnSend?.trim() || null;
     if (status !== undefined && ["BERJALAN", "JEDA"].includes(status)) data.status = status;
-    if (!sudahJalan) {
+    if (!terkunci) {
       if (message !== undefined) data.message = message.trim();
       if (filters !== undefined) data.filters = filters;
+      if (Array.isArray(images)) {
+        data.images = images.filter((g) => typeof g === "string" && g.startsWith("/uploads/"));
+      }
+      if (kolase !== undefined) data.kolase = kolase === true;
     }
 
     const updated = await prisma.broadcastCampaign.update({ where: { id: req.params.id }, data });
+    // Gambar atau opsi kolase berubah -> kisi lama basi, bangun ulang nanti.
+    if (data.images || data.kolase !== undefined) hapusKolase(campaign.id);
     res.json(updated);
   } catch (err) {
     console.error("[broadcast] ubah campaign gagal:", err.message);
@@ -649,8 +709,8 @@ broadcastRouter.post("/campaigns/:id/prepare", async (req, res) => {
   try {
     const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
     if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
-    if (campaign.status !== "DRAFT") {
-      return res.status(409).json({ error: "Kampanye sudah pernah dijalankan — buat kampanye baru" });
+    if (campaign.status === "BERJALAN") {
+      return res.status(409).json({ error: "Kampanye sedang berjalan — jeda dulu sebelum mengubah target" });
     }
 
     // customerIds = admin memilih sendiri di layar "Pilih Kontak".
@@ -670,8 +730,35 @@ broadcastRouter.post("/campaigns/:id/prepare", async (req, res) => {
 
     if (kandidat.length === 0) return res.status(400).json({ error: "Tidak ada kontak yang cocok dengan filter" });
 
+    // ⚠️ BUANG DULU target yang belum terkirim, baru susun ulang.
+    //
+    // BUG NYATA yang diperbaiki di sini (dilaporkan 14 Agt 2026): dulu
+    // prepare cuma createMany dengan skipDuplicates, jadi daftar target
+    // BEKU selamanya setelah sekali disiapkan. Admin yang kembali ke
+    // layar "Pilih Kontak", memilih 1 orang, lalu menekan Mulai tetap
+    // mengirim ke 300 orang dari pilihan sebelumnya — tanpa peringatan
+    // apa pun. Untuk kiriman massal ke nomor bisnis, itu selisih yang
+    // tidak bisa dibatalkan.
+    //
+    // Yang SUDAH TERKIRIM sengaja TIDAK dihapus: itu riwayat, dan
+    // menghapusnya akan membuat orang yang sama bisa dikirimi dua kali.
+    await prisma.broadcastTarget.deleteMany({
+      where: { campaignId: campaign.id, status: { in: ["MENUNGGU", "GAGAL", "DILEWATI"] } },
+    });
+
+    // Orang yang sudah pernah TERKIRIM di kampanye ini dikeluarkan dari
+    // daftar baru — createMany di bawah memang punya skipDuplicates, tapi
+    // menyaring lebih awal membuat nomor "urutan" tetap rapat dan angka
+    // yang dilaporkan ke admin jujur.
+    const sudahTerkirim = await prisma.broadcastTarget.findMany({
+      where: { campaignId: campaign.id, status: "TERKIRIM" },
+      select: { customerId: true },
+    });
+    const setTerkirim = new Set(sudahTerkirim.map((t) => t.customerId));
+    const final = kandidat.filter((c) => !setTerkirim.has(c.id));
+
     await prisma.broadcastTarget.createMany({
-      data: kandidat.map((c, i) => ({
+      data: final.map((c, i) => ({
         campaignId: campaign.id,
         customerId: c.id,
         phone: c.phone,
@@ -680,8 +767,10 @@ broadcastRouter.post("/campaigns/:id/prepare", async (req, res) => {
       skipDuplicates: true,
     });
 
-    const total = await prisma.broadcastTarget.count({ where: { campaignId: campaign.id } });
-    res.json({ prepared: total });
+    const menunggu = await prisma.broadcastTarget.count({
+      where: { campaignId: campaign.id, status: "MENUNGGU" },
+    });
+    res.json({ prepared: menunggu, sudahTerkirim: setTerkirim.size });
   } catch (err) {
     console.error("[broadcast] prepare gagal:", err.message);
     res.status(500).json({ error: "Gagal menyiapkan target" });
@@ -725,13 +814,27 @@ broadcastRouter.post("/campaigns/:id/pause", async (req, res) => {
   }
 });
 
+// POST /api/broadcast/images — unggah gambar TANPA kampanye.
+//
+// Dipisah dari endpoint per-kampanye supaya admin bisa menyiapkan gambar
+// sebelum menyimpan draft apa pun. Berkasnya langsung tersimpan di folder
+// uploads dan path-nya dikembalikan; kampanye baru "memiliki" path itu
+// ketika draft disimpan (POST/PATCH campaigns membawa field images).
+broadcastRouter.post("/images", unggah.array("images", 10), (req, res) => {
+  try {
+    res.json({ images: (req.files || []).map((f) => `/uploads/${f.filename}`) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // POST /api/broadcast/campaigns/:id/images — unggah gambar promo
 broadcastRouter.post("/campaigns/:id/images", unggah.array("images", 10), async (req, res) => {
   try {
     const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
     if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
-    if (campaign.status !== "DRAFT") {
-      return res.status(409).json({ error: "Kampanye sudah berjalan — gambar tidak bisa diubah lagi" });
+    if (campaign.status === "BERJALAN") {
+      return res.status(409).json({ error: "Kampanye sedang berjalan — jeda dulu sebelum mengubah gambar" });
     }
 
     const baru = (req.files || []).map((f) => `/uploads/${f.filename}`);
@@ -739,6 +842,9 @@ broadcastRouter.post("/campaigns/:id/images", unggah.array("images", 10), async 
       where: { id: campaign.id },
       data: { images: [...campaign.images, ...baru] },
     });
+    // Daftar gambar berubah -> kolase lama sudah basi. Dihapus supaya
+    // dibangun ulang saat kirim, bukan mengirim kisi versi lama.
+    hapusKolase(campaign.id);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -759,6 +865,7 @@ broadcastRouter.delete("/campaigns/:id/images", async (req, res) => {
       where: { id: campaign.id },
       data: { images: campaign.images.filter((g) => g !== image) },
     });
+    hapusKolase(campaign.id); // daftar berubah -> kisi lama basi
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -775,7 +882,7 @@ broadcastRouter.delete("/campaigns/:id/images", async (req, res) => {
 // orang sungguhan menerima pesan uji tanpa pernah setuju.)
 broadcastRouter.post("/test", async (req, res) => {
   try {
-    const { phone, message, images } = req.body;
+    const { phone, message, images, kolase } = req.body;
     if (!phone?.trim()) return res.status(400).json({ error: "Nomor tujuan uji wajib diisi" });
     if (!message?.trim()) return res.status(400).json({ error: "Pesan masih kosong" });
 
@@ -791,7 +898,16 @@ broadcastRouter.post("/test", async (req, res) => {
       return res.status(409).json({ error: "Sesi WA nomor ini belum diketahui — buka chatnya di Inbox dan pilih sesi dulu" });
     }
 
-    for (const gambar of images || []) {
+    // Uji kirim HARUS melewati jalur kolase yang sama dengan pengiriman
+    // sungguhan — kalau tidak, yang diperiksa admin bukan bentuk yang
+    // benar-benar akan diterima pelanggan.
+    let daftarUji = images || [];
+    if (kolase === true && daftarUji.length > 1) {
+      const hasil = await buatKolase(daftarUji, `uji-${Date.now()}`).catch(() => null);
+      if (hasil) daftarUji = [hasil];
+    }
+
+    for (const gambar of daftarUji) {
       await sendMedia(
         nomor,
         { mimetype: tebakMime(gambar), filename: gambar.split("/").pop(), url: `${BACKEND_INTERNAL_URL}${gambar}` },
