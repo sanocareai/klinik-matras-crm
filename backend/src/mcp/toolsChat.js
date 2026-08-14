@@ -51,6 +51,39 @@ const LABEL_PELANGGARAN = {
   certainty: "Jaminan mutlak (pasti cocok/dijamin)",
 };
 
+// ⚠️ PEMBEDAAN PENTING — `violations()` dirancang untuk membatasi DRAF AI, dan
+// aturan AI TIDAK SAMA dengan aturan sales manusia. Menyamakan keduanya membuat
+// laporan audit menuduh sales melanggar padahal mereka sedang mengerjakan
+// pekerjaannya (menyebut harga ke pelanggan itu memang tugas sales).
+// Dasar pembagian ini ada di CLAUDE.md:
+//   - §16.8  "Sano TIDAK BOLEH menyebut 'garansi 20 tahun' secara flat"
+//            → menyebut "Sano" (brand), berlaku untuk SIAPA PUN termasuk sales.
+//   - Fase 4 "Yang TIDAK boleh dijanjikan AI ke customer: harga pasti,
+//            estimasi pengiriman pasti, diskon/promo di luar KB, closing"
+//            → eksplisit "AI", bukan aturan untuk sales manusia.
+export const RUANG_LINGKUP_ATURAN = {
+  // Pelanggaran SUNGGUHAN walau dikirim manusia: soal akurasi klaim & risiko
+  // hukum/ekspektasi, bukan soal siapa yang mengetik.
+  warranty: "semua",
+  medical: "semua",
+  certainty: "semua",
+  // Tergantung konteks: bisa sah kalau sesuai paket/promo resmi yang berlaku
+  // (mis. "pengerjaan 3 hari" untuk Paket Premium, atau promo resmi berjalan).
+  // Ditampilkan untuk DITINJAU, bukan langsung dianggap salah.
+  delivery: "perlu_tinjau",
+  discount: "perlu_tinjau",
+  freebie: "perlu_tinjau",
+  // Aturan KHUSUS DRAF AI. Untuk sales manusia, menyebut harga = pekerjaan
+  // normal. Tidak ditampilkan sebagai pelanggaran kecuali diminta eksplisit.
+  price: "ai_saja",
+};
+
+const KETERANGAN_LINGKUP = {
+  semua: "Pelanggaran sungguhan — berlaku untuk siapa pun termasuk sales manusia (akurasi klaim / risiko hukum).",
+  perlu_tinjau: "Perlu ditinjau manusia — bisa SAH kalau sesuai paket atau promo resmi yang sedang berjalan. Baca kutipannya dulu.",
+  ai_saja: "Aturan khusus draf AI, BUKAN pelanggaran untuk sales manusia (menyebut harga memang tugas sales). Hanya muncul kalau termasukAturanKhususAi=true.",
+};
+
 // ═══ HELPER MURNI (tanpa DB — dites di tests/mcp-chat.test.js) ══════════════
 
 // `pesan` = array { direction, createdAt } URUT KRONOLOGIS (lama → baru).
@@ -364,18 +397,24 @@ export function registerChatTools(server) {
     {
       title: "Audit kepatuhan balasan sales",
       description:
-        "Memeriksa balasan sales terhadap ATURAN PRODUK dan ATURAN ALUR yang berlaku di Klinik Matras. " +
-        "Aturan produk (7 kategori: menyebut harga, janji diskon, janji gratis, janji waktu kirim, " +
-        "klaim garansi flat, klaim menyembuhkan, jaminan mutlak) memakai pendeteksi yang SAMA dengan " +
-        "penyaring draf AI, jadi standarnya konsisten. Aturan alur: SLA balas pertama, komplain yang " +
-        "tidak segera ditangani, dan pola 'sales balas di awal lalu hilang'. " +
-        "Hasilnya dikelompokkan per sales beserta contoh kutipan.",
+        "Memeriksa balasan sales terhadap ATURAN PRODUK dan ATURAN ALUR Klinik Matras.\n" +
+        "Aturan produk dikelompokkan menurut SIAPA yang terikat:\n" +
+        "• 'pelanggaran' (berlaku untuk semua termasuk sales manusia): klaim garansi flat berangka " +
+        "(CLAUDE.md §16.8 — garansi ada 2 tingkat, bukan flat 20 tahun), klaim menyembuhkan, jaminan mutlak.\n" +
+        "• 'perluTinjau' (tergantung konteks): janji waktu kirim/selesai, diskon, gratis/bonus — bisa SAH " +
+        "kalau sesuai paket atau promo resmi. Baca kutipannya sebelum menyimpulkan.\n" +
+        "• 'aturanKhususAi' (menyebut harga): BUKAN pelanggaran untuk sales manusia — menyebut harga " +
+        "memang tugas sales. Hanya ikut kalau termasukAturanKhususAi=true.\n" +
+        "Aturan alur: SLA balas pertama, komplain/permintaan bicara orang yang tidak segera ditangani, " +
+        "dan pola 'sales balas di awal lalu hilang'. Hasil dikelompokkan per sales beserta kutipan.",
       inputSchema: {
         dari: TANGGAL.describe("Tanggal awal periode audit (WIB, inklusif)."),
         sampai: TANGGAL.describe("Tanggal akhir periode audit (WIB, inklusif)."),
         salesId: z.string().optional().describe("Audit satu sales saja."),
         kategori: z.enum(["price", "discount", "freebie", "delivery", "warranty", "medical", "certainty"]).optional()
-          .describe("Fokus ke satu kategori pelanggaran aturan produk."),
+          .describe("Fokus ke satu kategori saja (menimpa pengelompokan default, termasuk kategori khusus AI)."),
+        termasukAturanKhususAi: z.boolean().optional()
+          .describe("true = ikutkan kategori yang hanya berlaku untuk draf AI (menyebut harga). Default false — supaya sales tidak terhitung melanggar saat menjalankan tugasnya."),
         slaMenit: z.number().int().min(5).max(1440).optional()
           .describe(`Ambang SLA balas pertama dalam menit (default ${SLA_BALAS_PERTAMA_MENIT}, sama dengan ambang takeover & laporan CRM).`),
         sertakanContoh: z.boolean().optional().describe("true = sertakan kutipan pesan yang melanggar (default true)."),
@@ -415,9 +454,16 @@ export function registerChatTools(server) {
       const totalPerKategori = {};
       let pesanMelanggar = 0;
 
+      // Saring kategori sesuai ruang lingkup: kategori khusus draf AI TIDAK
+      // dihitung sebagai pelanggaran sales kecuali diminta eksplisit.
+      const kategoriDipakai = (k) => {
+        if (args.kategori) return k === args.kategori;
+        if (RUANG_LINGKUP_ATURAN[k] === "ai_saja") return args.termasukAturanKhususAi === true;
+        return true;
+      };
+
       for (const m of pesanKeluar) {
-        let kategoriTerdeteksi = violations(m.content || "");
-        if (args.kategori) kategoriTerdeteksi = kategoriTerdeteksi.filter((k) => k === args.kategori);
+        const kategoriTerdeteksi = violations(m.content || "").filter(kategoriDipakai);
         if (!kategoriTerdeteksi.length) continue;
         pesanMelanggar++;
 
@@ -512,6 +558,18 @@ export function registerChatTools(server) {
       }
 
       const terpotong = totalPesanKeluar > pesanKeluar.length;
+
+      // Pisahkan hitungan menurut ruang lingkup supaya pembaca tidak menjumlah
+      // "pelanggaran sungguhan" dengan "aturan khusus AI" jadi satu angka besar
+      // yang menyesatkan.
+      const belahLingkup = (obj) => {
+        const out = { semua: {}, perlu_tinjau: {}, ai_saja: {} };
+        for (const [k, v] of Object.entries(obj)) out[RUANG_LINGKUP_ATURAN[k] ?? "perlu_tinjau"][k] = v;
+        return out;
+      };
+      const terbelah = belahLingkup(totalPerKategori);
+      const jumlahkan = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+
       return hasil({
         periode: { dari: args.dari, sampai: args.sampai, zonaWaktu: "WIB (Asia/Jakarta)" },
         slaBalasPertamaMenit: slaMenit,
@@ -519,12 +577,21 @@ export function registerChatTools(server) {
           pesanKeluarDiperiksa: pesanKeluar.length,
           totalPesanKeluarPeriode: totalPesanKeluar,
           terpotong,
-          pesanMelanggar,
-          persenMelanggar: pesanKeluar.length
+          pesanKenaSorot: pesanMelanggar,
+          persenPesanKenaSorot: pesanKeluar.length
             ? Number(((pesanMelanggar / pesanKeluar.length) * 100).toFixed(1))
             : 0,
-          totalPerKategori,
+          // Dipisah menurut siapa yang terikat aturannya — lihat RUANG_LINGKUP_ATURAN.
+          pelanggaran: { jumlah: jumlahkan(terbelah.semua), perKategori: terbelah.semua, arti: KETERANGAN_LINGKUP.semua },
+          perluTinjau: { jumlah: jumlahkan(terbelah.perlu_tinjau), perKategori: terbelah.perlu_tinjau, arti: KETERANGAN_LINGKUP.perlu_tinjau },
+          aturanKhususAi: {
+            disertakan: args.termasukAturanKhususAi === true || Boolean(args.kategori),
+            jumlah: jumlahkan(terbelah.ai_saja),
+            perKategori: terbelah.ai_saja,
+            arti: KETERANGAN_LINGKUP.ai_saja,
+          },
           labelKategori: LABEL_PELANGGARAN,
+          ruangLingkupKategori: RUANG_LINGKUP_ATURAN,
           perSales: [...perSales.values()].sort((a, b) => b.totalPelanggaran - a.totalPelanggaran),
         },
         aturanAlur: { ...alur, contoh: contohAlur },
@@ -535,7 +602,10 @@ export function registerChatTools(server) {
           percakapan.length >= 500
             ? "Pemeriksaan alur dibatasi 500 percakapan terbaru pada periode ini."
             : null,
-          "Deteksi aturan produk berbasis pola teks — bisa ada false positive (mis. pelanggan mengutip harga lalu disalin sales). Selalu cek kutipannya sebelum menegur.",
+          "Deteksi berbasis pola teks — SELALU baca kutipannya sebelum menyimpulkan, apalagi sebelum menegur orang. Contoh false positive: sales menyalin ulang kalimat pelanggan, atau menyebut promo yang memang resmi berjalan.",
+          args.termasukAturanKhususAi === true
+            ? "termasukAturanKhususAi=true — kategori 'menyebut harga' ikut dihitung. Untuk sales manusia ini biasanya BUKAN pelanggaran."
+            : "Kategori 'menyebut harga' (aturan khusus draf AI) TIDAK dihitung sebagai pelanggaran sales. Set termasukAturanKhususAi=true kalau memang ingin melihatnya.",
         ].filter(Boolean),
       });
     },
@@ -597,7 +667,11 @@ export function registerChatTools(server) {
             ? Math.round((new Date(m.createdAt) - new Date(sebelumnya.createdAt)) / 60000)
             : null,
           dikirimOlehSales: m.sentBy?.name ?? null,
-          pelanggaranAturan: pelanggaran.map((k) => ({ kategori: k, label: LABEL_PELANGGARAN[k] })),
+          pelanggaranAturan: pelanggaran.map((k) => ({
+            kategori: k,
+            label: LABEL_PELANGGARAN[k],
+            berlakuUntuk: RUANG_LINGKUP_ATURAN[k],
+          })),
           intentTerdeteksi: m.direction === "INBOUND" ? detectIntents(isi) : [],
         };
       });
@@ -630,9 +704,16 @@ export function registerChatTools(server) {
           slaTerlampaui: metrik.slaBalasPertamaTerlampaui,
           tidakPernahDibalas: metrik.tidakPernahDibalas,
           ditinggalSetelahBalasPertama: metrik.ditinggalSetelahBalasPertama,
-          totalPelanggaranAturanProduk: Object.values(totalPerKategori).reduce((a, b) => a + b, 0),
-          pelanggaranPerKategori: totalPerKategori,
+          totalTemuanAturanProduk: Object.values(totalPerKategori).reduce((a, b) => a + b, 0),
+          temuanPerKategori: totalPerKategori,
+          // Berapa yang benar-benar pelanggaran untuk sales manusia (bukan
+          // aturan khusus draf AI seperti "menyebut harga").
+          pelanggaranBerlakuUntukSales: Object.entries(totalPerKategori)
+            .filter(([k]) => RUANG_LINGKUP_ATURAN[k] === "semua")
+            .reduce((a, [, v]) => a + v, 0),
           labelKategori: LABEL_PELANGGARAN,
+          ruangLingkupKategori: RUANG_LINGKUP_ATURAN,
+          artiRuangLingkup: KETERANGAN_LINGKUP,
           intentPelangganTerdeteksi: semuaIntentMasuk,
           intentWajibDitanganiManusia: intentWajibManusia,
           adaKewajibanHandover: intentWajibManusia.length > 0,

@@ -12,6 +12,7 @@ import {
   hitungMetrikPercakapan,
   skorEngagement,
   hitungPelanggaran,
+  RUANG_LINGKUP_ATURAN,
   SLA_BALAS_PERTAMA_MENIT,
 } from "../src/mcp/toolsChat.js";
 // Pendeteksi aturan produk yang dipakai ulang oleh audit — dites di sini juga
@@ -149,4 +150,42 @@ test("violations() menangkap pelanggaran aturan produk di teks balasan sales", (
 test("hitungPelanggaran meringkas daftar kategori jadi hitungan", () => {
   assert.deepEqual(hitungPelanggaran(["price", "price", "delivery"]), { price: 2, delivery: 1 });
   assert.deepEqual(hitungPelanggaran([]), {});
+});
+
+// ── Ruang lingkup aturan: AI vs manusia ────────────────────────────────────
+// Ini pembeda yang mencegah laporan audit menuduh sales melanggar padahal
+// sedang mengerjakan tugasnya. Dasarnya CLAUDE.md §16.8 (garansi berlaku untuk
+// "Sano" = semua orang) vs Fase 4 (harga/pengiriman/diskon = aturan "AI").
+test("menyebut harga BUKAN pelanggaran untuk sales manusia (aturan khusus draf AI)", () => {
+  assert.equal(RUANG_LINGKUP_ATURAN.price, "ai_saja");
+});
+
+test("klaim garansi flat, klaim medis, dan jaminan mutlak berlaku untuk SIAPA PUN", () => {
+  // CLAUDE.md §16.8: garansi Klinik Matras 2 tingkat (Standard 10th / Premium
+  // 20th) — menyebut "garansi 20 tahun" rata itu keliru siapa pun pengirimnya.
+  assert.equal(RUANG_LINGKUP_ATURAN.warranty, "semua");
+  assert.equal(RUANG_LINGKUP_ATURAN.medical, "semua");
+  assert.equal(RUANG_LINGKUP_ATURAN.certainty, "semua");
+});
+
+test("janji kirim/diskon/gratis ditandai perlu ditinjau, bukan langsung salah", () => {
+  // Bisa SAH: "pengerjaan 3 hari" memang benar untuk Paket Premium, dan promo
+  // resmi yang sedang berjalan bukan pelanggaran.
+  for (const k of ["delivery", "discount", "freebie"]) {
+    assert.equal(RUANG_LINGKUP_ATURAN[k], "perlu_tinjau", `${k} seharusnya perlu_tinjau`);
+  }
+});
+
+test("setiap kategori yang bisa dideteksi violations() punya ruang lingkup", () => {
+  // Kalau replyAssistant menambah kategori baru, audit MCP tidak boleh diam-diam
+  // memperlakukannya tanpa keputusan sadar soal siapa yang terikat aturan itu.
+  const contoh = {
+    price: "Rp5.000.000", discount: "diskon 20%", freebie: "gratis ongkir",
+    delivery: "dikirim 3 hari", warranty: "garansi 20 tahun",
+    medical: "menyembuhkan", certainty: "dijamin cocok",
+  };
+  for (const [kategori, teks] of Object.entries(contoh)) {
+    assert.ok(violations(teks).includes(kategori), `contoh untuk ${kategori} tidak terdeteksi`);
+    assert.ok(RUANG_LINGKUP_ATURAN[kategori], `kategori ${kategori} belum punya ruang lingkup`);
+  }
 });
