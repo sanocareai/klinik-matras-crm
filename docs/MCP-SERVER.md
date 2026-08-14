@@ -181,6 +181,33 @@ claude mcp add --transport http klinik-matras https://app.sanomatrassehat.com/mc
 untuk tes", atau melonggarkan gate ADMIN di `/oauth/authorize` supaya SALES
 bisa login juga. Endpoint ini membaca SELURUH data pelanggan lintas sales.
 
+### ⚠️ Kalau CRM ter-install sebagai PWA di komputer admin: PAKAI INCOGNITO
+
+**Gejala (ditemukan & didiagnosis 14 Agustus 2026):** klik "Add" di claude.ai
+→ status nyangkut "mulai terhubung tetapi belum selesai" → begitu login,
+yang muncul layar login CRM **biasa** (dark theme, dashboard/portal), BUKAN
+kartu putih kecil "Izinkan akses Claude" dari `/oauth/authorize`.
+
+**Akar masalah:** kalau CRM sudah pernah di-install sebagai aplikasi PWA
+(ikon terpisah, bukan sekadar tab), Windows/Chrome menangkap link OAuth yang
+dibuka Claude dan malah **membuka app PWA yang ter-install** (dianggap "buka
+di app"), bukan tab browser biasa. App PWA itu boot ke router React-nya
+sendiri, tidak tahu apa-apa soal `/oauth/authorize` (rute itu di-handle
+Express, bukan React Router), jadi jatuh ke layar login SPA biasa lalu
+`/portal` — deep-link OAuth-nya terbuang begitu saja. **Sudah diverifikasi
+lewat nginx access log:** request `GET /oauth/authorize` untuk kasus ini
+TIDAK PERNAH sampai ke server sama sekali (server-side sudah dites benar via
+curl langsung) — jadi bug ini murni perilaku PWA-launch di browser, BUKAN
+bug di `oauth.js`.
+
+**Solusi:** lakukan proses "Add custom connector" dari jendela
+**Incognito/Private Browsing** (`Ctrl+Shift+N`). Incognito tidak pernah
+membuka app PWA yang ter-install, jadi link OAuth pasti kebuka sebagai tab
+browser biasa dan sampai ke `/oauth/authorize` dengan benar. Ini cukup
+dilakukan **sekali** per admin — access/refresh token yang dihasilkan tetap
+berlaku normal (refresh token 30 hari, rotasi otomatis) walau sesi Incognito
+sudah ditutup.
+
 ---
 
 ## 4. Daftar tool (semua read-only)
