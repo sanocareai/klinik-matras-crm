@@ -2,8 +2,11 @@
 //
 // Semua fungsi di sini SENGAJA murni/tanpa DB supaya bisa dites tanpa Postgres
 // (lihat tests/mcp.test.js). Jangan tambahkan query Prisma di file ini.
+// verifyAccessToken/oauthConfigured dari oauthCrypto.js juga murni (JWT saja,
+// tanpa DB) — makanya aman diimpor di sini tanpa melanggar aturan itu.
 
 import crypto from "crypto";
+import { verifyAccessToken, oauthConfigured, publicUrl } from "./oauthCrypto.js";
 
 // ─── MASKING NOMOR TELEPON ──────────────────────────────────────────────────
 //
@@ -42,9 +45,17 @@ export function maskEmail(email, unmask = false) {
 // user berumur 7 hari sehingga tidak cocok untuk koneksi yang dipasang sekali
 // lalu ditinggal. Token ini dicabut/dirotasi dengan mengganti MCP_API_TOKEN
 // di .env lalu restart backend.
-export function mcpTokenConfigured() {
+export function mcpStaticTokenConfigured() {
   const t = process.env.MCP_API_TOKEN;
   return typeof t === "string" && t.trim().length > 0;
+}
+
+// "Aktif" sekarang berarti SALAH SATU dari dua jalur auth terisi: token
+// statis (Claude Code/Desktop) ATAU secret OAuth (claude.ai browser, lihat
+// oauth.js). Fail-closed tetap berlaku — kalau DUA-DUANYA kosong, /mcp mati
+// total (503), bukan diam-diam terbuka.
+export function mcpAuthConfigured() {
+  return mcpStaticTokenConfigured() || oauthConfigured();
 }
 
 // Perbandingan konstan-waktu supaya panjang/isi token tidak bisa ditebak dari
@@ -56,26 +67,52 @@ function tokenCocok(diberikan, benar) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Header WWW-Authenticate 401 — SELALU sertakan `resource_metadata` kalau
+// OAuth dikonfigurasi, supaya Claude.ai browser bisa mulai discovery flow-nya
+// (lihat docs/connectors/building/authentication Anthropic: "Always return
+// a 401 with a WWW-Authenticate header whose resource_metadata parameter
+// points at your protected resource metadata document"). Claude Code/Desktop
+// yang sudah kirim token statis tidak pernah melihat header ini sama sekali.
+function setWwwAuthenticate(res) {
+  const params = ['realm="klinik-matras-mcp"'];
+  if (oauthConfigured()) {
+    params.push(`resource_metadata="${publicUrl()}/.well-known/oauth-protected-resource"`);
+  }
+  res.set("WWW-Authenticate", `Bearer ${params.join(", ")}`);
+}
+
 export function requireMcpToken(req, res, next) {
-  // Kalau token belum diset di .env, MCP dianggap MATI — bukan "terbuka".
-  // Fail-closed: lupa mengisi env tidak boleh berarti data CRM terbuka bebas.
-  if (!mcpTokenConfigured()) {
+  // Kalau tidak ada satu pun jalur auth diisi di .env, MCP dianggap MATI —
+  // bukan "terbuka". Fail-closed: lupa mengisi env tidak boleh berarti data
+  // CRM terbuka bebas.
+  if (!mcpAuthConfigured()) {
     return res.status(503).json({
-      error: "MCP server nonaktif — MCP_API_TOKEN belum diset di .env backend",
+      error: "MCP server nonaktif — isi MCP_API_TOKEN atau MCP_OAUTH_JWT_SECRET di .env backend",
     });
   }
 
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
-  if (!token || !tokenCocok(token, process.env.MCP_API_TOKEN.trim())) {
-    // WWW-Authenticate wajib menurut RFC 6750 untuk 401 — klien MCP memakai
-    // ini untuk membedakan "token salah" dari "endpoint tidak ada".
-    res.set("WWW-Authenticate", 'Bearer realm="klinik-matras-mcp"');
-    return res.status(401).json({ error: "Token MCP tidak valid" });
+  if (token && mcpStaticTokenConfigured() && tokenCocok(token, process.env.MCP_API_TOKEN.trim())) {
+    req.mcpAuth = { type: "static" };
+    return next();
   }
 
-  next();
+  if (token) {
+    const payload = verifyAccessToken(token);
+    if (payload) {
+      req.mcpAuth = { type: "oauth", userId: payload.userId, clientId: payload.clientId };
+      return next();
+    }
+  }
+
+  // WWW-Authenticate wajib menurut RFC 6750 untuk 401 — klien MCP memakai
+  // ini untuk membedakan "token salah" dari "endpoint tidak ada", dan
+  // claude.ai browser memakai resource_metadata di dalamnya untuk memulai
+  // OAuth discovery.
+  setWwwAuthenticate(res);
+  return res.status(401).json({ error: "Token MCP tidak valid" });
 }
 
 // ─── RATE LIMIT ─────────────────────────────────────────────────────────────

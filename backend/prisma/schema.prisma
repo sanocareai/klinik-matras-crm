@@ -176,7 +176,7 @@ model User {
   // TAPI order/transaksi historisnya tetap dihitung penuh di angka
   // company-wide (Dashboard/Ringkasan) karena endpoint itu agregat dari
   // Order/Customer langsung, tidak difilter per-user.
-  active       Boolean  @default(true)
+  active Boolean @default(true)
 
   assignedCustomers         Customer[]               @relation("AssignedSales")
   assignedConversations     Conversation[]           @relation("AssignedAgent")
@@ -227,6 +227,13 @@ model User {
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
+
+  // OAuth MCP (koneksi claude.ai) — Cascade SENGAJA berbeda dari relasi User
+  // lain di atas yang pakai RESTRICT/SetNull (itu soal riwayat BISNIS yang
+  // tidak boleh hilang). Ini cuma kredensial ephemeral: kalau user dihapus,
+  // tidak ada alasan menyimpan authorization code / refresh token miliknya.
+  mcpAuthorizationCodes McpAuthorizationCode[]
+  mcpRefreshTokens      McpRefreshToken[]
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -306,19 +313,19 @@ model PushToken {
 }
 
 model Customer {
-  id                      String        @id @default(cuid())
-  name                    String?
-  phone                   String?       @unique // format: 628xxxx (tanpa @c.us)
-  instagramHandle         String?       @unique
-  email                   String?
-  city                    String?
-  tags                    String[]      @default([])
-  pipelineStage           PipelineStage @default(NEW)
-  leadSource              LeadSource?
-  assignedSalesId         String?
-  assignedSales           User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
-  leadSourceDetail        String? // detail tambahan: nama link/campaign/ad headline
-  leadSourceConfirmed     Boolean       @default(false) // true = dikoreksi manual oleh sales
+  id                  String        @id @default(cuid())
+  name                String?
+  phone               String?       @unique // format: 628xxxx (tanpa @c.us)
+  instagramHandle     String?       @unique
+  email               String?
+  city                String?
+  tags                String[]      @default([])
+  pipelineStage       PipelineStage @default(NEW)
+  leadSource          LeadSource?
+  assignedSalesId     String?
+  assignedSales       User?         @relation("AssignedSales", fields: [assignedSalesId], references: [id])
+  leadSourceDetail    String? // detail tambahan: nama link/campaign/ad headline
+  leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
 
   // ── Atribusi iklan Meta Click-to-WhatsApp (CTWA) ──────────────────────
   // Iklan CTWA melompat LANGSUNG ke WhatsApp tanpa lewat website, jadi tag
@@ -576,10 +583,10 @@ model Product {
   // Dipakai untuk membatasi sales HANYA boleh edit/hapus produk buatannya
   // sendiri — lihat requireOwnerOrAdmin di routes/products.js.
   createdById String?
-  createdBy   User?          @relation("ProductCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?   @relation("ProductCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ProductImage {
@@ -614,32 +621,32 @@ model ClickEvent {
 }
 
 model Order {
-  id              String        @id @default(cuid())
-  customerId      String
-  customer        Customer      @relation(fields: [customerId], references: [id])
-  status          OrderStatus   @default(PENDING)
+  id                 String        @id @default(cuid())
+  customerId         String
+  customer           Customer      @relation(fields: [customerId], references: [id])
+  status             OrderStatus   @default(PENDING)
   // D-006, Integrasi Fase 1 — status DIHITUNG dari status unit terkait
   // (weakest-link: unit paling tertinggal yang menentukan), bukan ditulis
   // manual lagi. Lihat services/orderStatusSync.js. Kalau statusLocked=true,
   // sync BERHENTI menyentuh status ini — dikunci oleh override manusia
   // (kasus di luar pola normal: dibatalkan, dst), sampai dilepas lagi.
-  statusLocked       Boolean   @default(false) @map("status_locked")
-  statusOverrideById String?   @map("status_override_by")
-  statusOverrideBy   User?     @relation("OrderStatusOverrider", fields: [statusOverrideById], references: [id], onDelete: SetNull)
-  statusOverrideAt   DateTime? @map("status_override_at")
-  statusOverrideNote String?   @map("status_override_note")
-  paymentStatus   PaymentStatus @default(BELUM_BAYAR)
-  category        OrderCategory @default(LAYANAN)
-  value           Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
-  quantity        Int           @default(1)
-  beratBadan      Int? // berat badan customer dalam kg, nullable
-  orderNumber     String?       @unique // di-generate otomatis saat order dibuat
-  notes           String?
-  hasComplaint    Boolean       @default(false)
-  complaintDate   DateTime?
-  complaintDetail String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  statusLocked       Boolean       @default(false) @map("status_locked")
+  statusOverrideById String?       @map("status_override_by")
+  statusOverrideBy   User?         @relation("OrderStatusOverrider", fields: [statusOverrideById], references: [id], onDelete: SetNull)
+  statusOverrideAt   DateTime?     @map("status_override_at")
+  statusOverrideNote String?       @map("status_override_note")
+  paymentStatus      PaymentStatus @default(BELUM_BAYAR)
+  category           OrderCategory @default(LAYANAN)
+  value              Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
+  quantity           Int           @default(1)
+  beratBadan         Int? // berat badan customer dalam kg, nullable
+  orderNumber        String?       @unique // di-generate otomatis saat order dibuat
+  notes              String?
+  hasComplaint       Boolean       @default(false)
+  complaintDate      DateTime?
+  complaintDetail    String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   items             OrderItem[]
   weightEntries     OrderWeightEntry[]
@@ -2729,4 +2736,70 @@ model BroadcastTarget {
   // Menghitung kuota terpakai hari ini.
   @@index([sentAt])
   @@map("broadcast_targets")
+}
+
+// ─── OAuth 2.1 untuk MCP server (/mcp, /oauth/*) ────────────────────────────
+//
+// Server MCP read-only punya DUA jalur auth yang hidup berdampingan:
+//   1. Token statis MCP_API_TOKEN (Claude Code/Desktop) — TIDAK menyentuh
+//      tabel-tabel di bawah ini sama sekali.
+//   2. OAuth 2.1 penuh (claude.ai browser, yang UI-nya cuma punya field OAuth,
+//      tidak ada input header kustom) — tabel-tabel ini pendukungnya.
+//
+// Hanya user ber-role ADMIN yang boleh login+approve di halaman
+// GET/POST /oauth/authorize (lihat src/mcp/oauth.js) — keputusan sadar,
+// karena tool MCP membaca SEMUA data pelanggan lintas sales, bukan cuma
+// milik sendiri.
+
+// Client hasil Dynamic Client Registration (RFC 7591). Server ini HANYA
+// menerima redirect_uris persis "https://claude.ai/api/mcp/auth_callback" —
+// client dengan redirect_uri lain ditolak saat registrasi (lihat
+// validateRedirectUris di oauth.js), jadi tabel ini pada praktiknya cuma
+// pernah berisi baris untuk Claude.
+model McpOAuthClient {
+  id           String   @id @default(cuid())
+  clientId     String   @unique @map("client_id")
+  redirectUris String[] @map("redirect_uris")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("mcp_oauth_clients")
+}
+
+// Authorization code (RFC 6749 §4.1) — SEKALI PAKAI, hidup ≤60 detik.
+// codeChallenge disimpan untuk verifikasi PKCE S256 wajib saat ditukar di
+// POST /oauth/token (usedAt dicek supaya code tidak bisa dipakai dua kali).
+model McpAuthorizationCode {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  clientId      String    @map("client_id")
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redirectUri   String    @map("redirect_uri")
+  codeChallenge String    @map("code_challenge") // PKCE S256, base64url
+  scope         String
+  expiresAt     DateTime  @map("expires_at")
+  usedAt        DateTime? @map("used_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt]) // pembersihan baris kedaluwarsa
+  @@map("mcp_authorization_codes")
+}
+
+// Refresh token — nilai ASLI tidak pernah disimpan, cuma hash SHA-256-nya
+// (tokenHash), sama seperti kenapa passwordHash bukan password. ROTASI:
+// tiap dipakai, baris ini di-revoke dan baris baru dibuat — reuse token lama
+// setelah rotasi adalah sinyal pencurian (lihat validasi di oauth.js).
+model McpRefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique @map("token_hash")
+  clientId  String    @map("client_id")
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope     String
+  revokedAt DateTime? @map("revoked_at")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("mcp_refresh_tokens")
 }

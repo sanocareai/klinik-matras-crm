@@ -44,7 +44,7 @@ import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
 import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
-import { mcpRouter, logStatusMcp } from "./mcp/index.js";
+import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,6 +125,12 @@ app.use("/api/master-data", masterDataRouter);
 // WAJIB di atas express.static + catch-all "*" di bawah — kalau di bawah,
 // request /mcp akan dijawab index.html React, bukan JSON-RPC.
 app.use("/mcp", mcpRouter);
+// OAuth 2.1 untuk koneksi MCP dari claude.ai browser (src/mcp/oauth.js).
+// Root-level (BUKAN di bawah /mcp) — /.well-known/* dan /oauth/* adalah path
+// standar OAuth/RFC yang harus ada di root origin, sama seperti klien OAuth
+// mana pun mengharapkannya.
+app.use(wellKnownRouter);
+app.use(mcpOAuthRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 

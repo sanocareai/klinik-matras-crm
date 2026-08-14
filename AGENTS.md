@@ -1213,3 +1213,50 @@ dijawab index.html React, bukan JSON-RPC.
 Authorization). Connector di claude.ai kemungkinan menuntut OAuth — kalau
 begitu, tambahkan lapisan OAuth di depan `/mcp`, JANGAN "sementara" membuka
 endpoint tanpa auth untuk tes.
+
+### 18b. OAuth 2.1 untuk /mcp — koneksi claude.ai BROWSER (ditambah 14 Agustus 2026)
+
+Custom connector claude.ai browser TIDAK punya kolom header kustom (cuma
+OAuth Client ID/Secret) dan fitur `static_headers` (beta) belum rollout ke
+akun ini — dikonfirmasi lewat screenshot dialog "Tambah konektor kustom".
+Karena itu `/mcp` sekarang jadi *protected resource* OAuth 2.1 sungguhan,
+HIDUP BERDAMPINGAN dengan token statis di atas (Claude Code TIDAK terpengaruh
+sama sekali). Panduan lengkap & langkah verifikasi manual: `docs/MCP-SERVER.md`.
+
+Kode: `backend/src/mcp/oauthCrypto.js` (primitif murni: PKCE S256, sign/verify
+JWT, hash token — TANPA Prisma, gampang dites) dan `backend/src/mcp/oauth.js`
+(router: `/.well-known/oauth-protected-resource`,
+`/.well-known/oauth-authorization-server`, `POST /oauth/register` (DCR),
+`GET/POST /oauth/authorize` (halaman login+consent server-rendered),
+`POST /oauth/token`). Tes: `backend/tests/mcp-oauth.test.js`.
+
+**⚠️ ATURAN YANG TIDAK BOLEH DIKOMPROMIKAN (tambahan dari §18):**
+
+1. **Hanya user ber-role ADMIN yang boleh login+approve** di
+   `/oauth/authorize` — keputusan sadar, karena tool MCP membaca SEMUA data
+   pelanggan lintas sales (bukan cuma milik sendiri), setara dengan "siapa
+   yang boleh pegang MCP_API_TOKEN" (sebelumnya cuma admin). Cek role WAJIB
+   lewat `rolesOf()` dari `middleware/authorize.js` — JANGAN pernah cek
+   `user.role === "ADMIN"` langsung (lihat peringatan D-010 di §9, bug nyata
+   yang sudah pernah terjadi akibat pola ini).
+2. **`redirect_uris` di Dynamic Client Registration WAJIB persis**
+   `https://claude.ai/api/mcp/auth_callback` — `POST /oauth/register`
+   menolak SEMUA nilai lain (`validateRedirectUris` di `oauthCrypto.js`).
+   Ini yang membuat authorization server ini efektif cuma bisa dipakai
+   Claude, walau `client_id` bisa didaftarkan siapa saja lewat DCR.
+3. **`MCP_OAUTH_JWT_SECRET` WAJIB beda dari `JWT_SECRET`** (login CRM) —
+   supaya access token MCP dan token login CRM tidak bisa dipakai silang.
+4. **Refresh token WAJIB rotasi** tiap dipakai (public client + PKCE) —
+   token lama langsung `revokedAt`, reuse setelah rotasi = `invalid_grant`.
+   Jangan "menyederhanakan" jadi refresh token yang tidak pernah kedaluwarsa.
+5. **PKCE method WAJIB S256**, tidak ada fallback ke `plain`.
+
+**Model Prisma baru (FK ke User pakai `onDelete: Cascade`, SENGAJA beda dari
+pola RESTRICT/SetNull di Order/Unit — ini kredensial ephemeral, bukan riwayat
+bisnis):** `McpOAuthClient`, `McpAuthorizationCode`, `McpRefreshToken`.
+
+**Env var baru:** `MCP_PUBLIC_URL` (origin publik, dipakai di URL metadata
+OAuth) dan `MCP_OAUTH_JWT_SECRET` (secret access token OAuth MCP).
+`requireMcpToken` di `security.js` sekarang fail-closed berdasarkan
+`mcpAuthConfigured()` = token statis ATAU OAuth (bukan cuma token statis
+seperti sebelumnya) — kalau DUA-DUANYA kosong baru 503.

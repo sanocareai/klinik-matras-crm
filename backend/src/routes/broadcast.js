@@ -190,9 +190,16 @@ async function kirimSatuTarget(target, campaign) {
 
   // Pakai percakapan WhatsApp yang sudah ada supaya sesi (CS-1/CS-2) ikut
   // yang benar dan pesannya nyambung ke riwayat chat yang sales lihat.
+  //
+  // ⚠️ orderBy WAJIB lastMessageAt, BUKAN updatedAt — Conversation TIDAK
+  // PUNYA kolom updatedAt (cek schema.prisma). Salah tulis ini bikin
+  // Prisma menolak query, tick() melempar error KOSONG (Prisma
+  // PrismaClientValidationError .message-nya kosong di beberapa versi),
+  // dan broadcast diam-diam tidak pernah mengirim satu pesan pun —
+  // persis pola bug yang jadi alasan seluruh file ini ditulis ulang.
   const conversation = await prisma.conversation.findFirst({
     where: { customerId: target.customerId, channel: "WHATSAPP", type: "INDIVIDUAL" },
-    orderBy: { updatedAt: "desc" },
+    orderBy: { lastMessageAt: "desc" },
   });
 
   if (!conversation) {
@@ -355,7 +362,13 @@ export function mulaiWorkerBroadcast() {
   if (workerJalan) return;
   workerJalan = true;
   setInterval(() => {
-    tick().catch((err) => console.error("[broadcast] tick error:", err.message));
+    // Log err UTUH, bukan cuma err.message — PrismaClientValidationError
+    // (mis. orderBy ke kolom yang tidak ada) sering ber-.message KOSONG di
+    // beberapa versi Prisma, sehingga log sebelumnya menampilkan
+    // "[broadcast] tick error: " tanpa keterangan apa pun sementara worker
+    // gagal total di setiap tick. err.stack selalu berisi sesuatu yang
+    // berguna walau .message kosong.
+    tick().catch((err) => console.error("[broadcast] tick error:", err?.stack || err));
   }, TICK_MS);
   console.log("[broadcast] Worker aktif (tahan restart — antrean ada di database)");
 }

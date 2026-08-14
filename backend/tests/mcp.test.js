@@ -57,8 +57,15 @@ test("rate limiter menolak setelah melewati batas, lalu pulih di window berikutn
 // ── Server uji ─────────────────────────────────────────────────────────────
 // Router di-import DINAMIS setelah env diset, karena MCP_RATE_LIMIT dibaca
 // saat modul pertama kali dimuat.
+//
+// MCP_OAUTH_JWT_SECRET SENGAJA di-default-kan "" (mati) di sini, bukan
+// dibiarkan ikut apa pun yang ada di backend/.env sungguhan (Prisma
+// auto-load .env begitu PrismaClient dipakai di mana pun dalam proses tes
+// ini) — tanpa ini, tes "token statis kosong = 503" bisa lolos/gagal
+// tergantung isi .env developer yang menjalankannya, bukan logika kode.
 async function jalankanServer(env = {}) {
   process.env.MCP_API_TOKEN = env.MCP_API_TOKEN ?? TOKEN_UJI;
+  process.env.MCP_OAUTH_JWT_SECRET = env.MCP_OAUTH_JWT_SECRET ?? "";
   const { mcpRouter } = await import("../src/mcp/index.js");
 
   const app = express();
@@ -106,15 +113,21 @@ test("tanpa token / token salah ditolak 401", async (t) => {
   assert.equal(salah.status, 401);
 });
 
-test("MCP_API_TOKEN kosong = fitur mati (503), bukan terbuka bebas", async (t) => {
-  const { url, tutup } = await jalankanServer({ MCP_API_TOKEN: "" });
-  t.after(async () => {
-    process.env.MCP_API_TOKEN = TOKEN_UJI;
-    await tutup();
-  });
+test("kedua jalur auth kosong = fitur mati (503), bukan terbuka bebas", async (t) => {
+  const { url, tutup } = await jalankanServer({ MCP_API_TOKEN: "", MCP_OAUTH_JWT_SECRET: "" });
+  t.after(tutup);
 
   const res = await panggil(url, INIT, "apa saja");
   assert.equal(res.status, 503);
+});
+
+test("MCP_API_TOKEN kosong TAPI MCP_OAUTH_JWT_SECRET terisi = tetap aktif (401 di header WWW-Authenticate memuat resource_metadata)", async (t) => {
+  const { url, tutup } = await jalankanServer({ MCP_API_TOKEN: "", MCP_OAUTH_JWT_SECRET: "secret-oauth-tes" });
+  t.after(tutup);
+
+  const res = await panggil(url, INIT, null);
+  assert.equal(res.status, 401);
+  assert.match(res.headers.get("www-authenticate") || "", /resource_metadata=/);
 });
 
 test("initialize + tools/list berhasil dan semua tool ditandai read-only", async (t) => {

@@ -12,12 +12,19 @@
 // Konsekuensinya GET /mcp (SSE stream server→klien) memang tidak didukung —
 // itu disengaja, bukan bug.
 //
-// KEAMANAN — 4 lapis, JANGAN dilonggarkan satu pun:
-//   1. Bearer token dari env MCP_API_TOKEN (bukan JWT user). Tanpa token yang
-//      cocok → 401. Kalau env-nya kosong, seluruh endpoint mati (503).
-//   2. Rate limit 60 request/menit per IP (MCP_RATE_LIMIT_PER_MIN).
+// AUTH — DUA jalur yang hidup berdampingan (lihat security.js#requireMcpToken):
+//   a. Token statis MCP_API_TOKEN — Claude Code/Desktop (custom header).
+//   b. OAuth 2.1 (oauth.js) — claude.ai browser, yang UI custom connector-nya
+//      cuma punya field OAuth, tidak ada input header kustom.
+//
+// KEAMANAN — JANGAN dilonggarkan satu pun:
+//   1. Salah satu dari dua jalur auth di atas WAJIB cocok → selain itu 401.
+//      Kalau DUA-DUANYA belum dikonfigurasi di .env, seluruh endpoint mati (503).
+//   2. Rate limit 60 request/menit per IP (MCP_RATE_LIMIT_PER_MIN) di /mcp;
+//      /oauth/authorize (login) punya limit terpisah yang lebih ketat.
 //   3. Semua tool read-only — lihat aturan di tools.js.
 //   4. Nomor HP & email pelanggan disamarkan secara default.
+//   5. OAuth: hanya user ber-role ADMIN yang bisa login+approve (oauth.js).
 //
 // NGINX: tidak perlu diubah — /mcp ikut `proxy_pass http://localhost:4000`
 // yang sudah ada. Kalau nanti dibutuhkan streaming SSE jangka panjang, barulah
@@ -27,8 +34,11 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { requireMcpToken, mcpRateLimit, mcpTokenConfigured, MCP_RATE_LIMIT } from "./security.js";
+import { requireMcpToken, mcpRateLimit, mcpAuthConfigured, mcpStaticTokenConfigured, MCP_RATE_LIMIT } from "./security.js";
+import { oauthConfigured } from "./oauthCrypto.js";
 import { registerReadOnlyTools } from "./tools.js";
+
+export { wellKnownRouter, mcpOAuthRouter } from "./oauth.js";
 
 export const MCP_SERVER_NAME = "klinik-matras-crm";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -114,9 +124,13 @@ mcpRouter.get("/info", (_req, res) => {
 });
 
 export function logStatusMcp() {
-  if (mcpTokenConfigured()) {
-    console.log(`MCP server READ-ONLY aktif di /mcp (rate limit ${MCP_RATE_LIMIT} req/menit)`);
-  } else {
-    console.log("MCP server NONAKTIF — set MCP_API_TOKEN di .env untuk mengaktifkan /mcp");
+  if (!mcpAuthConfigured()) {
+    console.log("MCP server NONAKTIF — set MCP_API_TOKEN dan/atau MCP_OAUTH_JWT_SECRET di .env untuk mengaktifkan /mcp");
+    return;
   }
+  const jalur = [
+    mcpStaticTokenConfigured() && "token statis (Claude Code)",
+    oauthConfigured() && "OAuth (claude.ai browser)",
+  ].filter(Boolean).join(" + ");
+  console.log(`MCP server READ-ONLY aktif di /mcp [${jalur}] (rate limit ${MCP_RATE_LIMIT} req/menit)`);
 }
