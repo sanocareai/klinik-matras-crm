@@ -2687,6 +2687,19 @@ model BroadcastCampaign {
   // justru membuat teksnya mengecil dan susah dibaca di HP.
   kolase Boolean @default(false)
 
+  // Kontak yang SECARA EKSPLISIT dicentang admin di layar "Pilih Kontak".
+  //
+  // BUG NYATA yang kolom ini perbaiki (dilaporkan 14 Agt 2026): tanpa
+  // disimpan, pilihan cuma hidup di state React. Admin yang mencentang 1
+  // orang lalu menekan "Simpan Draft", membuka draft lain, lalu kembali —
+  // layar "Pilih Kontak" memuat ulang kandidat dan diam-diam mencentang
+  // SEMUA lagi (itu perilaku default yang wajar untuk draft BARU, tapi
+  // bencana untuk draft yang sudah pernah dipersempit).
+  //
+  // Kosong = belum pernah ada pilihan eksplisit -> frontend boleh
+  // mencentang semua kandidat sebagai default pertama kali.
+  selectedCustomerIds String[] @default([]) @map("selected_customer_ids")
+
   // Batas kirim per hari. Ini pengaman utama terhadap banned WhatsApp:
   // worker BERHENTI begitu jumlah TERKIRIM hari ini (WIB) menyentuh angka
   // ini, lalu lanjut lagi besok pagi dengan sendirinya.

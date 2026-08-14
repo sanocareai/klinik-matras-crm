@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, AlertTriangle, CheckCircle, Send, Pause, Play, Users, MessageSquare, X, ExternalLink, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
@@ -122,6 +122,10 @@ export default function Broadcast() {
   const [mengunggah, setMengunggah] = useState(false);
   // Popup cuplikan chat: { kontak, data, memuat }
   const [intipChat, setIntipChat] = useState(null);
+  // Kunci kombinasi kampanye+filter yang TERAKHIR dipakai untuk
+  // menginisialisasi `terpilih`. Selama masih sama, effect di bawah tidak
+  // boleh menimpa pilihan manual admin.
+  const initSelectionRef = useRef(null);
 
   const muatCampaigns = useCallback(() => {
     api.getBroadcastCampaigns().then(setCampaigns).catch(() => {});
@@ -148,21 +152,44 @@ export default function Broadcast() {
     return () => clearTimeout(t);
   }, [form.filters, step]);
 
-  // Kandidat dimuat saat masuk langkah "Pilih Kontak". Semua tercentang
-  // secara default supaya perilakunya sama dengan sebelum fitur ini ada —
-  // admin tinggal MENGURANGI, bukan harus mencentang ratusan satu per satu.
+  // Kandidat dimuat saat masuk langkah "Pilih Kontak". Daftar SELALU
+  // dimuat ulang (recency & status sesi bisa berubah), tapi centangnya
+  // HANYA di-reset ke "pilih semua" pada pemuatan PERTAMA untuk kombinasi
+  // kampanye+filter ini dalam sesi ini — bukan setiap kali langkah ini
+  // dibuka.
+  //
+  // BUG NYATA yang diperbaiki di sini (14 Agt 2026): sebelumnya efek ini
+  // menimpa `terpilih` SETIAP kali step berubah jadi 3, termasuk saat
+  // admin cuma bolak-balik antar langkah atau membuka ulang draft yang
+  // sudah pernah dipersempit ke 1 orang — pilihannya diam-diam kembali
+  // jadi "semua" (300 kontak) tanpa peringatan apa pun.
   useEffect(() => {
     if (step !== 3) return;
+    const kunci = `${activeCampaign?.id || "baru"}::${JSON.stringify(form.filters)}`;
+    const sudahDiinit = initSelectionRef.current === kunci;
+
     setMemuatKandidat(true);
     api.getBroadcastPreviewTargets(form.filters)
       .then((hasil) => {
         setKandidat(hasil.data);
         setTotalKandidat(hasil.total);
-        setTerpilih(new Set(hasil.data.map((k) => k.id)));
+        if (!sudahDiinit) {
+          // Pertama kali kombinasi kampanye+filter ini dimuat pada sesi
+          // ini. Kalau kampanye punya pilihan tersimpan (dibuat lewat
+          // "Simpan Draft" sebelumnya), pakai itu — kalau tidak, baru
+          // default ke "pilih semua".
+          const awal = activeCampaign?.selectedCustomerIds?.length
+            ? activeCampaign.selectedCustomerIds
+            : hasil.data.map((k) => k.id);
+          setTerpilih(new Set(awal));
+          initSelectionRef.current = kunci;
+        }
+        // sudah pernah diinit -> JANGAN sentuh terpilih, biarkan pilihan
+        // manual admin apa adanya.
       })
       .catch(() => setKandidat([]))
       .finally(() => setMemuatKandidat(false));
-  }, [step, form.filters]);
+  }, [step, form.filters, activeCampaign?.id]);
 
   function toggleKontak(id) {
     setTerpilih((prev) => {
@@ -247,6 +274,10 @@ export default function Broadcast() {
     setForm(FORM_KOSONG);
     setStep(1);
     setEstimate(null);
+    setTerpilih(new Set());
+    // Paksa layar "Pilih Kontak" menginisialisasi ulang (bukan mewarisi
+    // pilihan draft sebelumnya) begitu langkah itu dibuka untuk draft baru.
+    initSelectionRef.current = null;
   }
 
   function handleSelectCampaign(c) {
@@ -261,19 +292,36 @@ export default function Broadcast() {
       kolase: c.kolase === true,
     });
     setStep(1);
+    setTerpilih(new Set());
+    // Sama seperti di atas — kampanye yang dibuka bisa berbeda dari yang
+    // sebelumnya aktif, jadi pilihan harus dievaluasi ulang dari nol
+    // (memakai selectedCustomerIds milik kampanye INI, bukan sisa milik
+    // kampanye lain yang kebetulan masih di state).
+    initSelectionRef.current = null;
   }
 
   async function handleSaveDraft() {
     setSaving(true);
     try {
+      // Sertakan pilihan kontak SAAT INI — kalau admin belum pernah
+      // membuka langkah "Pilih Kontak" di sesi ini, terpilih masih kosong,
+      // yang artinya "belum ada pilihan eksplisit" (backend akan default
+      // pilih-semua saat layar itu dibuka nanti). Kalau admin SUDAH
+      // menyunting pilihannya, itu yang tersimpan — inilah perbaikan atas
+      // bug "simpan draft dengan 1 kontak, buka lagi jadi 300".
+      const body = { ...form, selectedCustomerIds: Array.from(terpilih) };
       if (activeCampaign) {
-        const updated = await api.updateBroadcastCampaign(activeCampaign.id, form);
+        const updated = await api.updateBroadcastCampaign(activeCampaign.id, body);
         setCampaigns((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
         setActiveCampaign((prev) => ({ ...prev, ...updated }));
       } else {
-        const created = await api.createBroadcastCampaign(form);
+        const created = await api.createBroadcastCampaign(body);
         setCampaigns((prev) => [created, ...prev]);
         setActiveCampaign(created);
+        // Kampanye BARU saja punya identitas asli (id sungguhan, bukan
+        // "baru") — tandai kunci ini sebagai sudah diinit supaya effect
+        // "Pilih Kontak" tidak menimpa pilihan yang barusan disimpan.
+        initSelectionRef.current = `${created.id}::${JSON.stringify(form.filters)}`;
       }
     } catch (err) {
       alert(err.message);

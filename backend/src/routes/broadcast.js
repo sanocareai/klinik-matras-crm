@@ -47,6 +47,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ke backend, bukan localhost dan bukan domain publik.
 const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
 
+/** Validasi array id pelanggan yang dikirim dari body — cuma string, dibatasi jumlahnya. */
+function bersihkanIdPelanggan(arr) {
+  if (!Array.isArray(arr)) return undefined;
+  return arr.filter((x) => typeof x === "string" && x.length > 0).slice(0, 5000);
+}
+
 /** Tebak MIME dari ekstensi — cukup untuk gambar promo yang kita simpan sendiri. */
 function tebakMime(namaFile) {
   const ext = String(namaFile || "").toLowerCase().split(".").pop();
@@ -456,7 +462,7 @@ broadcastRouter.get("/campaigns", async (_req, res) => {
 // POST /api/broadcast/campaigns
 broadcastRouter.post("/campaigns", async (req, res) => {
   try {
-    const { name, message, filters, dailyCap, tagOnSend, images, kolase } = req.body;
+    const { name, message, filters, dailyCap, tagOnSend, images, kolase, selectedCustomerIds } = req.body;
     if (!name?.trim() || !message?.trim()) {
       return res.status(400).json({ error: "Nama dan pesan wajib diisi" });
     }
@@ -473,6 +479,7 @@ broadcastRouter.post("/campaigns", async (req, res) => {
         // bisa menunjuk berkas sembarangan di server.
         images: Array.isArray(images) ? images.filter((g) => typeof g === "string" && g.startsWith("/uploads/")) : [],
         kolase: kolase === true,
+        selectedCustomerIds: bersihkanIdPelanggan(selectedCustomerIds) || [],
         createdById: req.user.id,
       },
     });
@@ -486,7 +493,7 @@ broadcastRouter.post("/campaigns", async (req, res) => {
 // PATCH /api/broadcast/campaigns/:id
 broadcastRouter.patch("/campaigns/:id", async (req, res) => {
   try {
-    const { name, message, filters, dailyCap, tagOnSend, status, images, kolase } = req.body;
+    const { name, message, filters, dailyCap, tagOnSend, status, images, kolase, selectedCustomerIds } = req.body;
     const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
     if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
 
@@ -507,6 +514,10 @@ broadcastRouter.patch("/campaigns/:id", async (req, res) => {
         data.images = images.filter((g) => typeof g === "string" && g.startsWith("/uploads/"));
       }
       if (kolase !== undefined) data.kolase = kolase === true;
+      // Pilihan kontak eksplisit — lihat komentar panjang di schema.prisma
+      // soal bug yang kolom ini perbaiki.
+      const idBersih = bersihkanIdPelanggan(selectedCustomerIds);
+      if (idBersih !== undefined) data.selectedCustomerIds = idBersih;
     }
 
     const updated = await prisma.broadcastCampaign.update({ where: { id: req.params.id }, data });
