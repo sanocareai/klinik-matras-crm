@@ -554,6 +554,9 @@ export const api = {
   getBusinessSummary: (params) => request("/analytics/business-summary" + buildQuery(params)),
   getSalesReport: (params) => request("/analytics/sales-report" + buildQuery(params)),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
+  // Rincian per iklan/kreatif spesifik (bukan cuma per platform) — lihat
+  // catatan panjang di backend/src/routes/analytics.js.
+  getLeadSourceDetail: (params) => request("/analytics/lead-source-detail" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)

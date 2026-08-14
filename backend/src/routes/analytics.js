@@ -1381,6 +1381,66 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
 // deviasi. Keunggulan dibanding "naik >30%": otomatis menyesuaikan skala bisnis
 // (tidak perlu diatur ulang saat volume tumbuh) dan tidak menuduh "drop" untuk
 // hari yang memang selalu sepi.
+// GET /api/analytics/lead-source-detail?from=&to=
+//
+// Rincian per IKLAN SPESIFIK, bukan cuma per platform. "/source-performance"
+// & atribusi.bySource di /traffic sudah menjawab "berapa lead dari Meta
+// Ads secara keseluruhan" — pertanyaan ini beda: "iklan/kreatif MANA yang
+// sebenarnya menghasilkan" (mis. "Meta CTWA - facebook - fb.me/77pJdJNsy"
+// vs "Meta CTWA - instagram - instagram.com/p/DXWbO-EAOeT" vs
+// "Website - google-cpc-srch-service").
+//
+// Sumbernya Customer.leadSourceDetail — string yang SUDAH tersimpan sejak
+// leadAttribution.js menulisnya di webhooks.js, tapi sebelum endpoint ini
+// tidak pernah diagregasi ke mana pun. TIDAK dinormalisasi/ditebak lebih
+// lanjut (mis. tidak coba menerjemahkan fb.me/xxx jadi nama campaign asli)
+// — apa yang tersimpan itulah yang ditampilkan, konsisten dengan prinsip
+// "jujur tidak tahu lebih baik daripada menebak" yang dipakai di seluruh
+// sistem atribusi ini.
+analyticsRouter.get("/lead-source-detail", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const where = {
+      ...buildDateWhere(from, to),
+      leadSourceDetail: { not: null },
+    };
+
+    const grup = await prisma.customer.groupBy({
+      by: ["leadSource", "leadSourceDetail"],
+      where,
+      _count: { _all: true },
+    });
+
+    const hasil = await Promise.all(grup.map(async (g) => {
+      const [won, orderAgg] = await Promise.all([
+        prisma.customer.count({
+          where: { leadSourceDetail: g.leadSourceDetail, pipelineStage: "COMPLETED", ...where },
+        }),
+        prisma.order.aggregate({
+          where: { customer: { leadSourceDetail: g.leadSourceDetail, ...where }, status: { not: "CANCELLED" } },
+          _sum: { value: true },
+        }),
+      ]);
+      return {
+        source: g.leadSource,
+        detail: g.leadSourceDetail,
+        leads: g._count._all,
+        won,
+        totalValue: orderAgg._sum.value || 0,
+      };
+    }));
+
+    hasil.sort((a, b) => b.leads - a.leads);
+    // Dibatasi 30 baris teratas — daftar mentah bisa panjang (tiap URL
+    // kreatif Meta beda jadi baris sendiri), dan yang jarang muncul tidak
+    // berguna untuk keputusan belanja iklan.
+    res.json(hasil.slice(0, 30));
+  } catch (err) {
+    console.error("lead-source-detail error:", err);
+    res.status(500).json({ error: "Gagal memuat rincian sumber lead" });
+  }
+});
+
 analyticsRouter.get("/traffic", async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -1546,12 +1606,18 @@ analyticsRouter.get("/traffic", async (req, res) => {
     // adalah lead yang memang tidak berjejak teknis (mis. lihat profil IG
     // lalu ketik nomor manual) — hanya bisa ditutup lewat konfirmasi sales.
     let teridentifikasi = 0;
+    let belumDikonfirmasi = 0;
     const bySource = {};
     for (const g of sourceGroups) {
       const n = g._count._all;
       const src = g.leadSource || "OTHER";
       bySource[src] = (bySource[src] || 0) + n;
       if (src !== "WHATSAPP_DIRECT" || g.leadSourceConfirmed) teridentifikasi += n;
+      // Dipakai widget "Konfirmasi Sumber" — antrean WHATSAPP_DIRECT dalam
+      // periode ini yang belum pernah ditanya/dikoreksi manual oleh sales.
+      // Ini SATU-SATUNYA cara menutup lead yang lihat IG/dari mulut ke
+      // mulut lalu chat manual (tidak ada jejak teknis untuk itu).
+      if (src === "WHATSAPP_DIRECT" && !g.leadSourceConfirmed) belumDikonfirmasi += n;
     }
 
     res.json({
@@ -1568,6 +1634,7 @@ analyticsRouter.get("/traffic", async (req, res) => {
         teridentifikasi,
         rate: totalLeads > 0 ? Math.round((teridentifikasi / totalLeads) * 1000) / 10 : null,
         bySource: Object.entries(bySource).map(([source, count]) => ({ source, count })),
+        belumDikonfirmasi,
       },
     });
   } catch (err) {

@@ -8,15 +8,19 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow,
 } from "@/components/ui/table.jsx";
 import {
-  formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, HEALTH_LABELS,
+  formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, HEALTH_LABELS, SOURCE_LABELS,
   stageVariant, orderStatusVariant, healthVariant, tagClass, isVIP,
 } from "@/utils/format.js";
 
 // Urutan kolom WAJIB dipertahankan (CLAUDE.md Gelombang 5 poin 1 & 3):
 // Nama → ID Order → No HP → Pipeline → Status Order → Keluhan → Kesehatan → Tags
 // lalu kolom tambahan. Urutan ini juga harus cocok dengan export Excel.
+// "Sumber" ditambah 14 Agt 2026 SETELAH prefix wajib itu (di antara kolom
+// tambahan yang boleh berubah) — supaya begitu tabel difilter Sumber Lead =
+// Meta Ads, iklan/kreatif SPESIFIK-nya langsung kelihatan per baris, tanpa
+// buka profil satu-satu.
 // +1 kolom checkbox seleksi massal (Wave 5B lanjutan — bulk assign sales).
-const COL_COUNT = 15;
+const COL_COUNT = 16;
 
 export default function CustomersTable({
   rows, loading, emptyMessage, sortKey, sortDir, onSort, onOpen,
@@ -63,6 +67,7 @@ export default function CustomersTable({
             <TH numeric sortable sortDir={dirFor("orderCount")} onSort={() => onSort("orderCount")}>Order</TH>
             <TH numeric sortable sortDir={dirFor("orderValue")} onSort={() => onSort("orderValue")}>Nilai Order</TH>
             <TH>Sales Person</TH>
+            <TH>Sumber</TH>
             <TH>Aksi</TH>
           </TR>
         </THead>
@@ -162,6 +167,27 @@ export default function CustomersTable({
                     kebaca jelas, bukan pudar seperti tanda "—". */}
                 <TD className={c.assignedSales ? "font-medium text-ink2" : undefined}>
                   {c.assignedSales?.name || <span className="text-ink3">—</span>}
+                </TD>
+
+                {/* leadSourceDetail = iklan/kreatif SPESIFIK ("Meta CTWA -
+                    facebook - fb.me/77pJdJNsy"), bukan cuma platform —
+                    ditulis apa adanya, tidak dinormalisasi/ditebak lebih
+                    lanjut (prinsip "jujur tidak tahu" yang sama dipakai di
+                    seluruh sistem atribusi ini). leadSourceConfirmed=false
+                    pada WHATSAPP_DIRECT ditandai "Otomatis" supaya sales
+                    tahu ini belum pernah dikonfirmasi manual. */}
+                <TD className="max-w-40">
+                  <div className="truncate text-[12.5px] text-ink2">
+                    {SOURCE_LABELS[c.leadSource] || c.leadSource || "—"}
+                  </div>
+                  {c.leadSourceDetail && (
+                    <div className="truncate text-[11px] text-ink3" title={c.leadSourceDetail}>
+                      {c.leadSourceDetail}
+                    </div>
+                  )}
+                  {c.leadSource === "WHATSAPP_DIRECT" && !c.leadSourceConfirmed && (
+                    <div className="text-[10.5px] text-ink3">(belum dikonfirmasi)</div>
+                  )}
                 </TD>
 
                 <TD onClick={(e) => { e.stopPropagation(); onOpen(c.id); }}>

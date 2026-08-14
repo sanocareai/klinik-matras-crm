@@ -48,6 +48,9 @@ export default function Customers() {
   const [filterSource, setFilterSource] = useState("");
   const [filterSales, setFilterSales]   = useState("");
   const [filterCity, setFilterCity]     = useState("");
+  // "" = semua, "false" = belum dikonfirmasi sales, "true" = sudah. Dipakai
+  // widget "Konfirmasi Sumber" di Laporan (deep-link ?confirmed=false).
+  const [filterConfirmed, setFilterConfirmed] = useState("");
   const [quickChip, setQuickChip]   = useState("");
   const [sortKey, setSortKey]   = useState("updatedAt");
   const [sortDir, setSortDir]   = useState("desc");
@@ -72,6 +75,18 @@ export default function Customers() {
     if (!id) return;
     setDrawerCustomerId(id);
     setSearchParams((prev) => { prev.delete("id"); return prev; }, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Deep-link `?source=` (Laporan > Traffic — klik nama sumber untuk lihat
+  // daftar kontaknya) dan `?confirmed=false` (widget "Konfirmasi Sumber" —
+  // WHATSAPP_DIRECT yang belum pernah dikoreksi manual sales).
+  useEffect(() => {
+    const source = searchParams.get("source");
+    const confirmed = searchParams.get("confirmed");
+    if (!source && confirmed === null) return;
+    if (source) setFilterSource(source);
+    if (confirmed !== null) setFilterConfirmed(confirmed);
+    setSearchParams((prev) => { prev.delete("source"); prev.delete("confirmed"); return prev; }, { replace: true });
   }, [searchParams, setSearchParams]);
   const [showModal, setShowModal]   = useState(false);
   const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
@@ -109,7 +124,8 @@ export default function Customers() {
     city: filterCity || undefined,
     customerType: mapTypeTab(typeTab),
     quickChip: quickChip || undefined,
-  }), [search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip]);
+    confirmed: filterConfirmed || undefined,
+  }), [search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip, filterConfirmed]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -155,6 +171,7 @@ export default function Customers() {
     setSearchInput(""); setSearch("");
     setFilterStage(""); setFilterSource("");
     setFilterSales(""); setFilterCity(""); setQuickChip("");
+    setFilterConfirmed("");
     setPage(1);
   }
 
@@ -162,7 +179,7 @@ export default function Customers() {
   // terjebak di halaman 5 padahal hasil filter cuma 1 halaman (tampak kosong).
   const withReset = (setter) => (v) => { setter(v); setPage(1); };
 
-  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip;
+  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip || filterConfirmed;
   const emptyMessage = hasFilters || typeTab !== "all"
     ? "Tidak ada pelanggan yang cocok dengan filter."
     : "Belum ada pelanggan.";
@@ -202,6 +219,7 @@ export default function Customers() {
         city: filterCity || undefined,
         customerType: mapTypeTab(typeTab),
         quickChip: quickChip || undefined,
+        confirmed: filterConfirmed || undefined,
       });
       const data = rows.map((c) => ({
         /* Urutan kolom cocok dengan urutan tabel di halaman */
@@ -223,6 +241,7 @@ export default function Customers() {
         "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
         Kota: c.city || "",
         "Sumber Lead": SOURCE_LABELS[c.leadSource] || c.leadSource || "",
+        "Detail Iklan": c.leadSourceDetail || "",
         "Jumlah Order": c.orderCount || 0,
         "Total Nilai Order": formatRupiah(c.orderValue || 0),
         "Pernah Komplain": c.pernahKomplain ? "Ya" : "Tidak",

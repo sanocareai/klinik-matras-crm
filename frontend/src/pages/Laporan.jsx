@@ -36,6 +36,7 @@ export default function Laporan() {
   const [velocity, setVelocity] = useState(null);
   const [respTimeSeries, setRespTimeSeries] = useState(null);
   const [traffic, setTraffic] = useState(null);
+  const [sourceDetail, setSourceDetail] = useState(null);
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -49,7 +50,7 @@ export default function Laporan() {
     if (setengahJadi) return;
     setLoading(true);
     try {
-      const [ov, sm, pf, fn, sr, vl, rts, tr] = await Promise.all([
+      const [ov, sm, pf, fn, sr, vl, rts, tr, lsd] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getBusinessSummary(params),
         api.getAnalyticsPerformance(params),
@@ -65,6 +66,7 @@ export default function Laporan() {
         api.getAnalyticsPipelineVelocity(params).catch(() => null),
         api.getResponseTimeSeries(params).catch(() => null),
         api.getTrafficReport(params).catch(() => null),
+        api.getLeadSourceDetail(params).catch(() => null),
       ]);
       setOverview(ov);
       setSummary(sm);
@@ -73,6 +75,7 @@ export default function Laporan() {
       setVelocity(vl);
       setRespTimeSeries(rts);
       setTraffic(tr);
+      setSourceDetail(lsd);
       // pipeline-funnel returns an array [{stage, count, value}]
       setFunnel(
         (fn || []).map((item) => ({
@@ -159,7 +162,7 @@ export default function Laporan() {
               </TabsContent>
 
               <TabsContent value="Traffic">
-                <TrafficTab traffic={traffic} />
+                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} />
               </TabsContent>
 
               <TabsContent value="Percakapan">

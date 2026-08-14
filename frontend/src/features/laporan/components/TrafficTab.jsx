@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame, ArrowRight, UserCheck } from "lucide-react";
 import dayjs from "dayjs";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
-import { formatDuration, SOURCE_LABELS } from "@/utils/format.js";
+import { formatDuration, formatRupiah, SOURCE_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
@@ -57,7 +58,7 @@ function TrafficTip({ active, payload, label }) {
   );
 }
 
-export default function TrafficTab({ traffic }) {
+export default function TrafficTab({ traffic, sourceDetail }) {
   const [mode, setMode] = useState("volume"); // "volume" | "respons"
   // Tooltip heatmap dibuat sendiri, BUKAN atribut `title` bawaan browser:
   // `title` baru muncul setelah jeda ~1-2 detik, tidak bisa distyle, dan di
@@ -131,18 +132,46 @@ export default function TrafficTab({ traffic }) {
 
       {/* Atribusi rendah = MASALAH KUALITAS DATA, bukan insight. Ditandai
           eksplisit (pola sama dgn peringatan "Kota Belum diisi" di Ringkasan)
-          supaya owner tidak menyimpulkan "berarti semua lead organik". */}
+          supaya owner tidak menyimpulkan "berarti semua lead organik".
+          ⚠️ 14 Agt 2026: kalimat lama di sini bilang "deteksi otomatis iklan
+          Meta terbukti tidak pernah berhasil" — itu benar SEBELUM perbaikan
+          CTWA (13 Agt 2026), sekarang SALAH: Meta Ads justru sumber #1
+          (95 dari 124 lead dalam 24 jam terakhir, semuanya berbukti clid
+          asli). Kalimat lama dibiarkan di sini akan membuat pengguna
+          mengira sistemnya masih rusak padahal sudah diperbaiki. */}
       {atribusi?.rate != null && atribusi.rate < 20 && atribusi.total > 0 && (
         <div className="flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
           <AlertTriangle className="mt-0.5 shrink-0 text-orange" size={16} />
           <p className="text-xs leading-relaxed text-ink">
             Hanya <strong>{atribusi.rate}%</strong> lead yang diketahui sumbernya — sisanya
-            masuk sebagai "WhatsApp Langsung" karena sistem tidak bisa mendeteksi asalnya.
-            Ini <strong>keterbatasan pelacakan, bukan berarti semua lead organik</strong>.
-            Untuk tahu iklan mana yang benar-benar menghasilkan, pakai <strong>Link
-            Pelacakan</strong> (1 link per campaign) — deteksi otomatis iklan Meta
-            terbukti tidak pernah berhasil di data produksi.
+            masuk sebagai "WhatsApp Langsung" karena tidak ada jejak teknis (mis. orang
+            yang lihat profil IG lalu ketik nomor manual). Ini <strong>keterbatasan
+            pelacakan, bukan berarti semua lead organik</strong> — satu-satunya cara
+            menutupnya adalah sales mengonfirmasi manual "dari mana tahu Sano?" di
+            profil pelanggan.
           </p>
+        </div>
+      )}
+
+      {/* ── Antrean konfirmasi sumber ──────────────────────────────────────
+          WHATSAPP_DIRECT ≠ organik — cuma berarti "tidak ada jejak teknis"
+          (mis. lihat profil IG lalu ketik nomor manual). Satu-satunya cara
+          menutup blind spot ini adalah sales bertanya & mengoreksi manual —
+          widget ini jadi pengingat berapa banyak yang masih menunggu. */}
+      {atribusi?.belumDikonfirmasi > 0 && (
+        <div className="flex items-center gap-3 rounded-xl bg-inset px-4 py-3">
+          <UserCheck className="shrink-0 text-accent" size={18} />
+          <p className="flex-1 text-xs leading-relaxed text-ink2">
+            <strong className="text-ink">{atribusi.belumDikonfirmasi} lead WhatsApp Langsung</strong>{" "}
+            pada periode ini belum pernah dikonfirmasi sumbernya oleh sales — kemungkinan
+            ada yang sebenarnya dari Instagram/referral tapi masuk sebagai "tidak diketahui".
+          </p>
+          <Link
+            to={`/customers?source=WHATSAPP_DIRECT&confirmed=false`}
+            className="flex shrink-0 items-center gap-1 text-xs font-semibold text-accent hover:underline"
+          >
+            Lihat daftarnya <ArrowRight size={13} />
+          </Link>
         </div>
       )}
 
@@ -353,19 +382,64 @@ export default function TrafficTab({ traffic }) {
 
       {/* ── Sumber lead ── */}
       {(atribusi?.bySource || []).length > 0 && (
-        <ChartCard index={8} title="Sumber Lead" description="Dari sistem pelacakan — lihat catatan akurasi di atas">
-          <div className="flex flex-col gap-2">
+        <ChartCard index={8} title="Sumber Lead" description="Dari sistem pelacakan — klik sumber untuk lihat daftar kontaknya">
+          <div className="flex flex-col gap-1">
             {[...atribusi.bySource].sort((a, b) => b.count - a.count).map((s) => (
-              <div key={s.source} className="flex items-center justify-between text-[12.5px]">
-                <span className="text-ink2">{SOURCE_LABELS[s.source] || s.source}</span>
-                <span className="font-semibold tabular-nums text-ink">
-                  {s.count.toLocaleString("id-ID")}
-                  <span className="ml-1.5 font-normal text-ink3">
-                    ({Math.round((s.count / (atribusi.total || 1)) * 100)}%)
+              <Link
+                key={s.source}
+                to={`/customers?source=${encodeURIComponent(s.source)}`}
+                className="group flex items-center justify-between rounded-btn px-2 py-1.5 text-[12.5px] transition-colors hover:bg-inset"
+              >
+                <span className="text-ink2 group-hover:text-ink">{SOURCE_LABELS[s.source] || s.source}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold tabular-nums text-ink">
+                    {s.count.toLocaleString("id-ID")}
+                    <span className="ml-1.5 font-normal text-ink3">
+                      ({Math.round((s.count / (atribusi.total || 1)) * 100)}%)
+                    </span>
                   </span>
+                  <ArrowRight size={12} className="text-ink3 opacity-0 transition-opacity group-hover:opacity-100" />
                 </span>
-              </div>
+              </Link>
             ))}
+          </div>
+        </ChartCard>
+      )}
+
+      {/* ── Rincian per iklan spesifik ──────────────────────────────────────
+          Beda dari "Sumber Lead" di atas: itu per PLATFORM (Meta Ads: 95),
+          ini per IKLAN/KREATIF (fb.me/77pJdJNsy: 40, instagram.com/p/DXWbO:
+          30, dst) — dari Customer.leadSourceDetail apa adanya, tidak
+          dinormalisasi/ditebak lebih lanjut. */}
+      {(sourceDetail || []).length > 0 && (
+        <ChartCard
+          index={9}
+          title="Rincian per Iklan"
+          description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink3">
+                  <th className="pb-2 pr-3 font-medium">Sumber</th>
+                  <th className="pb-2 pr-3 font-medium">Detail</th>
+                  <th className="pb-2 pr-3 text-right font-medium">Lead</th>
+                  <th className="pb-2 pr-3 text-right font-medium">Closing</th>
+                  <th className="pb-2 text-right font-medium">Nilai Order</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceDetail.map((row) => (
+                  <tr key={`${row.source}-${row.detail}`} className="border-b border-line last:border-0">
+                    <td className="py-2 pr-3 text-ink2">{SOURCE_LABELS[row.source] || row.source}</td>
+                    <td className="max-w-[280px] truncate py-2 pr-3 text-ink3" title={row.detail}>{row.detail}</td>
+                    <td className="py-2 pr-3 text-right font-semibold tabular-nums text-ink">{row.leads}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink2">{row.won}</td>
+                    <td className="py-2 text-right tabular-nums text-ink2">{formatRupiah(row.totalValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </ChartCard>
       )}

@@ -17,10 +17,16 @@ customerRouter.use(requireAuth);
 // bisa drift — "pilih semua yang cocok filter ini" harus benar-benar
 // berarti filter yang sama dengan yang sedang dilihat user).
 function buildCustomerWhere(query) {
-  const { search, stage, source, sales, salesId, city, customerType, quickChip } = query;
+  const { search, stage, source, sales, salesId, city, customerType, quickChip, confirmed } = query;
   const where = {};
   if (stage)  where.pipelineStage = stage;
   if (source) where.leadSource    = source;
+  // ?confirmed=false — dipakai antrean "Konfirmasi Sumber": WHATSAPP_DIRECT
+  // yang belum pernah dikoreksi manual sales (leadSourceConfirmed masih
+  // default false). ?confirmed=true kebalikannya, jarang dipakai tapi
+  // disediakan untuk simetri.
+  if (confirmed === "false") where.leadSourceConfirmed = false;
+  if (confirmed === "true") where.leadSourceConfirmed = true;
   if (sales)  where.assignedSalesId = sales;
   if (salesId) where.conversations = { some: { assignedToId: salesId } };
   if (city) where.city = city;
