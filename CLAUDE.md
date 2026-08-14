@@ -1288,3 +1288,38 @@ OAuth) dan `MCP_OAUTH_JWT_SECRET` (secret access token OAuth MCP).
 `requireMcpToken` di `security.js` sekarang fail-closed berdasarkan
 `mcpAuthConfigured()` = token statis ATAU OAuth (bukan cuma token statis
 seperti sebelumnya) — kalau DUA-DUANYA kosong baru 503.
+### 18c. Perluasan tool MCP — chat mendalam, audit sales, traffic iklan (14 Agt 2026)
+
+18 tool sekarang (dari 12), dipecah 3 file + helper bersama: `src/mcp/tools.js`
+(CRM inti), `toolsChat.js` (percakapan/kualitas/audit), `toolsTraffic.js`
+(traffic & iklan), `toolsShared.js` (helper). Detail: `docs/MCP-SERVER.md`.
+
+**⚠️ ATURAN PENTING:**
+
+1. **Audit sales TIDAK punya mesin aturan sendiri** — semuanya dipakai ulang:
+   `violations()` dari `services/replyAssistant/validator.js` (7 kategori janji
+   terlarang), `detectIntents()`/`INTENT_TAXONOMY` dari
+   `services/intelligence/replyReadiness.js` (COMPLAINT & HANDOVER_REQUEST wajib
+   manusia), dan `buildCustomerIntelligence()` dari `services/intelligence/`
+   (skor relasi/urgensi/peluang). **Jangan bikin definisi aturan kedua di MCP** —
+   kalau aturan produk berubah, cukup ubah di validator.js dan audit ikut berubah.
+2. **SLA balas pertama = 60 menit** (`SLA_BALAS_PERTAMA_MENIT` di toolsChat.js),
+   SENGAJA sama dengan `sla_breach` di routes/analytics.js dan ambang takeover
+   §7C. Jangan diganti sepihak — nanti laporan CRM & audit MCP bertentangan.
+   (`THRESHOLDS.unansweredMinutes` 180 menit di intelligence/weights.js BEDA
+   urusan: itu "follow-up menunggu", bukan SLA balas pertama.)
+3. **Kalau menambah file `toolsXxx.js` baru, WAJIB daftarkan di `FILE_TOOL`**
+   pada `tests/mcp.test.js`. Ada tes yang mencocokkan daftar itu dengan isi
+   folder, jadi kelupaan pasti ketahuan — jangan matikan tes itu.
+4. **Batas jumlah data itu disengaja** (76rb pesan di production):
+   `audit_balasan_sales` maks 5.000 pesan keluar + 500 percakapan,
+   `kualitas_engagement` maks 500 percakapan, 200 pesan per percakapan. Tool
+   mengembalikan `terpotong`/`adaLagi` — hasil yang terpotong TIDAK BOLEH
+   disajikan sebagai total periode.
+
+**TrackedLink KOSONG di production (0 link, 0 klik — diverifikasi 14 Agt 2026).**
+Karena itu `performa_iklan` dibangun di atas `Customer.leadSource` + atribusi
+CTWA (`ctwa_source_url` = URL kreatif IG/FB), BUKAN TrackedLink. Cakupan CTWA
+masih sebagian (aktif sejak 13 Agt 2026) dan tool WAJIB menyatakannya di output —
+jangan sajikan angka parsial seolah lengkap. Kalau nanti TrackedLink mulai
+dipakai, tool ini perlu diperluas.

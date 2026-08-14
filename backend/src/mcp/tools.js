@@ -16,118 +16,20 @@
 
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { maskPhone, maskEmail } from "./security.js";
+import { maskPhone } from "./security.js";
+// Mesin intelligence rule-based yang SUDAH ADA (Health/Priority/Opportunity +
+// Next Best Action). Deterministik, tanpa LLM, tanpa biaya token — dan angkanya
+// SAMA dengan yang dilihat sales di UI Customer360. Jangan bikin scoring baru.
+import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 // Batas tanggal WIB — WAJIB. Container backend jalan di UTC; `new Date(y,m,d)`
 // menggeser seluruh jendela laporan 7 jam (lihat utils/wib.js & CLAUDE.md §11).
+import { startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB } from "../utils/wib.js";
+// Helper bersama dengan toolsChat.js & toolsTraffic.js — lihat toolsShared.js.
 import {
-  startOfDayWIB,
-  endOfDayExclusiveWIB,
-  startOfMonthWIB,
-  endOfMonthExclusiveWIB,
-  nowPartsWIB,
-} from "../utils/wib.js";
-
-// ─── HELPER ─────────────────────────────────────────────────────────────────
-
-const TANGGAL = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal harus YYYY-MM-DD");
-
-const PIPELINE_STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
-const ORDER_STATUS = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
-const ORDER_CATEGORY = ["LAYANAN", "SEWA", "BARU"];
-const PAYMENT_STATUS = ["BELUM_BAYAR", "DP", "LUNAS"];
-const LEAD_SOURCE = [
-  "META_ADS", "GOOGLE_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
-  "WHATSAPP_DIRECT", "REFERRAL", "OTHER", "ADS", "WEBSITE",
-];
-
-const unmaskParam = z
-  .boolean()
-  .optional()
-  .describe("true = tampilkan nomor HP & email pelanggan LENGKAP (tanpa masking). Default false.");
-
-const limitParam = (bawaan) =>
-  z.number().int().min(1).max(100).optional().describe(`Jumlah baris (1-100, default ${bawaan}).`);
-
-const offsetParam = z.number().int().min(0).optional().describe("Lewati N baris pertama (paginasi).");
-
-// Rentang tanggal WIB → batas instant UTC. `to` EKSKLUSIF (awal hari
-// berikutnya), bukan 23:59:59 — lihat utils/wib.js kenapa.
-function whereTanggal(from, to, field = "createdAt") {
-  if (!from && !to) return {};
-  const w = {};
-  if (from) w.gte = startOfDayWIB(from);
-  if (to) w.lt = endOfDayExclusiveWIB(to);
-  return { [field]: w };
-}
-
-// Bentuk ringkas pelanggan — dipakai di semua daftar supaya konsisten.
-function ringkasPelanggan(c, unmask) {
-  return {
-    id: c.id,
-    nama: c.name,
-    telepon: maskPhone(c.phone, unmask),
-    email: maskEmail(c.email, unmask),
-    instagram: c.instagramHandle,
-    kota: c.city,
-    tags: c.tags,
-    pipelineStage: c.pipelineStage,
-    tipePelanggan: c.customerType,
-    statusKesehatan: c.healthStatus,
-    sumberLead: c.leadSource,
-    detailSumberLead: c.leadSourceDetail,
-    sumberLeadDikonfirmasi: c.leadSourceConfirmed,
-    // Atribusi Click-to-WhatsApp Meta — berguna untuk pertanyaan "kreatif
-    // iklan mana yang menghasilkan lead ini". Bukan PII pelanggan.
-    ctwaClickId: c.ctwaClid,
-    ctwaUrlSumber: c.ctwaSourceUrl,
-    salesPenanggungJawab: c.assignedSales?.name ?? null,
-    salesPenanggungJawabId: c.assignedSalesId,
-    jumlahOrder: c.orderCount,
-    nilaiOrder: c.orderValue,
-    dibuatPada: c.createdAt,
-  };
-}
-
-function ringkasOrder(o) {
-  return {
-    id: o.id,
-    nomorOrder: o.orderNumber,
-    pelangganId: o.customerId,
-    namaPelanggan: o.customer?.name ?? null,
-    status: o.status,
-    statusDikunciManual: o.statusLocked,
-    statusPembayaran: o.paymentStatus,
-    kategori: o.category,
-    nilai: o.value,
-    jumlah: o.quantity,
-    catatan: o.notes,
-    adaKomplain: o.hasComplaint,
-    tanggalKomplain: o.complaintDate,
-    detailKomplain: o.complaintDetail,
-    dibuatPada: o.createdAt,
-    diperbaruiPada: o.updatedAt,
-    ...(o.items
-      ? {
-          layanan: o.items.map((i) => ({ nama: i.layananName, harga: i.harga })),
-          totalLayanan: o.items.reduce((s, i) => s + i.harga, 0),
-        }
-      : {}),
-    ...(o.weightEntries
-      ? { beratBadan: o.weightEntries.map((w) => ({ label: w.label, kg: w.beratKg })) }
-      : {}),
-  };
-}
-
-// Semua tool mengembalikan JSON sebagai teks. Sengaja tidak pakai
-// structuredContent/outputSchema — bentuk datanya sering berubah mengikuti
-// schema CRM, dan skema keluaran yang ketat cuma jadi beban pemeliharaan.
-function hasil(data) {
-  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
-}
-
-// Anotasi seragam: readOnlyHint memberi tahu klien MCP bahwa tool ini tidak
-// pernah mengubah apa pun, jadi boleh dipanggil tanpa konfirmasi user.
-const ANOTASI_BACA = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  PIPELINE_STAGES, ORDER_STATUS, ORDER_CATEGORY, PAYMENT_STATUS, LEAD_SOURCE,
+  TANGGAL, unmaskParam, limitParam, offsetParam,
+  whereTanggal, ringkasPelanggan, ringkasOrder, hasil, ANOTASI_BACA,
+} from "./toolsShared.js";
 
 // ─── PENDAFTARAN TOOL ───────────────────────────────────────────────────────
 
@@ -210,8 +112,10 @@ export function registerReadOnlyTools(server) {
       title: "Detail pelanggan",
       description:
         "Profil lengkap satu pelanggan: data diri, seluruh order beserta rincian layanan & berat badan, " +
-        "catatan internal sales, riwayat perpindahan pipeline stage, riwayat keluhan, dan ringkasan " +
-        "percakapan. Cari berdasarkan customerId ATAU nomor HP.",
+        "catatan internal sales, riwayat perpindahan pipeline stage, riwayat keluhan, ringkasan " +
+        "percakapan, PLUS blok `intelligence` berisi skor rule-based yang sama dengan yang dilihat " +
+        "sales di CRM (skor relasi/kesehatan, urgensi, peluang beli, dan aksi yang disarankan). " +
+        "Cari berdasarkan customerId ATAU nomor HP.",
       inputSchema: {
         customerId: z.string().optional().describe("ID pelanggan (cuid)."),
         telepon: z.string().optional().describe("Nomor HP format 628xxxx (tanpa + dan tanpa @c.us)."),
@@ -258,9 +162,33 @@ export function registerReadOnlyTools(server) {
 
       if (!c) return hasil({ error: "Pelanggan tidak ditemukan." });
 
+      // Skor rule-based dari mesin intelligence yang sudah dipakai UI
+      // Customer360 — bukan hitungan baru, jadi angkanya PASTI sama dengan yang
+      // dilihat sales di CRM. Dibungkus try/catch: kalau mesin ini bermasalah,
+      // detail pelanggan tetap keluar (skor saja yang null), bukan tool gagal.
+      let intelligence = null;
+      try {
+        const ctx = await loadCustomerContext(prisma, c.id);
+        if (ctx) {
+          const intel = buildCustomerIntelligence(ctx);
+          intelligence = {
+            skorRelasi: { nilai: intel.health.score, kategori: intel.health.category, tren: intel.health.trendLabel, sinyal: intel.health.signals },
+            skorUrgensi: { nilai: intel.priority.score, urgensi: intel.priority.urgency, alasan: intel.priority.reasons },
+            skorPeluangBeli: { nilai: intel.opportunity.score, sinyal: intel.opportunity.signals },
+            aksiBerikutnya: intel.nextAction,
+            insight: intel.insight,
+            intentTerdeteksi: intel.signals.detectedIntents,
+            versiMesin: intel.meta.engineVersion,
+          };
+        }
+      } catch (err) {
+        console.error("[mcp] intelligence gagal untuk customer", c.id, err.message);
+      }
+
       const unmask = args.unmask === true;
       return hasil({
         ...ringkasPelanggan(c, unmask),
+        intelligence,
         order: c.orders.map(ringkasOrder),
         // Riwayat keluhan dirangkum dari semua order (bukan field terpisah di
         // Customer) — ini sengaja, lihat CLAUDE.md §7D.
@@ -723,10 +651,22 @@ export function registerReadOnlyTools(server) {
     {
       title: "Riwayat pesan percakapan",
       description:
-        "Isi pesan sebuah percakapan (urut dari yang terbaru). Berguna untuk memahami konteks " +
-        "keluhan/kebutuhan pelanggan. Pesan yang sudah dihapus pelanggan ditandai isRevoked.",
+        "Isi pesan sebuah percakapan, dengan paginasi & filter. Berguna untuk memahami konteks " +
+        "keluhan/kebutuhan pelanggan. Pesan yang sudah dihapus pelanggan ditandai dihapus=true.\n" +
+        "Percakapan panjang: pakai urutan='terlama' untuk membaca alur dari awal, atau " +
+        "sebelum=<waktu pesan tertua yang sudah didapat> untuk mengambil halaman berikutnya " +
+        "(cek field adaLagi). Untuk membedah kualitas balasan sales di satu percakapan, " +
+        "pakai tool diagnosa_percakapan.",
       inputSchema: {
         conversationId: z.string().describe("ID percakapan dari tool daftar_percakapan atau detail_pelanggan."),
+        arah: z.enum(["INBOUND", "OUTBOUND"]).optional()
+          .describe("INBOUND = hanya pesan pelanggan, OUTBOUND = hanya balasan CS. Default: keduanya."),
+        dari: TANGGAL.optional().describe("Hanya pesan sejak tanggal ini (WIB)."),
+        sampai: TANGGAL.optional().describe("Hanya pesan sampai tanggal ini (WIB, inklusif)."),
+        sebelum: z.string().optional()
+          .describe("Kursor paginasi: ambil pesan yang lebih lama dari waktu ISO ini (mis. waktu pesan tertua di halaman sebelumnya)."),
+        urutan: z.enum(["terbaru", "terlama"]).optional()
+          .describe("terbaru = pesan terbaru dulu (default). terlama = urut kronologis dari awal, untuk membaca alur percakapan."),
         limit: limitParam(50),
         unmask: unmaskParam,
       },
@@ -742,14 +682,36 @@ export function registerReadOnlyTools(server) {
       });
       if (!percakapan) return hasil({ error: "Percakapan tidak ditemukan." });
 
-      const pesan = await prisma.message.findMany({
-        where: { conversationId: args.conversationId },
-        include: { sentBy: { select: { name: true } } },
-        orderBy: { createdAt: "desc" },
-        take: args.limit ?? 50,
-      });
+      const take = args.limit ?? 50;
+      const rentang = whereTanggal(args.dari, args.sampai);
+      // Kursor `sebelum` digabung dengan filter tanggal lewat AND supaya
+      // dua-duanya berlaku (kalau ditulis ke properti createdAt yang sama,
+      // yang belakangan menimpa yang duluan tanpa error).
+      const where = {
+        conversationId: args.conversationId,
+        ...(args.arah ? { direction: args.arah } : {}),
+        ...(args.sebelum
+          ? { AND: [rentang, { createdAt: { lt: new Date(args.sebelum) } }] }
+          : rentang),
+      };
 
+      const [totalCocok, pesan] = await Promise.all([
+        prisma.message.count({ where }),
+        prisma.message.findMany({
+          where,
+          include: { sentBy: { select: { name: true } } },
+          // urutan=terlama membaca dari AWAL percakapan (alur), tapi paginasi
+          // `sebelum` bergerak MUNDUR — jadi tetap ambil yang terbaru dulu lalu
+          // dibalik, supaya kombinasi kursor + urutan kronologis tetap benar.
+          orderBy: { createdAt: "desc" },
+          take,
+        }),
+      ]);
+
+      const urut = args.urutan === "terlama" ? [...pesan].reverse() : pesan;
       const unmask = args.unmask === true;
+      const tertua = pesan.length ? pesan[pesan.length - 1].createdAt : null;
+
       return hasil({
         percakapan: {
           id: percakapan.id,
@@ -766,8 +728,12 @@ export function registerReadOnlyTools(server) {
               }
             : null,
         },
-        jumlahPesan: pesan.length,
-        pesan: pesan.map((m) => ({
+        totalPesanCocokFilter: totalCocok,
+        jumlahPesan: urut.length,
+        adaLagi: totalCocok > urut.length,
+        // Dipakai sebagai param `sebelum` di panggilan berikutnya.
+        kursorBerikutnya: totalCocok > urut.length ? tertua : null,
+        pesan: urut.map((m) => ({
           arah: m.direction === "INBOUND" ? "dari_pelanggan" : "dari_cs",
           isi: m.isRevoked ? "[pesan dihapus]" : m.content,
           tipeMedia: m.mediaType,

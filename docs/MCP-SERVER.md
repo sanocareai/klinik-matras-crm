@@ -212,11 +212,17 @@ sudah ditutup.
 
 ## 4. Daftar tool (semua read-only)
 
+Kode tool dipecah 3 file supaya tidak jadi satu file raksasa — helper bersamanya
+di `toolsShared.js`: `tools.js` (CRM inti), `toolsChat.js` (percakapan & audit),
+`toolsTraffic.js` (traffic & iklan).
+
+### CRM inti (`tools.js`)
+
 | Tool | Fungsi |
 |---|---|
 | `statistik_crm` | Snapshot cepat + daftar ID sales. **Panggil ini dulu untuk orientasi.** |
 | `cari_pelanggan` | Cari pelanggan (nama/HP/kota/stage/tipe/sumber lead/nilai order) |
-| `detail_pelanggan` | Profil lengkap: order, catatan, riwayat pipeline, riwayat keluhan, percakapan |
+| `detail_pelanggan` | Profil lengkap: order, catatan, riwayat pipeline, keluhan, percakapan, **+ skor CRM** (relasi/urgensi/peluang beli dari mesin intelligence) |
 | `cari_order` | Cari order (status, kategori, pembayaran, komplain, rentang tanggal) |
 | `detail_order` | Rincian layanan & harga, berat badan per orang, riwayat status |
 | `ringkasan_penjualan` | Agregat penjualan per periode (per status/kategori/pembayaran) |
@@ -224,8 +230,24 @@ sudah ditutup.
 | `ringkasan_sumber_lead` | Distribusi & conversion rate per sumber lead |
 | `performa_sales` | Realisasi vs target bulanan per sales |
 | `daftar_percakapan` | Inbox: status, pemegang, belum dibaca, lama tidak dibalas |
-| `riwayat_percakapan` | Isi pesan sebuah percakapan |
+| `riwayat_percakapan` | Isi pesan satu percakapan — **berpaginasi** (`sebelum`/`adaLagi`), filter tanggal & arah, `urutan=terlama` untuk baca alur dari awal |
 | `daftar_produk` | Katalog produk/layanan (tanpa data pelanggan) |
+
+### Percakapan, kualitas & audit (`toolsChat.js`)
+
+| Tool | Fungsi |
+|---|---|
+| `cari_pesan` | Cari kata/frasa di **seluruh** isi pesan lintas percakapan |
+| `kualitas_engagement` | Kualitas pelanggan dari pola balas chat (TINGGI/SEDANG/RENDAH) + skor CRM sebagai pembanding |
+| `audit_balasan_sales` | **Audit kepatuhan sales**: pelanggaran aturan produk + SLA + komplain tak tertangani + "balas di awal lalu hilang" |
+| `diagnosa_percakapan` | Bedah 1 percakapan pesan-per-pesan: pelanggaran, jeda respons, intent, ringkasan kepatuhan |
+
+### Traffic & iklan (`toolsTraffic.js`)
+
+| Tool | Fungsi |
+|---|---|
+| `tren_traffic_lead` | Tren harian lead + jam/hari tersibuk + pembanding periode sebelumnya |
+| `performa_iklan` | Performa per sumber lead **dan per kreatif iklan Meta** (URL post IG/FB dari CTWA) |
 
 **Tanggal:** parameter `dari`/`sampai` memakai kalender **WIB** format
 `YYYY-MM-DD` dan diterjemahkan lewat `utils/wib.js` (batas atas EKSKLUSIF).
@@ -235,13 +257,42 @@ Tanggal di hasil tetap ISO 8601 UTC. Lihat CLAUDE.md §11 kenapa ini penting.
 (kepemilikan lead), sama dengan endpoint target di `routes/analytics.js` —
 BUKAN `Conversation.assignedToId` yang dipakai laporan Performa CS.
 
+### Aturan & ambang yang dipakai audit (JANGAN didefinisikan ulang)
+
+Tool audit **tidak punya aturan sendiri** — semuanya dipakai ulang dari mesin
+yang sudah jalan di produk, supaya standar CRM dan standar audit tidak pernah
+berbeda:
+
+| Yang diukur | Sumber kebenaran | Catatan |
+|---|---|---|
+| 7 kategori janji terlarang (harga, diskon, gratis, waktu kirim, garansi flat, klaim medis, jaminan mutlak) | `violations()` di `services/replyAssistant/validator.js` | Dibuat untuk menyaring draf AI; di MCP dipakai mengaudit pesan sales sungguhan |
+| Intent pelanggan & kewajiban handover (COMPLAINT, HANDOVER_REQUEST) | `detectIntents()` + `INTENT_TAXONOMY` di `services/intelligence/replyReadiness.js` | |
+| Skor relasi / urgensi / peluang beli | `buildCustomerIntelligence()` di `services/intelligence/` | Angkanya sama persis dengan UI Customer360 |
+| SLA balas pertama = **60 menit** | `SLA_BALAS_PERTAMA_MENIT` di `toolsChat.js` | Sengaja sama dengan `sla_breach` di `routes/analytics.js` & ambang takeover CLAUDE.md §7C. Bisa di-override lewat param `slaMenit`. |
+
+⚠️ Deteksi aturan produk berbasis pola teks, jadi **bisa ada false positive**
+(mis. sales menyalin ulang kalimat pelanggan yang menyebut harga). Tool selalu
+mengembalikan kutipannya — baca dulu sebelum dipakai menegur orang.
+
+### Batas jumlah data (penting saat membaca hasil)
+
+Production punya ~76.000 pesan, jadi tool yang menyisir pesan **dibatasi**:
+`audit_balasan_sales` maks 5.000 pesan keluar + 500 percakapan per panggilan,
+`kualitas_engagement` maks 500 percakapan (default 200), pesan per percakapan
+maks 200. Kalau batas tercapai, hasilnya memuat `terpotong: true` / `adaLagi:
+true` — **angkanya bukan total periode**; persempit rentang tanggal.
+
 ---
 
 ## 5. Aturan saat menambah tool baru
 
 1. **Read-only, tanpa kecuali.** Tidak ada `create/update/delete/upsert/
-   $executeRaw/$transaction`. Tidak ada import `wahaClient.js`.
-   `tests/mcp.test.js` memindai `tools.js` dan GAGAL kalau pola ini muncul.
+   $executeRaw/$transaction`. Tidak ada import `wahaClient.js`. `$queryRaw`
+   boleh tapi HARUS `SELECT` murni. `tests/mcp.test.js` memindai SEMUA file
+   `tools*.js` dan GAGAL kalau pola ini muncul.
+   ⚠️ **Kalau membuat file `toolsXxx.js` BARU, daftarkan di konstanta
+   `FILE_TOOL` pada `tests/mcp.test.js`** — ada tes terpisah yang mencocokkan
+   daftar itu dengan isi folder, jadi kelupaan akan ketahuan, bukan lolos diam-diam.
 2. **Setiap tool yang mengembalikan kontak pelanggan wajib punya param
    `unmask`** dan memakai `maskPhone()`/`maskEmail()` dari `security.js`.
 3. **Pakai helper WIB** untuk semua batas tanggal — jangan `new Date(y,m,d)`.

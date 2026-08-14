@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -169,14 +169,12 @@ test("GET /mcp dijawab 405 (stateless, tidak ada SSE server→klien)", async (t)
 });
 
 // ── Jaring pengaman read-only ──────────────────────────────────────────────
-test("tools.js tidak mengandung operasi tulis Prisma maupun pengiriman WhatsApp", () => {
-  // Komentar dibuang dulu — header tools.js MENYEBUT pola-pola terlarang ini
-  // sebagai aturan, dan tanpa ini tes gagal karena dokumentasinya sendiri.
-  const src = readFileSync(path.join(__dirname, "../src/mcp/tools.js"), "utf8")
-    .split("\n")
-    .filter((l) => !l.trimStart().startsWith("//"))
-    .join("\n");
+// SEMUA file tool wajib ikut dipindai. Kalau menambah file toolsXxx.js baru,
+// TAMBAHKAN ke daftar ini — kalau lupa, file baru itu tidak terlindungi sama
+// sekali dan operasi tulis bisa lolos diam-diam ke Claude.
+const FILE_TOOL = ["tools.js", "toolsShared.js", "toolsChat.js", "toolsTraffic.js"];
 
+test("semua file tool MCP bebas operasi tulis Prisma & pengiriman WhatsApp", () => {
   const terlarang = [
     /prisma\.[A-Za-z]+\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/,
     /\$executeRaw/,
@@ -184,7 +182,31 @@ test("tools.js tidak mengandung operasi tulis Prisma maupun pengiriman WhatsApp"
     /wahaClient/,
     /sendText|sendMedia/,
   ];
-  for (const pola of terlarang) {
-    assert.equal(pola.test(src), false, `tools.js mengandung pola terlarang: ${pola}`);
+
+  for (const nama of FILE_TOOL) {
+    // Komentar dibuang dulu — header file-file itu MENYEBUT pola terlarang ini
+    // sebagai aturan, dan tanpa ini tes gagal karena dokumentasinya sendiri.
+    const src = readFileSync(path.join(__dirname, "../src/mcp", nama), "utf8")
+      .split("\n")
+      .filter((l) => !l.trimStart().startsWith("//"))
+      .join("\n");
+
+    for (const pola of terlarang) {
+      assert.equal(pola.test(src), false, `${nama} mengandung pola terlarang: ${pola}`);
+    }
+    // $queryRaw boleh (agregat), TAPI harus murni SELECT.
+    for (const m of src.matchAll(/\$queryRaw`([^`]*)`/g)) {
+      assert.match(m[1].trim(), /^\s*SELECT\b/i, `${nama}: $queryRaw bukan SELECT murni`);
+    }
   }
+});
+
+test("daftar FILE_TOOL mencakup semua file tools*.js yang benar-benar ada", () => {
+  // Tanpa cek ini, file tool baru bisa lolos dari pemindaian di atas hanya
+  // karena penulisnya lupa menambahkannya ke FILE_TOOL.
+  const adaDiDisk = readdirSync(path.join(__dirname, "../src/mcp"))
+    .filter((f) => /^tools.*\.js$/.test(f))
+    .sort();
+  assert.deepEqual(adaDiDisk, [...FILE_TOOL].sort(),
+    "Ada file tools*.js yang belum terdaftar di FILE_TOOL tes ini");
 });

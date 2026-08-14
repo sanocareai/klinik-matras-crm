@@ -37,6 +37,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { requireMcpToken, mcpRateLimit, mcpAuthConfigured, mcpStaticTokenConfigured, MCP_RATE_LIMIT } from "./security.js";
 import { oauthConfigured } from "./oauthCrypto.js";
 import { registerReadOnlyTools } from "./tools.js";
+import { registerChatTools } from "./toolsChat.js";
+import { registerTrafficTools } from "./toolsTraffic.js";
 
 export { wellKnownRouter, mcpOAuthRouter } from "./oauth.js";
 
@@ -52,15 +54,27 @@ function buatServer() {
     {
       instructions:
         "Server ini memberi akses BACA-SAJA ke CRM Klinik Matras (bisnis kasur sehat Indonesia): " +
-        "pelanggan, order, pipeline penjualan, percakapan WhatsApp, dan katalog produk. " +
+        "pelanggan, order, pipeline penjualan, percakapan WhatsApp, katalog produk, kualitas " +
+        "interaksi pelanggan, audit kepatuhan balasan sales, dan traffic/performa iklan. " +
         "Tidak ada tool yang bisa mengubah data atau mengirim pesan WhatsApp. " +
         "Nomor HP & email pelanggan disamarkan secara default — gunakan unmask=true hanya kalau " +
         "pengguna memang meminta kontak lengkap. Semua tanggal parameter memakai kalender WIB " +
-        "(Asia/Jakarta) format YYYY-MM-DD, sedangkan tanggal di hasil adalah ISO 8601 UTC. " +
-        "Panggil statistik_crm dulu kalau butuh orientasi awal (termasuk daftar ID sales).",
+        "(Asia/Jakarta) format YYYY-MM-DD, sedangkan tanggal di hasil adalah ISO 8601 UTC.\n" +
+        "Panduan memilih tool: statistik_crm untuk orientasi awal (termasuk daftar ID sales); " +
+        "cari_pesan untuk menemukan chat berdasarkan isinya; riwayat_percakapan untuk membaca satu " +
+        "percakapan (pakai urutan='terlama' + kursor `sebelum` untuk percakapan panjang); " +
+        "diagnosa_percakapan kalau ingin tahu APA YANG SALAH di satu percakapan; " +
+        "audit_balasan_sales untuk memeriksa kepatuhan aturan lintas sales pada suatu periode; " +
+        "kualitas_engagement untuk menilai pelanggan dari pola balas chatnya; " +
+        "tren_traffic_lead & performa_iklan untuk analisa akuisisi/iklan.\n" +
+        "Beberapa tool punya batas jumlah data yang diperiksa dan mengembalikan field `terpotong`/" +
+        "`adaLagi` — kalau bernilai true, JANGAN sajikan angkanya sebagai total; persempit rentang " +
+        "tanggal atau ambil halaman berikutnya dulu.",
     },
   );
   registerReadOnlyTools(server);
+  registerChatTools(server);
+  registerTrafficTools(server);
   return server;
 }
 
