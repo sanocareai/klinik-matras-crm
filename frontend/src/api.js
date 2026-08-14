@@ -639,10 +639,21 @@ export const api = {
     request(`/broadcast/campaigns/${id}/start`, { method: "POST" }),
   pauseBroadcastCampaign: (id) =>
     request(`/broadcast/campaigns/${id}/pause`, { method: "POST" }),
-  // Kirim uji ke nomor yang DITENTUKAN admin (versi lama diam-diam mengirim
-  // ke 3 pelanggan asli pertama di database).
-  testBroadcastCampaign: (id, phone) =>
-    request(`/broadcast/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({ phone }) }),
+  // Kirim uji ke nomor yang DITENTUKAN admin. TIDAK terikat campaign
+  // tersimpan — admin harus bisa mencoba tampilan pesannya sebelum
+  // menyimpan draft apa pun.
+  testBroadcast: ({ phone, message, images }) =>
+    request("/broadcast/test", { method: "POST", body: JSON.stringify({ phone, message, images }) }),
+  uploadBroadcastImages: (id, files) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("images", f);
+    // WAJIB lewat requestFormData, bukan request(): request() memaksa
+    // Content-Type application/json, yang membuat browser TIDAK menambahkan
+    // boundary multipart dan multer menolak seluruh unggahan.
+    return requestFormData(`/broadcast/campaigns/${id}/images`, fd);
+  },
+  deleteBroadcastImage: (id, image) =>
+    request(`/broadcast/campaigns/${id}/images`, { method: "DELETE", body: JSON.stringify({ image }) }),
   getBroadcastTargets: (id, params) =>
     request(`/broadcast/campaigns/${id}/targets` + buildQuery(params)),
 

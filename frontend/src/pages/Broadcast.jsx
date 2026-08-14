@@ -67,6 +67,37 @@ const FORM_KOSONG = {
   tagOnSend: "",
 };
 
+// Kolom isian di halaman ini sebelumnya mengambil warna latar yang sama
+// dengan panel di belakangnya, jadi seluruh form terlihat abu-abu rata dan
+// batas kolomnya nyaris tidak kelihatan. Diberi latar surface eksplisit +
+// border supaya jelas mana yang bisa diketik. Dipakai hanya di halaman ini
+// (bukan global) supaya tidak mengubah tampilan form di halaman lain.
+const GAYA_INPUT_KONTRAS = `
+  .wizard-main .bc-input,
+  .wizard-main input[type="text"],
+  .wizard-main input[type="datetime-local"],
+  .wizard-main textarea,
+  .wizard-main select {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    color: var(--text-primary, #111827);
+  }
+  .wizard-main .bc-input:focus,
+  .wizard-main input:focus,
+  .wizard-main textarea:focus,
+  .wizard-main select:focus {
+    outline: 2px solid var(--primary, #2563eb);
+    outline-offset: 1px;
+    border-color: var(--primary, #2563eb);
+  }
+  .wizard-main input:disabled,
+  .wizard-main textarea:disabled,
+  .wizard-main select:disabled {
+    background: var(--bg, #f8fafc);
+    color: var(--text-muted, #9ca3af);
+  }
+`;
+
 export default function Broadcast() {
   const [campaigns, setCampaigns] = useState([]);
   const [activeCampaign, setActiveCampaign] = useState(null);
@@ -82,6 +113,8 @@ export default function Broadcast() {
   const [totalKandidat, setTotalKandidat] = useState(0);
   const [terpilih, setTerpilih] = useState(() => new Set());
   const [memuatKandidat, setMemuatKandidat] = useState(false);
+  const [cariKontak, setCariKontak] = useState("");
+  const [mengunggah, setMengunggah] = useState(false);
 
   const muatCampaigns = useCallback(() => {
     api.getBroadcastCampaigns().then(setCampaigns).catch(() => {});
@@ -138,6 +171,41 @@ export default function Broadcast() {
     setTerpilih(new Set(kandidat.slice(0, n).map((k) => k.id)));
   }
 
+  // Pencarian hanya MENYARING TAMPILAN, tidak mengubah pilihan. Jadi admin
+  // bisa mencari satu orang, mencentangnya, lalu mengosongkan kotak cari
+  // tanpa kehilangan centang yang sudah dibuat sebelumnya.
+  const kandidatTampil = (kandidat || []).filter((k) => {
+    const q = cariKontak.trim().toLowerCase();
+    if (!q) return true;
+    return (k.name || "").toLowerCase().includes(q) || (k.phone || "").includes(q);
+  });
+
+  async function handleUnggahGambar(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // supaya file yang sama bisa dipilih lagi setelah dihapus
+    if (!files.length) return;
+    if (!activeCampaign) return alert("Simpan draft dulu sebelum menambah gambar");
+    setMengunggah(true);
+    try {
+      const updated = await api.uploadBroadcastImages(activeCampaign.id, files);
+      setActiveCampaign((prev) => ({ ...prev, images: updated.images }));
+      muatCampaigns();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setMengunggah(false);
+    }
+  }
+
+  async function handleHapusGambar(gambar) {
+    try {
+      const updated = await api.deleteBroadcastImage(activeCampaign.id, gambar);
+      setActiveCampaign((prev) => ({ ...prev, images: updated.images }));
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   function setFilter(key, val) {
     setForm((f) => ({ ...f, filters: { ...f.filters, [key]: val === "" ? undefined : val } }));
   }
@@ -180,13 +248,19 @@ export default function Broadcast() {
     }
   }
 
+  // Uji kirim TIDAK butuh draft tersimpan — isi pesan & gambar dikirim
+  // langsung dari form, supaya admin bisa memeriksa tampilannya lebih dulu.
   async function handleTest() {
-    if (!activeCampaign) return alert("Simpan draft terlebih dahulu");
     if (!testPhone.trim()) return alert("Isi nomor tujuan uji dulu");
+    if (!form.message.trim()) return alert("Pesan masih kosong");
     setBusy(true);
     try {
-      await api.testBroadcastCampaign(activeCampaign.id, testPhone.trim());
-      alert(`Pesan uji terkirim ke ${testPhone.trim()}`);
+      const hasil = await api.testBroadcast({
+        phone: testPhone.trim(),
+        message: form.message,
+        images: activeCampaign?.images || [],
+      });
+      alert(`Pesan uji terkirim ke ${hasil.sentTo} lewat ${hasil.sesi}`);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -250,6 +324,7 @@ export default function Broadcast() {
 
   return (
     <div className="wizard-layout" style={{ height: "calc(100dvh - 56px)" }}>
+      <style>{GAYA_INPUT_KONTRAS}</style>
       <div className="wizard-sidebar">
         <div className="wizard-sidebar-header">
           Broadcast &amp; Campaign
@@ -326,6 +401,61 @@ export default function Broadcast() {
                   onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
                 />
               </div>
+              <div className="form-group">
+                <label className="form-label">Gambar Promo (opsional)</label>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 6px" }}>
+                  Dikirim <strong>sebelum</strong> pesan teks, supaya teksnya tidak terpotong
+                  jadi caption "Baca selengkapnya".
+                  {!activeCampaign && " Simpan draft dulu untuk bisa menambah gambar."}
+                </p>
+
+                {activeCampaign?.images?.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                    {activeCampaign.images.map((g) => (
+                      <div key={g} style={{ position: "relative" }}>
+                        <img
+                          src={g}
+                          alt="Gambar promo"
+                          style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }}
+                        />
+                        {!terkunci && (
+                          <button
+                            onClick={() => handleHapusGambar(g)}
+                            title="Hapus gambar"
+                            style={{
+                              position: "absolute", top: -6, right: -6, width: 22, height: 22,
+                              borderRadius: "50%", border: "none", cursor: "pointer",
+                              background: "var(--color-danger, #dc2626)", color: "#fff", fontSize: 13, lineHeight: 1,
+                            }}
+                          >×</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!terkunci && (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={!activeCampaign || mengunggah}
+                    onChange={handleUnggahGambar}
+                    style={{ fontSize: 13 }}
+                  />
+                )}
+                {mengunggah && (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>Mengunggah...</p>
+                )}
+                {activeCampaign?.images?.length > 0 && (
+                  <p style={{ fontSize: 12, color: "var(--color-warning, #b45309)", margin: "6px 0 0" }}>
+                    ⚠️ {activeCampaign.images.length} gambar + 1 teks = {activeCampaign.images.length + 1} pesan
+                    per penerima. WhatsApp menghitung semuanya saat menilai pola akun — pertimbangkan
+                    menurunkan batas harian.
+                  </p>
+                )}
+              </div>
+
               {form.message && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
@@ -394,6 +524,22 @@ export default function Broadcast() {
                   <option value="">Semua Sumber</option>
                   {LEAD_SOURCES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                 </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Nomor CS</label>
+                <select className="filter-select bc-input" style={{ width: "100%" }} disabled={terkunci}
+                  value={form.filters.sesi || ""}
+                  onChange={(e) => setFilter("sesi", e.target.value)}>
+                  <option value="">Semua nomor (CS-1 &amp; CS-2)</option>
+                  <option value="CS-1">Hanya CS-1</option>
+                  <option value="CS-2">Hanya CS-2</option>
+                </select>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                  Pesan SELALU dikirim dari nomor yang selama ini dipakai bicara dengan orang
+                  tersebut. Memisahkan per nomor berguna karena batas harian berlaku per kampanye,
+                  sedangkan risiko blokir berlaku per nomor.
+                </p>
               </div>
 
               <div className="form-group">
@@ -469,18 +615,30 @@ export default function Broadcast() {
                     </button>
                   </div>
 
+                  <input
+                    type="text"
+                    className="bc-input"
+                    placeholder="Cari nama atau nomor..."
+                    value={cariKontak}
+                    onChange={(e) => setCariKontak(e.target.value)}
+                    style={{ width: "100%", marginBottom: 10 }}
+                  />
+
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>
                     Diurutkan dari yang <strong>paling baru berinteraksi</strong> — mereka paling ingat
-                    Sano, jadi paling kecil kemungkinan menganggap pesan ini spam.
+                    Sano, jadi paling kecil kemungkinan menganggap pesan ini spam. Mencari tidak
+                    menghilangkan centang yang sudah dibuat.
                   </p>
 
                   <div style={{ border: "1px solid var(--border)", borderRadius: 8, maxHeight: 360, overflowY: "auto" }}>
-                    {kandidat.length === 0 && (
+                    {kandidatTampil.length === 0 && (
                       <div style={{ padding: 16, fontSize: 13, color: "var(--text-muted)" }}>
-                        Tidak ada kontak yang cocok. Longgarkan filter di langkah sebelumnya.
+                        {cariKontak
+                          ? `Tidak ada kontak cocok dengan "${cariKontak}".`
+                          : "Tidak ada kontak yang cocok. Longgarkan filter di langkah sebelumnya."}
                       </div>
                     )}
-                    {kandidat.map((k) => (
+                    {kandidatTampil.map((k) => (
                       <label
                         key={k.id}
                         style={{
@@ -504,6 +662,19 @@ export default function Broadcast() {
                             {k.orderCount}x order
                           </span>
                         )}
+                        {/* Nomor CS mana yang selama ini bicara dengan orang
+                            ini. Pesannya PASTI keluar dari nomor yang sama —
+                            kalau sesinya belum diketahui, dia tidak akan
+                            dikirimi sama sekali (bukan ditebak). */}
+                        <span
+                          className={`badge ${k.sesi ? "badge-open" : "badge-pending"}`}
+                          style={{ fontSize: 10.5 }}
+                          title={k.sesi
+                            ? `Akan dikirim dari ${k.sesi}`
+                            : "Sesi belum diketahui — kontak ini akan dilewati. Buka chatnya di Inbox dan pilih sesi."}
+                        >
+                          {k.sesi || "sesi ?"}
+                        </span>
                         <span style={{ fontSize: 11.5, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                           {jarakWaktu(k.terakhirInteraksi)}
                         </span>

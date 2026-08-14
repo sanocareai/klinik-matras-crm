@@ -18,16 +18,41 @@
 // pesan terkirim ke alamat yang tidak ada dan hilang tanpa error.
 //
 // Sekarang: antrean = baris di tabel broadcast_targets (tahan restart),
-// kirim lewat sendText + sendWithSessionFallback yang sama persis dipakai
-// inbox (jadi ikut proteksi LID & pemilihan sesi CS-1/CS-2 yang benar),
-// setiap pesan dicatat sebagai Message OUTBOUND supaya muncul di riwayat
-// chat sales, dan ada batas harian yang benar-benar ditegakkan.
+// kirim lewat sendText/sendMedia dari wahaClient (jadi ikut proteksi
+// buildChatId yang menolak alamat LID), setiap pesan dicatat sebagai
+// Message OUTBOUND supaya muncul di riwayat chat sales, dan ada batas
+// harian yang benar-benar ditegakkan.
+//
+// ⚠️ Broadcast SENGAJA TIDAK memakai sendWithSessionFallback seperti Inbox.
+// Fallback itu menebak (coba CS-1, lalu CS-2) — aman di Inbox karena ada
+// manusia yang mengawasi, tapi berbahaya untuk kiriman massal tanpa
+// pengawasan: pelanggan bisa menerima promo dari nomor yang tidak pernah
+// dia ajak bicara. Di sini sesi harus SUDAH PASTI, kalau tidak: tidak
+// dikirim. Lihat kirimSatuTarget.
 
 import express from "express";
+import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { sendText } from "../services/wahaClient.js";
-import { sendWithSessionFallback } from "./conversations.js";
+import { sendText, sendMedia } from "../services/wahaClient.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// WAHA mengambil file gambar SENDIRI lewat URL. Dari dalam container WAHA,
+// "localhost" berarti dirinya sendiri — jadi harus alamat internal Docker
+// ke backend, bukan localhost dan bukan domain publik.
+const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+
+/** Tebak MIME dari ekstensi — cukup untuk gambar promo yang kita simpan sendiri. */
+function tebakMime(namaFile) {
+  const ext = String(namaFile || "").toLowerCase().split(".").pop();
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  return "image/jpeg";
+}
 import {
   awalHariWIB, dalamJamKirim, sisaWaktuKirimMs,
   jedaAntarPesanMs, acakJeda, susunPesan, TAG_OPT_OUT, TAG_BROADCAST,
@@ -35,6 +60,26 @@ import {
 
 export const broadcastRouter = express.Router();
 broadcastRouter.use(requireAuth);
+
+// Gambar promo disimpan di folder uploads yang sama dengan media chat, dan
+// disajikan lewat express.static("/uploads") di index.js.
+const penyimpanan = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, path.join(__dirname, "../../uploads")),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".jpg";
+    cb(null, `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
+  },
+});
+const unggah = multer({
+  storage: penyimpanan,
+  limits: { fileSize: 16 * 1024 * 1024 }, // WhatsApp menolak gambar besar
+  fileFilter: (_req, file, cb) => {
+    // Hanya gambar — kampanye ini memang untuk desain promo, dan membatasi
+    // di sini mencegah file lain ikut terkirim ke ratusan orang.
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    cb(null, true);
+  },
+});
 
 // ─── Penyusunan target ─────────────────────────────────────────────────────
 
@@ -158,13 +203,62 @@ async function kirimSatuTarget(target, campaign) {
     return "GAGAL";
   }
 
+  // ── Sesi WAJIB pasti, TIDAK BOLEH ditebak ────────────────────────────
+  //
+  // Nomor CS ada dua (CS-1: 1.888 percakapan, CS-2: 523, dan 84 tanpa sesi
+  // — diperiksa 14 Agt 2026). Balasan di Inbox boleh memakai
+  // sendWithSessionFallback yang mencoba CS-1 lalu CS-2, karena di sana ada
+  // manusia yang langsung melihat hasilnya dan sesi yang benar tersimpan
+  // otomatis (self-healing).
+  //
+  // Broadcast BEDA: berjalan tanpa pengawasan, ke ratusan orang. Kalau
+  // sesinya salah, pelanggan yang selama ini bicara dengan CS-1 tiba-tiba
+  // menerima promo dari nomor asing — persis pola yang dilaporkan orang
+  // sebagai spam, dan riwayat chatnya jadi terbelah di dua nomor. Jadi di
+  // sini: sesi tidak diketahui = TIDAK DIKIRIM, dan alasannya dicatat
+  // supaya admin bisa memperbaiki sesinya lewat Inbox.
+  const sesi = conversation.sessionId;
+  if (!sesi) {
+    await prisma.broadcastTarget.update({
+      where: { id: target.id },
+      data: {
+        status: "GAGAL",
+        error: "Sesi WA percakapan belum diketahui — buka chat ini di Inbox dan pilih sesinya dulu",
+      },
+    });
+    return "GAGAL";
+  }
+
   const isiPesan = susunPesan(campaign.message, customer.name);
+
+  // Gambar promo dikirim DULU, teks belakangan (alasannya di schema.prisma).
+  // Kalau salah satu gambar gagal, hentikan target ini — jangan lanjut
+  // mengirim teks yang mengacu ke gambar yang tidak pernah sampai.
+  for (const gambar of campaign.images || []) {
+    try {
+      await sendMedia(
+        target.phone,
+        {
+          mimetype: tebakMime(gambar),
+          filename: gambar.split("/").pop(),
+          // WAHA mengambil file ini sendiri lewat jaringan internal Docker,
+          // jadi harus URL yang bisa dijangkau DARI CONTAINER, bukan path disk.
+          url: `${BACKEND_INTERNAL_URL}${gambar}`,
+        },
+        "", "media", sesi,
+      );
+    } catch (err) {
+      await prisma.broadcastTarget.update({
+        where: { id: target.id },
+        data: { status: "GAGAL", error: `Gagal kirim gambar: ${String(err.message || err).slice(0, 400)}` },
+      });
+      return "GAGAL";
+    }
+  }
 
   let wahaMsg = null;
   try {
-    ({ result: wahaMsg } = await sendWithSessionFallback(conversation, (session) =>
-      sendText(target.phone, isiPesan, null, session)
-    ));
+    wahaMsg = await sendText(target.phone, isiPesan, null, sesi);
   } catch (err) {
     await prisma.broadcastTarget.update({
       where: { id: target.id },
@@ -375,6 +469,7 @@ broadcastRouter.get("/estimate", async (req, res) => {
       // perilaku yang diinginkan; harus sengaja dimatikan, bukan sengaja
       // dinyalakan.
       kecualikanChatAktif: req.query.kecualikanChatAktif !== "false",
+      sesi: req.query.sesi || undefined,
     };
     // Lewat ambilKandidat (bukan prisma.count) supaya saringan "belum
     // dibalas" — yang tidak bisa dinyatakan di klausa where — ikut terhitung.
@@ -410,6 +505,8 @@ async function ambilKandidat(filters = {}) {
         where: { channel: "WHATSAPP" },
         select: {
           lastMessageAt: true,
+          // Nomor CS mana yang selama ini dipakai bicara dengan orang ini.
+          sessionId: true,
           // Arah pesan TERAKHIR — dasar saringan "belum dibalas".
           messages: { orderBy: { createdAt: "desc" }, take: 1, select: { direction: true } },
         },
@@ -429,6 +526,10 @@ async function ambilKandidat(filters = {}) {
       tags: c.tags,
       terakhirInteraksi: c.conversations[0]?.lastMessageAt || null,
       arahPesanTerakhir: c.conversations[0]?.messages[0]?.direction || null,
+      // null = sesi belum diketahui. Kontak begini TIDAK akan dikirimi
+      // (lihat kirimSatuTarget) supaya pesan tidak keluar dari nomor yang
+      // salah — ditampilkan di UI agar admin bisa membereskannya dulu.
+      sesi: c.conversations[0]?.sessionId || null,
     }))
     // Paling baru berinteraksi duluan — mereka paling ingat Sano, jadi
     // paling kecil kemungkinan menganggap pesannya spam.
@@ -438,7 +539,15 @@ async function ambilKandidat(filters = {}) {
   // pesan terakhir" tidak bisa dinyatakan sebagai filter Prisma. Karena
   // /estimate, /preview-targets, dan /prepare semuanya lewat fungsi ini,
   // angka yang DILIHAT admin dijamin sama dengan yang DIKIRIMI.
-  return filters.kecualikanChatAktif ? kandidat.filter((k) => !belumDibalas(k)) : kandidat;
+  let hasil = filters.kecualikanChatAktif ? kandidat.filter((k) => !belumDibalas(k)) : kandidat;
+
+  // Saring per nomor CS. Berguna untuk menjalankan kampanye satu nomor
+  // dulu: kuota harian berlaku per kampanye, sedangkan risiko banned
+  // berlaku per NOMOR — memisahkan keduanya membuat beban tiap nomor jelas
+  // terlihat, bukan tercampur dalam satu angka.
+  if (filters.sesi) hasil = hasil.filter((k) => k.sesi === filters.sesi);
+
+  return hasil;
 }
 
 // GET /api/broadcast/preview-targets — daftar kandidat + recency, supaya
@@ -453,6 +562,7 @@ broadcastRouter.get("/preview-targets", async (req, res) => {
       tidakAktifSejakHari: req.query.tidakAktifSejakHari || undefined,
       sudahOrder: req.query.sudahOrder === "true" ? true : req.query.sudahOrder === "false" ? false : undefined,
       kecualikanChatAktif: req.query.kecualikanChatAktif !== "false",
+      sesi: req.query.sesi || undefined,
     };
     const semua = await ambilKandidat(filters);
     res.json({
@@ -566,30 +676,82 @@ broadcastRouter.post("/campaigns/:id/pause", async (req, res) => {
   }
 });
 
-// POST /api/broadcast/campaigns/:id/test — kirim contoh ke nomor yang
-// DITENTUKAN admin. Versi lama mengirim ke 3 pelanggan ASLI pertama di
-// database — orang sungguhan menerima pesan uji coba tanpa pernah setuju.
-broadcastRouter.post("/campaigns/:id/test", async (req, res) => {
+// POST /api/broadcast/campaigns/:id/images — unggah gambar promo
+broadcastRouter.post("/campaigns/:id/images", unggah.array("images", 10), async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone?.trim()) return res.status(400).json({ error: "Nomor tujuan uji wajib diisi" });
-
     const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
     if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
+    if (campaign.status !== "DRAFT") {
+      return res.status(409).json({ error: "Kampanye sudah berjalan — gambar tidak bisa diubah lagi" });
+    }
+
+    const baru = (req.files || []).map((f) => `/uploads/${f.filename}`);
+    const updated = await prisma.broadcastCampaign.update({
+      where: { id: campaign.id },
+      data: { images: [...campaign.images, ...baru] },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/broadcast/campaigns/:id/images — buang satu gambar dari daftar.
+// File fisiknya sengaja TIDAK dihapus: folder uploads dipakai bersama media
+// chat, dan menghapus berdasarkan path yang datang dari request adalah cara
+// gampang menghapus file yang bukan miliknya.
+broadcastRouter.delete("/campaigns/:id/images", async (req, res) => {
+  try {
+    const { image } = req.body;
+    const campaign = await prisma.broadcastCampaign.findUnique({ where: { id: req.params.id } });
+    if (!campaign) return res.status(404).json({ error: "Kampanye tidak ditemukan" });
+
+    const updated = await prisma.broadcastCampaign.update({
+      where: { id: campaign.id },
+      data: { images: campaign.images.filter((g) => g !== image) },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/broadcast/test — kirim contoh ke nomor yang DITENTUKAN admin.
+//
+// SENGAJA TIDAK terikat ke campaign yang tersimpan: admin harus bisa
+// mencoba tampilan pesannya dulu sebelum menyimpan draft apa pun. Isi pesan
+// & gambar datang langsung dari body.
+//
+// (Versi paling lama mengirim ke 3 pelanggan ASLI pertama di database —
+// orang sungguhan menerima pesan uji tanpa pernah setuju.)
+broadcastRouter.post("/test", async (req, res) => {
+  try {
+    const { phone, message, images } = req.body;
+    if (!phone?.trim()) return res.status(400).json({ error: "Nomor tujuan uji wajib diisi" });
+    if (!message?.trim()) return res.status(400).json({ error: "Pesan masih kosong" });
 
     const nomor = phone.replace(/[^0-9]/g, "");
     const conversation = await prisma.conversation.findFirst({
       where: { customer: { phone: nomor }, channel: "WHATSAPP" },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { lastMessageAt: "desc" },
     });
     if (!conversation) {
-      return res.status(400).json({ error: "Nomor ini belum pernah chat — pakai nomor yang ada di CRM" });
+      return res.status(400).json({ error: "Nomor ini belum pernah chat — pakai nomor yang sudah ada di CRM" });
+    }
+    if (!conversation.sessionId) {
+      return res.status(409).json({ error: "Sesi WA nomor ini belum diketahui — buka chatnya di Inbox dan pilih sesi dulu" });
     }
 
-    await sendWithSessionFallback(conversation, (session) =>
-      sendText(nomor, susunPesan(campaign.message, "Budi"), null, session)
-    );
-    res.json({ ok: true, sentTo: nomor });
+    for (const gambar of images || []) {
+      await sendMedia(
+        nomor,
+        { mimetype: tebakMime(gambar), filename: gambar.split("/").pop(), url: `${BACKEND_INTERNAL_URL}${gambar}` },
+        "", "media", conversation.sessionId,
+      );
+    }
+    await sendText(nomor, susunPesan(message, "Budi"), null, conversation.sessionId);
+
+    res.json({ ok: true, sentTo: nomor, sesi: conversation.sessionId });
   } catch (err) {
     res.status(502).json({ error: `Gagal kirim uji: ${err.message}` });
   }

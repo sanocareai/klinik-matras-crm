@@ -2657,6 +2657,18 @@ model BroadcastCampaign {
   message String // boleh mengandung {{nama}}
   status  BroadcastStatus @default(DRAFT)
 
+  // Gambar promo (path lokal "/uploads/xxx.jpg"), dikirim SEBELUM teks.
+  //
+  // Kenapa gambar dulu lalu teks terpisah, bukan teks jadi caption: caption
+  // WhatsApp dipotong dengan "Baca selengkapnya" untuk teks panjang, dan
+  // pesan promo di sini memang panjang (daftar kode diskon). Dikirim
+  // terpisah, seluruh teksnya kelihatan tanpa harus ditekan dulu.
+  //
+  // ⚠️ Tiap gambar = SATU pesan tambahan per penerima. 3 gambar berarti
+  // 4 pesan per orang, dan itu dihitung penuh oleh WhatsApp saat menilai
+  // pola akun — lihat peringatan di UI langkah Pengiriman.
+  images String[] @default([])
+
   // Batas kirim per hari. Ini pengaman utama terhadap banned WhatsApp:
   // worker BERHENTI begitu jumlah TERKIRIM hari ini (WIB) menyentuh angka
   // ini, lalu lanjut lagi besok pagi dengan sendirinya.
