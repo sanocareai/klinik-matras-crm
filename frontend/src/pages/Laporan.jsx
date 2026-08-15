@@ -162,7 +162,7 @@ export default function Laporan() {
               </TabsContent>
 
               <TabsContent value="Traffic">
-                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} />
+                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
               </TabsContent>
 
               <TabsContent value="Percakapan">

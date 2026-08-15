@@ -129,8 +129,14 @@ export const ORDER_STATUS_LABELS = {
   CANCELLED: "Dibatalkan",
 };
 
+// ⚠️ "Meta Ads" TANPA embel-embel "(FB/IG)". Facebook & Instagram dipisah
+// lewat kolom PLATFORM tersendiri (diturunkan dari leadSourceDetail, lihat
+// backend/src/services/platformIklan.js) — bukan dijejalkan ke satu label.
+// Menggabungnya jadi "Meta Ads (FB/IG)" membuat laporan terbaca seolah
+// keduanya tidak bisa dibedakan sama sekali, padahal untuk lead baru
+// (CTWA, sejak 13 Agt 2026) platformnya SUDAH diketahui pasti.
 export const SOURCE_LABELS = {
-  META_ADS:        "Meta Ads (FB/IG)",
+  META_ADS:        "Meta Ads",
   GOOGLE_ADS:      "Google Ads",
   WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM:       "Instagram Organik",
@@ -144,7 +150,7 @@ export const SOURCE_LABELS = {
 
 // Opsi dropdown untuk customer baru (hanya enum aktif, bukan yang deprecated)
 export const LEAD_SOURCES = [
-  { value: "META_ADS",        label: "Meta Ads (FB/IG)" },
+  { value: "META_ADS",        label: "Meta Ads" },
   { value: "GOOGLE_ADS",      label: "Google Ads" },
   { value: "WEBSITE_ORGANIC", label: "Website Organik" },
   { value: "INSTAGRAM",       label: "Instagram Organik" },

@@ -8,6 +8,7 @@ import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
+import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -17,8 +18,16 @@ customerRouter.use(requireAuth);
 // bisa drift — "pilih semua yang cocok filter ini" harus benar-benar
 // berarti filter yang sama dengan yang sedang dilihat user).
 function buildCustomerWhere(query) {
-  const { search, stage, source, sales, salesId, city, customerType, quickChip, confirmed } = query;
+  const { search, stage, source, sales, salesId, city, customerType, quickChip, confirmed, from, to } = query;
   const where = {};
+  // Filter tanggal PENDAFTARAN pelanggan — dipakai saat masuk dari
+  // Laporan > Traffic (klik sumber lead). Tanpa ini, laporan "30 hari
+  // terakhir" membuka daftar SELURUH waktu dan jumlahnya tidak pernah
+  // cocok dengan angka yang barusan diklik.
+  // Batas atas EKSKLUSIF (lihat aturan tanggal di CLAUDE.md §11).
+  if (from && to) {
+    where.createdAt = { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) };
+  }
   if (stage)  where.pipelineStage = stage;
   if (source) where.leadSource    = source;
   // ?confirmed=false — dipakai antrean "Konfirmasi Sumber": WHATSAPP_DIRECT

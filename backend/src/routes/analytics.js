@@ -5,6 +5,7 @@ import {
   startOfDayWIB, endOfDayExclusiveWIB,
   startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB,
 } from "../utils/wib.js";
+import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
@@ -1397,53 +1398,130 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
 // — apa yang tersimpan itulah yang ditampilkan, konsisten dengan prinsip
 // "jujur tidak tahu lebih baik daripada menebak" yang dipakai di seluruh
 // sistem atribusi ini.
+//
+// ⚠️ BASIS PERIODE BEDA DENGAN DASHBOARD & LAPORAN SALES — ini WAJIB
+// dijelaskan di UI, bukan dibiarkan jadi teka-teki:
+//   - Dashboard / sales-report : order yang DIBUAT dalam periode
+//     ("bulan ini kita jual berapa"), tak peduli kapan leadnya masuk.
+//   - Endpoint ini             : SELURUH order dari lead yang MASUK dalam
+//     periode ("iklan yang jalan bulan ini menghasilkan berapa").
+// Keduanya SAMA-SAMA BENAR dan menjawab pertanyaan berbeda. Untuk menilai
+// iklan, basis "kapan leadnya masuk" yang tepat — kalau tidak, order hari
+// ini dari lead 3 bulan lalu akan dikreditkan ke iklan yang jalan sekarang.
+// Selisih di data 30 hari (14 Agt 2026): 309jt vs 291jt.
+/**
+ * Metrik KUALITAS lead — menjawab "sumber mana yang leadnya bagus",
+ * bukan cuma "sumber mana yang leadnya banyak".
+ *
+ * `nilaiPerLead` adalah angka paling penting untuk keputusan belanja
+ * iklan: berapa rupiah yang dihasilkan SATU lead dari sumber ini. Iklan
+ * dengan 100 lead murah tapi Rp0 per lead jelas kalah dari 10 lead mahal
+ * yang menghasilkan Rp2jt per lead — perbandingan itu MUSTAHIL dilihat
+ * dari kolom "jumlah lead" saja, dan itulah kenapa laporan ini gampang
+ * menyesatkan tanpa metrik ini.
+ *
+ * Dikembalikan null (bukan 0) kalau penyebutnya nol — "belum ada closing"
+ * BEDA dari "rata-ratanya nol rupiah", dan UI harus bisa membedakannya.
+ */
+function metrikKualitas(leads, won, totalValue) {
+  return {
+    convRate: leads > 0 ? Math.round((won / leads) * 1000) / 10 : null,
+    nilaiPerLead: leads > 0 ? Math.round(totalValue / leads) : null,
+    avgOrderValue: won > 0 ? Math.round(totalValue / won) : null,
+  };
+}
+
 analyticsRouter.get("/lead-source-detail", async (req, res) => {
   try {
     const { from, to } = req.query;
-    const where = {
-      ...buildDateWhere(from, to),
-      leadSourceDetail: { not: null },
-    };
+    // ⚠️ BUG BESAR YANG DIPERBAIKI (14 Agt 2026): dulu `where` di sini
+    // menyertakan `leadSourceDetail: { not: null }`. Akibatnya SELURUH
+    // pelanggan WHATSAPP_DIRECT (yang memang tidak punya detail) dibuang
+    // dari tabel — termasuk Rp175.276.000 dari 76 order dalam 30 hari.
+    // Angka di tabel jadi 116jt sementara Dashboard menunjukkan ~309jt,
+    // tanpa penjelasan apa pun. Laporan yang tidak bisa direkonsiliasi
+    // dengan angka lain lebih berbahaya daripada laporan yang tidak ada,
+    // karena orang tetap memakainya untuk mengambil keputusan.
+    //
+    // Sekarang SEMUA pelanggan periode ini ikut; yang tanpa detail
+    // dikelompokkan terang-terangan sebagai "tidak diketahui".
+    // Sentinel untuk preset "Semua" — pola sama dengan /sales-report, supaya
+    // bentuk SQL-nya tetap satu (tidak dirakit kondisional yang mudah salah).
+    const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
 
-    const grup = await prisma.customer.groupBy({
-      by: ["leadSource", "leadSourceDetail"],
-      where,
-      _count: { _all: true },
+    // SATU query, bukan N+1 seperti versi sebelumnya (yang menembak 2 query
+    // per baris detail — puluhan query untuk satu halaman laporan).
+    //
+    // COUNT(DISTINCT c.id) WAJIB: LEFT JOIN ke Order menggandakan baris
+    // customer sebanyak ordernya, jadi COUNT(*) biasa akan menghitung
+    // pelanggan ber-3-order sebagai 3 lead.
+    const baris = await prisma.$queryRaw`
+      SELECT
+        c."leadSource"                                                           AS source,
+        c."leadSourceDetail"                                                     AS detail,
+        COUNT(DISTINCT c.id)::int                                                AS leads,
+        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'COMPLETED')::int AS won,
+        COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint AS total_value
+      FROM "Customer" c
+      LEFT JOIN "Order" o ON o."customerId" = c.id
+      WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+      GROUP BY 1, 2`;
+
+    const semua = baris.map((b) => {
+      const leads = Number(b.leads);
+      const won = Number(b.won);
+      // bigint dari Postgres — JSON.stringify melempar error untuk BigInt,
+      // jadi WAJIB dikonversi sebelum dikirim.
+      const totalValue = Number(b.total_value);
+      return {
+        source: b.source,
+        detail: b.detail,
+        platform: platformDariDetail(b.detail),
+        leads,
+        won,
+        totalValue,
+        ...metrikKualitas(leads, won, totalValue),
+      };
     });
 
-    const hasil = await Promise.all(grup.map(async (g) => {
-      // ⚠️ BUG YANG DIPERBAIKI (ketahuan saat verifikasi manual di
-      // production, 14 Agt 2026): `...where` di-spread SETELAH
-      // `leadSourceDetail: g.leadSourceDetail`, jadi `where.leadSourceDetail`
-      // (yang isinya cuma `{ not: null }`) MENIMPA nilai spesifik itu lagi.
-      // Akibatnya query won/totalValue TIDAK PERNAH benar-benar tersaring
-      // per detail — semua baris menghitung seluruh customer ber-detail
-      // apa pun, sehingga angkanya identik di setiap baris tanpa ada error
-      // yang kelihatan. `where` sekarang di-spread DULU, baru
-      // leadSourceDetail spesifik menimpanya.
-      const [won, orderAgg] = await Promise.all([
-        prisma.customer.count({
-          where: { ...where, leadSourceDetail: g.leadSourceDetail, pipelineStage: "COMPLETED" },
-        }),
-        prisma.order.aggregate({
-          where: { customer: { ...where, leadSourceDetail: g.leadSourceDetail }, status: { not: "CANCELLED" } },
-          _sum: { value: true },
-        }),
-      ]);
-      return {
-        source: g.leadSource,
-        detail: g.leadSourceDetail,
-        leads: g._count._all,
-        won,
-        totalValue: orderAgg._sum.value || 0,
-      };
-    }));
+    semua.sort((a, b) => b.leads - a.leads);
 
-    hasil.sort((a, b) => b.leads - a.leads);
-    // Dibatasi 30 baris teratas — daftar mentah bisa panjang (tiap URL
-    // kreatif Meta beda jadi baris sendiri), dan yang jarang muncul tidak
-    // berguna untuk keputusan belanja iklan.
-    res.json(hasil.slice(0, 30));
+    // Total SELURUH baris dihitung SEBELUM dipotong — dipakai UI untuk
+    // menunjukkan bahwa tabel ini rekonsiliasi dengan angka Dashboard.
+    // Versi sebelumnya memotong 30 baris teratas TANPA menyebut sisanya,
+    // jadi menjumlah kolom di layar tidak pernah ketemu total mana pun.
+    const total = semua.reduce((a, r) => ({
+      leads: a.leads + r.leads,
+      won: a.won + r.won,
+      totalValue: a.totalValue + r.totalValue,
+    }), { leads: 0, won: 0, totalValue: 0 });
+
+    const BATAS = 30;
+    const tampil = semua.slice(0, BATAS);
+    const sisa = semua.slice(BATAS);
+    // Sisanya diringkas jadi SATU baris, bukan dibuang diam-diam.
+    if (sisa.length > 0) {
+      const l = sisa.reduce((a, r) => a + r.leads, 0);
+      const w = sisa.reduce((a, r) => a + r.won, 0);
+      const v = sisa.reduce((a, r) => a + r.totalValue, 0);
+      tampil.push({
+        source: "LAINNYA",
+        detail: `${sisa.length} sumber lain dengan lead sedikit`,
+        platform: PLATFORM.UNKNOWN,
+        leads: l, won: w, totalValue: v,
+        ...metrikKualitas(l, w, v),
+        agregat: true,
+      });
+    }
+
+    res.json({
+      data: tampil,
+      total: { ...total, ...metrikKualitas(total.leads, total.won, total.totalValue) },
+      // Dinyatakan eksplisit supaya UI bisa menjelaskan angkanya ke pengguna
+      // — lihat catatan panjang di atas soal beda definisi periode.
+      basisPeriode: "customer_dibuat",
+    });
   } catch (err) {
     console.error("lead-source-detail error:", err);
     res.status(500).json({ error: "Gagal memuat rincian sumber lead" });

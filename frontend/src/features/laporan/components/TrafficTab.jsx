@@ -58,7 +58,34 @@ function TrafficTip({ active, payload, label }) {
   );
 }
 
-export default function TrafficTab({ traffic, sourceDetail }) {
+// Warna per sumber — SATU warna per kanal, dipakai konsisten di bar
+// proporsi & titik daftar supaya mata bisa mencocokkan keduanya tanpa
+// legend terpisah.
+const WARNA_SUMBER = {
+  META_ADS: "var(--blue-600)",
+  GOOGLE_ADS: "var(--green)",
+  INSTAGRAM: "var(--violet, #7c3aed)",
+  WEBSITE_ORGANIC: "var(--orange)",
+  WHATSAPP_DIRECT: "var(--text-tertiary)",
+  REFERRAL: "var(--accent)",
+  OTHER: "var(--text-tertiary)",
+  LAINNYA: "var(--text-tertiary)",
+};
+
+const LABEL_PLATFORM = {
+  FACEBOOK: "Facebook",
+  INSTAGRAM: "Instagram",
+  WHATSAPP: "WA Status",
+  UNKNOWN: "—",
+};
+
+export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
+  // Filter tanggal ikut dibawa ke halaman Pelanggan — tanpa ini, klik
+  // "Google Ads" di laporan 30 hari membuka daftar SELURUH waktu, jadi
+  // angka yang dilihat di laporan tidak pernah cocok dengan daftarnya.
+  const qsTanggal = rangeParams?.from && rangeParams?.to
+    ? `&from=${rangeParams.from}&to=${rangeParams.to}`
+    : "";
   const [mode, setMode] = useState("volume"); // "volume" | "respons"
   // Tooltip heatmap dibuat sendiri, BUKAN atribut `title` bawaan browser:
   // `title` baru muncul setelah jeda ~1-2 detik, tidak bisa distyle, dan di
@@ -382,26 +409,53 @@ export default function TrafficTab({ traffic, sourceDetail }) {
 
       {/* ── Sumber lead ── */}
       {(atribusi?.bySource || []).length > 0 && (
-        <ChartCard index={8} title="Sumber Lead" description="Dari sistem pelacakan — klik sumber untuk lihat daftar kontaknya">
-          <div className="flex flex-col gap-1">
+        <ChartCard
+          index={8}
+          title="Sumber Lead"
+          description="Klik sumber untuk membuka daftar kontaknya (filter tanggal ikut terbawa)"
+        >
+          {/* Bar proporsi — satu batang utuh, tiap kanal satu segmen.
+              Lebih cepat dibaca daripada deretan angka: mana yang dominan
+              langsung kelihatan tanpa membandingkan digit satu per satu. */}
+          <div className="mb-3 flex h-2.5 w-full overflow-hidden rounded-full bg-inset">
             {[...atribusi.bySource].sort((a, b) => b.count - a.count).map((s) => (
-              <Link
+              <div
                 key={s.source}
-                to={`/customers?source=${encodeURIComponent(s.source)}`}
-                className="group flex items-center justify-between rounded-btn px-2 py-1.5 text-[12.5px] transition-colors hover:bg-inset"
-              >
-                <span className="text-ink2 group-hover:text-ink">{SOURCE_LABELS[s.source] || s.source}</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="font-semibold tabular-nums text-ink">
-                    {s.count.toLocaleString("id-ID")}
-                    <span className="ml-1.5 font-normal text-ink3">
-                      ({Math.round((s.count / (atribusi.total || 1)) * 100)}%)
-                    </span>
-                  </span>
-                  <ArrowRight size={12} className="text-ink3 opacity-0 transition-opacity group-hover:opacity-100" />
-                </span>
-              </Link>
+                style={{
+                  width: `${(s.count / (atribusi.total || 1)) * 100}%`,
+                  background: WARNA_SUMBER[s.source] || "var(--text-tertiary)",
+                }}
+                title={`${SOURCE_LABELS[s.source] || s.source}: ${s.count}`}
+              />
             ))}
+          </div>
+
+          <div className="flex flex-col gap-0.5">
+            {[...atribusi.bySource].sort((a, b) => b.count - a.count).map((s) => {
+              const persen = (s.count / (atribusi.total || 1)) * 100;
+              return (
+                <Link
+                  key={s.source}
+                  to={`/customers?source=${encodeURIComponent(s.source)}${qsTanggal}`}
+                  className="group flex items-center gap-2.5 rounded-btn px-2 py-2 transition-colors hover:bg-inset"
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: WARNA_SUMBER[s.source] || "var(--text-tertiary)" }}
+                  />
+                  <span className="flex-1 text-[12.5px] text-ink2 group-hover:text-ink">
+                    {SOURCE_LABELS[s.source] || s.source}
+                  </span>
+                  <span className="w-11 text-right text-[12px] tabular-nums text-ink3">
+                    {persen.toFixed(1)}%
+                  </span>
+                  <span className="w-14 text-right text-[13px] font-semibold tabular-nums text-ink">
+                    {s.count.toLocaleString("id-ID")}
+                  </span>
+                  <ArrowRight size={13} className="shrink-0 text-ink3 opacity-0 transition-opacity group-hover:opacity-100" />
+                </Link>
+              );
+            })}
           </div>
         </ChartCard>
       )}
@@ -411,33 +465,107 @@ export default function TrafficTab({ traffic, sourceDetail }) {
           ini per IKLAN/KREATIF (fb.me/77pJdJNsy: 40, instagram.com/p/DXWbO:
           30, dst) — dari Customer.leadSourceDetail apa adanya, tidak
           dinormalisasi/ditebak lebih lanjut. */}
-      {(sourceDetail || []).length > 0 && (
+      {(sourceDetail?.data || []).length > 0 && (
         <ChartCard
           index={9}
           title="Rincian per Iklan"
           description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
         >
+          {/* Basis periode WAJIB dijelaskan — angkanya memang beda dari
+              Dashboard, dan tanpa penjelasan itu terbaca sebagai data rusak.
+              Lihat catatan panjang di backend/src/routes/analytics.js. */}
+          <div className="mb-3 flex items-start gap-2 rounded-btn bg-inset px-3 py-2">
+            <Info size={13} className="mt-0.5 shrink-0 text-ink3" />
+            <p className="text-[11.5px] leading-relaxed text-ink2">
+              Nilai order di sini = <strong>semua order dari lead yang MASUK pada periode ini</strong>,
+              termasuk yang baru closing belakangan. Beda dengan Dashboard yang menghitung
+              <strong> order yang dibuat pada periode ini</strong> (bisa dari lead lama).
+              Dua-duanya benar — untuk menilai iklan, yang dipakai adalah basis "kapan leadnya masuk".
+            </p>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink3">
                   <th className="pb-2 pr-3 font-medium">Sumber</th>
+                  <th className="pb-2 pr-3 font-medium">Platform</th>
                   <th className="pb-2 pr-3 font-medium">Detail</th>
                   <th className="pb-2 pr-3 text-right font-medium">Lead</th>
                   <th className="pb-2 pr-3 text-right font-medium">Closing</th>
+                  <th className="pb-2 pr-3 text-right font-medium" title="Berapa persen lead dari sumber ini yang akhirnya closing">
+                    Konversi
+                  </th>
+                  <th className="pb-2 pr-3 text-right font-medium" title="Rata-rata nilai order dari yang closing">
+                    Rata2 Order
+                  </th>
+                  <th
+                    className="pb-2 pr-3 text-right font-medium text-ink2"
+                    title="Rupiah yang dihasilkan SATU lead dari sumber ini — angka paling menentukan untuk membandingkan iklan"
+                  >
+                    Nilai/Lead
+                  </th>
                   <th className="pb-2 text-right font-medium">Nilai Order</th>
                 </tr>
               </thead>
               <tbody>
-                {sourceDetail.map((row) => (
-                  <tr key={`${row.source}-${row.detail}`} className="border-b border-line last:border-0">
-                    <td className="py-2 pr-3 text-ink2">{SOURCE_LABELS[row.source] || row.source}</td>
+                {sourceDetail.data.map((row) => (
+                  <tr
+                    key={`${row.source}-${row.detail}`}
+                    className={cn("border-b border-line", row.agregat && "text-ink3")}
+                  >
+                    <td className="py-2 pr-3">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: WARNA_SUMBER[row.source] || "var(--text-tertiary)" }}
+                        />
+                        <span className="text-ink2">{SOURCE_LABELS[row.source] || row.source}</span>
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-ink2">{LABEL_PLATFORM[row.platform] || "—"}</td>
                     <td className="max-w-[280px] truncate py-2 pr-3 text-ink3" title={row.detail}>{row.detail}</td>
                     <td className="py-2 pr-3 text-right font-semibold tabular-nums text-ink">{row.leads}</td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink2">{row.won}</td>
+                    {/* null = penyebutnya nol ("belum ada closing"), BEDA dari
+                        0% / Rp0. Ditampilkan "—" supaya tidak terbaca sebagai
+                        "sudah dicoba dan hasilnya nol". */}
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink2">
+                      {row.convRate == null ? "—" : `${row.convRate}%`}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink3">
+                      {row.avgOrderValue == null ? "—" : formatRupiah(row.avgOrderValue)}
+                    </td>
+                    <td className={cn(
+                      "py-2 pr-3 text-right font-semibold tabular-nums",
+                      row.nilaiPerLead > 0 ? "text-ink" : "text-ink3",
+                    )}>
+                      {row.nilaiPerLead == null ? "—" : formatRupiah(row.nilaiPerLead)}
+                    </td>
                     <td className="py-2 text-right tabular-nums text-ink2">{formatRupiah(row.totalValue)}</td>
                   </tr>
                 ))}
+                {/* Baris total — supaya angka di tabel ini bisa DIREKONSILIASI,
+                    bukan sekadar dipercaya. Versi sebelumnya memotong 30 baris
+                    teratas tanpa menyebut sisanya, jadi menjumlah kolom di
+                    layar tidak pernah ketemu total mana pun. */}
+                {sourceDetail.total && (
+                  <tr className="border-t-2 border-line font-semibold">
+                    <td className="py-2.5 pr-3 text-ink" colSpan={3}>Total seluruh sumber</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.leads}</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.won}</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
+                      {sourceDetail.total.convRate == null ? "—" : `${sourceDetail.total.convRate}%`}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
+                      {sourceDetail.total.avgOrderValue == null ? "—" : formatRupiah(sourceDetail.total.avgOrderValue)}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
+                      {sourceDetail.total.nilaiPerLead == null ? "—" : formatRupiah(sourceDetail.total.nilaiPerLead)}
+                    </td>
+                    <td className="py-2.5 text-right tabular-nums text-ink">{formatRupiah(sourceDetail.total.totalValue)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

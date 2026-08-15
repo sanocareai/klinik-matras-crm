@@ -51,6 +51,10 @@ export default function Customers() {
   // "" = semua, "false" = belum dikonfirmasi sales, "true" = sudah. Dipakai
   // widget "Konfirmasi Sumber" di Laporan (deep-link ?confirmed=false).
   const [filterConfirmed, setFilterConfirmed] = useState("");
+  // Periode pendaftaran pelanggan — hanya terisi saat masuk dari
+  // Laporan > Traffic, supaya jumlah di daftar cocok dengan angka yang
+  // barusan diklik di laporan.
+  const [filterPeriode, setFilterPeriode] = useState({ from: "", to: "" });
   const [quickChip, setQuickChip]   = useState("");
   const [sortKey, setSortKey]   = useState("updatedAt");
   const [sortDir, setSortDir]   = useState("desc");
@@ -83,10 +87,16 @@ export default function Customers() {
   useEffect(() => {
     const source = searchParams.get("source");
     const confirmed = searchParams.get("confirmed");
-    if (!source && confirmed === null) return;
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (!source && confirmed === null && !from) return;
     if (source) setFilterSource(source);
     if (confirmed !== null) setFilterConfirmed(confirmed);
-    setSearchParams((prev) => { prev.delete("source"); prev.delete("confirmed"); return prev; }, { replace: true });
+    if (from && to) setFilterPeriode({ from, to });
+    setSearchParams((prev) => {
+      prev.delete("source"); prev.delete("confirmed"); prev.delete("from"); prev.delete("to");
+      return prev;
+    }, { replace: true });
   }, [searchParams, setSearchParams]);
   const [showModal, setShowModal]   = useState(false);
   const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
@@ -125,7 +135,9 @@ export default function Customers() {
     customerType: mapTypeTab(typeTab),
     quickChip: quickChip || undefined,
     confirmed: filterConfirmed || undefined,
-  }), [search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip, filterConfirmed]);
+    from: filterPeriode.from || undefined,
+    to: filterPeriode.to || undefined,
+  }), [search, filterStage, filterSource, filterSales, filterCity, typeTab, quickChip, filterConfirmed, filterPeriode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,6 +184,7 @@ export default function Customers() {
     setFilterStage(""); setFilterSource("");
     setFilterSales(""); setFilterCity(""); setQuickChip("");
     setFilterConfirmed("");
+    setFilterPeriode({ from: "", to: "" });
     setPage(1);
   }
 
@@ -179,7 +192,7 @@ export default function Customers() {
   // terjebak di halaman 5 padahal hasil filter cuma 1 halaman (tampak kosong).
   const withReset = (setter) => (v) => { setter(v); setPage(1); };
 
-  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip || filterConfirmed;
+  const hasFilters = search || filterStage || filterSource || filterSales || filterCity || quickChip || filterConfirmed || filterPeriode.from;
   const emptyMessage = hasFilters || typeTab !== "all"
     ? "Tidak ada pelanggan yang cocok dengan filter."
     : "Belum ada pelanggan.";
@@ -220,6 +233,8 @@ export default function Customers() {
         customerType: mapTypeTab(typeTab),
         quickChip: quickChip || undefined,
         confirmed: filterConfirmed || undefined,
+        from: filterPeriode.from || undefined,
+        to: filterPeriode.to || undefined,
       });
       const data = rows.map((c) => ({
         /* Urutan kolom cocok dengan urutan tabel di halaman */
@@ -324,6 +339,25 @@ export default function Customers() {
           cities={cities} salesUsers={salesUsers}
           hasFilters={hasFilters} onReset={resetAllFilters}
         />
+
+        {/* Penanda periode aktif — filter tanggal datang dari deep-link
+            Laporan dan TIDAK punya kontrolnya sendiri di halaman ini, jadi
+            tanpa penanda ini daftar terlihat "kurang" tanpa sebab yang
+            jelas. Bisa dilepas satu klik. */}
+        {filterPeriode.from && (
+          <div className="mb-3 flex items-center gap-2 rounded-btn bg-inset px-3 py-2 text-[12.5px]">
+            <span className="text-ink2">
+              Menampilkan pelanggan yang masuk <strong className="text-ink">{filterPeriode.from}</strong> s/d{" "}
+              <strong className="text-ink">{filterPeriode.to}</strong> (dari Laporan)
+            </span>
+            <button
+              onClick={() => { setFilterPeriode({ from: "", to: "" }); setPage(1); }}
+              className="ml-auto shrink-0 font-semibold text-accent hover:underline"
+            >
+              Tampilkan semua periode
+            </button>
+          </div>
+        )}
 
         {selected.size > 0 && (
           <BulkActionBar
