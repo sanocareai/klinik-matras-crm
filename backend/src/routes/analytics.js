@@ -1497,6 +1497,21 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       totalValue: a.totalValue + r.totalValue,
     }), { leads: 0, won: 0, totalValue: 0 });
 
+    // ── Jembatan rekonsiliasi ke Ringkasan/Dashboard ──────────────────────
+    // Pertanyaan yang berulang muncul (15-16 Agt 2026): "kenapa nilai order
+    // di sini beda dengan Ringkasan?" Jawabannya SELALU sama — order yang
+    // DIBUAT di periode ini tapi customernya sudah masuk SEBELUM periode
+    // (lead lama yang baru closing sekarang). Dihitung eksplisit di sini,
+    // bukan dibiarkan jadi pertanyaan berulang di UI.
+    const [leadLamaRaw] = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n, COALESCE(SUM(o.value), 0)::bigint AS nilai
+      FROM "Order" o
+      JOIN "Customer" c ON c.id = o."customerId"
+      WHERE o.status <> 'CANCELLED'
+        AND o."createdAt" >= ${mulai} AND o."createdAt" < ${selesai}
+        AND c."createdAt" < ${mulai}`;
+    const leadLama = { order: Number(leadLamaRaw.n), totalValue: Number(leadLamaRaw.nilai) };
+
     const BATAS = 30;
     const tampil = semua.slice(0, BATAS);
     const sisa = semua.slice(BATAS);
@@ -1521,6 +1536,11 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       // Dinyatakan eksplisit supaya UI bisa menjelaskan angkanya ke pengguna
       // — lihat catatan panjang di atas soal beda definisi periode.
       basisPeriode: "customer_dibuat",
+      leadLama,
+      // = angka yang akan cocok dengan "Total Nilai Order" di Ringkasan/
+      // Dashboard untuk periode yang SAMA. Kalau dua-duanya dibuka
+      // berdampingan, angka ini yang harus dicocokkan, bukan total.totalValue.
+      sesuaiRingkasan: total.totalValue + leadLama.totalValue,
     });
   } catch (err) {
     console.error("lead-source-detail error:", err);
@@ -1671,6 +1691,41 @@ analyticsRouter.get("/traffic", async (req, res) => {
     }));
 
     const totalLeads = hourly.reduce((s, h) => s + h.leads, 0);
+
+    // ── Rata-rata harian, dan respons keseluruhan ────────────────────────
+    // Sebelum ini tab Traffic cuma punya TOTAL — tidak ada cara melihat
+    // "apakah progress-nya membaik" tanpa membagi sendiri di kepala.
+    //
+    // Hari BERJALAN (partial) DIKECUALIKAN dari rata-rata — kalau ikut,
+    // rata-rata selalu turun palsu tiap kali laporan dibuka siang hari
+    // (hari itu belum selesai), bukan karena traffic beneran turun.
+    const hariLengkap = daily.filter((d) => !d.partial);
+    const rataRataHarian = hariLengkap.length > 0
+      ? Math.round((hariLengkap.reduce((s, d) => s + d.value, 0) / hariLengkap.length) * 10) / 10
+      : null;
+
+    // Pembanding: rata-rata harian periode SEBELUMNYA (panjang sama persis).
+    // prevCount sudah dihitung di atas untuk growthPct total; di sini
+    // dipakai lagi supaya konsisten dengan angka itu, bukan query baru.
+    const jumlahHariPeriode = Math.max(1, Math.round(panjangMs / 86_400_000));
+    const rataRataHarianPrev = jumlahHariPeriode > 0
+      ? Math.round((prevCount / jumlahHariPeriode) * 10) / 10
+      : null;
+    const rataRataGrowthPct = rataRataHarianPrev > 0 && rataRataHarian != null
+      ? Math.round(((rataRataHarian - rataRataHarianPrev) / rataRataHarianPrev) * 100)
+      : null;
+
+    // Rata-rata waktu respons SELURUH periode (bukan per-jam seperti
+    // `hourly`) — angka tunggal untuk "secara umum kita cepat atau lambat
+    // balas". Terbobot per jumlah percakapan, BUKAN rata-rata dari
+    // rata-rata 24 angka jam (itu akan menyamakan bobot jam sepi dengan
+    // jam ramai, padahal jam ramai jauh lebih menentukan pengalaman
+    // customer secara keseluruhan).
+    const totalRespondedKeseluruhan = hourly.reduce((s, h) => s + h.responded, 0);
+    const totalMenitKeseluruhan = hourly.reduce((s, h) => s + (h.avgMinutes != null ? h.avgMinutes * h.responded : 0), 0);
+    const avgResponseMinutes = totalRespondedKeseluruhan > 0
+      ? Math.round(totalMenitKeseluruhan / totalRespondedKeseluruhan)
+      : null;
     const busiestHours = [...hourly].sort((a, b) => b.leads - a.leads).slice(0, 3);
     // Jam RAWAN = respons terburuk, TAPI dibatasi jam yang volumenya berarti
     // (>=5% rata-rata per jam). Tanpa filter ini, jam 03:00 dengan 2 chat
@@ -1711,6 +1766,10 @@ analyticsRouter.get("/traffic", async (req, res) => {
       totalLeads,
       prevTotalLeads: prevCount,
       growthPct: prevCount > 0 ? Math.round(((totalLeads - prevCount) / prevCount) * 100) : null,
+      rataRataHarian,
+      rataRataHarianPrev,
+      rataRataGrowthPct,
+      avgResponseMinutes,
       daily,
       heatmap,
       hourly,

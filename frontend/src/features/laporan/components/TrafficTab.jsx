@@ -128,7 +128,9 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
   return (
     <div className="flex flex-col gap-5">
       {/* ── KPI ── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* 3 kolom (bukan 4) supaya 6 kartu jadi 2 baris rapi: baris 1 = volume
+          lead, baris 2 = kecepatan & kualitas. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard
           index={0} hero label="Total Lead Masuk"
           numericValue={traffic.totalLeads || 0}
@@ -136,7 +138,17 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           sub={`periode sebelumnya: ${(traffic.prevTotalLeads || 0).toLocaleString("id-ID")} lead`}
         />
         <KpiCard
-          index={1} label="Hari Tidak Normal"
+          index={1} label="Rata-rata per Hari"
+          numericValue={traffic.rataRataHarian ?? 0}
+          format={(v) => v.toLocaleString("id-ID", { maximumFractionDigits: 1 })}
+          growth={traffic.rataRataGrowthPct}
+          sub={traffic.rataRataHarianPrev != null
+            ? `periode sebelumnya: ${traffic.rataRataHarianPrev.toLocaleString("id-ID", { maximumFractionDigits: 1 })} lead/hari`
+            : "Belum ada periode pembanding"}
+          tooltip="Hari yang sedang berjalan (belum selesai 24 jam) dikecualikan dari rata-rata, supaya angkanya tidak turun palsu tiap kali laporan dibuka siang hari."
+        />
+        <KpiCard
+          index={2} label="Hari Tidak Normal"
           numericValue={anomali.length}
           sub={hariDinilai === 0
             ? "Belum cukup histori pembanding — pilih periode yang lebih panjang"
@@ -144,13 +156,19 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           tooltip="Dibandingkan rata-rata 7 hari SEBELUM hari itu (tidak termasuk hari itu sendiri) ± 2 standar deviasi. Di luar rentang itu → ditandai Spike (lebih ramai dari biasa) atau Drop (lebih sepi). Hari yang sedang berjalan tidak pernah dinilai — datanya belum lengkap."
         />
         <KpiCard
-          index={2} label="Jam Tersibuk"
+          index={3} label="Jam Tersibuk"
           numericValue={traffic.busiestHours?.[0]?.jam ?? 0}
           format={(v) => `${String(Math.round(v)).padStart(2, "0")}:00`}
           sub={traffic.busiestHours?.[0] ? `${traffic.busiestHours[0].leads} lead masuk di jam ini` : "—"}
         />
         <KpiCard
-          index={3} label="Atribusi Sumber"
+          index={4} label="Respons Rata-rata"
+          numericValue={traffic.avgResponseMinutes ?? 0}
+          format={(v) => traffic.avgResponseMinutes != null ? formatDuration(traffic.avgResponseMinutes) : "—"}
+          sub="Rata-rata waktu balas pertama, terbobot per jumlah percakapan — bukan rata-rata dari 24 angka per-jam"
+        />
+        <KpiCard
+          index={5} label="Atribusi Sumber"
           numericValue={atribusi?.rate || 0}
           format={(v) => `${v.toFixed(1)}%`}
           sub={`${atribusi?.teridentifikasi || 0} dari ${atribusi?.total || 0} lead diketahui sumbernya`}
@@ -481,6 +499,15 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
               termasuk yang baru closing belakangan. Beda dengan Dashboard yang menghitung
               <strong> order yang dibuat pada periode ini</strong> (bisa dari lead lama).
               Dua-duanya benar — untuk menilai iklan, yang dipakai adalah basis "kapan leadnya masuk".
+              {/* Jembatan angka — supaya "kenapa beda dengan Ringkasan?" tidak
+                  perlu ditanyakan berulang tiap ganti rentang tanggal. */}
+              {sourceDetail.leadLama?.order > 0 && (
+                <>
+                  {" "}<strong>+ {formatRupiah(sourceDetail.leadLama.totalValue)}</strong> dari{" "}
+                  <strong>{sourceDetail.leadLama.order} order lead lama</strong> yang baru closing
+                  periode ini = <strong>{formatRupiah(sourceDetail.sesuaiRingkasan)}</strong> (cocok dengan Dashboard).
+                </>
+              )}
             </p>
           </div>
 
