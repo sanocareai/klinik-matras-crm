@@ -96,14 +96,21 @@ export default function AttachComposer({ conversationId, customerName, onSent })
     addAssets(result.assets, (a) => (a.type === "video" ? "video" : "image"));
   }
 
+  // BUG YANG DIPERBAIKI (10 Agustus 2026): launchCameraAsync() SEBELUMNYA
+  // dipanggil tanpa `mediaTypes` — default expo-image-picker untuk kamera
+  // adalah HANYA foto ("images"), jadi tombol "Ambil Foto (Kamera)" di sheet
+  // lampiran memang secara harfiah tidak pernah menawarkan mode video sama
+  // sekali (bukan bug rendering, defaultnya begitu). Sekarang eksplisit minta
+  // ["images", "videos"] SAMA seperti pickFromGallery() di atas, supaya
+  // aplikasi kamera menampilkan toggle foto/video seperti kamera WhatsApp asli.
   async function pickFromCamera() {
     setShowSheet(false);
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto");
+      Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto/video");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 1 });
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images", "videos"], quality: 1 });
     if (result.canceled || !result.assets?.length) return;
     addAssets(result.assets, (a) => (a.type === "video" ? "video" : "image"));
   }
@@ -198,7 +205,7 @@ export default function AttachComposer({ conversationId, customerName, onSent })
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetItemRow} onPress={pickFromCamera}>
               <Camera size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Ambil Foto (Kamera)</Text>
+              <Text style={styles.sheetItemText}>Kamera (Foto/Video)</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetItemRow} onPress={pickDocument}>
               <FileText size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />

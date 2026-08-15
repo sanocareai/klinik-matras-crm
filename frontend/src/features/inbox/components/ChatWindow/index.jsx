@@ -54,9 +54,16 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
     setForwarding(true);
     const results = await Promise.allSettled(items.map((m) => api.forwardMessage(m.conversationId, m.id, targetConvId)));
     setForwarding(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed > 0) alert(`${failed} dari ${items.length} pesan gagal diteruskan.`);
-    else onClose();
+    const rejected = results.filter((r) => r.status === "rejected");
+    if (rejected.length > 0) {
+      // Sertakan pesan error ASLI dari backend (mis. "Media pesan ini belum
+      // berhasil diunduh dari WhatsApp — coba lagi sebentar lagi.") — sales
+      // sebelumnya cuma lihat "gagal diteruskan" tanpa tahu kenapa/harus
+      // ngapain, jadi terasa seperti fitur forward-nya rusak permanen.
+      alert(`${rejected.length} dari ${items.length} pesan gagal diteruskan.\n\n${rejected[0].reason?.message || ""}`);
+    } else {
+      onClose();
+    }
   }
 
   return (

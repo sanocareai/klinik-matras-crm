@@ -11,6 +11,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
+import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
 // Debounce read receipt ke WAHA — jangan panggil API tiap kali frontend re-render.
@@ -776,7 +777,15 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   res.status(201).json(message);
 });
 
-// Kirim produk dari galeri ke customer (gambar berurutan dengan delay)
+// Kirim produk dari galeri ke customer ATAU grup (gambar berurutan dengan delay)
+//
+// BUG YANG DIPERBAIKI (10 Agustus 2026): sebelumnya SELALU pakai
+// `conversation.customer.phone` langsung — untuk conversation type GROUP,
+// `customer` itu `null` (lihat schema.prisma, GROUP tidak punya Customer),
+// jadi `conversation.customer.phone` CRASH (TypeError: Cannot read properties
+// of null) begitu sales coba kirim galeri produk ke grup. Sekarang pakai
+// resolveSendTarget() yang sama dengan POST /:id/messages & /:id/media —
+// groupJid untuk GROUP, nomor customer untuk INDIVIDUAL.
 conversationRouter.post("/:id/send-product", async (req, res) => {
   const { productId, imageIds, includePrice } = req.body;
   if (!productId) return res.status(400).json({ error: "productId wajib diisi" });
@@ -786,8 +795,12 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     include: { customer: true },
   });
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
-  if (!conversation.customer.phone)
-    return res.status(400).json({ error: "Nomor WA pelanggan tidak tersedia" });
+  const sendTarget = resolveSendTarget(conversation);
+  if (!sendTarget) {
+    return res.status(400).json({
+      error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+    });
+  }
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -829,7 +842,7 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
       // mengulang percobaan CS-1/CS-2 dari awal tiap gambar.
       const { session } = await sendWithSessionFallback(conversation, (s) =>
         sendMedia(
-          conversation.customer.phone,
+          sendTarget,
           { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
           caption,
           "media",
@@ -1114,8 +1127,34 @@ conversationRouter.post("/:id/forward", async (req, res) => {
   if (!messageId || !targetConversationId)
     return res.status(400).json({ error: "messageId dan targetConversationId wajib diisi" });
 
-  const sourceMsg = await prisma.message.findUnique({ where: { id: messageId } });
+  let sourceMsg = await prisma.message.findUnique({ where: { id: messageId } });
   if (!sourceMsg) return res.status(404).json({ error: "Pesan tidak ditemukan" });
+
+  // BUG YANG DIPERBAIKI (10 Agustus 2026): pesan media yang mediaUrl-nya
+  // masih null (download awal gagal — WAHA belum selesai proses saat webhook
+  // tiba, sering terjadi kalau customer kirim BANYAK video sekaligus lewat
+  // fitur "album" WhatsApp, mis. 5-7 video bersamaan) SEBELUMNYA jatuh ke
+  // cabang `else if (sourceMsg.content)` di bawah — content untuk pesan media
+  // gagal-unduh sudah diisi PLACEHOLDER teks (mis. "[Video]", lihat
+  // parseHistoryMessage.js), jadi forward "berhasil" tapi yang benar-benar
+  // terkirim ke tujuan cuma teks placeholder itu, BUKAN videonya. Sales
+  // menyangka fitur forward video-nya rusak, padahal videonya memang belum
+  // pernah berhasil diunduh dari awal. Sekarang forward MENCOBA UNDUH ULANG
+  // di titik ini — pada saat sales forward (biasanya beberapa menit setelah
+  // pesan masuk), WAHA hampir pasti sudah selesai proses medianya.
+  if (sourceMsg.mediaType && !sourceMsg.mediaUrl && sourceMsg.externalId) {
+    const redownloaded = await downloadAndSaveMedia(null, sourceMsg.externalId, "");
+    if (redownloaded) {
+      sourceMsg = await prisma.message.update({
+        where: { id: sourceMsg.id },
+        data:  { mediaUrl: redownloaded },
+      });
+    } else {
+      return res.status(502).json({
+        error: "Media pesan ini belum berhasil diunduh dari WhatsApp — coba lagi sebentar lagi.",
+      });
+    }
+  }
 
   const targetConv = await prisma.conversation.findUnique({
     where: { id: targetConversationId },
@@ -1124,7 +1163,25 @@ conversationRouter.post("/:id/forward", async (req, res) => {
   if (!targetConv) return res.status(404).json({ error: "Percakapan tujuan tidak ditemukan" });
 
   let wahaMsg = null;
-  if (targetConv.channel === "WHATSAPP" && targetConv.customer?.phone) {
+  if (targetConv.channel === "WHATSAPP") {
+    // BUG YANG DIPERBAIKI (10 Agustus 2026): sebelumnya syarat kirim di sini
+    // adalah `targetConv.customer?.phone` — untuk conversation type GROUP,
+    // `customer` selalu null (GROUP tidak punya Customer, lihat
+    // schema.prisma), jadi kondisi ini SELALU false dan blok WAHA di bawah
+    // DILEWATI SAMA SEKALI tanpa error. Akibatnya: pesan yang "diteruskan" ke
+    // grup cuma tersimpan sebagai baris Message lokal (kode di bawah, di luar
+    // if ini) — TIDAK PERNAH benar-benar terkirim ke WhatsApp. Bubble-nya
+    // ikut tersangkut di status "terkirim"/loading karena externalId (ack
+    // WAHA) memang tidak pernah ada. Sekarang pakai resolveSendTarget() yang
+    // sama dengan POST /:id/messages & /:id/media — groupJid untuk GROUP,
+    // nomor customer untuk INDIVIDUAL — supaya forward ke grup benar-benar
+    // terkirim (atau gagal dengan error yang jelas, bukan diam-diam no-op).
+    const target = resolveSendTarget(targetConv);
+    if (!target) {
+      return res.status(400).json({
+        error: targetConv.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+      });
+    }
     // Session diambil dari conversation TUJUAN (targetConv), bukan sumber —
     // pesan diteruskan KELUAR lewat nomor CS yang menangani percakapan tujuan.
     try {
@@ -1136,7 +1193,7 @@ conversationRouter.post("/:id/forward", async (req, res) => {
         const mimeMap = { image: "image/jpeg", video: "video/mp4", audio: "audio/ogg", document: "application/octet-stream" };
         ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
           sendMedia(
-            targetConv.customer.phone,
+            target,
             { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
             sourceMsg.content || "",
             "media",
@@ -1145,7 +1202,7 @@ conversationRouter.post("/:id/forward", async (req, res) => {
         ));
       } else if (sourceMsg.content) {
         ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
-          sendText(targetConv.customer.phone, sourceMsg.content, null, session)
+          sendText(target, sourceMsg.content, null, session)
         ));
       }
     } catch (err) {

@@ -231,7 +231,17 @@ function extFromMime(mime) {
 // kosong ada di grup, karena SEMUA pesan media grup lewat sini tanpa pernah
 // coba download/simpan apapun). Return mediaUrl (path lokal) atau null
 // kalau gagal/tidak ada sumber — caller WAJIB isi placeholder teks kalau null.
-async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime) {
+//
+// EXPORTED (10 Agustus 2026) — dipakai juga oleh routes/conversations.js
+// POST /:id/forward: kalau beberapa video/foto tiba BERSAMAAN (mis. customer
+// kirim 5-7 video sekaligus lewat fitur "album" WhatsApp), WAHA kadang belum
+// selesai transcode/simpan salah satu videonya saat webhook tiba — 3x retry
+// downloadWithRetry (total ~4.5 detik) di atas SELESAI TANPA hasil, mediaUrl
+// tersimpan null. Kalau sales coba forward video itu SETELAH itu (WAHA sudah
+// pasti selesai proses beberapa saat kemudian), forward WAJIB coba unduh
+// ulang di titik itu — bukan diam-diam kirim placeholder teks "[Video]" ke
+// tujuan seolah videonya benar-benar terkirim.
+export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime) {
   const downloaded = await downloadWithRetry(mediaInfo, externalId);
   if (!downloaded?.data) return null;
   const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
