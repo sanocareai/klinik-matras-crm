@@ -16,12 +16,12 @@
 // yang tidak ada.
 import React, { useEffect, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, Modal, TextInput, ActivityIndicator, ScrollView, Dimensions,
+  View, Text, StyleSheet, Modal, TextInput, ActivityIndicator, ScrollView,
 } from "react-native";
 import { X, Check, AlertTriangle, MessageSquarePlus } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
-import { useKeyboardHeight } from "../lib/useKeyboardHeight";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import PressableScale from "./PressableScale";
 
 // Nomor CS aktif — WAJIB dipilih eksplisit, tidak boleh ditebak: pelanggan
@@ -32,14 +32,11 @@ const SESI = ["CS-1", "CS-2"];
 export default function ChatBaruModal({ visible, onClose, onJadi }) {
   const tokens = useTokens();
   const styles = React.useMemo(() => createStyles(tokens), [tokens]);
-  // Modal Android SELALU jadi Dialog/Window terpisah dari Activity, jadi
-  // TIDAK PERNAH ikut windowSoftInputMode=adjustResize — KeyboardAvoidingView
-  // pun tidak reliable di dalamnya (lihat catatan panjang di
-  // lib/useKeyboardHeight.js & OrderFormModal.js). Tinggi keyboard diukur
-  // langsung dari event Keyboard, lalu tinggi maksimum sheet dikurangi
-  // sebanyak itu supaya isinya tidak pernah tertutup.
-  const keyboardHeight = useKeyboardHeight();
-  const screenHeight = Dimensions.get("window").height;
+  // overlayStyle (paddingBottom) MENDORONG sheet naik ke atas keyboard;
+  // maxHeight membatasi tingginya. Keduanya WAJIB dipakai bersama — lihat
+  // catatan di lib/useSheetMaxHeight.js soal kenapa mengecilkan tinggi saja
+  // tidak menyelesaikan apa pun.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.9);
 
   const [nomor, setNomor] = useState("");
   const [sesi, setSesi] = useState(SESI[0]);
@@ -96,8 +93,8 @@ export default function ChatBaruModal({ visible, onClose, onJadi }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.sheet, { maxHeight: screenHeight * 0.9 - keyboardHeight }]}>
+      <View style={[styles.overlay, overlayStyle]}>
+        <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Chat Baru</Text>
             <PressableScale style={styles.closeBtn} onPress={onClose}>

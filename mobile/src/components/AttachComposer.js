@@ -66,7 +66,9 @@ export default function AttachComposer({ conversationId, customerName, onSent })
   // Modal preview punya kolom "Caption…" per file — tanpa ini, mengetik
   // caption membuat kolomnya tertutup keyboard dan tombol Kirim di bawah
   // tidak bisa dijangkau sama sekali.
-  const sheetMaxHeight = useSheetMaxHeight(0.85);
+  // overlayStyle MENDORONG sheet naik ke atas keyboard; maxHeight
+  // membatasi tingginya. Keduanya wajib bersama — lihat lib/useSheetMaxHeight.js.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.85);
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems] = useState([]);
   const [hd, setHd] = useState(false);
@@ -261,7 +263,7 @@ export default function AttachComposer({ conversationId, customerName, onSent })
 
       {/* Modal preview sebelum kirim */}
       <Modal visible={items.length > 0} transparent animationType="slide" onRequestClose={() => !sending && closePreview()}>
-        <View style={styles.previewOverlay}>
+        <View style={[styles.previewOverlay, overlayStyle]}>
           <View style={[styles.previewModal, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.previewHeader}>
               <Text style={styles.previewHeaderText}>{items.length} file dipilih</Text>

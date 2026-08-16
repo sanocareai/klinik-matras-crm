@@ -17,7 +17,9 @@ import Avatar from "./Avatar";
 export default function ForwardModal({ visible, message, messages, onClose }) {
   // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
   // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
-  const sheetMaxHeight = useSheetMaxHeight(0.8);
+  // overlayStyle MENDORONG sheet naik ke atas keyboard; maxHeight
+  // membatasi tingginya. Keduanya wajib bersama — lihat lib/useSheetMaxHeight.js.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.8);
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [convs, setConvs] = useState([]);
@@ -58,7 +60,7 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, overlayStyle]}>
         <View style={[styles.modal, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>

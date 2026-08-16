@@ -21,7 +21,9 @@ const KATEGORI_LABELS = {
 export default function TemplateFormModal({ visible, template, onClose, onSaved }) {
   // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
   // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
-  const sheetMaxHeight = useSheetMaxHeight(0.88);
+  // overlayStyle MENDORONG sheet naik ke atas keyboard; maxHeight
+  // membatasi tingginya. Keduanya wajib bersama — lihat lib/useSheetMaxHeight.js.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.88);
   const tokens = useTokens();
   const styles = createStyles(tokens);
   const { user } = useAuth();
@@ -66,7 +68,7 @@ export default function TemplateFormModal({ visible, template, onClose, onSaved 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, overlayStyle]}>
         <View style={[styles.modal, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{isEdit ? "Edit Template" : "Template Baru"}</Text>

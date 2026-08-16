@@ -42,7 +42,9 @@ function applyVariables(text, customer) {
 export default function TemplatePickerSheet({ visible, customer, onSelect, onClose }) {
   // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
   // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
-  const sheetMaxHeight = useSheetMaxHeight(0.8);
+  // overlayStyle MENDORONG sheet naik ke atas keyboard; maxHeight
+  // membatasi tingginya. Keduanya wajib bersama — lihat lib/useSheetMaxHeight.js.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.8);
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [templates, setTemplates] = useState([]);
@@ -100,7 +102,7 @@ export default function TemplatePickerSheet({ visible, customer, onSelect, onClo
   return (
     <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, overlayStyle]}>
         <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Pilih Template</Text>
