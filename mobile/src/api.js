@@ -170,6 +170,17 @@ export const api = {
   // ⚠️ Response { data, nextCursor } (cursor pagination) — lihat
   // backend/src/routes/conversations.js, dikonsumsi lewat useConversations.js.
   getConversations: (params) => request("/conversations" + buildQuery(params)),
+  // "Ketik nomor lalu chat" — seperti di aplikasi WhatsApp. cekNomorWa cuma
+  // MEMERIKSA (tidak membuat apa pun), mulaiChatBaru yang benar-benar
+  // membuat Customer + Conversation kalau nomornya terbukti terdaftar.
+  // Backend: backend/src/routes/conversations.js.
+  cekNomorWa: (phone, session) =>
+    request("/conversations/cek-nomor" + buildQuery({ phone, session })),
+  mulaiChatBaru: ({ phone, session, name }) =>
+    request("/conversations/mulai-chat", {
+      method: "POST",
+      body: JSON.stringify({ phone, session, name }),
+    }),
   getConversationCounts: () => request("/conversations/counts"),
   getUnreadCount: () => request("/conversations/unread-count"),
   getMessages: (conversationId) =>

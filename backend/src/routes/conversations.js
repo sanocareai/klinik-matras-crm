@@ -242,6 +242,10 @@ conversationRouter.post("/mulai-chat", async (req, res) => {
         customerId: existing.id,
         sudahAda: true,
         nomor,
+        // `nama` SELALU dikirim (baik kontak lama maupun baru) supaya
+        // pemanggil tidak perlu membedakan dua bentuk respons — mobile
+        // memakainya langsung sebagai judul layar chat.
+        nama: existing.name,
       });
     }
 

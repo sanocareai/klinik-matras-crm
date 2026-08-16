@@ -14,7 +14,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
-  Pin, PinOff, Check, Circle,
+  Pin, PinOff, Check, Circle, MessageSquarePlus,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -23,6 +23,7 @@ import { lightHaptic } from "../lib/haptics";
 import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
 import ReorderFiltersModal from "../components/ReorderFiltersModal";
+import ChatBaruModal from "../components/ChatBaruModal";
 import { InboxListSkeleton } from "../components/SkeletonLoader";
 import { useConversations } from "../hooks/useConversations";
 import {
@@ -129,6 +130,7 @@ export default function ChatListScreen({ navigation }) {
   const defaultTabOrder = useMemo(() => TABS.map((t) => t.key), []);
   const [tabOrder, setTabOrder] = useState(defaultTabOrder);
   const [reorderModalVisible, setReorderModalVisible] = useState(false);
+  const [chatBaruVisible, setChatBaruVisible] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(TAB_ORDER_KEY).then((raw) => {
@@ -331,6 +333,13 @@ export default function ChatListScreen({ navigation }) {
             <TouchableOpacity onPress={() => setSearchOpen(true)} style={styles.headerIconBtn}>
               <Search size={20} color={tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
+            {/* Chat baru — ketik nomor langsung, tanpa menunggu pelanggan
+                chat duluan. Ditaruh sebelah Search karena keduanya sama-sama
+                "mencari orang", bedanya yang satu di dalam CRM dan yang ini
+                di luar (nomor yang belum pernah masuk sama sekali). */}
+            <TouchableOpacity onPress={() => setChatBaruVisible(true)} style={styles.headerIconBtn}>
+              <MessageSquarePlus size={20} color={tokens.color.accent} strokeWidth={2} />
+            </TouchableOpacity>
             {/* Profil (pengaturan notifikasi, versi app/cek update, logout)
                 sekarang tab tersendiri di bottom nav — tombol shortcut lama
                 di sini dihapus karena sudah redundan. Logout tetap
@@ -397,6 +406,24 @@ export default function ChatListScreen({ navigation }) {
         order={tabOrder}
         onChangeOrder={handleChangeTabOrder}
         onClose={() => setReorderModalVisible(false)}
+      />
+
+      {/* Setelah percakapan berhasil dibuat/ditemukan, langsung dibuka —
+          sama seperti perilaku openChat dari daftar. Nama diambil dari
+          respons backend (bisa dari WhatsApp kalau kontak baru, atau nama
+          yang sudah ada di CRM kalau nomornya sudah dikenal). */}
+      <ChatBaruModal
+        visible={chatBaruVisible}
+        onClose={() => setChatBaruVisible(false)}
+        onJadi={(hasil) => {
+          navigation.navigate("ChatRoom", {
+            conversationId: hasil.conversationId,
+            name: hasil.nama || hasil.nomor || "Pelanggan",
+            isGroup: false,
+            customerId: hasil.customerId,
+            assignedTo: null,
+          });
+        }}
       />
 
       {/* Daftar percakapan */}
