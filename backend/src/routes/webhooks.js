@@ -9,6 +9,7 @@ import { sendPushToAllUsers } from "../services/expoPush.js";
 import { broadcast } from "./sse.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
+import { cleanMime, resolveMediaExt } from "../utils/mediaExt.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
@@ -178,11 +179,6 @@ async function extractMessageData(payload, engine, sessionName) {
   };
 }
 
-// Bersihkan MIME type dari codec info (contoh: "audio/ogg; codecs=opus" → "audio/ogg")
-function cleanMime(mime) {
-  return (mime || "").split(";")[0].trim().toLowerCase();
-}
-
 // Tentukan mediaType dari MIME type
 function mimeToMediaType(mime) {
   const m = cleanMime(mime);
@@ -212,18 +208,6 @@ async function downloadWithRetry(mediaInfo, messageId) {
   return null;
 }
 
-// Ekstensi file dari MIME type
-function extFromMime(mime) {
-  const map = {
-    "image/jpeg": ".jpg",  "image/png": ".png",   "image/gif": ".gif",
-    "image/webp": ".webp", "video/mp4": ".mp4",   "video/webm": ".webm",
-    "audio/ogg":  ".ogg",  "audio/opus": ".ogg",  "audio/webm": ".webm",
-    "audio/mpeg": ".mp3",  "audio/mp4": ".m4a",   "audio/aac": ".aac",
-    "application/pdf": ".pdf",
-  };
-  return map[cleanMime(mime)] || ".bin";
-}
-
 // Download & simpan 1 file media ke disk — DIPAKAI BERSAMA oleh handler
 // grup, inbound, dan outbound-dari-HP (Fix 1 bug produksi: sebelumnya cuma
 // handleInboundMessage yang punya logic ini, handleGroupMessage &
@@ -241,14 +225,19 @@ function extFromMime(mime) {
 // pasti selesai proses beberapa saat kemudian), forward WAJIB coba unduh
 // ulang di titik itu — bukan diam-diam kirim placeholder teks "[Video]" ke
 // tujuan seolah videonya benar-benar terkirim.
-export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime) {
+export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType) {
   const downloaded = await downloadWithRetry(mediaInfo, externalId);
   if (!downloaded?.data) return null;
   const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
     ? downloaded.mimetype : (fallbackMime || "");
-  const ext = extFromMime(finalMime);
+  const buffer = Buffer.from(downloaded.data, "base64");
+  // Ekstensi ditentukan MIME → magic bytes → mediaType (lihat utils/mediaExt.js).
+  // Dulu di sini cuma `extFromMime(finalMime)` yang langsung jatuh ke ".bin"
+  // saat MIME tidak dikenal — itu yang membuat 9,9 GB video tersimpan sebagai
+  // .bin dan tidak bisa diputar di browser.
+  const ext = resolveMediaExt({ buffer, mime: finalMime, mediaType });
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-  fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
+  fs.writeFileSync(path.join(uploadsDir, filename), buffer);
   console.log("[webhook] Media disimpan:", filename);
   return `/uploads/${filename}`;
 }
@@ -390,7 +379,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 
     if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
       const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
-      mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
+      mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType);
       if (!mediaUrl) console.warn("[webhook] Grup: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
     }
 
@@ -655,7 +644,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = mediaInfo?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
     console.log("[webhook] Ada media, tipe:", mediaType, "mime:", fallbackMime, "url:", mediaInfo?.url?.slice(0, 80));
-    mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime);
+    mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType);
     if (!mediaUrl) console.warn("[webhook] Tidak bisa download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
@@ -803,7 +792,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
 
   if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
-    mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime);
+    mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType);
     if (!mediaUrl) console.warn("[webhook] fromMe: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 

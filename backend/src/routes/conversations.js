@@ -12,6 +12,7 @@ import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchC
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
+import { resolveMediaExt } from "../utils/mediaExt.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -45,18 +46,6 @@ function mimeToMediaType(mime) {
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
   return "document";
-}
-
-// Ekstensi file dari MIME type — dipakai POST /:id/messages/:messageId/load-media
-function extFromMime(mime) {
-  const map = {
-    "image/jpeg": ".jpg",  "image/png": ".png",   "image/gif": ".gif",
-    "image/webp": ".webp", "video/mp4": ".mp4",   "video/webm": ".webm",
-    "audio/ogg":  ".ogg",  "audio/opus": ".ogg",  "audio/webm": ".webm",
-    "audio/mpeg": ".mp3",  "audio/mp4": ".m4a",   "audio/aac": ".aac",
-    "application/pdf": ".pdf",
-  };
-  return map[(mime || "").split(";")[0].trim().toLowerCase()] || ".bin";
 }
 
 // BUG KRITIS (produksi) — sebelumnya sendText/sendMedia/markChatAsRead diam-diam
@@ -1281,7 +1270,7 @@ conversationRouter.post("/:id/forward", async (req, res) => {
   // di titik ini — pada saat sales forward (biasanya beberapa menit setelah
   // pesan masuk), WAHA hampir pasti sudah selesai proses medianya.
   if (sourceMsg.mediaType && !sourceMsg.mediaUrl && sourceMsg.externalId) {
-    const redownloaded = await downloadAndSaveMedia(null, sourceMsg.externalId, "");
+    const redownloaded = await downloadAndSaveMedia(null, sourceMsg.externalId, "", sourceMsg.mediaType);
     if (redownloaded) {
       sourceMsg = await prisma.message.update({
         where: { id: sourceMsg.id },
@@ -1537,9 +1526,10 @@ conversationRouter.post("/:id/messages/:messageId/load-media", async (req, res) 
     if (!downloaded?.data) {
       return res.status(502).json({ error: "WAHA tidak bisa kasih media ini lagi (mungkin sudah kedaluwarsa di server WhatsApp)" });
     }
-    const ext = extFromMime(downloaded.mimetype);
+    const buffer = Buffer.from(downloaded.data, "base64");
+    const ext = resolveMediaExt({ buffer, mime: downloaded.mimetype, mediaType: message.mediaType });
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    fs.writeFileSync(path.join(uploadsDir, filename), Buffer.from(downloaded.data, "base64"));
+    fs.writeFileSync(path.join(uploadsDir, filename), buffer);
     const mediaUrl = `/uploads/${filename}`;
 
     const updated = await prisma.message.update({
