@@ -16,6 +16,7 @@ import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, A
 import { X, MessageSquare, Plus, Pencil, Trash2 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import TemplateFormModal from "./TemplateFormModal";
 
 const KATEGORI_LABELS = {
@@ -39,6 +40,9 @@ function applyVariables(text, customer) {
 }
 
 export default function TemplatePickerSheet({ visible, customer, onSelect, onClose }) {
+  // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
+  // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
+  const sheetMaxHeight = useSheetMaxHeight(0.8);
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [templates, setTemplates] = useState([]);
@@ -97,7 +101,7 @@ export default function TemplatePickerSheet({ visible, customer, onSelect, onClo
     <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Pilih Template</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>

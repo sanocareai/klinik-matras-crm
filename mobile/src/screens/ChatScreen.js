@@ -481,15 +481,31 @@ export default function ChatScreen({ route, navigation }) {
   // tap bubble lain (selama selectionMode aktif) menambah/mengurangi
   // seleksi. Keluar otomatis begitu seleksi kosong (sama seperti WA asli),
   // atau lewat tombol X di toolbar.
-  const handleEnterSelection = useCallback((msg) => {
+  // `anggota` = SEMUA pesan yang diwakili satu bubble. Untuk bubble biasa
+  // isinya cuma [msg] sendiri; untuk bubble ALBUM isinya seluruh foto/video
+  // dalam kisi itu.
+  //
+  // BUG YANG DIPERBAIKI (16 Agt 2026): dulu kedua handler ini cuma memakai
+  // `msg.id`, padahal album dirender sebagai SATU bubble yang mewakili
+  // banyak pesan. Akibatnya long-press album berisi 4 media lalu Teruskan
+  // cuma mengirim 1 media — 3 sisanya hilang tanpa pesan error apa pun.
+  const handleEnterSelection = useCallback((msg, anggota) => {
     setSelectionMode(true);
-    setSelectedIds(new Set([msg.id]));
+    setSelectedIds(new Set((anggota?.length ? anggota : [msg]).map((x) => x.id)));
   }, []);
 
-  const handleToggleSelect = useCallback((msg) => {
+  const handleToggleSelect = useCallback((msg, anggota) => {
+    const daftar = anggota?.length ? anggota : [msg];
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(msg.id)) next.delete(msg.id); else next.add(msg.id);
+      // Album diperlakukan sebagai SATU kesatuan: kalau perwakilannya sudah
+      // terpilih, seluruh anggota dilepas — kalau belum, seluruhnya dipilih.
+      // Tanpa aturan ini, seleksi album bisa jadi separuh-separuh dan sales
+      // tidak punya cara melihat mana yang ikut.
+      const sudah = next.has(msg.id);
+      for (const x of daftar) {
+        if (sudah) next.delete(x.id); else next.add(x.id);
+      }
       if (next.size === 0) setSelectionMode(false);
       return next;
     });

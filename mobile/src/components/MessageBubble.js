@@ -359,9 +359,20 @@ function MessageBubbleBase({
     onDeleteEveryone?.(m);
   }
 
+  // Satu bubble album MEWAKILI beberapa pesan (WhatsApp mengelompokkan
+  // foto/video berurutan jadi satu kisi). Seleksi harus mencakup SEMUA
+  // anggotanya, bukan cuma pesan perwakilan.
+  //
+  // BUG YANG DIPERBAIKI (16 Agt 2026): sebelumnya seleksi cuma memakai
+  // `m` (perwakilan), jadi long-press album 4 media lalu Teruskan cuma
+  // mengirim 1 media — sisanya hilang tanpa pesan error. Sales mengira
+  // fitur forward-nya rusak, padahal 3 lainnya memang tidak pernah ikut
+  // terpilih.
+  const anggotaSeleksi = albumMessages && albumMessages.length > 1 ? albumMessages : [m];
+
   function handleSelectPress() {
     setShowActions(false);
-    onEnterSelection?.(m);
+    onEnterSelection?.(m, anggotaSeleksi);
   }
 
   // ── Swipe to reply — inbound geser KANAN, outbound geser KIRI (pola WA
@@ -471,7 +482,7 @@ function MessageBubbleBase({
         {selectionMode && (
           <TouchableOpacity
             style={styles.selectCheckbox}
-            onPress={() => onToggleSelect?.(m)}
+            onPress={() => onToggleSelect?.(m, anggotaSeleksi)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <View style={[styles.selectCheckboxCircle, selected && styles.selectCheckboxCircleActive]}>
@@ -483,7 +494,7 @@ function MessageBubbleBase({
       <GestureDetector gesture={panGesture}>
         <Animated.View style={swipeAnimStyle}>
           <PressableScale
-            onPress={() => { if (selectionMode) { lightHaptic(); onToggleSelect?.(m); } }}
+            onPress={() => { if (selectionMode) { lightHaptic(); onToggleSelect?.(m, anggotaSeleksi); } }}
             onLongPress={() => { if (!selectionMode && !isSending && !isFailed && !isRevoked) { lightHaptic(); setShowActions(true); } }}
             style={[
               styles.bubble,

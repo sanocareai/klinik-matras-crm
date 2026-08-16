@@ -15,6 +15,7 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { Plus, Image as ImageIcon, Camera, FileText, X, Video, Package } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import PressableScale from "./PressableScale";
 import ProductPicker from "./ProductPicker";
 
@@ -62,6 +63,10 @@ async function compressImage(uri) {
 export default function AttachComposer({ conversationId, customerName, onSent }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  // Modal preview punya kolom "Caption…" per file — tanpa ini, mengetik
+  // caption membuat kolomnya tertutup keyboard dan tombol Kirim di bawah
+  // tidak bisa dijangkau sama sekali.
+  const sheetMaxHeight = useSheetMaxHeight(0.85);
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems] = useState([]);
   const [hd, setHd] = useState(false);
@@ -96,21 +101,41 @@ export default function AttachComposer({ conversationId, customerName, onSent })
     addAssets(result.assets, (a) => (a.type === "video" ? "video" : "image"));
   }
 
-  // BUG YANG DIPERBAIKI (10 Agustus 2026): launchCameraAsync() SEBELUMNYA
-  // dipanggil tanpa `mediaTypes` — default expo-image-picker untuk kamera
-  // adalah HANYA foto ("images"), jadi tombol "Ambil Foto (Kamera)" di sheet
-  // lampiran memang secara harfiah tidak pernah menawarkan mode video sama
-  // sekali (bukan bug rendering, defaultnya begitu). Sekarang eksplisit minta
-  // ["images", "videos"] SAMA seperti pickFromGallery() di atas, supaya
-  // aplikasi kamera menampilkan toggle foto/video seperti kamera WhatsApp asli.
-  async function pickFromCamera() {
+  // ⚠️ KAMERA WAJIB DIPISAH FOTO vs VIDEO — ini batasan ANDROID, bukan
+  // pilihan gaya.
+  //
+  // Riwayat: 10 Agt 2026 kode ini diubah jadi `mediaTypes: ["images",
+  // "videos"]` dengan harapan aplikasi kamera menampilkan toggle foto/video.
+  // Perbaikan itu TERLIHAT benar tapi TIDAK MUNGKIN bekerja — dilaporkan
+  // masih foto-saja, lalu ditelusuri ke kode native expo-image-picker
+  // (node_modules/expo-image-picker/android/.../ImagePickerOptions.kt):
+  //
+  //     fromJSMediaTypesArray(["images","videos"]) -> MediaTypes.ALL
+  //     toCameraIntentAction(): VIDEOS -> ACTION_VIDEO_CAPTURE
+  //                             else   -> ACTION_IMAGE_CAPTURE   // ALL di sini
+  //
+  // Android TIDAK punya intent kamera "foto+video sekaligus" — cuma
+  // MediaStore.ACTION_IMAGE_CAPTURE atau ACTION_VIDEO_CAPTURE. Mengirim
+  // KEDUANYA justru diam-diam jatuh ke foto saja. (WhatsApp bisa toggle
+  // karena memakai kamera bikinan sendiri, bukan intent sistem.)
+  //
+  // Jadi pengguna yang memilih mode, BUKAN aplikasi kameranya. Satu
+  // mediaType per panggilan — itu satu-satunya bentuk yang benar-benar
+  // dihormati Android.
+  async function bukaKamera(mode) {
     setShowSheet(false);
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto/video");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images", "videos"], quality: 1 });
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: mode === "video" ? ["videos"] : ["images"],
+      quality: 1,
+      // Batas durasi supaya video tidak jadi ratusan MB yang gagal kirim
+      // ke WhatsApp (limit WA sekitar 16 MB untuk video biasa).
+      ...(mode === "video" ? { videoMaxDuration: 60 } : {}),
+    });
     if (result.canceled || !result.assets?.length) return;
     addAssets(result.assets, (a) => (a.type === "video" ? "video" : "image"));
   }
@@ -203,9 +228,16 @@ export default function AttachComposer({ conversationId, customerName, onSent })
               <ImageIcon size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
               <Text style={styles.sheetItemText}>Foto / Video dari Galeri</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItemRow} onPress={pickFromCamera}>
+            {/* DUA baris terpisah, bukan satu "Kamera (Foto/Video)" —
+                Android tidak bisa membuka kamera mode gabungan, lihat
+                catatan panjang di bukaKamera(). */}
+            <TouchableOpacity style={styles.sheetItemRow} onPress={() => bukaKamera("foto")}>
               <Camera size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Kamera (Foto/Video)</Text>
+              <Text style={styles.sheetItemText}>Ambil Foto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItemRow} onPress={() => bukaKamera("video")}>
+              <Video size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
+              <Text style={styles.sheetItemText}>Rekam Video</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetItemRow} onPress={pickDocument}>
               <FileText size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
@@ -230,14 +262,17 @@ export default function AttachComposer({ conversationId, customerName, onSent })
       {/* Modal preview sebelum kirim */}
       <Modal visible={items.length > 0} transparent animationType="slide" onRequestClose={() => !sending && closePreview()}>
         <View style={styles.previewOverlay}>
-          <View style={styles.previewModal}>
+          <View style={[styles.previewModal, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.previewHeader}>
               <Text style={styles.previewHeaderText}>{items.length} file dipilih</Text>
               <TouchableOpacity onPress={closePreview} disabled={sending}>
                 <X size={18} color={tokens.color.textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: 380 }}>
+            {/* maxHeight "100%" — tinggi sebenarnya sudah dibatasi previewModal di
+                 atas yang ikut mengecil saat keyboard muncul. Angka tetap (dulu
+                 380) bikin isi terpotong dua kali. */}
+            <ScrollView style={{ maxHeight: "100%" }} keyboardShouldPersistTaps="handled">
               {items.map((item) => (
                 <View key={item.uid} style={styles.previewItem}>
                   <View style={styles.previewThumbWrap}>

@@ -9,6 +9,7 @@ import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityInd
 import { X } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import { useAuth } from "../context/AuthContext";
 
 const KATEGORI_OPTIONS = ["pembukaan", "follow_up", "penawaran", "konfirmasi", "penutupan", "lainnya"];
@@ -18,6 +19,9 @@ const KATEGORI_LABELS = {
 };
 
 export default function TemplateFormModal({ visible, template, onClose, onSaved }) {
+  // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
+  // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
+  const sheetMaxHeight = useSheetMaxHeight(0.88);
   const tokens = useTokens();
   const styles = createStyles(tokens);
   const { user } = useAuth();
@@ -63,7 +67,7 @@ export default function TemplateFormModal({ visible, template, onClose, onSaved 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <View style={[styles.modal, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{isEdit ? "Edit Template" : "Template Baru"}</Text>
             <TouchableOpacity onPress={onClose}>

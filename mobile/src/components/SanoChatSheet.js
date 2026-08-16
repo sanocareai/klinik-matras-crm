@@ -149,6 +149,15 @@ const SanoChatSheet = forwardRef(function SanoChatSheet({ context }, ref) {
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: tokens.color.card }}
       handleIndicatorStyle={{ backgroundColor: tokens.color.border }}
+      // Tanpa tiga prop ini, kolom ketik "Tanya Sano" tertutup keyboard
+      // begitu di-fokus — default gorhom android_keyboardInputMode
+      // ("adjustPan") menggeser seluruh sheet ke atas alih-alih
+      // mengecilkannya, jadi isi atas terpotong dan input tetap tertutup.
+      // Nilai yang dipakai SENGAJA sama dengan CustomerSheet.js yang sudah
+      // terbukti benar di perangkat asli — jangan disetel beda-beda.
+      android_keyboardInputMode="adjustResize"
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
     >
       <View style={styles.header}>
         <Sparkles size={18} color={tokens.color.accent} strokeWidth={2.2} style={{ marginRight: 6 }} />

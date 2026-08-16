@@ -16,6 +16,7 @@ import {
   extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
 } from "../services/leadAttribution.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
+import { idPesanInti } from "../utils/idPesanWa.js";
 
 export const webhookRouter = express.Router();
 
@@ -381,6 +382,40 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
       mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType);
       if (!mediaUrl) console.warn("[webhook] Grup: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
+    }
+
+    // ── Tolak GEMA pesan kita sendiri ────────────────────────────────────
+    //
+    // BUG YANG DIPERBAIKI (16 Agt 2026): pesan yang DIKIRIM CRM ke grup
+    // digemakan balik oleh WAHA sebagai webhook biasa, TAPI dengan
+    // `fromMe: false` — WAHA tidak mengenali gema itu milik kita karena
+    // pengirimnya dilaporkan dalam bentuk LID. Akibatnya pesan tersimpan
+    // DUA KALI: sekali OUTBOUND (saat kita kirim) dan sekali INBOUND atas
+    // nama "Klinik Matras by Sano". Di layar terlihat seperti dua bubble
+    // untuk satu pesan.
+    //
+    // Dedup lewat kolom `externalId` TIDAK MEMBANTU di sini karena string
+    // penuhnya memang berbeda (prefix true_/false_ dan bagian pengirim) —
+    // lihat contoh nyata di utils/idPesanWa.js. Yang stabil cuma ID pesan
+    // WhatsApp di tengah, jadi itu yang dibandingkan.
+    const idInti = idPesanInti(externalId);
+    if (idInti) {
+      const sudahAda = await prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          // Cocokkan ID inti di posisi mana pun dalam externalId — bentuk
+          // yang tersimpan bisa versi "true_" (kiriman kita) maupun
+          // "false_" (gema), dan keduanya sah sebagai penanda "sudah ada".
+          externalId: { contains: idInti },
+        },
+        select: { id: true, direction: true },
+      });
+      if (sudahAda) {
+        console.log(
+          `[webhook] Grup: lewati gema pesan ${idInti} (sudah tersimpan sebagai ${sudahAda.direction})`,
+        );
+        return "skip-gema";
+      }
     }
 
     // Simpan pesan grup (sertakan senderName supaya nama pengirim muncul di bubble)

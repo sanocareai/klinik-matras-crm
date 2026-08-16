@@ -8,12 +8,16 @@ import {
 import { Forward, X } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import Avatar from "./Avatar";
 
 // messages: array opsional — dipakai forward BULK dari mode pilih
 // (ChatScreen.js#selectionMode). Kalau tidak ada, fallback ke `message`
 // tunggal (pola lama, dipakai action-sheet "Teruskan" per-bubble).
 export default function ForwardModal({ visible, message, messages, onClose }) {
+  // Sheet ikut mengecil saat keyboard muncul — tanpa ini kolom isian &
+  // tombol di bawahnya tertutup keyboard (lihat lib/useSheetMaxHeight.js).
+  const sheetMaxHeight = useSheetMaxHeight(0.8);
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [convs, setConvs] = useState([]);
@@ -55,7 +59,7 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <View style={[styles.modal, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
               <Forward size={16} color={tokens.color.textPrimary} strokeWidth={2} style={{ marginRight: 6 }} />
