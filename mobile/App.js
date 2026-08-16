@@ -9,6 +9,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
+import { setAudioModeAsync } from "expo-audio";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -201,6 +202,17 @@ function respondToNotification(response) {
 function Root() {
   const { user, loading } = useAuth();
   const colors = useColors();
+
+  // BUG (fix, 16 Agt 2026): sesi audio expo-audio SEBELUM INI cuma pernah
+  // dikonfigurasi di dalam VoiceRecorderBar.js — saat MULAI rekam. Kalau
+  // sales membuka chat dan langsung menekan play di voice note (miliknya
+  // sendiri atau punya customer) TANPA pernah merekam dulu di sesi app itu,
+  // sesi audio native belum pernah di-setup sama sekali → player.play()
+  // tidak merespons (bukan error, cuma diam). Fix: inisialisasi sekali di
+  // root app, sebelum layar mana pun butuh audio (rekam ATAU putar).
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }).catch(() => {});
+  }, []);
 
   // Socket.IO event → store, dan flush antrean outbox — aktif selama user
   // login, tidak peduli sedang di layar mana (Inbox/Chat/Customer).

@@ -9,11 +9,13 @@
 // TETAP di sini saja (bukan di CustomerProfileContent) karena tab
 // Pelanggan/CustomerDetail tidak pernah berurusan dengan grup WhatsApp.
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
 import CustomerProfileContent from "./CustomerProfileContent";
+import GaleriMediaModal from "./GaleriMediaModal";
 import { useMessagesForConv } from "../store/messageStore";
 
 function Section({ title, children }) {
@@ -46,6 +48,7 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
   // customer di-refetch fresh tiap kali sheet dibuka (bukan cuma sekali di
   // mount pertama), sama seperti perilaku lama sebelum di-refactor.
   const [reloadKey, setReloadKey] = useState(0);
+  const [showGaleri, setShowGaleri] = useState(false);
 
   useImperativeHandle(ref, () => ({
     open: () => { setReloadKey((k) => k + 1); sheetRef.current?.present(); },
@@ -74,13 +77,25 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
             <Text style={styles.phone}>Percakapan Grup WhatsApp</Text>
           </View>
           <Section title={`Media (${mediaCount})`}>
-            <Text style={styles.detailValue}>
-              {mediaCount > 0
-                ? `${mediaCount} foto/video/dokumen dibagikan di percakapan ini`
-                : "Belum ada media dibagikan"}
-            </Text>
+            <TouchableOpacity
+              style={styles.mediaLink}
+              disabled={mediaCount === 0}
+              onPress={() => setShowGaleri(true)}
+            >
+              <Text style={styles.detailValue}>
+                {mediaCount > 0
+                  ? `${mediaCount} foto/video/dokumen dibagikan di percakapan ini`
+                  : "Belum ada media dibagikan"}
+              </Text>
+              {mediaCount > 0 && <ChevronRight size={16} color={tokens.color.textMuted} strokeWidth={2} />}
+            </TouchableOpacity>
           </Section>
         </BottomSheetScrollView>
+        <GaleriMediaModal
+          visible={showGaleri}
+          conversationId={conversation?.id}
+          onClose={() => setShowGaleri(false)}
+        />
       </BottomSheetModal>
     );
   }
@@ -110,7 +125,26 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
     >
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <CustomerProfileContent customerId={customerId} reloadKey={reloadKey} />
+        <Section title={`Media (${mediaCount})`}>
+          <TouchableOpacity
+            style={styles.mediaLink}
+            disabled={mediaCount === 0}
+            onPress={() => setShowGaleri(true)}
+          >
+            <Text style={styles.detailValue}>
+              {mediaCount > 0
+                ? `${mediaCount} foto/video/dokumen dibagikan di percakapan ini`
+                : "Belum ada media dibagikan"}
+            </Text>
+            {mediaCount > 0 && <ChevronRight size={16} color={tokens.color.textMuted} strokeWidth={2} />}
+          </TouchableOpacity>
+        </Section>
       </BottomSheetScrollView>
+      <GaleriMediaModal
+        visible={showGaleri}
+        conversationId={conversation?.id}
+        onClose={() => setShowGaleri(false)}
+      />
     </BottomSheetModal>
   );
 });
@@ -124,6 +158,7 @@ function createStyles(tokens) {
     phone: { fontSize: 14, color: tokens.color.textSecondary },
     section: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: tokens.color.border },
     sectionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textMuted, marginBottom: 8, textTransform: "uppercase" },
-    detailValue: { fontSize: 13, color: tokens.color.textPrimary },
+    detailValue: { fontSize: 13, color: tokens.color.textPrimary, flex: 1 },
+    mediaLink: { flexDirection: "row", alignItems: "center", gap: 6 },
   });
 }

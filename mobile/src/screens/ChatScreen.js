@@ -23,7 +23,7 @@ import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, ChevronDown, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
   Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
-  Bold, Italic, Strikethrough, Code,
+  Bold, Italic, Strikethrough, Code, Search,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
@@ -167,6 +167,16 @@ export default function ChatScreen({ route, navigation }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false); // GAP (fix): tidak ada affordance "lompat ke pesan terbaru" saat scroll jauh ke atas
+
+  // FITUR (tambahan, 16 Agt 2026): cari pesan dalam percakapan ini — tanpa
+  // ini, menemukan pesan lama cuma bisa lewat scroll manual (tidak praktis
+  // untuk percakapan berbulan-bulan). Cari di `allMessages` penuh (bukan
+  // cuma window `items` yang lagi ter-render), pakai scrollToMessage yang
+  // sama dengan fitur "go to reply" (sudah menangani perluasan window +
+  // highlight sementara).
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
 
   const listRef = useRef(null);
   const pollRef = useRef(null);
@@ -315,6 +325,39 @@ export default function ChatScreen({ route, navigation }) {
     clearTimeout(highlightTimerRef.current);
     highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
   }, [allMessages, visibleCount, items]);
+
+  // Urutan lama→baru (sama seperti allMessages) — teks pesan biasa
+  // (`content`) saja yang dicari, konten terstruktur (lokasi/kontak/poll,
+  // JSON mentah) dan pesan yang sudah dihapus (isRevoked) dikecualikan
+  // supaya tidak muncul cocok pada data yang bukan teks asli.
+  const searchMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allMessages.filter((m) => !m.isRevoked && m.content && m.content.toLowerCase().includes(q));
+  }, [searchQuery, allMessages]);
+
+  useEffect(() => { setSearchIndex(0); }, [searchQuery]);
+
+  useEffect(() => {
+    if (!searchMatches.length) return;
+    const idx = Math.min(searchIndex, searchMatches.length - 1);
+    scrollToMessage(searchMatches[idx].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchIndex, searchMatches]);
+
+  function handleSearchNext() {
+    if (!searchMatches.length) return;
+    setSearchIndex((i) => (i + 1) % searchMatches.length);
+  }
+  function handleSearchPrev() {
+    if (!searchMatches.length) return;
+    setSearchIndex((i) => (i - 1 + searchMatches.length) % searchMatches.length);
+  }
+  function closeSearch() {
+    setShowSearch(false);
+    setSearchQuery("");
+    setSearchIndex(0);
+  }
 
   const handleStartReached = useCallback(() => {
     if (visibleCount >= allMessages.length) return;
@@ -700,28 +743,59 @@ export default function ChatScreen({ route, navigation }) {
     // dari nav bar.
     <View style={[styles.container, { paddingBottom: keyboardHeight > 0 ? keyboardHeight + insets.bottom : insets.bottom }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.headerInfo}
-          onPress={() => customerSheetRef.current?.open()}
-        >
-          <Avatar name={name} size={38} isGroup={isGroup} avatarUrl={conversation?.customer?.profilePictureUrl} />
-          <View style={{ marginLeft: 10, flex: 1 }}>
-            <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
-            <Text style={styles.headerSub} numberOfLines={1}>
-              {isGroup ? "Percakapan Grup" : (conversation?.customer?.phone || "Ketuk untuk info pelanggan")}
-            </Text>
-          </View>
-        </TouchableOpacity>
-        {!isGroup && (
-          <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuBtn}>
-            <MoreVertical size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
+      {showSearch ? (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={closeSearch} style={styles.backBtn}>
+            <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
           </TouchableOpacity>
-        )}
-      </View>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Cari pesan di percakapan ini..."
+            placeholderTextColor={tokens.color.textMuted}
+            autoFocus
+            returnKeyType="search"
+          />
+          {!!searchQuery && (
+            <Text style={styles.searchCount}>
+              {searchMatches.length ? `${searchIndex + 1}/${searchMatches.length}` : "0/0"}
+            </Text>
+          )}
+          <TouchableOpacity onPress={handleSearchPrev} style={styles.searchNavBtn} disabled={!searchMatches.length}>
+            <ChevronLeft size={20} color={searchMatches.length ? tokens.color.textPrimary : tokens.color.textMuted} strokeWidth={2.2} style={{ transform: [{ rotate: "90deg" }] }} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSearchNext} style={styles.searchNavBtn} disabled={!searchMatches.length}>
+            <ChevronLeft size={20} color={searchMatches.length ? tokens.color.textPrimary : tokens.color.textMuted} strokeWidth={2.2} style={{ transform: [{ rotate: "-90deg" }] }} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <ChevronLeft size={26} color={tokens.color.textPrimary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerInfo}
+            onPress={() => customerSheetRef.current?.open()}
+          >
+            <Avatar name={name} size={38} isGroup={isGroup} avatarUrl={conversation?.customer?.profilePictureUrl} />
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
+              <Text style={styles.headerSub} numberOfLines={1}>
+                {isGroup ? "Percakapan Grup" : (conversation?.customer?.phone || "Ketuk untuk info pelanggan")}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowSearch(true)} style={styles.menuBtn}>
+            <Search size={20} color={tokens.color.textPrimary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          {!isGroup && (
+            <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuBtn}>
+              <MoreVertical size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {!isGroup && <HandoverHistoryBanner conversationId={conversationId} />}
 
@@ -1033,6 +1107,11 @@ function createStyles(tokens) {
   headerName: { color: tokens.color.textPrimary, fontSize: 16, fontWeight: "700" },
   headerSub: { color: tokens.color.textSecondary, fontSize: 11 },
   menuBtn: { paddingHorizontal: 12 },
+  searchInput: {
+    flex: 1, fontSize: 15, color: tokens.color.textPrimary, paddingVertical: 6,
+  },
+  searchCount: { fontSize: 12, color: tokens.color.textMuted, marginRight: 4 },
+  searchNavBtn: { paddingHorizontal: 6 },
   menuIcon: { color: tokens.color.textPrimary, fontSize: 22, fontWeight: "700" },
   list: { flex: 1 },
   jumpToLatestBtn: {
