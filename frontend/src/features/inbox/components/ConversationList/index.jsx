@@ -1,7 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
+import { MessageSquarePlus } from "lucide-react";
 import FilterTabs from "./FilterTabs.jsx";
 import SearchBar from "./SearchBar.jsx";
+import ChatBaruDialog from "./ChatBaruDialog.jsx";
 import ConversationItem from "./ConversationItem.jsx";
 import { ConversationListSkeleton } from "../Skeletons.jsx";
 import { useConversations } from "../../hooks/useConversations.js";
@@ -29,6 +32,8 @@ function matches(c, filter, userId, query) {
 }
 
 export default function ConversationList({ userId }) {
+  const navigate = useNavigate();
+  const [chatBaruOpen, setChatBaruOpen] = useState(false);
   const filter = useFilter();
   const search = useConvSearchQuery();
   const orderedIds = useOrderedIds();
@@ -48,7 +53,29 @@ export default function ConversationList({ userId }) {
 
   return (
     <div className="conversation-list">
-      <SearchBar />
+      {/* Dibuka lewat tombol di bawah; percakapan yang jadi langsung dibuka
+          lewat deep-link ?conv= (pola sama dengan klik baris di Pelanggan). */}
+      <ChatBaruDialog
+        open={chatBaruOpen}
+        onClose={() => setChatBaruOpen(false)}
+        onJadi={(hasil) => navigate(`/inbox?conv=${hasil.conversationId}`)}
+      />
+
+      <div style={{ display: "flex", gap: 8, padding: "8px 10px 0", alignItems: "center" }}>
+        <div style={{ flex: 1, minWidth: 0 }}><SearchBar /></div>
+        <button
+          onClick={() => setChatBaruOpen(true)}
+          title="Chat baru — ketik nomor langsung, seperti di WhatsApp"
+          style={{
+            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            width: 34, height: 34, borderRadius: 8, cursor: "pointer",
+            border: "1px solid var(--border)", background: "var(--card-bg, #fff)",
+            color: "var(--primary, #2563eb)",
+          }}
+        >
+          <MessageSquarePlus size={17} />
+        </button>
+      </div>
       <FilterTabs />
       <div className="conv-virtuoso-wrap">
         {isLoading && visibleIds.length === 0 && (

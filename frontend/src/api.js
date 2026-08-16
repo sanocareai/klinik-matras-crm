@@ -411,6 +411,16 @@ export const api = {
     }
     return request("/conversations" + qs);
   },
+  // "Ketik nomor lalu chat" — seperti di aplikasi WhatsApp. cekNomor cuma
+  // memeriksa (tidak membuat apa pun), mulaiChat yang benar-benar membuat
+  // Customer + Conversation kalau nomornya terbukti terdaftar.
+  cekNomorWa: (phone, session) =>
+    request(`/conversations/cek-nomor${buildQuery({ phone, session })}`),
+  mulaiChatBaru: ({ phone, session, name }) =>
+    request("/conversations/mulai-chat", {
+      method: "POST",
+      body: JSON.stringify({ phone, session, name }),
+    }),
   getConversation: (id) => request(`/conversations/${id}`),
   getUnreadCount: () => request("/conversations/unread-count"),
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),

@@ -8,7 +8,8 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS } from "../services/wahaClient.js";
+import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
+import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
@@ -186,6 +187,139 @@ conversationRouter.get("/counts", async (req, res) => {
     prisma.conversation.count({ where: { unread: true } }),
   ]);
   res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca });
+});
+
+// POST /api/conversations/mulai-chat — "ketik nomor lalu chat", seperti di
+// aplikasi WhatsApp.
+//
+// KENAPA INI ADA. Sebelumnya percakapan HANYA bisa lahir dari customer yang
+// chat duluan (lewat webhook). Kalau sales dapat nomor dari telepon, kartu
+// nama, atau referral, tidak ada jalan memulai chat dari CRM sama sekali —
+// mereka harus buka WhatsApp di HP, dan percakapan itu tidak pernah masuk
+// CRM sampai customer membalas.
+//
+// ALUR & ALASAN URUTANNYA:
+//   1. Bakukan nomor (08xx/+62/8xx -> 628xx) — tanpa ini satu orang bisa
+//      jadi beberapa Customer terpisah cuma karena beda cara ketik.
+//   2. Kalau SUDAH ada di CRM, kembalikan percakapan yang ada. TIDAK bikin
+//      baru — menduplikasi customer memecah riwayat chat & order.
+//   3. Baru cek ke WhatsApp apakah nomornya benar-benar terdaftar. Cek ini
+//      TERAKHIR karena paling mahal (panggilan jaringan) dan tidak perlu
+//      dilakukan untuk nomor yang sudah jelas ada di CRM.
+//   4. Customer/Conversation baru dibuat HANYA kalau nomornya terbukti ada.
+conversationRouter.post("/mulai-chat", async (req, res) => {
+  try {
+    const { phone, session, name } = req.body;
+
+    const baku = bakukanNomorIndonesia(phone);
+    if (!baku.ok) return res.status(400).json({ error: baku.alasan });
+    const nomor = baku.nomor;
+
+    // Sesi WAJIB dipilih eksplisit — nomor CS ada 2 (CS-1/CS-2) dan
+    // pelanggan akan melihat pesan datang DARI nomor itu. Menebak sesi di
+    // sini artinya menentukan identitas pengirim tanpa sepengetahuan sales.
+    if (!KNOWN_SESSIONS.includes(session)) {
+      return res.status(400).json({ error: `Pilih nomor pengirim: ${KNOWN_SESSIONS.join(" atau ")}` });
+    }
+
+    // ── Sudah ada di CRM? Pakai yang itu. ──
+    const existing = await prisma.customer.findUnique({ where: { phone: nomor } });
+    if (existing) {
+      let conv = await prisma.conversation.findFirst({
+        where: { customerId: existing.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
+        orderBy: { lastMessageAt: "desc" },
+      });
+      // Pelanggan lama yang semua percakapannya sudah RESOLVED — buka
+      // percakapan baru, jangan menghidupkan kembali yang sudah ditutup
+      // (statusnya punya arti bagi sales).
+      if (!conv) {
+        conv = await prisma.conversation.create({
+          data: { customerId: existing.id, channel: "WHATSAPP", sessionId: session },
+        });
+      }
+      return res.json({
+        conversationId: conv.id,
+        customerId: existing.id,
+        sudahAda: true,
+        nomor,
+      });
+    }
+
+    // ── Nomor baru: pastikan dulu benar-benar ada di WhatsApp ──
+    const cek = await checkNumberExists(nomor, session);
+    if (cek === null) {
+      // WAHA tidak bisa dihubungi — SENGAJA dibedakan dari "nomor tidak
+      // terdaftar", supaya sales tidak menyimpulkan nomornya salah padahal
+      // layanannya yang sedang mati.
+      return res.status(503).json({ error: "Layanan WhatsApp sedang tidak bisa dihubungi — coba lagi sebentar lagi" });
+    }
+    if (!cek.ada) {
+      return res.status(404).json({ error: `Nomor ${nomor} tidak terdaftar di WhatsApp` });
+    }
+
+    // Ambil nama dari WhatsApp kalau ada — lebih baik daripada kontak tanpa
+    // nama, dan sales tetap bisa menimpanya nanti.
+    const kontak = await getContactInfo(nomor, session).catch(() => null);
+
+    const customer = await prisma.customer.create({
+      data: {
+        phone: nomor,
+        name: name?.trim() || kontak?.name || kontak?.pushname || null,
+        // Dimulai OLEH SALES, bukan customer yang datang sendiri — jadi ini
+        // bukan lead masuk dari kanal manapun. Ditandai jujur begitu, bukan
+        // dipaksa masuk salah satu sumber iklan.
+        leadSource: "OTHER",
+        leadSourceDetail: "Dimulai manual oleh sales dari CRM",
+      },
+    });
+
+    const conversation = await prisma.conversation.create({
+      data: { customerId: customer.id, channel: "WHATSAPP", sessionId: session },
+    });
+
+    console.log(`[mulai-chat] Percakapan baru ${conversation.id} ke ${nomor} lewat ${session}`);
+    res.status(201).json({
+      conversationId: conversation.id,
+      customerId: customer.id,
+      sudahAda: false,
+      nomor,
+      nama: customer.name,
+    });
+  } catch (err) {
+    console.error("[mulai-chat] gagal:", err);
+    res.status(500).json({ error: "Gagal memulai percakapan" });
+  }
+});
+
+// GET /api/conversations/cek-nomor?phone=&session= — periksa nomor TANPA
+// membuat apa pun. Dipakai UI untuk memberi umpan balik langsung saat sales
+// mengetik, sebelum dia menekan tombol.
+conversationRouter.get("/cek-nomor", async (req, res) => {
+  try {
+    const { phone, session } = req.query;
+    const baku = bakukanNomorIndonesia(phone);
+    if (!baku.ok) return res.json({ valid: false, alasan: baku.alasan });
+
+    const sesi = KNOWN_SESSIONS.includes(session) ? session : KNOWN_SESSIONS[0];
+    const nomor = baku.nomor;
+
+    const existing = await prisma.customer.findUnique({
+      where: { phone: nomor },
+      select: { id: true, name: true },
+    });
+
+    const cek = await checkNumberExists(nomor, sesi);
+    res.json({
+      valid: true,
+      nomor,
+      adaDiWhatsApp: cek === null ? null : cek.ada, // null = WAHA tidak terjangkau
+      sudahAdaDiCrm: !!existing,
+      namaDiCrm: existing?.name || null,
+    });
+  } catch (err) {
+    console.error("[cek-nomor] gagal:", err.message);
+    res.status(500).json({ error: "Gagal memeriksa nomor" });
+  }
 });
 
 // Daftar percakapan — cursor pagination (cursor = id percakapan terakhir dari

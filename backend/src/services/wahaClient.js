@@ -327,6 +327,39 @@ export async function getContactInfo(phone, session) {
   }
 }
 
+/**
+ * Cek apakah sebuah nomor benar-benar TERDAFTAR di WhatsApp.
+ *
+ * Ini yang membuat "ketik nomor lalu chat" seperti di aplikasi WhatsApp
+ * jadi mungkin di CRM: sebelum membuat Customer/Conversation baru, nomornya
+ * dipastikan dulu ada. Tanpa cek ini, salah ketik satu digit menghasilkan
+ * pelanggan hantu di database DAN pesan yang terkirim ke ruang hampa —
+ * WhatsApp tidak mengembalikan error untuk tujuan yang tidak ada.
+ *
+ * @returns {Promise<{ada: boolean, chatId: string|null}|null>} null kalau
+ *   WAHA-nya sendiri tidak bisa dihubungi — SENGAJA dibedakan dari
+ *   `{ada:false}` supaya pemanggil tidak bilang "nomor tidak terdaftar"
+ *   padahal yang terjadi adalah layanannya sedang mati.
+ */
+export async function checkNumberExists(phone, session) {
+  if (!session) throw new Error("checkNumberExists: parameter 'session' wajib diisi");
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/contacts/check-exists?phone=${encodeURIComponent(phone)}&session=${encodeURIComponent(session)}`,
+      { headers: headers() }
+    );
+    if (!res.ok) {
+      console.warn(`[checkNumberExists] WAHA balas ${res.status} untuk ${phone}`);
+      return null;
+    }
+    const data = await res.json();
+    return { ada: data.numberExists === true, chatId: data.chatId || null };
+  } catch (e) {
+    console.warn("[checkNumberExists] Error:", e.message);
+    return null;
+  }
+}
+
 // Cek status sesi WhatsApp
 // session opsional — default tetap WAHA_SESSION (perilaku lama tidak berubah).
 // Dipakai Pengaturan > Status WhatsApp untuk cek CS-1/CS-2 secara terpisah
