@@ -9,6 +9,7 @@ import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.j
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { buatFileVCard } from "../services/vcard.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -125,6 +126,51 @@ customerRouter.post("/", async (req, res) => {
 // daftar pelanggan yang di-fetch (lihat catatan paginasi di bawah); begitu
 // list utama dipaginasi, tidak ada lagi "seluruh daftar" di browser untuk
 // menurunkannya dari situ, jadi dipisah jadi endpoint kecil sendiri.
+// GET /api/customers/export/vcard — unduh pelanggan sebagai file .vcf
+// untuk diimpor ke buku alamat HP.
+//
+// KENAPA INI ADA (bukan sinkron otomatis ke WhatsApp). WAHA terhubung
+// sebagai perangkat tertaut — dia TIDAK PUNYA buku alamat sendiri untuk
+// ditulisi, dan nama kontak WhatsApp memang tersimpan di HP masing-masing
+// orang, bukan di server. Diverifikasi langsung ke WAHA production
+// 16 Agt 2026: semua endpoint tulis kontak (PUT/POST/PATCH /api/contacts,
+// /contacts/name, /rename, /update, /set-name, /addressbook) menjawab 404.
+// Ini bukan keterbatasan tier yang bisa diakali upgrade.
+//
+// Jadi ini SATU ARAH & MANUAL: file diunduh dari CRM, diimpor sekali oleh
+// sales ke HP mereka. Nama baru/berubah di CRM TIDAK otomatis menyusul —
+// harus diimpor ulang. Filter query SAMA PERSIS dengan yang dipakai
+// tabel Pelanggan (buildCustomerWhere), supaya "ekspor yang sedang saya
+// lihat" benar-benar berarti itu.
+customerRouter.get("/export/vcard", async (req, res) => {
+  try {
+    const where = buildCustomerWhere(req.query);
+    const pelanggan = await prisma.customer.findMany({
+      where,
+      select: { name: true, phone: true },
+      orderBy: { name: "asc" },
+    });
+
+    const { isi, jumlah, dilewati } = buatFileVCard(pelanggan);
+    if (jumlah === 0) {
+      return res.status(400).json({
+        error: dilewati > 0
+          ? `${dilewati} pelanggan cocok filter, tapi semuanya tanpa nama atau tanpa nomor — tidak ada yang bisa diekspor`
+          : "Tidak ada pelanggan yang cocok filter ini",
+      });
+    }
+
+    console.log(`[export/vcard] ${req.user.id} mengekspor ${jumlah} kontak (${dilewati} dilewati: tanpa nama/nomor)`);
+
+    res.setHeader("Content-Type", "text/vcard; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="pelanggan-klinik-matras-${jumlah}.vcf"`);
+    res.send(isi);
+  } catch (err) {
+    console.error("[export/vcard] gagal:", err.message);
+    res.status(500).json({ error: "Gagal membuat file kontak" });
+  }
+});
+
 customerRouter.get("/meta/cities", async (req, res) => {
   try {
     const rows = await prisma.customer.findMany({

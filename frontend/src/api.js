@@ -483,6 +483,27 @@ export const api = {
 
   // Customers
   getCustomers: (params) => request("/customers" + buildQuery(params)),
+  // Ekspor pelanggan sebagai file .vcf untuk diimpor ke buku alamat HP —
+  // BUKAN sinkron otomatis ke WhatsApp (WAHA tidak punya jalan menulis
+  // kontak, lihat catatan panjang di backend/src/services/vcard.js).
+  // Endpoint mengembalikan FILE, bukan JSON, jadi tidak lewat request()
+  // biasa — auth tetap wajib (requireAuth di backend), makanya di-fetch
+  // manual dengan header Bearer, bukan <a href> polos yang tidak bisa
+  // membawa header otorisasi.
+  exportCustomersVCard: async (params) => {
+    const res = await fetch(BASE + "/customers/export/vcard" + buildQuery(params), {
+      headers: authHeaders(),
+    });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal mengekspor kontak";
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || "pelanggan.vcf";
+    return { blob: await res.blob(), namaFile };
+  },
   // Pindahkan SEMUA pelanggan yang cocok `filters` (bukan cuma satu halaman)
   // ke sales lain sekaligus — 1 request, bukan ratusan api.updateCustomer.
   // `filters` pakai nama query param yang SAMA dengan getCustomers.

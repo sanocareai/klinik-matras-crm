@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Download } from "lucide-react";
+import { Plus, Download, Contact } from "lucide-react";
 import { api } from "../api.js";
 import CustomerDrawer from "../components/CustomerDrawer.jsx";
 import Pagination from "../components/Pagination.jsx";
@@ -268,6 +268,29 @@ export default function Customers() {
     }
   }
 
+  // Unduh .vcf untuk diimpor ke buku alamat HP — SATU ARAH & MANUAL, bukan
+  // sinkron otomatis ke WhatsApp. Lihat catatan panjang di
+  // backend/src/services/vcard.js soal kenapa itu tidak mungkin lewat WAHA.
+  const [exportingVCard, setExportingVCard] = useState(false);
+  async function handleExportVCard() {
+    setExportingVCard(true);
+    try {
+      // Filter yang SEDANG AKTIF di layar — "ekspor kontak ini" berarti
+      // persis yang sedang dilihat, sama seperti Export Excel.
+      const { blob, namaFile } = await api.exportCustomersVCard(activeFilters);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = namaFile;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setExportingVCard(false);
+    }
+  }
+
   // Bulk assign sales — DUA jalur:
   // - selectAllMatching: SEMUA pelanggan yang cocok filter aktif (lintas
   //   halaman, bisa ratusan) → 1 request ke POST /customers/bulk-reassign
@@ -319,6 +342,17 @@ export default function Customers() {
           <>
             <Button variant="ghost" onClick={handleExport} disabled={loading}>
               <Download size={15} /> Export Excel
+            </Button>
+            {/* .vcf untuk diimpor ke buku alamat HP — supaya nama di CRM
+                ikut muncul di WhatsApp sales. Satu arah & manual, lihat
+                tooltip. */}
+            <Button
+              variant="ghost"
+              onClick={handleExportVCard}
+              disabled={loading || exportingVCard}
+              title="Unduh kontak lalu impor ke buku alamat HP — TIDAK otomatis sinkron, harus diimpor ulang kalau ada nama baru"
+            >
+              <Contact size={15} /> {exportingVCard ? "Membuat..." : "Kontak (.vcf)"}
             </Button>
             <Button onClick={() => setShowModal(true)}>
               <Plus size={16} /> Pelanggan Baru
