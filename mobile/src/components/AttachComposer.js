@@ -12,7 +12,6 @@ import {
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import * as Location from "expo-location";
 // SDK 57 mendeprecate API lama expo-contacts (getContactsAsync dkk) demi API
 // class-based baru — dikonfirmasi via dialog error asli di HP: "Method
 // getContactsAsync imported from 'expo-contacts' is deprecated ... import the
@@ -28,6 +27,7 @@ import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import ProductPicker from "./ProductPicker";
+import KirimLokasiModal from "./KirimLokasiModal";
 
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
@@ -96,7 +96,7 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
   const [sendingProduct, setSendingProduct] = useState(false);
   const [kontakList, setKontakList] = useState(null); // null = picker tertutup
   const [cariKontak, setCariKontak] = useState("");
-  const [mengirimLokasi, setMengirimLokasi] = useState(false);
+  const [showLokasi, setShowLokasi] = useState(false);
 
   useImperativeHandle(ref, () => ({
     // Dipanggil ikon klip di composer ChatScreen.
@@ -188,33 +188,28 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
     setShowProductPicker(true);
   }
 
-  // Kirim LOKASI SAAT INI. Sengaja tidak ada peta pemilih titik — sales di
-  // lapangan hampir selalu ingin membagikan "posisi saya sekarang" (di
-  // showroom / di rumah pelanggan). Peta interaktif butuh API key Google
-  // Maps + layar tambahan, tidak sepadan untuk kebutuhan itu.
-  async function kirimLokasiSekarang() {
+  // Dulu menekan "Lokasi" LANGSUNG mengirim posisi saat itu juga tanpa
+  // konfirmasi apa pun — sekarang membuka layar tinjau dulu (KirimLokasiModal),
+  // sales lihat alamatnya baru menekan kirim. Peta visual & daftar "tempat
+  // terdekat" (seperti WhatsApp asli) SENGAJA belum ada — butuh Google
+  // Maps/Places API key berbayar yang belum tersedia; lihat catatan panjang
+  // di KirimLokasiModal.js.
+  function bukaKirimLokasi() {
     setShowSheet(false);
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Lokasi", "Izin lokasi diperlukan untuk membagikan titik lokasi");
-      return;
-    }
-    setMengirimLokasi(true);
+    setShowLokasi(true);
+  }
+
+  async function handleKirimLokasi(payload) {
     try {
-      // Balanced, bukan Highest — akurasi ~100m sudah cukup untuk menunjukkan
-      // alamat, sementara Highest bisa menahan sampai belasan detik menunggu
-      // fix GPS di dalam ruangan (dan sering gagal total di showroom).
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const msg = await api.sendLocation(conversationId, {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        name: null,
-      });
+      const msg = await api.sendLocation(conversationId, payload);
       onSent?.(msg);
+      setShowLokasi(false);
     } catch (err) {
       Alert.alert("Gagal kirim lokasi", err.message);
-    } finally {
-      setMengirimLokasi(false);
+      // TIDAK rethrow — KirimLokasiModal sudah menghentikan spinner tombolnya
+      // sendiri lewat `finally` terlepas dari berhasil/gagal di sini, dan
+      // modalnya tetap terbuka (sales bisa coba kirim lagi tanpa mengulang
+      // ambil lokasi dari awal).
     }
   }
 
@@ -337,7 +332,7 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
     { key: "kamera",   label: "Kamera",   Icon: Camera,    warna: "#EC4899", aksi: () => bukaKamera("foto") },
     { key: "video",    label: "Video",    Icon: Video,     warna: "#F97316", aksi: () => bukaKamera("video") },
     { key: "dokumen",  label: "Dokumen",  Icon: FileText,  warna: "#3B82F6", aksi: pickDocument },
-    { key: "lokasi",   label: "Lokasi",   Icon: MapPin,    warna: "#10B981", aksi: kirimLokasiSekarang },
+    { key: "lokasi",   label: "Lokasi",   Icon: MapPin,    warna: "#10B981", aksi: bukaKirimLokasi },
     { key: "kontak",   label: "Kontak",   Icon: User,      warna: "#0EA5E9", aksi: bukaPilihKontak },
     { key: "produk",   label: "Produk",   Icon: Package,   warna: "#F59E0B", aksi: openProductPicker },
   ];
@@ -374,16 +369,11 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
         </TouchableOpacity>
       </Modal>
 
-      {/* Indikator saat menunggu fix GPS — tanpa ini menekan "Lokasi" terasa
-          seperti tombol rusak selama beberapa detik pertama. */}
-      <Modal visible={mengirimLokasi} transparent animationType="fade">
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={tokens.color.accent} />
-            <Text style={styles.loadingText}>Mengambil lokasi…</Text>
-          </View>
-        </View>
-      </Modal>
+      <KirimLokasiModal
+        visible={showLokasi}
+        onClose={() => setShowLokasi(false)}
+        onKirim={handleKirimLokasi}
+      />
 
       {/* Pilih kontak dari HP */}
       <Modal visible={!!kontakList} animationType="slide" onRequestClose={() => setKontakList(null)}>
@@ -577,12 +567,6 @@ function createStyles(tokens) {
     width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center",
   },
   gridLabel: { fontSize: 11.5, color: tokens.color.textSecondary, marginTop: 7 },
-  loadingOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center" },
-  loadingBox: {
-    backgroundColor: tokens.color.card, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 18,
-    alignItems: "center", gap: 10,
-  },
-  loadingText: { fontSize: 13, color: tokens.color.textPrimary },
   kontakRoot: { flex: 1, backgroundColor: tokens.color.bg },
   kontakHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

@@ -12,7 +12,7 @@
     "jsEngine": "hermes",
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 15,
+      "versionCode": 16,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
