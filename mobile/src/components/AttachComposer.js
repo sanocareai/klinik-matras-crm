@@ -7,7 +7,7 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, ScrollView,
-  ActivityIndicator,
+  ActivityIndicator, Dimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -16,7 +16,7 @@ import * as Location from "expo-location";
 import * as Contacts from "expo-contacts";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
-  Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User, Plus,
+  Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User, Plus, Play,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -25,6 +25,8 @@ import ProductPicker from "./ProductPicker";
 
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
+
+const { width: SCREEN_W } = Dimensions.get("window");
 
 // uploadFile() (mobile/src/api.js, dipakai api.sendMedia) kadang GAGAL cuma
 // di sisi respons — file sudah ke-upload penuh, WAHA sudah kirim ke
@@ -72,14 +74,16 @@ async function compressImage(uri) {
 const AttachComposer = forwardRef(function AttachComposer({ conversationId, customerName, onSent }, ref) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  // Modal preview punya kolom "Caption…" per file — tanpa ini, mengetik
-  // caption membuat kolomnya tertutup keyboard dan tombol Kirim di bawah
-  // tidak bisa dijangkau sama sekali.
-  // overlayStyle MENDORONG sheet naik ke atas keyboard; maxHeight
-  // membatasi tingginya. Keduanya wajib bersama — lihat lib/useSheetMaxHeight.js.
-  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.85);
+  // Preview sekarang layar PENUH (bukan bottom sheet lagi), jadi cuma
+  // butuh tinggi keyboard untuk mendorong bar caption+kirim naik — bukan
+  // maxHeight/overlayStyle penuh seperti sheet lain di file ini.
+  const { keyboardHeight } = useSheetMaxHeight(0.85);
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems] = useState([]);
+  // Item yang sedang ditampilkan besar + caption yang sedang diedit — pola
+  // WhatsApp: preview besar SATU per satu + filmstrip di bawahnya untuk
+  // pindah, bukan daftar baris kecil-kecil seperti sebelumnya.
+  const [activeUid, setActiveUid] = useState(null);
   const [hd, setHd] = useState(false);
   const [sending, setSending] = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
@@ -112,6 +116,10 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
       };
     });
     setItems((prev) => [...prev, ...newItems]);
+    // Item pertama yang dipilih otomatis jadi yang ditampilkan besar. Kalau
+    // menambah lagi lewat "Tambah" (activeUid sudah terisi), yang sedang
+    // dilihat TIDAK berpindah — sales mungkin lagi mengetik caption-nya.
+    setActiveUid((prev) => prev || newItems[0]?.uid || null);
   }
 
   async function pickFromGallery() {
@@ -263,13 +271,24 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
   }
 
   function removeItem(uid) {
-    setItems((prev) => prev.filter((i) => i.uid !== uid));
+    setItems((prev) => {
+      const next = prev.filter((i) => i.uid !== uid);
+      // Kalau yang dihapus adalah yang sedang ditampilkan besar, pindah ke
+      // tetangganya — jangan biarkan preview besar kosong sementara
+      // filmstrip di bawahnya masih menunjukkan sisa file lain.
+      if (uid === activeUid) {
+        const idx = prev.findIndex((i) => i.uid === uid);
+        setActiveUid(next[idx]?.uid || next[idx - 1]?.uid || next[0]?.uid || null);
+      }
+      return next;
+    });
   }
   function setCaption(uid, caption) {
     setItems((prev) => prev.map((i) => (i.uid === uid ? { ...i, caption } : i)));
   }
   function closePreview() {
     setItems([]);
+    setActiveUid(null);
   }
 
   async function handleSendAll() {
@@ -300,6 +319,7 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
       }
     }
     setItems(remaining);
+    if (!remaining.some((i) => i.uid === activeUid)) setActiveUid(remaining[0]?.uid || null);
     setSending(false);
   }
 
@@ -403,72 +423,129 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
         onSend={handleSendProduct}
       />
 
-      {/* Modal preview sebelum kirim */}
-      <Modal visible={items.length > 0} transparent animationType="slide" onRequestClose={() => !sending && closePreview()}>
-        <View style={[styles.previewOverlay, overlayStyle]}>
-          <View style={[styles.previewModal, { maxHeight: sheetMaxHeight }]}>
-            <View style={styles.previewHeader}>
-              <Text style={styles.previewHeaderText}>{items.length} file dipilih</Text>
-              <TouchableOpacity onPress={closePreview} disabled={sending}>
-                <X size={18} color={tokens.color.textSecondary} strokeWidth={2.2} />
-              </TouchableOpacity>
-            </View>
-            {/* maxHeight "100%" — tinggi sebenarnya sudah dibatasi previewModal di
-                 atas yang ikut mengecil saat keyboard muncul. Angka tetap (dulu
-                 380) bikin isi terpotong dua kali. */}
-            <ScrollView style={{ maxHeight: "100%" }} keyboardShouldPersistTaps="handled">
-              {items.map((item) => (
-                <View key={item.uid} style={styles.previewItem}>
-                  <View style={styles.previewThumbWrap}>
-                    {item.mediaType === "image" ? (
-                      <Image source={{ uri: item.uri }} style={styles.previewThumb} contentFit="cover" />
-                    ) : (
-                      <View style={[styles.previewThumb, styles.previewThumbIcon]}>
-                        {item.mediaType === "video" ? (
-                          <Video size={22} color={tokens.color.textSecondary} strokeWidth={1.8} />
-                        ) : (
-                          <FileText size={22} color={tokens.color.textSecondary} strokeWidth={1.8} />
-                        )}
-                      </View>
-                    )}
-                    {!sending && (
-                      <TouchableOpacity style={styles.previewRemove} onPress={() => removeItem(item.uid)}>
-                        <X size={11} color="#fff" strokeWidth={2.6} />
-                      </TouchableOpacity>
-                    )}
+      {/* Modal preview sebelum kirim — gaya WhatsApp: layar penuh gelap,
+          SATU file ditampilkan besar sekaligus, filmstrip di bawah untuk
+          pindah antar file, caption terikat ke file yang sedang aktif.
+          Sebelumnya ini daftar baris kecil-kecil (thumbnail 56px + caption
+          sejajar) yang terasa jauh dari WhatsApp — diganti total di sini. */}
+      <Modal visible={items.length > 0} animationType="slide" onRequestClose={() => !sending && closePreview()}>
+        <View style={styles.previewRoot}>
+          <View style={styles.previewTopBar}>
+            <TouchableOpacity onPress={closePreview} disabled={sending} style={styles.previewTopBtn}>
+              <X size={22} color="#fff" strokeWidth={2.2} />
+            </TouchableOpacity>
+            <Text style={styles.previewCounter}>{items.length} file dipilih</Text>
+            <TouchableOpacity
+              style={[styles.hdPill, hd && styles.hdPillActive]}
+              onPress={() => setHd((v) => !v)}
+              disabled={sending}
+            >
+              <Text style={[styles.hdPillText, hd && styles.hdPillTextActive]}>HD</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Preview besar item aktif */}
+          <View style={styles.previewStage}>
+            {(() => {
+              const active = items.find((i) => i.uid === activeUid) || items[0];
+              if (!active) return null;
+              if (active.mediaType === "image") {
+                return <Image source={{ uri: active.uri }} style={styles.previewStageImage} contentFit="contain" />;
+              }
+              if (active.mediaType === "video") {
+                return (
+                  <View style={styles.previewStageImage}>
+                    <Image source={{ uri: active.uri }} style={StyleSheet.absoluteFillObject} contentFit="contain" />
+                    <View style={styles.previewPlayOverlay}>
+                      <Play size={40} color="#fff" fill="#fff" strokeWidth={0} />
+                    </View>
                   </View>
-                  <TextInput
-                    style={styles.previewCaption}
-                    placeholder="Caption…"
-                    placeholderTextColor={tokens.color.textMuted}
-                    value={item.caption}
-                    editable={!sending}
-                    onChangeText={(t) => setCaption(item.uid, t)}
-                  />
-                  {item.error && <Text style={styles.previewError}>{item.error}</Text>}
+                );
+              }
+              return (
+                <View style={styles.previewDocStage}>
+                  <FileText size={48} color="rgba(255,255,255,0.7)" strokeWidth={1.5} />
+                  <Text style={styles.previewDocName} numberOfLines={2}>{active.name}</Text>
                 </View>
+              );
+            })()}
+          </View>
+
+          {/* Filmstrip — cuma tampil kalau >1 file, persis WhatsApp (1 file
+              tidak butuh strip pemilih). */}
+          {items.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filmstrip}
+              keyboardShouldPersistTaps="handled"
+            >
+              {items.map((item) => (
+                <TouchableOpacity
+                  key={item.uid}
+                  style={[styles.filmstripItem, item.uid === activeUid && styles.filmstripItemActive]}
+                  onPress={() => setActiveUid(item.uid)}
+                >
+                  {item.mediaType === "document" ? (
+                    <View style={[styles.filmstripThumb, styles.filmstripDocThumb]}>
+                      <FileText size={18} color="rgba(255,255,255,0.8)" strokeWidth={1.8} />
+                    </View>
+                  ) : (
+                    <Image source={{ uri: item.uri }} style={styles.filmstripThumb} contentFit="cover" />
+                  )}
+                  {item.mediaType === "video" && (
+                    <View style={styles.filmstripPlayBadge}>
+                      <Play size={10} color="#fff" fill="#fff" strokeWidth={0} />
+                    </View>
+                  )}
+                  {!sending && (
+                    <TouchableOpacity style={styles.filmstripRemove} onPress={() => removeItem(item.uid)}>
+                      <X size={9} color="#fff" strokeWidth={3} />
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
               ))}
-            </ScrollView>
-            <View style={styles.previewFooter}>
-              <TouchableOpacity
-                style={[styles.hdToggle, hd && styles.hdToggleActive]}
-                onPress={() => setHd((v) => !v)}
-                disabled={sending}
-              >
-                <Text style={[styles.hdToggleText, hd && styles.hdToggleTextActive]}>{hd ? "HD" : "Standar"}</Text>
-              </TouchableOpacity>
               {/* Tambah foto/video lagi TANPA kehilangan yang sudah dipilih
                   beserta caption-nya — addAssets() meng-APPEND ke `items`,
-                  bukan mengganti. Sebelumnya sales harus menutup preview dan
-                  memilih ulang semuanya dari awal. */}
-              <TouchableOpacity style={styles.tambahBtn} onPress={pickFromGallery} disabled={sending}>
-                <Plus size={15} color={tokens.color.accent} strokeWidth={2.4} />
-                <Text style={styles.tambahBtnText}>Tambah</Text>
+                  bukan mengganti. */}
+              <TouchableOpacity style={[styles.filmstripThumb, styles.filmstripAdd]} onPress={pickFromGallery} disabled={sending}>
+                <Plus size={20} color="#fff" strokeWidth={2.2} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.sendAllBtn} onPress={handleSendAll} disabled={sending}>
-                <Text style={styles.sendAllText}>{sending ? "Mengirim…" : `Kirim (${items.length})`}</Text>
+            </ScrollView>
+          )}
+
+          {(() => {
+            const active = items.find((i) => i.uid === activeUid) || items[0];
+            return active?.error ? <Text style={styles.previewError}>{active.error}</Text> : null;
+          })()}
+
+          {/* Bar bawah — caption terikat ke file aktif (bukan satu caption
+              per file dalam daftar panjang) + Tambah (kalau cuma 1 file,
+              filmstrip di atas tersembunyi jadi tombol ini pindah ke sini)
+              + Kirim. */}
+          <View style={[styles.previewBottomBar, keyboardHeight > 0 && { paddingBottom: keyboardHeight + 10 }]}>
+            <TextInput
+              style={styles.previewCaptionInput}
+              placeholder="Tambahkan keterangan…"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              value={(items.find((i) => i.uid === activeUid) || items[0])?.caption || ""}
+              editable={!sending}
+              onChangeText={(t) => setCaption(activeUid ?? items[0]?.uid, t)}
+            />
+            {items.length === 1 && (
+              <TouchableOpacity style={styles.previewCircleBtn} onPress={pickFromGallery} disabled={sending}>
+                <Plus size={20} color="#fff" strokeWidth={2.2} />
               </TouchableOpacity>
-            </View>
+            )}
+            <TouchableOpacity
+              style={[styles.previewSendBtn, sending && styles.previewSendBtnDisabled]}
+              onPress={handleSendAll}
+              disabled={sending}
+            >
+              {sending
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.previewSendText}>Kirim{items.length > 1 ? ` (${items.length})` : ""}</Text>}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -524,36 +601,65 @@ function createStyles(tokens) {
   kontakNama: { fontSize: 14.5, color: tokens.color.textPrimary, fontWeight: "600" },
   kontakNomor: { fontSize: 12.5, color: tokens.color.textMuted },
   kontakKosong: { fontSize: 13, color: tokens.color.textMuted, textAlign: "center", padding: 24 },
-  previewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  previewModal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16 },
-  previewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  previewHeaderText: { fontWeight: "700", color: tokens.color.textPrimary },
-  previewClose: { fontSize: 16, color: tokens.color.textSecondary, padding: 4 },
-  previewItem: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  previewThumbWrap: { position: "relative" },
-  previewThumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: tokens.color.subtle },
-  previewThumbIcon: { alignItems: "center", justifyContent: "center" },
-  previewRemove: {
-    position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+  // Preview kirim media — gaya WhatsApp, layar penuh gelap. Warna DIPATOK
+  // (bukan token tema) — persis videoThumb/albumTile di MessageBubble.js,
+  // konsisten dengan area "panggung media" lain di app ini yang selalu
+  // gelap terlepas dari tema terang/gelap CRM.
+  previewRoot: { flex: 1, backgroundColor: "#000" },
+  previewTopBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: 54, paddingHorizontal: 8, paddingBottom: 10,
+  },
+  previewTopBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  previewCounter: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600" },
+  hdPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)" },
+  hdPillActive: { backgroundColor: tokens.color.accent },
+  hdPillText: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.7)" },
+  hdPillTextActive: { color: "#fff" },
+  previewStage: { flex: 1, alignItems: "center", justifyContent: "center" },
+  previewStageImage: { width: SCREEN_W, height: "100%" },
+  previewPlayOverlay: {
+    ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  previewDocStage: { alignItems: "center", gap: 12, paddingHorizontal: 32 },
+  previewDocName: { color: "#fff", fontSize: 14, textAlign: "center" },
+  previewError: { color: tokens.color.danger, fontSize: 12, textAlign: "center", paddingBottom: 6 },
+  filmstrip: { paddingHorizontal: 10, paddingBottom: 10, gap: 8 },
+  filmstripItem: { position: "relative", borderRadius: 8, opacity: 0.55 },
+  filmstripItemActive: { opacity: 1 },
+  filmstripThumb: {
+    width: 52, height: 52, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 2, borderColor: "transparent",
+  },
+  filmstripDocThumb: { alignItems: "center", justifyContent: "center" },
+  filmstripPlayBadge: {
+    position: "absolute", bottom: 3, right: 3, width: 16, height: 16, borderRadius: 8,
+    alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  filmstripRemove: {
+    position: "absolute", top: -5, right: -5, width: 16, height: 16, borderRadius: 8,
     backgroundColor: tokens.color.danger, alignItems: "center", justifyContent: "center",
   },
-  previewRemoveText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  previewCaption: {
-    flex: 1, backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12,
-    paddingVertical: 8, fontSize: 13, color: tokens.color.textPrimary,
+  filmstripAdd: {
+    alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.1)", opacity: 1,
   },
-  previewError: { fontSize: 11, color: tokens.color.danger },
-  previewFooter: { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 10 },
-  hdToggle: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: tokens.color.subtle },
-  hdToggleActive: { backgroundColor: tokens.color.accentSoft },
-  hdToggleText: { fontSize: 12, fontWeight: "700", color: tokens.color.textSecondary },
-  hdToggleTextActive: { color: tokens.color.accent },
-  tambahBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 14, backgroundColor: tokens.color.accentSoft,
+  previewBottomBar: {
+    flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10,
   },
-  tambahBtnText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
-  sendAllBtn: { marginLeft: "auto", backgroundColor: tokens.color.accent, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10 },
-  sendAllText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  previewCaptionInput: {
+    flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 22, paddingHorizontal: 16,
+    paddingVertical: 10, fontSize: 14, color: "#fff",
+  },
+  previewCircleBtn: {
+    width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  previewSendBtn: {
+    minWidth: 44, height: 44, borderRadius: 22, paddingHorizontal: 16,
+    alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.accent,
+  },
+  previewSendBtnDisabled: { opacity: 0.6 },
+  previewSendText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   });
 }
