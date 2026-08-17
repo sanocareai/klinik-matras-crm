@@ -112,6 +112,58 @@ export async function sendMedia(to, file, caption, sendAs = "media", session) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+// Kirim LOKASI — dipakai sales membagikan titik showroom/alamat pelanggan.
+//
+// Bentuk payload & nama field DIVERIFIKASI langsung dari kode engine GOWS
+// yang benar-benar jalan di produksi (/app/dist/core/engines/gows/
+// session.gows.core.js#sendLocation), bukan dari dokumentasi umum WAHA:
+//   { session, chatId, latitude, longitude, title }
+// `title` yang dipetakan ke Location.name — jadi nama tempat masuk lewat
+// situ, BUKAN field "name" terpisah.
+//
+// session: WAJIB DIISI caller, alasan sama seperti sendText (lihat di atas).
+export async function sendLocation(to, { lat, lng, title }, session) {
+  if (!session) {
+    throw new Error("sendLocation: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
+  // Lewat buildChatId supaya guard LID yang sama ikut berlaku di sini —
+  // tanpa itu lokasi bisa terkirim ke "<LID>@c.us" (alamat tidak ada) dan
+  // hilang tanpa error, persis bug lama sendText sebelum 25 Juli 2026.
+  const chatId = buildChatId(to, "sendLocation");
+  const body = { session, chatId, latitude: lat, longitude: lng };
+  if (title) body.title = title;
+  const res = await fetch(`${WAHA_BASE_URL}/api/sendLocation`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`WAHA sendLocation gagal (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+// Kirim KARTU KONTAK (vCard) — mis. membagikan nomor teknisi atau sales lain.
+//
+// contacts = [{ fullName, phoneNumber }]. WAHA yang menyusun teks vCard-nya
+// sendiri (toVcardV3 di /app/dist/core/vcard.js) dari field ini, jadi JANGAN
+// merangkai string "BEGIN:VCARD..." manual di sisi kita — nanti ada dua
+// bentuk vCard berbeda yang harus dijaga.
+export async function sendContactVcard(to, contacts, session) {
+  if (!session) {
+    throw new Error("sendContactVcard: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
+  }
+  const chatId = buildChatId(to, "sendContactVcard");
+  const body = { session, chatId, contacts };
+  const res = await fetch(`${WAHA_BASE_URL}/api/sendContactVcard`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`WAHA sendContactVcard gagal (${res.status}): ${text.slice(0, 300)}`);
+  try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
 // Edit pesan OUTBOUND yang sudah terkirim — dikonfirmasi via swagger WAHA
 // (operationId ChatsController_editMessage, tag "💬 Chats") + tes manual
 // langsung ke endpoint ini (PUT berhasil, dan trigger webhook message.edited

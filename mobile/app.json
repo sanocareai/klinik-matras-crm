@@ -2,7 +2,7 @@
   "expo": {
     "name": "SANO Messenger",
     "slug": "klinik-matras-crm",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
     "jsEngine": "hermes",
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 11,
+      "versionCode": 12,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -48,6 +48,18 @@
         "expo-audio",
         {
           "microphonePermission": "Aplikasi butuh akses mikrofon untuk merekam pesan suara ke pelanggan"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Aplikasi butuh akses lokasi untuk membagikan titik lokasi ke pelanggan"
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Aplikasi butuh akses kontak untuk membagikan kartu kontak ke pelanggan"
         }
       ],
       [

@@ -466,7 +466,10 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
         <Animated.View
           style={[stage === "idle" ? styles.micBtn : styles.micBtnBig, micAnimatedStyle]}
         >
-          <Mic size={20} color={stage === "idle" ? tokens.color.textSecondary : "#fff"} strokeWidth={2} />
+          {/* Putih di KEDUA keadaan — latarnya sekarang selalu lingkaran
+              berwarna penuh (aksen saat idle, merah saat merekam), jadi ikon
+              abu-abu lama tidak lagi punya kontras yang cukup. */}
+          <Mic size={stage === "idle" ? 21 : 24} color="#fff" strokeWidth={2.2} />
         </Animated.View>
       </GestureDetector>
 
@@ -481,15 +484,23 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
 
 function createStyles(tokens) {
   return StyleSheet.create({
+  // Tombol mic = lingkaran PENUH berwarna aksen, ukuran sama dengan tombol
+  // kirim (44) — dulu cuma ikon transparan 40px, jadi saat teks diketik dan
+  // tombol berganti ke tombol kirim bulat, ukuran & bentuknya ikut "melompat".
+  // Sekarang keduanya lingkaran 44px: pergantian mic <-> kirim tidak menggeser
+  // apa pun di baris composer.
   micBtn: {
-    width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
-  },
-  micBtnBig: {
     width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center",
+    backgroundColor: tokens.color.accent,
+  },
+  // Saat merekam: MERAH (bukan aksen) — warna itu yang membedakan "siap
+  // merekam" dari "sedang merekam", sekaligus sinyal batal/berhenti.
+  micBtnBig: {
+    width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center",
     backgroundColor: tokens.color.danger,
   },
   // rootIdle: ukuran kecil normal, inline sejajar tombol kirim teks.
-  rootIdle: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  rootIdle: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   // rootActive: overlay lebar PENUH — menutupi seluruh baris input (termasuk
   // TextInput di baliknya, lihat ChatScreen.js inputBar) supaya tombol
   // trash/pause/kirim SELALU dapat ruang cukup, tidak pernah kepotong. Posisi

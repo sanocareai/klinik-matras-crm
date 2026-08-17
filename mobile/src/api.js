@@ -365,6 +365,20 @@ export const api = {
   sendProduct: (conversationId, data) =>
     request(`/conversations/${conversationId}/send-product`, { method: "POST", body: JSON.stringify(data) }),
 
+  // Lokasi & kartu kontak (17 Agt 2026) — WAHA engine GOWS mendukung
+  // /api/sendLocation & /api/sendContactVcard (diverifikasi langsung ke
+  // instance produksi, bukan dari dokumentasi). Backend menyimpan content
+  // dengan bentuk JSON yang SAMA seperti pesan masuk, jadi bubble-nya
+  // dirender LocationCard/ContactCard yang sudah ada di MessageBubble.js.
+  sendLocation: (conversationId, { lat, lng, name }) =>
+    request(`/conversations/${conversationId}/send-location`, {
+      method: "POST", body: JSON.stringify({ lat, lng, name }),
+    }),
+  sendContact: (conversationId, { name, phone }) =>
+    request(`/conversations/${conversationId}/send-contact`, {
+      method: "POST", body: JSON.stringify({ name, phone }),
+    }),
+
   // Daftar user (untuk modal Transfer percakapan ke sales lain)
   getUsers: () => request("/users"),
 

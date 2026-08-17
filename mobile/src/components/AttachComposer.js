@@ -4,19 +4,23 @@
 // frontend/src/features/inbox/components/ChatWindow/MediaUploader.jsx,
 // kompresi "Standar" pakai expo-image-manipulator (API kontekstual baru
 // SDK 57 — manipulateAsync versi lama sudah deprecated, lihat AGENTS.md).
-import React, { useMemo, useState } from "react";
+import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as Location from "expo-location";
+import * as Contacts from "expo-contacts";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
-import { Plus, Image as ImageIcon, Camera, FileText, X, Video, Package } from "lucide-react-native";
+import {
+  Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User,
+} from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
-import PressableScale from "./PressableScale";
 import ProductPicker from "./ProductPicker";
 
 let uidCounter = 0;
@@ -60,7 +64,12 @@ async function compressImage(uri) {
   }
 }
 
-export default function AttachComposer({ conversationId, customerName, onSent }) {
+// Tombolnya TIDAK dirender di sini lagi (dulu satu tombol "+" milik sendiri).
+// ChatScreen.js yang menempatkan ikon klip & kamera DI DALAM pill composer
+// gaya WhatsApp, lalu memanggil komponen ini lewat ref — jadi komponen ini
+// sekarang murni "mesin lampiran" (sheet + preview + upload) tanpa tombol.
+// Pola forwardRef+useImperativeHandle sama seperti CustomerSheet.js.
+const AttachComposer = forwardRef(function AttachComposer({ conversationId, customerName, onSent }, ref) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   // Modal preview punya kolom "Caption…" per file — tanpa ini, mengetik
@@ -75,6 +84,17 @@ export default function AttachComposer({ conversationId, customerName, onSent })
   const [sending, setSending] = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [sendingProduct, setSendingProduct] = useState(false);
+  const [kontakList, setKontakList] = useState(null); // null = picker tertutup
+  const [cariKontak, setCariKontak] = useState("");
+  const [mengirimLokasi, setMengirimLokasi] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    // Dipanggil ikon klip di composer ChatScreen.
+    bukaSheet: () => setShowSheet(true),
+    // Dipanggil ikon kamera di composer — langsung ke kamera foto, tanpa
+    // mampir ke sheet dulu (persis WhatsApp: ikon kamera = jepret langsung).
+    bukaKameraLangsung: () => bukaKamera("foto"),
+  }), []);
 
   // mediaTypeOf: string tetap ("document") ATAU function per-asset (dari
   // ImagePicker, tiap asset punya field .type "image"|"video" sendiri).
@@ -154,6 +174,74 @@ export default function AttachComposer({ conversationId, customerName, onSent })
     setShowProductPicker(true);
   }
 
+  // Kirim LOKASI SAAT INI. Sengaja tidak ada peta pemilih titik — sales di
+  // lapangan hampir selalu ingin membagikan "posisi saya sekarang" (di
+  // showroom / di rumah pelanggan). Peta interaktif butuh API key Google
+  // Maps + layar tambahan, tidak sepadan untuk kebutuhan itu.
+  async function kirimLokasiSekarang() {
+    setShowSheet(false);
+    const perm = await Location.requestForegroundPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Lokasi", "Izin lokasi diperlukan untuk membagikan titik lokasi");
+      return;
+    }
+    setMengirimLokasi(true);
+    try {
+      // Balanced, bukan Highest — akurasi ~100m sudah cukup untuk menunjukkan
+      // alamat, sementara Highest bisa menahan sampai belasan detik menunggu
+      // fix GPS di dalam ruangan (dan sering gagal total di showroom).
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const msg = await api.sendLocation(conversationId, {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        name: null,
+      });
+      onSent?.(msg);
+    } catch (err) {
+      Alert.alert("Gagal kirim lokasi", err.message);
+    } finally {
+      setMengirimLokasi(false);
+    }
+  }
+
+  // Buka daftar kontak HP untuk dibagikan sebagai kartu kontak.
+  async function bukaPilihKontak() {
+    setShowSheet(false);
+    const perm = await Contacts.requestPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Kontak", "Izin kontak diperlukan untuk membagikan kartu kontak");
+      return;
+    }
+    try {
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+      });
+      // Kontak tanpa nomor tidak ada gunanya dibagikan — buang di sini
+      // supaya daftar tidak penuh baris yang pasti gagal saat dipilih.
+      const berguna = (data || [])
+        .filter((c) => c.phoneNumbers?.length)
+        .map((c) => ({ id: c.id, name: c.name || "Tanpa nama", phone: c.phoneNumbers[0].number }));
+      if (!berguna.length) {
+        Alert.alert("Kontak", "Tidak ada kontak bernomor telepon di HP ini");
+        return;
+      }
+      setCariKontak("");
+      setKontakList(berguna);
+    } catch (err) {
+      Alert.alert("Gagal baca kontak", err.message);
+    }
+  }
+
+  async function kirimKontak(kontak) {
+    setKontakList(null);
+    try {
+      const msg = await api.sendContact(conversationId, { name: kontak.name, phone: kontak.phone });
+      onSent?.(msg);
+    } catch (err) {
+      Alert.alert("Gagal kirim kontak", err.message);
+    }
+  }
+
   // Kirim foto produk — beda dari handleSendAll di atas (yang mengunggah FILE
   // dari device): ini kirim gambar yang SUDAH ADA di server (Galeri Produk),
   // jadi satu request ke send-product, backend yang urus WAHA & bikin
@@ -215,42 +303,96 @@ export default function AttachComposer({ conversationId, customerName, onSent })
     setSending(false);
   }
 
+  // Grid pilihan lampiran — gaya WhatsApp: kotak-kotak berwarna, bukan daftar
+  // baris. Warna per jenis membantu sales mengenali tujuan tanpa membaca
+  // labelnya lebih dulu (dipakai berulang puluhan kali sehari).
+  const PILIHAN = [
+    { key: "galeri",   label: "Galeri",   Icon: ImageIcon, warna: "#7C5CFF", aksi: pickFromGallery },
+    { key: "kamera",   label: "Kamera",   Icon: Camera,    warna: "#EC4899", aksi: () => bukaKamera("foto") },
+    { key: "video",    label: "Video",    Icon: Video,     warna: "#F97316", aksi: () => bukaKamera("video") },
+    { key: "dokumen",  label: "Dokumen",  Icon: FileText,  warna: "#3B82F6", aksi: pickDocument },
+    { key: "lokasi",   label: "Lokasi",   Icon: MapPin,    warna: "#10B981", aksi: kirimLokasiSekarang },
+    { key: "kontak",   label: "Kontak",   Icon: User,      warna: "#0EA5E9", aksi: bukaPilihKontak },
+    { key: "produk",   label: "Produk",   Icon: Package,   warna: "#F59E0B", aksi: openProductPicker },
+  ];
+
+  const kontakTersaring = kontakList
+    ? kontakList.filter((k) => {
+        const q = cariKontak.trim().toLowerCase();
+        if (!q) return true;
+        return k.name.toLowerCase().includes(q) || k.phone.replace(/\D/g, "").includes(q.replace(/\D/g, ""));
+      })
+    : [];
+
   return (
     <>
-      <PressableScale style={styles.attachBtn} onPress={() => setShowSheet(true)}>
-        <Plus size={22} color={tokens.color.textSecondary} strokeWidth={2.2} />
-      </PressableScale>
-
-      {/* Sheet pilih sumber lampiran */}
+      {/* Sheet pilih sumber lampiran — grid, bukan daftar baris */}
       <Modal visible={showSheet} transparent animationType="fade" onRequestClose={() => setShowSheet(false)}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowSheet(false)}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>Lampirkan</Text>
-            <TouchableOpacity style={styles.sheetItemRow} onPress={pickFromGallery}>
-              <ImageIcon size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Foto / Video dari Galeri</Text>
-            </TouchableOpacity>
-            {/* DUA baris terpisah, bukan satu "Kamera (Foto/Video)" —
-                Android tidak bisa membuka kamera mode gabungan, lihat
-                catatan panjang di bukaKamera(). */}
-            <TouchableOpacity style={styles.sheetItemRow} onPress={() => bukaKamera("foto")}>
-              <Camera size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Ambil Foto</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItemRow} onPress={() => bukaKamera("video")}>
-              <Video size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Rekam Video</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItemRow} onPress={pickDocument}>
-              <FileText size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Dokumen</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetItemRow} onPress={openProductPicker}>
-              <Package size={18} color={tokens.color.textPrimary} strokeWidth={1.8} style={styles.sheetItemIcon} />
-              <Text style={styles.sheetItemText}>Galeri Produk</Text>
-            </TouchableOpacity>
+            <View style={styles.grid}>
+              {/* Kamera & Video jadi DUA kotak terpisah, bukan satu
+                  "Kamera (Foto/Video)" — Android tidak punya intent kamera
+                  mode gabungan, lihat catatan panjang di bukaKamera(). */}
+              {PILIHAN.map(({ key, label, Icon, warna, aksi }) => (
+                <TouchableOpacity key={key} style={styles.gridItem} onPress={aksi}>
+                  <View style={[styles.gridIconBox, { backgroundColor: warna }]}>
+                    <Icon size={22} color="#fff" strokeWidth={2} />
+                  </View>
+                  <Text style={styles.gridLabel} numberOfLines={1}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Indikator saat menunggu fix GPS — tanpa ini menekan "Lokasi" terasa
+          seperti tombol rusak selama beberapa detik pertama. */}
+      <Modal visible={mengirimLokasi} transparent animationType="fade">
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator color={tokens.color.accent} />
+            <Text style={styles.loadingText}>Mengambil lokasi…</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Pilih kontak dari HP */}
+      <Modal visible={!!kontakList} animationType="slide" onRequestClose={() => setKontakList(null)}>
+        <View style={styles.kontakRoot}>
+          <View style={styles.kontakHeader}>
+            <TouchableOpacity onPress={() => setKontakList(null)} style={styles.kontakClose}>
+              <X size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <Text style={styles.kontakTitle}>Bagikan Kontak</Text>
+            <View style={{ width: 38 }} />
+          </View>
+          <TextInput
+            style={styles.kontakSearch}
+            value={cariKontak}
+            onChangeText={setCariKontak}
+            placeholder="Cari nama atau nomor…"
+            placeholderTextColor={tokens.color.textMuted}
+          />
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {kontakTersaring.map((k) => (
+              <TouchableOpacity key={k.id} style={styles.kontakRow} onPress={() => kirimKontak(k)}>
+                <View style={styles.kontakAvatar}>
+                  <User size={16} color={tokens.color.textSecondary} strokeWidth={2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.kontakNama} numberOfLines={1}>{k.name}</Text>
+                  <Text style={styles.kontakNomor} numberOfLines={1}>{k.phone}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {!kontakTersaring.length && (
+              <Text style={styles.kontakKosong}>Tidak ada kontak yang cocok.</Text>
+            )}
+          </ScrollView>
+        </View>
       </Modal>
 
       <ProductPicker
@@ -324,25 +466,56 @@ export default function AttachComposer({ conversationId, customerName, onSent })
       </Modal>
     </>
   );
-}
+});
+
+export default AttachComposer;
 
 function createStyles(tokens) {
   return StyleSheet.create({
-  attachBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  attachIcon: { fontSize: 22, color: tokens.color.textSecondary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18,
     padding: 18, paddingBottom: 28,
   },
   sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
-  sheetItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },
-  sheetItemRow: {
-    flexDirection: "row", alignItems: "center", paddingVertical: 12,
+  // 4 kolom seperti WhatsApp. Lebar pakai persen (bukan angka tetap) supaya
+  // ikut benar dari HP kecil sampai tablet tanpa mengukur layar manual.
+  grid: { flexDirection: "row", flexWrap: "wrap", marginTop: 6 },
+  gridItem: { width: "25%", alignItems: "center", paddingVertical: 12 },
+  gridIconBox: {
+    width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center",
+  },
+  gridLabel: { fontSize: 11.5, color: tokens.color.textSecondary, marginTop: 7 },
+  loadingOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", alignItems: "center", justifyContent: "center" },
+  loadingBox: {
+    backgroundColor: tokens.color.card, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 18,
+    alignItems: "center", gap: 10,
+  },
+  loadingText: { fontSize: 13, color: tokens.color.textPrimary },
+  kontakRoot: { flex: 1, backgroundColor: tokens.color.bg },
+  kontakHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 8, paddingTop: 54, paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
   },
-  sheetItemIcon: { marginRight: 10 },
-  sheetItemText: { fontSize: 15, color: tokens.color.textPrimary },
+  kontakClose: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  kontakTitle: { fontSize: 16, fontWeight: "700", color: tokens.color.textPrimary },
+  kontakSearch: {
+    margin: 12, backgroundColor: tokens.color.card, borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 14, color: tokens.color.textPrimary,
+    borderWidth: 1, borderColor: tokens.color.border,
+  },
+  kontakRow: {
+    flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+  },
+  kontakAvatar: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: tokens.color.subtle,
+    alignItems: "center", justifyContent: "center",
+  },
+  kontakNama: { fontSize: 14.5, color: tokens.color.textPrimary, fontWeight: "600" },
+  kontakNomor: { fontSize: 12.5, color: tokens.color.textMuted },
+  kontakKosong: { fontSize: 13, color: tokens.color.textMuted, textAlign: "center", padding: 24 },
   previewOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   previewModal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16 },
   previewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },

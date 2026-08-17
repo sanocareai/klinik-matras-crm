@@ -8,7 +8,7 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { sendText, sendMedia, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
+import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
@@ -901,6 +901,132 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConvMedia);
   console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
+  res.status(201).json(message);
+});
+
+// POST /:id/send-location — bagikan titik lokasi (showroom, alamat pelanggan).
+//
+// content DISIMPAN dengan bentuk JSON yang SAMA PERSIS dengan pesan lokasi
+// MASUK (lihat tryParseLocationNormalized di utils/parseHistoryMessage.js:
+// {lat, lng, name, address}) — supaya LocationCard di frontend/mobile
+// merender bubble keluar dan masuk lewat satu jalur yang sama, tidak perlu
+// cabang khusus "lokasi yang kita kirim sendiri".
+conversationRouter.post("/:id/send-location", async (req, res) => {
+  const { lat, lng, name } = req.body;
+  // Validasi rentang, bukan cuma "ada isinya" — nol itu koordinat SAH
+  // (Teluk Guinea), jadi cek kebenaran nilai harus pakai Number.isFinite,
+  // bukan falsy-check yang diam-diam menolak 0.
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: "lat & lng wajib berupa angka" });
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: "Koordinat di luar rentang yang mungkin" });
+  }
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (conversation.channel !== "WHATSAPP") {
+    return res.status(400).json({ error: "Channel ini belum didukung" });
+  }
+  const target = resolveSendTarget(conversation);
+  if (!target) {
+    return res.status(400).json({
+      error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+    });
+  }
+
+  let waResult;
+  try {
+    ({ result: waResult } = await sendWithSessionFallback(conversation, (session) =>
+      sendLocation(target, { lat, lng, title: name || null }, session)
+    ));
+  } catch (err) {
+    if (err instanceof SessionResolutionError) {
+      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+    }
+    return res.status(502).json({ error: `Gagal kirim lokasi ke WhatsApp: ${err.message}` });
+  }
+
+  const content = JSON.stringify({ lat, lng, name: name || null, address: null });
+  const message = await prisma.message.create({
+    data: {
+      conversationId: conversation.id, direction: "OUTBOUND",
+      content, mediaType: "location", mediaUrl: null,
+      externalId: waResult?.id || null, rawType: "location", sentById: req.user.id,
+    },
+  });
+  const convUpdate = { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, "location") };
+  if (!conversation.firstResponderId) convUpdate.firstResponderId = req.user.id;
+  const updatedConv = await prisma.conversation.update({ where: { id: conversation.id }, data: convUpdate });
+  emitNewMessage(conversation.id, message);
+  emitConversationUpdate(updatedConv);
+  res.status(201).json(message);
+});
+
+// POST /:id/send-contact — bagikan kartu kontak (vCard), mis. nomor teknisi.
+//
+// Bentuk content SAMA dengan pesan kontak MASUK ({contacts:[{name, phone}]},
+// lihat tryParseContactNormalized) — alasan sama seperti send-location.
+conversationRouter.post("/:id/send-contact", async (req, res) => {
+  const { name, phone } = req.body;
+  if (!name?.trim() || !phone?.trim()) {
+    return res.status(400).json({ error: "name & phone wajib diisi" });
+  }
+  // Bakukan ke format 62xxx — sama seperti jalur lain yang menerima nomor
+  // dari input manusia (lihat services/nomorIndonesia.js). Tanpa ini kartu
+  // kontak bisa berisi "08xx" yang tidak bisa langsung di-chat dari WhatsApp.
+  const hasil = bakukanNomorIndonesia(phone);
+  if (!hasil.ok) return res.status(400).json({ error: hasil.alasan });
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (conversation.channel !== "WHATSAPP") {
+    return res.status(400).json({ error: "Channel ini belum didukung" });
+  }
+  const target = resolveSendTarget(conversation);
+  if (!target) {
+    return res.status(400).json({
+      error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
+    });
+  }
+
+  let waResult;
+  try {
+    ({ result: waResult } = await sendWithSessionFallback(conversation, (session) =>
+      // whatsappId diisi supaya penerima bisa langsung ketuk-chat kontaknya
+      // (tanpa waid, WhatsApp cuma menampilkan nomor sebagai teks mati).
+      sendContactVcard(target, [{
+        fullName: name.trim(),
+        phoneNumber: `+${hasil.nomor}`,
+        whatsappId: hasil.nomor,
+      }], session)
+    ));
+  } catch (err) {
+    if (err instanceof SessionResolutionError) {
+      return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+    }
+    return res.status(502).json({ error: `Gagal kirim kontak ke WhatsApp: ${err.message}` });
+  }
+
+  const content = JSON.stringify({ contacts: [{ name: name.trim(), phone: hasil.nomor }] });
+  const message = await prisma.message.create({
+    data: {
+      conversationId: conversation.id, direction: "OUTBOUND",
+      content, mediaType: "contact", mediaUrl: null,
+      externalId: waResult?.id || null, rawType: "contact", sentById: req.user.id,
+    },
+  });
+  const convUpdate = { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(content, "contact") };
+  if (!conversation.firstResponderId) convUpdate.firstResponderId = req.user.id;
+  const updatedConv = await prisma.conversation.update({ where: { id: conversation.id }, data: convUpdate });
+  emitNewMessage(conversation.id, message);
+  emitConversationUpdate(updatedConv);
   res.status(201).json(message);
 });
 

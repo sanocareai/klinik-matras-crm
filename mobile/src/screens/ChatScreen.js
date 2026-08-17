@@ -23,7 +23,7 @@ import NetInfo from "@react-native-community/netinfo";
 import {
   ChevronLeft, ChevronDown, MoreVertical, WifiOff, X, Send, UserPlus, UserCog,
   Circle, CircleDot, CheckCircle2, RefreshCw, AlertTriangle, Pencil, Forward, Trash2, MessageSquare,
-  Bold, Italic, Strikethrough, Code, Search,
+  Bold, Italic, Strikethrough, Code, Search, Paperclip, Camera,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
@@ -183,6 +183,9 @@ export default function ChatScreen({ route, navigation }) {
   const pendingScrollIdRef = useRef(null);
   const highlightTimerRef = useRef(null);
   const customerSheetRef = useRef(null);
+  // AttachComposer tidak punya tombol sendiri lagi — ikon klip & kamera di
+  // dalam pill composer yang memanggilnya lewat ref ini.
+  const attachRef = useRef(null);
 
   // BUG (fix): mengirim pesan SEBELUMNYA cuma mengandalkan
   // maintainVisibleContentPosition.autoscrollToBottomThreshold untuk
@@ -962,30 +965,51 @@ export default function ChatScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           )}
+          {/* Composer gaya WhatsApp: SATU pill berisi template + kolom teks +
+              klip + kamera, lalu tombol bulat (mic/kirim) TERPISAH di luar
+              pill. Sebelumnya semua ikon berjejer rata di dalam baris tanpa
+              pill, jadi kolom teks terlihat menyempit tiap kali ikon
+              ditambah. AttachComposer sekarang tidak punya tombol sendiri —
+              ikon klip & kamera di bawah ini yang memanggilnya lewat ref. */}
           <View style={styles.inputBar}>
-            {/* Template Pesan (quick reply) — TemplatePickerSheet.js sekarang
-                juga bisa CRUD (28 Jul 2026 fix — kelola template pribadi
-                BUKAN adminOnly seperti dikira sebelumnya, lihat
-                bisaKelola() di backend/src/routes/templates.js). */}
-            {!editingMessage && (
-              <PressableScale style={styles.attachBtn} onPress={() => setShowTemplatePicker(true)}>
-                <MessageSquare size={20} color={tokens.color.textSecondary} strokeWidth={2.2} />
-              </PressableScale>
-            )}
+            <View style={styles.pill}>
+              {/* Template Pesan (quick reply) — TemplatePickerSheet.js sekarang
+                  juga bisa CRUD (28 Jul 2026 fix — kelola template pribadi
+                  BUKAN adminOnly seperti dikira sebelumnya, lihat
+                  bisaKelola() di backend/src/routes/templates.js). */}
+              {!editingMessage && (
+                <PressableScale style={styles.pillBtn} onPress={() => setShowTemplatePicker(true)}>
+                  <MessageSquare size={21} color={tokens.color.textSecondary} strokeWidth={2} />
+                </PressableScale>
+              )}
+              <TextInput
+                style={styles.input}
+                placeholder={editingMessage ? "Edit pesan…" : "Pesan"}
+                placeholderTextColor={tokens.color.textMuted}
+                value={text}
+                onChangeText={handleChangeText}
+                onSelectionChange={handleSelectionChange}
+                selection={forcedSelection || undefined}
+                multiline
+              />
+              {!editingMessage && (
+                <>
+                  <PressableScale style={styles.pillBtn} onPress={() => attachRef.current?.bukaSheet()}>
+                    <Paperclip size={20} color={tokens.color.textSecondary} strokeWidth={2} />
+                  </PressableScale>
+                  {/* Ikon kamera = jepret LANGSUNG (tidak mampir ke sheet),
+                      persis WhatsApp — itu gunanya ada terpisah dari klip. */}
+                  <PressableScale style={styles.pillBtn} onPress={() => attachRef.current?.bukaKameraLangsung()}>
+                    <Camera size={20} color={tokens.color.textSecondary} strokeWidth={2} />
+                  </PressableScale>
+                </>
+              )}
+            </View>
             <AttachComposer
+              ref={attachRef}
               conversationId={conversationId}
               customerName={routeName}
               onSent={(msg) => { useMessageStore.getState().appendMessage(conversationId, msg); scrollToBottomSoon(); }}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder={editingMessage ? "Edit pesan…" : "Ketik pesan…"}
-              placeholderTextColor={tokens.color.textMuted}
-              value={text}
-              onChangeText={handleChangeText}
-              onSelectionChange={handleSelectionChange}
-              selection={forcedSelection || undefined}
-              multiline
             />
             {text.trim() ? (
               <PressableScale
@@ -1170,18 +1194,26 @@ function createStyles(tokens) {
     backgroundColor: tokens.color.card,
   },
   inputBar: {
-    flexDirection: "row", alignItems: "flex-end", padding: 8, gap: 4,
+    flexDirection: "row", alignItems: "flex-end", padding: 8, gap: 6,
     backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,
   },
+  // Pill yang membungkus template + kolom teks + klip + kamera. Latar & radius
+  // pindah dari `input` ke sini — kalau tetap di `input`, tiap ikon di dalam
+  // pill akan tampak "di luar" kolom teks (dua bentuk bulat bertumpuk).
+  pill: {
+    flex: 1, flexDirection: "row", alignItems: "flex-end",
+    backgroundColor: tokens.color.subtle, borderRadius: tokens.radius.pill,
+    paddingHorizontal: 4, paddingVertical: 2,
+  },
+  pillBtn: { width: 36, height: 40, alignItems: "center", justifyContent: "center" },
   input: {
-    flex: 1, backgroundColor: tokens.color.subtle, borderRadius: tokens.radius.pill, paddingHorizontal: 16,
-    paddingVertical: 9, fontSize: 15, maxHeight: 110, color: tokens.color.textPrimary,
+    flex: 1, paddingHorizontal: 6, paddingVertical: 9, fontSize: 15,
+    maxHeight: 110, color: tokens.color.textPrimary,
   },
   sendBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accent,
     alignItems: "center", justifyContent: "center",
   },
-  attachBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   sendBtnDisabled: { opacity: 0.6 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
