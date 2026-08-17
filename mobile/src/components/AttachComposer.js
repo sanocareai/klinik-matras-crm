@@ -13,7 +13,13 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as Location from "expo-location";
-import * as Contacts from "expo-contacts";
+// SDK 57 mendeprecate API lama expo-contacts (getContactsAsync dkk) demi API
+// class-based baru — dikonfirmasi via dialog error asli di HP: "Method
+// getContactsAsync imported from 'expo-contacts' is deprecated ... import the
+// legacy API from 'expo-contacts/legacy'". API-nya identik, cuma pindah
+// jalur import — pakai /legacy di sini supaya tidak perlu menulis ulang
+// bukaPilihKontak() dengan API baru yang berbeda bentuk.
+import * as Contacts from "expo-contacts/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
   Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User, Plus, Play,
