@@ -368,6 +368,9 @@ export const api = {
   sendProduct: (conversationId, data) =>
     request(`/conversations/${conversationId}/send-product`, { method: "POST", body: JSON.stringify(data) }),
 
+  // Info Grup ala WhatsApp: foto, deskripsi (topic), nama.
+  getGroupInfo: (conversationId) => request(`/conversations/${conversationId}/group-info`),
+
   // Anggota grup + nama yang sudah di-resolve dari LID — dipakai untuk
   // menerjemahkan mention "@165811675242551" jadi nama, DAN sebagai daftar
   // pilihan saat mengetik "@". Percakapan pribadi balikin array kosong.

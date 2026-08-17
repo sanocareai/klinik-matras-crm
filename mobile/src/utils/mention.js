@@ -34,7 +34,10 @@ function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function formatNomor(phone) {
+// Diekspor juga (bukan cuma dipakai internal di sini) — dipakai layar Info
+// Grup (GroupInfoContent.js) untuk menampilkan nomor anggota yang belum
+// punya nama di CRM, konsisten dengan format yang sama dipakai di sini.
+export function formatNomor(phone) {
   if (!phone) return null;
   const lokal = phone.startsWith("62") ? "0" + phone.slice(2) : phone;
   return lokal.replace(/^(\d{4})(\d{4})(\d+)$/, "$1-$2-$3");

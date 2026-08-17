@@ -8,11 +8,14 @@
 // frontend/src/features/inbox/components/CustomerPanel/GroupPanel.jsx) —
 // TETAP di sini saja (bukan di CustomerProfileContent) karena tab
 // Pelanggan/CustomerDetail tidak pernah berurusan dengan grup WhatsApp.
-import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { ChevronRight } from "lucide-react-native";
+import { Image } from "expo-image";
+import { ChevronRight, Shield } from "lucide-react-native";
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { formatNomor } from "../utils/mention";
 import Avatar from "./Avatar";
 import CustomerProfileContent from "./CustomerProfileContent";
 import GaleriMediaModal from "./GaleriMediaModal";
@@ -50,17 +53,33 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
   const [reloadKey, setReloadKey] = useState(0);
   const [showGaleri, setShowGaleri] = useState(false);
 
+  // FITUR (tambahan, 17 Agt 2026): Info Grup ala WhatsApp — foto, deskripsi,
+  // daftar anggota + badge Admin. Sebelumnya sheet grup cuma nama + hitungan
+  // media, jauh dari yang diminta ("profile grup buat seperti whatsapp").
+  const [groupInfo, setGroupInfo] = useState(null); // { name, topic, avatarUrl }
+  const [members, setMembers] = useState([]);
+
   useImperativeHandle(ref, () => ({
     open: () => { setReloadKey((k) => k + 1); sheetRef.current?.present(); },
     close: () => sheetRef.current?.dismiss(),
   }), []);
+
+  useEffect(() => {
+    if (!isGroup || !conversation?.id) return;
+    let alive = true;
+    api.getGroupInfo(conversation.id).then((d) => { if (alive) setGroupInfo(d); }).catch(() => {});
+    api.getParticipants(conversation.id).then((d) => { if (alive) setMembers(d); }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id, isGroup, reloadKey]);
 
   const renderBackdrop = useCallback((props) => (
     <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
   ), []);
 
   if (isGroup) {
-    const groupName = conversation?.groupName || "Grup WhatsApp";
+    const groupName = groupInfo?.name || conversation?.groupName || "Grup WhatsApp";
+    const memberCount = members.length;
     return (
       <BottomSheetModal
         ref={sheetRef}
@@ -72,10 +91,29 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
       >
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: 32 }}>
           <View style={styles.profile}>
-            <Avatar name={groupName} isGroup size={72} />
+            {groupInfo?.avatarUrl ? (
+              <Image source={{ uri: groupInfo.avatarUrl }} style={styles.groupPhoto} contentFit="cover" />
+            ) : (
+              <Avatar name={groupName} isGroup size={88} />
+            )}
             <Text style={styles.name}>{groupName}</Text>
-            <Text style={styles.phone}>Percakapan Grup WhatsApp</Text>
+            <Text style={styles.phone}>
+              Grup{memberCount > 0 ? ` · ${memberCount} anggota` : ""}
+            </Text>
           </View>
+
+          {/* Deskripsi grup — read-only (WAHA belum kita pakai untuk MENGUBAH
+              deskripsi, cuma menampilkan). String kosong (topic memang belum
+              diisi admin grup) dibedakan dari null (gagal ambil/belum termuat)
+              lewat pemeriksaan groupInfo terlebih dulu. */}
+          {groupInfo && (
+            <Section title="Deskripsi">
+              <Text style={styles.detailValue}>
+                {groupInfo.topic?.trim() || "Belum ada deskripsi grup"}
+              </Text>
+            </Section>
+          )}
+
           <Section title={`Media (${mediaCount})`}>
             <TouchableOpacity
               style={styles.mediaLink}
@@ -89,6 +127,38 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
               </Text>
               {mediaCount > 0 && <ChevronRight size={16} color={tokens.color.textMuted} strokeWidth={2} />}
             </TouchableOpacity>
+          </Section>
+
+          {/* Daftar anggota — nama dari CRM (lewat nomor telepon) kalau ada,
+              kalau tidak fallback ke nomor yang enak dibaca. TIDAK PERNAH
+              menampilkan LID mentah ke pengguna (lihat backend
+              GET /:id/participants & utils/mention.js). */}
+          <Section title={`${memberCount} Anggota`}>
+            <View style={{ marginTop: -4 }}>
+              {members.map((m) => {
+                const label = m.name || formatNomor(m.phone) || "Anggota";
+                return (
+                  <View key={m.phone || m.lid} style={styles.memberRow}>
+                    <Avatar name={label} size={40} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.memberName} numberOfLines={1}>{label}</Text>
+                      {!!m.name && !!m.phone && (
+                        <Text style={styles.memberPhone} numberOfLines={1}>{formatNomor(m.phone)}</Text>
+                      )}
+                    </View>
+                    {m.isAdmin && (
+                      <View style={styles.adminBadge}>
+                        <Shield size={11} color={tokens.color.accent} strokeWidth={2.4} />
+                        <Text style={styles.adminBadgeText}>Admin</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+              {members.length === 0 && (
+                <Text style={styles.detailValue}>Memuat daftar anggota…</Text>
+              )}
+            </View>
           </Section>
         </BottomSheetScrollView>
         <GaleriMediaModal
@@ -160,5 +230,14 @@ function createStyles(tokens) {
     sectionLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textMuted, marginBottom: 8, textTransform: "uppercase" },
     detailValue: { fontSize: 13, color: tokens.color.textPrimary, flex: 1 },
     mediaLink: { flexDirection: "row", alignItems: "center", gap: 6 },
+    groupPhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: tokens.color.subtle },
+    memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8 },
+    memberName: { fontSize: 14, fontWeight: "600", color: tokens.color.textPrimary },
+    memberPhone: { fontSize: 12, color: tokens.color.textMuted, marginTop: 1 },
+    adminBadge: {
+      flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 3,
+      borderRadius: 999, backgroundColor: tokens.color.accentSoft,
+    },
+    adminBadgeText: { fontSize: 10.5, fontWeight: "700", color: tokens.color.accent },
   });
 }

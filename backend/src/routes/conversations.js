@@ -8,7 +8,7 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
+import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
@@ -909,6 +909,34 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   emitConversationUpdate(updatedConvMedia);
   console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
   res.status(201).json(message);
+});
+
+// GET /:id/group-info — layar "Info Grup" ala WhatsApp: foto, deskripsi,
+// jumlah anggota. Dipisah dari /:id/participants (bukan digabung jadi satu
+// payload besar) supaya UI bisa menampilkan header dulu sambil daftar
+// anggota masih dimuat — sama seperti WhatsApp asli yang terasa instan
+// duluan sebelum daftar member scroll ke bawah.
+const groupInfoCache = new Map(); // conversationId -> { data, at }
+const GROUP_INFO_TTL_MS = 5 * 60 * 1000;
+
+conversationRouter.get("/:id/group-info", async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  if (conversation.type !== "GROUP" || !conversation.groupJid) {
+    return res.status(400).json({ error: "Bukan percakapan grup" });
+  }
+
+  const cached = groupInfoCache.get(conversation.id);
+  if (cached && Date.now() - cached.at < GROUP_INFO_TTL_MS) return res.json(cached.data);
+
+  const session = conversation.sessionId || KNOWN_SESSIONS[0];
+  const [topic, avatarUrl] = await Promise.all([
+    getGroupTopic(conversation.groupJid, session),
+    getGroupPicture(conversation.groupJid, session),
+  ]);
+  const data = { name: conversation.groupName || null, topic: topic || null, avatarUrl };
+  groupInfoCache.set(conversation.id, { data, at: Date.now() });
+  res.json(data);
 });
 
 // GET /:id/participants — anggota grup + NAMA yang sudah di-resolve.

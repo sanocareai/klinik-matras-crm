@@ -330,6 +330,54 @@ export async function getGroupInfo(groupJid, session = WAHA_SESSION) {
   }
 }
 
+// Deskripsi grup ("Topic" di GOWS) — dipakai layar "Info Grup" ala WhatsApp.
+// Fungsi TERPISAH dari getGroupInfo() di atas (yang cuma balikin nama dan
+// dipakai jalur ingest webhook) supaya tidak mengubah kontrak fungsi yang
+// sudah dipakai di tempat lain — GET /groups/{id} sebenarnya satu response
+// yang sama, cuma dibaca field beda.
+export async function getGroupTopic(groupJid, session) {
+  if (!session) {
+    throw new Error("getGroupTopic: parameter 'session' wajib diisi");
+  }
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupJid)}`,
+      { headers: headers() }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    // String kosong (grup memang belum diisi deskripsi) DIBEDAKAN dari null
+    // (gagal ambil) di sini dulu — caller yang putuskan cara menampilkannya.
+    return typeof data.Topic === "string" ? data.Topic : null;
+  } catch (e) {
+    console.warn("[getGroupTopic] Error:", e.message);
+    return null;
+  }
+}
+
+// Foto profil GRUP — dipakai layar "Info Grup" ala WhatsApp. Berbeda endpoint
+// dari getProfilePicture (yang untuk kontak perorangan, query-style) — untuk
+// grup WAHA pakai path-style /groups/{id}/picture, dikonfirmasi langsung ke
+// instance produksi. Return null kalau gagal/grup belum punya foto (WAJAR —
+// klien fallback ke avatar inisial, sama seperti kontak perorangan).
+export async function getGroupPicture(groupJid, session) {
+  if (!session) {
+    throw new Error("getGroupPicture: parameter 'session' wajib diisi");
+  }
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupJid)}/picture`,
+      { headers: headers() }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url || null;
+  } catch (e) {
+    console.warn("[getGroupPicture] Error:", e.message);
+    return null;
+  }
+}
+
 // Ambil daftar anggota grup — dipakai untuk (a) menerjemahkan mention LID jadi
 // nama orang, (b) daftar pilihan saat sales mengetik "@" di composer grup.
 //
