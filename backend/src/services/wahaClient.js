@@ -50,7 +50,12 @@ function normalizeWahaUrl(url) {
 // CLAUDE.md), tidak boleh diam-diam pakai WAHA_SESSION global (itu penyebab
 // bug kritis "balasan keluar lewat sesi salah"). Caller HARUS ambil dari
 // conversation.sessionId — lihat conversations.js.
-export async function sendText(to, text, quotedMessageId = null, session) {
+// mentions: array JID yang di-mention (mis. ["628881996001@c.us"]) — WAJIB
+// dikirim kalau teksnya mengandung "@nomor", kalau tidak WhatsApp menampilkan
+// teksnya apa adanya TANPA menandai/menotifikasi orangnya (mention "palsu"
+// yang tidak berfungsi). Didukung engine GOWS, diverifikasi dari kodenya
+// (session.gows.core.js#sendText menerima request.mentions).
+export async function sendText(to, text, quotedMessageId = null, session, mentions = null) {
   if (!session) {
     throw new Error("sendText: parameter 'session' wajib diisi (tidak boleh fallback ke WAHA_SESSION global)");
   }
@@ -60,6 +65,7 @@ export async function sendText(to, text, quotedMessageId = null, session) {
   const chatId = buildChatId(to, "sendText");
   const body = { session, chatId, text };
   if (quotedMessageId) body.quotedMessageId = quotedMessageId;
+  if (mentions?.length) body.mentions = mentions;
   const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
     headers: headers(),
@@ -321,6 +327,43 @@ export async function getGroupInfo(groupJid, session = WAHA_SESSION) {
   } catch (e) {
     console.warn("[getGroupInfo] Error:", e.message);
     return null;
+  }
+}
+
+// Ambil daftar anggota grup — dipakai untuk (a) menerjemahkan mention LID jadi
+// nama orang, (b) daftar pilihan saat sales mengetik "@" di composer grup.
+//
+// Bentuk respons GOWS (dikonfirmasi via curl langsung ke instance produksi):
+//   [{ JID: "219331296272411@lid", PhoneNumber: "628881996001@s.whatsapp.net",
+//      LID: "219331296272411@lid", IsAdmin: false, IsSuperAdmin: false,
+//      DisplayName: "", ... }]
+//
+// ⚠️ `DisplayName` SELALU KOSONG di produksi (diperiksa: 0 dari 14 anggota
+// punya isinya) — jadi nama TIDAK BOLEH diambil dari situ. Nama harus dicari
+// dari data kita sendiri lewat PhoneNumber (lihat routes/conversations.js
+// GET /:id/participants).
+//
+// Return: array apa adanya dari WAHA, atau [] kalau gagal (WAJAR — grup bisa
+// sudah ditinggalkan, atau sesi sedang tidak terhubung). Caller HARUS tahan
+// terhadap daftar kosong, jangan sampai fitur lain mati karenanya.
+export async function getGroupParticipants(groupJid, session) {
+  if (!session) {
+    throw new Error("getGroupParticipants: parameter 'session' wajib diisi");
+  }
+  try {
+    const res = await fetch(
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(session)}/groups/${encodeURIComponent(groupJid)}/participants`,
+      { headers: headers() }
+    );
+    if (!res.ok) {
+      console.warn("[getGroupParticipants] Gagal:", res.status, "groupJid:", groupJid);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.warn("[getGroupParticipants] Error:", e.message);
+    return [];
   }
 }
 

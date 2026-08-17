@@ -49,18 +49,35 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
     return c.customer?.name?.toLowerCase().includes(q) || (c.customer?.phone || "").includes(q);
   });
 
+  // BUG (fix, 17 Agt 2026): SEBELUMNYA `Promise.allSettled(items.map(...))`
+  // mengirim SEMUA pesan bersamaan — untuk album (>1 foto sekaligus, lihat
+  // laporan mobile app dengan gejala identik) hasilnya cuma 1 dari beberapa
+  // yang benar-benar terkirim ke WhatsApp. Root cause: WAHA/WhatsApp tidak
+  // bisa diandalkan menerima beberapa kirim media BERSAMAAN dari satu sesi —
+  // sudah ditangani di jalur lain (send-product & send-documentation di
+  // backend/src/routes/conversations.js) dengan loop SEKUENSIAL + delay
+  // 1500ms antar kirim; forward bulk luput dari pola yang sama.
   async function handleForward(targetConvId) {
     if (forwarding || !items.length) return;
     setForwarding(true);
-    const results = await Promise.allSettled(items.map((m) => api.forwardMessage(m.conversationId, m.id, targetConvId)));
+    let gagal = 0;
+    let pesanErrorPertama = "";
+    for (let i = 0; i < items.length; i++) {
+      try {
+        await api.forwardMessage(items[i].conversationId, items[i].id, targetConvId);
+      } catch (err) {
+        gagal += 1;
+        if (!pesanErrorPertama) pesanErrorPertama = err.message || "";
+      }
+      if (i < items.length - 1) await new Promise((r) => setTimeout(r, 1500));
+    }
     setForwarding(false);
-    const rejected = results.filter((r) => r.status === "rejected");
-    if (rejected.length > 0) {
+    if (gagal > 0) {
       // Sertakan pesan error ASLI dari backend (mis. "Media pesan ini belum
       // berhasil diunduh dari WhatsApp — coba lagi sebentar lagi.") — sales
       // sebelumnya cuma lihat "gagal diteruskan" tanpa tahu kenapa/harus
       // ngapain, jadi terasa seperti fitur forward-nya rusak permanen.
-      alert(`${rejected.length} dari ${items.length} pesan gagal diteruskan.\n\n${rejected[0].reason?.message || ""}`);
+      alert(`${gagal} dari ${items.length} pesan gagal diteruskan.\n\n${pesanErrorPertama}`);
     } else {
       onClose();
     }

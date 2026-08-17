@@ -24,6 +24,7 @@ import AudioPlayer from "./AudioPlayer";
 import PressableScale from "./PressableScale";
 import { lightHaptic, mediumHaptic } from "../lib/haptics";
 import { parseWaFormatting } from "../utils/waFormat";
+import { gantiMention } from "../utils/mention";
 import { useMessageStore } from "../store/messageStore";
 
 const TEXT_COLLAPSED_LINES = 8; // batas baris sebelum "Baca Selengkapnya" muncul, dekat dengan batas WhatsApp asli
@@ -265,7 +266,7 @@ function AlbumGrid({ items, onOpenMedia, styles }) {
 }
 
 function MessageBubbleBase({
-  message: m, albumMessages, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
+  message: m, albumMessages, conversationId, isGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   const tokens = useTokens();
@@ -303,7 +304,12 @@ function MessageBubbleBase({
   const isStructured = STRUCTURED_TYPES.has(m.mediaType);
   const structuredData = isStructured ? parseStructuredContent(m.mediaType, m.content) : null;
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = m.content && !isRevoked && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
+  const textMentah = m.content && !isRevoked && !isStructured && !(hasMedia && !m.mediaUrl && isBracketPlaceholder) ? m.content : "";
+  // Mention grup datang dari WhatsApp sebagai "@<LID>" (angka internal, lihat
+  // utils/mention.js) — diterjemahkan jadi nama SEBELUM parseWaFormatting,
+  // supaya format *tebal* dkk di dalam mention (jarang, tapi mungkin) tetap
+  // diproses parser yang sama seperti teks lain.
+  const text = isGroup && mentionMap ? gantiMention(textMentah, mentionMap) : textMentah;
 
   // BUG (fix): setStringAsync balikin Promise — kalau reject (native side
   // clipboard gagal dsb) itu jadi "Uncaught (in promise)" walau pemanggil
@@ -334,7 +340,12 @@ function MessageBubbleBase({
   function handleForward() {
     setShowActions(false);
     try {
-      onForward?.(m);
+      // Aksi cepat "Teruskan" dari bubble album (>1 anggota) harus meneruskan
+      // SEMUA anggotanya, bukan cuma satu foto/video wakil yang kebetulan
+      // dirender jadi bubble tunggal — persis pola yang sama dengan
+      // handleSelectPress di bawah (album = 1 bubble, N pesan sungguhan).
+      const anggota = albumMessages && albumMessages.length > 1 ? albumMessages : null;
+      onForward?.(m, anggota);
     } catch {
       Alert.alert("Gagal meneruskan", "Terjadi kesalahan saat menyiapkan pesan diteruskan");
     }

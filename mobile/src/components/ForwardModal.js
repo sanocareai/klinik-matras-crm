@@ -43,16 +43,31 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
       || (c.groupName || "").toLowerCase().includes(q);
   });
 
+  // BUG (fix, 17 Agt 2026): SEBELUMNYA `Promise.allSettled(items.map(...))`
+  // — mengirim SEMUA pesan sekaligus secara BERSAMAAN. Untuk 1 pesan itu
+  // tidak masalah, tapi untuk album (mis. teruskan 4 foto sekaligus dari
+  // mode pilih), gejalanya PERSIS yang dilaporkan: cuma 1 dari 4 yang
+  // benar-benar terkirim ke WhatsApp, sisanya hilang tanpa error terlihat.
+  // Root cause: WAHA/WhatsApp TIDAK bisa diandalkan menerima beberapa kirim
+  // media BERSAMAAN dari satu sesi yang sama — ini SUDAH diketahui & sudah
+  // ditangani di jalur lain (send-product & send-documentation di
+  // backend/src/routes/conversations.js) dengan loop SEKUENSIAL + delay
+  // 1500ms antar kirim. Forward bulk sebelumnya luput dari pola yang sama.
   async function handleForward(targetConvId) {
     if (forwarding || !items.length) return;
     setForwarding(true);
-    const results = await Promise.allSettled(
-      items.map((m) => api.forwardMessage(m.conversationId, m.id, targetConvId))
-    );
+    let gagal = 0;
+    for (let i = 0; i < items.length; i++) {
+      try {
+        await api.forwardMessage(items[i].conversationId, items[i].id, targetConvId);
+      } catch {
+        gagal += 1;
+      }
+      if (i < items.length - 1) await new Promise((r) => setTimeout(r, 1500));
+    }
     setForwarding(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed > 0) {
-      Alert.alert("Sebagian gagal diteruskan", `${failed} dari ${items.length} pesan gagal diteruskan.`);
+    if (gagal > 0) {
+      Alert.alert("Sebagian gagal diteruskan", `${gagal} dari ${items.length} pesan gagal diteruskan.`);
     } else {
       onClose();
     }

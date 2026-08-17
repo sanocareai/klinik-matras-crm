@@ -196,10 +196,13 @@ export const api = {
     request(`/conversations/${conversationId}/read`, { method: "POST" }),
   // clientId: opsional — lihat ChatScreen.js#handleSend & messageStore.js
   // untuk kenapa ini perlu (rekonsiliasi pesan optimistic vs echo socket).
-  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null, clientId = null) =>
+  // mentions: daftar NOMOR (bukan LID, bukan nama) yang di-mention — wajib
+  // ikut dikirim kalau teksnya memuat "@nomor", kalau tidak orangnya tidak
+  // tertandai & tidak dinotifikasi WhatsApp (lihat utils/mention.js).
+  sendMessage: (conversationId, content, quotedMessageId = null, replyToId = null, clientId = null, mentions = null) =>
     request(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, quotedMessageId, replyToId, clientId }),
+      body: JSON.stringify({ content, quotedMessageId, replyToId, clientId, mentions }),
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -364,6 +367,11 @@ export const api = {
   // kirim katalog produk resmi tanpa keluar app).
   sendProduct: (conversationId, data) =>
     request(`/conversations/${conversationId}/send-product`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Anggota grup + nama yang sudah di-resolve dari LID — dipakai untuk
+  // menerjemahkan mention "@165811675242551" jadi nama, DAN sebagai daftar
+  // pilihan saat mengetik "@". Percakapan pribadi balikin array kosong.
+  getParticipants: (conversationId) => request(`/conversations/${conversationId}/participants`),
 
   // Lokasi & kartu kontak (17 Agt 2026) — WAHA engine GOWS mendukung
   // /api/sendLocation & /api/sendContactVcard (diverifikasi langsung ke

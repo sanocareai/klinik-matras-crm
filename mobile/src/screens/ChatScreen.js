@@ -15,7 +15,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, Modal,
+  Alert, ActivityIndicator, Modal, ScrollView,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,7 @@ import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { dateDividerLabel } from "../utils/format";
 import { WA_MARKERS, toggleWaFormatRN } from "../utils/waFormat";
+import { buatPetaMention, siapkanMentionUntukKirim } from "../utils/mention";
 import { lightHaptic } from "../lib/haptics";
 import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 import Avatar from "../components/Avatar";
@@ -236,6 +237,68 @@ export default function ChatScreen({ route, navigation }) {
   const isMine = assignedTo?.id === user?.id;
   const canTakeover = conversation?.canTakeOver ?? false;
 
+  // FITUR (tambahan, 17 Agt 2026): mention grup — WhatsApp menyimpan mention
+  // sebagai "@<LID>" (angka internal, lihat utils/mention.js), yang sebelum
+  // ini tampil mentah di bubble & saat mengetik "@" tidak ada saran sama
+  // sekali (beda dari WhatsApp asli). `participants` dipakai untuk KEDUANYA:
+  // menerjemahkan LID jadi nama saat MERENDER, dan sebagai sumber daftar
+  // saran saat MENGETIK "@".
+  const [participants, setParticipants] = useState([]);
+  const mentionMap = useMemo(() => buatPetaMention(participants), [participants]);
+  // picks: siapa saja yang benar-benar dipilih dari daftar "@" di sesi
+  // composer INI — dipakai siapkanMentionUntukKirim() saat kirim (lihat
+  // handleSend). Direset tiap ganti percakapan supaya tidak "bocor" ke chat lain.
+  const [mentionPicks, setMentionPicks] = useState([]);
+  const [mentionQuery, setMentionQuery] = useState(null); // null = picker tertutup, string = sedang ngetik nama setelah "@"
+
+  useEffect(() => {
+    setMentionPicks([]);
+    setMentionQuery(null);
+    if (!isGroup) { setParticipants([]); return; }
+    let alive = true;
+    api.getParticipants(conversationId).then((data) => { if (alive) setParticipants(data); }).catch(() => {});
+    return () => { alive = false; };
+  }, [conversationId, isGroup]);
+
+  const mentionSaran = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim().toLowerCase();
+    return participants
+      .filter((p) => p.name) // anggota tanpa nama tidak berguna untuk dicari — lihat catatan di participants endpoint
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [mentionQuery, participants]);
+
+  // Dipanggil dari onChangeText composer (lihat handleChangeText di bawah) —
+  // mendeteksi apakah kursor SEDANG berada tepat setelah "@<sebagian nama>"
+  // yang belum diselesaikan spasi, supaya popup saran muncul/hilang PERSIS
+  // seperti WhatsApp (bukan cuma "ada @ di suatu tempat di teks").
+  function deteksiMentionSaatKetik(t, posisiKursor) {
+    if (!isGroup) return;
+    const sebelum = t.slice(0, posisiKursor);
+    const m = sebelum.match(/(?:^|\s)@([^\s@]*)$/);
+    setMentionQuery(m ? m[1] : null);
+  }
+
+  function pilihMention(p) {
+    // Sisipkan "@Nama " menggantikan "@<sebagian yang sedang diketik>" di
+    // posisi kursor — pola sama dengan template picker (cari titik "@"
+    // terakhir sebelum kursor, potong-sambung di situ), bukan asal append
+    // di akhir teks (kursor sales bisa di tengah kalimat).
+    setText((prev) => {
+      const pos = textSelection.start ?? prev.length;
+      const sebelum = prev.slice(0, pos);
+      const sesudah = prev.slice(pos);
+      const idx = sebelum.lastIndexOf("@");
+      if (idx === -1) return prev;
+      const baru = sebelum.slice(0, idx) + `@${p.name} ` + sesudah;
+      useComposerStore.getState().setDraft(conversationId, baru);
+      return baru;
+    });
+    setMentionPicks((prev) => (prev.some((x) => x.phone === p.phone) ? prev : [...prev, p]));
+    setMentionQuery(null);
+  }
+
   const load = useCallback(async (silent = false) => {
     try {
       const data = await api.getMessages(conversationId);
@@ -370,6 +433,13 @@ export default function ChatScreen({ route, navigation }) {
   function handleChangeText(t) {
     setText(t);
     useComposerStore.getState().setDraft(conversationId, t);
+    // Pendekatan: pakai akhir teks sebagai posisi kursor. RN TextInput tidak
+    // menyertakan posisi kursor di onChangeText (cuma di onSelectionChange,
+    // yang di Android fire SETELAH ini dengan nilai selection LAMA) — untuk
+    // alur ketik maju biasa (nambah huruf di ujung, kasus paling umum) ini
+    // sudah tepat. Mengedit "@" di TENGAH kalimat yang sudah panjang tidak
+    // memicu saran — batasan yang bisa diterima, bukan silently salah.
+    deteksiMentionSaatKetik(t, t.length);
   }
 
   // FITUR (tambahan): toolbar Bold/Italic/Strikethrough/Monospace saat teks
@@ -399,12 +469,16 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   async function handleSend() {
-    const content = text.trim();
-    if (!content || sending) return;
+    const mentah = text.trim();
+    if (!mentah || sending) return;
     lightHaptic();
+    // Composer menampilkan "@Nama", tapi WhatsApp menuntut "@nomor" di teks
+    // + daftar mentions — konversi tepat sebelum kirim (lihat utils/mention.js).
+    const { text: content, mentions } = siapkanMentionUntukKirim(mentah, mentionPicks);
     const currentReply = replyTarget;
     setSending(true);
     setText("");
+    setMentionPicks([]);
     useComposerStore.getState().clearComposer(conversationId);
 
     const tempId = `temp-${Date.now()}`;
@@ -429,12 +503,16 @@ export default function ChatScreen({ route, navigation }) {
 
     try {
       const msg = await api.sendMessage(
-        conversationId, content, currentReply?.externalId || null, currentReply?.id || null, clientId,
+        conversationId, content, currentReply?.externalId || null, currentReply?.id || null, clientId, mentions,
       );
       useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg);
     } catch (err) {
       // Gagal (kemungkinan offline di lapangan) — antre, dicoba otomatis lagi
-      // begitu koneksi kembali (lihat src/lib/outboxFlush.js).
+      // begitu koneksi kembali (lihat src/lib/outboxFlush.js). Outbox tidak
+      // dirombak untuk kirim ulang `mentions` — kalau pesan tertunda cukup
+      // lama sampai antrean jalan lagi, teks yang tersimpan SUDAH berbentuk
+      // "@nomor" (bukan "@Nama" lagi), jadi tetap terkirim benar walau tanpa
+      // penandaan mention resmi WhatsApp (fallback aman, bukan silently rusak).
       useOutboxStore.getState().enqueue({
         convId: conversationId, tempId, clientId,
         payload: { content, quotedMessageId: currentReply?.externalId || null, replyToId: currentReply?.id || null },
@@ -675,8 +753,12 @@ export default function ChatScreen({ route, navigation }) {
   const handleReplyMessage = useCallback((msg) => {
     useComposerStore.getState().setReplyTarget(msg);
   }, []);
-  const handleForwardMessage = useCallback((msg) => {
-    setForwardMsg(msg);
+  // anggota: array anggota album (kalau bubble yang di-"Teruskan" mewakili
+  // >1 pesan asli) dari MessageBubble.js#handleForward — forward BULK
+  // dipakai supaya SEMUA anggota ikut, bukan cuma 1 wakil.
+  const handleForwardMessage = useCallback((msg, anggota) => {
+    if (anggota?.length) setForwardBulk(anggota);
+    else setForwardMsg(msg);
   }, []);
 
   const renderItem = useCallback(({ item }) => {
@@ -694,6 +776,7 @@ export default function ChatScreen({ route, navigation }) {
         albumMessages={item.albumMessages}
         conversationId={conversationId}
         isGroup={isGroup}
+        mentionMap={mentionMap}
         highlighted={highlightedId === m.id}
         onReply={handleReplyMessage}
         onForward={handleForwardMessage}
@@ -710,7 +793,7 @@ export default function ChatScreen({ route, navigation }) {
       />
     );
   }, [
-    styles, isGroup, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
+    styles, isGroup, mentionMap, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
     handleRetry, openMediaViewer, handleDeleteLocal, handleDeleteEveryone, handleEnterSelection,
     selectionMode, selectedIds, handleToggleSelect, conversationId,
   ]);
@@ -949,6 +1032,22 @@ export default function ChatScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           )}
+          {/* Saran "@" — muncul persis saat mengetik "@" diikuti sebagian
+              nama, sama seperti WhatsApp asli. Anggota tanpa nama (belum ada
+              di CRM) sengaja TIDAK muncul di sini — mem-mention nomor mentah
+              tidak berguna untuk siapa pun. */}
+          {mentionQuery !== null && mentionSaran.length > 0 && (
+            <View style={styles.mentionPopup}>
+              <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 180 }}>
+                {mentionSaran.map((p) => (
+                  <TouchableOpacity key={p.phone || p.lid} style={styles.mentionRow} onPress={() => pilihMention(p)}>
+                    <Avatar name={p.name} size={28} />
+                    <Text style={styles.mentionName} numberOfLines={1}>{p.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
           {textSelection.start !== textSelection.end && (
             <View style={styles.formatToolbar}>
               <TouchableOpacity style={styles.formatBtn} onPress={() => applyFormat(WA_MARKERS.bold)}>
@@ -1185,6 +1284,13 @@ function createStyles(tokens) {
   replyBarTitle: { fontSize: 11, fontWeight: "700", color: tokens.color.accent },
   replyBarText: { fontSize: 12, color: tokens.color.textSecondary },
   replyBarClose: { fontSize: 15, color: tokens.color.textMuted, padding: 4 },
+  mentionPopup: {
+    backgroundColor: tokens.color.card, borderTopWidth: 1, borderTopColor: tokens.color.border,
+  },
+  mentionRow: {
+    flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 9,
+  },
+  mentionName: { fontSize: 14, color: tokens.color.textPrimary, fontWeight: "600" },
   formatToolbar: {
     flexDirection: "row", gap: 6, paddingHorizontal: 10, paddingVertical: 6,
     backgroundColor: tokens.color.subtle, borderTopWidth: 1, borderTopColor: tokens.color.border,

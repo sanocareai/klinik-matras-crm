@@ -8,7 +8,7 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
+import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
@@ -548,7 +548,7 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   // clientId ini SUDAH PERNAH diproses (ada row Message dengan clientId
   // sama), balikin langsung row yang sudah ada — TIDAK panggil sendText()
   // lagi sama sekali.
-  const { content, quotedMessageId, replyToId, clientId } = req.body;
+  const { content, quotedMessageId, replyToId, clientId, mentions } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: "Pesan kosong" });
 
   if (clientId) {
@@ -574,9 +574,16 @@ conversationRouter.post("/:id/messages", async (req, res) => {
         error: conversation.type === "GROUP" ? "groupJid tidak tersedia" : "Nomor WA pelanggan tidak tersedia",
       });
     }
+    // mentions dikirim sebagai daftar NOMOR (mis. ["628881996001"]) oleh
+    // klien; WAHA menuntut bentuk JID. Tanpa daftar ini, teks "@628881996001"
+    // terkirim sebagai tulisan biasa — orangnya TIDAK tertandai & TIDAK
+    // dinotifikasi, jadi mention-nya cuma terlihat benar tapi tidak berfungsi.
+    const mentionJids = Array.isArray(mentions)
+      ? mentions.filter((n) => /^\d{8,}$/.test(String(n))).map((n) => `${n}@c.us`)
+      : null;
     try {
       ({ result: wahaMsg } = await sendWithSessionFallback(conversation, (session) =>
-        sendText(target, content, quotedMessageId || null, session)
+        sendText(target, content, quotedMessageId || null, session, mentionJids)
       ));
     } catch (waErr) {
       if (waErr instanceof SessionResolutionError) {
@@ -902,6 +909,62 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   emitConversationUpdate(updatedConvMedia);
   console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
   res.status(201).json(message);
+});
+
+// GET /:id/participants — anggota grup + NAMA yang sudah di-resolve.
+//
+// Melayani DUA kebutuhan sekaligus dari satu sumber data (jangan dipecah jadi
+// dua endpoint yang bisa saling tidak konsisten):
+//   1. Menerjemahkan mention "@165811675242551" jadi "@bang richel Digital".
+//      WhatsApp menyimpan mention di TEKS pesan sebagai @<LID>, dan LID itu
+//      angka internal yang tidak berarti apa pun bagi manusia — itu yang
+//      selama ini terlihat mentah di CRM & SANO Messenger.
+//   2. Daftar pilihan saat sales mengetik "@" di composer grup.
+//
+// ⚠️ Nama TIDAK diambil dari DisplayName WAHA — field itu SELALU kosong di
+// produksi (lihat catatan di wahaClient.js#getGroupParticipants). Nama dicari
+// dari tabel Customer lewat nomor telepon. Anggota yang tidak punya baris
+// Customer akan `name: null` — klien menampilkan nomornya, JANGAN pernah
+// menampilkan LID ke pengguna.
+const participantsCache = new Map(); // conversationId -> { data, at }
+const PARTICIPANTS_TTL_MS = 5 * 60 * 1000; // anggota grup jarang berubah
+
+conversationRouter.get("/:id/participants", async (req, res) => {
+  const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
+  if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  // Bukan error untuk percakapan pribadi — cuma tidak ada anggota. Balikin
+  // array kosong supaya klien tidak perlu bercabang per tipe percakapan.
+  if (conversation.type !== "GROUP" || !conversation.groupJid) return res.json([]);
+
+  const cached = participantsCache.get(conversation.id);
+  if (cached && Date.now() - cached.at < PARTICIPANTS_TTL_MS) return res.json(cached.data);
+
+  const session = conversation.sessionId || KNOWN_SESSIONS[0];
+  const raw = await getGroupParticipants(conversation.groupJid, session);
+
+  // Bentuk WAHA: JID/LID "<lid>@lid", PhoneNumber "<nomor>@s.whatsapp.net".
+  const anggota = raw.map((p) => ({
+    lid: String(p.LID || p.JID || "").split("@")[0] || null,
+    phone: String(p.PhoneNumber || "").split("@")[0] || null,
+    isAdmin: !!(p.IsAdmin || p.IsSuperAdmin),
+  })).filter((a) => a.lid || a.phone);
+
+  const nomorList = anggota.map((a) => a.phone).filter(Boolean);
+  const pelanggan = nomorList.length
+    ? await prisma.customer.findMany({
+        where: { phone: { in: nomorList } },
+        select: { phone: true, name: true },
+      })
+    : [];
+  const namaPerNomor = new Map(pelanggan.filter((c) => c.name).map((c) => [c.phone, c.name]));
+
+  const data = anggota.map((a) => ({
+    ...a,
+    name: (a.phone && namaPerNomor.get(a.phone)) || null,
+  }));
+
+  participantsCache.set(conversation.id, { data, at: Date.now() });
+  res.json(data);
 });
 
 // POST /:id/send-location — bagikan titik lokasi (showroom, alamat pelanggan).
