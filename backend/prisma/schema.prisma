@@ -512,6 +512,31 @@ model Message {
   // sebenarnya masuk, padahal itu pesan sungguhan yang tidak terbaca di CRM.
   rawType String?
 
+  // Poster/cover VIDEO + ukuran tampilnya. Ditambahkan 17 Agt 2026 untuk
+  // memperbaiki dua bug yang saling terkait:
+  //
+  // 1. COVER VIDEO HITAM. Sebelumnya cover diambil di sisi KLIEN — mula-mula
+  //    dengan menampilkan <VideoView> paused (tidak reliable, ExoPlayer sering
+  //    tampil kosong), lalu dengan expo-video-thumbnails `time: 0`. Keduanya
+  //    tetap hitam di lapangan. Dua sebabnya: (a) ekstraksi frame dari URL
+  //    REMOTE di Android tidak dapat diandalkan, dan (b) frame pada detik 0
+  //    memang SERING hitam (fade-in), jadi walau berhasil hasilnya tetap
+  //    hitam. Sekarang thumbnail dibuat di SERVER dengan ffmpeg (sudah ada di
+  //    image backend untuk konversi audio) memakai filter `thumbnail` yang
+  //    memilih frame paling representatif, BUKAN frame detik 0.
+  //
+  // 2. VIDEO PORTRAIT TAMPIL LANDSCAPE. Video HP menyimpan stream dalam
+  //    orientasi landscape + metadata `rotation`. Contoh nyata dari produksi:
+  //    stream 3840x2160 dengan rotation=-90, yang seharusnya TAMPIL 2160x3840
+  //    (portrait). Kode yang membaca width/height mentah tanpa menerapkan
+  //    rotasi akan selalu menyimpulkan landscape. mediaWidth/mediaHeight di
+  //    sini diambil dari DIMENSI THUMBNAIL hasil ffmpeg — ffmpeg otomatis
+  //    menerapkan rotasi saat men-decode, jadi angka ini sudah pasti ukuran
+  //    TAMPIL yang benar, tanpa perlu mengurai metadata rotasi sendiri.
+  thumbUrl    String? // path lokal poster video, mis. "/uploads/xxx-thumb.jpg"
+  mediaWidth  Int? // lebar TAMPIL (sudah memperhitungkan rotasi)
+  mediaHeight Int? // tinggi TAMPIL (sudah memperhitungkan rotasi)
+
   // Sales yang kirim pesan OUTBOUND ini dari CRM (web/app) — null untuk
   // pesan INBOUND (dari customer) dan pesan lama sebelum field ini ada.
   // Dipakai buat set Conversation.firstResponderId sekali di

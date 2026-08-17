@@ -16,7 +16,7 @@ import * as Location from "expo-location";
 import * as Contacts from "expo-contacts";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
-  Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User,
+  Image as ImageIcon, Camera, FileText, X, Video, Package, MapPin, User, Plus,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -457,6 +457,14 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
               >
                 <Text style={[styles.hdToggleText, hd && styles.hdToggleTextActive]}>{hd ? "HD" : "Standar"}</Text>
               </TouchableOpacity>
+              {/* Tambah foto/video lagi TANPA kehilangan yang sudah dipilih
+                  beserta caption-nya — addAssets() meng-APPEND ke `items`,
+                  bukan mengganti. Sebelumnya sales harus menutup preview dan
+                  memilih ulang semuanya dari awal. */}
+              <TouchableOpacity style={styles.tambahBtn} onPress={pickFromGallery} disabled={sending}>
+                <Plus size={15} color={tokens.color.accent} strokeWidth={2.4} />
+                <Text style={styles.tambahBtnText}>Tambah</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.sendAllBtn} onPress={handleSendAll} disabled={sending}>
                 <Text style={styles.sendAllText}>{sending ? "Mengirim…" : `Kirim (${items.length})`}</Text>
               </TouchableOpacity>
@@ -540,6 +548,11 @@ function createStyles(tokens) {
   hdToggleActive: { backgroundColor: tokens.color.accentSoft },
   hdToggleText: { fontSize: 12, fontWeight: "700", color: tokens.color.textSecondary },
   hdToggleTextActive: { color: tokens.color.accent },
+  tambahBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 14, backgroundColor: tokens.color.accentSoft,
+  },
+  tambahBtnText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
   sendAllBtn: { marginLeft: "auto", backgroundColor: tokens.color.accent, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10 },
   sendAllText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   });

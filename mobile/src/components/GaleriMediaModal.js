@@ -41,7 +41,10 @@ export default function GaleriMediaModal({ visible, conversationId, onClose }) {
 
   function openViewer(index) {
     setViewer({
-      items: mediaItems.map((m) => ({ id: m.id, type: m.mediaType, url: mediaUrl(m.mediaUrl) })),
+      items: mediaItems.map((m) => ({
+        id: m.id, type: m.mediaType, url: mediaUrl(m.mediaUrl),
+        thumbUrl: m.thumbUrl ? mediaUrl(m.thumbUrl) : null,
+      })),
       index,
     });
   }
@@ -91,6 +94,20 @@ export default function GaleriMediaModal({ visible, conversationId, onClose }) {
               <TouchableOpacity style={styles.gridCell} onPress={() => openViewer(index)}>
                 {m.mediaType === "image" ? (
                   <Image source={{ uri: mediaUrl(m.mediaUrl) }} style={styles.gridThumb} contentFit="cover" cachePolicy="memory-disk" />
+                ) : m.thumbUrl ? (
+                  // Video: poster dari server + ikon kecil sebagai penanda
+                  // bahwa ini video, bukan foto (sama seperti WhatsApp).
+                  <View style={styles.gridThumb}>
+                    <Image
+                      source={{ uri: mediaUrl(m.thumbUrl) }}
+                      style={StyleSheet.absoluteFillObject}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
+                    <View style={styles.gridVideoBadge}>
+                      <Video size={12} color="#fff" strokeWidth={2.2} />
+                    </View>
+                  </View>
                 ) : (
                   <View style={[styles.gridThumb, styles.gridVideoThumb]}>
                     <Video size={20} color="#fff" strokeWidth={2} />
@@ -153,8 +170,12 @@ function createStyles(tokens) {
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
     emptyText: { fontSize: 13.5, color: tokens.color.textMuted, textAlign: "center" },
     gridCell: { width: `${cellSize}%`, aspectRatio: 1, padding: GRID_GAP },
-    gridThumb: { flex: 1, borderRadius: 6, backgroundColor: tokens.color.card },
+    gridThumb: { flex: 1, borderRadius: 6, backgroundColor: tokens.color.card, overflow: "hidden" },
     gridVideoThumb: { alignItems: "center", justifyContent: "center", backgroundColor: "#1a1a1a" },
+    gridVideoBadge: {
+      position: "absolute", bottom: 4, left: 4, width: 20, height: 20, borderRadius: 10,
+      alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.55)",
+    },
     docRow: {
       flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12,
       borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,

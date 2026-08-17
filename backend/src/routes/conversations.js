@@ -13,6 +13,7 @@ import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { resolveMediaExt } from "../utils/mediaExt.js";
+import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -896,6 +897,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   const message = await prisma.message.create({
     data: { conversationId: conversation.id, direction: "OUTBOUND",
             content: caption, mediaType, mediaUrl, externalId: waResult?.id || null,
+            ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
             sentById: req.user.id },
   });
   // Sama seperti POST /:id/messages — firstResponderId diisi sekali saja.
@@ -1567,6 +1569,15 @@ conversationRouter.post("/:id/forward", async (req, res) => {
       mediaUrl: sourceMsg.mediaUrl || null,
       forwarded: true,
       externalId: wahaMsg?.id || null,
+      // Poster IKUT diwariskan dari pesan sumber — file videonya sama persis
+      // (mediaUrl dipakai ulang, tidak diunduh/ditulis ulang), jadi tidak ada
+      // gunanya menjalankan ffmpeg lagi untuk file yang sudah punya poster.
+      // Fallback ke pembuatan poster kalau pesan sumbernya belum punya (mis.
+      // video lama sebelum fitur ini ada dan belum ter-backfill).
+      thumbUrl: sourceMsg.thumbUrl || null,
+      mediaWidth: sourceMsg.mediaWidth || null,
+      mediaHeight: sourceMsg.mediaHeight || null,
+      ...(sourceMsg.thumbUrl ? {} : await fieldPosterVideo(uploadsDir, sourceMsg.mediaUrl, sourceMsg.mediaType)),
     },
   });
 

@@ -57,6 +57,7 @@ import { useConversationStore } from "../store/conversationStore";
 import { useMessageStore, useMessagesForConv } from "../store/messageStore";
 import { useComposerStore, useDraft, useReplyTarget } from "../store/composerStore";
 import { useOutboxStore } from "../store/outboxStore";
+import { useSocketStatusStore } from "../store/socketStatusStore";
 
 const POLL_MS = 5000;
 const PAGE_SIZE = 50;
@@ -314,11 +315,42 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, [conversationId]);
 
+  // PERF (17 Agt 2026) — POLLING JADI FALLBACK, BUKAN JALUR UTAMA.
+  //
+  // Sebelumnya layar ini memanggil GET /:id/messages setiap 5 detik TANPA
+  // syarat. Endpoint itu mengembalikan SELURUH riwayat percakapan (tidak ada
+  // pagination di server, lihat catatan di kepala file) — diukur langsung di
+  // produksi: percakapan terbesar = 2,29 MB per respons. Artinya membuka satu
+  // chat menghabiskan ±27 MB/menit kuota, plus parse JSON 2,3 MB tiap 5 detik
+  // di thread JS (sumber jank saat scroll) dan penggantian SELURUH array di
+  // store yang memicu render ulang besar.
+  //
+  // Itu semua SIA-SIA saat socket tersambung: Socket.IO sudah mengirim
+  // message:new/message:update secara live (lihat hooks/useSocketEvents.js),
+  // jadi polling hanya berguna sebagai jaring pengaman ketika socket TERPUTUS.
+  // Sekarang: socket tersambung -> tidak ada polling sama sekali; socket
+  // terputus -> polling 5 detik seperti dulu.
+  const socketConnected = useSocketStatusStore((s) => s.connected);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    load();
+    if (socketConnected) return; // live via socket, tidak perlu polling
     pollRef.current = setInterval(() => load(true), POLL_MS);
     return () => clearInterval(pollRef.current);
-  }, [load]);
+  }, [load, socketConnected]);
+
+  // WAJIB ADA karena polling tak-bersyarat di atas dihapus: pesan yang masuk
+  // SELAMA socket terputus tidak pernah terkirim sebagai event, jadi tanpa
+  // penyusulan sekali di sini pesan itu TIDAK akan pernah muncul sampai
+  // layar dibuka ulang. Hanya jalan pada transisi terputus -> tersambung
+  // (bukan pada mount pertama, itu sudah ditangani load() di atas).
+  const pernahTerputusRef = useRef(false);
+  useEffect(() => {
+    if (!socketConnected) { pernahTerputusRef.current = true; return; }
+    if (pernahTerputusRef.current) {
+      pernahTerputusRef.current = false;
+      load(true);
+    }
+  }, [socketConnected, load]);
 
   // Join room socket percakapan ini selama layar dibuka (lihat useSocketEvents di App.js)
   useEffect(() => {
@@ -342,7 +374,13 @@ export default function ChatScreen({ route, navigation }) {
   // Semua foto/video yang sudah termuat di percakapan ini — dipakai swipe gallery MediaViewerModal.
   const galleryItems = useMemo(() => allMessages
     .filter((m) => (m.mediaType === "image" || m.mediaType === "video") && m.mediaUrl)
-    .map((m) => ({ id: m.id, type: m.mediaType, url: mediaUrl(m.mediaUrl) })),
+    // thumbUrl ikut dibawa — dipakai MediaViewerModal sebagai poster supaya
+    // tidak ada layar hitam selagi video di-buffer, dan supaya halaman
+    // tetangga di swiper tidak perlu membangun player video sama sekali.
+    .map((m) => ({
+      id: m.id, type: m.mediaType, url: mediaUrl(m.mediaUrl),
+      thumbUrl: m.thumbUrl ? mediaUrl(m.thumbUrl) : null,
+    })),
   [allMessages]);
 
   // Setelah window diperlebar demi "jump to reply", baru scroll (lihat scrollToMessage)

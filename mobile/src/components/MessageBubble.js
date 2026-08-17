@@ -3,7 +3,7 @@
 // varian teks/foto/video/audio/dokumen, ack ticks, reply quote, forwarded
 // label, long-press → Reply/Forward/Salin. memo supaya list tidak
 // re-render seluruh bubble tiap ada pesan baru masuk.
-import React, { lazy, memo, Suspense, useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Linking, Alert, Modal,
 } from "react-native";
@@ -205,13 +205,34 @@ function DocumentRow({ url }) {
   );
 }
 
-// Lazy (sama alasan MediaViewerModal.js di ChatScreen.js) — VideoThumbPreview
-// import expo-video, MessageBubble.js dirender utk SEMUA pesan di SEMUA
-// chat yang dibuka, jadi kalau expo-video di-import statis di sini costnya
-// ikut kebawa startup app tiap kali layar chat manapun dibuka. Suspense
-// fallback null aman: tile/thumbnail cuma "kosong sebentar" (background
-// gelap videoThumb/albumTile sudah ada di baliknya) sebelum chunk termuat.
-const VideoThumbPreview = lazy(() => import("./VideoThumbPreview"));
+// PERF (17 Agt 2026): VideoThumbPreview (lazy chunk + expo-video-thumbnails,
+// ekstraksi frame di HP per bubble video) SUDAH DIHAPUS dari sini. Poster
+// sekarang dibuat sekali di server (backend/src/utils/videoThumb.js) dan
+// dikirim sebagai URL gambar biasa, jadi bubble video cuma perlu <Image>
+// yang ter-cache — tidak ada modul native, tidak ada chunk tambahan, tidak
+// ada kerja decode video di HP sama sekali. Ini sekaligus memperbaiki
+// cover hitam yang dua kali gagal diperbaiki dari sisi klien.
+
+// Lebar bubble media — dipakai foto, album, dan video supaya semua bubble
+// punya lebar yang sama (bubble tidak "goyang" lebarnya antar jenis media).
+const LEBAR_MEDIA = 220;
+// Batas tinggi video: portrait 9:16 penuh akan jadi 391px dan mendorong
+// pesan lain jauh keluar layar, jadi dipatok — sama seperti WhatsApp yang
+// juga membatasi tinggi bubble video portrait.
+const TINGGI_VIDEO_MIN = 124;
+const TINGGI_VIDEO_MAX = 300;
+
+// Hitung tinggi kotak video dari rasio ASLI. Kalau dimensi tidak diketahui
+// (video lama sebelum kolom mediaWidth/mediaHeight ada, atau ffprobe gagal),
+// jatuh ke 16:9 — tebakan yang paling umum, bukan angka acak.
+function ukuranVideo(w, h) {
+  const rasio = (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) ? w / h : 16 / 9;
+  const tinggi = Math.round(LEBAR_MEDIA / rasio);
+  return {
+    width: LEBAR_MEDIA,
+    height: Math.max(TINGGI_VIDEO_MIN, Math.min(TINGGI_VIDEO_MAX, tinggi)),
+  };
+}
 
 // Grid multi-foto/video ala WhatsApp — dipakai saat MessageBubble menerima
 // `albumMessages` (>2 foto/video berurutan, dikelompokkan di
@@ -232,13 +253,24 @@ function AlbumGrid({ items, onOpenMedia, styles }) {
         return (
           <TouchableOpacity key={it.id} style={styles.albumTile} onPress={() => onOpenMedia?.(it)}>
             {isVideo ? (
-              // BUG (fix): tile video dulu dikasih ke <Image> (expo-image)
-              // seolah-olah file video adalah gambar — gagal decode total,
-              // jadi tile-nya kosong/rusak. File video WAJIB lewat
-              // VideoThumbPreview (expo-video), bukan Image.
-              <Suspense fallback={null}>
-                <VideoThumbPreview uri={mediaUrl(it.mediaUrl)} style={styles.albumTileImage} />
-              </Suspense>
+              // Tile video memakai POSTER dari server (it.thumbUrl), bukan
+              // file videonya. Riwayat: dulu file video diberikan langsung ke
+              // <Image> (gagal decode, tile kosong), lalu diganti ekstraksi
+              // frame di HP (tetap hitam). Poster server-side menyelesaikan
+              // keduanya — lihat catatan di atas.
+              it.thumbUrl ? (
+                <Image
+                  source={{ uri: mediaUrl(it.thumbUrl) }}
+                  style={styles.albumTileImage}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  recyclingKey={it.id}
+                />
+              ) : (
+                <View style={[styles.albumTileImage, styles.albumTileKosong]}>
+                  <VideoIcon size={18} color="rgba(255,255,255,0.55)" strokeWidth={1.8} />
+                </View>
+              )
             ) : (
               <Image
                 source={{ uri: mediaUrl(it.mediaUrl) }}
@@ -246,6 +278,7 @@ function AlbumGrid({ items, onOpenMedia, styles }) {
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 transition={120}
+                recyclingKey={it.id}
               />
             )}
             {isVideo && !isLastTile && (
@@ -563,14 +596,44 @@ function MessageBubbleBase({
                       contentFit="cover"
                       cachePolicy="memory-disk"
                       transition={120}
+                      // PERF: recyclingKey WAJIB di dalam FlashList — tanpa
+                      // ini, cell yang di-recycle sempat menampilkan foto
+                      // PESAN SEBELUMNYA sebelum foto baru selesai dimuat
+                      // (kelihatan seperti foto "salah tempat" saat scroll
+                      // cepat). Direkomendasikan eksplisit oleh expo-image
+                      // untuk list yang me-recycle view.
+                      recyclingKey={m.id}
                     />
                   </TouchableOpacity>
                 )}
                 {m.mediaType === "video" && m.mediaUrl && (
-                  <TouchableOpacity style={styles.videoThumb} onPress={() => onOpenMedia?.(m)}>
-                    <Suspense fallback={null}>
-                      <VideoThumbPreview uri={mediaUrl(m.mediaUrl)} style={StyleSheet.absoluteFillObject} />
-                    </Suspense>
+                  // Ukuran bubble mengikuti rasio ASLI video (m.mediaWidth/
+                  // mediaHeight dari server, sudah memperhitungkan rotasi) —
+                  // dulu kotaknya dipatok 220x140 (landscape) sehingga SEMUA
+                  // video tampak landscape walau aslinya portrait.
+                  <TouchableOpacity
+                    style={[styles.videoThumb, ukuranVideo(m.mediaWidth, m.mediaHeight)]}
+                    onPress={() => onOpenMedia?.(m)}
+                  >
+                    {m.thumbUrl ? (
+                      // Poster dibuat SERVER-SIDE dengan ffmpeg (lihat
+                      // backend/src/utils/videoThumb.js) — file gambar biasa,
+                      // jadi tampil instan lewat <Image> yang ter-cache.
+                      // Ekstraksi di sisi klien sudah dicoba DUA KALI dan
+                      // gagal (kotak hitam) — jangan dikembalikan.
+                      <Image
+                        source={{ uri: mediaUrl(m.thumbUrl) }}
+                        style={StyleSheet.absoluteFillObject}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={120}
+                        recyclingKey={m.id}
+                      />
+                    ) : (
+                      // Video lama yang belum ter-backfill poster-nya — ikon,
+                      // BUKAN kotak hitam kosong yang terlihat seperti bug.
+                      <VideoIcon size={26} color="rgba(255,255,255,0.55)" strokeWidth={1.8} />
+                    )}
                     <View style={styles.videoPlayOverlay}>
                       <Play size={28} color="#fff" fill="#fff" strokeWidth={0} />
                     </View>
@@ -586,6 +649,7 @@ function MessageBubbleBase({
                     style={styles.sticker}
                     contentFit="contain"
                     cachePolicy="memory-disk"
+                    recyclingKey={m.id}
                   />
                 )}
                 {m.mediaType === "audio" && m.mediaUrl && <AudioPlayer uri={mediaUrl(m.mediaUrl)} />}
@@ -760,6 +824,7 @@ function createStyles(tokens) {
   },
   albumTile: { width: 109, height: 109, backgroundColor: "#0f172a" },
   albumTileImage: { width: "100%", height: "100%" },
+  albumTileKosong: { alignItems: "center", justifyContent: "center" },
   albumTilePlayWrap: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center",
   },
@@ -768,8 +833,11 @@ function createStyles(tokens) {
     backgroundColor: "rgba(0,0,0,0.45)",
   },
   albumTileOverlayText: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  // width/height TIDAK diset di sini — ditentukan per pesan oleh ukuranVideo()
+  // dari rasio asli video. Dulu dipatok 220x140 dan itulah sebabnya semua
+  // video tampak landscape walau aslinya portrait.
   videoThumb: {
-    width: 220, height: 140, borderRadius: 10, marginBottom: 4, backgroundColor: "#0f172a",
+    borderRadius: 10, marginBottom: 4, backgroundColor: "#0f172a",
     alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative",
   },
   videoPlayOverlay: {

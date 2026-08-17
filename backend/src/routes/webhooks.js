@@ -17,6 +17,7 @@ import {
 } from "../services/leadAttribution.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
+import { fieldPosterVideo } from "../utils/videoThumb.js";
 
 export const webhookRouter = express.Router();
 
@@ -425,7 +426,8 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
       message = await prisma.message.create({
         data: { conversationId: conversation.id, direction, content, mediaType, mediaUrl, externalId,
                 senderName: fromMe ? null : (senderName || null),
-                rawType: parsedMedia.rawType || null, replyToId },
+                rawType: parsedMedia.rawType || null, replyToId,
+                ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)) },
         // include replyTo — BUG YANG DIPERBAIKI: emitNewMessage di bawah kirim
         // hasil create() ini APA ADANYA lewat Socket.IO ke client; tanpa
         // include ini, payload cuma bawa replyToId (string ID mentah), bukan
@@ -697,6 +699,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         externalId,
         rawType: parsedMedia.rawType || null,
         replyToId,
+        ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
       },
       // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
       // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
@@ -845,6 +848,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
         ack: initialAck || 0,
         rawType: parsedMedia.rawType || null,
         replyToId,
+        ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
       },
       // include replyTo — lihat catatan sama di handleGroupMessage/
       // handleInboundMessage: tanpa ini efek kutipan cuma muncul setelah

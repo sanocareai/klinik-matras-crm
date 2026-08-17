@@ -4,9 +4,10 @@
 // dibangun manual pakai react-native-gesture-handler (sudah ada sejak M-B).
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Modal, View, StyleSheet, Dimensions, TouchableOpacity, Text, FlatList,
+  Modal, View, StyleSheet, Dimensions, TouchableOpacity, Text, FlatList, ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
+import { useEvent } from "expo";
 // Ganti dari expo-av (deprecated, crash New Architecture — lihat
 // mobile/CLAUDE.md) ke expo-video, API resmi pengganti sejak SDK 54+.
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -82,17 +83,27 @@ function ZoomableImage({ uri, onZoomChange }) {
   );
 }
 
-function VideoPage({ uri, active }) {
+// PERF + BUG (17 Agt 2026): dulu SETIAP item video di swiper membangun
+// instance useVideoPlayer sendiri — FlatList merender beberapa halaman
+// sekaligus (windowing), jadi 2-3 player native hidup bersamaan walau cuma
+// satu yang dilihat. Untuk video besar (nyata di produksi: 37 MB, 3840x2160)
+// itu berat sekali dan ikut membuat "buka video lambat".
+//
+// Sekarang halaman yang TIDAK aktif cuma menampilkan poster (gambar biasa) —
+// tidak ada player, tidak ada decoder. Player baru dibuat saat halamannya
+// benar-benar aktif.
+function VideoPageAktif({ uri, poster }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = false;
+    p.play();
   });
 
-  // useVideoPlayer tidak punya prop shouldPlay seperti expo-av — kontrol
-  // play/pause manual mengikuti halaman mana yang lagi aktif di swiper.
-  useEffect(() => {
-    if (active) player.play();
-    else player.pause();
-  }, [active, player]);
+  // Poster ditahan di ATAS video sampai player benar-benar siap. Tanpa ini
+  // yang terlihat adalah LAYAR HITAM selama video di-buffer — persis keluhan
+  // "buka video loading-nya lama dan blank hitam dulu". Poster tidak
+  // menghilangkan waktu buffering, tapi menghilangkan layar hitamnya.
+  const { status } = useEvent(player, "statusChange", { status: player.status }) ?? {};
+  const siap = status === "readyToPlay";
 
   return (
     <View style={styles.page}>
@@ -102,8 +113,30 @@ function VideoPage({ uri, active }) {
         nativeControls
         contentFit="contain"
       />
+      {!siap && (
+        <View style={styles.posterWrap} pointerEvents="none">
+          {poster ? (
+            <Image source={{ uri: poster }} style={styles.fullImage} contentFit="contain" />
+          ) : null}
+          <ActivityIndicator color="#fff" style={styles.posterSpinner} />
+        </View>
+      )}
     </View>
   );
+}
+
+function VideoPage({ uri, poster, active }) {
+  if (!active) {
+    // Halaman tetangga di swiper — poster saja, TIDAK membuat player.
+    return (
+      <View style={styles.page}>
+        {poster ? <Image source={{ uri: poster }} style={styles.fullImage} contentFit="contain" /> : null}
+      </View>
+    );
+  }
+  // key={uri} — pastikan player benar-benar dibangun ulang saat berpindah
+  // video, bukan dipakai ulang dengan sumber lama yang masih ter-buffer.
+  return <VideoPageAktif key={uri} uri={uri} poster={poster} />;
 }
 
 // items: [{ id, type: 'image'|'video', url }], initialIndex: posisi awal
@@ -141,7 +174,7 @@ export default function MediaViewerModal({ visible, items, initialIndex = 0, onC
           showsHorizontalScrollIndicator={false}
           renderItem={({ item, index }) =>
             item.type === "video" ? (
-              <VideoPage uri={item.url} active={index === activeIndex} />
+              <VideoPage uri={item.url} poster={item.thumbUrl} active={index === activeIndex} />
             ) : (
               <ZoomableImage uri={item.url} onZoomChange={setZoomed} />
             )
@@ -156,6 +189,14 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)" },
   page: { width: SCREEN_W, height: SCREEN_H, alignItems: "center", justifyContent: "center" },
   fullImage: { width: SCREEN_W, height: SCREEN_H },
+  // Poster menutupi video PENUH sampai player siap — backgroundColor hitam
+  // supaya area di luar rasio poster tidak menampilkan permukaan video yang
+  // belum tergambar (itu yang dulu terlihat sebagai kedipan hitam).
+  posterWrap: {
+    ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center",
+    backgroundColor: "#000",
+  },
+  posterSpinner: { position: "absolute" },
   closeBtn: {
     position: "absolute", top: 44, right: 16, zIndex: 10,
     width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.15)",
