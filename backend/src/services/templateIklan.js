@@ -85,10 +85,12 @@ export function cocokkanTemplateIklan(text, templates) {
 }
 
 let cache = { data: null, at: 0 };
+let cacheWeb = { data: null, at: 0 };
 
 /** Dipakai tes — jangan dipanggil dari kode produksi. */
 export function _resetCacheTemplateIklan() {
   cache = { data: null, at: 0 };
+  cacheWeb = { data: null, at: 0 };
 }
 
 /**
@@ -130,5 +132,68 @@ export async function ambilTemplateIklanAktif() {
   } catch (e) {
     console.warn("[templateIklan] Gagal ambil daftar template:", e.message);
     return cache.data || [];
+  }
+}
+
+// ── TEKS TOMBOL WA DI WEBSITE ──────────────────────────────────────────
+//
+// MASALAH TERPISAH dari template iklan di atas, tapi pola solusinya sama.
+//
+// Tombol WhatsApp di sanomatrassehat.com membuka WA dengan teks prefilled
+// ("Halo Sano, saya tertarik konsultasi"). Kalau pengunjung datang dari
+// iklan, website juga menempelkan tag kanal tak terlihat (lihat
+// leadAttribution.js#extractRefTag). Pengunjung ORGANIK tidak dapat tag —
+// dan itu memang benar, tidak ada kanal iklan untuk dicatat.
+//
+// Tapi akibatnya lead itu jatuh ke WHATSAPP_DIRECT, yang MENYATAKAN HAL
+// YANG SALAH: "customer menghubungi langsung tanpa lewat website".
+// Padahal jelas lewat website — teks tombolnya ada di pesan pertamanya.
+//
+// Terukur di produksi (90 hari): 343 lead memakai teks tombol ini, hanya
+// 51 yang bertag kanal. Sisanya (292) tercatat "WhatsApp Langsung" —
+// itu yang menggelembungkan angka "direct" di laporan.
+//
+// Yang JUJUR: sumbernya WEBSITE, kanalnya tidak diketahui (organik, atau
+// iklan yang tagnya hilang). Itu yang ditulis di detail — bukan menebak
+// Google/Meta, dan bukan pula mengaku "direct".
+export const MIN_KEMUNCULAN_WEBSITE = 3;
+
+/**
+ * Daftar teks tombol WA website, diturunkan dari lead yang tag kanalnya
+ * TERBUKTI terbaca ("Website - <kanal>", bukan hasil backfill retroaktif).
+ *
+ * Ambang panjang & jumlah sama alasannya dengan template iklan: mencegah
+ * sapaan wajar seperti "halo sano" (9 karakter) ikut terjaring.
+ */
+export async function ambilTeksTombolWebsite() {
+  if (cacheWeb.data && Date.now() - cacheWeb.at < CACHE_TTL_MS) return cacheWeb.data;
+
+  try {
+    const baris = await prisma.$queryRaw`
+      WITH pertama AS (
+        SELECT c.id, lower(trim(m.content)) AS teks
+        FROM "Customer" c
+        JOIN "Conversation" conv ON conv."customerId" = c.id
+        JOIN LATERAL (
+          SELECT content FROM "Message"
+          WHERE "conversationId" = conv.id AND direction = 'INBOUND'
+          ORDER BY "createdAt" ASC LIMIT 1
+        ) m ON true
+        WHERE c."leadSourceDetail" LIKE 'Website - %'
+          AND c."leadSourceDetail" NOT LIKE '%retroaktif%'
+          AND c."createdAt" >= now() - (${JENDELA_HARI} || ' days')::interval
+      )
+      SELECT teks, count(*)::int AS n
+      FROM pertama
+      WHERE length(teks) >= ${PANJANG_MIN}
+      GROUP BY teks
+      HAVING count(*) >= ${MIN_KEMUNCULAN_WEBSITE}
+    `;
+    const data = baris.map((b) => normalisasi(b.teks)).filter(Boolean);
+    cacheWeb = { data, at: Date.now() };
+    return data;
+  } catch (e) {
+    console.warn("[templateIklan] Gagal ambil teks tombol website:", e.message);
+    return cacheWeb.data || [];
   }
 }

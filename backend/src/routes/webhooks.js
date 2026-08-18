@@ -15,7 +15,7 @@ import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
   extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
 } from "../services/leadAttribution.js";
-import { ambilTemplateIklanAktif, cocokkanTemplateIklan } from "../services/templateIklan.js";
+import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite } from "../services/templateIklan.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
@@ -598,6 +598,26 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         // keputusan belanja iklan.
         detectedDetail = `Meta Ads - template: "${cocok.slice(0, 80)}" (pola pesan, CTWA tidak terbaca)`;
         console.log("[attribution] Lapis 3b template iklan:", cocok.slice(0, 50));
+      }
+    }
+
+    // Lapis 3c: TEKS TOMBOL WA WEBSITE tanpa tag kanal.
+    //
+    // Pengunjung organik website tidak pernah dapat tag kanal (memang tidak
+    // ada iklan untuk dicatat), jadi selama ini mereka tercatat
+    // WHATSAPP_DIRECT — pernyataan yang JELAS SALAH, karena teks tombol
+    // website ada di pesan pertamanya. Terukur 292 lead dalam 90 hari.
+    //
+    // Kanalnya SENGAJA tidak ditebak (bisa organik, bisa iklan yang tagnya
+    // hilang) — cukup dinyatakan datang dari website. Menebak Google/Meta
+    // di sini akan mengkredit iklan yang belum tentu berjalan.
+    if (detectedSource === "WHATSAPP_DIRECT") {
+      const teksTombol = await ambilTeksTombolWebsite();
+      const cocokWeb = cocokkanTemplateIklan(text, teksTombol);
+      if (cocokWeb) {
+        detectedSource = "WEBSITE_ORGANIC";
+        detectedDetail = "Website - kanal tidak diketahui (tanpa tag, organik atau tag hilang)";
+        console.log("[attribution] Lapis 3c tombol WA website:", cocokWeb.slice(0, 50));
       }
     }
     // Lapis 4: default WHATSAPP_DIRECT sudah diset di atas

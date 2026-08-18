@@ -113,3 +113,38 @@ describe("ambang penjaga", () => {
     assert.ok(MIN_KEMUNCULAN >= 5);
   });
 });
+
+describe("teks tombol WA website vs template iklan Meta — jangan tertukar", () => {
+  // Teks tombol website yang terverifikasi dari lead bertag kanal asli.
+  const TOMBOL_WEB = [
+    "halo sano, saya tertarik konsultasi",
+    "halo sano, saya tertarik konsultasi gratis",
+    "halo sano, saya tertarik paket premium",
+  ];
+
+  test("teks tombol website dikenali sebagai website", () => {
+    assert.equal(
+      cocokkanTemplateIklan("Halo Sano, saya tertarik konsultasi", TOMBOL_WEB),
+      "halo sano, saya tertarik konsultasi",
+    );
+  });
+
+  test("varian lebih panjang menang — 'gratis' tidak tertelan varian pendek", () => {
+    assert.equal(
+      cocokkanTemplateIklan("Halo Sano, saya tertarik konsultasi gratis", TOMBOL_WEB),
+      "halo sano, saya tertarik konsultasi gratis",
+    );
+  });
+
+  test("template iklan Meta TIDAK cocok ke daftar tombol website", () => {
+    // Kalau tertukar, lead Meta akan dikreditkan ke Website — persis
+    // kesalahan arah sebaliknya yang ingin dicegah.
+    assert.equal(cocokkanTemplateIklan("Minta estimasi harga dan proses pengerjaan", TOMBOL_WEB), null);
+  });
+
+  test("sapaan biasa 'halo sano' saja TIDAK dianggap dari website", () => {
+    // 9 karakter — di bawah PANJANG_MIN, dan memang wajar diketik siapa pun.
+    assert.equal(cocokkanTemplateIklan("halo sano", TOMBOL_WEB), null);
+    assert.equal(cocokkanTemplateIklan("Halo Sano, mau tanya harga", TOMBOL_WEB), null);
+  });
+});
