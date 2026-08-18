@@ -15,6 +15,7 @@ import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
   extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
 } from "../services/leadAttribution.js";
+import { ambilTemplateIklanAktif, cocokkanTemplateIklan } from "../services/templateIklan.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
@@ -571,6 +572,32 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         detectedDetail = recentClick.trackedLink.name;
         pendingClickId = recentClick.id;
         console.log("[attribution] Lapis 3 (tebakan 15 menit) hit:", recentClick.trackedLink.name);
+      }
+    }
+
+    // Lapis 3b: TEKS TEMPLATE IKLAN — jaring pengaman saat CTWA tidak terbaca.
+    //
+    // Sinyal CTWA tidak selalu sampai dari WAHA (diukur di produksi: ada
+    // hari dengan cakupan 92%, ada hari 0%). Tanpa lapis ini, lead iklan
+    // yang CTWA-nya gagal jatuh ke WHATSAPP_DIRECT walau pesan pertamanya
+    // HARFIAH teks iklan — itu yang membuat laporan meremehkan Meta dan
+    // menggelembungkan "WhatsApp Langsung". Lihat services/templateIklan.js
+    // untuk data pengukurannya dan alasan ambang panjang teks.
+    //
+    // SENGAJA paling akhir: semua sinyal eksplisit (tag website, CTWA,
+    // campaign) didahulukan. Ini kesimpulan dari POLA, jadi hanya dipakai
+    // kalau tidak ada bukti langsung apa pun.
+    if (detectedSource === "WHATSAPP_DIRECT") {
+      const templates = await ambilTemplateIklanAktif();
+      const cocok = cocokkanTemplateIklan(text, templates);
+      if (cocok) {
+        detectedSource = "META_ADS";
+        // Ditandai "pola pesan" secara eksplisit — supaya di laporan bisa
+        // dibedakan dari lead yang CTWA-nya benar-benar terbaca. Jangan
+        // disamarkan jadi seolah sepasti CTWA: angka ini dipakai untuk
+        // keputusan belanja iklan.
+        detectedDetail = `Meta Ads - template: "${cocok.slice(0, 80)}" (pola pesan, CTWA tidak terbaca)`;
+        console.log("[attribution] Lapis 3b template iklan:", cocok.slice(0, 50));
       }
     }
     // Lapis 4: default WHATSAPP_DIRECT sudah diset di atas
