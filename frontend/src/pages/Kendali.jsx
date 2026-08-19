@@ -151,6 +151,92 @@ function relatifWaktu(iso) {
 // dinamis (`bg-${tone}bg`) yang TIDAK PERNAH bisa dilihat compiler Tailwind,
 // jadi warnanya sebagian memang tidak pernah benar-benar ter-generate.
 
+// ─── KESIAPAN OPERASIONAL ────────────────────────────────────────────────
+// Menjawab "apa yang masih kurang sebelum Bengkel/Armada/Gudang bisa dipakai
+// kerja?" — lihat catatan panjang di backend #GET /kendali/kesiapan.
+//
+// SENGAJA MENGHILANG SENDIRI kalau semua prasyarat sudah terpenuhi DAN
+// sistem sudah benar-benar dipakai. Checklist yang isinya centang hijau
+// semua tiap hari akan berhenti dibaca orang; begitu berhenti dibaca, dia
+// tidak berguna lagi saat suatu saat benar-benar ada yang merah.
+// State sendiri (bukan ikut /overview) supaya kalau endpoint ini gagal,
+// sisa halaman Kendali tetap tampil normal.
+function KesiapanOperasional() {
+  const [k, setK] = useState(null);
+
+  useEffect(() => {
+    let batal = false;
+    api.getKendaliKesiapan()
+      .then((d) => !batal && setK(d))
+      .catch(() => {}); // diam-diam: ini panel bantu, bukan konten utama Kendali
+    return () => { batal = true; };
+  }, []);
+
+  if (!k) return null;
+  if (k.siap && k.aktivitas.pernahDipakai) return null;
+
+  const belum = k.butir.filter((b) => !b.siap);
+  const perModul = belum.reduce((acc, b) => {
+    (acc[b.modul] ||= []).push(b);
+    return acc;
+  }, {});
+
+  return (
+    <Card className="border-l-4 border-l-orange">
+      <CardHeader>
+        <CardTitle>
+          {k.siap ? "Siap dipakai — belum ada aktivitas tercatat" : `Kesiapan Operasional — ${k.jumlahBelumSiap} hal belum siap`}
+        </CardTitle>
+      </CardHeader>
+
+      {k.siap ? (
+        <p className="text-[13px] leading-relaxed text-ink2">
+          Semua prasyarat sudah terpenuhi, tapi belum ada satu pun unit yang masuk produksi,
+          job pengiriman, atau pergerakan stok. Angka nol di dashboard ini <strong>wajar</strong> untuk
+          sistem yang baru mau mulai — bukan tanda ada yang rusak.
+        </p>
+      ) : (
+        <>
+          <p className="mb-3 text-[13px] leading-relaxed text-ink2">
+            Selama hal di bawah ini belum dibereskan, tombol aksi di modul terkait akan{" "}
+            <strong>ditolak (403)</strong> — dan di layar gejalanya cuma terlihat seperti
+            “tidak terjadi apa-apa”, bukan pesan error yang jelas.
+          </p>
+          <div className="flex flex-col gap-3">
+            {Object.entries(perModul).map(([modul, items]) => (
+              <div key={modul}>
+                <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">{modul}</div>
+                <div className="flex flex-col gap-1.5">
+                  {items.map((b) => (
+                    <div key={b.nama} className="rounded-btn bg-inset px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <AlertTriangle size={13} className="shrink-0 text-orange" />
+                        <span className="text-[13px] font-semibold text-ink">{b.nama}</span>
+                        <span className="text-[11px] text-ink3">({b.nilai})</span>
+                      </div>
+                      {b.catatan && <p className="mt-0.5 text-[12px] leading-relaxed text-ink2">{b.catatan}</p>}
+                      {b.aksi && <p className="mt-0.5 text-[11.5px] text-accent">→ {b.aksi}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Denyut operasional — BUKAN prasyarat, sekadar menjawab "sudah benar-
+          benar dipakai belum". Ditampilkan juga saat semua sudah siap. */}
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-line pt-2.5 text-[11.5px] text-ink3">
+        <span>{k.aktivitas.unitSedangDikerjakan} unit sedang dikerjakan</span>
+        <span>{k.aktivitas.unitBelumMasukProduksi} unit belum masuk produksi</span>
+        <span>{k.aktivitas.totalJob} job pengiriman</span>
+        <span>{k.aktivitas.totalPergerakanStok} pergerakan stok</span>
+      </div>
+    </Card>
+  );
+}
+
 export default function Kendali() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -228,6 +314,11 @@ export default function Kendali() {
       </div>
 
       <PageBody>
+
+        {/* Paling atas dengan sengaja: kalau ada prasyarat yang belum siap,
+            itu menjelaskan KENAPA angka-angka di bawahnya nol — percuma
+            menatap grafik kosong tanpa tahu penyebabnya. */}
+        <KesiapanOperasional />
 
         {/* Unit per status */}
         <Card>

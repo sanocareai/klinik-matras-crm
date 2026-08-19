@@ -239,6 +239,9 @@ export const api = {
 
   // Kendali — dashboard lintas portal (Sano Hub Phase 1)
   getKendaliOverview: () => request("/kendali/overview"),
+  // Checklist prasyarat sebelum Bengkel/Armada/Gudang bisa dipakai kerja —
+  // lihat catatan di backend/src/routes/kendali.js #GET /kesiapan.
+  getKendaliKesiapan: () => request("/kendali/kesiapan"),
 
   // Gudang — Inventory v1 (Sano Hub Phase 3)
   getMaterials: (params = {}) => {
