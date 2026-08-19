@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { rolesOf } from "../middleware/authorize.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -55,6 +56,47 @@ async function syncOrderValue(orderId) {
   return total;
 }
 
+// D-025 (19 Agustus 2026): kunci transaksi — order yang statusnya DELIVERED
+// ("sudah terkirim/selesai & dikonfirmasi") tidak boleh diedit SALES/role
+// lain lagi, cuma ADMIN. Dipasang di semua endpoint yang mengubah field
+// NON-STATUS (item layanan, harga, catatan, berat badan, pembayaran, jumlah
+// unit) — status sendiri TETAP ikut alur D-006 (dihitung otomatis / override
+// eksplisit), itu sudah punya jalur audit terpisah, jadi TIDAK ikut dikunci
+// di sini (lihat pemisahan di PATCH /:id di bawah).
+//
+// Kalau ADMIN yang mengedit order yang sudah DELIVERED, otomatis TERCATAT ke
+// OrderRevisionLog (ledger append-only) — supaya transaksi yang harusnya
+// sudah selesai tetap punya jejak siapa/kapan/kenapa berubah lagi. Biasanya
+// ini terjadi karena revisi/komplain dari pelanggan — sales menandainya lewat
+// PATCH /:id/complaint (TIDAK dikunci, itu memang jalur "ajukan revisi"-nya),
+// lalu admin yang menindaklanjuti edit datanya di sini.
+//
+// Kalau revisinya butuh kasur fisik dibawa balik & dikerjakan ulang, itu
+// beda sistem — sudah ada di Sano Hub: POST/PATCH /api/armada/revisions
+// (model UnitRevision, menu "Revisi/Retur"), dan itu SUDAH admin/dispatcher-
+// gated dari awal (P.JOB_WRITE). Ledger di sini murni jejak audit perubahan
+// DATA order di CRM, bukan pengganti alur operasional itu.
+//
+// Return null (response error sudah dikirim) kalau diblokir/order tidak ada;
+// return { id, status } kalau boleh lanjut.
+async function guardOrderLocked(req, res, orderId, aksi) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, status: true } });
+  if (!order) { res.status(404).json({ error: "Order tidak ditemukan" }); return null; }
+  if (order.status === "DELIVERED") {
+    if (!rolesOf(req.user).includes("ADMIN")) {
+      res.status(403).json({
+        error: `Order ini sudah terkirim & selesai — cuma admin yang bisa ${aksi}. ` +
+          `Kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya supaya admin tahu dan bisa menindaklanjuti.`,
+      });
+      return null;
+    }
+    await prisma.orderRevisionLog.create({
+      data: { orderId, editedById: req.user?.id || null, note: aksi.charAt(0).toUpperCase() + aksi.slice(1) },
+    }).catch((e) => console.warn("[order-lock] gagal catat revision log:", e.message));
+  }
+  return order;
+}
+
 // PATCH /api/orders/:id — edit order (status, paymentStatus, notes, qty, orderNumber)
 // value TIDAK bisa diubah langsung dari sini — dikontrol oleh items
 //
@@ -67,6 +109,16 @@ async function syncOrderValue(orderId) {
 orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal } = req.body;
+
+  // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
+  // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal]
+    .some((v) => v !== undefined);
+  if (ubahFieldNonStatus) {
+    const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
+    if (!guarded) return;
+  }
+
   try {
     // Update + catat riwayat status dalam SATU transaksi, supaya tidak pernah
     // ada baris riwayat tanpa perubahan order yang berhasil (dan sebaliknya).
@@ -163,8 +215,8 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
 // sano-hub §"PRD bilang RLS... di sini artinya middleware Express").
 orderRouter.post("/:id/payments", async (req, res) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: req.params.id }, select: { id: true } });
-    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    const guarded = await guardOrderLocked(req, res, req.params.id, "mencatat pembayaran baru");
+    if (!guarded) return;
 
     const { amount, method, proofPhotoUrl } = req.body;
     const amountInt = Number(amount);
@@ -550,6 +602,9 @@ orderRouter.post("/:orderId/items", async (req, res) => {
   if (harga === undefined || harga === null) return res.status(400).json({ error: "Harga wajib diisi" });
 
   try {
+    const guarded = await guardOrderLocked(req, res, req.params.orderId, "menambah item layanan");
+    if (!guarded) return;
+
     const item = await prisma.orderItem.create({
       data: {
         orderId: req.params.orderId,
@@ -569,6 +624,11 @@ orderRouter.post("/:orderId/items", async (req, res) => {
 orderRouter.patch("/items/:itemId", async (req, res) => {
   const { layananName, harga, sortOrder } = req.body;
   try {
+    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true } });
+    if (!existing) return res.status(404).json({ error: "Item tidak ditemukan" });
+    const guarded = await guardOrderLocked(req, res, existing.orderId, "mengubah item layanan");
+    if (!guarded) return;
+
     const item = await prisma.orderItem.update({
       where: { id: req.params.itemId },
       data: {
@@ -587,6 +647,11 @@ orderRouter.patch("/items/:itemId", async (req, res) => {
 // DELETE /api/orders/items/:itemId — hapus item layanan
 orderRouter.delete("/items/:itemId", async (req, res) => {
   try {
+    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true } });
+    if (!existing) return res.status(404).json({ error: "Item tidak ditemukan" });
+    const guarded = await guardOrderLocked(req, res, existing.orderId, "menghapus item layanan");
+    if (!guarded) return;
+
     const item = await prisma.orderItem.delete({ where: { id: req.params.itemId } });
     const newTotal = await syncOrderValue(item.orderId);
     res.json({ ok: true, orderValue: newTotal });
@@ -601,6 +666,9 @@ orderRouter.post("/:id/weight-entries", async (req, res) => {
   if (!label?.trim()) return res.status(400).json({ error: "Label wajib diisi" });
   if (!beratKg)       return res.status(400).json({ error: "Berat badan wajib diisi" });
   try {
+    const guarded = await guardOrderLocked(req, res, req.params.id, "menambah data berat badan");
+    if (!guarded) return;
+
     const entry = await prisma.orderWeightEntry.create({
       data: {
         orderId:   req.params.id,
@@ -619,6 +687,11 @@ orderRouter.post("/:id/weight-entries", async (req, res) => {
 orderRouter.patch("/weight-entries/:entryId", async (req, res) => {
   const { label, beratKg, sortOrder } = req.body;
   try {
+    const existing = await prisma.orderWeightEntry.findUnique({ where: { id: req.params.entryId }, select: { orderId: true } });
+    if (!existing) return res.status(404).json({ error: "Data berat badan tidak ditemukan" });
+    const guarded = await guardOrderLocked(req, res, existing.orderId, "mengubah data berat badan");
+    if (!guarded) return;
+
     const entry = await prisma.orderWeightEntry.update({
       where: { id: req.params.entryId },
       data: {
@@ -636,6 +709,11 @@ orderRouter.patch("/weight-entries/:entryId", async (req, res) => {
 // DELETE /api/orders/weight-entries/:entryId — hapus baris berat badan
 orderRouter.delete("/weight-entries/:entryId", async (req, res) => {
   try {
+    const existing = await prisma.orderWeightEntry.findUnique({ where: { id: req.params.entryId }, select: { orderId: true } });
+    if (!existing) return res.status(404).json({ error: "Data berat badan tidak ditemukan" });
+    const guarded = await guardOrderLocked(req, res, existing.orderId, "menghapus data berat badan");
+    if (!guarded) return;
+
     await prisma.orderWeightEntry.delete({ where: { id: req.params.entryId } });
     res.json({ ok: true });
   } catch (err) {
@@ -672,6 +750,9 @@ orderRouter.post("/:id/units", async (req, res) => {
     return res.status(400).json({ error: "Jumlah unit harus antara 1 dan 50" });
   }
   try {
+    const guarded = await guardOrderLocked(req, res, req.params.id, "menambah unit");
+    if (!guarded) return;
+
     const units = await prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: req.params.id } });
       if (!order) return null;
@@ -702,6 +783,9 @@ orderRouter.delete("/units/:unitId", async (req, res) => {
       },
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    const guarded = await guardOrderLocked(req, res, unit.orderId, "menghapus unit");
+    if (!guarded) return;
 
     const jejak = unit._count;
     const total = jejak.stageLogs + jejak.jobUnits + jejak.qcFitTests + jejak.stockMovements;

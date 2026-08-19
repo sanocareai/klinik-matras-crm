@@ -190,6 +190,7 @@ model User {
   pipelineTransitions       PipelineTransition[]     @relation("PipelineTransitionActor")
   orderStatusChanges        OrderStatusTransition[]  @relation("OrderStatusActor")
   orderStatusOverrides      Order[]                  @relation("OrderStatusOverrider")
+  orderRevisionEdits        OrderRevisionLog[]       @relation("OrderRevisionEditor")
   messageTemplates          MessageTemplate[]
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
@@ -680,9 +681,41 @@ model Order {
   jobs              Job[]
   payments          Payment[]
   scopeRevisions    ScopeRevision[]
+  revisionLogs      OrderRevisionLog[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
+}
+
+// KUNCI TRANSAKSI (D-025, 19 Agustus 2026). Order yang statusnya DELIVERED
+// ("sudah terkirim/selesai") dikunci dari SALES/role lain — field non-status
+// (item layanan, harga, catatan, berat badan, pembayaran, dll) cuma bisa
+// diedit ADMIN lagi setelah itu. Status sendiri TETAP ikut D-006 (dihitung
+// otomatis dari unit / override eksplisit) — TIDAK ikut dikunci oleh aturan
+// ini, itu sudah punya jalur audit sendiri (statusOverrideBy/At/Note).
+//
+// Ledger APPEND-ONLY (pola sama dengan UnitStageLog/PipelineTransition):
+// tiap kali ADMIN mengedit order yang sudah DELIVERED, TERCATAT otomatis di
+// sini (lihat guardOrderLocked() di routes/orders.js) — supaya transaksi
+// yang harusnya sudah "selesai" tetap punya jejak siapa/kapan/kenapa berubah
+// lagi, biasanya karena revisi/komplain dari customer.
+//
+// BUKAN pengganti UnitRevision (Sano Hub, Delivery Tahap 6 "Revisi/Retur",
+// POST/PATCH /api/armada/revisions) — itu alur OPERASIONAL untuk kasus kasur
+// fisik dibawa balik & direvisi. Tabel ini murni jejak AUDIT untuk perubahan
+// data Order di CRM (harga/item/catatan/dll), dua hal yang berbeda level.
+model OrderRevisionLog {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  editedById String?  @map("edited_by")
+  // SetNull: staf resign, jejak revisinya TETAP ada.
+  editedBy   User?    @relation("OrderRevisionEditor", fields: [editedById], references: [id], onDelete: SetNull)
+  note       String // alasan/ringkasan aksi, diisi otomatis dari endpoint yang dipanggil
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([orderId, createdAt])
+  @@map("order_revision_logs")
 }
 
 // UNIT — entitas inti Sano Hub (D-002). Satu kasur fisik.

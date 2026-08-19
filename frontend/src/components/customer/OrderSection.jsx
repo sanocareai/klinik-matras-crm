@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES,
 } from "../../utils/format.js";
+import { isAdminUser } from "../../lib/roles.js";
+
+// D-025 (19 Agustus 2026): order yang sudah DELIVERED (terkirim & selesai)
+// dikunci dari SALES/role lain — cuma admin yang bisa mengedit lagi. Backend
+// (guardOrderLocked() di routes/orders.js) yang benar-benar menegakkan ini;
+// helper di sini cuma untuk UI supaya sales tidak klik lalu kaget oleh error.
+function currentUserIsAdmin() {
+  try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
+}
 
 // Jenis Layanan/Merk Kasur/Ukuran Kasur BUKAN lagi hardcode di sini — diambil
 // dari GET /api/master-data/order-options (satu sumber dipakai web & mobile,
@@ -74,6 +83,12 @@ function formatTanggal(d) {
 function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
   const info = parseNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
+
+  // D-025: field non-status (merk/ukuran/item/harga/berat/catatan/pembayaran)
+  // terkunci untuk non-admin begitu order DELIVERED. Status TIDAK ikut
+  // dikunci — itu jalur D-006/override sendiri, tombol "Ubah Status" di
+  // bawah tetap aktif seperti biasa untuk semua role.
+  const locked = order.status === "DELIVERED" && !currentUserIsAdmin();
 
   const [editing, setEditing]             = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
@@ -269,7 +284,14 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginBottom: 10 }}>
         {!editing ? (
           <>
-            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Edit</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setEditing(true)}
+              disabled={locked}
+              title={locked ? "Order sudah terkirim & selesai — cuma admin yang bisa mengedit" : undefined}
+            >
+              {locked && <Lock size={11} style={{ marginRight: 4 }} />}Edit
+            </button>
             <button
               className="btn btn-sm"
               onClick={handleDelete}
@@ -288,6 +310,21 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
           </>
         )}
       </div>
+
+      {/* D-025: penjelasan kunci — kenapa tombol Edit nonaktif, dan apa yang
+          harus dilakukan sales kalau pelanggan minta revisi. */}
+      {locked && (
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#f3f4f6", borderRadius: 8, border: "1px solid #d1d5db" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Lock size={12} color="#4b5563" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>Order terkunci</span>
+          </div>
+          <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "#4b5563", lineHeight: 1.5 }}>
+            Sudah terkirim & selesai — cuma admin yang bisa mengedit lagi. Kalau pelanggan minta revisi, tandai
+            lewat tombol "Ajukan Revisi" di bawah supaya admin tahu dan bisa menindaklanjuti.
+          </p>
+        </div>
+      )}
 
       {/* Badge komplain (jika sudah ada) */}
       {order.hasComplaint && (
@@ -540,7 +577,10 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
         </div>
       ) : null}
 
-      {/* Tombol tandai komplain (hanya untuk order DELIVERED yang belum punya komplain) */}
+      {/* Tombol tandai komplain/ajukan revisi (hanya untuk order DELIVERED
+          yang belum punya komplain). D-025: ini jalur RESMI sales melaporkan
+          permintaan revisi customer ke admin — TIDAK dikunci walau order
+          sudah DELIVERED (justru syaratnya harus DELIVERED). */}
       {!editing && order.status === "DELIVERED" && !order.hasComplaint && (
         <div style={{ marginTop: 8 }}>
           {!showComplaintForm ? (
@@ -548,15 +588,15 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
               onClick={() => setShowComplaintForm(true)}
               style={{ fontSize: 12, color: "#dc2626", background: "none", border: "1px solid #fca5a5", borderRadius: 6, cursor: "pointer", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}
             >
-              <AlertTriangle size={12} /> + Tandai Komplain
+              <AlertTriangle size={12} /> + Ajukan Revisi / Komplain
             </button>
           ) : (
             <div style={{ padding: 10, background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8 }}>
-              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Detail Komplain</p>
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Detail Revisi / Komplain</p>
               <textarea
                 value={complaintDetail}
                 onChange={(e) => setComplaintDetail(e.target.value)}
-                placeholder="Jelaskan masalah yang dilaporkan customer..."
+                placeholder="Jelaskan masalah/revisi yang diminta customer — admin akan meninjau dan menindaklanjuti..."
                 rows={3}
                 style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid #fca5a5", resize: "vertical", boxSizing: "border-box" }}
               />
@@ -566,7 +606,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
                   disabled={savingComplaint}
                   style={{ flex: 1, fontSize: 12, padding: "5px 0", background: "#dc2626", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}
                 >
-                  {savingComplaint ? "Menyimpan..." : "Simpan Komplain"}
+                  {savingComplaint ? "Menyimpan..." : "Kirim ke Admin"}
                 </button>
                 <button
                   onClick={() => { setShowComplaintForm(false); setComplaintDetail(""); }}

@@ -17,7 +17,17 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { badgeVariants } from "@/components/ui/badge.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
+import { isAdminUser } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
+
+// D-025: order yang sudah DELIVERED (terkirim & selesai) dikunci dari
+// SALES/role lain — cuma admin yang bisa mengedit lagi (backend menegakkan
+// ini di routes/orders.js, guardOrderLocked()). Helper ini cuma untuk UI:
+// nonaktifkan kontrol yang akan ditolak, supaya sales tidak klik lalu kaget
+// oleh error, bukan sumber kebenaran otorisasi.
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+}
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
@@ -127,16 +137,19 @@ const PAYMENT_TONE = {
   DP:          "bg-orangebg text-orange",
   LUNAS:       "bg-greenbg text-green",
 };
-function PaymentStatusSelect({ order, onChange, className }) {
+function PaymentStatusSelect({ order, onChange, className, locked }) {
   return (
     <select
       value={order.paymentStatus || "BELUM_BAYAR"}
       onChange={(e) => onChange(order, e.target.value)}
       onClick={(e) => e.stopPropagation()}
+      disabled={locked}
       aria-label={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
+      title={locked ? "Order sudah terkirim & selesai — cuma admin yang bisa ubah pembayaran" : undefined}
       className={cn(
-        "cursor-pointer appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold",
+        "appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+        locked ? "cursor-not-allowed opacity-60" : "cursor-pointer",
         PAYMENT_TONE[order.paymentStatus || "BELUM_BAYAR"],
         className
       )}
@@ -148,7 +161,7 @@ function PaymentStatusSelect({ order, onChange, className }) {
   );
 }
 
-function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange }) {
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   return (
@@ -161,7 +174,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
         </div>
-        <PaymentStatusSelect order={order} onChange={onPaymentChange} className="shrink-0" />
+        <PaymentStatusSelect order={order} onChange={onPaymentChange} className="shrink-0" locked={paymentLocked} />
       </div>
 
       <div className="mt-2 flex items-center gap-1.5">
@@ -220,6 +233,10 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
 
 export default function Orders() {
   const navigate = useNavigate();
+  // D-025: cuma untuk menonaktifkan kontrol pembayaran di UI kalau order
+  // sudah DELIVERED — backend (guardOrderLocked di routes/orders.js) yang
+  // benar-benar menegakkan kuncinya.
+  const isAdmin = useMemo(() => isAdminUser(currentUser()), []);
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -525,7 +542,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.status === "DELIVERED" && !isAdmin} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -581,7 +598,7 @@ export default function Orders() {
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} />
+                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.status === "DELIVERED" && !isAdmin} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
                         {formatRupiah(o.value || 0)}
