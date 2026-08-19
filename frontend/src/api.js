@@ -615,6 +615,10 @@ export const api = {
   getMe: () => request("/users/me"),
   updateMe: (data) =>
     request("/users/me", { method: "PATCH", body: JSON.stringify(data) }),
+  // Ganti foto profil sendiri. Endpoint SUDAH ADA di backend sejak lama
+  // (dipakai mobile "Sano Messenger") — web belum pernah punya UI-nya.
+  // Field "file" WAJIB nama itu persis, sama dengan yang dipakai mobile.
+  uploadAvatar: (formData) => requestFormData("/users/me/avatar", formData),
   changePassword: (data) =>
     request("/users/me/change-password", { method: "POST", body: JSON.stringify(data) }),
   createUser: (data) =>

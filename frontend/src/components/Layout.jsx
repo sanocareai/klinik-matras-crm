@@ -16,6 +16,7 @@ import ToastNotif from "./ToastNotif.jsx";
 import SidebarLink from "./SidebarLink.jsx";
 import WorkspaceSwitcher from "./WorkspaceSwitcher.jsx";
 import NotificationDrawer from "@/features/notifications/NotificationDrawer.jsx";
+import Avatar from "./Avatar.jsx";
 import { BRAND } from "@/lib/brand.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
@@ -555,9 +556,10 @@ export default function Layout({ user, onLogout, children }) {
             align="start"
             trigger={
               <button className="sidebar-profile" type="button" title={collapsed ? user.name : "Menu akun"}>
-                <div className="avatar avatar-sm sidebar-avatar">
-                  {(user.name || "?")[0].toUpperCase()}
-                </div>
+                {/* Foto profil sungguhan kalau sudah diganti (Pengaturan >
+                    Keamanan Akun) — fallback inisial berwarna kalau belum
+                    pernah upload, sama seperti avatar customer di Inbox/Pelanggan. */}
+                <Avatar name={user.name} src={user.avatarUrl} size="sm" className="sidebar-avatar" />
                 {!collapsed && (
                   <>
                     <div className="sidebar-user-info">

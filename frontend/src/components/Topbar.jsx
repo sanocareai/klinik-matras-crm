@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronRight, Menu as MenuIcon, Search, ChevronDown, LogOut } from "lucide-react";
-import { formatTanggalIndo, getInitials } from "../utils/format.js";
+import { formatTanggalIndo } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
 import { useNotificationStore, badgeText } from "@/features/notifications/notificationStore.js";
+import Avatar from "./Avatar.jsx";
 
 const ROUTE_LABELS = {
   // Tanpa entri ini breadcrumb jatuh ke fallback `pathname.replace("/","")`
@@ -187,9 +188,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
                   className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1.5 transition-colors hover:bg-hovertint md:pr-2.5"
                   title="Menu akun"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-[12px] font-bold text-white">
-                    {getInitials(user.name)}
-                  </span>
+                  <Avatar name={user.name} src={user.avatarUrl} size="sm" />
                   <span className="hidden max-w-[120px] truncate text-[13px] font-semibold text-ink md:block">
                     {user.name?.split(" ")[0]}
                   </span>

@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Palette,
-  Bold, Italic, Strikethrough,
+  Bold, Italic, Strikethrough, Camera,
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
+import Avatar from "../components/Avatar.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
@@ -572,9 +573,16 @@ const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
 // gerbangnya PER-SECTION: SALES cuma bisa buka "Template Pesan" (untuk
 // kelola template pribadinya), section lain (Profil Perusahaan, Status
 // WhatsApp, Target Sales, Data & Backup) TETAP admin-only.
-const SALES_ALLOWED_SECTIONS = ["template"];
+//
+// "keamanan" DITAMBAHKAN (19 Agustus 2026, bareng fitur ganti foto profil
+// web): ini section AKUN PRIBADI (password + foto profil sendiri), sama
+// sifatnya dengan "template" — bukan pengaturan perusahaan/tim yang
+// seharusnya admin-only. Sebelumnya ikut ke-lock tanpa alasan eksplisit,
+// akibatnya SALES tidak bisa ganti password ATAU foto profilnya sendiri
+// dari web sama sekali (cuma bisa dari aplikasi mobile).
+const SALES_ALLOWED_SECTIONS = ["template", "keamanan"];
 
-export default function Pengaturan({ user }) {
+export default function Pengaturan({ user, onUserUpdate }) {
   const isAdmin = isAdminUser(user);
 
   // Deep link ?section=target-sales — dipakai widget Target Sales di
@@ -610,6 +618,36 @@ export default function Pengaturan({ user }) {
   const [pwMsg, setPwMsg]         = useState(null);
   const [pwLoading, setPwLoading] = useState(false);
   const [showPw, setShowPw]       = useState({ current: false, new: false, confirm: false });
+
+  // Foto profil — SEBELUMNYA cuma bisa diganti dari aplikasi mobile "Sano
+  // Messenger" (ProfileScreen.js). Endpoint backend (POST /users/me/avatar)
+  // sudah generik sejak awal, cuma web belum pernah punya UI-nya.
+  const avatarInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarMsg, setAvatarMsg]             = useState(null);
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // supaya pilih file YANG SAMA lagi tetap memicu onChange
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAvatarMsg({ type: "error", text: "File harus berupa gambar" });
+      return;
+    }
+    setUploadingAvatar(true);
+    setAvatarMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const updated = await api.uploadAvatar(fd);
+      onUserUpdate?.({ avatarUrl: updated.avatarUrl });
+      setAvatarMsg({ type: "success", text: "Foto profil berhasil diganti" });
+    } catch (err) {
+      setAvatarMsg({ type: "error", text: err.message });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
 
   // Export data
   const [exporting, setExporting] = useState(false);
@@ -966,8 +1004,65 @@ export default function Pengaturan({ user }) {
 
           {/* ── KEAMANAN ── */}
           {section === "keamanan" && (
-            <div className="settings-card">
-              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Keamanan Akun</h2>
+            <>
+              {/* Foto profil — CATATAN 19 Agustus 2026: dulu cuma bisa diganti
+                  dari mobile "Sano Messenger". Sekarang jalur yang sama persis
+                  (POST /users/me/avatar, crop persegi 256px di server) juga
+                  dibuka di sini. */}
+              <div className="settings-card" style={{ marginBottom: 16 }}>
+                <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Foto Profil</h2>
+                <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+                  Terlihat di sidebar, header, dan mana pun nama Anda muncul di CRM.
+                </p>
+                {avatarMsg && (
+                  <div className={`inline-feedback inline-feedback-${avatarMsg.type}`} style={{ marginBottom: 16 }}>
+                    {avatarMsg.text}
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    title="Ganti foto profil"
+                    style={{ position: "relative", padding: 0, border: "none", background: "none", cursor: uploadingAvatar ? "wait" : "pointer", borderRadius: "9999px" }}
+                  >
+                    <Avatar name={user?.name} src={user?.avatarUrl} size="xl" />
+                    <span
+                      style={{
+                        position: "absolute", bottom: -2, right: -2, width: 26, height: 26, borderRadius: "9999px",
+                        background: "var(--color-primary)", color: "#fff", display: "flex", alignItems: "center",
+                        justifyContent: "center", border: "2px solid var(--card-bg)",
+                      }}
+                    >
+                      <Camera size={13} />
+                    </span>
+                  </button>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                    >
+                      {uploadingAvatar ? "Mengunggah..." : "Ganti Foto"}
+                    </button>
+                    <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>
+                      JPG/PNG, otomatis dipotong persegi
+                    </p>
+                  </div>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={handleAvatarChange}
+                  />
+                </div>
+              </div>
+
+              <div className="settings-card">
+              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Ganti Password</h2>
               <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
                 Ubah password login Anda. Gunakan kombinasi huruf, angka, dan simbol.
               </p>
@@ -1005,7 +1100,8 @@ export default function Pengaturan({ user }) {
                   </button>
                 </div>
               </form>
-            </div>
+              </div>
+            </>
           )}
 
           {/* ── DATA & BACKUP ── */}

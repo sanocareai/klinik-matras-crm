@@ -83,6 +83,20 @@ export default function App() {
     setSessionExpired(false);
   }
 
+  // Update SEBAGIAN data user yang sedang login (mis. avatarUrl setelah
+  // ganti foto profil) — beda dari handleLogin yang mengganti seluruh objek
+  // user saat login. Tanpa ini, halaman yang menyimpan foto baru (mis.
+  // Pengaturan.jsx) tidak punya jalan mengabarkan App.jsx supaya sidebar
+  // (yang baca `user` dari state di sini, bukan localStorage langsung)
+  // langsung ikut berubah tanpa perlu reload halaman.
+  function handleUserUpdate(patch) {
+    setUser((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem("user", JSON.stringify(next));
+      return next;
+    });
+  }
+
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -337,7 +351,7 @@ export default function App() {
             <Route path="/broadcast"   element={<Broadcast />} />
             <Route path="/automation"  element={<Automation />} />
             <Route path="/laporan"     element={<Laporan />} />
-            <Route path="/pengaturan"  element={<Pengaturan user={user} />} />
+            <Route path="/pengaturan"  element={<Pengaturan user={user} onUserUpdate={handleUserUpdate} />} />
             <Route path="/pengguna"    element={<Pengguna user={user} />} />
             <Route path="/products"    element={<Products user={user} />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
