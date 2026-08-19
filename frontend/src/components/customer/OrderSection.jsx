@@ -7,10 +7,13 @@ import {
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 
-// D-025 (19 Agustus 2026): order yang sudah DELIVERED (terkirim & selesai)
-// dikunci dari SALES/role lain — cuma admin yang bisa mengedit lagi. Backend
+// D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari
+// SALES/role lain — cuma admin yang bisa mengedit lagi. Backend
 // (guardOrderLocked() di routes/orders.js) yang benar-benar menegakkan ini;
 // helper di sini cuma untuk UI supaya sales tidak klik lalu kaget oleh error.
+// Pemicunya SEMPAT status DELIVERED, diubah setelah tes pilot: order yang
+// sudah terkirim tapi BELUM lunas (COD belum ditagih, dst) ternyata tetap
+// butuh diedit sales — uang yang sudah pindah tangan itu yang perlu dijaga.
 function currentUserIsAdmin() {
   try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
 }
@@ -85,10 +88,10 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
   const isLayanan = !order.category || order.category === "LAYANAN";
 
   // D-025: field non-status (merk/ukuran/item/harga/berat/catatan/pembayaran)
-  // terkunci untuk non-admin begitu order DELIVERED. Status TIDAK ikut
+  // terkunci untuk non-admin begitu order LUNAS. Status TIDAK ikut
   // dikunci — itu jalur D-006/override sendiri, tombol "Ubah Status" di
   // bawah tetap aktif seperti biasa untuk semua role.
-  const locked = order.status === "DELIVERED" && !currentUserIsAdmin();
+  const locked = order.paymentStatus === "LUNAS" && !currentUserIsAdmin();
 
   const [editing, setEditing]             = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
@@ -288,7 +291,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
               className="btn btn-ghost btn-sm"
               onClick={() => setEditing(true)}
               disabled={locked}
-              title={locked ? "Order sudah terkirim & selesai — cuma admin yang bisa mengedit" : undefined}
+              title={locked ? "Order sudah LUNAS — cuma admin yang bisa mengedit" : undefined}
             >
               {locked && <Lock size={11} style={{ marginRight: 4 }} />}Edit
             </button>
@@ -320,8 +323,10 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>Order terkunci</span>
           </div>
           <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "#4b5563", lineHeight: 1.5 }}>
-            Sudah terkirim & selesai — cuma admin yang bisa mengedit lagi. Kalau pelanggan minta revisi, tandai
-            lewat tombol "Ajukan Revisi" di bawah supaya admin tahu dan bisa menindaklanjuti.
+            Sudah LUNAS — cuma admin yang bisa mengedit lagi.{" "}
+            {order.status === "DELIVERED"
+              ? 'Kalau pelanggan minta revisi, tandai lewat tombol "Ajukan Revisi" di bawah supaya admin tahu dan bisa menindaklanjuti.'
+              : "Kalau ada koreksi yang perlu dilakukan, hubungi admin langsung."}
           </p>
         </div>
       )}

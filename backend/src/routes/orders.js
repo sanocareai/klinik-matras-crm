@@ -56,20 +56,30 @@ async function syncOrderValue(orderId) {
   return total;
 }
 
-// D-025 (19 Agustus 2026): kunci transaksi — order yang statusnya DELIVERED
-// ("sudah terkirim/selesai & dikonfirmasi") tidak boleh diedit SALES/role
-// lain lagi, cuma ADMIN. Dipasang di semua endpoint yang mengubah field
-// NON-STATUS (item layanan, harga, catatan, berat badan, pembayaran, jumlah
-// unit) — status sendiri TETAP ikut alur D-006 (dihitung otomatis / override
+// D-025 (revisi 19 Agustus 2026): kunci transaksi — order yang SUDAH LUNAS
+// (bukan sekadar sudah terkirim) tidak boleh diedit SALES/role lain lagi,
+// cuma ADMIN. Dipasang di semua endpoint yang mengubah field NON-STATUS
+// (item layanan, harga, catatan, berat badan, pembayaran, jumlah unit) —
+// status sendiri TETAP ikut alur D-006 (dihitung otomatis / override
 // eksplisit), itu sudah punya jalur audit terpisah, jadi TIDAK ikut dikunci
 // di sini (lihat pemisahan di PATCH /:id di bawah).
 //
-// Kalau ADMIN yang mengedit order yang sudah DELIVERED, otomatis TERCATAT ke
+// ⚠️ PEMICU AWALNYA `status === "DELIVERED"`, DIUBAH setelah tes pilot nyata:
+// order yang SUDAH TERKIRIM tapi BELUM LUNAS (mis. COD belum ditagih, invoice
+// masih jalan) ternyata tetap butuh diedit sales — typo harga/layanan yang
+// baru ketahuan setelah kasur sampai bukan kasus langka. Uang yang sudah
+// pindah tangan (LUNAS) itu yang sebenarnya butuh dijaga dari perubahan
+// diam-diam, bukan status pengirimannya. paymentStatus sendiri bukan label
+// bebas — dihitung dari ledger Payment (services/paymentLedger.js:
+// SUM(Payment) vs Order.value), jadi ini pemicu yang punya dasar data nyata.
+//
+// Kalau ADMIN yang mengedit order yang sudah LUNAS, otomatis TERCATAT ke
 // OrderRevisionLog (ledger append-only) — supaya transaksi yang harusnya
 // sudah selesai tetap punya jejak siapa/kapan/kenapa berubah lagi. Biasanya
 // ini terjadi karena revisi/komplain dari pelanggan — sales menandainya lewat
-// PATCH /:id/complaint (TIDAK dikunci, itu memang jalur "ajukan revisi"-nya),
-// lalu admin yang menindaklanjuti edit datanya di sini.
+// PATCH /:id/complaint (TIDAK dikunci — itu memang jalur "ajukan revisi"-nya,
+// DAN tetap mensyaratkan status DELIVERED seperti semula, terpisah dari kunci
+// pembayaran ini), lalu admin yang menindaklanjuti edit datanya di sini.
 //
 // Kalau revisinya butuh kasur fisik dibawa balik & dikerjakan ulang, itu
 // beda sistem — sudah ada di Sano Hub: POST/PATCH /api/armada/revisions
@@ -78,14 +88,14 @@ async function syncOrderValue(orderId) {
 // DATA order di CRM, bukan pengganti alur operasional itu.
 //
 // Return null (response error sudah dikirim) kalau diblokir/order tidak ada;
-// return { id, status } kalau boleh lanjut.
+// return { id, paymentStatus } kalau boleh lanjut.
 async function guardOrderLocked(req, res, orderId, aksi) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, status: true } });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, paymentStatus: true } });
   if (!order) { res.status(404).json({ error: "Order tidak ditemukan" }); return null; }
-  if (order.status === "DELIVERED") {
+  if (order.paymentStatus === "LUNAS") {
     if (!rolesOf(req.user).includes("ADMIN")) {
       res.status(403).json({
-        error: `Order ini sudah terkirim & selesai — cuma admin yang bisa ${aksi}. ` +
+        error: `Order ini sudah LUNAS — cuma admin yang bisa ${aksi}. ` +
           `Kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya supaya admin tahu dan bisa menindaklanjuti.`,
       });
       return null;
