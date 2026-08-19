@@ -1277,11 +1277,24 @@ conversationRouter.post("/:id/send-documentation", async (req, res) => {
 
   // entries datang dari klien (hasil GET /production/orders/:id/documentation
   // yang sudah ditampilkan & dipilih sales) — TIDAK dipercaya mentah-mentah.
-  // photoUrls WAJIB berupa path lokal /media/unit-photos/... yang memang kita
-  // simpan sendiri (lihat routes/units.js upload). Tanpa validasi ini, body
-  // request bisa memasukkan URL APA SAJA dan membuat server men-fetch +
-  // mengirim file dari mana pun (SSRF lewat parameter file WAHA).
-  const isValidPhotoUrl = (u) => typeof u === "string" && u.startsWith("/media/unit-photos/");
+  // photoUrls WAJIB berupa path lokal yang memang KITA SENDIRI yang simpan.
+  // Tanpa validasi ini, body request bisa memasukkan URL APA SAJA dan membuat
+  // server men-fetch + mengirim file dari mana pun (SSRF lewat parameter file
+  // WAHA).
+  //
+  // DUA prefix yang diizinkan, keduanya direktori upload milik sendiri:
+  //   /media/unit-photos/ → foto tahap produksi   (routes/units.js)
+  //   /media/job-photos/  → foto driver jemput/antar (routes/armada.js)
+  // job-photos DITAMBAHKAN 19 Agustus 2026 bersama berkas dokumentasi lintas
+  // divisi — sebelumnya foto bukti pengiriman tidak bisa diteruskan ke
+  // customer sama sekali walau datanya sudah ada.
+  //
+  // ⚠️ Ini allowlist, bukan blocklist. Menambah prefix baru = menambah
+  // direktori yang boleh dikirim keluar — pastikan direktori itu memang berisi
+  // file hasil upload kita, bukan path yang isinya bisa dipengaruhi user.
+  const ALLOWED_PHOTO_PREFIXES = ["/media/unit-photos/", "/media/job-photos/"];
+  const isValidPhotoUrl = (u) =>
+    typeof u === "string" && ALLOWED_PHOTO_PREFIXES.some((p) => u.startsWith(p));
   const cleanEntries = entries
     .map((e) => ({
       stageLabel: String(e.stageLabel || "").slice(0, 200),

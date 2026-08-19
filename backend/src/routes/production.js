@@ -201,30 +201,96 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
     });
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
 
-    const logs = await prisma.unitStageLog.findMany({
-      where: {
-        unit: { orderId: req.params.orderId },
-        action: { in: ["COMPLETE", "SKIP"] },
-      },
-      include: {
-        stage: { select: { code: true, labelId: true, phase: true } },
-        unit: { select: { unitCode: true, merk: true, ukuran: true } },
-      },
-      orderBy: { createdAt: "asc" },
+    // BERKAS DOKUMENTASI LINTAS DIVISI (19 Agustus 2026). SEBELUMNYA endpoint
+    // ini HANYA membaca unit_stage_logs — jadi foto driver (saat menjemput
+    // kasur & saat mengantar) beserta tanda tangan customer tidak pernah ikut,
+    // padahal ketiganya bagian dari satu perjalanan order yang sama dan
+    // sama-sama sudah tersimpan rapi di database.
+    //
+    // Akibat pemisahan itu: sales yang ingin menunjukkan "kasur Bapak sudah
+    // kami jemput, ini prosesnya, ini bukti sudah sampai" harus membuka dua
+    // tempat berbeda — dan bukti pengiriman praktis tidak pernah dipakai.
+    //
+    // Sekarang satu order = satu berkas, TERKATEGORI mengikuti urutan nyata
+    // di lapangan: Penjemputan → Produksi → Pengiriman.
+    const [logs, jobs] = await Promise.all([
+      prisma.unitStageLog.findMany({
+        where: {
+          unit: { orderId: req.params.orderId },
+          action: { in: ["COMPLETE", "SKIP"] },
+        },
+        include: {
+          stage: { select: { code: true, labelId: true, phase: true } },
+          unit: { select: { unitCode: true, merk: true, ukuran: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.job.findMany({
+        where: { orderId: req.params.orderId },
+        select: {
+          type: true, status: true, completedAt: true, createdAt: true,
+          proofPhotoUrls: true, signatureUrl: true,
+          driver: { select: { name: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+
+    // Bentuk entry SENGAJA seragam untuk ketiga kategori — supaya UI bisa
+    // merender & mengirimkannya ke customer dengan satu jalur yang sama
+    // (POST /conversations/:id/send-documentation), tanpa cabang per sumber.
+    const entryJob = (j, kategori) => ({
+      kategori,
+      unitCode: null, // job itu level ORDER, bukan per unit (D-006: satu job bisa bawa sebagian unit)
+      stageLabel: j.type === "PICKUP" ? "Penjemputan kasur" : "Serah terima di customer",
+      photoUrls: j.proofPhotoUrls,
+      note: j.driver?.name ? `Oleh driver ${j.driver.name}` : null,
+      recordedAt: j.completedAt || j.createdAt,
     });
 
-    // Hanya tahap yang benar-benar punya foto yang masuk berkas dokumentasi.
-    const entries = logs
-      .filter((l) => l.photoUrls.length > 0)
-      .map((l) => ({
-        unitCode: l.unit.unitCode,
-        stageLabel: l.stage.labelId,
-        photoUrls: l.photoUrls,
-        note: l.note,
-        recordedAt: l.createdAt,
-      }));
+    const entries = [
+      // 1. PENJEMPUTAN — bukti kondisi kasur SAAT DIAMBIL. Ini juga yang
+      //    melindungi tim kalau nanti ada sengketa "kasur saya tidak begini
+      //    waktu diambil".
+      ...jobs
+        .filter((j) => j.type === "PICKUP" && j.proofPhotoUrls.length > 0)
+        .map((j) => entryJob(j, "PENJEMPUTAN")),
 
-    res.json({ order, entries, totalPhotos: entries.reduce((n, e) => n + e.photoUrls.length, 0) });
+      // 2. PRODUKSI — per tahap, per unit. Hanya tahap yang benar-benar
+      //    punya foto yang masuk berkas.
+      ...logs
+        .filter((l) => l.photoUrls.length > 0)
+        .map((l) => ({
+          kategori: "PRODUKSI",
+          unitCode: l.unit.unitCode,
+          stageLabel: l.stage.labelId,
+          photoUrls: l.photoUrls,
+          note: l.note,
+          recordedAt: l.createdAt,
+        })),
+
+      // 3. PENGIRIMAN — bukti sudah sampai.
+      ...jobs
+        .filter((j) => j.type === "DELIVERY" && j.proofPhotoUrls.length > 0)
+        .map((j) => entryJob(j, "PENGIRIMAN")),
+    ];
+
+    // Tanda tangan customer DIPISAH dari `entries`, bukan dijadikan salah satu
+    // foto biasa. Dua alasan: (a) sifatnya OPSIONAL dengan sengaja — penerima
+    // tidak selalu ada di tempat (lihat catatan di schema.prisma Job.signatureUrl),
+    // jadi ketiadaannya normal dan tidak boleh terlihat seperti dokumentasi
+    // yang bolong; (b) mengirimkan balik tanda tangan seseorang ke WhatsApp-nya
+    // sendiri tidak ada gunanya — ini bukti internal, bukan bahan forward.
+    const ttd = jobs.find((j) => j.type === "DELIVERY" && j.signatureUrl);
+
+    res.json({
+      order,
+      entries,
+      tandaTangan: ttd
+        ? { url: ttd.signatureUrl, waktu: ttd.completedAt, driver: ttd.driver?.name || null }
+        : null,
+      totalPhotos: entries.reduce((n, e) => n + e.photoUrls.length, 0),
+    });
   } catch (err) {
     handleErr(err, res);
   }

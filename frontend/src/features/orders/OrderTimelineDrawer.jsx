@@ -234,33 +234,60 @@ function DocumentationTab({ orderId, conversationId }) {
         <ImageOff className="text-ink3" size={24} />
         <p className="text-[13px] font-semibold text-ink2">Belum ada dokumentasi</p>
         <p className="text-[11px] leading-relaxed text-ink3">
-          Foto muncul di sini begitu kepala produksi mencatat tahap yang wajib foto
-          (Uji Sebelum Bongkar, Bongkar, Uji Berat Badan, Jahit Corner, Finish).
+          Foto muncul di sini begitu driver mendokumentasikan penjemputan, kepala
+          produksi mencatat tahap yang wajib foto, atau driver menyelesaikan pengiriman.
         </p>
       </div>
     );
   }
 
-  // Dikelompokkan per UNIT — order multi-kasur (mis. hotel) perlu jelas
-  // "ini foto kasur yang mana", bukan daftar foto tercampur (D-002). Index
-  // ASLI di doc.entries dipertahankan (bukan index-dalam-grup) supaya
-  // toggle/selected tetap merujuk baris yang benar setelah dikelompokkan.
-  const byUnit = doc.entries.reduce((acc, e, i) => {
-    (acc[e.unitCode] = acc[e.unitCode] || []).push({ ...e, _idx: i });
-    return acc;
-  }, {});
+  // Dikelompokkan per KATEGORI mengikuti urutan nyata di lapangan
+  // (Penjemputan → Produksi → Pengiriman), lalu di dalam Produksi masih
+  // dipecah per UNIT — order multi-kasur (mis. hotel) perlu jelas "ini foto
+  // kasur yang mana", bukan daftar foto tercampur (D-002).
+  //
+  // Index ASLI di doc.entries dipertahankan di `_idx` (bukan index-dalam-grup)
+  // supaya toggle/selected tetap merujuk baris yang benar setelah dikelompokkan
+  // dua lapis.
+  const KATEGORI = [
+    { key: "PENJEMPUTAN", label: "Penjemputan", sub: "Bukti kondisi kasur saat diambil dari customer" },
+    { key: "PRODUKSI",    label: "Proses Produksi", sub: "Foto per tahap pengerjaan di bengkel" },
+    { key: "PENGIRIMAN",  label: "Pengiriman", sub: "Bukti kasur sudah sampai & diterima" },
+  ];
+  const withIdx = doc.entries.map((e, i) => ({ ...e, _idx: i }));
 
   return (
     <div className="flex flex-col gap-4 pb-16">
       <p className="text-[11px] text-ink3">
-        {doc.totalPhotos} foto dari {Object.keys(byUnit).length} unit. Klik foto untuk
-        buka ukuran penuh (simpan & forward manual), atau centang tahap lalu kirim
-        langsung lewat WhatsApp CRM.
+        {doc.totalPhotos} foto sepanjang perjalanan order ini. Klik foto untuk buka
+        ukuran penuh (simpan & forward manual), atau centang lalu kirim langsung
+        lewat WhatsApp CRM.
       </p>
-      {Object.entries(byUnit).map(([unitCode, entries]) => (
-        <div key={unitCode}>
-          <p className="mb-1.5 font-mono text-[11px] font-semibold text-ink2">{unitCode}</p>
-          <div className="flex flex-col gap-2.5">
+
+      {KATEGORI.map(({ key, label, sub }) => {
+        const items = withIdx.filter((e) => e.kategori === key);
+        if (items.length === 0) return null;
+        // Produksi dipecah lagi per unit; penjemputan/pengiriman itu level
+        // ORDER (satu job bisa membawa beberapa unit), jadi tidak dipecah.
+        const grup = key === "PRODUKSI"
+          ? Object.entries(items.reduce((acc, e) => {
+              (acc[e.unitCode || "—"] = acc[e.unitCode || "—"] || []).push(e);
+              return acc;
+            }, {}))
+          : [[null, items]];
+
+        return (
+          <div key={key}>
+            <div className="mb-2 border-b border-line pb-1.5">
+              <p className="text-[12px] font-bold text-ink">{label}</p>
+              <p className="text-[10.5px] text-ink3">{sub}</p>
+            </div>
+            {grup.map(([unitCode, entries]) => (
+              <div key={unitCode || key} className="mb-2">
+                {unitCode && (
+                  <p className="mb-1.5 font-mono text-[11px] font-semibold text-ink2">{unitCode}</p>
+                )}
+                <div className="flex flex-col gap-2.5">
             {entries.map((entry) => (
               <div
                 key={entry._idx}
@@ -293,9 +320,38 @@ function DocumentationTab({ orderId, conversationId }) {
                 </div>
               </div>
             ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      {/* Tanda tangan customer — DIPISAH dari daftar foto & TIDAK bisa
+          dicentang untuk dikirim. Ini bukti internal serah terima; mengirim
+          balik tanda tangan seseorang ke WhatsApp-nya sendiri tidak ada
+          gunanya. Ketiadaannya WAJAR (opsional by design — penerima tidak
+          selalu ada di tempat), jadi blok ini cuma muncul kalau memang ada. */}
+      {doc.tandaTangan && (
+        <div>
+          <div className="mb-2 border-b border-line pb-1.5">
+            <p className="text-[12px] font-bold text-ink">Tanda Tangan Penerima</p>
+            <p className="text-[10.5px] text-ink3">
+              Bukti serah terima internal — tidak ikut dikirim ke customer
+            </p>
+          </div>
+          <div className="rounded-xl bg-surface p-2.5 shadow-card">
+            <img
+              src={doc.tandaTangan.url} alt="Tanda tangan penerima"
+              className="h-20 rounded-lg bg-white object-contain px-2"
+            />
+            <p className="mt-1.5 text-[10.5px] text-ink3">
+              {formatTanggal(doc.tandaTangan.waktu)}
+              {doc.tandaTangan.driver && ` · diterima oleh driver ${doc.tandaTangan.driver}`}
+            </p>
           </div>
         </div>
-      ))}
+      )}
 
       {/* Bar kirim — absolute relatif ke <aside> (aside sudah `fixed`, jadi
           jadi containing block untuk descendant absolute-nya) supaya bar ini
@@ -323,7 +379,7 @@ function DocumentationTab({ orderId, conversationId }) {
                        font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-            {sending ? "Mengirim…" : selected.size > 0 ? `Kirim ${selected.size} tahap ke customer` : "Pilih tahap untuk dikirim"}
+            {sending ? "Mengirim…" : selected.size > 0 ? `Kirim ${selected.size} dokumentasi ke customer` : "Pilih dokumentasi untuk dikirim"}
           </button>
         )}
       </div>
