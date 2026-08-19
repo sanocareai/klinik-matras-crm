@@ -66,8 +66,8 @@ export default function CustomersTable({
             <TH sortable sortDir={dirFor("city")} onSort={() => onSort("city")}>Kota</TH>
             <TH numeric sortable sortDir={dirFor("orderCount")} onSort={() => onSort("orderCount")}>Order</TH>
             <TH numeric sortable sortDir={dirFor("orderValue")} onSort={() => onSort("orderValue")}>Nilai Order</TH>
-            <TH>Sales Person</TH>
-            <TH>Sumber</TH>
+            <TH sortable sortDir={dirFor("assignedSales")} onSort={() => onSort("assignedSales")}>Sales Person</TH>
+            <TH sortable sortDir={dirFor("leadSource")} onSort={() => onSort("leadSource")}>Sumber</TH>
             <TH>Aksi</TH>
           </TR>
         </THead>

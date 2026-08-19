@@ -191,7 +191,12 @@ customerRouter.get("/meta/cities", async (req, res) => {
 const SORT_FIELDS = {
   name: "name", createdAt: "createdAt", updatedAt: "updatedAt",
   orderCount: "orderCount", orderValue: "orderValue", city: "city",
+  leadSource: "leadSource",
 };
+// `assignedSales` SENGAJA di luar SORT_FIELDS — itu kolom SCALAR, ini sort
+// LEWAT RELASI (assignedSales.name), bentuk orderBy Prisma-nya beda (nested
+// object, bukan string field), jadi ditangani terpisah di bawah, bukan
+// dipaksa masuk map yang sama.
 
 // Revisi 27 Jul 2026 — PAGINASI & FILTER PINDAH KE SERVER (dulu SEMUA
 // pelanggan di-fetch sekaligus dengan include orders/items/weightEntries
@@ -235,8 +240,10 @@ customerRouter.get("/", async (req, res) => {
     // buildCustomerWhere() di atas (dipakai bersama POST /bulk-reassign).
     const where = buildCustomerWhere(req.query);
 
-    const orderByField = SORT_FIELDS[sortKey] || "updatedAt";
     const orderByDir = sortDir === "asc" ? "asc" : "desc";
+    const orderBy = sortKey === "assignedSales"
+      ? { assignedSales: { name: orderByDir } }
+      : { [SORT_FIELDS[sortKey] || "updatedAt"]: orderByDir };
 
     // Sama seperti `where` di atas TAPI TANPA pipelineStage — dipakai untuk
     // hitung "berapa customer di tiap stage KALAU tab ini dipilih" (tab
@@ -257,7 +264,7 @@ customerRouter.get("/", async (req, res) => {
             select: { id: true, lastMessageAt: true },
           },
         },
-        orderBy: { [orderByField]: orderByDir },
+        orderBy,
         // Jalur lama (mobile, export Pengaturan) TIDAK kirim ?page= — tanpa
         // skip/take di situ supaya perilakunya tetap "semua baris" seperti
         // sebelumnya, cuma sekarang query-nya lebih ringan (tidak include

@@ -15,9 +15,10 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { badgeVariants } from "@/components/ui/badge.jsx";
+import { TH } from "@/components/ui/table.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { isAdminUser } from "@/lib/roles.js";
+import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari
@@ -247,11 +248,31 @@ export default function Orders() {
   const [debounced, setDebounced] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fBayar, setFBayar]   = useState("");
+  const [fSales, setFSales]   = useState("");
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
   // Filter tanggal order DIBUAT (Order.createdAt) — default "Hari ini",
   // konsisten dengan Dashboard & Pipeline.
   const [range, setRange] = useState(() => makeRange("today"));
+  // Sort tabel — HANYA berlaku di view="table" (papan Kanban dikelompokkan
+  // per status, "urutkan" tidak berarti apa-apa di situ). Klik pertama =
+  // asc, klik lagi di kolom yang sama = flip, sama seperti Customers.jsx.
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [users, setUsers]     = useState([]);
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+
+  useEffect(() => { api.getUsers().then(setUsers).catch(() => {}); }, []);
+
+  // Sales atau admin yang PERNAH pegang lead (D-010: role tambahan lewat
+  // Pengguna & Peran ikut dihitung, bukan cuma field `role` legacy) — pola
+  // SAMA dengan Customers.jsx & Pipeline.jsx supaya daftar sales di seluruh
+  // CRM selalu konsisten.
+  const salesUsers = useMemo(() => users.filter((u) => rolesOf(u).includes("SALES")), [users]);
 
   // Debounce pencarian — tiap ketikan tidak boleh jadi satu request.
   useEffect(() => {
@@ -266,6 +287,7 @@ export default function Orders() {
         search: debounced || undefined,
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
+        salesId: fSales || undefined,
         ...toApiParams(range),
       });
       setData(res);
@@ -275,7 +297,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fBayar, range]);
+  }, [debounced, fKategori, fBayar, fSales, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -298,11 +320,36 @@ export default function Orders() {
     localStorage.setItem("orders-view", v);
   }
 
+  // Nilai per kolom untuk sort — SEMUA client-side (order sudah di-load
+  // penuh ke `data.items`, sama seperti filter `hanyaMandek` yang sudah ada
+  // di sini). String dibandingkan case-insensitive, tanggal lewat epoch.
+  const SORT_GETTERS = {
+    orderNumber:  (o) => o.orderNumber || "",
+    customerName: (o) => o.customerName || o.customerPhone || "",
+    category:     (o) => KATEGORI_LABELS[o.category] || o.category || "",
+    status:       (o) => ORDER_STATUS_LABELS[o.status] || o.status || "",
+    pipelineStage:(o) => STAGE_LABELS[o.pipelineStage] || o.pipelineStage || "",
+    daysInStatus: (o) => o.daysInStatus || 0,
+    paymentStatus:(o) => PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus || "",
+    value:        (o) => o.value || 0,
+    assignedSales:(o) => o.assignedSales?.name || "",
+    createdAt:    (o) => o.createdAt ? new Date(o.createdAt).getTime() : 0,
+  };
+
   const items = useMemo(() => {
     let list = data?.items || [];
     if (hanyaMandek) list = list.filter(isMandek);
+    if (sortKey && SORT_GETTERS[sortKey]) {
+      const get = SORT_GETTERS[sortKey];
+      const dir = sortDir === "asc" ? 1 : -1;
+      list = [...list].sort((a, b) => {
+        const va = get(a), vb = get(b);
+        if (typeof va === "string") return va.localeCompare(vb, "id") * dir;
+        return (va - vb) * dir;
+      });
+    }
     return list;
-  }, [data, hanyaMandek]);
+  }, [data, hanyaMandek, sortKey, sortDir]);
 
   const perStatus = useMemo(() => {
     const map = {};
@@ -319,7 +366,7 @@ export default function Orders() {
   const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
   const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
                            .reduce((s, o) => s + (o.value || 0), 0);
-  const adaFilter = !!(debounced || fKategori || fBayar || hanyaMandek);
+  const adaFilter = !!(debounced || fKategori || fBayar || fSales || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -433,6 +480,14 @@ export default function Orders() {
               <option value="">Semua Pembayaran</option>
               {Object.entries(PAYMENT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+            <select
+              value={fSales} onChange={(e) => setFSales(e.target.value)}
+              aria-label="Filter sales person"
+              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <option value="">Semua Sales</option>
+              {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
             <Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
               onClick={() => setHanyaMandek((v) => !v)}
@@ -478,7 +533,7 @@ export default function Orders() {
           <p className="mb-3 text-xs text-ink3">
             {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
             <button type="button"
-              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setHanyaMandek(false); }}
+              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setHanyaMandek(false); }}
               className="font-semibold text-accent hover:underline">
               Reset filter
             </button>
@@ -561,11 +616,20 @@ export default function Orders() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
-                  {["ID Order", "Pelanggan", "Kategori", "Status", "Pipeline", "Lama", "Pembayaran", "Nilai", "Sales", "Dibuat", ""].map((h) => (
-                    <th key={h} className="whitespace-nowrap border-b border-line px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
-                      {h}
-                    </th>
-                  ))}
+                  {/* Header bisa diklik untuk urut — komponen TH sama yang
+                      dipakai tabel Pelanggan (components/ui/table.jsx), jadi
+                      perilaku & tampilannya konsisten di seluruh CRM. */}
+                  <TH sortable sortDir={sortKey === "orderNumber" ? sortDir : null} onSort={() => toggleSort("orderNumber")}>ID Order</TH>
+                  <TH sortable sortDir={sortKey === "customerName" ? sortDir : null} onSort={() => toggleSort("customerName")}>Pelanggan</TH>
+                  <TH sortable sortDir={sortKey === "category" ? sortDir : null} onSort={() => toggleSort("category")}>Kategori</TH>
+                  <TH sortable sortDir={sortKey === "status" ? sortDir : null} onSort={() => toggleSort("status")}>Status</TH>
+                  <TH sortable sortDir={sortKey === "pipelineStage" ? sortDir : null} onSort={() => toggleSort("pipelineStage")}>Pipeline</TH>
+                  <TH numeric sortable sortDir={sortKey === "daysInStatus" ? sortDir : null} onSort={() => toggleSort("daysInStatus")}>Lama</TH>
+                  <TH sortable sortDir={sortKey === "paymentStatus" ? sortDir : null} onSort={() => toggleSort("paymentStatus")}>Pembayaran</TH>
+                  <TH numeric sortable sortDir={sortKey === "value" ? sortDir : null} onSort={() => toggleSort("value")}>Nilai</TH>
+                  <TH sortable sortDir={sortKey === "assignedSales" ? sortDir : null} onSort={() => toggleSort("assignedSales")}>Sales</TH>
+                  <TH sortable sortDir={sortKey === "createdAt" ? sortDir : null} onSort={() => toggleSort("createdAt")}>Dibuat</TH>
+                  <TH></TH>
                 </tr>
               </thead>
               <tbody>

@@ -270,7 +270,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
 
     const where = {
@@ -279,6 +279,11 @@ orderRouter.get("/", async (req, res) => {
       ...(paymentStatus && { paymentStatus }),
       ...(hasComplaint === "true" && { hasComplaint: true }),
       ...(from && to && { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }),
+      // Filter per sales — assignedSalesId ada di Customer, bukan Order
+      // langsung (order tidak punya "sales-nya sendiri", ikut siapa yang
+      // pegang pelanggannya). Baris `OR` dari `search` di bawah tetap AND
+      // dengan ini (semua key top-level di `where` selalu digabung AND).
+      ...(salesId && { customer: { assignedSalesId: salesId } }),
       ...(search && {
         OR: [
           { orderNumber: { contains: search, mode: "insensitive" } },
