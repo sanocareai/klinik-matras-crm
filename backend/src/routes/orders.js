@@ -118,11 +118,11 @@ async function guardOrderLocked(req, res, orderId, aksi) {
 // melepas kunci dan kembali ke hitungan otomatis.
 orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
-          merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal } = req.body;
+          merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -158,6 +158,8 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(quantity          !== undefined && { quantity: Number(quantity) }),
           ...(notes             !== undefined && { notes }),
           ...(orderNumber       !== undefined && { orderNumber: orderNumber?.trim() || null }),
+          // D-026: kirim "" atau null untuk lepas promo dari order ini.
+          ...(promoId           !== undefined && { promoId: promoId || null }),
           ...(merkKasur         !== undefined && { merkKasur }),
           ...(ukuranKasur       !== undefined && { ukuranKasur }),
           ...(keluhanCustomer   !== undefined && { keluhanCustomer }),
@@ -270,7 +272,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
 
     const where = {
@@ -284,6 +286,7 @@ orderRouter.get("/", async (req, res) => {
       // pegang pelanggannya). Baris `OR` dari `search` di bawah tetap AND
       // dengan ini (semua key top-level di `where` selalu digabung AND).
       ...(salesId && { customer: { assignedSalesId: salesId } }),
+      ...(promoId && { promoId }),
       ...(search && {
         OR: [
           { orderNumber: { contains: search, mode: "insensitive" } },
@@ -328,6 +331,9 @@ orderRouter.get("/", async (req, res) => {
           orderBy: { createdAt: "desc" }, take: 1,
           select: { createdAt: true, fromStatus: true },
         },
+        // D-026 — cukup id/code/name untuk chip di tabel, tidak perlu round
+        // trip terpisah tiap baris.
+        promo: { select: { id: true, code: true, name: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: limit,

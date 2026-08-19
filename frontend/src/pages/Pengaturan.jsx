@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Palette,
-  Bold, Italic, Strikethrough, Camera,
+  Bold, Italic, Strikethrough, Camera, Tag,
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { key: "whatsapp",     label: "Status WhatsApp",    icon: Wifi },
   { key: "template",     label: "Template Pesan",     icon: MessageSquare },
   { key: "target-sales", label: "Target Sales",       icon: TrendingUp },
+  { key: "promo",        label: "Promo",              icon: Tag },
   { key: "tampilan",     label: "Tampilan",           icon: Palette },
   { key: "keamanan",     label: "Keamanan Akun",      icon: Lock },
   { key: "data",         label: "Data & Backup",      icon: Download },
@@ -561,6 +562,152 @@ function SalesTargetSection() {
   );
 }
 
+// D-026 (20 Agustus 2026) — kelola katalog kampanye promo (mis. "Merdeka
+// dari Sakit Pinggang" diskon hingga 17%). Admin-only (create/edit) — sales
+// cuma MEMILIH promo dari dropdown ini saat input order (OrderSection.jsx),
+// tidak pernah membuat kampanye baru sendiri.
+function PromoSection() {
+  const [promos, setPromos] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", discountPercent: "", validFrom: "", validUntil: "" });
+  const [saving, setSaving] = useState(false);
+
+  function showMsg(type, text) {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  function load() {
+    api.getPromos().then(setPromos).catch((err) => showMsg("error", err.message));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    if (!form.code.trim() || !form.name.trim()) return;
+    setSaving(true);
+    try {
+      await api.createPromo({
+        code: form.code, name: form.name,
+        discountPercent: form.discountPercent || undefined,
+        validFrom: form.validFrom || undefined,
+        validUntil: form.validUntil || undefined,
+      });
+      setForm({ code: "", name: "", discountPercent: "", validFrom: "", validUntil: "" });
+      setShowForm(false);
+      showMsg("success", "Promo dibuat");
+      load();
+    } catch (err) {
+      showMsg("error", err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(promo) {
+    try {
+      await api.updatePromo(promo.id, { active: !promo.active });
+      load();
+    } catch (err) {
+      showMsg("error", err.message);
+    }
+  }
+
+  return (
+    <div className="settings-card">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Promo</h2>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowForm((v) => !v)}>
+          <Plus size={14} /> Promo Baru
+        </button>
+      </div>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
+        Kampanye yang bisa dipilih sales saat input order (mis. "Merdeka dari Sakit Pinggang").
+        Diskonnya cuma PENANDA untuk laporan — harga akhir tetap diketik manual sales seperti biasa,
+        tidak dihitung otomatis dari sini.
+      </p>
+
+      {msg && (
+        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
+          {msg.text}
+        </div>
+      )}
+
+      {showForm && (
+        <form onSubmit={handleCreate} style={{ padding: 14, marginBottom: 16, border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-page)" }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="form-group" style={{ margin: 0, minWidth: 140 }}>
+              <label className="form-label">Kode</label>
+              <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                placeholder="MERDEKA17" style={{ textTransform: "uppercase" }} />
+            </div>
+            <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 220 }}>
+              <label className="form-label">Nama Kampanye</label>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Merdeka dari Sakit Pinggang" />
+            </div>
+            <div className="form-group" style={{ margin: 0, minWidth: 100 }}>
+              <label className="form-label">Diskon (%)</label>
+              <input type="number" min="0" max="100" value={form.discountPercent}
+                onChange={(e) => setForm((f) => ({ ...f, discountPercent: e.target.value }))} placeholder="17" />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Mulai</label>
+              <input type="date" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Sampai</label>
+              <input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+              {saving ? "Menyimpan..." : "Simpan Promo"}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>Batal</button>
+          </div>
+        </form>
+      )}
+
+      {promos === null ? (
+        <p className="text-muted">Memuat...</p>
+      ) : promos.length === 0 ? (
+        <p className="text-muted">Belum ada promo dibuat.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {promos.map((p) => (
+            <div key={p.id} style={{
+              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+              border: "1px solid var(--border)", borderRadius: 8,
+              background: "var(--card-bg)", opacity: p.active ? 1 : 0.55,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>{p.code}</span>
+                  {p.discountPercent != null && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--color-primary)" }}>{p.discountPercent}%</span>
+                  )}
+                </div>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                  {p.orderCount} order · {formatRupiah(p.totalValue)}
+                  {(p.validFrom || p.validUntil) && (
+                    <> · {p.validFrom ? new Date(p.validFrom).toLocaleDateString("id-ID") : "—"} s/d {p.validUntil ? new Date(p.validUntil).toLocaleDateString("id-ID") : "—"}</>
+                  )}
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(p)}>
+                {p.active ? "Nonaktifkan" : "Aktifkan"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
 
 // Section yang boleh diakses SALES (bukan cuma ADMIN). Revisi 26 Jul 2026:
@@ -1001,6 +1148,9 @@ export default function Pengaturan({ user, onUserUpdate }) {
 
           {/* ── TARGET SALES ── */}
           {section === "target-sales" && <SalesTargetSection />}
+
+          {/* ── PROMO (D-026) ── */}
+          {section === "promo" && <PromoSection />}
 
           {/* ── KEAMANAN ── */}
           {section === "keamanan" && (

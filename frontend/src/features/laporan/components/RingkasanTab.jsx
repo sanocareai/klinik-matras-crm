@@ -1,14 +1,57 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import dayjs from "dayjs";
+import { api } from "@/api.js";
 import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
+
+// D-026 (20 Agustus 2026) — ringkasan kampanye promo (mis. "Merdeka dari
+// Sakit Pinggang"). SENGAJA fetch sendiri (bukan lewat prop `summary` dari
+// Laporan.jsx) — /api/promos sudah menghitung orderCount/totalValue per
+// promo dalam satu query, jadi tidak perlu menambah endpoint/prop baru cuma
+// untuk angka yang sudah tersedia. Kalau tidak ada satu pun promo yang
+// PERNAH dipakai order, kartu ini menghilang total — bukan tampil kosong —
+// supaya tab Ringkasan tidak penuh kartu "belum ada apa-apa" sebelum
+// kampanye pertama benar-benar berjalan.
+function PromoSummaryCard({ index }) {
+  const [promos, setPromos] = useState(null);
+  useEffect(() => { api.getPromos().then(setPromos).catch(() => setPromos([])); }, []);
+
+  const dipakai = (promos || []).filter((p) => p.orderCount > 0);
+  if (promos === null || dipakai.length === 0) return null;
+
+  const max = Math.max(...dipakai.map((p) => p.orderCount));
+  return (
+    <ChartCard index={index} title="Kampanye Promo" description="Order & omzet per kampanye yang pernah dipakai">
+      <div className="flex flex-col gap-2.5">
+        {dipakai.map((p) => (
+          <BarRow
+            key={p.id}
+            label={p.name} value={p.orderCount} max={max}
+            display={`${p.orderCount.toLocaleString("id-ID")} order`}
+            sub={formatRupiahShort(p.totalValue)}
+            tone={p.active ? "accent" : "muted"}
+          />
+        ))}
+      </div>
+      <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
+        Rata-rata nilai order per kampanye:{" "}
+        {dipakai.map((p, i) => (
+          <span key={p.id}>
+            {i > 0 && " · "}
+            <strong className="text-ink2">{p.name}</strong> {formatRupiahShort(Math.round(p.totalValue / p.orderCount))}
+          </span>
+        ))}
+      </p>
+    </ChartCard>
+  );
+}
 
 // ═══ RINGKASAN EKSEKUTIF ══════════════════════════════════════════════════
 // Tab ini menjawab SATU pertanyaan: "bagaimana kondisi bisnis periode ini?"
@@ -368,6 +411,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
             </p>
           )}
         </ChartCard>
+
+        <PromoSummaryCard index={10} />
       </div>
     </div>
   );

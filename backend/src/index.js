@@ -8,6 +8,7 @@ import { initSocket } from "./socket.js";
 
 import { webhookRouter }    from "./routes/webhooks.js";
 import { productRouter }    from "./routes/products.js";
+import { promoRouter }      from "./routes/promos.js";
 import { authRouter }       from "./routes/auth.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { customerRouter }   from "./routes/customers.js";
@@ -85,6 +86,7 @@ app.use("/api/customers",    customerRouter);
 app.use("/api/analytics",    analyticsRouter);
 app.use("/api/intelligence", intelligenceRouter);
 app.use("/api/orders",       orderRouter);
+app.use("/api/promos",       promoRouter);
 app.use("/api/dashboard",    dashboardRouter);
 app.use("/api/users",        userRouter);
 app.use("/api/pipeline",     pipelineRouter);

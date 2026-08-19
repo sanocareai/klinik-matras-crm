@@ -191,6 +191,7 @@ model User {
   orderStatusChanges        OrderStatusTransition[]  @relation("OrderStatusActor")
   orderStatusOverrides      Order[]                  @relation("OrderStatusOverrider")
   orderRevisionEdits        OrderRevisionLog[]       @relation("OrderRevisionEditor")
+  promosCreated             Promo[]                  @relation("PromoCreator")
   messageTemplates          MessageTemplate[]
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
@@ -671,6 +672,18 @@ model Order {
   hasComplaint       Boolean       @default(false)
   complaintDate      DateTime?
   complaintDetail    String?
+
+  // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
+  // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin
+  // hitung harga: harga di sini SELALU hasil input manual sales per item
+  // (lihat OrderItem.harga) — order Klinik Matras adalah hasil NEGOSIASI,
+  // bukan checkout dari price list tetap, jadi memaksa "value = hargaAsli *
+  // (1 - discountPercent)" akan salah tiap kali ada nego tambahan di atas
+  // promo. promoId cuma menjawab "order ini pakai kampanye yang mana" untuk
+  // laporan (jumlah order & omzet per kampanye) dan filter di halaman Order.
+  promoId String? @map("promo_id")
+  promo   Promo?  @relation(fields: [promoId], references: [id], onDelete: SetNull)
+
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -685,6 +698,40 @@ model Order {
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
+  @@index([promoId])
+}
+
+// D-026 — katalog kampanye promo, dikelola admin (Pengaturan > Promo).
+// Order.promoId cuma PENANDA (lihat catatan panjang di atas model Order) —
+// discountPercent di sini MURNI INFORMASIONAL untuk konteks laporan
+// ("kampanye ini nominalnya berapa persen"), TIDAK pernah dipakai
+// menghitung ulang Order.value di kode mana pun. Kalau nanti ada kebutuhan
+// hitung-otomatis, itu keputusan terpisah (butuh harga "sebelum diskon" di
+// level item, bukan cuma persen di level kampanye) — jangan diam-diam
+// ditambahkan di sini tanpa mengubah UI OrderSection yang sudah menegaskan
+// harga selalu input manual.
+model Promo {
+  id   String @id @default(cuid())
+  // Kode pendek unik (mis. "MERDEKA17") — dipilih dari dropdown saat input
+  // order, BUKAN diketik bebas, supaya satu kampanye tidak pernah pecah
+  // jadi beberapa varian ejaan di laporan.
+  code            String    @unique
+  name            String // nama tampil (mis. "Merdeka dari Sakit Pinggang")
+  discountPercent Int? // opsional — sebagian promo mungkin bukan persen (mis. bonus item)
+  validFrom       DateTime? @db.Date
+  validUntil      DateTime? @db.Date
+  active          Boolean   @default(true)
+
+  // SetNull: admin pembuat resign, riwayat promo & order yang memakainya TETAP ada.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("PromoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@index([active])
+  @@map("promos")
 }
 
 // KUNCI TRANSAKSI (D-025, 19 Agustus 2026). Order yang statusnya DELIVERED

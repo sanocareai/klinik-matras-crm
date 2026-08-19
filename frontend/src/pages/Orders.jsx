@@ -249,6 +249,8 @@ export default function Orders() {
   const [fKategori, setFKategori] = useState("");
   const [fBayar, setFBayar]   = useState("");
   const [fSales, setFSales]   = useState("");
+  const [fPromo, setFPromo]   = useState("");
+  const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
   // Filter tanggal order DIBUAT (Order.createdAt) — default "Hari ini",
@@ -267,6 +269,9 @@ export default function Orders() {
   }
 
   useEffect(() => { api.getUsers().then(setUsers).catch(() => {}); }, []);
+  // Dropdown filter promo — SEMUA promo (bukan cuma yang aktif), supaya
+  // order lama yang pakai kampanye yang sudah berakhir tetap bisa difilter.
+  useEffect(() => { api.getPromos().then(setPromos).catch(() => {}); }, []);
 
   // Sales atau admin yang PERNAH pegang lead (D-010: role tambahan lewat
   // Pengguna & Peran ikut dihitung, bukan cuma field `role` legacy) — pola
@@ -288,6 +293,7 @@ export default function Orders() {
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
         salesId: fSales || undefined,
+        promoId: fPromo || undefined,
         ...toApiParams(range),
       });
       setData(res);
@@ -297,7 +303,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fBayar, fSales, range]);
+  }, [debounced, fKategori, fBayar, fSales, fPromo, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -333,6 +339,7 @@ export default function Orders() {
     paymentStatus:(o) => PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus || "",
     value:        (o) => o.value || 0,
     assignedSales:(o) => o.assignedSales?.name || "",
+    promo:        (o) => o.promo?.name || "",
     createdAt:    (o) => o.createdAt ? new Date(o.createdAt).getTime() : 0,
   };
 
@@ -366,7 +373,7 @@ export default function Orders() {
   const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
   const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
                            .reduce((s, o) => s + (o.value || 0), 0);
-  const adaFilter = !!(debounced || fKategori || fBayar || fSales || hanyaMandek);
+  const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -429,6 +436,7 @@ export default function Orders() {
         // di utils/exportLaporan.js soal uang sebagai teks).
         Nilai: o.value || 0,
         Komplain: o.hasComplaint ? "Ya" : "",
+        Promo: o.promo?.name || "",
         "Sales Person": o.assignedSales?.name || "",
         Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
       })),
@@ -488,6 +496,16 @@ export default function Orders() {
               <option value="">Semua Sales</option>
               {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
+            {promos.length > 0 && (
+              <select
+                value={fPromo} onChange={(e) => setFPromo(e.target.value)}
+                aria-label="Filter promo"
+                className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              >
+                <option value="">Semua Promo</option>
+                {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
             <Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
               onClick={() => setHanyaMandek((v) => !v)}
@@ -533,7 +551,7 @@ export default function Orders() {
           <p className="mb-3 text-xs text-ink3">
             {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
             <button type="button"
-              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setHanyaMandek(false); }}
+              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setHanyaMandek(false); }}
               className="font-semibold text-accent hover:underline">
               Reset filter
             </button>
@@ -627,6 +645,7 @@ export default function Orders() {
                   <TH numeric sortable sortDir={sortKey === "daysInStatus" ? sortDir : null} onSort={() => toggleSort("daysInStatus")}>Lama</TH>
                   <TH sortable sortDir={sortKey === "paymentStatus" ? sortDir : null} onSort={() => toggleSort("paymentStatus")}>Pembayaran</TH>
                   <TH numeric sortable sortDir={sortKey === "value" ? sortDir : null} onSort={() => toggleSort("value")}>Nilai</TH>
+                  <TH sortable sortDir={sortKey === "promo" ? sortDir : null} onSort={() => toggleSort("promo")}>Promo</TH>
                   <TH sortable sortDir={sortKey === "assignedSales" ? sortDir : null} onSort={() => toggleSort("assignedSales")}>Sales</TH>
                   <TH sortable sortDir={sortKey === "createdAt" ? sortDir : null} onSort={() => toggleSort("createdAt")}>Dibuat</TH>
                   <TH></TH>
@@ -668,6 +687,16 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
                         {formatRupiah(o.value || 0)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        {o.promo ? (
+                          // "violet dekoratif dilipat ke accent" — satu aturan
+                          // warna aksen di seluruh design system, lihat
+                          // components/ui/badge.jsx variant="violet".
+                          <span className="rounded-chip bg-accentbg px-1.5 py-0.5 text-[10px] font-semibold text-accent" title={o.promo.code}>
+                            {o.promo.name}
+                          </span>
+                        ) : <span className="text-ink3">—</span>}
                       </td>
                       <td className={cn("whitespace-nowrap px-3 py-2.5", o.assignedSales ? "font-medium text-ink2" : "text-ink3")}>
                         {o.assignedSales?.name || "—"}

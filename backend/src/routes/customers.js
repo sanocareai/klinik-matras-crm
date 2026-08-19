@@ -382,6 +382,7 @@ customerRouter.get("/:id", async (req, res) => {
         include: {
           items:         { orderBy: { sortOrder: "asc" } },
           weightEntries: { orderBy: { sortOrder: "asc" } },
+          promo:         { select: { id: true, code: true, name: true } }, // D-026
         },
       },
       assignedSales: true,
@@ -575,7 +576,7 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 // jumlah barang yang dipesan (bisa 2 bantal / 2 guling), bukan jumlah kasur.
 // Klien lama yang tidak mengirim `unitCount` tetap benar untuk mayoritas order.
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, beratBadan, category, unitCount } = req.body;
+  const { quantity, status, notes, beratBadan, category, unitCount, promoId } = req.body;
 
   const cat = category || "LAYANAN";
 
@@ -597,6 +598,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
         orderNumber,
         notes,
         ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
+        ...(promoId && { promoId }),
       },
       include: { items: true },
     });

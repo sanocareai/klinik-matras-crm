@@ -83,7 +83,7 @@ function formatTanggal(d) {
 }
 
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
-function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
+function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, promos }) {
   const info = parseNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
@@ -107,6 +107,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
   const [merkKasur, setMerkKasur]         = useState(info.merkKasur);
   const [ukuran, setUkuran]               = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
+  const [promoId, setPromoId]             = useState(order.promoId || "");
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
@@ -149,6 +150,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
       await api.updateOrder(order.id, {
         paymentStatus,
         notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        promoId: promoId || null,
       });
 
       // Proses weight entries
@@ -507,6 +509,28 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
         </div>
       ) : null}
 
+      {/* Promo (D-026) — cuma PENANDA untuk laporan, tidak menghitung ulang
+          harga apa pun (harga tetap manual di item layanan di bawah). */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>Promo</span>
+        {editing ? (
+          <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={selStyleFull} disabled={locked}>
+            <option value="">Tanpa promo</option>
+            {order.promo && !promos.some((p) => p.id === order.promo.id) && (
+              // Promo yang dipakai order ini sudah tidak aktif lagi — tetap
+              // tampilkan sebagai pilihan supaya tidak diam-diam tergeser
+              // begitu dropdown dibuka, tapi tandai jelas.
+              <option value={order.promo.id}>{order.promo.name} (sudah berakhir)</option>
+            )}
+            {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        ) : order.promo ? (
+          <div><span style={chipStyle}>{order.promo.name}</span></div>
+        ) : (
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>—</div>
+        )}
+      </div>
+
       {/* Items layanan — hanya untuk LAYANAN */}
       {isLayanan && (
         editing ? (
@@ -629,12 +653,13 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions }) {
 }
 
 // ─── Form tambah order baru (step 0: kategori → step 1: info → step 2: layanan) ─
-function AddOrderForm({ customerId, onDone, onCancel, orderOptions }) {
+function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [step, setStep]               = useState(0);
   const [category, setCategory]       = useState("");
   const [merkKasur, setMerk]          = useState("");
   const [ukuran, setUkuran]           = useState("");
   const [keluhan, setKeluhan]         = useState("");
+  const [promoId, setPromoId]         = useState("");
   const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
@@ -678,6 +703,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions }) {
       const order = await api.addOrder(customerId, {
         category,
         notes: buildNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        promoId: promoId || undefined,
       });
       if (harga > 0) {
         const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
@@ -702,6 +728,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions }) {
       const order = await api.addOrder(customerId, {
         category: "LAYANAN",
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        promoId: promoId || undefined,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
@@ -825,6 +852,18 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions }) {
             rows={3} style={{ ...formSelect, resize: "vertical" }} />
         </div>
 
+        {/* Promo (D-026) — opsional, cuma PENANDA utk laporan. Cuma muncul
+            kalau ada kampanye AKTIF; order lama-tanpa-promo tetap wajar. */}
+        {promos.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={formLabel}>Promo (opsional)</label>
+            <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={formSelect}>
+              <option value="">Tanpa promo</option>
+              {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* BARU/SEWA: harga total langsung di step ini */}
         {!isLayanan && (
           <div style={{ marginBottom: 14 }}>
@@ -911,9 +950,15 @@ export default function OrderSection({ customer, onUpdate }) {
   const [showForm, setShowForm]     = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [orderOptions, setOrderOptions] = useState(EMPTY_ORDER_OPTIONS);
+  // D-026 — promo AKTIF saja di sini (order baru cuma boleh pakai kampanye
+  // yang sedang berjalan). Order LAMA yang pakai promo yang sudah berakhir
+  // tetap menampilkan namanya lewat order.promo (sudah di-include backend),
+  // tidak butuh daftar ini untuk itu.
+  const [promos, setPromos] = useState([]);
 
   useEffect(() => {
     api.getOrderOptions().then(setOrderOptions).catch(() => {});
+    api.getPromos({ active: true }).then(setPromos).catch(() => {});
   }, []);
 
   async function refresh() {
@@ -950,6 +995,7 @@ export default function OrderSection({ customer, onUpdate }) {
           onDone={() => { setShowForm(false); refresh(); }}
           onCancel={() => setShowForm(false)}
           orderOptions={orderOptions}
+          promos={promos}
         />
       )}
 
@@ -1007,6 +1053,7 @@ export default function OrderSection({ customer, onUpdate }) {
                             onRefresh={refresh}
                             onDelete={handleDelete}
                             orderOptions={orderOptions}
+                            promos={promos}
                           />
                         </td>
                       </tr>

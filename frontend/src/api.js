@@ -537,6 +537,13 @@ export const api = {
   // Daftar order (order-centric) untuk halaman Order — beda dari
   // getCustomers(): 1 baris = 1 ORDER, bukan 1 pelanggan.
   getOrders: (params) => request("/orders" + buildQuery(params)),
+
+  // Promo (D-026) — tracking kampanye seperti "Merdeka dari Sakit Pinggang".
+  // BACA boleh siapa saja (dropdown pilih promo di form order); KELOLA
+  // (create/update) admin-only, ditegakkan di backend.
+  getPromos: (params) => request("/promos" + buildQuery(params)),
+  createPromo: (data) => request("/promos", { method: "POST", body: JSON.stringify(data) }),
+  updatePromo: (id, data) => request(`/promos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
