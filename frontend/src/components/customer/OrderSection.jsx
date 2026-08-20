@@ -810,7 +810,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "10px 14px", borderRadius: 8, cursor: "pointer",
                 border: category === opt.value ? "2px solid var(--primary)" : "1px solid var(--border)",
-                background: category === opt.value ? "#eff6ff" : "var(--card-bg)",
+                background: category === opt.value ? "#eff6ff" : "var(--bg-card)",
                 transition: "all 0.15s",
               }}
             >

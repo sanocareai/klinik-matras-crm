@@ -155,7 +155,7 @@
 
 /* shadcn/ui butuh token semantik standar (background/foreground/card/dst)
    — dipetakan ke variable warna yang SUDAH ADA di index.css (var(--bg),
-   var(--card-bg), dst) supaya shadcn otomatis konsisten dgn tema app,
+   var(--bg-card), dst) supaya shadcn otomatis konsisten dgn tema app,
    bukan warna baru yang lepas dari design system.
 
    ⚠️ BUG NYATA YANG PERNAH TERJADI DI SINI — SEVERITAS TINGGI:
@@ -181,7 +181,7 @@
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text-primary);
-  --color-card: var(--card-bg);
+  --color-card: var(--bg-card);
   --color-card-foreground: var(--text-primary);
   --color-border: var(--border);
   --color-input: var(--border);

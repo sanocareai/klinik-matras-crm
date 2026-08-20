@@ -168,18 +168,22 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
               <label className="attach-item">
                 <input type="file" accept="image/*,video/*" multiple style={{ display: "none" }}
                   onChange={(e) => { addFiles(e.target.files); e.target.value = ""; setShowSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#dbeafe" }}><ImageIcon size={24} style={{ color: "#2563eb" }} /></div>
+                {/* bg alpha dari warna ikon (bukan pastel hardcode) — otomatis
+                    membaur wajar di permukaan terang MAUPUN gelap, lihat
+                    catatan pillTone() di InfoSection.jsx (fix dark mode
+                    20 Agt 2026, masalah yang sama). */}
+                <div className="attach-item-icon" style={{ background: "#2563eb26" }}><ImageIcon size={24} style={{ color: "#2563eb" }} /></div>
                 <span className="attach-item-label">Foto/Video</span>
               </label>
               <label className="attach-item">
                 <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv" multiple style={{ display: "none" }}
                   onChange={(e) => { addFiles(e.target.files); e.target.value = ""; setShowSheet(false); }} />
-                <div className="attach-item-icon" style={{ background: "#fef9c3" }}><FileText size={24} style={{ color: "#ca8a04" }} /></div>
+                <div className="attach-item-icon" style={{ background: "#ca8a0426" }}><FileText size={24} style={{ color: "#ca8a04" }} /></div>
                 <span className="attach-item-label">Dokumen</span>
               </label>
               {onOpenProduct && (
                 <button className="attach-item" onClick={() => { onOpenProduct(); setShowSheet(false); }}>
-                  <div className="attach-item-icon" style={{ background: "#ede9fe" }}><Package size={24} style={{ color: "#7c3aed" }} /></div>
+                  <div className="attach-item-icon" style={{ background: "#7c3aed26" }}><Package size={24} style={{ color: "#7c3aed" }} /></div>
                   <span className="attach-item-label">Produk</span>
                 </button>
               )}

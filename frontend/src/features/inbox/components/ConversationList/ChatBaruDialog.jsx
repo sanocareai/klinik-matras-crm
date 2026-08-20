@@ -90,7 +90,7 @@ export default function ChatBaruDialog({ open, onClose, onJadi }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--card-bg, #fff)", borderRadius: 12, width: "min(440px, 100%)",
+          background: "var(--bg-card, #fff)", borderRadius: 12, width: "min(440px, 100%)",
           boxShadow: "0 12px 40px rgba(0,0,0,0.25)", overflow: "hidden",
         }}
       >
@@ -118,7 +118,7 @@ export default function ChatBaruDialog({ open, onClose, onJadi }) {
               placeholder="0851-8728-3900 atau 628518728390"
               style={{
                 width: "100%", padding: "9px 12px", borderRadius: 8,
-                border: "1px solid var(--border)", background: "var(--card-bg, #fff)",
+                border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
                 color: "var(--text-primary)", fontSize: 14,
               }}
             />
@@ -187,7 +187,7 @@ export default function ChatBaruDialog({ open, onClose, onJadi }) {
                 placeholder="Kosongkan untuk pakai nama dari WhatsApp"
                 style={{
                   width: "100%", padding: "9px 12px", borderRadius: 8,
-                  border: "1px solid var(--border)", background: "var(--card-bg, #fff)",
+                  border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
                   color: "var(--text-primary)", fontSize: 14,
                 }}
               />
@@ -203,7 +203,7 @@ export default function ChatBaruDialog({ open, onClose, onJadi }) {
               onChange={(e) => setSesi(e.target.value)}
               style={{
                 width: "100%", padding: "9px 12px", borderRadius: 8,
-                border: "1px solid var(--border)", background: "var(--card-bg, #fff)",
+                border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
                 color: "var(--text-primary)", fontSize: 14,
               }}
             >

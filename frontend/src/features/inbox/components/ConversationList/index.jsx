@@ -69,7 +69,7 @@ export default function ConversationList({ userId }) {
           style={{
             flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
             width: 34, height: 34, borderRadius: 8, cursor: "pointer",
-            border: "1px solid var(--border)", background: "var(--card-bg, #fff)",
+            border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
             color: "var(--primary, #2563eb)",
           }}
         >

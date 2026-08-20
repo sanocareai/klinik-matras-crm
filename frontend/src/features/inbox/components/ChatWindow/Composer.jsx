@@ -24,13 +24,18 @@ function ActionBtnFallback({ icon: Icon }) {
 
 const MAX_ROWS = 5;
 
+// Fix dark mode (20 Agt 2026): bg pastel + teks gelap HARDCODE — pastelnya
+// tidak ikut gelap, jadi chip ini selalu tampil terang mencolok di atas
+// popup gelap. bg alpha dari warna solid (bukan pastel) otomatis membaur
+// wajar di permukaan terang MAUPUN gelap — sama seperti pillTone() di
+// InfoSection.jsx (masalah yang identik).
 const KATEGORI_COLORS = {
-  pembukaan: { bg: "#dbeafe", color: "#1e40af" },
-  follow_up: { bg: "#ede9fe", color: "#5b21b6" },
-  penawaran: { bg: "#dcfce7", color: "#166534" },
-  konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
-  penutupan: { bg: "#fee2e2", color: "#991b1b" },
-  lainnya:   { bg: "#f3f4f6", color: "#374151" },
+  pembukaan:  { bg: "#2563eb26", color: "#2563eb" },
+  follow_up:  { bg: "#7c3aed26", color: "#7c3aed" },
+  penawaran:  { bg: "#16a34a26", color: "#16a34a" },
+  konfirmasi: { bg: "#b4530926", color: "#b45309" },
+  penutupan:  { bg: "#dc262626", color: "#dc2626" },
+  lainnya:    { bg: "var(--bg-inset)", color: "var(--text-secondary)" },
 };
 const KATEGORI_LABELS = {
   pembukaan: "Pembukaan", follow_up: "Follow Up", penawaran: "Penawaran",

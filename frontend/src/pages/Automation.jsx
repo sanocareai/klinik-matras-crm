@@ -1353,7 +1353,7 @@ function KnowledgeBaseTab() {
           onClick={() => setShowDebugCtx(false)}
         >
           <div
-            style={{ background: "var(--card-bg)", borderRadius: 12, padding: 24, maxWidth: 720, width: "90%", maxHeight: "80vh", overflow: "auto" }}
+            style={{ background: "var(--bg-card)", borderRadius: 12, padding: 24, maxWidth: 720, width: "90%", maxHeight: "80vh", overflow: "auto" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
