@@ -60,6 +60,16 @@ function buildNotes(info) {
   });
 }
 
+// D-026 fix (20 Agustus 2026): satu campaign (mis. "MDSP-Aug") sering
+// punya BEBERAPA kode voucher berbeda (MERDEKA10, MERDEKA8, dst) sebagai
+// promo TERPISAH dengan `name` yang sama persis — dropdown yang cuma
+// menampilkan `name` bikin sales lihat "MDSP-Aug" dobel tanpa tahu mana
+// yang mana, jadi tidak bisa pilih voucher yang benar. Kode SELALU
+// ditaruh duluan (paling menonjol) karena itu satu-satunya pembeda.
+function promoLabel(p) {
+  return `${p.code} — ${p.name}`;
+}
+
 function newItem() {
   return { key: Date.now() + Math.random(), layananName: "", harga: "" };
 }
@@ -556,12 +566,12 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
               // Promo yang dipakai order ini sudah tidak aktif lagi — tetap
               // tampilkan sebagai pilihan supaya tidak diam-diam tergeser
               // begitu dropdown dibuka, tapi tandai jelas.
-              <option value={order.promo.id}>{order.promo.name} (sudah berakhir)</option>
+              <option value={order.promo.id}>{promoLabel(order.promo)} (sudah berakhir)</option>
             )}
-            {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {promos.map((p) => <option key={p.id} value={p.id}>{promoLabel(p)}</option>)}
           </select>
         ) : order.promo ? (
-          <div><span style={chipStyle}>{order.promo.name}</span></div>
+          <div><span style={chipStyle}>{promoLabel(order.promo)}</span></div>
         ) : (
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>—</div>
         )}
@@ -918,7 +928,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             <label style={formLabel}>Promo (opsional)</label>
             <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={formSelect}>
               <option value="">Tanpa promo</option>
-              {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {promos.map((p) => <option key={p.id} value={p.id}>{promoLabel(p)}</option>)}
             </select>
           </div>
         )}

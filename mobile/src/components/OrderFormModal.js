@@ -77,6 +77,15 @@ function parseNotes(notes) {
   }
 }
 
+// D-026 fix (20 Agustus 2026) — satu campaign (mis. "MDSP-Aug") sering
+// punya BEBERAPA kode voucher berbeda (MERDEKA10, MERDEKA8, dst) sebagai
+// promo TERPISAH dengan `name` yang sama persis. Menampilkan cuma `name`
+// bikin sales lihat "MDSP-Aug" dobel tanpa tahu mana yang mana. Kode
+// SELALU ditaruh duluan (paling menonjol) karena itu satu-satunya pembeda.
+function promoLabel(p) {
+  return `${p.code} — ${p.name}`;
+}
+
 // Bottom-sheet pilih 1 opsi — dipakai Merk Kasur, Ukuran Kasur, pilihan
 // cepat Jenis Layanan per baris item, dan (D-026) Promo.
 //
@@ -666,8 +675,12 @@ export default function OrderFormModal({
             <TouchableOpacity style={styles.selectBox} onPress={() => setShowPromoPicker(true)}>
               <Text style={styles.selectBoxText}>
                 {promoId
-                  ? (promos.find((p) => p.id === promoId)?.name
-                      || (order?.promo?.id === promoId ? `${order.promo.name} (sudah berakhir)` : "Promo dipilih"))
+                  ? (() => {
+                      const found = promos.find((p) => p.id === promoId);
+                      if (found) return promoLabel(found);
+                      if (order?.promo?.id === promoId) return `${promoLabel(order.promo)} (sudah berakhir)`;
+                      return "Promo dipilih";
+                    })()
                   : "Tanpa promo"}
               </Text>
             </TouchableOpacity>
@@ -768,9 +781,9 @@ export default function OrderFormModal({
       <PickerSheet
         visible={showPromoPicker}
         title="Pilih Promo"
-        options={[{ id: "", name: "Tanpa promo" }, ...promos]}
+        options={[{ id: "", name: "Tanpa promo", code: "" }, ...promos]}
         getKey={(p) => p.id || "none"}
-        getLabel={(p) => p.name}
+        getLabel={(p) => (p.code ? promoLabel(p) : p.name)}
         onSelect={(p) => setPromoId(p.id)}
         onClose={() => setShowPromoPicker(false)}
       />

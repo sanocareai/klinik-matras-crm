@@ -683,11 +683,15 @@ function PromoSection() {
           {promos.map((p) => (
             <div key={p.id} className={cn("flex items-center gap-3 rounded-btn bg-inset px-3.5 py-2.5", !p.active && "opacity-55")}>
               <div className="min-w-0 flex-1">
+                {/* Kode di-highlight DULUAN — 1 campaign (name) bisa punya
+                    beberapa kode voucher berbeda (MERDEKA10, MERDEKA8, dst),
+                    kode itu satu-satunya pembeda, jadi bukan name yang perlu
+                    paling menonjol di sini. */}
                 <div className="flex items-center gap-2">
+                  <span className="rounded-chip bg-accentbg px-2 py-0.5 font-mono text-[12px] font-bold text-accent">{p.code}</span>
                   <span className="text-sm font-semibold text-ink">{p.name}</span>
-                  <span className="font-mono text-[11px] text-ink3">{p.code}</span>
                   {p.discountPercent != null && (
-                    <span className="text-[11px] font-bold text-accent">{p.discountPercent}%</span>
+                    <span className="text-[11px] font-bold text-green">{p.discountPercent}%</span>
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-ink3">

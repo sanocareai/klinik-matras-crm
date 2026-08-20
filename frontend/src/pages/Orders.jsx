@@ -436,7 +436,7 @@ export default function Orders() {
         // di utils/exportLaporan.js soal uang sebagai teks).
         Nilai: o.value || 0,
         Komplain: o.hasComplaint ? "Ya" : "",
-        Promo: o.promo?.name || "",
+        Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
         "Sales Person": o.assignedSales?.name || "",
         Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
       })),
@@ -503,7 +503,7 @@ export default function Orders() {
                 className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 <option value="">Semua Promo</option>
-                {promos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {promos.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
               </select>
             )}
             <Button
@@ -693,8 +693,12 @@ export default function Orders() {
                           // "violet dekoratif dilipat ke accent" — satu aturan
                           // warna aksen di seluruh design system, lihat
                           // components/ui/badge.jsx variant="violet".
-                          <span className="rounded-chip bg-accentbg px-1.5 py-0.5 text-[10px] font-semibold text-accent" title={o.promo.code}>
-                            {o.promo.name}
+                          // KODE (bukan nama campaign) yang ditampilkan —
+                          // 1 campaign (mis. "MDSP-Aug") sering punya BEBERAPA
+                          // kode voucher (MERDEKA10, MERDEKA8), kode itu yang
+                          // membedakan, nama campaign cuma di tooltip.
+                          <span className="rounded-chip bg-accentbg px-1.5 py-0.5 text-[10px] font-semibold text-accent" title={o.promo.name}>
+                            {o.promo.code}
                           </span>
                         ) : <span className="text-ink3">—</span>}
                       </td>
