@@ -576,7 +576,7 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 // jumlah barang yang dipesan (bisa 2 bantal / 2 guling), bukan jumlah kasur.
 // Klien lama yang tidak mengirim `unitCount` tetap benar untuk mayoritas order.
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress } = req.body;
+  const { quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory } = req.body;
 
   const cat = category || "LAYANAN";
 
@@ -601,6 +601,10 @@ customerRouter.post("/:id/orders", async (req, res) => {
         ...(promoId && { promoId }),
         ...(deliveryCity && { deliveryCity }),
         ...(deliveryAddress && { deliveryAddress }),
+        ...(healthStatus && {
+          healthStatus,
+          complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+        }),
       },
       include: { items: true },
     });

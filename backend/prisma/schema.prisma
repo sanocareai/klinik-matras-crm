@@ -157,6 +157,22 @@ enum HealthStatus {
   TIDAK_SAKIT
 }
 
+// D-028 (20 Agustus 2026) — klasifikasi keluhan sakit PER ORDER (bukan
+// Customer.healthStatus di atas, yang levelnya profil pelanggan). Dipakai
+// untuk mengelompokkan customer klinik matras berdasarkan jenis keluhan
+// spesifik saat order dibuat, supaya bisa dianalisa (mis. berapa % order
+// terkait saraf kejepit) tanpa parsing teks bebas di keluhanCustomer.
+enum HealthComplaintCategory {
+  KEPALA_PUSING
+  SAKIT_PINGGANG
+  SAKIT_PUNGGUNG
+  SAKIT_LEHER
+  PEGAL_PEGAL
+  SARAF_KEJEPIT
+  SKOLIOSIS
+  LAINNYA
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -684,6 +700,12 @@ model Order {
   // addressText dari sini saat bikin Job, itu keputusan terpisah.
   deliveryCity       String?       @map("delivery_city")
   deliveryAddress    String?       @map("delivery_address")
+
+  // D-028 (20 Agustus 2026) — Sakit/Tidak Sakit + kategori keluhan PER ORDER,
+  // diisi sales di form order (bukan cuma Customer.healthStatus di profil).
+  // complaintCategory HANYA relevan/ditampilkan kalau healthStatus = SAKIT.
+  healthStatus       HealthStatus?             @map("health_status")
+  complaintCategory  HealthComplaintCategory?  @map("complaint_category")
 
   // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
   // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin

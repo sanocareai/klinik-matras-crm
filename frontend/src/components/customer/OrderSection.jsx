@@ -31,6 +31,21 @@ const CATEGORY_OPTIONS = [
   { value: "SEWA",    icon: "📅", label: "Kasur Sewa",        sub: "Sewa kasur" },
 ];
 
+// D-028: klasifikasi keluhan sakit per order (beda dari Customer.healthStatus
+// di panel Inbox — ini levelnya order, dipakai untuk laporan/analisa jenis
+// keluhan). complaintCategory cuma relevan kalau healthStatus = SAKIT.
+const HEALTH_COMPLAINT_LABELS = {
+  KEPALA_PUSING:  "Kepala Pusing",
+  SAKIT_PINGGANG: "Sakit Pinggang",
+  SAKIT_PUNGGUNG: "Sakit Punggung",
+  SAKIT_LEHER:    "Sakit Leher",
+  PEGAL_PEGAL:    "Pegal-pegal",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+  LAINNYA:        "Lainnya",
+};
+const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
+
 const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
 const CATEGORY_BADGE  = {
   LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
@@ -122,6 +137,9 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
   // (1 customer bisa order untuk alamat berbeda-beda).
   const [deliveryCity, setDeliveryCity]       = useState(order.deliveryCity || "");
   const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || "");
+  // D-028: Sakit/Tidak Sakit + kategori keluhan per order.
+  const [healthStatus, setHealthStatus]           = useState(order.healthStatus || "");
+  const [complaintCategory, setComplaintCategory] = useState(order.complaintCategory || "");
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
@@ -167,6 +185,8 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
         promoId: promoId || null,
         deliveryCity: deliveryCity || null,
         deliveryAddress: deliveryAddress || null,
+        healthStatus: healthStatus || null,
+        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
       });
 
       // Proses weight entries
@@ -239,6 +259,8 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
     setKeluhan(inf.keluhanCustomer);
     setDeliveryCity(order.deliveryCity || "");
     setDeliveryAddress(order.deliveryAddress || "");
+    setHealthStatus(order.healthStatus || "");
+    setComplaintCategory(order.complaintCategory || "");
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
     setWeightEntries(
       (order.weightEntries && order.weightEntries.length > 0)
@@ -555,6 +577,60 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
         </div>
       </div>
 
+      {/* Kondisi Kesehatan + kategori keluhan (D-028) — per order, dipakai
+          mengklasifikasi jenis keluhan sakit customer klinik matras. */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>Kondisi Kesehatan</span>
+        {editing ? (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: healthStatus === "SAKIT" ? 6 : 0 }}>
+              {[
+                { value: "SAKIT", label: "Sakit", hex: "#dc2626" },
+                { value: "TIDAK_SAKIT", label: "Tidak Sakit", hex: "#16a34a" },
+              ].map(({ value, label, hex }) => {
+                const active = healthStatus === value;
+                return (
+                  <button
+                    key={value} type="button" disabled={locked}
+                    onClick={() => setHealthStatus(active ? "" : value)}
+                    style={{
+                      fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99,
+                      cursor: locked ? "not-allowed" : "pointer", transition: "all 0.15s",
+                      border: `1.5px solid ${active ? hex : "var(--border)"}`,
+                      background: active ? `${hex}1a` : "transparent",
+                      color: active ? hex : "var(--text-secondary)",
+                    }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {healthStatus === "SAKIT" && (
+              <select value={complaintCategory} onChange={(e) => setComplaintCategory(e.target.value)} style={selStyleFull} disabled={locked}>
+                <option value="">— Pilih Kategori Keluhan —</option>
+                {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
+              </select>
+            )}
+          </>
+        ) : order.healthStatus ? (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span style={{
+              fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 99,
+              ...(order.healthStatus === "SAKIT"
+                ? { background: "#dc26261a", color: "#dc2626" }
+                : { background: "#16a34a1a", color: "#16a34a" }),
+            }}>
+              {order.healthStatus === "SAKIT" ? "Sakit" : "Tidak Sakit"}
+            </span>
+            {order.complaintCategory && (
+              <span style={chipStyle}>{HEALTH_COMPLAINT_LABELS[order.complaintCategory] || order.complaintCategory}</span>
+            )}
+          </div>
+        ) : (
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>—</span>
+        )}
+      </div>
+
       {/* Promo (D-026) — cuma PENANDA untuk laporan, tidak menghitung ulang
           harga apa pun (harga tetap manual di item layanan di bawah). */}
       <div style={{ marginBottom: 8 }}>
@@ -709,6 +785,9 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // D-027: kota + alamat pengiriman order ini.
   const [deliveryCity, setDeliveryCity]       = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  // D-028: Sakit/Tidak Sakit + kategori keluhan per order.
+  const [healthStatus, setHealthStatus]           = useState("");
+  const [complaintCategory, setComplaintCategory] = useState("");
   const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
@@ -755,6 +834,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
+        healthStatus: healthStatus || undefined,
+        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || undefined) : undefined,
       });
       if (harga > 0) {
         const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
@@ -782,6 +863,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
+        healthStatus: healthStatus || undefined,
+        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || undefined) : undefined,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
@@ -912,6 +995,40 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
             placeholder="Alamat lengkap pengiriman..."
             rows={2} style={{ ...formSelect, resize: "vertical" }} />
+        </div>
+
+        {/* Kondisi Kesehatan + kategori keluhan (D-028) — per order, dipakai
+            mengklasifikasi jenis keluhan sakit customer klinik matras. */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={formLabel}>Kondisi Kesehatan</label>
+          <div style={{ display: "flex", gap: 6, marginBottom: healthStatus === "SAKIT" ? 6 : 0 }}>
+            {[
+              { value: "SAKIT", label: "Sakit", hex: "#dc2626" },
+              { value: "TIDAK_SAKIT", label: "Tidak Sakit", hex: "#16a34a" },
+            ].map(({ value, label, hex }) => {
+              const active = healthStatus === value;
+              return (
+                <button
+                  key={value} type="button"
+                  onClick={() => setHealthStatus(active ? "" : value)}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 99,
+                    cursor: "pointer", transition: "all 0.15s",
+                    border: `1.5px solid ${active ? hex : "var(--border)"}`,
+                    background: active ? `${hex}1a` : "transparent",
+                    color: active ? hex : "var(--text-secondary)",
+                  }}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {healthStatus === "SAKIT" && (
+            <select value={complaintCategory} onChange={(e) => setComplaintCategory(e.target.value)} style={formSelect}>
+              <option value="">— Pilih Kategori Keluhan —</option>
+              {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
+            </select>
+          )}
         </div>
 
         <div style={{ marginBottom: 14 }}>

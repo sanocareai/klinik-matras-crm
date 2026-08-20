@@ -119,11 +119,11 @@ async function guardOrderLocked(req, res, orderId, aksi) {
 orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
-          deliveryCity, deliveryAddress } = req.body;
+          deliveryCity, deliveryAddress, healthStatus, complaintCategory } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -169,6 +169,13 @@ orderRouter.patch("/:id", async (req, res) => {
           // D-027: kirim "" untuk mengosongkan lagi.
           ...(deliveryCity      !== undefined && { deliveryCity: deliveryCity || null }),
           ...(deliveryAddress   !== undefined && { deliveryAddress: deliveryAddress || null }),
+          // D-028: kategori keluhan cuma relevan kalau healthStatus = SAKIT —
+          // dipaksa null di sini juga (bukan cuma di frontend) supaya data
+          // tidak pernah nyangkut kalau sales toggle balik ke Tidak Sakit.
+          ...(healthStatus      !== undefined && {
+            healthStatus: healthStatus || null,
+            complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+          }),
         },
         include: {
           items:         { orderBy: { sortOrder: "asc" } },
