@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
-  Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
+  Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
+  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText,
 } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
 } from "../../utils/format.js";
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -21,6 +23,123 @@ const KATEGORI_TONE = {
   PRODUKSI:    { icon: Wrench,       chip: "bg-accentbg text-accent", dot: "bg-accent" },
   PENGIRIMAN:  { icon: Truck,        chip: "bg-greenbg text-green",   dot: "bg-green" },
 };
+
+// D-030 (revisi 20 Agustus 2026) — "rincian pesanan" sebelumnya cuma
+// ringkasan status/pembayaran/nilai, tanpa alamat pengiriman & detail
+// produk (persis yang tampak di reference tracking marketplace: alamat,
+// merk/ukuran kasur, keluhan, ongkir, estimasi pickup, dst). Semua field
+// ini SUDAH ada di `order` (D-027/D-028/D-029) — tinggal ditampilkan.
+const DETAIL_TONE = {
+  address: { icon: MapPin,           hex: "#ea580c" },
+  link:    { icon: Link2,            hex: "#0891b2" },
+  bed:     { icon: Bed,              hex: "#7c3aed" },
+  weight:  { icon: Weight,           hex: "#2563eb" },
+  note:    { icon: MessageSquareText,hex: "#4b5563" },
+  health:  { icon: HeartPulse,       hex: "#dc2626" },
+  money:   { icon: Banknote,         hex: "#16a34a" },
+  pickup:  { icon: CalendarClock,    hex: "#0891b2" },
+  promo:   { icon: Tag,              hex: "#db2777" },
+};
+function DetailRow({ tone, label, children }) {
+  const t = DETAIL_TONE[tone];
+  const Icon = t.icon;
+  return (
+    <div className="flex gap-2.5 border-b border-line py-2.5 last:border-0">
+      <span
+        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+        style={{ background: `${t.hex}1f`, color: t.hex }}
+      >
+        <Icon size={12} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-ink3">{label}</p>
+        <div className="mt-0.5 text-[13px] text-ink">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function DetailPesananSection({ order }) {
+  const info = parseOrderNotes(order.notes);
+  const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
+  const layanan = (order.items || []).map((it) => it.layananName).filter(Boolean).join(", ");
+  const kasur = [info.merkKasur, info.ukuranKasur].filter(Boolean).join(" · ");
+
+  return (
+    <div className="rounded-xl bg-surface px-3 shadow-card">
+      <DetailRow tone="address" label="Alamat Pengiriman">
+        {order.deliveryAddress || order.deliveryCity ? (
+          <>
+            {order.deliveryAddress || ""}
+            {order.deliveryCity && <span className="font-semibold"> · {order.deliveryCity}</span>}
+          </>
+        ) : <span className="text-ink3">—</span>}
+      </DetailRow>
+
+      {order.locationUrl && (
+        <DetailRow tone="link" label="Link Lokasi">
+          <a href={order.locationUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+            Buka lokasi ↗
+          </a>
+        </DetailRow>
+      )}
+
+      {(kasur || layanan) && (
+        <DetailRow tone="bed" label="Kasur & Layanan">
+          {kasur && <p>{kasur}</p>}
+          {layanan && <p className={cn(kasur && "mt-0.5 text-ink2")}>{layanan}</p>}
+        </DetailRow>
+      )}
+
+      {info.keluhanCustomer && (
+        <DetailRow tone="note" label="Keluhan Kasur">
+          {info.keluhanCustomer}
+        </DetailRow>
+      )}
+
+      {berat && (
+        <DetailRow tone="weight" label="Berat Badan">
+          {berat}
+        </DetailRow>
+      )}
+
+      {order.healthStatus && (
+        <DetailRow tone="health" label="Kondisi Kesehatan">
+          <span className={order.healthStatus === "SAKIT" ? "font-semibold text-red" : "font-semibold text-green"}>
+            {HEALTH_LABELS[order.healthStatus] || order.healthStatus}
+          </span>
+          {(order.complaintCategory || []).length > 0 && (
+            <span className="text-ink2"> — {order.complaintCategory.map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", ")}</span>
+          )}
+        </DetailRow>
+      )}
+
+      {(order.ongkir || order.ongkirKlaimGaransi) && (
+        <DetailRow tone="money" label="Ongkir">
+          {order.ongkir ? formatRupiah(order.ongkir) : "Rp0"}
+          {order.ongkirKlaimGaransi ? ` · Klaim Garansi: ${formatRupiah(order.ongkirKlaimGaransi)}` : ""}
+        </DetailRow>
+      )}
+
+      {(order.pickupEstimate || order.pickupConfirmedDate) && (
+        <DetailRow tone="pickup" label="Jadwal Pick Up">
+          {order.pickupEstimate && <p>{order.pickupEstimate}</p>}
+          {order.pickupConfirmedDate && (
+            <p className={cn(order.pickupEstimate && "mt-0.5 text-ink2")}>
+              Pasti: {formatTanggal(order.pickupConfirmedDate)}
+            </p>
+          )}
+        </DetailRow>
+      )}
+
+      {order.promo && (
+        <DetailRow tone="promo" label="Promo">
+          {promoLabel(order.promo)}
+        </DetailRow>
+      )}
+    </div>
+  );
+}
 
 // Tab "Pembayaran" (D-023) — DP di konfirmasi order + riwayat pembayaran
 // dari SEMUA sumber (sales di sini, driver di stop pengiriman D-011).
@@ -496,6 +615,10 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
                 <p className="mt-0.5 text-[13px] font-bold text-ink">{k.v}</p>
               </div>
             ))}
+          </div>
+
+          <div className="mt-3">
+            <DetailPesananSection order={order} />
           </div>
 
           {order.conversationId && (
