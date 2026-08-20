@@ -14,7 +14,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
-  Pin, PinOff, Check, Circle, MessageSquarePlus,
+  Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -55,18 +55,27 @@ const TABS = [
   { key: "MINE", label: "Milik Saya" },
   { key: "ALL", label: "Semua" },
   { key: "UNREAD", label: "Belum Dibaca" },
+  // D-031 (20 Agustus 2026) — "Belum Dibalas" BEDA dari "Belum Dibaca":
+  // Belum Dibaca = sales belum BUKA chat-nya sama sekali (bisa jadi pesan
+  // customer sudah lama, sales cuma belum lihat). Belum Dibalas = pesan
+  // TERAKHIR di percakapan itu dari CUSTOMER (arah INBOUND) — sales SUDAH
+  // baca tapi belum sempat balas, ini yang paling penting dikejar duluan
+  // (definisi sama persis dengan `isUnanswered` yang sudah dipakai badge
+  // "Ambil Alih (belum dibalas 1j+)" di web, lihat conversations.js).
+  { key: "UNANSWERED", label: "Belum Dibalas" },
   { key: "OPEN", label: "Terbuka" },
   { key: "PENDING", label: "Pending" },
   { key: "CLOSED", label: "Selesai" },
 ];
 
 const EMPTY_STATE = {
-  ALL:     { Icon: Inbox, text: "Belum ada percakapan" },
-  UNREAD:  { Icon: MailWarning, text: "Tidak ada percakapan belum dibaca" },
-  OPEN:    { Icon: MessageCircle, text: "Tidak ada percakapan terbuka" },
-  PENDING: { Icon: Clock, text: "Tidak ada percakapan pending" },
-  CLOSED:  { Icon: CheckCircle2, text: "Tidak ada percakapan selesai" },
-  MINE:    { Icon: User, text: "Belum ada percakapan milik kamu" },
+  ALL:        { Icon: Inbox, text: "Belum ada percakapan" },
+  UNREAD:     { Icon: MailWarning, text: "Tidak ada percakapan belum dibaca" },
+  UNANSWERED: { Icon: MessageCircleWarning, text: "Semua percakapan sudah dibalas" },
+  OPEN:       { Icon: MessageCircle, text: "Tidak ada percakapan terbuka" },
+  PENDING:    { Icon: Clock, text: "Tidak ada percakapan pending" },
+  CLOSED:     { Icon: CheckCircle2, text: "Tidak ada percakapan selesai" },
+  MINE:       { Icon: User, text: "Belum ada percakapan milik kamu" },
 };
 
 // Cocokkan 1 conversation dengan filter + search AKTIF SEKARANG. Perlu
@@ -79,6 +88,9 @@ function matches(c, filter, userId, query) {
   if (filter === "OPEN" && c.status !== "OPEN") return false;
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
+  // `isUnanswered` datang dari backend (GET /conversations), dihitung dari
+  // arah pesan TERAKHIR — lihat catatan definisi di TABS di atas.
+  if (filter === "UNANSWERED" && !c.isUnanswered) return false;
   if (filter === "UNREAD") {
     // BUG YANG DIPERBAIKI: `c.unreadCount ?? (c.unread ? 1 : 0)` SALAH kalau
     // unreadCount sudah terisi ANGKA 0 (bukan null/undefined) — `??` cuma
@@ -367,6 +379,7 @@ export default function ChatListScreen({ navigation }) {
           const active = filter === t.key;
           const count = counts[
             t.key === "ALL" ? "semua" : t.key === "UNREAD" ? "belumDibaca" :
+            t.key === "UNANSWERED" ? "belumDibalas" :
             t.key === "OPEN" ? "terbuka" : t.key === "PENDING" ? "pending" :
             t.key === "CLOSED" ? "selesai" : "milikSaya"
           ] || 0;

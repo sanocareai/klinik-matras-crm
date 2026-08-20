@@ -11,23 +11,25 @@ import { useConversationStore } from "../store/conversationStore";
 // yang dikenal backend (enum ConversationStatus: OPEN/PENDING/RESOLVED).
 // 'MINE' tidak difilter lewat status, tapi lewat assignedToId.
 // 'UNREAD' tidak difilter lewat status, tapi lewat ?unread=true (lihat
-// backend/src/routes/conversations.js).
+// backend/src/routes/conversations.js). 'UNANSWERED' ("Belum Dibalas",
+// D-031) sama polanya — ?unanswered=true.
 function filterToStatus(filter) {
   if (filter === "OPEN") return "OPEN";
   if (filter === "PENDING") return "PENDING";
   if (filter === "CLOSED") return "RESOLVED";
-  return undefined; // 'ALL' | 'MINE' | 'UNREAD'
+  return undefined; // 'ALL' | 'MINE' | 'UNREAD' | 'UNANSWERED'
 }
 
 export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   const status = filterToStatus(filter);
   const assignedToId = filter === "MINE" ? userId : undefined;
   const unread = filter === "UNREAD" ? true : undefined;
+  const unanswered = filter === "UNANSWERED" ? true : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId, unread }],
+    queryKey: ["conversations", { status, search, assignedToId, unread, unanswered }],
     queryFn: ({ pageParam }) =>
-      api.getConversations({ status, search, assignedToId, unread, cursor: pageParam || undefined }),
+      api.getConversations({ status, search, assignedToId, unread, unanswered, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });

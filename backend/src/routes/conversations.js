@@ -168,15 +168,29 @@ conversationRouter.get("/latest-unread", async (req, res) => {
 // Jumlah percakapan per tab filter Inbox (Semua/Terbuka/Pending/Selesai/Milik Saya)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/counts", async (req, res) => {
-  const [semua, terbuka, pending, selesai, milikSaya, belumDibaca] = await Promise.all([
+  const [semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalasRows] = await Promise.all([
     prisma.conversation.count(),
     prisma.conversation.count({ where: { status: "OPEN" } }),
     prisma.conversation.count({ where: { status: "PENDING" } }),
     prisma.conversation.count({ where: { status: "RESOLVED" } }),
     prisma.conversation.count({ where: { assignedToId: req.user.id } }),
     prisma.conversation.count({ where: { unread: true } }),
+    // "Belum Dibalas" = pesan TERAKHIR di percakapan itu arahnya INBOUND
+    // (sama persis definisi `isUnanswered` di GET /conversations & POST
+    // /:id/takeover di atas — JANGAN buat definisi kedua yang bisa
+    // menyimpang). Bukan kolom tersendiri (Conversation tidak menyimpan
+    // arah pesan terakhirnya), jadi dihitung lewat DISTINCT ON per
+    // percakapan atas pesan terbarunya — satu query, bukan N+1.
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count FROM (
+        SELECT DISTINCT ON (m."conversationId") m.direction
+        FROM "Message" m
+        ORDER BY m."conversationId", m."createdAt" DESC
+      ) sub WHERE sub.direction = 'INBOUND'
+    `,
   ]);
-  res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca });
+  const belumDibalas = Number(belumDibalasRows[0]?.count || 0);
+  res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalas });
 });
 
 // POST /api/conversations/mulai-chat — "ketik nomor lalu chat", seperti di
@@ -322,11 +336,27 @@ conversationRouter.get("/cek-nomor", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor, unread, tag } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag, unanswered } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?unanswered=true — tab "Belum Dibalas" mobile (ChatListScreen.js). Sama
+  // definisi `isUnanswered` yang sudah dihitung di bawah untuk tiap baris
+  // (pesan TERAKHIR arahnya INBOUND) — TANPA filter server-side ini,
+  // FlashList harus fetch banyak halaman kosong dulu untuk isi layar
+  // (kebanyakan percakapan SUDAH dibalas), sama seperti kenapa ?unread=true
+  // di bawah juga difilter di server, bukan cuma di client.
+  if (unanswered === "true") {
+    const rows = await prisma.$queryRaw`
+      SELECT sub."conversationId" AS id FROM (
+        SELECT DISTINCT ON (m."conversationId") m."conversationId", m.direction
+        FROM "Message" m
+        ORDER BY m."conversationId", m."createdAt" DESC
+      ) sub WHERE sub.direction = 'INBOUND'
+    `;
+    where.id = { in: rows.map((r) => r.id) };
+  }
   // ?tag=... — saring percakapan berdasarkan tag pelanggannya. Dipakai
   // chip "Broadcast" di Inbox: setelah kampanye mengirim, penerimanya
   // otomatis diberi tag (BroadcastCampaign.tagOnSend), sehingga sales bisa
