@@ -4,6 +4,7 @@ import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
@@ -194,6 +195,7 @@ export default function App() {
       {/* Floating "Tanya Sano" (CoPilotFloat) DIHAPUS — sudah ada akses lewat
           sidebar (AI & OTOMASI > Tanya Sano), FAB ini jadi redundan. */}
       <Layout user={user} onLogout={handleLogout}>
+        <ChunkErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             {/* Landing sekarang /portal (Gilang, 31 Juli 2026) — Bengkel punya
@@ -362,6 +364,7 @@ export default function App() {
             <Route path="*"            element={<Navigate to="/portal" replace />} />
           </Routes>
         </Suspense>
+        </ChunkErrorBoundary>
       </Layout>
     </BrowserRouter>
   );
