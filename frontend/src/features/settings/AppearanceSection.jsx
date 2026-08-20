@@ -2,6 +2,7 @@ import React from "react";
 import { Sun, Moon, Monitor } from "lucide-react";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { cn } from "@/lib/utils.js";
+import { Card, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 
 const OPSI = [
   { key: "light",  label: "Terang", Icon: Sun,     ket: "Selalu terang" },
@@ -35,19 +36,18 @@ export default function AppearanceSection() {
   const { theme, resolved, setTheme } = useTheme();
 
   return (
-    <div className="settings-card">
-      <h2 className="t-card-title" style={{ marginTop: 0 }}>Tampilan</h2>
-      <p className="t-secondary" style={{ marginTop: 4, marginBottom: 20 }}>
+    <Card>
+      <CardTitle>Tampilan</CardTitle>
+      <CardDescription className="mb-5 mt-1">
         Pilih tema tampilan CRM. Pengaturan ini tersimpan di perangkat ini saja —
         tidak memengaruhi tampilan anggota tim lain.
-      </p>
+      </CardDescription>
 
       {/* Segmented control 3 opsi */}
       <div
         role="radiogroup"
         aria-label="Tema tampilan"
-        className="flex gap-1 rounded-btn bg-inset p-1"
-        style={{ maxWidth: 420 }}
+        className="flex max-w-[420px] gap-1 rounded-btn bg-inset p-1"
       >
         {OPSI.map(({ key, label, Icon }) => {
           const aktif = theme === key;
@@ -73,16 +73,16 @@ export default function AppearanceSection() {
         })}
       </div>
 
-      <p className="t-secondary" style={{ marginTop: 12 }}>
+      <p className="t-secondary mt-3">
         {theme === "system"
           ? `Mengikuti perangkat — sekarang ${resolved === "dark" ? "gelap" : "terang"}.`
           : OPSI.find((o) => o.key === theme)?.ket}
       </p>
 
-      <div style={{ marginTop: 24, maxWidth: 260 }}>
-        <p className="t-caption" style={{ marginBottom: 8 }}>Pratinjau</p>
+      <div className="mt-6 max-w-[260px]">
+        <p className="t-caption mb-2">Pratinjau</p>
         <Pratinjau />
       </div>
-    </div>
+    </Card>
   );
 }

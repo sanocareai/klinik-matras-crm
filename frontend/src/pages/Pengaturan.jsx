@@ -17,6 +17,38 @@ import { WA_MARKERS, toggleWaFormat, parseWaFormatting } from "../utils/waFormat
 // connect — 3 detik sesuai spec.
 import AppearanceSection from "@/features/settings/AppearanceSection.jsx";
 import { isAdminUser } from "@/lib/roles.js";
+import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
+import { Field } from "@/components/ui/field.jsx";
+import { Input } from "@/components/ui/input.jsx";
+import { Button } from "@/components/ui/button.jsx";
+import { Divider } from "@/components/ui/divider.jsx";
+import { cn } from "@/lib/utils.js";
+
+// Reskin 20 Agt 2026 (Sano DS v2 strangler-fig, lihat CLAUDE.md/dokumen
+// migrasi) — halaman ini sebelumnya satu-satunya yang masih pakai kelas CSS
+// lama (`.settings-card`/`.form-group`/`.wa-session-*`/dll dari index.css),
+// jadi terlihat beda sendiri (kotak gelap penuh border) dibanding
+// Order/Pelanggan yang sudah migrasi (kartu tanpa border, token bg-surface/
+// bg-inset). Perubahan ini CUMA lapisan markup/style — semua state, handler,
+// dan alur data di bawah TIDAK disentuh.
+const selectCls =
+  "h-9 w-full rounded-lg bg-surface px-3 text-sm text-ink outline-none transition-colors " +
+  "focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50";
+
+function InlineFeedback({ msg }) {
+  if (!msg) return null;
+  return (
+    <p
+      className={cn(
+        "rounded-lg px-3 py-2 text-[13px] font-medium",
+        msg.type === "success" ? "bg-green/10 text-green" : "bg-red/10 text-red"
+      )}
+    >
+      {msg.text}
+    </p>
+  );
+}
 
 const SYNC_POLL_INTERVAL_MS = 3000;
 
@@ -40,13 +72,15 @@ const KATEGORI_LABELS = {
   lainnya: "Lainnya",
 };
 
-const KATEGORI_COLORS = {
-  pembukaan: { bg: "#dbeafe", color: "#1e40af" },
-  follow_up: { bg: "#ede9fe", color: "#5b21b6" },
-  penawaran: { bg: "#dcfce7", color: "#166534" },
-  konfirmasi: { bg: "#fef9c3", color: "#854d0e" },
-  penutupan: { bg: "#fee2e2", color: "#991b1b" },
-  lainnya:   { bg: "#f3f4f6", color: "#374151" },
+// Token DS v2 — dibatasi warna semantik yang tersedia (red/orange/green +
+// SATU accent, aturan "satu accent"), bukan palet hex bebas seperti dulu.
+const KATEGORI_TONE = {
+  pembukaan:  "bg-accentbg text-accent",
+  follow_up:  "bg-inset text-ink2",
+  penawaran:  "bg-greenbg text-green",
+  konfirmasi: "bg-orangebg text-orange",
+  penutupan:  "bg-redbg text-red",
+  lainnya:    "bg-inset text-ink3",
 };
 
 const EMPTY_TPL_FORM = { nama: "", kategori: "pembukaan", isi: "", isShared: false };
@@ -78,12 +112,12 @@ function TemplateFormatToolbar({ textareaRef, value, onChange }) {
       el.selectionEnd = selEnd;
     }, 0);
   }
-  const btnStyle = { padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center" };
+  const btnCls = "flex items-center rounded-md bg-inset p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2";
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-      <button type="button" title="Tebal (*teks*)" style={btnStyle} onClick={() => apply(WA_MARKERS.bold)}><Bold size={13} /></button>
-      <button type="button" title="Miring (_teks_)" style={btnStyle} onClick={() => apply(WA_MARKERS.italic)}><Italic size={13} /></button>
-      <button type="button" title="Coret (~teks~)" style={btnStyle} onClick={() => apply(WA_MARKERS.strike)}><Strikethrough size={13} /></button>
+    <div className="mb-1.5 flex gap-1.5">
+      <button type="button" title="Tebal (*teks*)" className={btnCls} onClick={() => apply(WA_MARKERS.bold)}><Bold size={13} /></button>
+      <button type="button" title="Miring (_teks_)" className={btnCls} onClick={() => apply(WA_MARKERS.italic)}><Italic size={13} /></button>
+      <button type="button" title="Coret (~teks~)" className={btnCls} onClick={() => apply(WA_MARKERS.strike)}><Strikethrough size={13} /></button>
     </div>
   );
 }
@@ -178,45 +212,44 @@ function TemplateSection({ user }) {
       return acc;
     }, {});
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="flex flex-col gap-5">
         {Object.entries(KATEGORI_LABELS).map(([key, label]) => {
           const items = grouped[key] || [];
           if (items.length === 0) return null;
-          const colors = KATEGORI_COLORS[key];
           return (
             <div key={key}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: colors.bg, color: colors.color }}>
+              <div className="mb-2.5 flex items-center gap-2">
+                <span className={cn("rounded-chip px-2.5 py-1 text-[11px] font-bold", KATEGORI_TONE[key])}>
                   {label}
                 </span>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{items.length} template</span>
+                <span className="text-xs text-ink3">{items.length} template</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="flex flex-col gap-2">
                 {items.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    style={{ padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-primary)", display: "flex", gap: 12, alignItems: "flex-start" }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 13 }}>
+                  <div key={tpl.id} className="flex items-start gap-3 rounded-btn bg-inset p-3.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-1 text-[13px] font-semibold text-ink">
                         {tpl.nama}
                         {tpl.isShared && tpl.author == null && (
-                          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>· TIM</span>
+                          <span className="ml-1.5 text-[10px] font-bold text-ink3">· TIM</span>
                         )}
                       </p>
                       {/* Format WhatsApp langsung dirender di sini juga (bukan
                           teks mentah "*.../*") — supaya preview template SAMA
                           dengan tampilan di TemplatePicker Inbox dan pesan
                           yang benar-benar terkirim. */}
-                      <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      <p className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink2">
                         {parseWaFormatting(tpl.isi)}
                       </p>
                     </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <div className="flex shrink-0 gap-1">
                       <button
                         title="Salin isi template"
                         onClick={() => handleCopy(tpl)}
-                        style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: copied === tpl.id ? "#166534" : "var(--text-muted)" }}
+                        className={cn(
+                          "rounded-md bg-surface p-1.5 transition-colors hover:bg-hovertint",
+                          copied === tpl.id ? "text-green" : "text-ink3"
+                        )}
                       >
                         {copied === tpl.id ? <CheckCircle size={13} /> : <Copy size={13} />}
                       </button>
@@ -229,14 +262,14 @@ function TemplateSection({ user }) {
                           <button
                             title="Edit"
                             onClick={() => openEdit(tpl)}
-                            style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", color: "var(--text-muted)" }}
+                            className="rounded-md bg-surface p-1.5 text-ink3 transition-colors hover:bg-hovertint"
                           >
                             <Pencil size={13} />
                           </button>
                           <button
                             title="Hapus"
                             onClick={() => handleDelete(tpl.id)}
-                            style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #fee2e2", background: "#fff5f5", cursor: "pointer", color: "#991b1b" }}
+                            className="rounded-md bg-redbg p-1.5 text-red transition-colors hover:opacity-80"
                           >
                             <Trash2 size={13} />
                           </button>
@@ -254,59 +287,50 @@ function TemplateSection({ user }) {
   }
 
   return (
-    <div className="settings-card">
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 200 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Template Pesan</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
+    <Card>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-[200px]">
+          <CardTitle>Template Pesan</CardTitle>
+          <CardDescription className="mt-1">
             Template siap pakai untuk mempercepat balasan di Inbox. Gunakan <code>{"{nama_customer}"}</code> untuk nama otomatis,
             dan tombol <strong>Tebal/Miring/Coret</strong> di bawah — formatnya akan tampil PERSIS begitu di WhatsApp customer.
-          </p>
+          </CardDescription>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openAdd} style={{ gap: 5, display: "flex", alignItems: "center" }}>
-          <Plus size={14} /> Tambah Template
-        </button>
+        <Button size="sm" onClick={openAdd}><Plus size={14} /> Tambah Template</Button>
       </div>
 
-      {msg && (
-        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
-          {msg.text}
-        </div>
-      )}
+      {msg && <div className="mb-4"><InlineFeedback msg={msg} /></div>}
 
       {/* Form tambah/edit */}
       {showForm && (
-        <div style={{ marginBottom: 24, padding: 16, background: "var(--bg-secondary)", borderRadius: 10, border: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+        <div className="mb-6 rounded-btn bg-inset p-4">
+          <div className="mb-3.5 flex items-center justify-between">
+            <h3 className="text-[15px] font-bold text-ink">
               {editId ? "Edit Template" : "Template Baru"}
             </h3>
-            <button onClick={cancelForm} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+            <button onClick={cancelForm} className="text-ink3 hover:text-ink2">
               <X size={16} />
             </button>
           </div>
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Nama Template *</label>
-                <input
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Nama Template *">
+                <Input
                   value={form.nama}
                   onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
                   placeholder="Contoh: Salam Pembuka"
                   required
                 />
-              </div>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Kategori</label>
-                <select value={form.kategori} onChange={(e) => setForm((f) => ({ ...f, kategori: e.target.value }))}>
+              </Field>
+              <Field label="Kategori">
+                <select value={form.kategori} onChange={(e) => setForm((f) => ({ ...f, kategori: e.target.value }))} className={selectCls}>
                   {Object.entries(KATEGORI_LABELS).map(([v, l]) => (
                     <option key={v} value={v}>{l}</option>
                   ))}
                 </select>
-              </div>
+              </Field>
             </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Isi Pesan *</label>
+            <Field label="Isi Pesan *">
               <TemplateFormatToolbar
                 textareaRef={formTextareaRef}
                 value={form.isi}
@@ -319,30 +343,30 @@ function TemplateSection({ user }) {
                 placeholder={"Halo kak {nama_customer}, terima kasih sudah menghubungi Klinik Matras..."}
                 rows={4}
                 required
-                style={{ resize: "vertical" }}
+                className="w-full resize-y rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
-              <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+              <p className="mt-1 text-[11px] text-ink3">
                 Gunakan <code>{"{nama_customer}"}</code> — akan diganti otomatis dengan nama customer saat dipakai di Inbox.
                 Pilih teks lalu klik tombol format di atas untuk menebalkan/memiringkan/mencoret
                 (kotak ketik tetap teks polos dengan simbol WhatsApp — sama seperti WhatsApp asli,
                 gayanya baru terlihat saat template dipakai/dikirim).
               </p>
               {form.isi && (
-                <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--bg-primary)", border: "1px dashed var(--border)", borderRadius: 6 }}>
-                  <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)" }}>Preview</p>
-                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                <div className="mt-2 rounded-btn bg-surface p-2.5">
+                  <p className="mb-1 text-[10px] font-bold uppercase text-ink3">Preview</p>
+                  <p className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink">
                     {parseWaFormatting(form.isi)}
                   </p>
                 </div>
               )}
-            </div>
+            </Field>
 
             {/* Toggle "jadikan Template Tim" HANYA untuk ADMIN — sales tidak
                 bisa mempromosikan template pribadinya sendiri jadi milik
                 tim (server juga menolak ini kalau dipaksa lewat API, lihat
                 routes/templates.js). */}
             {isAdmin && (
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink2">
                 <input
                   type="checkbox"
                   checked={!!form.isShared}
@@ -352,13 +376,9 @@ function TemplateSection({ user }) {
               </label>
             )}
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="submit" className="btn btn-primary btn-sm">
-                <Save size={13} /> {editId ? "Simpan Perubahan" : "Buat Template"}
-              </button>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={cancelForm}>
-                Batal
-              </button>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm"><Save size={13} /> {editId ? "Simpan Perubahan" : "Buat Template"}</Button>
+              <Button type="button" variant="neutral" size="sm" onClick={cancelForm}>Batal</Button>
             </div>
           </form>
         </div>
@@ -366,34 +386,34 @@ function TemplateSection({ user }) {
 
       {/* Daftar template — dipisah Tim vs Saya */}
       {loading ? (
-        <p className="text-muted">Memuat...</p>
+        <p className="text-[13px] text-ink3">Memuat...</p>
       ) : templates.length === 0 ? (
-        <p className="text-muted" style={{ textAlign: "center", padding: "40px 0" }}>
+        <p className="py-10 text-center text-[13px] text-ink3">
           Belum ada template. Klik "+ Tambah Template" untuk mulai.
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+        <div className="flex flex-col gap-7">
           <div>
-            <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            <h3 className="mb-3 text-[13px] font-bold uppercase tracking-wide text-ink3">
               Template Tim {templateTim.length > 0 && `(${templateTim.length})`}
             </h3>
             {templateTim.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: 13 }}>Belum ada template tim.</p>
+              <p className="text-[13px] text-ink3">Belum ada template tim.</p>
             ) : renderDaftar(templateTim)}
           </div>
           <div>
-            <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            <h3 className="mb-3 text-[13px] font-bold uppercase tracking-wide text-ink3">
               Template Saya {templateSaya.length > 0 && `(${templateSaya.length})`}
             </h3>
             {templateSaya.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: 13 }}>
+              <p className="text-[13px] text-ink3">
                 Belum punya template pribadi. Klik "+ Tambah Template" — hanya Anda yang bisa lihat dan pakai.
               </p>
             ) : renderDaftar(templateSaya)}
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -426,22 +446,25 @@ function WaSessionCard({ session, label }) {
   const connected = status?.connected;
 
   return (
-    <div className="wa-session-card">
-      <div className="wa-session-card-head">
-        <span className="wa-session-name">{label}</span>
+    <div className="rounded-btn bg-inset p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold text-ink">{label}</span>
         {status && (
-          <span className={`wa-status-dot-wrap ${connected ? "connected" : "disconnected"}`}>
-            <span className="wa-status-dot" />
+          <span className={cn(
+            "flex items-center gap-1.5 rounded-chip px-2.5 py-1 text-[11px] font-bold",
+            connected ? "bg-greenbg text-green" : "bg-redbg text-red"
+          )}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-green" : "bg-red")} />
             {connected ? "WORKING" : (status.status || "DOWN")}
           </span>
         )}
       </div>
       {status?.error && (
-        <p className="wa-session-error">{status.error}</p>
+        <p className="mt-2 text-[12px] text-red">{status.error}</p>
       )}
-      <button className="btn btn-secondary btn-sm" onClick={checkStatus} disabled={loading} style={{ marginTop: 12 }}>
+      <Button variant="secondary" size="sm" className="mt-3" onClick={checkStatus} disabled={loading}>
         <Wifi size={13} /> {loading ? "Mengecek..." : "Cek Status"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -494,71 +517,65 @@ function SalesTargetSection() {
   const years = [nowDate.getFullYear() - 1, nowDate.getFullYear(), nowDate.getFullYear() + 1];
 
   return (
-    <div className="settings-card">
-      <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Target Sales Bulanan</h2>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
-        Set target nilai order (Rupiah) per Sales Person per bulan. Digunakan untuk progress bar di Dashboard.
-      </p>
+    <Card>
+      <CardHeader>
+        <CardTitle>Target Sales Bulanan</CardTitle>
+        <CardDescription>
+          Set target nilai order (Rupiah) per Sales Person per bulan. Digunakan untuk progress bar di Dashboard.
+        </CardDescription>
+      </CardHeader>
 
-      {msg && (
-        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
-          {msg.text}
-        </div>
-      )}
+      {msg && <div className="mb-4"><InlineFeedback msg={msg} /></div>}
 
       {/* Pilih bulan & tahun */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Bulan</label>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} style={{ minWidth: 140 }}>
+      <div className="mb-6 flex flex-wrap gap-3">
+        <Field label="Bulan" className="min-w-[160px]">
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={selectCls}>
             {BULAN_LABELS.slice(1).map((label, i) => (
               <option key={i + 1} value={i + 1}>{label}</option>
             ))}
           </select>
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Tahun</label>
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ minWidth: 100 }}>
+        </Field>
+        <Field label="Tahun" className="min-w-[110px]">
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-        </div>
+        </Field>
       </div>
 
       {loading ? (
-        <p className="text-muted">Memuat...</p>
+        <p className="text-[13px] text-ink3">Memuat...</p>
       ) : rows.length === 0 ? (
-        <p className="text-muted">Belum ada Sales Person terdaftar.</p>
+        <p className="text-[13px] text-ink3">Belum ada Sales Person terdaftar.</p>
       ) : (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+          <div className="mb-5 flex flex-col gap-2.5">
             {rows.map((row, idx) => (
-              <div key={row.userId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card-bg)" }}>
-                <span style={{ fontWeight: 600, minWidth: 120, fontSize: 14 }}>{row.name}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Rp</span>
+              <div key={row.userId} className="flex items-center gap-3 rounded-btn bg-inset px-4 py-3">
+                <span className="min-w-[120px] text-sm font-semibold text-ink">{row.name}</span>
+                <div className="flex flex-1 items-center gap-1.5">
+                  <span className="text-[13px] text-ink3">Rp</span>
                   <input
                     type="number"
                     min="0"
                     step="1000000"
                     value={row.targetValue}
                     onChange={(e) => setRows((prev) => prev.map((r, i) => i === idx ? { ...r, targetValue: Number(e.target.value) } : r))}
-                    style={{ flex: 1, maxWidth: 200, padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 13 }}
+                    className="h-8 max-w-[200px] flex-1 rounded-lg bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   />
                   {row.targetValue > 0 && (
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      = {formatRupiah(row.targetValue)}
-                    </span>
+                    <span className="text-xs text-ink3">= {formatRupiah(row.targetValue)}</span>
                   )}
                 </div>
               </div>
             ))}
           </div>
-          <button className="btn btn-primary" onClick={handleSaveAll} disabled={saving}>
+          <Button onClick={handleSaveAll} disabled={saving}>
             <Save size={14} /> {saving ? "Menyimpan..." : "Simpan Semua Target"}
-          </button>
+          </Button>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -615,96 +632,79 @@ function PromoSection() {
   }
 
   return (
-    <div className="settings-card">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Promo</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm((v) => !v)}>
-          <Plus size={14} /> Promo Baru
-        </button>
+    <Card>
+      <div className="mb-1 flex items-center justify-between">
+        <CardTitle>Promo</CardTitle>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}><Plus size={14} /> Promo Baru</Button>
       </div>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
+      <CardDescription className="mb-5">
         Kampanye yang bisa dipilih sales saat input order (mis. "Merdeka dari Sakit Pinggang").
         Diskonnya cuma PENANDA untuk laporan — harga akhir tetap diketik manual sales seperti biasa,
         tidak dihitung otomatis dari sini.
-      </p>
+      </CardDescription>
 
-      {msg && (
-        <div className={`inline-feedback inline-feedback-${msg.type}`} style={{ marginBottom: 16 }}>
-          {msg.text}
-        </div>
-      )}
+      {msg && <div className="mb-4"><InlineFeedback msg={msg} /></div>}
 
       {showForm && (
-        <form onSubmit={handleCreate} style={{ padding: 14, marginBottom: 16, border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-page)" }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div className="form-group" style={{ margin: 0, minWidth: 140 }}>
-              <label className="form-label">Kode</label>
-              <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                placeholder="MERDEKA17" style={{ textTransform: "uppercase" }} />
-            </div>
-            <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 220 }}>
-              <label className="form-label">Nama Kampanye</label>
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        <form onSubmit={handleCreate} className="mb-4 rounded-btn bg-inset p-3.5">
+          <div className="flex flex-wrap gap-2.5">
+            <Field label="Kode" className="min-w-[140px]">
+              <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                placeholder="MERDEKA17" className="uppercase" />
+            </Field>
+            <Field label="Nama Kampanye" className="min-w-[220px] flex-1">
+              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Merdeka dari Sakit Pinggang" />
-            </div>
-            <div className="form-group" style={{ margin: 0, minWidth: 100 }}>
-              <label className="form-label">Diskon (%)</label>
-              <input type="number" min="0" max="100" value={form.discountPercent}
+            </Field>
+            <Field label="Diskon (%)" className="min-w-[100px]">
+              <Input type="number" min="0" max="100" value={form.discountPercent}
                 onChange={(e) => setForm((f) => ({ ...f, discountPercent: e.target.value }))} placeholder="17" />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Mulai</label>
-              <input type="date" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Sampai</label>
-              <input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} />
-            </div>
+            </Field>
+            <Field label="Mulai">
+              <Input type="date" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} />
+            </Field>
+            <Field label="Sampai">
+              <Input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} />
+            </Field>
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
-              {saving ? "Menyimpan..." : "Simpan Promo"}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)}>Batal</button>
+          <div className="mt-3 flex gap-2">
+            <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan..." : "Simpan Promo"}</Button>
+            <Button type="button" variant="neutral" size="sm" onClick={() => setShowForm(false)}>Batal</Button>
           </div>
         </form>
       )}
 
       {promos === null ? (
-        <p className="text-muted">Memuat...</p>
+        <p className="text-[13px] text-ink3">Memuat...</p>
       ) : promos.length === 0 ? (
-        <p className="text-muted">Belum ada promo dibuat.</p>
+        <p className="text-[13px] text-ink3">Belum ada promo dibuat.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {promos.map((p) => (
-            <div key={p.id} style={{
-              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-              border: "1px solid var(--border)", borderRadius: 8,
-              background: "var(--card-bg)", opacity: p.active ? 1 : 0.55,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</span>
-                  <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>{p.code}</span>
+            <div key={p.id} className={cn("flex items-center gap-3 rounded-btn bg-inset px-3.5 py-2.5", !p.active && "opacity-55")}>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-ink">{p.name}</span>
+                  <span className="font-mono text-[11px] text-ink3">{p.code}</span>
                   {p.discountPercent != null && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--color-primary)" }}>{p.discountPercent}%</span>
+                    <span className="text-[11px] font-bold text-accent">{p.discountPercent}%</span>
                   )}
                 </div>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                <p className="mt-0.5 text-xs text-ink3">
                   {p.orderCount} order · {formatRupiah(p.totalValue)}
                   {(p.validFrom || p.validUntil) && (
                     <> · {p.validFrom ? new Date(p.validFrom).toLocaleDateString("id-ID") : "—"} s/d {p.validUntil ? new Date(p.validUntil).toLocaleDateString("id-ID") : "—"}</>
                   )}
                 </p>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(p)}>
+              <Button variant="neutral" size="sm" onClick={() => toggleActive(p)}>
                 {p.active ? "Nonaktifkan" : "Aktifkan"}
-              </button>
+              </Button>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -948,36 +948,30 @@ export default function Pengaturan({ user, onUserUpdate }) {
   // ini tetap jaring terakhir kalau ada jalan lain mengubah `section`.
   if (!isAdmin && !SALES_ALLOWED_SECTIONS.includes(section)) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 12 }}>
-        <Lock size={40} color="var(--text-muted)" />
-        <h2 style={{ margin: 0, color: "var(--text-muted)" }}>Akses Terbatas</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Hanya admin yang bisa mengakses bagian ini.</p>
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3">
+        <Lock size={40} className="text-ink3" />
+        <h2 className="m-0 text-ink3">Akses Terbatas</h2>
+        <p className="text-sm text-ink3">Hanya admin yang bisa mengakses bagian ini.</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
-            {isAdmin ? "Pengaturan" : "Template Pesan"}
-          </h1>
-          <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>
-            {isAdmin ? "Konfigurasi sistem CRM Klinik Matras" : "Kelola template balasan cepat milik Anda sendiri"}
-          </p>
-        </div>
-      </div>
+    <PageContainer>
+      <PageHeader
+        title={isAdmin ? "Pengaturan" : "Template Pesan"}
+        subtitle={isAdmin ? "Konfigurasi sistem CRM Klinik Matras" : "Kelola template balasan cepat milik Anda sendiri"}
+      />
 
-      {/* Dropdown sub-menu — mobile saja (sidebar disembunyikan via CSS di
-          breakpoint ini). SALES cuma punya 1 opsi (Template Pesan), jadi
-          dropdown-nya tidak perlu ditampilkan sama sekali — dropdown
-          1-opsi cuma bingung, bukan navigasi. */}
+      {/* Dropdown sub-menu — mobile saja (sidebar disembunyikan di breakpoint
+          ini, lihat md:block di bawah). SALES cuma punya 1 opsi (Template
+          Pesan), jadi dropdown-nya tidak perlu ditampilkan sama sekali —
+          dropdown 1-opsi cuma bingung, bukan navigasi. */}
       {visibleNavItems.length > 1 && (
         <select
-          className="settings-mobile-select"
           value={section}
           onChange={(e) => setSection(e.target.value)}
+          className={cn(selectCls, "mb-4 md:hidden")}
         >
           {visibleNavItems.map(({ key, label }) => (
             <option key={key} value={key}>{label}</option>
@@ -985,14 +979,20 @@ export default function Pengaturan({ user, onUserUpdate }) {
         </select>
       )}
 
-      <div className="settings-layout">
+      <div className="flex flex-col gap-6 md:flex-row md:items-start">
         {/* Sidebar — disembunyikan total untuk SALES (cuma 1 section, sidebar
             navigasi tidak ada gunanya untuk 1 pilihan). */}
         {visibleNavItems.length > 1 && (
-        <nav className="settings-sidebar">
+        <nav className="hidden shrink-0 flex-col gap-0.5 rounded-card bg-surface p-2 shadow-card md:flex md:w-56">
           {visibleNavItems.map(({ key, label, icon: Icon }) => (
-            <button key={key} className={`settings-nav-item ${section === key ? "active" : ""}`}
-              onClick={() => setSection(key)}>
+            <button
+              key={key}
+              onClick={() => setSection(key)}
+              className={cn(
+                "flex items-center gap-2.5 rounded-btn px-3 py-2 text-left text-[13px] font-medium transition-colors",
+                section === key ? "bg-accentbg text-accent" : "text-ink2 hover:bg-hovertint"
+              )}
+            >
               <Icon size={16} /> {label}
             </button>
           ))}
@@ -1000,19 +1000,17 @@ export default function Pengaturan({ user, onUserUpdate }) {
         )}
 
         {/* Main */}
-        <div className="settings-main">
+        <PageBody className="min-w-0 flex-1">
 
           {/* ── PROFIL PERUSAHAAN ── */}
           {section === "profil" && (
-            <div className="settings-card">
-              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Profil Perusahaan</h2>
+            <Card>
+              <CardTitle className="mb-5">Profil Perusahaan</CardTitle>
               {settingsMsg && (
-                <div className={`inline-feedback inline-feedback-${settingsMsg.type}`} style={{ marginBottom: 16 }}>
-                  {settingsMsg.text}
-                </div>
+                <div className="mb-4"><InlineFeedback msg={settingsMsg} /></div>
               )}
-              <form onSubmit={handleSaveSettings}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <form onSubmit={handleSaveSettings} className="flex flex-col gap-5">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {[
                     { key: "companyName",    label: "Nama Perusahaan",  placeholder: "Klinik Matras" },
                     { key: "companyTagline", label: "Tagline",          placeholder: "Spesialis Kasur Berkualitas" },
@@ -1021,116 +1019,119 @@ export default function Pengaturan({ user, onUserUpdate }) {
                     { key: "companyAddress", label: "Alamat",           placeholder: "Jl. Contoh No. 1", full: true },
                     { key: "companyCity",    label: "Kota",             placeholder: "Bandung" },
                   ].map(({ key, label, placeholder, type, full }) => (
-                    <div key={key} className="form-group" style={full ? { gridColumn: "1 / -1" } : {}}>
-                      <label className="form-label">{label}</label>
-                      <input type={type || "text"} value={form[key] || ""} placeholder={placeholder}
+                    <Field key={key} label={label} className={full ? "sm:col-span-2" : undefined}>
+                      <Input type={type || "text"} value={form[key] || ""} placeholder={placeholder}
                         onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
-                    </div>
+                    </Field>
                   ))}
                 </div>
 
-                <hr style={{ margin: "20px 0", borderColor: "var(--border)" }} />
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginTop: 0 }}>Target & Mata Uang</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                  <div className="form-group">
-                    <label className="form-label">Target Penjualan Bulanan (Rp)</label>
-                    <input type="number" value={form.targetBulanan || ""} placeholder="500000000"
-                      onChange={(e) => setForm((f) => ({ ...f, targetBulanan: Number(e.target.value) }))} />
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-                      Saat ini: {formatRupiah(form.targetBulanan || 0)}
-                    </p>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Timezone</label>
-                    <select value={form.timezone || "Asia/Jakarta"} onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}>
-                      <option value="Asia/Jakarta">WIB — Asia/Jakarta</option>
-                      <option value="Asia/Makassar">WITA — Asia/Makassar</option>
-                      <option value="Asia/Jayapura">WIT — Asia/Jayapura</option>
-                    </select>
+                <Divider inset={false} />
+                <div>
+                  <h3 className="mb-3 text-[15px] font-bold text-ink">Target & Mata Uang</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Target Penjualan Bulanan (Rp)" hint={`Saat ini: ${formatRupiah(form.targetBulanan || 0)}`}>
+                      <Input type="number" value={form.targetBulanan || ""} placeholder="500000000"
+                        onChange={(e) => setForm((f) => ({ ...f, targetBulanan: Number(e.target.value) }))} />
+                    </Field>
+                    <Field label="Timezone">
+                      <select value={form.timezone || "Asia/Jakarta"} onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))} className={selectCls}>
+                        <option value="Asia/Jakarta">WIB — Asia/Jakarta</option>
+                        <option value="Asia/Makassar">WITA — Asia/Makassar</option>
+                        <option value="Asia/Jayapura">WIT — Asia/Jayapura</option>
+                      </select>
+                    </Field>
                   </div>
                 </div>
 
-                <hr style={{ margin: "20px 0", borderColor: "var(--border)" }} />
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginTop: 0 }}>Koneksi WAHA</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                  <div className="form-group">
-                    <label className="form-label">WAHA Base URL</label>
-                    <input type="text" value={form.wahaBaseUrl || ""} placeholder="http://localhost:3000"
-                      onChange={(e) => setForm((f) => ({ ...f, wahaBaseUrl: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">WAHA Session Name</label>
-                    <input type="text" value={form.wahaSession || ""} placeholder="default"
-                      onChange={(e) => setForm((f) => ({ ...f, wahaSession: e.target.value }))} />
+                <Divider inset={false} />
+                <div>
+                  <h3 className="mb-3 text-[15px] font-bold text-ink">Koneksi WAHA</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="WAHA Base URL">
+                      <Input type="text" value={form.wahaBaseUrl || ""} placeholder="http://localhost:3000"
+                        onChange={(e) => setForm((f) => ({ ...f, wahaBaseUrl: e.target.value }))} />
+                    </Field>
+                    <Field label="WAHA Session Name">
+                      <Input type="text" value={form.wahaSession || ""} placeholder="default"
+                        onChange={(e) => setForm((f) => ({ ...f, wahaSession: e.target.value }))} />
+                    </Field>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                  <button type="submit" className="btn btn-primary" disabled={savingSettings}>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={savingSettings}>
                     <Save size={15} /> {savingSettings ? "Menyimpan..." : "Simpan Pengaturan"}
-                  </button>
+                  </Button>
                 </div>
               </form>
-            </div>
+            </Card>
           )}
 
           {/* ── STATUS WHATSAPP ── */}
           {section === "whatsapp" && (
-            <div className="settings-card">
-              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Status Koneksi WhatsApp</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
-                Status real-time koneksi WAHA self-hosted untuk kedua nomor CS.
-              </p>
+            <Card>
+              <CardHeader>
+                <CardTitle>Status Koneksi WhatsApp</CardTitle>
+                <CardDescription>Status real-time koneksi WAHA self-hosted untuk kedua nomor CS.</CardDescription>
+              </CardHeader>
 
-              <div className="wa-session-grid">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {WA_SESSIONS.map((s) => (
                   <WaSessionCard key={s.key} session={s.key} label={s.label} />
                 ))}
               </div>
 
-              <div style={{ marginTop: 20 }}>
-                <button className="btn btn-secondary" onClick={handleSyncHistory} disabled={syncJob?.status === "running"}>
+              <div className="mt-5">
+                <Button variant="secondary" onClick={handleSyncHistory} disabled={syncJob?.status === "running"}>
                   <Download size={15} /> {syncJob?.status === "running" ? "Sedang sinkronisasi..." : "Sinkronisasi Riwayat Chat"}
-                </button>
+                </Button>
               </div>
 
               {syncJob?.status === "running" && (
-                <div style={{ marginTop: 14, maxWidth: 420 }}>
-                  <div className="progress-track">
+                <div className="mt-3.5 max-w-[420px]">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-inset">
                     <div
-                      className="progress-fill"
+                      className="h-full rounded-full bg-accent transition-all"
                       style={{
                         width: `${syncJob.progress.totalChats ? Math.min(100, Math.round((syncJob.progress.processedChats / syncJob.progress.totalChats) * 100)) : 0}%`,
                       }}
                     />
                   </div>
-                  <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
+                  <p className="mt-1.5 text-[12.5px] text-ink3">
                     {syncJob.progress.processedChats}/{syncJob.progress.totalChats || "?"} chat diproses
                     {syncJob.progress.currentChat && <> — Memproses {syncJob.progress.currentChat}...</>}
                   </p>
-                  <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "2px 0 0" }}>
+                  <p className="mt-0.5 text-[12.5px] text-ink3">
                     {syncJob.progress.newMessages} pesan baru ditemukan
                   </p>
                 </div>
               )}
 
               {syncJob?.status === "done" && (
-                <div className="inline-feedback inline-feedback-success" style={{ marginTop: 14 }}>
-                  <strong>Selesai:</strong> {syncJob.progress.processedChats} chat diproses, {syncJob.progress.newMessages} pesan baru
-                  {syncJob.progress.failedChats > 0 && <> · {syncJob.progress.failedChats} chat gagal (lihat log)</>}
-                  {syncJob.progress.unsupportedMessages > 0 && <> · {syncJob.progress.unsupportedMessages} pesan tipe tidak dikenal (lihat log)</>}
-                  {syncJob.startedAt && syncJob.finishedAt && <> · durasi {formatSyncDuration(syncJob.startedAt, syncJob.finishedAt)}</>}
+                <div className="mt-3.5">
+                  <InlineFeedback msg={{
+                    type: "success",
+                    text: (
+                      <>
+                        <strong>Selesai:</strong> {syncJob.progress.processedChats} chat diproses, {syncJob.progress.newMessages} pesan baru
+                        {syncJob.progress.failedChats > 0 && <> · {syncJob.progress.failedChats} chat gagal (lihat log)</>}
+                        {syncJob.progress.unsupportedMessages > 0 && <> · {syncJob.progress.unsupportedMessages} pesan tipe tidak dikenal (lihat log)</>}
+                        {syncJob.startedAt && syncJob.finishedAt && <> · durasi {formatSyncDuration(syncJob.startedAt, syncJob.finishedAt)}</>}
+                      </>
+                    ),
+                  }} />
                 </div>
               )}
               {syncJob?.status === "failed" && (
-                <div className="inline-feedback inline-feedback-error" style={{ marginTop: 14 }}>
-                  Gagal sinkronisasi: {syncJob.error}
+                <div className="mt-3.5">
+                  <InlineFeedback msg={{ type: "error", text: `Gagal sinkronisasi: ${syncJob.error}` }} />
                 </div>
               )}
 
-              <div style={{ marginTop: 24, padding: 16, background: "var(--bg-secondary)", borderRadius: 10 }}>
-                <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700 }}>Cara menghubungkan ulang</h3>
-                <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.7, color: "var(--text-muted)" }}>
+              <div className="mt-6 rounded-btn bg-inset p-4">
+                <h3 className="mb-2 text-sm font-bold text-ink">Cara menghubungkan ulang</h3>
+                <ol className="m-0 list-decimal space-y-1 pl-5 text-[13px] leading-relaxed text-ink2">
                   <li>Buka WAHA dashboard di browser (URL dari pengaturan profil)</li>
                   <li>Pilih session &ldquo;CS-1&rdquo; atau &ldquo;CS-2&rdquo; sesuai nomor yang terputus</li>
                   <li>Klik &ldquo;Start&rdquo; → scan QR code dengan WhatsApp di HP</li>
@@ -1138,7 +1139,7 @@ export default function Pengaturan({ user, onUserUpdate }) {
                   <li>Klik &ldquo;Cek Status&rdquo; di card di atas untuk verifikasi</li>
                 </ol>
               </div>
-            </div>
+            </Card>
           )}
 
           {/* ── TEMPLATE PESAN ── */}
@@ -1159,47 +1160,36 @@ export default function Pengaturan({ user, onUserUpdate }) {
                   dari mobile "Sano Messenger". Sekarang jalur yang sama persis
                   (POST /users/me/avatar, crop persegi 256px di server) juga
                   dibuka di sini. */}
-              <div className="settings-card" style={{ marginBottom: 16 }}>
-                <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Foto Profil</h2>
-                <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+              <Card className="mb-4">
+                <CardTitle className="mb-1">Foto Profil</CardTitle>
+                <CardDescription className="mb-4">
                   Terlihat di sidebar, header, dan mana pun nama Anda muncul di CRM.
-                </p>
-                {avatarMsg && (
-                  <div className={`inline-feedback inline-feedback-${avatarMsg.type}`} style={{ marginBottom: 16 }}>
-                    {avatarMsg.text}
-                  </div>
-                )}
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                </CardDescription>
+                {avatarMsg && <div className="mb-4"><InlineFeedback msg={avatarMsg} /></div>}
+                <div className="flex items-center gap-4">
                   <button
                     type="button"
                     onClick={() => avatarInputRef.current?.click()}
                     disabled={uploadingAvatar}
                     title="Ganti foto profil"
-                    style={{ position: "relative", padding: 0, border: "none", background: "none", cursor: uploadingAvatar ? "wait" : "pointer", borderRadius: "9999px" }}
+                    className={cn("relative rounded-full border-0 bg-transparent p-0", uploadingAvatar ? "cursor-wait" : "cursor-pointer")}
                   >
                     <Avatar name={user?.name} src={user?.avatarUrl} size="xl" />
-                    <span
-                      style={{
-                        position: "absolute", bottom: -2, right: -2, width: 26, height: 26, borderRadius: "9999px",
-                        background: "var(--color-primary)", color: "#fff", display: "flex", alignItems: "center",
-                        justifyContent: "center", border: "2px solid var(--card-bg)",
-                      }}
-                    >
+                    <span className="absolute -bottom-0.5 -right-0.5 flex h-[26px] w-[26px] items-center justify-center rounded-full border-2 border-surface bg-accent text-white">
                       <Camera size={13} />
                     </span>
                   </button>
                   <div>
-                    <button
+                    <Button
                       type="button"
-                      className="btn btn-secondary btn-sm"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => avatarInputRef.current?.click()}
                       disabled={uploadingAvatar}
                     >
                       {uploadingAvatar ? "Mengunggah..." : "Ganti Foto"}
-                    </button>
-                    <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>
-                      JPG/PNG, otomatis dipotong persegi
-                    </p>
+                    </Button>
+                    <p className="mt-1.5 text-[11.5px] text-ink3">JPG/PNG, otomatis dipotong persegi</p>
                   </div>
                   <input
                     ref={avatarInputRef}
@@ -1209,95 +1199,90 @@ export default function Pengaturan({ user, onUserUpdate }) {
                     onChange={handleAvatarChange}
                   />
                 </div>
-              </div>
+              </Card>
 
-              <div className="settings-card">
-              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Ganti Password</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
+              <Card>
+              <CardTitle className="mb-1">Ganti Password</CardTitle>
+              <CardDescription className="mb-5">
                 Ubah password login Anda. Gunakan kombinasi huruf, angka, dan simbol.
-              </p>
-              {pwMsg && (
-                <div className={`inline-feedback inline-feedback-${pwMsg.type}`} style={{ marginBottom: 16 }}>
-                  {pwMsg.text}
-                </div>
-              )}
-              <form onSubmit={handleChangePassword} style={{ maxWidth: 400 }}>
+              </CardDescription>
+              {pwMsg && <div className="mb-4"><InlineFeedback msg={pwMsg} /></div>}
+              <form onSubmit={handleChangePassword} className="flex max-w-[400px] flex-col gap-4">
                 {[
                   { key: "currentPassword", label: "Password Saat Ini",  show: "current" },
                   { key: "newPassword",     label: "Password Baru",       show: "new" },
                   { key: "confirmPassword", label: "Konfirmasi Password Baru", show: "confirm" },
                 ].map(({ key, label, show }) => (
-                  <div key={key} className="form-group">
-                    <label className="form-label">{label}</label>
-                    <div style={{ position: "relative" }}>
-                      <input
+                  <Field key={key} label={label}>
+                    <div className="relative">
+                      <Input
                         type={showPw[show] ? "text" : "password"}
                         value={pwForm[key]}
                         onChange={(e) => setPwForm((f) => ({ ...f, [key]: e.target.value }))}
                         placeholder="••••••••"
-                        style={{ paddingRight: 40 }}
+                        className="pr-10"
                       />
                       <button type="button" onClick={() => setShowPw((s) => ({ ...s, [show]: !s[show] }))}
-                        style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink3 hover:text-ink2">
                         {showPw[show] ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
-                  </div>
+                  </Field>
                 ))}
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                  <button type="submit" className="btn btn-primary" disabled={pwLoading}>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={pwLoading}>
                     <Lock size={15} /> {pwLoading ? "Menyimpan..." : "Ubah Password"}
-                  </button>
+                  </Button>
                 </div>
               </form>
-              </div>
+              </Card>
             </>
           )}
 
           {/* ── DATA & BACKUP ── */}
           {section === "data" && (
-            <div className="settings-card">
-              <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Data & Backup</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 24 }}>
+            <Card>
+              <CardTitle className="mb-1">Data & Backup</CardTitle>
+              <CardDescription className="mb-6">
                 Export data CRM ke format Excel untuk backup atau analisis eksternal.
-              </p>
+              </CardDescription>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", border: "1px solid var(--border)", borderRadius: 10 }}>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between rounded-btn bg-inset px-5 py-4">
                   <div>
-                    <p style={{ margin: 0, fontWeight: 700 }}>Data Pelanggan</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--text-muted)" }}>Semua data pelanggan beserta info kontak, pipeline, dan nilai order</p>
+                    <p className="m-0 font-bold text-ink">Data Pelanggan</p>
+                    <p className="mt-0.5 text-[13px] text-ink3">Semua data pelanggan beserta info kontak, pipeline, dan nilai order</p>
                   </div>
-                  <button className="btn btn-ghost" onClick={handleExportCustomers} disabled={exporting}>
+                  <Button variant="tertiary" onClick={handleExportCustomers} disabled={exporting}>
                     <Download size={14} /> {exporting ? "Mengunduh..." : "Export Excel"}
-                  </button>
+                  </Button>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", border: "1px solid var(--border)", borderRadius: 10 }}>
+                <div className="flex items-center justify-between rounded-btn bg-inset px-5 py-4">
                   <div>
-                    <p style={{ margin: 0, fontWeight: 700 }}>FAQ & Knowledge Base</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--text-muted)" }}>Daftar pertanyaan & jawaban yang tersimpan di Knowledge Base AI</p>
+                    <p className="m-0 font-bold text-ink">FAQ & Knowledge Base</p>
+                    <p className="mt-0.5 text-[13px] text-ink3">Daftar pertanyaan & jawaban yang tersimpan di Knowledge Base AI</p>
                   </div>
-                  <button className="btn btn-ghost" onClick={async () => {
+                  <Button variant="tertiary" onClick={async () => {
                     try {
                       const [{ exportToExcel }, faq] = await Promise.all([import("../utils/export.js"), api.getFaq()]);
                       exportToExcel(faq.map((q) => ({ Pertanyaan: q.question, Jawaban: q.answer })), "faq-knowledge-base");
                     } catch (e) { alert("Gagal export FAQ: " + e.message); }
                   }}>
                     <Download size={14} /> Export Excel
-                  </button>
+                  </Button>
                 </div>
               </div>
 
-              <div style={{ marginTop: 24, padding: 16, background: "#fef3c7", borderRadius: 10, border: "1px solid #fde68a" }}>
-                <p style={{ margin: 0, fontSize: 13, color: "#92400e", fontWeight: 600 }}>
+              <div className="mt-6 rounded-btn bg-orangebg p-4">
+                <p className="m-0 text-[13px] font-semibold text-orange">
                   Catatan: Data percakapan dan pesan tidak dapat diexport secara massal karena volume yang besar. Gunakan Prisma Studio untuk akses database langsung jika diperlukan.
                 </p>
               </div>
-            </div>
+            </Card>
           )}
-        </div>
+        </PageBody>
       </div>
-    </div>
+    </PageContainer>
   );
 }
