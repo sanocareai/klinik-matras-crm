@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
-  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent,
+  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch,
 } from "lucide-react";
 import { api } from "../api.js";
 import {
@@ -66,10 +66,11 @@ const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
 // filter itu DIPILIH (bukan "Semua...") — biar "on point" tapi tidak
 // bertabrakan makna dengan warna status/pembayaran per baris di tabel.
 const FILTER_TONE = {
-  kategori:   { icon: Tag,       hex: "#7c3aed" },
-  pembayaran: { icon: Wallet,    hex: "#16a34a" },
-  sales:      { icon: UserRound, hex: "#2563eb" },
-  promo:      { icon: Percent,   hex: "#db2777" },
+  kategori:   { icon: Tag,        hex: "#7c3aed" },
+  pembayaran: { icon: Wallet,     hex: "#16a34a" },
+  sales:      { icon: UserRound,  hex: "#2563eb" },
+  promo:      { icon: Percent,    hex: "#db2777" },
+  pipeline:   { icon: GitBranch,  hex: "#ea580c" },
 };
 function FilterSelect({ tone, active, className, children, ...props }) {
   const t = FILTER_TONE[tone];
@@ -296,6 +297,7 @@ export default function Orders() {
   const [fBayar, setFBayar]   = useState("");
   const [fSales, setFSales]   = useState("");
   const [fPromo, setFPromo]   = useState("");
+  const [fPipeline, setFPipeline] = useState("");
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
@@ -340,6 +342,7 @@ export default function Orders() {
         paymentStatus: fBayar || undefined,
         salesId: fSales || undefined,
         promoId: fPromo || undefined,
+        pipelineStage: fPipeline || undefined,
         ...toApiParams(range),
       });
       setData(res);
@@ -349,7 +352,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fBayar, fSales, fPromo, range]);
+  }, [debounced, fKategori, fBayar, fSales, fPromo, fPipeline, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -419,7 +422,7 @@ export default function Orders() {
   const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
   const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
                            .reduce((s, o) => s + (o.value || 0), 0);
-  const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || hanyaMandek);
+  const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -567,6 +570,14 @@ export default function Orders() {
               <option value="">Semua Sales</option>
               {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </FilterSelect>
+            <FilterSelect
+              tone="pipeline" active={!!fPipeline}
+              value={fPipeline} onChange={(e) => setFPipeline(e.target.value)}
+              aria-label="Filter tahap pipeline"
+            >
+              <option value="">Semua Pipeline</option>
+              {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+            </FilterSelect>
             {promos.length > 0 && (
               <FilterSelect
                 tone="promo" active={!!fPromo}
@@ -622,7 +633,7 @@ export default function Orders() {
           <p className="mb-3 text-xs text-ink3">
             {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
             <button type="button"
-              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setHanyaMandek(false); }}
+              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
               className="font-semibold text-accent hover:underline">
               Reset filter
             </button>
