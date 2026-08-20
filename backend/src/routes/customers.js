@@ -418,7 +418,7 @@ customerRouter.patch("/:id", async (req, res) => {
   const {
     name, phone, tags, pipelineStage, assignedSalesId, email, city,
     leadSource, leadSourceDetail, leadSourceConfirmed,
-    customerType, healthStatus,
+    customerType, healthStatus, complaintCategory,
   } = req.body;
 
   // Cek duplikat nomor kalau diubah
@@ -443,7 +443,14 @@ customerRouter.patch("/:id", async (req, res) => {
     ...(leadSourceDetail !== undefined && { leadSourceDetail: leadSourceDetail || null }),
     ...(leadSourceConfirmed !== undefined && { leadSourceConfirmed }),
     ...(customerType !== undefined && { customerType }),
-    ...(healthStatus !== undefined && { healthStatus: healthStatus || null }),
+    // D-028: kategori keluhan cuma relevan kalau healthStatus = SAKIT —
+    // dipaksa null di sini juga kalau toggle balik ke Tidak Sakit/kosong,
+    // sama seperti Order.complaintCategory di routes/orders.js.
+    ...(healthStatus !== undefined && {
+      healthStatus: healthStatus || null,
+      complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+    }),
+    ...(healthStatus === undefined && complaintCategory !== undefined && { complaintCategory: complaintCategory || null }),
   };
 
   // Kalau leadSource diubah manual → otomatis set confirmed = true

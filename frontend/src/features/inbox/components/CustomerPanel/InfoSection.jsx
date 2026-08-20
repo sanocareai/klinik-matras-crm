@@ -35,6 +35,22 @@ function pillTone(hex) {
   return { background: `${hex}26`, color: hex };
 }
 
+// D-028 (20 Agustus 2026) — klasifikasi kategori keluhan sakit di level
+// PROFIL pelanggan (beda dari Order.complaintCategory yang per-order, lihat
+// components/customer/OrderSection.jsx). Cuma relevan/ditampilkan kalau
+// healthStatus = SAKIT.
+const HEALTH_COMPLAINT_LABELS = {
+  KEPALA_PUSING:  "Kepala Pusing",
+  SAKIT_PINGGANG: "Sakit Pinggang",
+  SAKIT_PUNGGUNG: "Sakit Punggung",
+  SAKIT_LEHER:    "Sakit Leher",
+  PEGAL_PEGAL:    "Pegal-pegal",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+  LAINNYA:        "Lainnya",
+};
+const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
+
 // Sumber lead, Kondisi Pelanggan, Tipe Customer, Kota — semua inline edit lewat
 // endpoint existing (PATCH /customers/:id, sama seperti CustomerPanel lama).
 export default function InfoSection({ customer, onUpdate }) {
@@ -63,11 +79,23 @@ export default function InfoSection({ customer, onUpdate }) {
     setSavingHealth(true);
     try {
       const updated = await api.updateCustomer(customer.id, { healthStatus: newVal });
-      onUpdate((c) => ({ ...c, healthStatus: updated.healthStatus }));
+      // Backend juga null-kan complaintCategory kalau newVal !== "SAKIT" —
+      // ikutkan di sini supaya dropdown kategori langsung hilang, tidak
+      // nunggu refresh.
+      onUpdate((c) => ({ ...c, healthStatus: updated.healthStatus, complaintCategory: updated.complaintCategory }));
     } catch (err) {
       showFeedback("error", err.message);
     } finally {
       setSavingHealth(false);
+    }
+  }
+
+  async function saveComplaintCategory(value) {
+    try {
+      const updated = await api.updateCustomer(customer.id, { complaintCategory: value || null });
+      onUpdate((c) => ({ ...c, complaintCategory: updated.complaintCategory }));
+    } catch (err) {
+      showFeedback("error", err.message);
     }
   }
 
@@ -171,6 +199,17 @@ export default function InfoSection({ customer, onUpdate }) {
           )}
         </div>
         {!customer.healthStatus && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>Belum ditanyakan ke customer</p>}
+        {/* D-028: kategori keluhan cuma muncul kalau kondisinya Sakit. */}
+        {customer.healthStatus === "SAKIT" && (
+          <select
+            value={customer.complaintCategory || ""}
+            onChange={(e) => saveComplaintCategory(e.target.value)}
+            className="mt-2 w-full rounded-lg border border-line px-2 py-1.5 text-[13px] text-ink"
+          >
+            <option value="">— Pilih Kategori Keluhan —</option>
+            {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Tipe Customer */}

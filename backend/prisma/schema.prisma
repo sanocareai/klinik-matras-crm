@@ -363,6 +363,12 @@ model Customer {
   ctwaSourceUrl           String?       @map("ctwa_source_url")
   customerType            CustomerType  @default(END_USER)
   healthStatus            HealthStatus?
+  // D-028 (20 Agustus 2026) — sama seperti Order.complaintCategory, tapi di
+  // level PROFIL pelanggan (diisi dari panel Inbox "Kondisi Pelanggan",
+  // tidak butuh bikin order dulu). Kalau order-nya sendiri juga diisi
+  // (form order), keduanya independen — order bisa beda keluhan dari
+  // kondisi umum customer saat ini.
+  complaintCategory       HealthComplaintCategory? @map("complaint_category")
   profilePictureUrl       String? // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
   profilePictureFetchedAt DateTime? // kapan terakhir dicoba fetch dari WAHA — dipakai cek "expired >7 hari" di webhooks.js, JUGA distempel saat fetch GAGAL (privasi dibatasi dsb) supaya tidak coba lagi tiap pesan masuk sampai TTL lewat
   nameManuallyEdited      Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
