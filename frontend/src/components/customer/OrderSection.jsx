@@ -1414,13 +1414,31 @@ export default function OrderSection({ customer, onUpdate }) {
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
   }
-  function bukaTimeline(o) {
-    setTimelineOrder({
+  // D-030: customer.orders (dari GET /customers/:id) TIDAK punya
+  // daysInStatus/daysInStatusPerkiraan — itu dihitung server HANYA di
+  // endpoint list GET /orders (dipakai halaman Order). OrderTimelineDrawer
+  // dibangun mengasumsikan field itu ada (dipakai kartu "Lama di Status").
+  // Supaya tidak muncul "undefined hari", ambil ulang bentuk order yang
+  // SAMA dari GET /orders (dicari lewat orderNumber, unique) sebelum buka
+  // drawer — fallback ke data lokal kalau gagal (tetap lebih baik daripada
+  // drawer tidak terbuka sama sekali).
+  async function bukaTimeline(o) {
+    const base = {
       ...o,
       customerName: customer.name,
       customerPhone: customer.phone,
       conversationId: customer.conversations?.[0]?.id || null,
-    });
+    };
+    setTimelineOrder(base);
+    if (!o.orderNumber) return;
+    try {
+      const { items } = await api.getOrders({ search: o.orderNumber });
+      const fresh = items?.find((it) => it.id === o.id);
+      if (fresh) setTimelineOrder({ ...fresh, customerName: customer.name, customerPhone: customer.phone });
+    } catch {
+      // biarkan `base` yang sudah ditampilkan — kartu "Lama di Status" saja
+      // yang tidak akurat, sisanya (dokumentasi/pembayaran) tetap jalan.
+    }
   }
 
   const totalValue = customer.orders.reduce((s, o) => s + o.value, 0);
