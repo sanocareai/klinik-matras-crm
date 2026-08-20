@@ -679,8 +679,14 @@ input:focus, select:focus, textarea:focus {
   display: flex; flex-direction: column; gap: 8px;
 }
 .bubble {
-  max-width: 65%; padding: 10px 14px;
-  border-radius: 14px; font-size: 13.5px; line-height: 1.45;
+  /* Reskin 20 Agt 2026 — permintaan user "terlalu oldskool": radius
+     dibesarkan (14→19px) dengan sudut "ekor" yang lebih halus (4→6px,
+     bukan mendadak lancip), font sedikit dibesarkan+lebih lega (13.5→14.5px,
+     line-height 1.45→1.5) untuk keterbacaan gaya chat app modern
+     (iMessage/Telegram), padding disesuaikan supaya proporsinya tetap pas
+     dengan radius baru. */
+  max-width: 65%; padding: 9px 14px;
+  border-radius: 19px; font-size: 14.5px; line-height: 1.5;
   position: relative;
   transition: background 0.4s ease;
 }
@@ -688,7 +694,7 @@ input:focus, select:focus, textarea:focus {
   align-self: flex-start;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 6px;
   color: var(--text-primary);
   /* BUG YANG DIPERBAIKI: --bg-card (putih, #FFFFFF) vs latar .chat-window
      (--bg-base, #F5F5F7) cuma beda ~2% luminance, dan --border/--hairline
@@ -703,10 +709,18 @@ input:focus, select:focus, textarea:focus {
   align-self: flex-end;
   background: var(--accent);
   color: white;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
+  /* Shadow tipis warna accent (bukan abu-abu netral seperti .bubble.in) —
+     bubble terkirim "mengambang" dengan tone yang sama, bukan shadow
+     generik yang terasa tempelan. color-mix() supaya otomatis ikut warna
+     accent APAPUN temanya (light #1457D9 vs dark #0A84FF beda persis),
+     tidak perlu variabel --accent-rgb terpisah yang bisa drift dari
+     --accent kalau salah satunya diganti tapi yang lain lupa. */
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .bubble-time {
-  font-size: 10.5px; margin-top: 4px; display: block; opacity: 0.55;
+  font-size: 10.5px; margin-top: 4px; display: block; opacity: 0.6;
+  font-variant-numeric: tabular-nums;
 }
 .bubble.out .bubble-time { text-align: right; }
 .bubble-quote:hover { filter: brightness(0.95); }
@@ -731,14 +745,20 @@ input:focus, select:focus, textarea:focus {
   display: flex; gap: 8px; padding: 12px 16px; align-items: flex-end;
   background: white; border-top: 1px solid var(--border); flex-shrink: 0;
 }
+/* Reskin 20 Agt 2026 — kotak ketik dulu border tipis rata dengan bar di
+   belakangnya (kelihatan "menyatu", ciri khas tampilan lama). Sekarang
+   permukaan TERISI (bg-secondary, sama pola dengan Input.jsx DS v2:
+   "TANPA border, input = permukaan terisi") supaya kelihatan sebagai 1
+   elemen terpisah/mengambang di dalam bar, bukan garis kotak polos. */
 .chat-textarea {
-  flex: 1; padding: 10px 14px; font-size: 13.5px;
-  border: 1px solid var(--border); border-radius: 22px;
-  resize: none; overflow-y: hidden; line-height: 1.45;
-  min-height: 40px; max-height: 120px; overflow-y: auto;
-  font-family: inherit; background: white;
+  flex: 1; padding: 11px 16px; font-size: 14.5px;
+  border: 1px solid transparent; border-radius: 22px;
+  resize: none; overflow-y: hidden; line-height: 1.5;
+  min-height: 42px; max-height: 120px; overflow-y: auto;
+  font-family: inherit; background: var(--bg-secondary);
+  transition: box-shadow 0.15s ease;
 }
-.chat-textarea:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); outline: none; }
+.chat-textarea:focus { border-color: transparent; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent); outline: none; }
 
 /* Wrapper textarea — anchor posisi untuk popup format mengambang
    (.chat-selection-toolbar), lihat Composer.jsx. */
@@ -772,13 +792,16 @@ input:focus, select:focus, textarea:focus {
   border: 5px solid transparent; border-top-color: #1f2430;
 }
 .chat-send-btn {
-  width: 40px; height: 40px; border-radius: 50%; border: none;
+  width: 42px; height: 42px; border-radius: 50%; border: none;
   background: var(--color-primary); color: white;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+  cursor: pointer; flex-shrink: 0; transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  /* Shadow warna accent — lepas dari bar (bukan tombol datar menempel) */
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 .chat-send-btn:hover { background: #1d4ed8; }
-.chat-send-btn:disabled { background: var(--border); color: var(--text-small); cursor: not-allowed; }
+.chat-send-btn:active { transform: scale(0.94); }
+.chat-send-btn:disabled { background: var(--border); color: var(--text-small); cursor: not-allowed; box-shadow: none; }
 
 /* Customer panel (right panel — Inbox) */
 .customer-panel {
@@ -1543,13 +1566,16 @@ input:focus, select:focus, textarea:focus {
 .media-viewer-next { right: 16px; }
 
 /* ─── MEDIA BUBBLE ───────────────────────────────────────── */
+/* Radius elemen media/dokumen dinaikkan (8→14px) mengikuti radius bubble
+   yang baru (19px) — proporsional (sedikit lebih kecil dari induknya,
+   bukan sama persis), reskin 20 Agt 2026. */
 .bubble-img {
-  max-width: 220px; max-height: 220px; border-radius: 8px;
+  max-width: 220px; max-height: 220px; border-radius: 14px;
   display: block; cursor: zoom-in; object-fit: cover;
   margin-bottom: 4px;
 }
 .bubble-video {
-  max-width: 240px; border-radius: 8px; display: block;
+  max-width: 240px; border-radius: 14px; display: block;
   margin-bottom: 4px;
 }
 .bubble-audio {
@@ -1558,7 +1584,7 @@ input:focus, select:focus, textarea:focus {
 }
 .bubble-doc {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 12px; background: rgba(0,0,0,0.06); border-radius: 8px;
+  padding: 9px 13px; background: rgba(0,0,0,0.06); border-radius: 14px;
   text-decoration: none; color: inherit; margin-bottom: 4px;
   max-width: 220px;
 }
@@ -1567,7 +1593,7 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden; text-overflow: ellipsis;
 }
 .bubble-text {
-  display: block; margin-top: 4px; font-size: 13.5px; line-height: 1.45;
+  display: block; margin-top: 4px; font-size: 14.5px; line-height: 1.5;
   /* pre-wrap: baris baru di pesan (Shift+Enter di composer, atau pesan
      multi-baris dari customer) sebelumnya hilang/kolaps jadi satu baris
      panjang — <span> polos tidak menghormati "\n" tanpa ini. */
@@ -2094,13 +2120,16 @@ input:focus, select:focus, textarea:focus {
 .message-list-wrap { flex: 1; min-height: 0; overflow: hidden; position: relative; background: var(--bg-base); }
 .message-virtuoso { height: 100%; }
 .message-list-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
-.msg-row { padding: 3px 20px; }
+.msg-row { padding: 4px 20px; }
 
 /* Divider tanggal (inline, lihat catatan di MessageList.jsx soal sticky) */
 .date-divider-row { display: flex; justify-content: center; padding: 10px 0 6px; }
 .date-divider-pill {
-  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
-  background: #e5e7eb; padding: 4px 12px; border-radius: 99px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--text-muted);
+  background: #e5e7eb; padding: 5px 13px; border-radius: 99px;
+  /* Bayangan tipis — pil "mengambang" di atas daftar pesan, bukan
+     tempelan flat, kesan lebih ringan/modern. */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
 /* Kutipan reply di dalam bubble */
@@ -2179,15 +2208,15 @@ input:focus, select:focus, textarea:focus {
 
 /* Media di dalam bubble baru */
 .bubble-img-btn { display: block; padding: 0; border: none; background: none; cursor: zoom-in; line-height: 0; }
-.bubble-img { max-width: 320px; max-height: 320px; border-radius: 8px; display: block; object-fit: cover; margin-bottom: 4px; }
+.bubble-img { max-width: 320px; max-height: 320px; border-radius: 14px; display: block; object-fit: cover; margin-bottom: 4px; }
 .bubble-sticker { width: 130px; height: 130px; display: block; object-fit: contain; margin-bottom: 4px; }
-.bubble-struct-card { background: var(--bg-secondary); border-radius: 10px; padding: 10px; margin-bottom: 4px; min-width: 180px; }
+.bubble-struct-card { background: var(--bg-secondary); border-radius: 14px; padding: 11px; margin-bottom: 4px; min-width: 180px; }
 .bubble-struct-header { display: flex; align-items: center; gap: 6px; color: var(--primary); }
 .bubble-struct-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
 .bubble-struct-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .bubble-struct-link { display: inline-block; font-size: 12px; font-weight: 700; color: var(--primary); margin-top: 6px; }
 .bubble-poll-option { margin-top: 6px; padding: 7px 10px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); font-size: 13px; color: var(--text-primary); }
-.bubble-video-thumb { position: relative; display: block; padding: 0; border: none; background: #000; border-radius: 8px; overflow: hidden; cursor: pointer; margin-bottom: 4px; width: 240px; height: 160px; }
+.bubble-video-thumb { position: relative; display: block; padding: 0; border: none; background: #000; border-radius: 14px; overflow: hidden; cursor: pointer; margin-bottom: 4px; width: 240px; height: 160px; }
 .bubble-video-thumb-el { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0.85; }
 .bubble-video-play-icon {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -3239,7 +3268,6 @@ input:focus, select:focus, textarea:focus {
 [data-theme="dark"] .customer-panel,
 [data-theme="dark"] .chat-header,
 [data-theme="dark"] .chat-input,
-[data-theme="dark"] .chat-textarea,
 [data-theme="dark"] .chat-input-area,
 [data-theme="dark"] .panel-edit-btn,
 [data-theme="dark"] .table-wrap,
@@ -3320,6 +3348,15 @@ input:focus, select:focus, textarea:focus {
 [data-theme="dark"] .picker-product-item:hover {
   background: var(--accent-bg);
 }
+
+/* ── Reskin composer 20 Agt 2026: kotak ketik dipisah dari daftar
+   "panel/kartu statis → bg-surface" di atas SENGAJA — kalau ikut
+   bg-surface, warnanya SAMA PERSIS dengan .chat-input (bar di
+   belakangnya, juga bg-surface), jadi kotak ketik "menyatu" lagi dengan
+   bar-nya di dark mode (persis masalah yang baru diperbaiki di light
+   mode). --bg-inset sedikit lebih terang dari --bg-surface di dark mode,
+   jadi tetap kelihatan sebagai permukaan terpisah di kedua tema. */
+[data-theme="dark"] .chat-textarea { background: var(--bg-inset); }
 
 /* ── Bug nyata ditemukan 20 Agt 2026 (tombol Tahap Pipeline di panel
    pelanggan Inbox render KOSONG/putih polos tanpa teks kelihatan di dark
