@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
-  AlertTriangle, Clock, MessageSquare, Package,
+  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent,
 } from "lucide-react";
 import { api } from "../api.js";
 import {
@@ -59,6 +59,42 @@ const STATUS_TONE = {
 };
 
 const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+
+// D-030 (20 Agustus 2026) — filter Kategori/Pembayaran/Sales/Promo dulu
+// semuanya <select> abu-abu identik, tidak bisa dipindai sekilas mana
+// yang lagi aktif. Ikon berwarna khas per filter + tint background begitu
+// filter itu DIPILIH (bukan "Semua...") — biar "on point" tapi tidak
+// bertabrakan makna dengan warna status/pembayaran per baris di tabel.
+const FILTER_TONE = {
+  kategori:   { icon: Tag,       hex: "#7c3aed" },
+  pembayaran: { icon: Wallet,    hex: "#16a34a" },
+  sales:      { icon: UserRound, hex: "#2563eb" },
+  promo:      { icon: Percent,   hex: "#db2777" },
+};
+function FilterSelect({ tone, active, className, children, ...props }) {
+  const t = FILTER_TONE[tone];
+  const Icon = t.icon;
+  return (
+    <div className="relative">
+      <Icon
+        size={13}
+        className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+        style={{ color: active ? t.hex : "var(--text-tertiary)" }}
+      />
+      <select
+        {...props}
+        className={cn(
+          "h-8 rounded-lg pl-7 pr-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          active ? "font-semibold" : "text-ink2",
+          className
+        )}
+        style={active ? { background: `${t.hex}1f`, color: t.hex } : { background: "var(--bg-surface)" }}
+      >
+        {children}
+      </select>
+    </div>
+  );
+}
 
 // Ambang "mandek": order yang tertahan di satu status kerja terlalu lama.
 // DELIVERED/CANCELLED dikecualikan — itu status AKHIR, lama di sana normal.
@@ -487,9 +523,9 @@ export default function Orders() {
               <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
               <input
                 type="search" value={cari} onChange={(e) => setCari(e.target.value)}
-                placeholder="Cari ID order, nama, nomor…"
+                placeholder="Cari ID, nama, HP…"
                 aria-label="Cari order"
-                className="h-8 w-52 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="h-8 w-64 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
               {cari && (
                 <button type="button" onClick={() => setCari("")} aria-label="Hapus pencarian"
@@ -498,39 +534,39 @@ export default function Orders() {
                 </button>
               )}
             </div>
-            <select
+            <FilterSelect
+              tone="kategori" active={!!fKategori}
               value={fKategori} onChange={(e) => setFKategori(e.target.value)}
               aria-label="Filter kategori"
-              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
               <option value="">Semua Kategori</option>
               {Object.entries(KATEGORI_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
+              tone="pembayaran" active={!!fBayar}
               value={fBayar} onChange={(e) => setFBayar(e.target.value)}
               aria-label="Filter status pembayaran"
-              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
               <option value="">Semua Pembayaran</option>
               {Object.entries(PAYMENT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
+              tone="sales" active={!!fSales}
               value={fSales} onChange={(e) => setFSales(e.target.value)}
               aria-label="Filter sales person"
-              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
               <option value="">Semua Sales</option>
               {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            </FilterSelect>
             {promos.length > 0 && (
-              <select
+              <FilterSelect
+                tone="promo" active={!!fPromo}
                 value={fPromo} onChange={(e) => setFPromo(e.target.value)}
                 aria-label="Filter promo"
-                className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 <option value="">Semua Promo</option>
                 {promos.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
-              </select>
+              </FilterSelect>
             )}
             <Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
