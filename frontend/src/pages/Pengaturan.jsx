@@ -968,10 +968,20 @@ export default function Pengaturan({ user, onUserUpdate }) {
           Pesan), jadi dropdown-nya tidak perlu ditampilkan sama sekali —
           dropdown 1-opsi cuma bingung, bukan navigasi. */}
       {visibleNavItems.length > 1 && (
+        // `style` (bukan cuma className bg-surface) SENGAJA dipakai di sini —
+        // select ini duduk LANGSUNG di atas bg page (bukan di dalam Card),
+        // dan ada rule CSS lama di index.css (selector element polos `select`,
+        // tidak masuk @layer) yang menang atas utility Tailwind `bg-surface`
+        // (Tailwind v4: utility ada di @layer, cascade layer TANPA nama selalu
+        // menang lawan layer manapun terlepas dari spesifisitas) — hasilnya
+        // dropdown ini KELIHATAN NYARIS TRANSPARAN (F5F5F7 di atas F5F5F7,
+        // sama-sama warna page). `style` inline SELALU menang di luar isu
+        // layer itu, jadi paling aman dipakai cuma di titik ini.
         <select
           value={section}
           onChange={(e) => setSection(e.target.value)}
-          className={cn(selectCls, "mb-4 md:hidden")}
+          className={cn(selectCls, "mb-4 shadow-card md:hidden")}
+          style={{ backgroundColor: "var(--bg-surface)" }}
         >
           {visibleNavItems.map(({ key, label }) => (
             <option key={key} value={key}>{label}</option>
