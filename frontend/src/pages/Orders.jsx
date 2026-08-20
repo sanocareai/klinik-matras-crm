@@ -204,8 +204,17 @@ function PaymentStatusSelect({ order, onChange, className, locked }) {
 function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
+  // D-030 (revisi 20 Agustus 2026): SELURUH kartu bisa diklik untuk buka
+  // rincian pesanan (dulu cuma ikon jam kecil di pojok, gampang kelewat —
+  // pola sekarang mengikuti kebiasaan tracking paket marketplace: klik
+  // order apa pun langsung masuk detail). Kontrol interaktif di dalam kartu
+  // (select status/pipeline/pembayaran, tombol chat) sudah/perlu
+  // stopPropagation supaya tidak ikut memicu buka drawer saat dipakai.
   return (
-    <div className="rounded-xl bg-surface p-2.5 shadow-card transition-shadow duration-150 hover:shadow-popover">
+    <div
+      onClick={() => onOpenTimeline(order)}
+      className="cursor-pointer rounded-xl bg-surface p-2.5 shadow-card transition-shadow duration-150 hover:shadow-popover"
+    >
       <div className="flex items-start gap-2">
         <Avatar name={nama} src={order.profilePictureUrl} size="sm" />
         <div className="min-w-0 flex-1">
@@ -252,14 +261,14 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           {order.assignedSales?.name || "Belum ada sales"}
         </span>
         <button
-          type="button" onClick={() => onOpenTimeline(order)}
-          title="Lihat riwayat status order"
+          type="button" onClick={(e) => { e.stopPropagation(); onOpenTimeline(order); }}
+          title="Lihat rincian pesanan"
           className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink2"
         >
           <Clock size={13} />
         </button>
         <button
-          type="button" onClick={() => onOpenChat(order)}
+          type="button" onClick={(e) => { e.stopPropagation(); onOpenChat(order); }}
           title={order.conversationId ? "Buka chat customer" : "Customer belum pernah chat"}
           disabled={!order.conversationId}
           className="rounded-md p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
@@ -717,7 +726,11 @@ export default function Orders() {
                 {items.map((o) => {
                   const mandek = isMandek(o);
                   return (
-                    <tr key={o.id} className="border-b border-line last:border-0 hover:bg-hovertint">
+                    <tr
+                      key={o.id}
+                      onClick={() => setTimelineOrder(o)}
+                      className="cursor-pointer border-b border-line last:border-0 hover:bg-hovertint"
+                    >
                       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
                         {o.orderNumber || "—"}
                       </td>
@@ -770,9 +783,9 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-ink3">
                         {o.createdAt ? formatTanggalPendek(o.createdAt) : "—"}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
+                      <td className="whitespace-nowrap px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => setTimelineOrder(o)} title="Riwayat status"
+                          <button type="button" onClick={() => setTimelineOrder(o)} title="Rincian pesanan"
                             className="rounded-md p-1 text-ink3 hover:bg-hovertint hover:text-ink2">
                             <Clock size={14} />
                           </button>
