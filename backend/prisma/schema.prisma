@@ -673,6 +673,18 @@ model Order {
   complaintDate      DateTime?
   complaintDetail    String?
 
+  // D-027 (20 Agustus 2026) — kota + alamat pengiriman PER ORDER, diinput
+  // sales saat buat order (dropdown kota SAMA dgn Customer.city, lihat
+  // KOTA_LIST di frontend/src/utils/format.js). SENGAJA field terpisah
+  // dari Customer.city, bukan dipakai bareng — 1 customer bisa order untuk
+  // alamat berbeda-beda (kirim ke rumah, kantor, dst). Ini alamat versi
+  // SALES/rencana, BUKAN alamat terverifikasi — Job.addressText (per
+  // kunjungan driver, lihat komentar di model Job) tetap sumber kebenaran
+  // untuk GPS/lokasi aktual di lapangan. Kalau nanti Armada mau prefill
+  // addressText dari sini saat bikin Job, itu keputusan terpisah.
+  deliveryCity       String?       @map("delivery_city")
+  deliveryAddress    String?       @map("delivery_address")
+
   // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
   // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin
   // hitung harga: harga di sini SELALU hasil input manual sales per item

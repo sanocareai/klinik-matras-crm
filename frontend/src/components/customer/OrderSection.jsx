@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock } from "lucide-reac
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
-  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES,
+  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 
@@ -108,6 +108,10 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
   const [ukuran, setUkuran]               = useState(info.ukuranKasur);
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
   const [promoId, setPromoId]             = useState(order.promoId || "");
+  // D-027: kota + alamat pengiriman order ini — TERPISAH dari Customer.city
+  // (1 customer bisa order untuk alamat berbeda-beda).
+  const [deliveryCity, setDeliveryCity]       = useState(order.deliveryCity || "");
+  const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || "");
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
@@ -151,6 +155,8 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
         paymentStatus,
         notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || null,
+        deliveryCity: deliveryCity || null,
+        deliveryAddress: deliveryAddress || null,
       });
 
       // Proses weight entries
@@ -221,6 +227,8 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
     setKeluhan(inf.keluhanCustomer);
+    setDeliveryCity(order.deliveryCity || "");
+    setDeliveryAddress(order.deliveryAddress || "");
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
     setWeightEntries(
       (order.weightEntries && order.weightEntries.length > 0)
@@ -509,6 +517,34 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
         </div>
       ) : null}
 
+      {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city, 1
+          customer bisa order untuk alamat berbeda-beda. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 6, marginBottom: 8 }}>
+        <div>
+          <span style={metaLabel}>Kota</span>
+          {editing ? (
+            <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={selStyleFull} disabled={locked}>
+              <option value="">— Pilih Kota —</option>
+              {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.deliveryCity || <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+        <div>
+          <span style={metaLabel}>Alamat</span>
+          {editing ? (
+            <textarea
+              value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="Alamat lengkap pengiriman..." rows={1} disabled={locked}
+              style={{ ...selStyleFull, resize: "vertical" }}
+            />
+          ) : (
+            <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{order.deliveryAddress || <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+      </div>
+
       {/* Promo (D-026) — cuma PENANDA untuk laporan, tidak menghitung ulang
           harga apa pun (harga tetap manual di item layanan di bawah). */}
       <div style={{ marginBottom: 8 }}>
@@ -660,6 +696,9 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [ukuran, setUkuran]           = useState("");
   const [keluhan, setKeluhan]         = useState("");
   const [promoId, setPromoId]         = useState("");
+  // D-027: kota + alamat pengiriman order ini.
+  const [deliveryCity, setDeliveryCity]       = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
@@ -704,6 +743,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         category,
         notes: buildNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
+        deliveryCity: deliveryCity || undefined,
+        deliveryAddress: deliveryAddress || undefined,
       });
       if (harga > 0) {
         const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
@@ -729,6 +770,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         category: "LAYANAN",
         notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
+        deliveryCity: deliveryCity || undefined,
+        deliveryAddress: deliveryAddress || undefined,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
@@ -845,6 +888,22 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
+        {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
+            1 customer bisa order untuk alamat berbeda-beda. */}
+        <div style={{ marginBottom: 10 }}>
+          <label style={formLabel}>Kota</label>
+          <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={formSelect}>
+            <option value="">— Pilih Kota —</option>
+            {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={formLabel}>Alamat</label>
+          <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
+            placeholder="Alamat lengkap pengiriman..."
+            rows={2} style={{ ...formSelect, resize: "vertical" }} />
+        </div>
+
         <div style={{ marginBottom: 14 }}>
           <label style={formLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</label>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}

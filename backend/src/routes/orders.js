@@ -118,11 +118,12 @@ async function guardOrderLocked(req, res, orderId, aksi) {
 // melepas kunci dan kembali ke hitungan otomatis.
 orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
-          merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId } = req.body;
+          merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
+          deliveryCity, deliveryAddress } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -165,6 +166,9 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(keluhanCustomer   !== undefined && { keluhanCustomer }),
           ...(jenisLayanan      !== undefined && { jenisLayanan }),
           ...(hargaTotal        !== undefined && { value: hargaTotal ? Number(hargaTotal) : 0 }),
+          // D-027: kirim "" untuk mengosongkan lagi.
+          ...(deliveryCity      !== undefined && { deliveryCity: deliveryCity || null }),
+          ...(deliveryAddress   !== undefined && { deliveryAddress: deliveryAddress || null }),
         },
         include: {
           items:         { orderBy: { sortOrder: "asc" } },
