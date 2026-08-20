@@ -335,6 +335,10 @@ export const api = {
   // Master data opsi form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) —
   // satu sumber dipakai OrderSection.jsx web & OrderFormModal.js mobile.
   getOrderOptions: () => request("/master-data/order-options"),
+  // Promo (D-026) — dropdown "pilih kampanye" di OrderFormModal, SATU
+  // sumber dengan web (routes/promos.js). ?active=true = cuma kampanye
+  // yang sedang berjalan, dipakai form CREATE/EDIT.
+  getPromos: (params) => request("/promos" + buildQuery(params)),
 
   // Daftar order LINTAS PELANGGAN (order-centric) — endpoint SAMA yang
   // dipakai halaman Order web (frontend/src/pages/Orders.jsx). Beda dari

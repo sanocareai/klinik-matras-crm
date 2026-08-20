@@ -77,9 +77,15 @@ function parseNotes(notes) {
   }
 }
 
-// Bottom-sheet pilih 1 opsi dari daftar string — dipakai Merk Kasur, Ukuran
-// Kasur, dan pilihan cepat Jenis Layanan per baris item.
-function PickerSheet({ visible, title, options, onSelect, onClose }) {
+// Bottom-sheet pilih 1 opsi — dipakai Merk Kasur, Ukuran Kasur, pilihan
+// cepat Jenis Layanan per baris item, dan (D-026) Promo.
+//
+// `options` awalnya SELALU array string biasa (dipilih apa adanya sebagai
+// value). Promo BUKAN string — perlu tampilkan `name` tapi kembalikan `id`
+// — jadi `getKey`/`getLabel` ditambahkan sebagai prop OPSIONAL (default ke
+// identity function) supaya 3 pemanggil lama tetap jalan tanpa diubah sama
+// sekali, cuma pemanggil Promo yang mengisinya.
+function PickerSheet({ visible, title, options, onSelect, onClose, getKey = (o) => o, getLabel = (o) => o }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
@@ -89,11 +95,11 @@ function PickerSheet({ visible, title, options, onSelect, onClose }) {
           <Text style={styles.pickerTitle}>{title}</Text>
           <FlatList
             data={options}
-            keyExtractor={(o) => o}
+            keyExtractor={getKey}
             style={{ maxHeight: 360 }}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.pickerItem} onPress={() => { onSelect(item); onClose(); }}>
-                <Text style={styles.pickerItemText}>{item}</Text>
+                <Text style={styles.pickerItemText}>{getLabel(item)}</Text>
               </TouchableOpacity>
             )}
           />
@@ -148,6 +154,15 @@ export default function OrderFormModal({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // D-026 — promo cuma PENANDA (lihat catatan panjang di schema.prisma
+  // model Promo), sama seperti web (OrderSection.jsx). `promos` HANYA yang
+  // aktif (?active=true) — order lama yang pakai kampanye yang sudah
+  // berakhir tetap menampilkan namanya dari `order.promo` (di-include
+  // backend), tidak butuh daftar ini untuk itu, lihat promoLabel di bawah.
+  const [promos, setPromos] = useState([]);
+  const [promoId, setPromoId] = useState("");
+  const [showPromoPicker, setShowPromoPicker] = useState(false);
+
   const [showMerkPicker, setShowMerkPicker] = useState(false);
   const [showUkuranPicker, setShowUkuranPicker] = useState(false);
   const [layananPickerTarget, setLayananPickerTarget] = useState(null); // item key sedang dipilih
@@ -168,6 +183,7 @@ export default function OrderFormModal({
     setSelectedProductId(null);
     api.getProducts().then(setProducts).catch(() => {}).finally(() => setLoadingProducts(false));
     if (!orderOptionsProp) api.getOrderOptions().then(setOrderOptionsState).catch(() => {});
+    api.getPromos({ active: true }).then(setPromos).catch(() => {});
 
     if (order) {
       const info = parseNotes(order.notes);
@@ -179,6 +195,7 @@ export default function OrderFormModal({
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
       setKeluhan(info.keluhanCustomer);
+      setPromoId(order.promoId || "");
       setHargaTotal(order.value ? String(order.value) : "");
       setItems(
         (order.items && order.items.length > 0)
@@ -199,6 +216,7 @@ export default function OrderFormModal({
       setMerkKasur("");
       setUkuran("");
       setKeluhan("");
+      setPromoId("");
       setHargaTotal("");
       setItems([newItem()]);
       setWeightEntries([newWeightEntry()]);
@@ -241,6 +259,7 @@ export default function OrderFormModal({
       category,
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      promoId: promoId || undefined,
     });
 
     const createdItems = [];
@@ -284,6 +303,7 @@ export default function OrderFormModal({
       paymentStatus,
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      promoId: promoId || null,
     });
 
     const existingWeightIds = (order.weightEntries || []).map((e) => e.id);
@@ -640,6 +660,18 @@ export default function OrderFormModal({
               <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
             </TouchableOpacity>
 
+            {/* Promo (D-026) — opsional, cuma PENANDA untuk laporan, tidak
+                menghitung ulang harga apa pun (harga tetap manual di bawah). */}
+            <Text style={styles.label}>Promo (opsional)</Text>
+            <TouchableOpacity style={styles.selectBox} onPress={() => setShowPromoPicker(true)}>
+              <Text style={styles.selectBoxText}>
+                {promoId
+                  ? (promos.find((p) => p.id === promoId)?.name
+                      || (order?.promo?.id === promoId ? `${order.promo.name} (sudah berakhir)` : "Promo dipilih"))
+                  : "Tanpa promo"}
+              </Text>
+            </TouchableOpacity>
+
             {/* Keluhan / Catatan */}
             <Text style={styles.label}>{isLayanan ? "Keluhan Customer" : "Catatan"}</Text>
             <TextInput
@@ -732,6 +764,15 @@ export default function OrderFormModal({
         options={orderOptions.jenisLayanan}
         onSelect={(v) => layananPickerTarget && setItemField(layananPickerTarget, "layananName", v)}
         onClose={() => setLayananPickerTarget(null)}
+      />
+      <PickerSheet
+        visible={showPromoPicker}
+        title="Pilih Promo"
+        options={[{ id: "", name: "Tanpa promo" }, ...promos]}
+        getKey={(p) => p.id || "none"}
+        getLabel={(p) => p.name}
+        onSelect={(p) => setPromoId(p.id)}
+        onClose={() => setShowPromoPicker(false)}
       />
     </Modal>
   );
