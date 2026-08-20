@@ -386,6 +386,16 @@ customerRouter.get("/:id", async (req, res) => {
         },
       },
       assignedSales: true,
+      // D-030 (20 Agustus 2026) — dibutuhkan supaya OrderTimelineDrawer bisa
+      // dipakai dari tab Order di drawer Pelanggan juga (sebelumnya cuma
+      // dari halaman /orders, yang sumber datanya endpoint list TERPISAH
+      // dan sudah menyertakan ini). Cuma id/type — sama minimal seperti
+      // include di GET /customers list.
+      conversations: {
+        where: { type: "INDIVIDUAL" },
+        orderBy: { lastMessageAt: "desc" }, take: 1,
+        select: { id: true },
+      },
     },
   });
   if (!customer) return res.status(404).json({ error: "Pelanggan tidak ditemukan" });

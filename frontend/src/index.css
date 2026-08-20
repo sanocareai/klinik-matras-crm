@@ -3372,6 +3372,24 @@ input:focus, select:focus, textarea:focus {
   background: var(--bg-inset);
 }
 
+/* ── Bug nyata ditemukan 20 Agt 2026 (dropdown "Kota" & select lain di form
+   Order tetap render POPUP PUTIH dengan teks nyaris tak kelihatan di dark
+   mode, walau kotak select-nya sendiri sudah gelap): `color-scheme: dark`
+   di :root SEHARUSNYA cukup bikin browser render popup native <select>
+   gelap otomatis, tapi ternyata tidak konsisten di semua WebView (PWA
+   Android jadi kasus nyata yang dilaporkan). Fallback eksplisit di sini —
+   set background/color LANGSUNG di setiap <option> — didukung luas
+   (Chrome/Firefox/Edge desktop & Android WebView modern), tidak
+   bergantung sepenuhnya pada color-scheme. Global (semua <select>), bukan
+   per-komponen, karena ini bug platform bukan bug 1 komponen. */
+[data-theme="dark"] select {
+  color-scheme: dark;
+}
+[data-theme="dark"] select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 /* ── Background netral statis (badge abu netral, thumb placeholder,
      divider chip) → var(--bg-inset) ── */
 [data-theme="dark"] .first-responder-badge,

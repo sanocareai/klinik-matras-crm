@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2, Wallet } from "lucide-react";
+import {
+  X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
+  Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
+} from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -9,6 +12,15 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { cn } from "@/lib/utils.js";
 
 const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+
+// Warna khas per kategori dokumentasi — supaya sekilas lihat langsung
+// kebaca "ini tahap yang mana" (Penjemputan/Produksi/Pengiriman), mengikuti
+// gaya tracking paket marketplace yang sudah familiar buat sales/customer.
+const KATEGORI_TONE = {
+  PENJEMPUTAN: { icon: PackageCheck, chip: "bg-orangebg text-orange", dot: "bg-orange" },
+  PRODUKSI:    { icon: Wrench,       chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  PENGIRIMAN:  { icon: Truck,        chip: "bg-greenbg text-green",   dot: "bg-green" },
+};
 
 // Tab "Pembayaran" (D-023) — DP di konfirmasi order + riwayat pembayaran
 // dari SEMUA sumber (sales di sini, driver di stop pengiriman D-011).
@@ -275,12 +287,19 @@ function DocumentationTab({ orderId, conversationId }) {
               return acc;
             }, {}))
           : [[null, items]];
+        const tone = KATEGORI_TONE[key];
+        const ToneIcon = tone.icon;
 
         return (
           <div key={key}>
-            <div className="mb-2 border-b border-line pb-1.5">
-              <p className="text-[12px] font-bold text-ink">{label}</p>
-              <p className="text-[10.5px] text-ink3">{sub}</p>
+            <div className="mb-2 flex items-center gap-2 border-b border-line pb-1.5">
+              <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-full", tone.chip)}>
+                <ToneIcon size={13} />
+              </span>
+              <div>
+                <p className="text-[12px] font-bold text-ink">{label}</p>
+                <p className="text-[10.5px] text-ink3">{sub}</p>
+              </div>
             </div>
             {grup.map(([unitCode, entries]) => (
               <div key={unitCode || key} className="mb-2">
@@ -334,13 +353,21 @@ function DocumentationTab({ orderId, conversationId }) {
           selalu ada di tempat), jadi blok ini cuma muncul kalau memang ada. */}
       {doc.tandaTangan && (
         <div>
-          <div className="mb-2 border-b border-line pb-1.5">
-            <p className="text-[12px] font-bold text-ink">Tanda Tangan Penerima</p>
-            <p className="text-[10.5px] text-ink3">
-              Bukti serah terima internal — tidak ikut dikirim ke customer
-            </p>
+          <div className="mb-2 flex items-center gap-2 border-b border-line pb-1.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-greenbg text-green">
+              <PenTool size={12} />
+            </span>
+            <div>
+              <p className="text-[12px] font-bold text-ink">Tanda Tangan Penerima</p>
+              <p className="text-[10.5px] text-ink3">
+                Bukti serah terima internal — tidak ikut dikirim ke customer
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl bg-surface p-2.5 shadow-card">
+          <div className="rounded-xl border-2 border-green/30 bg-greenbg/40 p-2.5 shadow-card">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-green">
+              <CheckCircle2 size={13} /> Diterima
+            </div>
             <img
               src={doc.tandaTangan.url} alt="Tanda tangan penerima"
               className="h-20 rounded-lg bg-white object-contain px-2"
@@ -443,9 +470,9 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             <p className="truncate text-sm font-bold text-ink">
               {order.customerName || order.customerPhone || "Tanpa nama"}
             </p>
-            <p className="mt-0.5 truncate font-mono text-[11px] text-ink3">
-              {order.orderNumber || "tanpa ID order"}
-            </p>
+            <span className="mt-1 inline-flex items-center gap-1 rounded-chip bg-greenbg px-2 py-0.5 font-mono text-[11px] font-bold text-green">
+              <Hash size={10} />{order.orderNumber || "tanpa ID order"}
+            </span>
           </div>
           <button
             type="button" onClick={onClose} aria-label="Tutup"

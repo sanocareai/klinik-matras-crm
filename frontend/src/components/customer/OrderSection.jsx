@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check, PackageSearch,
+  Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText,
+} from "lucide-react";
 import { api } from "../../api.js";
+import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
@@ -60,6 +65,45 @@ const ORDER_STATUS_BADGE = {
 function formatTanggal(d) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+}
+
+// D-029/D-030 (20 Agustus 2026) — label field polos ("BERAT BADAN", "KOTA",
+// dst) diganti chip ikon berwarna per kelompok, supaya form order yang
+// tadinya satu warna abu-abu rata semua bisa dipindai sekilas ("oh ini
+// bagian alamat, ini bagian kesehatan") tanpa baca teks satu-satu dulu —
+// pola yang sama dipakai OrderTimelineDrawer untuk kategori dokumentasi.
+const FIELD_TONE = {
+  weight:  { icon: Weight,        hex: "#2563eb" },
+  bed:     { icon: Bed,           hex: "#7c3aed" },
+  size:    { icon: Ruler,         hex: "#7c3aed" },
+  address: { icon: MapPin,        hex: "#ea580c" },
+  health:  { icon: HeartPulse,    hex: "#dc2626" },
+  money:   { icon: Banknote,      hex: "#16a34a" },
+  pickup:  { icon: CalendarClock, hex: "#0891b2" },
+  link:    { icon: Link2,         hex: "#0891b2" },
+  promo:   { icon: Tag,           hex: "#db2777" },
+  note:    { icon: MessageSquareText, hex: "#4b5563" },
+};
+function FieldLabel({ tone, children, small }) {
+  const t = FIELD_TONE[tone];
+  const Icon = t.icon;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: small ? 3 : 4 }}>
+      <span style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: 17, height: 17, borderRadius: 99, flexShrink: 0,
+        background: `${t.hex}1f`, color: t.hex,
+      }}>
+        <Icon size={10} />
+      </span>
+      <span style={{
+        fontSize: small ? 10 : 11, fontWeight: 700, color: "var(--text-muted)",
+        textTransform: "uppercase", letterSpacing: "0.04em",
+      }}>
+        {children}
+      </span>
+    </div>
+  );
 }
 
 // D-029 (20 Agustus 2026) — sales SELAMA INI ngetik ulang manual seluruh info
@@ -542,7 +586,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
       {/* Berat Badan — multi-orang */}
       <div style={{ marginBottom: 8 }}>
-        <span style={metaLabel}>Berat Badan</span>
+        <FieldLabel tone="weight" small>Berat Badan</FieldLabel>
         {editing ? (
           <div>
             {weightEntries.map((e) => (
@@ -581,7 +625,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {editing ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
           <div>
-            <span style={metaLabel}>Merk Kasur</span>
+            <FieldLabel tone="bed" small>Merk Kasur</FieldLabel>
             {isLayanan ? (
               <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
                 <option value="">—</option>
@@ -592,7 +636,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             )}
           </div>
           <div>
-            <span style={metaLabel}>Ukuran</span>
+            <FieldLabel tone="size" small>Ukuran</FieldLabel>
             <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={selStyleFull}>
               <option value="">—</option>
               {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -610,7 +654,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           customer bisa order untuk alamat berbeda-beda. */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 6, marginBottom: 8 }}>
         <div>
-          <span style={metaLabel}>Kota</span>
+          <FieldLabel tone="address" small>Kota</FieldLabel>
           {editing ? (
             <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={selStyleFull} disabled={locked}>
               <option value="">— Pilih Kota —</option>
@@ -621,7 +665,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           )}
         </div>
         <div>
-          <span style={metaLabel}>Alamat</span>
+          <FieldLabel tone="address" small>Alamat</FieldLabel>
           {editing ? (
             <textarea
               value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -637,7 +681,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {/* Kondisi Kesehatan + kategori keluhan (D-028) — per order, dipakai
           mengklasifikasi jenis keluhan sakit customer klinik matras. */}
       <div style={{ marginBottom: 8 }}>
-        <span style={metaLabel}>Kondisi Kesehatan</span>
+        <FieldLabel tone="health" small>Kondisi Kesehatan</FieldLabel>
         {editing ? (
           <>
             <div style={{ display: "flex", gap: 6, marginBottom: healthStatus === "SAKIT" ? 6 : 0 }}>
@@ -711,7 +755,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           di bawah). */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
         <div>
-          <span style={metaLabel}>Ongkir</span>
+          <FieldLabel tone="money" small>Ongkir</FieldLabel>
           {editing ? (
             <input type="number" value={ongkir} onChange={(e) => setOngkir(e.target.value)}
               placeholder="0" disabled={locked} style={selStyleFull} />
@@ -720,7 +764,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           )}
         </div>
         <div>
-          <span style={metaLabel}>Ongkir Klaim Garansi</span>
+          <FieldLabel tone="money" small>Ongkir Klaim Garansi</FieldLabel>
           {editing ? (
             <input type="number" value={ongkirKlaimGaransi} onChange={(e) => setOngkirKlaimGaransi(e.target.value)}
               placeholder="0" disabled={locked} style={selStyleFull} />
@@ -732,7 +776,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
         <div>
-          <span style={metaLabel}>Estimasi Pick Up</span>
+          <FieldLabel tone="pickup" small>Estimasi Pick Up</FieldLabel>
           {editing ? (
             <input value={pickupEstimate} onChange={(e) => setPickupEstimate(e.target.value)}
               placeholder="cth: est 24/25 Agustus 2026" disabled={locked} style={selStyleFull} />
@@ -741,7 +785,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           )}
         </div>
         <div>
-          <span style={metaLabel}>Tanggal Pick Up Pasti</span>
+          <FieldLabel tone="pickup" small>Tanggal Pick Up Pasti</FieldLabel>
           {editing ? (
             <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
               disabled={locked} style={selStyleFull} />
@@ -752,7 +796,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       </div>
 
       <div style={{ marginBottom: 8 }}>
-        <span style={metaLabel}>Link Lokasi</span>
+        <FieldLabel tone="link" small>Link Lokasi</FieldLabel>
         {editing ? (
           <input value={locationUrl} onChange={(e) => setLocationUrl(e.target.value)}
             placeholder="https://maps.app.goo.gl/..." disabled={locked} style={selStyleFull} />
@@ -768,7 +812,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {/* Promo (D-026) — cuma PENANDA untuk laporan, tidak menghitung ulang
           harga apa pun (harga tetap manual di item layanan di bawah). */}
       <div style={{ marginBottom: 8 }}>
-        <span style={metaLabel}>Promo</span>
+        <FieldLabel tone="promo" small>Promo</FieldLabel>
         {editing ? (
           <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={selStyleFull} disabled={locked}>
             <option value="">Tanpa promo</option>
@@ -850,7 +894,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {/* Keluhan/Catatan */}
       {editing ? (
         <div style={{ marginBottom: 8 }}>
-          <span style={metaLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</span>
+          <FieldLabel tone="note" small>{isLayanan ? "Keluhan Customer" : "Catatan"}</FieldLabel>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
             placeholder={isLayanan ? "Keluhan kasur customer..." : "Catatan order..."}
             rows={2} style={{ ...selStyleFull, resize: "vertical" }} />
@@ -1084,7 +1128,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 
         {/* Berat Badan — multi-orang */}
         <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>Berat Badan</label>
+          <FieldLabel tone="weight">Berat Badan</FieldLabel>
           {weightEntries.map((e) => (
             <div key={e.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
               <input
@@ -1113,7 +1157,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 
         {/* Merk Kasur */}
         <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>Merk Kasur</label>
+          <FieldLabel tone="bed">Merk Kasur</FieldLabel>
           {isLayanan ? (
             <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
               <option value="">— Pilih Merk —</option>
@@ -1125,7 +1169,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>Ukuran Kasur</label>
+          <FieldLabel tone="size">Ukuran Kasur</FieldLabel>
           <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
             <option value="">— Pilih Ukuran —</option>
             {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -1134,14 +1178,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
             1 customer bisa order untuk alamat berbeda-beda. */}
         <div style={{ marginBottom: 10 }}>
-          <label style={formLabel}>Kota</label>
+          <FieldLabel tone="address">Kota</FieldLabel>
           <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={formSelect}>
             <option value="">— Pilih Kota —</option>
             {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={formLabel}>Alamat</label>
+          <FieldLabel tone="address">Alamat</FieldLabel>
           <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
             placeholder="Alamat lengkap pengiriman..."
             rows={2} style={{ ...formSelect, resize: "vertical" }} />
@@ -1150,7 +1194,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         {/* Kondisi Kesehatan + kategori keluhan (D-028) — per order, dipakai
             mengklasifikasi jenis keluhan sakit customer klinik matras. */}
         <div style={{ marginBottom: 14 }}>
-          <label style={formLabel}>Kondisi Kesehatan</label>
+          <FieldLabel tone="health">Kondisi Kesehatan</FieldLabel>
           <div style={{ display: "flex", gap: 6, marginBottom: healthStatus === "SAKIT" ? 6 : 0 }}>
             {[
               { value: "SAKIT", label: "Sakit", hex: "#dc2626" },
@@ -1199,7 +1243,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={formLabel}>{isLayanan ? "Keluhan Customer" : "Catatan"}</label>
+          <FieldLabel tone="note">{isLayanan ? "Keluhan Customer" : "Catatan"}</FieldLabel>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
             placeholder={isLayanan ? "Jelaskan keluhan kasur..." : "Catatan order..."}
             rows={3} style={{ ...formSelect, resize: "vertical" }} />
@@ -1208,30 +1252,30 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         {/* D-029: Ongkir + estimasi pickup + link lokasi. */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
           <div>
-            <label style={formLabel}>Ongkir</label>
+            <FieldLabel tone="money">Ongkir</FieldLabel>
             <input type="number" value={ongkir} onChange={(e) => setOngkir(e.target.value)}
               placeholder="0" style={formSelect} />
           </div>
           <div>
-            <label style={formLabel}>Ongkir Klaim Garansi</label>
+            <FieldLabel tone="money">Ongkir Klaim Garansi</FieldLabel>
             <input type="number" value={ongkirKlaimGaransi} onChange={(e) => setOngkirKlaimGaransi(e.target.value)}
               placeholder="0" style={formSelect} />
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
           <div>
-            <label style={formLabel}>Estimasi Pick Up</label>
+            <FieldLabel tone="pickup">Estimasi Pick Up</FieldLabel>
             <input value={pickupEstimate} onChange={(e) => setPickupEstimate(e.target.value)}
               placeholder="cth: est 24/25 Agustus 2026" style={formSelect} />
           </div>
           <div>
-            <label style={formLabel}>Tanggal Pick Up Pasti</label>
+            <FieldLabel tone="pickup">Tanggal Pick Up Pasti</FieldLabel>
             <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
               style={formSelect} />
           </div>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={formLabel}>Link Lokasi</label>
+          <FieldLabel tone="link">Link Lokasi</FieldLabel>
           <input value={locationUrl} onChange={(e) => setLocationUrl(e.target.value)}
             placeholder="https://maps.app.goo.gl/..." style={formSelect} />
         </div>
@@ -1240,7 +1284,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             kalau ada kampanye AKTIF; order lama-tanpa-promo tetap wajar. */}
         {promos.length > 0 && (
           <div style={{ marginBottom: 14 }}>
-            <label style={formLabel}>Promo (opsional)</label>
+            <FieldLabel tone="promo">Promo (opsional)</FieldLabel>
             <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={formSelect}>
               <option value="">Tanpa promo</option>
               {promos.map((p) => <option key={p.id} value={p.id}>{promoLabel(p)}</option>)}
@@ -1251,7 +1295,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         {/* BARU/SEWA: harga total langsung di step ini */}
         {!isLayanan && (
           <div style={{ marginBottom: 14 }}>
-            <label style={formLabel}>Harga Total (Rp)</label>
+            <FieldLabel tone="money">Harga Total (Rp)</FieldLabel>
             <input type="number" value={hargaTotal} onChange={(e) => setHargaTotal(e.target.value)}
               placeholder="cth: 5000000" min="0" style={formSelect} />
           </div>
@@ -1331,8 +1375,15 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 
 // ─── Container utama ──────────────────────────────────────────────────────────
 export default function OrderSection({ customer, onUpdate }) {
+  const navigate = useNavigate();
   const [showForm, setShowForm]     = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  // D-030 (20 Agustus 2026) — rincian pesanan lengkap (riwayat status, foto
+  // dokumentasi penjemputan/produksi/pengiriman + tanda tangan penerima,
+  // pembayaran) dibuka lewat OrderTimelineDrawer yang SAMA dengan halaman
+  // Order (features/orders/OrderTimelineDrawer.jsx) — bukan komponen baru,
+  // supaya kedua tempat selalu menampilkan data yang identik.
+  const [timelineOrder, setTimelineOrder] = useState(null);
   const [orderOptions, setOrderOptions] = useState(EMPTY_ORDER_OPTIONS);
   // D-026 — promo AKTIF saja di sini (order baru cuma boleh pakai kampanye
   // yang sedang berjalan). Order LAMA yang pakai promo yang sudah berakhir
@@ -1358,6 +1409,18 @@ export default function OrderSection({ customer, onUpdate }) {
 
   function toggleExpand(id) {
     setExpandedId((prev) => (prev === id ? null : id));
+  }
+
+  function bukaChat(order) {
+    if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
+  }
+  function bukaTimeline(o) {
+    setTimelineOrder({
+      ...o,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      conversationId: customer.conversations?.[0]?.id || null,
+    });
   }
 
   const totalValue = customer.orders.reduce((s, o) => s + o.value, 0);
@@ -1395,6 +1458,7 @@ export default function OrderSection({ customer, onUpdate }) {
                 <th style={thStyle}>Nilai</th>
                 <th style={thStyle}>Status</th>
                 <th style={{ ...thStyle, width: 36 }}></th>
+                <th style={{ ...thStyle, width: 36 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -1424,13 +1488,22 @@ export default function OrderSection({ customer, onUpdate }) {
                           {ORDER_STATUS_LABELS[o.status] || o.status}
                         </span>
                       </td>
+                      <td style={{ padding: "10px 8px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button" onClick={() => bukaTimeline(o)}
+                          title="Rincian pesanan — riwayat, dokumentasi & pembayaran"
+                          style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 4, borderRadius: 6, border: "none", background: "var(--accentbg, #eff6ff)", color: "var(--primary)", cursor: "pointer" }}
+                        >
+                          <PackageSearch size={14} />
+                        </button>
+                      </td>
                       <td style={{ padding: "10px 8px", textAlign: "center" }}>
                         {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </td>
                     </tr>
                     {isOpen && (
                       <tr>
-                        <td colSpan={4} style={{ padding: 0 }}>
+                        <td colSpan={5} style={{ padding: 0 }}>
                           <OrderDetail
                             order={o}
                             customer={customer}
@@ -1454,6 +1527,13 @@ export default function OrderSection({ customer, onUpdate }) {
       {customer.orders.length === 0 && !showForm && (
         <p className="text-small">Belum ada order. Klik "+ Order" untuk menambah.</p>
       )}
+
+      <OrderTimelineDrawer
+        order={timelineOrder}
+        onClose={() => setTimelineOrder(null)}
+        onOpenChat={bukaChat}
+        onPaymentRecorded={refresh}
+      />
     </div>
   );
 }
