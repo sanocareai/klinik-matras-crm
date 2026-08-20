@@ -194,6 +194,8 @@ export default function OrderFormModal({
   const [ongkirKlaimGaransi, setOngkirKlaimGaransi] = useState("");
   const [pickupEstimate, setPickupEstimate] = useState("");
   const [pickupConfirmedDate, setPickupConfirmedDate] = useState("");
+  const [deliveryEstimate, setDeliveryEstimate] = useState("");
+  const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
   const [keluhan, setKeluhan] = useState("");
   const [hargaTotal, setHargaTotal] = useState("");
@@ -250,6 +252,8 @@ export default function OrderFormModal({
       setOngkirKlaimGaransi(order.ongkirKlaimGaransi != null ? String(order.ongkirKlaimGaransi) : "");
       setPickupEstimate(order.pickupEstimate || "");
       setPickupConfirmedDate(order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : "");
+      setDeliveryEstimate(order.deliveryEstimate || "");
+      setDeliveryConfirmedDate(order.deliveryConfirmedDate ? order.deliveryConfirmedDate.slice(0, 10) : "");
       setLocationUrl(order.locationUrl || "");
       setKeluhan(info.keluhanCustomer);
       setPromoId(order.promoId || "");
@@ -334,6 +338,8 @@ export default function OrderFormModal({
       ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
       pickupEstimate: pickupEstimate || undefined,
       pickupConfirmedDate: pickupConfirmedDate || undefined,
+      deliveryEstimate: deliveryEstimate || undefined,
+      deliveryConfirmedDate: deliveryConfirmedDate || undefined,
       locationUrl: locationUrl || undefined,
     });
 
@@ -387,6 +393,8 @@ export default function OrderFormModal({
       ongkirKlaimGaransi: ongkirKlaimGaransi === "" ? null : ongkirKlaimGaransi,
       pickupEstimate: pickupEstimate || null,
       pickupConfirmedDate: pickupConfirmedDate || null,
+      deliveryEstimate: deliveryEstimate || null,
+      deliveryConfirmedDate: deliveryConfirmedDate || null,
       locationUrl: locationUrl || null,
     });
 
@@ -880,6 +888,25 @@ export default function OrderFormModal({
               placeholderTextColor={tokens.color.textMuted}
               value={pickupConfirmedDate}
               onChangeText={setPickupConfirmedDate}
+            />
+
+            {/* D-033: pasangan pengiriman — diisi begitu produksi hampir/sudah selesai. */}
+            <Text style={styles.label}>Estimasi Kirim</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="cth: estimasi 25/26 Agustus 2026"
+              placeholderTextColor={tokens.color.textMuted}
+              value={deliveryEstimate}
+              onChangeText={setDeliveryEstimate}
+            />
+
+            <Text style={styles.label}>Tanggal Kirim Pasti</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD (diisi setelah jadwal dikunci)"
+              placeholderTextColor={tokens.color.textMuted}
+              value={deliveryConfirmedDate}
+              onChangeText={setDeliveryConfirmedDate}
             />
 
             <Text style={styles.label}>Link Lokasi</Text>

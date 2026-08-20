@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check, PackageSearch,
-  Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText, Send,
+  Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText, Send, Truck,
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
@@ -80,6 +80,7 @@ const FIELD_TONE = {
   health:  { icon: HeartPulse,    hex: "#dc2626" },
   money:   { icon: Banknote,      hex: "#16a34a" },
   pickup:  { icon: CalendarClock, hex: "#0891b2" },
+  delivery: { icon: Truck,        hex: "#16a34a" },
   link:    { icon: Link2,         hex: "#0891b2" },
   promo:   { icon: Tag,           hex: "#db2777" },
   note:    { icon: MessageSquareText, hex: "#4b5563" },
@@ -163,6 +164,8 @@ function buildWaMessage(order, customer) {
     `Ongkir claim garansi : ${formatAngka(order.ongkirKlaimGaransi)}`,
     `Pick Up : ${order.pickupEstimate || "-"}`,
     `Est Pick Up : ${order.pickupConfirmedDate ? formatTanggal(order.pickupConfirmedDate) : "-"}`,
+    `Kirim : ${order.deliveryEstimate || "-"}`,
+    `Est Kirim : ${order.deliveryConfirmedDate ? formatTanggal(order.deliveryConfirmedDate) : "-"}`,
     `Cs : ${customer.assignedSales?.name || "-"}`,
     `Share loct : ${order.locationUrl || "-"}`,
   ].join("\n");
@@ -209,6 +212,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [pickupEstimate, setPickupEstimate]       = useState(order.pickupEstimate || "");
   const [pickupConfirmedDate, setPickupConfirmedDate] = useState(
     order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : ""
+  );
+  // D-033: pasangan pengiriman dari pickupEstimate/pickupConfirmedDate.
+  const [deliveryEstimate, setDeliveryEstimate]       = useState(order.deliveryEstimate || "");
+  const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState(
+    order.deliveryConfirmedDate ? order.deliveryConfirmedDate.slice(0, 10) : ""
   );
   const [locationUrl, setLocationUrl]             = useState(order.locationUrl || "");
   const [items, setItems]                 = useState(
@@ -290,6 +298,8 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         ongkirKlaimGaransi: ongkirKlaimGaransi === "" ? null : ongkirKlaimGaransi,
         pickupEstimate: pickupEstimate || null,
         pickupConfirmedDate: pickupConfirmedDate || null,
+        deliveryEstimate: deliveryEstimate || null,
+        deliveryConfirmedDate: deliveryConfirmedDate || null,
         locationUrl: locationUrl || null,
       });
 
@@ -369,6 +379,8 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     setOngkirKlaimGaransi(order.ongkirKlaimGaransi ?? "");
     setPickupEstimate(order.pickupEstimate || "");
     setPickupConfirmedDate(order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : "");
+    setDeliveryEstimate(order.deliveryEstimate || "");
+    setDeliveryConfirmedDate(order.deliveryConfirmedDate ? order.deliveryConfirmedDate.slice(0, 10) : "");
     setLocationUrl(order.locationUrl || "");
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
     setWeightEntries(
@@ -822,6 +834,29 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         </div>
       </div>
 
+      {/* D-033: pasangan pengiriman dari Estimasi/Tanggal Pick Up di atas —
+          diisi sales begitu produksi hampir/sudah selesai. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+        <div>
+          <FieldLabel tone="delivery" small>Estimasi Kirim</FieldLabel>
+          {editing ? (
+            <input value={deliveryEstimate} onChange={(e) => setDeliveryEstimate(e.target.value)}
+              placeholder="cth: estimasi 25/26 Agustus 2026" disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.deliveryEstimate || <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+        <div>
+          <FieldLabel tone="delivery" small>Tanggal Kirim Pasti</FieldLabel>
+          {editing ? (
+            <input type="date" value={deliveryConfirmedDate} onChange={(e) => setDeliveryConfirmedDate(e.target.value)}
+              disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.deliveryConfirmedDate ? formatTanggal(order.deliveryConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+      </div>
+
       <div style={{ marginBottom: 8 }}>
         <FieldLabel tone="link" small>Link Lokasi</FieldLabel>
         {editing ? (
@@ -998,6 +1033,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [ongkirKlaimGaransi, setOngkirKlaimGaransi] = useState("");
   const [pickupEstimate, setPickupEstimate]       = useState("");
   const [pickupConfirmedDate, setPickupConfirmedDate] = useState("");
+  const [deliveryEstimate, setDeliveryEstimate]       = useState("");
+  const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState("");
   const [locationUrl, setLocationUrl]             = useState("");
   const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
@@ -1051,6 +1088,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
         pickupEstimate: pickupEstimate || undefined,
         pickupConfirmedDate: pickupConfirmedDate || undefined,
+        deliveryEstimate: deliveryEstimate || undefined,
+        deliveryConfirmedDate: deliveryConfirmedDate || undefined,
         locationUrl: locationUrl || undefined,
       });
       if (harga > 0) {
@@ -1085,6 +1124,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
         pickupEstimate: pickupEstimate || undefined,
         pickupConfirmedDate: pickupConfirmedDate || undefined,
+        deliveryEstimate: deliveryEstimate || undefined,
+        deliveryConfirmedDate: deliveryConfirmedDate || undefined,
         locationUrl: locationUrl || undefined,
       });
       for (const it of validItems) {
@@ -1298,6 +1339,19 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           <div>
             <FieldLabel tone="pickup">Tanggal Pick Up Pasti</FieldLabel>
             <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
+              style={formSelect} />
+          </div>
+        </div>
+        {/* D-033: pasangan pengiriman — diisi begitu produksi hampir/sudah selesai. */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div>
+            <FieldLabel tone="delivery">Estimasi Kirim</FieldLabel>
+            <input value={deliveryEstimate} onChange={(e) => setDeliveryEstimate(e.target.value)}
+              placeholder="cth: estimasi 25/26 Agustus 2026" style={formSelect} />
+          </div>
+          <div>
+            <FieldLabel tone="delivery">Tanggal Kirim Pasti</FieldLabel>
+            <input type="date" value={deliveryConfirmedDate} onChange={(e) => setDeliveryConfirmedDate(e.target.value)}
               style={formSelect} />
           </div>
         </div>

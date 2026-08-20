@@ -124,11 +124,12 @@ orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,
-          ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl } = req.body;
+          ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
+          deliveryEstimate, deliveryConfirmedDate, locationUrl } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -188,6 +189,9 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(ongkirKlaimGaransi  !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
           ...(pickupEstimate      !== undefined && { pickupEstimate: pickupEstimate || null }),
           ...(pickupConfirmedDate !== undefined && { pickupConfirmedDate: pickupConfirmedDate || null }),
+          // D-033: pasangan pengiriman dari pickupEstimate/pickupConfirmedDate.
+          ...(deliveryEstimate      !== undefined && { deliveryEstimate: deliveryEstimate || null }),
+          ...(deliveryConfirmedDate !== undefined && { deliveryConfirmedDate: deliveryConfirmedDate || null }),
           ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
         },
         include: {
@@ -528,6 +532,8 @@ function buildWaMessage(order, customer) {
     `Ongkir claim garansi : ${formatAngka(order.ongkirKlaimGaransi)}`,
     `Pick Up : ${order.pickupEstimate || "-"}`,
     `Est Pick Up : ${order.pickupConfirmedDate ? formatTanggalOrder(order.pickupConfirmedDate) : "-"}`,
+    `Kirim : ${order.deliveryEstimate || "-"}`,
+    `Est Kirim : ${order.deliveryConfirmedDate ? formatTanggalOrder(order.deliveryConfirmedDate) : "-"}`,
     `Cs : ${customer.assignedSales?.name || "-"}`,
     `Share loct : ${order.locationUrl || "-"}`,
   ].join("\n");

@@ -577,6 +577,8 @@ export default function Orders() {
           "Ongkir Klaim Garansi": o.ongkirKlaimGaransi || 0,
           "Estimasi Pick Up": o.pickupEstimate || "",
           "Tanggal Pick Up Pasti": o.pickupConfirmedDate ? o.pickupConfirmedDate.slice(0, 10) : "",
+          "Estimasi Kirim": o.deliveryEstimate || "",
+          "Tanggal Kirim Pasti": o.deliveryConfirmedDate ? o.deliveryConfirmedDate.slice(0, 10) : "",
           "Link Lokasi": o.locationUrl || "",
           Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
         };

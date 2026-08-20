@@ -38,6 +38,7 @@ const DETAIL_TONE = {
   health:  { icon: HeartPulse,       hex: "#dc2626" },
   money:   { icon: Banknote,         hex: "#16a34a" },
   pickup:  { icon: CalendarClock,    hex: "#0891b2" },
+  delivery: { icon: Truck,           hex: "#16a34a" },
   promo:   { icon: Tag,              hex: "#db2777" },
 };
 function DetailRow({ tone, label, children }) {
@@ -127,6 +128,17 @@ function DetailPesananSection({ order }) {
           {order.pickupConfirmedDate && (
             <p className={cn(order.pickupEstimate && "mt-0.5 text-ink2")}>
               Pasti: {formatTanggal(order.pickupConfirmedDate)}
+            </p>
+          )}
+        </DetailRow>
+      )}
+
+      {(order.deliveryEstimate || order.deliveryConfirmedDate) && (
+        <DetailRow tone="delivery" label="Jadwal Kirim">
+          {order.deliveryEstimate && <p>{order.deliveryEstimate}</p>}
+          {order.deliveryConfirmedDate && (
+            <p className={cn(order.deliveryEstimate && "mt-0.5 text-ink2")}>
+              Pasti: {formatTanggal(order.deliveryConfirmedDate)}
             </p>
           )}
         </DetailRow>

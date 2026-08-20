@@ -596,7 +596,8 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 customerRouter.post("/:id/orders", async (req, res) => {
   const {
     quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
-    healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl,
+    healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
+    deliveryEstimate, deliveryConfirmedDate, locationUrl,
   } = req.body;
 
   const cat = category || "LAYANAN";
@@ -630,6 +631,8 @@ customerRouter.post("/:id/orders", async (req, res) => {
         ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
         ...(pickupEstimate && { pickupEstimate }),
         ...(pickupConfirmedDate && { pickupConfirmedDate }),
+        ...(deliveryEstimate && { deliveryEstimate }),
+        ...(deliveryConfirmedDate && { deliveryConfirmedDate }),
         ...(locationUrl && { locationUrl }),
       },
       include: { items: true },

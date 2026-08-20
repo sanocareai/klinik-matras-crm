@@ -756,6 +756,17 @@ model Order {
   pickupEstimate      String?   @map("pickup_estimate")
   pickupConfirmedDate DateTime? @map("pickup_confirmed_date") @db.Date
 
+  // D-033 (21 Agustus 2026) — pasangan PENGIRIMAN dari pickupEstimate/
+  // pickupConfirmedDate di atas, alasan sama persis: deliveryEstimate teks
+  // bebas (sales isi begitu produksi HAMPIR/SUDAH selesai, biasanya masih
+  // "estimasi X/Y Agustus" bukan tanggal pasti — produksi selesai bukan
+  // berarti jadwal armada/driver otomatis pasti), deliveryConfirmedDate
+  // diisi BELAKANGAN begitu jadwal benar-benar dikunci. Dua kolom terpisah
+  // dengan alasan sama: histori "awalnya dijanjikan kapan" tidak boleh
+  // hilang kalau tanggal pastinya beda dari estimasi awal.
+  deliveryEstimate      String?   @map("delivery_estimate")
+  deliveryConfirmedDate DateTime? @map("delivery_confirmed_date") @db.Date
+
   // Link share lokasi Google Maps dari customer — dulu cuma nempel di teks
   // pesan WA (gampang hilang begitu chat discroll), sekarang jadi field
   // sendiri supaya selalu ketemu dari Order-nya langsung.
