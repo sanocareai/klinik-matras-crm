@@ -73,6 +73,12 @@ export const labelBulan = formatLabelBulan;
 export function getInitials(name) {
   if (!name) return "?";
   const parts = name.trim().split(" ").filter(Boolean);
+  // name bisa berisi spasi/karakter kosong doang (mis. sinkron kontak WA
+  // yang pushName-nya blank) — trim+filter di atas jadi array KOSONG,
+  // bukan cuma "1 kata". Tanpa guard ini, parts[0][0] error karena
+  // parts[0] undefined (bug nyata production 20 Agt 2026: 1 customer
+  // bernama " " bikin seluruh tabel Pelanggan blank).
+  if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
