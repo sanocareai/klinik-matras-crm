@@ -111,6 +111,14 @@ export const ROLE_PERMISSIONS = {
     // produksi, cuma melihatnya.
     P.UNIT_READ, P.SCOPE_REVISION_DECIDE,
     P.DASHBOARD_READ,
+    // D-030 paritas mobile (21 Agustus 2026) — ditemukan saat membangun tab
+    // Pembayaran di "Rincian Pesanan": SALES bisa CATAT pembayaran (POST
+    // /orders/:id/payments TIDAK dijaga requirePermission sama sekali) tapi
+    // TIDAK BISA lihat riwayatnya sendiri (GET /armada/payments butuh
+    // PAYMENT_READ, sebelumnya cuma ADMIN) — asimetri nyata, bukan
+    // pembatasan yang disengaja (bandingkan komentar UNIT_READ di atas:
+    // sales MEMANG dimaksudkan bisa lihat status finansial order-nya).
+    P.PAYMENT_READ,
   ],
 
   // Lantai produksi: tahu kasur siapa dan harus diapakan, TIDAK tahu nomor

@@ -11,3 +11,14 @@ export function navigateToChat({ conversationId, name, isGroup = false, customer
   if (!conversationId || !navigationRef.isReady()) return;
   navigationRef.navigate("ChatRoom", { conversationId, name, isGroup, customerId });
 }
+
+// D-030 paritas mobile (21 Agustus 2026) — buka "Rincian Pesanan"
+// (OrderTimelineScreen.js) dari OrderCard.js, yang dipakai di DUA konteks
+// berbeda (OrdersScreen.js order-lintas-pelanggan, dan
+// CustomerProfileContent.js dalam profil 1 pelanggan) — pakai navigationRef
+// global di sini alih-alih prop-drilling `navigation` lewat kedua parent
+// itu, pola SAMA dengan navigateToChat di atas.
+export function navigateToOrderTimeline({ orderId, orderNumber, customerName }) {
+  if (!orderId || !navigationRef.isReady()) return;
+  navigationRef.navigate("OrderTimeline", { orderId, orderNumber, customerName });
+}

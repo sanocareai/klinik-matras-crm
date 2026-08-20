@@ -12,9 +12,10 @@
 // PATCH /orders/:id/complaint.
 import React, { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput } from "react-native";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle, PackageSearch } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
+import { navigateToOrderTimeline } from "../lib/navigationRef";
 import {
   formatRupiah, shortDate,
   ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, ORDER_STATUSES,
@@ -148,6 +149,20 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
         <View style={styles.detail}>
           {/* Tombol aksi */}
           <View style={styles.actionRow}>
+            {/* D-030 paritas mobile — rincian pesanan (riwayat status, foto
+                dokumentasi pickup/produksi/kirim, riwayat pembayaran), sama
+                dengan tombol "Rincian" di web (OrderTimelineDrawer.jsx). */}
+            <TouchableOpacity
+              style={styles.rincianBtn}
+              onPress={() => navigateToOrderTimeline({
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                customerName: order.customerName,
+              })}
+            >
+              <PackageSearch size={12} color={tokens.color.accent} strokeWidth={2.2} />
+              <Text style={styles.rincianBtnText}>Rincian</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => onEdit(order)}>
               <Text style={styles.editBtnText}>Edit</Text>
             </TouchableOpacity>
@@ -285,6 +300,8 @@ function createStyles(tokens) {
   statusBadge: { fontSize: 10, fontWeight: "700", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, overflow: "hidden" },
   detail: { paddingHorizontal: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tokens.color.border, paddingTop: 10 },
   actionRow: { flexDirection: "row", gap: 6, justifyContent: "flex-end", marginBottom: 10 },
+  rincianBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: tokens.color.accentSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginRight: "auto" },
+  rincianBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.accent },
   editBtn: { backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   editBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   deleteBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fee2e2", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },

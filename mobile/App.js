@@ -25,6 +25,7 @@ import HomeScreen from "./src/screens/HomeScreen";
 import PelangganScreen from "./src/screens/PelangganScreen";
 import OrdersScreen from "./src/screens/OrdersScreen";
 import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
+import OrderTimelineScreen from "./src/screens/OrderTimelineScreen";
 import InAppBanner from "./src/components/InAppBanner";
 import SocketStatusBanner from "./src/components/SocketStatusBanner";
 import { useColors } from "./src/theme";
@@ -273,6 +274,7 @@ function Root() {
             <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen name="ChatRoom" component={ChatScreen} />
             <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
+            <Stack.Screen name="OrderTimeline" component={OrderTimelineScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

@@ -348,6 +348,16 @@ export const api = {
   // order sama sekali). Lihat backend/src/routes/orders.js#GET /.
   getOrders: (params) => request("/orders" + buildQuery(params)),
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
+  // D-030 paritas mobile (21 Agustus 2026) — "Rincian Pesanan"
+  // (OrderTimelineScreen.js), sama endpoint dengan web
+  // (features/orders/OrderTimelineDrawer.jsx). Upload bukti bayar/kirim
+  // dokumentasi ke customer SENGAJA belum dibuatkan di sini — v1 mobile ini
+  // cuma LIHAT dokumentasi + catat pembayaran teks, dua aksi berbasis foto
+  // itu scope terpisah.
+  getOrderDocumentation: (orderId) => request(`/production/orders/${orderId}/documentation`),
+  getOrderPayments: (orderId) => request(`/armada/payments?orderId=${orderId}`),
+  recordOrderPayment: (orderId, data) =>
+    request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
 
   // Galeri Produk — dipakai OrderFormModal sebagai pemilih cepat nama+harga
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,
