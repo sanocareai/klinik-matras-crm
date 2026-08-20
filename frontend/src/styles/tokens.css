@@ -442,15 +442,27 @@ body, .card-surface, .card-inset {
   border: none !important;
 }
 
-/* — Input & kontrol: gaya Apple = permukaan TERISI, bukan kotak ber-outline — */
-input[type="text"], input[type="email"], input[type="password"],
-input[type="number"], input[type="date"], input[type="search"],
-select, textarea, .chat-textarea, .caption-input, .template-search,
-.status-select, .role-select, .product-image-label-input,
-.leads-detail-date-input, .media-preview-caption, .settings-mobile-select {
-  border: none !important;
-  background-color: var(--bg-inset);
-  color: var(--text-primary);
+/* — Input & kontrol: gaya Apple = permukaan TERISI, bukan kotak ber-outline —
+   ⚠️ Bug nyata ditemukan 20 Agt 2026: rule ini tidak berada di dalam layer
+   apa pun (beda dari sisa STEP 5 di atas/bawahnya yang SENGAJA dibiarkan
+   unlayered untuk sweep border) — jadi `background-color`/`color` di sini
+   SELALU menang atas utility Tailwind (bg-orangebg, text-orange, dst) yang
+   dipasang di StatusSelect/PipelineStageSelect/PaymentStatusSelect (Orders.jsx)
+   maupun filter select lain. Akibatnya SEMUA <select> berwarna itu tampil
+   rata abu (--bg-inset) alih-alih warna tone-nya masing-masing. Dipisah ke
+   @layer base SENDIRI (bukan ikut STEP 5 yang lain, supaya perubahan tetap
+   sempit) — border:none !important TETAP menang (importance selalu di atas
+   layer), cuma background-color/color yang sekarang kalah dari utility. */
+@layer base {
+  input[type="text"], input[type="email"], input[type="password"],
+  input[type="number"], input[type="date"], input[type="search"],
+  select, textarea, .chat-textarea, .caption-input, .template-search,
+  .status-select, .role-select, .product-image-label-input,
+  .leads-detail-date-input, .media-preview-caption, .settings-mobile-select {
+    border: none !important;
+    background-color: var(--bg-inset);
+    color: var(--text-primary);
+  }
 }
 /* Fokus ditandai RING accent, bukan border yang muncul-hilang (menggeser layout). */
 input:focus-visible, select:focus-visible, textarea:focus-visible {
