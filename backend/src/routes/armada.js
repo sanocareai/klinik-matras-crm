@@ -136,7 +136,19 @@ const jobInclude = {
     include: {
       unit: {
         include: {
-          order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+          order: {
+            select: {
+              id: true, orderNumber: true,
+              // D-032 — alamat/kota SALES/rencana (D-027), dipakai FE
+              // sebagai prefill saat dispatcher pertama kali isi addressText
+              // job ini (belum ada alamat verifikasi lapangan). Keputusan
+              // yang sebelumnya ditunda di komentar Order.deliveryAddress —
+              // ini jalur baca-saja, tidak menimpa job.addressText yang
+              // sudah diisi/diverifikasi driver.
+              deliveryAddress: true, deliveryCity: true,
+              customer: { select: { id: true, name: true, phone: true } },
+            },
+          },
         },
       },
     },

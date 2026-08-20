@@ -472,6 +472,16 @@ model Conversation {
   // ditandai admin SEKALI, bukan dipilih ulang tiap job selesai.
   isDriverGroup Boolean @default(false)
 
+  // D-032 (21 Agustus 2026) — grup WhatsApp yang menerima ringkasan order
+  // (tombol "Kirim ke Grup WA" di rincian pesanan, menggantikan copy-paste
+  // manual sales ke grup sales). Pola SAMA PERSIS dengan isDriverGroup di
+  // atas (boolean + partial unique index singleton) — sengaja tidak
+  // digabung jadi satu field "groupType" karena satu grup WA di dunia
+  // nyata BISA jadi grup driver DAN grup sales sekaligus (kecil
+  // kemungkinan tapi bukan mustahil), dua boolean independen menghindari
+  // itu jadi masalah pemodelan.
+  isSalesGroup Boolean @default(false)
+
   // Sales yang PERTAMA KALI kirim balasan outbound dari CRM di percakapan
   // ini — diisi SEKALI (tidak pernah berubah lagi walau assignedToId
   // berpindah-pindah lewat takeover/transfer), lihat routes/conversations.js

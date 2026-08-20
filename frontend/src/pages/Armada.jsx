@@ -69,6 +69,17 @@ function formatDuration(s) {
 function JobCard({ job, drivers, onChanged, route }) {
   const [driverId, setDriverId] = useState(job.driverId || "");
   const [address, setAddress] = useState(job.addressText || "");
+  // D-032 — alamat SALES/rencana (Order.deliveryAddress/deliveryCity,
+  // D-027), dipakai SEBAGAI SARAN, bukan auto-fill langsung — field ini
+  // auto-save on blur (lihat saveAddress di bawah), jadi mengisi `address`
+  // di sini akan diam-diam TERSIMPAN begitu dispatcher klik keluar field
+  // walau dia belum sempat baca/setuju. Ditampilkan sebagai tombol "Pakai
+  // alamat order" (klik = niat jelas) alih-alih placeholder biasa, supaya
+  // tetap kelihatan walau field sudah ada isinya dari sumber lain.
+  const orderForJob = job.units[0]?.unit?.order;
+  const prefillAddress = orderForJob
+    ? [orderForJob.deliveryAddress, orderForJob.deliveryCity].filter(Boolean).join(", ")
+    : "";
   const [busy, setBusy] = useState(false);
   const editable = EDITABLE_STATUSES.has(job.status);
 
@@ -179,6 +190,20 @@ function JobCard({ job, drivers, onChanged, route }) {
               className="h-9 flex-1 rounded-lg border border-border px-2 text-xs text-ink outline-none focus:border-accent"
             />
           </div>
+          {/* D-032 — cuma muncul kalau field masih kosong DAN order-nya
+              punya alamat sales (D-027). Klik = niat jelas isi + langsung
+              simpan (bukan cuma numpang di draft, supaya konsisten dgn
+              perilaku onBlur field di atas — tidak ada "draft nyangkut"
+              yang beda state dari yang tersimpan). */}
+          {!address && prefillAddress && (
+            <button
+              type="button"
+              onClick={() => { setAddress(prefillAddress); api.updateArmadaJob(job.id, { addressText: prefillAddress }).then(onChanged); }}
+              className="ml-6 mt-1 text-[11px] text-accent hover:underline"
+            >
+              Pakai alamat order: {prefillAddress}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDelete}

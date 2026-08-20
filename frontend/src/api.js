@@ -534,6 +534,14 @@ export const api = {
   // Orders + OrderItem
   updateOrder: (orderId, data) =>
     request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // D-032 — kirim ringkasan order (format sama dengan "Salin pesan WA") ke
+  // grup WA yang ditandai isSalesGroup lewat getSalesGroup/setSalesGroup di
+  // bawah.
+  sendOrderWaSummary: (orderId) =>
+    request(`/orders/${orderId}/send-wa-summary`, { method: "POST" }),
+  getSalesGroup: () => request("/conversations/sales-group"),
+  setSalesGroup: (conversationId) =>
+    request("/conversations/sales-group", { method: "PUT", body: JSON.stringify({ conversationId }) }),
   // Daftar order (order-centric) untuk halaman Order — beda dari
   // getCustomers(): 1 baris = 1 ORDER, bukan 1 pelanggan.
   getOrders: (params) => request("/orders" + buildQuery(params)),

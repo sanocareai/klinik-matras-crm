@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
-  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch,
+  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2,
 } from "lucide-react";
 import { api } from "../api.js";
+import { Card } from "@/components/ui/card.jsx";
 import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
@@ -94,6 +95,72 @@ function FilterSelect({ tone, active, className, children, ...props }) {
         {children}
       </select>
     </div>
+  );
+}
+
+// ── Pengaturan Grup WA Order (D-032) — ADMIN only, sekali setup ──────────
+// Sengaja MINIMAL (satu dropdown + tombol simpan), pola SAMA PERSIS dengan
+// DriverGroupSettings di Armada.jsx — konfigurasi sekali di awal, bukan aksi
+// rutin harian.
+function SalesGroupSettings() {
+  const [open, setOpen] = useState(false);
+  const [groups, setGroups] = useState(null);
+  const [current, setCurrent] = useState(null);
+  const [selected, setSelected] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || groups) return;
+    Promise.all([api.getGroupConversations(), api.getSalesGroup()]).then(([gs, cur]) => {
+      setGroups(gs);
+      setCurrent(cur.group);
+      setSelected(cur.group?.id || "");
+    });
+  }, [open, groups]);
+
+  async function save() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const r = await api.setSalesGroup(selected);
+      setCurrent(r.group);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="mb-3 text-xs text-ink2 hover:text-accent hover:underline">
+        Grup WhatsApp Order: {current?.groupName || "belum diatur"} — atur
+      </button>
+    );
+  }
+
+  return (
+    <Card className="mb-4 p-3">
+      <p className="mb-2 text-xs font-semibold text-ink">Grup WhatsApp Order</p>
+      <p className="mb-2 text-[11px] text-ink2">
+        Tombol "Kirim ke Grup WA" di rincian pesanan mengirim ringkasan order ke grup ini.
+      </p>
+      {!groups ? (
+        <Loader2 className="h-4 w-4 animate-spin text-ink2" />
+      ) : (
+        <div className="flex gap-2">
+          <select
+            value={selected} onChange={(e) => setSelected(e.target.value)}
+            className="h-9 flex-1 rounded-lg border border-border px-2 text-xs text-ink outline-none focus:border-accent"
+          >
+            <option value="">Pilih grup…</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.groupName || g.id}</option>)}
+          </select>
+          <Button className="h-9 text-xs" disabled={busy || !selected} onClick={save}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Simpan"}
+          </Button>
+          <button onClick={() => setOpen(false)} className="text-ink2 hover:text-ink"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -611,6 +678,7 @@ export default function Orders() {
 
       <PageBody>
        <PageErrorBoundary label="Orders">
+        {isAdmin && <SalesGroupSettings />}
         {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
             sering dicari dan paling mudah hilang dari pandangan. */}
         {!loading && items.length > 0 && (

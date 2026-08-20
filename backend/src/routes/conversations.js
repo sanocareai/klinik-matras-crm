@@ -193,6 +193,48 @@ conversationRouter.get("/counts", async (req, res) => {
   res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalas });
 });
 
+// D-032 (21 Agustus 2026) — grup WA yang menerima ringkasan order (tombol
+// "Kirim ke Grup WA" di rincian pesanan). Pola SAMA PERSIS dengan
+// /armada/driver-group (armada.js) — boolean singleton, ADMIN only,
+// ditandai sekali di awal bukan dipilih ulang tiap kirim. Harus di atas
+// /:id agar Express tidak salah routing.
+conversationRouter.get("/sales-group", requireAdmin, async (req, res) => {
+  try {
+    const group = await prisma.conversation.findFirst({
+      where: { type: "GROUP", isSalesGroup: true },
+      select: { id: true, groupName: true, groupJid: true },
+    });
+    res.json({ group });
+  } catch (err) {
+    console.error("[sales-group] gagal ambil:", err.message);
+    res.status(500).json({ error: "Gagal memuat grup WA order" });
+  }
+});
+
+// PUT /api/conversations/sales-group { conversationId }
+// Index unik parsial (migrasi 20260821090000) yang benar-benar menjamin
+// singleton — endpoint ini cuma urus "matikan yang lama, nyalakan yang
+// baru" dalam satu transaksi supaya tidak ada jendela waktu dua-duanya
+// true (yang akan membentur index itu).
+conversationRouter.put("/sales-group", requireAdmin, async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    if (!conversationId) return res.status(400).json({ error: "conversationId wajib diisi" });
+    const target = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!target) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+    if (target.type !== "GROUP") return res.status(400).json({ error: "Hanya percakapan GRUP yang bisa ditandai" });
+
+    await prisma.$transaction([
+      prisma.conversation.updateMany({ where: { isSalesGroup: true }, data: { isSalesGroup: false } }),
+      prisma.conversation.update({ where: { id: conversationId }, data: { isSalesGroup: true } }),
+    ]);
+    res.json({ ok: true, group: { id: target.id, groupName: target.groupName } });
+  } catch (err) {
+    console.error("[sales-group] gagal simpan:", err.message);
+    res.status(500).json({ error: "Gagal menyimpan grup WA order" });
+  }
+});
+
 // POST /api/conversations/mulai-chat — "ketik nomor lalu chat", seperti di
 // aplikasi WhatsApp.
 //

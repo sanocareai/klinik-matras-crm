@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check, PackageSearch,
-  Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText,
+  Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText, Send,
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
@@ -223,6 +223,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [copied, setCopied]       = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
 
   async function handleCopyWaMessage() {
     try {
@@ -231,6 +232,22 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       alert("Gagal menyalin: " + err.message);
+    }
+  }
+
+  // D-032: kirim LANGSUNG ke grup WA yang sudah ditandai admin (bukan
+  // copy-paste manual lagi) — tombol eksplisit, sales tetap yang memutuskan
+  // kapan data sudah lengkap untuk dikirim.
+  async function handleSendWaGroup() {
+    if (sendingWa) return;
+    setSendingWa(true);
+    try {
+      const res = await api.sendOrderWaSummary(order.id);
+      alert(`Terkirim ke grup "${res.group?.groupName || "WA"}".`);
+    } catch (err) {
+      alert("Gagal kirim ke grup WA: " + err.message);
+    } finally {
+      setSendingWa(false);
     }
   }
 
@@ -429,6 +446,16 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             >
               {copied ? <Check size={12} color="#16a34a" /> : <Copy size={12} />}
               {copied ? "Tersalin" : "Salin pesan WA"}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleSendWaGroup}
+              disabled={sendingWa}
+              title="Kirim ringkasan order ini langsung ke grup WA order (harus diatur admin dulu)"
+              style={{ display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Send size={12} />
+              {sendingWa ? "Mengirim..." : "Kirim ke Grup WA"}
             </button>
             <button
               className="btn btn-ghost btn-sm"

@@ -14,6 +14,10 @@ import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.j
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
+import { sendText } from "../services/wahaClient.js";
+import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
+import { buildMessagePreview } from "../utils/messagePreview.js";
+import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -454,6 +458,143 @@ orderRouter.get("/:id/timeline", async (req, res) => {
   } catch (err) {
     console.error("order timeline error:", err);
     res.status(500).json({ error: "Gagal memuat riwayat order" });
+  }
+});
+
+// D-032 (21 Agustus 2026) — port PERSIS dari buildWaMessage() di
+// frontend/src/components/customer/OrderSection.jsx (JANGAN biarkan dua
+// definisi ini menyimpang — kalau format pesan berubah, ubah DUA-DUANYA).
+// Backend butuh salinannya sendiri karena tombol "Salin pesan WA" (client-
+// side, clipboard) dan tombol "Kirim ke Grup WA" (server-side, lewat WAHA)
+// sengaja dua jalur terpisah — yang satu tidak bisa memanggil kode di sisi
+// yang lain.
+const BODY_AREA_LABELS = {
+  KEPALA_PUSING:  "Kepala",
+  SAKIT_LEHER:    "Leher",
+  BAHU:           "Bahu",
+  SAKIT_PUNGGUNG: "Punggung",
+  SAKIT_PINGGANG: "Pinggang",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+};
+function formatAngka(n) {
+  return (n || 0).toLocaleString("id-ID");
+}
+function formatTanggalOrder(d) {
+  if (!d) return "-";
+  return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+}
+function parseOrderNotesForWa(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  try {
+    const p = JSON.parse(notes);
+    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "" };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+  }
+}
+function buildWaMessage(order, customer) {
+  const info  = parseOrderNotesForWa(order.notes);
+  const berat = (order.weightEntries || []).map((w) => w.beratKg).join(", ") || "-";
+  const cats  = order.complaintCategory || [];
+
+  const areaSelected = cats.filter((c) => BODY_AREA_LABELS[c]).map((c) => BODY_AREA_LABELS[c]);
+  const keluhanLines = [];
+  if (areaSelected.length) keluhanLines.push(`- sakit Area ${areaSelected.join(", ")}`);
+  if (cats.includes("PEGAL_PEGAL")) keluhanLines.push("- Pegal area seluruh badan");
+  if (cats.includes("LAINNYA")) keluhanLines.push("- Lainnya");
+
+  const layanan    = (order.items || []).map((i) => i.layananName).join(", ") || "-";
+  const finalBiaya = order.value || 0;
+  const biayaAwal = order.promo?.discountPercent
+    ? Math.round(finalBiaya / (1 - order.promo.discountPercent / 100))
+    : finalBiaya;
+
+  return [
+    `Nama : ${customer.name || "-"}`,
+    `Tlp : ${customer.phone || "-"}`,
+    `Alamat : ${customer.name || "-"}. \n${order.deliveryAddress || "-"}${order.deliveryCity ? `. ${order.deliveryCity}` : ""}.`,
+    `Berat badan pengguna : ${berat}`,
+    `Keluhan fisik saat bangun tidur :`,
+    keluhanLines.length ? keluhanLines.join("\n") : "-",
+    `Keluhan kasur : ${info.keluhanCustomer || "-"}`,
+    `Ukuran kasur : ${info.ukuranKasur || "-"}`,
+    `Merk kasur : ${info.merkKasur || "-"}`,
+    `Layanan yang di pilih : ${layanan}`,
+    `Biaya : ${formatAngka(biayaAwal)}`,
+    `Diskon : ${order.promo ? order.promo.code : "-"}`,
+    `Final Biaya : ${formatAngka(finalBiaya)}`,
+    `Ongkir : ${formatAngka(order.ongkir)}`,
+    `Ongkir claim garansi : ${formatAngka(order.ongkirKlaimGaransi)}`,
+    `Pick Up : ${order.pickupEstimate || "-"}`,
+    `Est Pick Up : ${order.pickupConfirmedDate ? formatTanggalOrder(order.pickupConfirmedDate) : "-"}`,
+    `Cs : ${customer.assignedSales?.name || "-"}`,
+    `Share loct : ${order.locationUrl || "-"}`,
+  ].join("\n");
+}
+
+// POST /api/orders/:id/send-wa-summary — kirim ringkasan order (format SAMA
+// dengan tombol "Salin pesan WA") ke grup WA yang ditandai isSalesGroup
+// (D-032). SENGAJA tombol eksplisit (bukan otomatis begitu order disimpan)
+// — sales tetap yang memutuskan kapan data sudah lengkap/benar untuk
+// dikirim, sama pola dengan "kirim dokumentasi ke customer" (D-016) yang
+// juga perlu klik manual, bukan auto-send begitu foto ada.
+orderRouter.post("/:id/send-wa-summary", async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: {
+        customer: { include: { assignedSales: { select: { name: true } } } },
+        items: { orderBy: { sortOrder: "asc" } },
+        weightEntries: { orderBy: { sortOrder: "asc" } },
+        promo: { select: { code: true, discountPercent: true } },
+      },
+    });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+
+    const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isSalesGroup: true } });
+    if (!group) {
+      return res.status(409).json({ error: "Grup WA order belum diatur — atur dulu lewat halaman Order (admin)" });
+    }
+
+    const target = resolveSendTarget(group);
+    if (!target) return res.status(400).json({ error: "groupJid grup ini tidak tersedia" });
+
+    const text = buildWaMessage(order, order.customer);
+
+    let wahaMsg;
+    try {
+      ({ result: wahaMsg } = await sendWithSessionFallback(group, (session) =>
+        sendText(target, text, null, session)
+      ));
+    } catch (waErr) {
+      if (waErr instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
+      console.error("[send-wa-summary] gagal kirim:", waErr.message);
+      return res.status(502).json({ error: `Gagal kirim ke WhatsApp: ${waErr.message}` });
+    }
+
+    const msg = await prisma.message.create({
+      data: {
+        conversationId: group.id,
+        direction: "OUTBOUND",
+        content: text,
+        externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+        sentById: req.user.id,
+      },
+    });
+    const updatedGroup = await prisma.conversation.update({
+      where: { id: group.id },
+      data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(text, null) },
+    });
+    emitNewMessage(group.id, msg);
+    emitConversationUpdate(updatedGroup);
+
+    res.json({ ok: true, group: { id: group.id, groupName: group.groupName } });
+  } catch (err) {
+    console.error("[send-wa-summary] error:", err);
+    res.status(500).json({ error: "Gagal kirim ringkasan order ke grup WA" });
   }
 });
 
