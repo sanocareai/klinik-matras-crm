@@ -293,25 +293,39 @@ body {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── FORM INPUTS ────────────────────────────────────────── */
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="number"],
-select,
-textarea {
-  font-family: inherit;
-  font-size: 13.5px;
-  color: var(--text-main);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-input);
-  padding: 9px 12px;
-  background: white;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  outline: none;
-}
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.3);
+/* ⚠️ Bug nyata ditemukan 20 Agt 2026 (sama persis dengan bug reset <button>
+   yang sudah didokumentasikan di styles/tokens.css — baca komentar itu untuk
+   penjelasan lengkap cascade layer): blok ini TIDAK berada di dalam layer
+   apa pun, jadi per spesifikasi CSS ia SELALU menang atas utility Tailwind
+   (`@layer utilities`) berapa pun spesifisitasnya. Akibatnya SEMUA <select>
+   yang diberi warna lewat Tailwind (StatusSelect/PipelineStageSelect/
+   PaymentStatusSelect di Orders.jsx, filter Kategori/Pembayaran/Sales/Promo,
+   dst) kehilangan background/padding/font-size berwarna yang dimaksud —
+   tampil rata abu/gelap polos, PERSIS keluhan "halaman Order kurang warna,
+   semua kelihatan sama". Dibungkus @layer base (tailwind.css sudah
+   mendeklarasikan `@layer theme, base, utilities;` duluan, jadi base <
+   utilities terjamin) — JANGAN keluarkan blok ini dari @layer base. */
+@layer base {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    padding: 9px 12px;
+    background: white;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.3);
+  }
 }
 .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
 .form-group { margin-bottom: 16px; }
