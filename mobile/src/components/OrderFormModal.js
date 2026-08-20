@@ -58,6 +58,28 @@ const CATEGORY_OPTIONS = [
   { value: "SEWA", label: "Kasur Sewa" },
 ];
 
+// D-027/D-028/D-029 (20 Agustus 2026) — paritas dengan web
+// (frontend/src/components/customer/OrderSection.jsx & utils/format.js).
+// Konstanta ini SAMA PERSIS dengan versi web — kalau daftar kota/kategori
+// keluhan berubah di sana, ubah juga di sini (belum ada API master-data
+// untuk ini, sama seperti web yang juga masih hardcode).
+const KOTA_LIST = [
+  "Jakarta Selatan", "Jakarta Barat", "Jakarta Utara", "Jakarta Pusat", "Jakarta Timur",
+  "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
+];
+const HEALTH_COMPLAINT_LABELS = {
+  KEPALA_PUSING:  "Kepala Pusing",
+  SAKIT_PINGGANG: "Sakit Pinggang",
+  SAKIT_PUNGGUNG: "Sakit Punggung",
+  SAKIT_LEHER:    "Sakit Leher",
+  BAHU:           "Bahu",
+  PEGAL_PEGAL:    "Pegal-pegal",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+  LAINNYA:        "Lainnya",
+};
+const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
+
 function newItem() {
   return { key: String(Date.now()) + Math.random(), layananName: "", harga: "" };
 }
@@ -156,6 +178,23 @@ export default function OrderFormModal({
   const [quantity, setQuantity] = useState("1");
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
+  // D-027: kota + alamat pengiriman order ini — TERPISAH dari Customer.city
+  // (1 customer bisa order untuk alamat berbeda-beda), sama seperti web.
+  const [deliveryCity, setDeliveryCity] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [showKotaPicker, setShowKotaPicker] = useState(false);
+  // D-028: Sakit/Tidak Sakit + kategori keluhan (multi-pilih, lihat komentar
+  // enum HealthComplaintCategory di backend — keluhan biasanya lebih dari
+  // satu area sekaligus).
+  const [healthStatus, setHealthStatus] = useState("");
+  const [complaintCategory, setComplaintCategory] = useState([]);
+  // D-029: field tambahan supaya form order menangkap semua yang selama ini
+  // diketik ulang manual sales ke grup WA (ongkir, estimasi pickup, lokasi).
+  const [ongkir, setOngkir] = useState("");
+  const [ongkirKlaimGaransi, setOngkirKlaimGaransi] = useState("");
+  const [pickupEstimate, setPickupEstimate] = useState("");
+  const [pickupConfirmedDate, setPickupConfirmedDate] = useState("");
+  const [locationUrl, setLocationUrl] = useState("");
   const [keluhan, setKeluhan] = useState("");
   const [hargaTotal, setHargaTotal] = useState("");
   const [items, setItems] = useState([newItem()]);
@@ -203,6 +242,15 @@ export default function OrderFormModal({
       setQuantity(order.quantity ? String(order.quantity) : "1");
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
+      setDeliveryCity(order.deliveryCity || "");
+      setDeliveryAddress(order.deliveryAddress || "");
+      setHealthStatus(order.healthStatus || "");
+      setComplaintCategory(order.complaintCategory || []);
+      setOngkir(order.ongkir != null ? String(order.ongkir) : "");
+      setOngkirKlaimGaransi(order.ongkirKlaimGaransi != null ? String(order.ongkirKlaimGaransi) : "");
+      setPickupEstimate(order.pickupEstimate || "");
+      setPickupConfirmedDate(order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : "");
+      setLocationUrl(order.locationUrl || "");
       setKeluhan(info.keluhanCustomer);
       setPromoId(order.promoId || "");
       setHargaTotal(order.value ? String(order.value) : "");
@@ -224,6 +272,15 @@ export default function OrderFormModal({
       setQuantity("1");
       setMerkKasur("");
       setUkuran("");
+      setDeliveryCity("");
+      setDeliveryAddress("");
+      setHealthStatus("");
+      setComplaintCategory([]);
+      setOngkir("");
+      setOngkirKlaimGaransi("");
+      setPickupEstimate("");
+      setPickupConfirmedDate("");
+      setLocationUrl("");
       setKeluhan("");
       setPromoId("");
       setHargaTotal("");
@@ -269,6 +326,15 @@ export default function OrderFormModal({
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       promoId: promoId || undefined,
+      deliveryCity: deliveryCity || undefined,
+      deliveryAddress: deliveryAddress || undefined,
+      healthStatus: healthStatus || undefined,
+      complaintCategory: healthStatus === "SAKIT" ? complaintCategory : undefined,
+      ongkir: ongkir || undefined,
+      ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
+      pickupEstimate: pickupEstimate || undefined,
+      pickupConfirmedDate: pickupConfirmedDate || undefined,
+      locationUrl: locationUrl || undefined,
     });
 
     const createdItems = [];
@@ -313,6 +379,15 @@ export default function OrderFormModal({
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       promoId: promoId || null,
+      deliveryCity: deliveryCity || null,
+      deliveryAddress: deliveryAddress || null,
+      healthStatus: healthStatus || null,
+      complaintCategory: healthStatus === "SAKIT" ? complaintCategory : [],
+      ongkir: ongkir === "" ? null : ongkir,
+      ongkirKlaimGaransi: ongkirKlaimGaransi === "" ? null : ongkirKlaimGaransi,
+      pickupEstimate: pickupEstimate || null,
+      pickupConfirmedDate: pickupConfirmedDate || null,
+      locationUrl: locationUrl || null,
     });
 
     const existingWeightIds = (order.weightEntries || []).map((e) => e.id);
@@ -669,6 +744,71 @@ export default function OrderFormModal({
               <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
             </TouchableOpacity>
 
+            {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
+                1 customer bisa order untuk alamat berbeda-beda. */}
+            <Text style={styles.label}>Kota</Text>
+            <TouchableOpacity style={styles.selectBox} onPress={() => setShowKotaPicker(true)}>
+              <Text style={styles.selectBoxText}>{deliveryCity || "— Pilih Kota —"}</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.label}>Alamat</Text>
+            <TextInput
+              style={[styles.input, styles.textarea]}
+              placeholder="Alamat lengkap pengiriman…"
+              placeholderTextColor={tokens.color.textMuted}
+              value={deliveryAddress}
+              onChangeText={setDeliveryAddress}
+              multiline
+            />
+
+            {/* Kondisi Kesehatan + kategori keluhan (D-028) — multi-pilih,
+                dipakai mengklasifikasi jenis keluhan sakit customer klinik
+                matras. Kategori cuma muncul kalau Sakit dipilih. */}
+            <Text style={styles.label}>Kondisi Kesehatan</Text>
+            <View style={styles.categoryRow}>
+              {[
+                { value: "SAKIT", label: "Sakit", color: tokens.color.danger },
+                { value: "TIDAK_SAKIT", label: "Tidak Sakit", color: tokens.color.success },
+              ].map(({ value, label, color }) => {
+                const active = healthStatus === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.categoryChip,
+                      active && { backgroundColor: color + "22", borderColor: color },
+                    ]}
+                    onPress={() => setHealthStatus((prev) => (prev === value ? "" : value))}
+                  >
+                    <Text style={[styles.categoryChipText, active && { color, fontWeight: "700" }]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {healthStatus === "SAKIT" && (
+              <View style={[styles.statusRow, { marginTop: 8 }]}>
+                {HEALTH_COMPLAINT_OPTIONS.map((k) => {
+                  const active = complaintCategory.includes(k);
+                  return (
+                    <TouchableOpacity
+                      key={k}
+                      style={[
+                        styles.statusChip,
+                        active && { backgroundColor: tokens.color.danger + "22", borderColor: tokens.color.danger },
+                      ]}
+                      onPress={() => setComplaintCategory((prev) =>
+                        prev.includes(k) ? prev.filter((v) => v !== k) : [...prev, k]
+                      )}
+                    >
+                      <Text style={[styles.categoryChipText, active && { color: tokens.color.danger, fontWeight: "700" }]}>
+                        {HEALTH_COMPLAINT_LABELS[k]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Promo (D-026) — opsional, cuma PENANDA untuk laporan, tidak
                 menghitung ulang harga apa pun (harga tetap manual di bawah). */}
             <Text style={styles.label}>Promo (opsional)</Text>
@@ -694,6 +834,62 @@ export default function OrderFormModal({
               value={keluhan}
               onChangeText={setKeluhan}
               multiline
+            />
+
+            {/* D-029: Ongkir + estimasi pickup + link lokasi — supaya semua
+                data yang selama ini diketik ulang manual sales ke grup WA
+                tercatat di order-nya langsung. */}
+            <View style={styles.weightRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Ongkir</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={ongkir}
+                  onChangeText={setOngkir}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.label}>Ongkir Klaim Garansi</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={tokens.color.textMuted}
+                  value={ongkirKlaimGaransi}
+                  onChangeText={setOngkirKlaimGaransi}
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.label}>Estimasi Pick Up</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="cth: est 24/25 Agustus 2026"
+              placeholderTextColor={tokens.color.textMuted}
+              value={pickupEstimate}
+              onChangeText={setPickupEstimate}
+            />
+
+            <Text style={styles.label}>Tanggal Pick Up Pasti</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD (diisi setelah jadwal dikunci)"
+              placeholderTextColor={tokens.color.textMuted}
+              value={pickupConfirmedDate}
+              onChangeText={setPickupConfirmedDate}
+            />
+
+            <Text style={styles.label}>Link Lokasi</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="https://maps.app.goo.gl/…"
+              placeholderTextColor={tokens.color.textMuted}
+              value={locationUrl}
+              onChangeText={setLocationUrl}
+              autoCapitalize="none"
             />
 
             {/* Harga Total — hanya BARU/SEWA */}
@@ -770,6 +966,13 @@ export default function OrderFormModal({
         options={orderOptions.ukuranKasur}
         onSelect={setUkuran}
         onClose={() => setShowUkuranPicker(false)}
+      />
+      <PickerSheet
+        visible={showKotaPicker}
+        title="Pilih Kota"
+        options={KOTA_LIST}
+        onSelect={setDeliveryCity}
+        onClose={() => setShowKotaPicker(false)}
       />
       <PickerSheet
         visible={!!layananPickerTarget}
