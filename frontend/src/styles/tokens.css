@@ -197,32 +197,40 @@
    Dipakai sebagai class supaya ladder-nya bisa ditegakkan (satu util Tailwind
    tidak bisa menyatakan size+weight+tracking+warna sekaligus).
    ═══════════════════════════════════════════════════════════════════════════ */
-.t-page-title {
-  font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
-  line-height: 1.2; color: var(--text-primary);
-}
-.t-card-title {
-  font-size: 17px; font-weight: 600; line-height: 1.3;
-  color: var(--text-primary);
-}
-.t-body {
-  font-size: 15px; font-weight: 400; line-height: 1.45;
-  color: var(--text-primary);
-}
-.t-secondary {
-  font-size: 13px; font-weight: 400; line-height: 1.4;
-  color: var(--text-secondary);
-}
-.t-caption {
-  font-size: 11px; font-weight: 500; text-transform: uppercase;
-  letter-spacing: 0.05em; line-height: 1.3; color: var(--text-tertiary);
-}
-/* Angka metrik — satu-satunya ukuran di luar tangga, khusus angka besar.
-   tabular-nums supaya digit tidak "goyang" saat count-up berjalan. */
-.t-metric {
-  font-size: 34px; font-weight: 700; letter-spacing: -0.02em;
-  line-height: 1.05; color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
+/* Hardening preventif (21 Agustus 2026, sama alasan STEP 5 di bawah) —
+   color di sini unlayered, dibungkus @layer base supaya utility Tailwind
+   text-* (kalau ada komponen baru yang menambahkannya ke elemen ber-class
+   ini) tidak diam-diam kalah. font-size/weight/spacing TIDAK berubah
+   perilakunya sama sekali — cuma color yang sekarang bisa dikalahkan
+   utility, dan itu memang yang diinginkan. */
+@layer base {
+  .t-page-title {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+    line-height: 1.2; color: var(--text-primary);
+  }
+  .t-card-title {
+    font-size: 17px; font-weight: 600; line-height: 1.3;
+    color: var(--text-primary);
+  }
+  .t-body {
+    font-size: 15px; font-weight: 400; line-height: 1.45;
+    color: var(--text-primary);
+  }
+  .t-secondary {
+    font-size: 13px; font-weight: 400; line-height: 1.4;
+    color: var(--text-secondary);
+  }
+  .t-caption {
+    font-size: 11px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.05em; line-height: 1.3; color: var(--text-tertiary);
+  }
+  /* Angka metrik — satu-satunya ukuran di luar tangga, khusus angka besar.
+     tabular-nums supaya digit tidak "goyang" saat count-up berjalan. */
+  .t-metric {
+    font-size: 34px; font-weight: 700; letter-spacing: -0.02em;
+    line-height: 1.05; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
 }
 @media (max-width: 640px) {
   .t-page-title { font-size: 24px; }
@@ -405,37 +413,49 @@ body, .card-surface, .card-inset {
    list, sel tabel, dan tab adalah HAIRLINE yang MEMANG diinginkan spec. Yang
    dimatikan hanya border PENUH pada permukaan. */
 
-/* — Kartu & panel: border → satu shadow lembut — */
-.card, .chart-card, .stat-card, .settings-card, .user-card, .workflow-card,
-.estimate-card, .kpi-mini, .wa-session-card, .dash-metric-card, .dash-chart-card,
-.dash-session-card, .target-sales-person-card, .product-editor, .order-item,
-.leads-detail-row, .table-wrap, .media-gallery-doc-item, .preview-doc,
-.product-image-item, .picker-image-item, .bubble-poll-option {
-  border: none !important;
-  box-shadow: var(--shadow-card);
-  background-color: var(--bg-surface);
-}
-/* Baris di DALAM kartu tidak boleh ikut mengapung — tone saja, tanpa shadow. */
-.order-item, .leads-detail-row, .bubble-poll-option, .product-image-item,
-.picker-image-item, .media-gallery-doc-item {
-  box-shadow: none;
-  background-color: var(--bg-inset);
-}
+/* ⚠️ Hardening preventif (21 Agustus 2026) — BUKAN bug yang sudah terjadi
+   (diaudit: belum ada komponen Tailwind yang pakai nama class legacy di
+   bawah ini bersamaan dengan utility bg-* atau text-* yang konflik), tapi pola
+   akarnya SAMA PERSIS dengan 2 bug nyata yang sudah ditemukan sesi ini
+   (reset <button> & reset <select>/<input> — lihat komentar masing-masing
+   di file ini): background-color/color di bawah unlayered, jadi begitu ADA
+   komponen baru yang menambahkan utility Tailwind ke elemen berclass ini,
+   warnanya akan diam-diam kalah tanpa error apa pun. Dibungkus @layer base
+   sekarang, sebelum itu terjadi — border:none !important TIDAK terpengaruh
+   (importance selalu menang di atas layer manapun). */
+@layer base {
+  /* — Kartu & panel: border → satu shadow lembut — */
+  .card, .chart-card, .stat-card, .settings-card, .user-card, .workflow-card,
+  .estimate-card, .kpi-mini, .wa-session-card, .dash-metric-card, .dash-chart-card,
+  .dash-session-card, .target-sales-person-card, .product-editor, .order-item,
+  .leads-detail-row, .table-wrap, .media-gallery-doc-item, .preview-doc,
+  .product-image-item, .picker-image-item, .bubble-poll-option {
+    border: none !important;
+    box-shadow: var(--shadow-card);
+    background-color: var(--bg-surface);
+  }
+  /* Baris di DALAM kartu tidak boleh ikut mengapung — tone saja, tanpa shadow. */
+  .order-item, .leads-detail-row, .bubble-poll-option, .product-image-item,
+  .picker-image-item, .media-gallery-doc-item {
+    box-shadow: none;
+    background-color: var(--bg-inset);
+  }
 
-/* — Permukaan mengapung: satu-satunya elevasi berat — */
-.conv-context-menu, .chat-dots-dropdown, .template-picker-popup,
-.emoji-picker-popup, .model-picker-dropdown, .msg-action-bar,
-.pipeline-undo-toast, .media-quality-toggle {
-  border: none !important;
-  box-shadow: var(--shadow-popover);
-  background-color: var(--bg-surface);
-}
+  /* — Permukaan mengapung: satu-satunya elevasi berat — */
+  .conv-context-menu, .chat-dots-dropdown, .template-picker-popup,
+  .emoji-picker-popup, .model-picker-dropdown, .msg-action-bar,
+  .pipeline-undo-toast, .media-quality-toggle {
+    border: none !important;
+    box-shadow: var(--shadow-popover);
+    background-color: var(--bg-surface);
+  }
 
-/* — Tombol: tidak ada border di tingkat mana pun (3 tingkat, lihat button.jsx) — */
-.btn-secondary {
-  border: none !important;
-  background-color: var(--accent-bg);
-  color: var(--accent);
+  /* — Tombol: tidak ada border di tingkat mana pun (3 tingkat, lihat button.jsx) — */
+  .btn-secondary {
+    border: none !important;
+    background-color: var(--accent-bg);
+    color: var(--accent);
+  }
 }
 .btn-ghost, .panel-edit-btn, .picker-kat-btn, .media-gallery-tab,
 .bubble-media-load-btn, .model-selector-pill, .stage-btn {
@@ -470,17 +490,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline-offset: -1px;
 }
 
-/* — Bubble chat masuk: permukaan, bukan kotak ber-border — */
-.bubble.in, .ai-bubble.ai, .copilot-msg-assistant .copilot-msg-bubble {
-  border: none !important;
-  background-color: var(--bg-inset);
-}
+/* — Bubble chat masuk & banner feedback: sama alasan hardening di atas. */
+@layer base {
+  .bubble.in, .ai-bubble.ai, .copilot-msg-assistant .copilot-msg-bubble {
+    border: none !important;
+    background-color: var(--bg-inset);
+  }
 
-/* — Banner feedback inline: tinted, tanpa border (pola Badge) — */
-.inline-feedback-success { border: none !important; background: var(--green-bg);  color: var(--green); }
-.inline-feedback-warning { border: none !important; background: var(--orange-bg); color: var(--orange); }
-.inline-feedback-error   { border: none !important; background: var(--red-bg);    color: var(--red); }
-.inline-feedback-info    { border: none !important; background: var(--accent-bg); color: var(--accent); }
+  .inline-feedback-success { border: none !important; background: var(--green-bg);  color: var(--green); }
+  .inline-feedback-warning { border: none !important; background: var(--orange-bg); color: var(--orange); }
+  .inline-feedback-error   { border: none !important; background: var(--red-bg);    color: var(--red); }
+  .inline-feedback-info    { border: none !important; background: var(--accent-bg); color: var(--accent); }
+}
 
 /* — Sisa: hilangkan border tanpa mengubah latar — */
 .wizard-step-circle, .bubble-failed, .emoji-mart-loading, .search-input-wrap,
