@@ -444,13 +444,14 @@ customerRouter.patch("/:id", async (req, res) => {
     ...(leadSourceConfirmed !== undefined && { leadSourceConfirmed }),
     ...(customerType !== undefined && { customerType }),
     // D-028: kategori keluhan cuma relevan kalau healthStatus = SAKIT —
-    // dipaksa null di sini juga kalau toggle balik ke Tidak Sakit/kosong,
-    // sama seperti Order.complaintCategory di routes/orders.js.
+    // dipaksa [] di sini juga kalau toggle balik ke Tidak Sakit/kosong,
+    // sama seperti Order.complaintCategory di routes/orders.js. Array
+    // (multi-pilih) sejak revisi 20 Agustus 2026.
     ...(healthStatus !== undefined && {
       healthStatus: healthStatus || null,
-      complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+      complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
     }),
-    ...(healthStatus === undefined && complaintCategory !== undefined && { complaintCategory: complaintCategory || null }),
+    ...(healthStatus === undefined && complaintCategory !== undefined && { complaintCategory: complaintCategory || [] }),
   };
 
   // Kalau leadSource diubah manual → otomatis set confirmed = true
@@ -583,7 +584,10 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 // jumlah barang yang dipesan (bisa 2 bantal / 2 guling), bukan jumlah kasur.
 // Klien lama yang tidak mengirim `unitCount` tetap benar untuk mayoritas order.
 customerRouter.post("/:id/orders", async (req, res) => {
-  const { quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory } = req.body;
+  const {
+    quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
+    healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl,
+  } = req.body;
 
   const cat = category || "LAYANAN";
 
@@ -610,8 +614,13 @@ customerRouter.post("/:id/orders", async (req, res) => {
         ...(deliveryAddress && { deliveryAddress }),
         ...(healthStatus && {
           healthStatus,
-          complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+          complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
         }),
+        ...(ongkir !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
+        ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
+        ...(pickupEstimate && { pickupEstimate }),
+        ...(pickupConfirmedDate && { pickupConfirmedDate }),
+        ...(locationUrl && { locationUrl }),
       },
       include: { items: true },
     });

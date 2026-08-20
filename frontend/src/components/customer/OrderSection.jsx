@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check } from "lucide-react";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
+  HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
+  parseOrderNotes, buildOrderNotes, promoLabel,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 
@@ -31,59 +33,12 @@ const CATEGORY_OPTIONS = [
   { value: "SEWA",    icon: "📅", label: "Kasur Sewa",        sub: "Sewa kasur" },
 ];
 
-// D-028: klasifikasi keluhan sakit per order (beda dari Customer.healthStatus
-// di panel Inbox — ini levelnya order, dipakai untuk laporan/analisa jenis
-// keluhan). complaintCategory cuma relevan kalau healthStatus = SAKIT.
-const HEALTH_COMPLAINT_LABELS = {
-  KEPALA_PUSING:  "Kepala Pusing",
-  SAKIT_PINGGANG: "Sakit Pinggang",
-  SAKIT_PUNGGUNG: "Sakit Punggung",
-  SAKIT_LEHER:    "Sakit Leher",
-  PEGAL_PEGAL:    "Pegal-pegal",
-  SARAF_KEJEPIT:  "Saraf Kejepit",
-  SKOLIOSIS:      "Skoliosis",
-  LAINNYA:        "Lainnya",
-};
-const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
-
 const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
 const CATEGORY_BADGE  = {
   LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
   BARU:    { bg: "#dcfce7", color: "#166534" },
   SEWA:    { bg: "#dbeafe", color: "#1e40af" },
 };
-
-function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
-  try {
-    const p = JSON.parse(notes);
-    return {
-      merkKasur:       p.merkKasur || "",
-      ukuranKasur:     p.ukuranKasur || "",
-      keluhanCustomer: p.keluhanCustomer || "",
-    };
-  } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
-  }
-}
-
-function buildNotes(info) {
-  return JSON.stringify({
-    merkKasur:       info.merkKasur || "",
-    ukuranKasur:     info.ukuranKasur || "",
-    keluhanCustomer: info.keluhanCustomer || "",
-  });
-}
-
-// D-026 fix (20 Agustus 2026): satu campaign (mis. "MDSP-Aug") sering
-// punya BEBERAPA kode voucher berbeda (MERDEKA10, MERDEKA8, dst) sebagai
-// promo TERPISAH dengan `name` yang sama persis — dropdown yang cuma
-// menampilkan `name` bikin sales lihat "MDSP-Aug" dobel tanpa tahu mana
-// yang mana, jadi tidak bisa pilih voucher yang benar. Kode SELALU
-// ditaruh duluan (paling menonjol) karena itu satu-satunya pembeda.
-function promoLabel(p) {
-  return `${p.code} — ${p.name}`;
-}
 
 function newItem() {
   return { key: Date.now() + Math.random(), layananName: "", harga: "" };
@@ -107,9 +62,71 @@ function formatTanggal(d) {
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 }
 
+// D-029 (20 Agustus 2026) — sales SELAMA INI ngetik ulang manual seluruh info
+// order ini ke grup WA sales (format persis di bawah, diambil dari contoh
+// pesan nyata). Tombol "Salin pesan WA" generate teks yang SAMA dari data
+// order yang sudah ada di CRM, supaya tidak ada lagi field yang kelewat/typo
+// saat diketik ulang. Angka SENGAJA tanpa prefix "Rp" — mengikuti format asli
+// yang sales pakai di WA.
+const BODY_AREA_LABELS = {
+  KEPALA_PUSING:  "Kepala",
+  SAKIT_LEHER:    "Leher",
+  BAHU:           "Bahu",
+  SAKIT_PUNGGUNG: "Punggung",
+  SAKIT_PINGGANG: "Pinggang",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+};
+function formatAngka(n) {
+  return (n || 0).toLocaleString("id-ID");
+}
+function buildWaMessage(order, customer) {
+  const info   = parseOrderNotes(order.notes);
+  const berat  = (order.weightEntries || []).map((w) => w.beratKg).join(", ") || "-";
+  const cats   = order.complaintCategory || [];
+
+  const areaSelected = cats.filter((c) => BODY_AREA_LABELS[c]).map((c) => BODY_AREA_LABELS[c]);
+  const keluhanLines = [];
+  if (areaSelected.length) keluhanLines.push(`- sakit Area ${areaSelected.join(", ")}`);
+  if (cats.includes("PEGAL_PEGAL")) keluhanLines.push("- Pegal area seluruh badan");
+  if (cats.includes("LAINNYA")) keluhanLines.push("- Lainnya");
+
+  const layanan     = (order.items || []).map((i) => i.layananName).join(", ") || "-";
+  const finalBiaya  = order.value || 0;
+  // Biaya SEBELUM diskon — dihitung mundur dari final harga, HANYA untuk
+  // tampilan pesan WA (bukan disimpan). Kalau promo tidak punya
+  // discountPercent (mis. promo bonus item), tidak ada cara menghitung
+  // mundur yang benar — tampilkan final biaya apa adanya, jangan menebak.
+  const biayaAwal = order.promo?.discountPercent
+    ? Math.round(finalBiaya / (1 - order.promo.discountPercent / 100))
+    : finalBiaya;
+
+  return [
+    `Nama : ${customer.name || "-"}`,
+    `Tlp : ${customer.phone || "-"}`,
+    `Alamat : ${customer.name || "-"}. \n${order.deliveryAddress || "-"}${order.deliveryCity ? `. ${order.deliveryCity}` : ""}.`,
+    `Berat badan pengguna : ${berat}`,
+    `Keluhan fisik saat bangun tidur :`,
+    keluhanLines.length ? keluhanLines.join("\n") : "-",
+    `Keluhan kasur : ${info.keluhanCustomer || "-"}`,
+    `Ukuran kasur : ${info.ukuranKasur || "-"}`,
+    `Merk kasur : ${info.merkKasur || "-"}`,
+    `Layanan yang di pilih : ${layanan}`,
+    `Biaya : ${formatAngka(biayaAwal)}`,
+    `Diskon : ${order.promo ? order.promo.code : "-"}`,
+    `Final Biaya : ${formatAngka(finalBiaya)}`,
+    `Ongkir : ${formatAngka(order.ongkir)}`,
+    `Ongkir claim garansi : ${formatAngka(order.ongkirKlaimGaransi)}`,
+    `Pick Up : ${order.pickupEstimate || "-"}`,
+    `Est Pick Up : ${order.pickupConfirmedDate ? formatTanggal(order.pickupConfirmedDate) : "-"}`,
+    `Cs : ${customer.assignedSales?.name || "-"}`,
+    `Share loct : ${order.locationUrl || "-"}`,
+  ].join("\n");
+}
+
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
-function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, promos }) {
-  const info = parseNotes(order.notes);
+function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOptions, promos }) {
+  const info = parseOrderNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
   // D-025: field non-status (merk/ukuran/item/harga/berat/catatan/pembayaran)
@@ -137,9 +154,19 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
   // (1 customer bisa order untuk alamat berbeda-beda).
   const [deliveryCity, setDeliveryCity]       = useState(order.deliveryCity || "");
   const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || "");
-  // D-028: Sakit/Tidak Sakit + kategori keluhan per order.
+  // D-028: Sakit/Tidak Sakit + kategori keluhan per order (multi-pilih —
+  // keluhan biasanya lebih dari satu area sekaligus, lihat komentar enum).
   const [healthStatus, setHealthStatus]           = useState(order.healthStatus || "");
-  const [complaintCategory, setComplaintCategory] = useState(order.complaintCategory || "");
+  const [complaintCategory, setComplaintCategory] = useState(order.complaintCategory || []);
+  // D-029: field tambahan supaya form order menangkap semua yang selama ini
+  // diketik ulang manual ke grup WA sales (ongkir, estimasi pickup, lokasi).
+  const [ongkir, setOngkir]                       = useState(order.ongkir ?? "");
+  const [ongkirKlaimGaransi, setOngkirKlaimGaransi] = useState(order.ongkirKlaimGaransi ?? "");
+  const [pickupEstimate, setPickupEstimate]       = useState(order.pickupEstimate || "");
+  const [pickupConfirmedDate, setPickupConfirmedDate] = useState(
+    order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : ""
+  );
+  const [locationUrl, setLocationUrl]             = useState(order.locationUrl || "");
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
@@ -151,6 +178,17 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
   );
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState(false);
+  const [copied, setCopied]       = useState(false);
+
+  async function handleCopyWaMessage() {
+    try {
+      await navigator.clipboard.writeText(buildWaMessage(order, customer || {}));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      alert("Gagal menyalin: " + err.message);
+    }
+  }
 
   // State untuk fitur komplain
   const [showComplaintForm, setShowComplaintForm] = useState(false);
@@ -181,12 +219,17 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
 
       await api.updateOrder(order.id, {
         paymentStatus,
-        notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildOrderNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || null,
         deliveryCity: deliveryCity || null,
         deliveryAddress: deliveryAddress || null,
         healthStatus: healthStatus || null,
-        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+        complaintCategory: healthStatus === "SAKIT" ? complaintCategory : [],
+        ongkir: ongkir === "" ? null : ongkir,
+        ongkirKlaimGaransi: ongkirKlaimGaransi === "" ? null : ongkirKlaimGaransi,
+        pickupEstimate: pickupEstimate || null,
+        pickupConfirmedDate: pickupConfirmedDate || null,
+        locationUrl: locationUrl || null,
       });
 
       // Proses weight entries
@@ -252,7 +295,7 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
   }
 
   function handleCancel() {
-    const inf = parseNotes(order.notes);
+    const inf = parseOrderNotes(order.notes);
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
@@ -260,7 +303,12 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
     setDeliveryCity(order.deliveryCity || "");
     setDeliveryAddress(order.deliveryAddress || "");
     setHealthStatus(order.healthStatus || "");
-    setComplaintCategory(order.complaintCategory || "");
+    setComplaintCategory(order.complaintCategory || []);
+    setOngkir(order.ongkir ?? "");
+    setOngkirKlaimGaransi(order.ongkirKlaimGaransi ?? "");
+    setPickupEstimate(order.pickupEstimate || "");
+    setPickupConfirmedDate(order.pickupConfirmedDate ? order.pickupConfirmedDate.slice(0, 10) : "");
+    setLocationUrl(order.locationUrl || "");
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
     setWeightEntries(
       (order.weightEntries && order.weightEntries.length > 0)
@@ -329,6 +377,15 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginBottom: 10 }}>
         {!editing ? (
           <>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleCopyWaMessage}
+              title="Salin ringkasan order ini dalam format pesan WA — tempel langsung ke grup WA sales"
+              style={{ display: "flex", alignItems: "center", gap: 4 }}
+            >
+              {copied ? <Check size={12} color="#16a34a" /> : <Copy size={12} />}
+              {copied ? "Tersalin" : "Salin pesan WA"}
+            </button>
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => setEditing(true)}
@@ -606,10 +663,27 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
               })}
             </div>
             {healthStatus === "SAKIT" && (
-              <select value={complaintCategory} onChange={(e) => setComplaintCategory(e.target.value)} style={selStyleFull} disabled={locked}>
-                <option value="">— Pilih Kategori Keluhan —</option>
-                {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
-              </select>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {HEALTH_COMPLAINT_OPTIONS.map((k) => {
+                  const active = complaintCategory.includes(k);
+                  return (
+                    <button
+                      key={k} type="button" disabled={locked}
+                      onClick={() => setComplaintCategory((prev) =>
+                        prev.includes(k) ? prev.filter((v) => v !== k) : [...prev, k]
+                      )}
+                      style={{
+                        fontSize: 11.5, fontWeight: 600, padding: "3px 10px", borderRadius: 99,
+                        cursor: locked ? "not-allowed" : "pointer", transition: "all 0.15s",
+                        border: `1.5px solid ${active ? "#dc2626" : "var(--border)"}`,
+                        background: active ? "#dc26261a" : "transparent",
+                        color: active ? "#dc2626" : "var(--text-secondary)",
+                      }}>
+                      {HEALTH_COMPLAINT_LABELS[k]}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </>
         ) : order.healthStatus ? (
@@ -622,12 +696,72 @@ function OrderDetail({ order, customerId, onRefresh, onDelete, orderOptions, pro
             }}>
               {order.healthStatus === "SAKIT" ? "Sakit" : "Tidak Sakit"}
             </span>
-            {order.complaintCategory && (
-              <span style={chipStyle}>{HEALTH_COMPLAINT_LABELS[order.complaintCategory] || order.complaintCategory}</span>
-            )}
+            {(order.complaintCategory || []).map((k) => (
+              <span key={k} style={chipStyle}>{HEALTH_COMPLAINT_LABELS[k] || k}</span>
+            ))}
           </div>
         ) : (
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>—</span>
+        )}
+      </div>
+
+      {/* D-029: Ongkir + estimasi pickup + link lokasi — supaya semua data
+          yang sebelumnya diketik ulang manual ke grup WA sales sekarang
+          tercatat di order-nya langsung (lihat tombol "Salin pesan WA"
+          di bawah). */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+        <div>
+          <span style={metaLabel}>Ongkir</span>
+          {editing ? (
+            <input type="number" value={ongkir} onChange={(e) => setOngkir(e.target.value)}
+              placeholder="0" disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.ongkir != null ? formatRupiah(order.ongkir) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+        <div>
+          <span style={metaLabel}>Ongkir Klaim Garansi</span>
+          {editing ? (
+            <input type="number" value={ongkirKlaimGaransi} onChange={(e) => setOngkirKlaimGaransi(e.target.value)}
+              placeholder="0" disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.ongkirKlaimGaransi != null ? formatRupiah(order.ongkirKlaimGaransi) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+        <div>
+          <span style={metaLabel}>Estimasi Pick Up</span>
+          {editing ? (
+            <input value={pickupEstimate} onChange={(e) => setPickupEstimate(e.target.value)}
+              placeholder="cth: est 24/25 Agustus 2026" disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.pickupEstimate || <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+        <div>
+          <span style={metaLabel}>Tanggal Pick Up Pasti</span>
+          {editing ? (
+            <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
+              disabled={locked} style={selStyleFull} />
+          ) : (
+            <div style={{ fontSize: 13 }}>{order.pickupConfirmedDate ? formatTanggal(order.pickupConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={metaLabel}>Link Lokasi</span>
+        {editing ? (
+          <input value={locationUrl} onChange={(e) => setLocationUrl(e.target.value)}
+            placeholder="https://maps.app.goo.gl/..." disabled={locked} style={selStyleFull} />
+        ) : order.locationUrl ? (
+          <div style={{ fontSize: 13 }}>
+            <a href={order.locationUrl} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>Buka lokasi ↗</a>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>—</div>
         )}
       </div>
 
@@ -785,9 +919,15 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // D-027: kota + alamat pengiriman order ini.
   const [deliveryCity, setDeliveryCity]       = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  // D-028: Sakit/Tidak Sakit + kategori keluhan per order.
+  // D-028: Sakit/Tidak Sakit + kategori keluhan per order (multi-pilih).
   const [healthStatus, setHealthStatus]           = useState("");
-  const [complaintCategory, setComplaintCategory] = useState("");
+  const [complaintCategory, setComplaintCategory] = useState([]);
+  // D-029: ongkir/estimasi pickup/link lokasi.
+  const [ongkir, setOngkir]                       = useState("");
+  const [ongkirKlaimGaransi, setOngkirKlaimGaransi] = useState("");
+  const [pickupEstimate, setPickupEstimate]       = useState("");
+  const [pickupConfirmedDate, setPickupConfirmedDate] = useState("");
+  const [locationUrl, setLocationUrl]             = useState("");
   const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
@@ -830,12 +970,17 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     try {
       const order = await api.addOrder(customerId, {
         category,
-        notes: buildNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildOrderNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
         healthStatus: healthStatus || undefined,
-        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || undefined) : undefined,
+        complaintCategory: healthStatus === "SAKIT" ? complaintCategory : undefined,
+        ongkir: ongkir || undefined,
+        ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
+        pickupEstimate: pickupEstimate || undefined,
+        pickupConfirmedDate: pickupConfirmedDate || undefined,
+        locationUrl: locationUrl || undefined,
       });
       if (harga > 0) {
         const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
@@ -859,12 +1004,17 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     try {
       const order = await api.addOrder(customerId, {
         category: "LAYANAN",
-        notes: buildNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildOrderNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
         healthStatus: healthStatus || undefined,
-        complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || undefined) : undefined,
+        complaintCategory: healthStatus === "SAKIT" ? complaintCategory : undefined,
+        ongkir: ongkir || undefined,
+        ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
+        pickupEstimate: pickupEstimate || undefined,
+        pickupConfirmedDate: pickupConfirmedDate || undefined,
+        locationUrl: locationUrl || undefined,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
@@ -1024,10 +1174,27 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             })}
           </div>
           {healthStatus === "SAKIT" && (
-            <select value={complaintCategory} onChange={(e) => setComplaintCategory(e.target.value)} style={formSelect}>
-              <option value="">— Pilih Kategori Keluhan —</option>
-              {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
-            </select>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {HEALTH_COMPLAINT_OPTIONS.map((k) => {
+                const active = complaintCategory.includes(k);
+                return (
+                  <button
+                    key={k} type="button"
+                    onClick={() => setComplaintCategory((prev) =>
+                      prev.includes(k) ? prev.filter((v) => v !== k) : [...prev, k]
+                    )}
+                    style={{
+                      fontSize: 11.5, fontWeight: 600, padding: "5px 12px", borderRadius: 99,
+                      cursor: "pointer", transition: "all 0.15s",
+                      border: `1.5px solid ${active ? "#dc2626" : "var(--border)"}`,
+                      background: active ? "#dc26261a" : "transparent",
+                      color: active ? "#dc2626" : "var(--text-secondary)",
+                    }}>
+                    {HEALTH_COMPLAINT_LABELS[k]}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -1036,6 +1203,37 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
             placeholder={isLayanan ? "Jelaskan keluhan kasur..." : "Catatan order..."}
             rows={3} style={{ ...formSelect, resize: "vertical" }} />
+        </div>
+
+        {/* D-029: Ongkir + estimasi pickup + link lokasi. */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div>
+            <label style={formLabel}>Ongkir</label>
+            <input type="number" value={ongkir} onChange={(e) => setOngkir(e.target.value)}
+              placeholder="0" style={formSelect} />
+          </div>
+          <div>
+            <label style={formLabel}>Ongkir Klaim Garansi</label>
+            <input type="number" value={ongkirKlaimGaransi} onChange={(e) => setOngkirKlaimGaransi(e.target.value)}
+              placeholder="0" style={formSelect} />
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div>
+            <label style={formLabel}>Estimasi Pick Up</label>
+            <input value={pickupEstimate} onChange={(e) => setPickupEstimate(e.target.value)}
+              placeholder="cth: est 24/25 Agustus 2026" style={formSelect} />
+          </div>
+          <div>
+            <label style={formLabel}>Tanggal Pick Up Pasti</label>
+            <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
+              style={formSelect} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={formLabel}>Link Lokasi</label>
+          <input value={locationUrl} onChange={(e) => setLocationUrl(e.target.value)}
+            placeholder="https://maps.app.goo.gl/..." style={formSelect} />
         </div>
 
         {/* Promo (D-026) — opsional, cuma PENANDA utk laporan. Cuma muncul
@@ -1235,6 +1433,7 @@ export default function OrderSection({ customer, onUpdate }) {
                         <td colSpan={4} style={{ padding: 0 }}>
                           <OrderDetail
                             order={o}
+                            customer={customer}
                             customerId={customer.id}
                             onRefresh={refresh}
                             onDelete={handleDelete}

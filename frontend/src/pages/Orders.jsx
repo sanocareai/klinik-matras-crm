@@ -9,6 +9,7 @@ import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
+  HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
 } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -422,24 +423,49 @@ export default function Orders() {
   async function handleExport() {
     const { exportToExcel } = await import("../utils/export.js");
     exportToExcel(
-      items.map((o) => ({
-        "ID Order": o.orderNumber || "",
-        Pelanggan: o.customerName || "",
-        "No HP": o.customerPhone || "",
-        Kota: o.customerCity || "",
-        Kategori: KATEGORI_LABELS[o.category] || o.category,
-        Status: ORDER_STATUS_LABELS[o.status] || o.status,
-        "Hari di Status": o.daysInStatus ?? "",
-        Mandek: isMandek(o) ? "Ya" : "",
-        Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
-        // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
-        // di utils/exportLaporan.js soal uang sebagai teks).
-        Nilai: o.value || 0,
-        Komplain: o.hasComplaint ? "Ya" : "",
-        Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
-        "Sales Person": o.assignedSales?.name || "",
-        Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
-      })),
+      items.map((o) => {
+        // Merk/ukuran/keluhan kasur disimpan JSON di o.notes, bukan kolom
+        // sendiri — sama parser yang dipakai OrderSection.jsx (drawer
+        // profil pelanggan), supaya export TIDAK PERNAH beda baca dari UI.
+        const info = parseOrderNotes(o.notes);
+        const berat = (o.weightEntries || []).map((w) => `${w.label}: ${w.beratKg}kg`).join(", ");
+        return {
+          "ID Order": o.orderNumber || "",
+          Pelanggan: o.customerName || "",
+          "No HP": o.customerPhone || "",
+          Kota: o.customerCity || "",
+          Kategori: KATEGORI_LABELS[o.category] || o.category,
+          Status: ORDER_STATUS_LABELS[o.status] || o.status,
+          "Hari di Status": o.daysInStatus ?? "",
+          Mandek: isMandek(o) ? "Ya" : "",
+          Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
+          // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
+          // di utils/exportLaporan.js soal uang sebagai teks).
+          Nilai: o.value || 0,
+          Komplain: o.hasComplaint ? "Ya" : "",
+          Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
+          "Sales Person": o.assignedSales?.name || "",
+          "Merk Kasur":   info.merkKasur || "",
+          "Ukuran Kasur": info.ukuranKasur || "",
+          "Keluhan Kasur": info.keluhanCustomer || "",
+          "Berat Badan": berat,
+          // D-028 — kondisi kesehatan & kategori keluhan PER ORDER (beda dari
+          // Customer.healthStatus/complaintCategory di profil pelanggan).
+          "Kondisi Kesehatan": o.healthStatus ? (HEALTH_LABELS[o.healthStatus] || o.healthStatus) : "",
+          "Kategori Keluhan": (o.complaintCategory || []).map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", "),
+          // D-027 — kota/alamat PENGIRIMAN order ini, TERPISAH dari "Kota"
+          // (kota domisili customer) di atas.
+          "Kota Pengiriman":   o.deliveryCity || "",
+          "Alamat Pengiriman": o.deliveryAddress || "",
+          // D-029
+          Ongkir: o.ongkir || 0,
+          "Ongkir Klaim Garansi": o.ongkirKlaimGaransi || 0,
+          "Estimasi Pick Up": o.pickupEstimate || "",
+          "Tanggal Pick Up Pasti": o.pickupConfirmedDate ? o.pickupConfirmedDate.slice(0, 10) : "",
+          "Link Lokasi": o.locationUrl || "",
+          Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
+        };
+      }),
       "order-" + new Date().toISOString().slice(0, 10)
     );
   }

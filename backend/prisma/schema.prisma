@@ -162,11 +162,18 @@ enum HealthStatus {
 // untuk mengelompokkan customer klinik matras berdasarkan jenis keluhan
 // spesifik saat order dibuat, supaya bisa dianalisa (mis. berapa % order
 // terkait saraf kejepit) tanpa parsing teks bebas di keluhanCustomer.
+// 20 Agustus 2026 (revisi setelah lihat contoh pesan WA nyata dari sales):
+// keluhan customer HAMPIR SELALU lebih dari satu area sekaligus (mis.
+// "leher, bahu, punggung, pinggang" bersamaan) — field ini karena itu
+// array (multi-pilih), BUKAN satu nilai. "BAHU" ditambahkan karena
+// ternyata sudah jadi keluhan umum di lapangan, sebelumnya tidak ada
+// pilihan untuk itu (kepaksa masuk "Lainnya", menghilangkan sinyalnya).
 enum HealthComplaintCategory {
   KEPALA_PUSING
   SAKIT_PINGGANG
   SAKIT_PUNGGUNG
   SAKIT_LEHER
+  BAHU
   PEGAL_PEGAL
   SARAF_KEJEPIT
   SKOLIOSIS
@@ -367,8 +374,9 @@ model Customer {
   // level PROFIL pelanggan (diisi dari panel Inbox "Kondisi Pelanggan",
   // tidak butuh bikin order dulu). Kalau order-nya sendiri juga diisi
   // (form order), keduanya independen — order bisa beda keluhan dari
-  // kondisi umum customer saat ini.
-  complaintCategory       HealthComplaintCategory? @map("complaint_category")
+  // kondisi umum customer saat ini. Array sejak revisi 20 Agustus 2026 —
+  // lihat komentar di enum HealthComplaintCategory.
+  complaintCategory       HealthComplaintCategory[] @default([]) @map("complaint_category")
   profilePictureUrl       String? // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
   profilePictureFetchedAt DateTime? // kapan terakhir dicoba fetch dari WAHA — dipakai cek "expired >7 hari" di webhooks.js, JUGA distempel saat fetch GAGAL (privasi dibatasi dsb) supaya tidak coba lagi tiap pesan masuk sampai TTL lewat
   nameManuallyEdited      Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
@@ -710,8 +718,38 @@ model Order {
   // D-028 (20 Agustus 2026) — Sakit/Tidak Sakit + kategori keluhan PER ORDER,
   // diisi sales di form order (bukan cuma Customer.healthStatus di profil).
   // complaintCategory HANYA relevan/ditampilkan kalau healthStatus = SAKIT.
-  healthStatus       HealthStatus?             @map("health_status")
-  complaintCategory  HealthComplaintCategory?  @map("complaint_category")
+  // Array sejak revisi 20 Agustus 2026 — lihat komentar di enum
+  // HealthComplaintCategory (keluhan biasanya lebih dari satu area sekaligus).
+  healthStatus       HealthStatus?              @map("health_status")
+  complaintCategory  HealthComplaintCategory[]  @default([]) @map("complaint_category")
+
+  // D-029 (20 Agustus 2026) — field tambahan supaya form order menangkap
+  // SEMUA info yang sales SELAMA INI ketik ulang manual ke grup WA sales
+  // (lihat contoh pesan nyata yang jadi acuan). Tujuannya: sales cukup isi
+  // sekali di CRM, lalu generate pesan WA dari data ini (tombol "Salin
+  // pesan WA" di UI) — bukan ngetik dari nol dan rawan field kelewat/typo.
+  //
+  // ongkir/ongkirKlaimGaransi terpisah karena beda kebijakan: klaim garansi
+  // (servis ulang gara-gara masalah produk) punya aturan ongkir sendiri,
+  // beda dari ongkir order biasa — keduanya tidak pernah dijumlah manual di
+  // sini, biar jelas mana yang mana saat rekap.
+  ongkir              Int?      @map("ongkir")
+  ongkirKlaimGaransi  Int?      @map("ongkir_klaim_garansi")
+
+  // pickupEstimate SENGAJA teks bebas, bukan tanggal presisi — di lapangan
+  // sales cuma tahu rentang tanggal customer available (mis. "est 24/25
+  // Agustus 2026"), bukan tanggal pasti. pickupConfirmedDate diisi BELAKANGAN
+  // (oleh siapa pun yang mengunci jadwal final dengan gudang/driver) begitu
+  // tanggal PASTI sudah didapat — dua kolom ini sengaja terpisah, jangan
+  // digabung jadi satu tanggal supaya histori "awalnya diminta kapan" tidak
+  // hilang begitu tanggal pastinya beda dari estimasi awal.
+  pickupEstimate      String?   @map("pickup_estimate")
+  pickupConfirmedDate DateTime? @map("pickup_confirmed_date") @db.Date
+
+  // Link share lokasi Google Maps dari customer — dulu cuma nempel di teks
+  // pesan WA (gampang hilang begitu chat discroll), sekarang jadi field
+  // sendiri supaya selalu ketemu dari Order-nya langsung.
+  locationUrl         String?   @map("location_url")
 
   // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
   // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin

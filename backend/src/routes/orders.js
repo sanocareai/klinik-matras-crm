@@ -119,11 +119,12 @@ async function guardOrderLocked(req, res, orderId, aksi) {
 orderRouter.patch("/:id", async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
-          deliveryCity, deliveryAddress, healthStatus, complaintCategory } = req.body;
+          deliveryCity, deliveryAddress, healthStatus, complaintCategory,
+          ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, locationUrl]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -170,12 +171,20 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(deliveryCity      !== undefined && { deliveryCity: deliveryCity || null }),
           ...(deliveryAddress   !== undefined && { deliveryAddress: deliveryAddress || null }),
           // D-028: kategori keluhan cuma relevan kalau healthStatus = SAKIT —
-          // dipaksa null di sini juga (bukan cuma di frontend) supaya data
+          // dipaksa [] di sini juga (bukan cuma di frontend) supaya data
           // tidak pernah nyangkut kalau sales toggle balik ke Tidak Sakit.
+          // Array (multi-pilih) sejak revisi 20 Agustus 2026.
           ...(healthStatus      !== undefined && {
             healthStatus: healthStatus || null,
-            complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || null) : null,
+            complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
           }),
+          // D-029: ongkir/estimasi pickup/link lokasi — dikirim "" atau null
+          // untuk mengosongkan lagi, sama pola dengan field D-027 di atas.
+          ...(ongkir              !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
+          ...(ongkirKlaimGaransi  !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
+          ...(pickupEstimate      !== undefined && { pickupEstimate: pickupEstimate || null }),
+          ...(pickupConfirmedDate !== undefined && { pickupConfirmedDate: pickupConfirmedDate || null }),
+          ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
         },
         include: {
           items:         { orderBy: { sortOrder: "asc" } },

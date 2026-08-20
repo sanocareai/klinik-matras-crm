@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../../../../api.js";
-import { KOTA_LIST } from "../../../../utils/format.js";
+import { KOTA_LIST, HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS } from "../../../../utils/format.js";
 
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
@@ -34,22 +34,6 @@ const LEAD_SOURCE_HEX = {
 function pillTone(hex) {
   return { background: `${hex}26`, color: hex };
 }
-
-// D-028 (20 Agustus 2026) — klasifikasi kategori keluhan sakit di level
-// PROFIL pelanggan (beda dari Order.complaintCategory yang per-order, lihat
-// components/customer/OrderSection.jsx). Cuma relevan/ditampilkan kalau
-// healthStatus = SAKIT.
-const HEALTH_COMPLAINT_LABELS = {
-  KEPALA_PUSING:  "Kepala Pusing",
-  SAKIT_PINGGANG: "Sakit Pinggang",
-  SAKIT_PUNGGUNG: "Sakit Punggung",
-  SAKIT_LEHER:    "Sakit Leher",
-  PEGAL_PEGAL:    "Pegal-pegal",
-  SARAF_KEJEPIT:  "Saraf Kejepit",
-  SKOLIOSIS:      "Skoliosis",
-  LAINNYA:        "Lainnya",
-};
-const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
 
 // Sumber lead, Kondisi Pelanggan, Tipe Customer, Kota — semua inline edit lewat
 // endpoint existing (PATCH /customers/:id, sama seperti CustomerPanel lama).
@@ -90,9 +74,14 @@ export default function InfoSection({ customer, onUpdate }) {
     }
   }
 
-  async function saveComplaintCategory(value) {
+  // D-028 (revisi multi-pilih, 20 Agustus 2026): keluhan biasanya lebih dari
+  // satu area sekaligus (mis. leher+bahu+punggung bersamaan) — toggle satu
+  // kategori masuk/keluar dari array, bukan ganti satu nilai.
+  async function toggleComplaintCategory(key) {
+    const current = customer.complaintCategory || [];
+    const next = current.includes(key) ? current.filter((v) => v !== key) : [...current, key];
     try {
-      const updated = await api.updateCustomer(customer.id, { complaintCategory: value || null });
+      const updated = await api.updateCustomer(customer.id, { complaintCategory: next });
       onUpdate((c) => ({ ...c, complaintCategory: updated.complaintCategory }));
     } catch (err) {
       showFeedback("error", err.message);
@@ -199,16 +188,27 @@ export default function InfoSection({ customer, onUpdate }) {
           )}
         </div>
         {!customer.healthStatus && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>Belum ditanyakan ke customer</p>}
-        {/* D-028: kategori keluhan cuma muncul kalau kondisinya Sakit. */}
+        {/* D-028: kategori keluhan cuma muncul kalau kondisinya Sakit,
+            multi-pilih — keluhan biasanya lebih dari satu area sekaligus. */}
         {customer.healthStatus === "SAKIT" && (
-          <select
-            value={customer.complaintCategory || ""}
-            onChange={(e) => saveComplaintCategory(e.target.value)}
-            className="mt-2 w-full rounded-lg border border-line px-2 py-1.5 text-[13px] text-ink"
-          >
-            <option value="">— Pilih Kategori Keluhan —</option>
-            {HEALTH_COMPLAINT_OPTIONS.map((k) => <option key={k} value={k}>{HEALTH_COMPLAINT_LABELS[k]}</option>)}
-          </select>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {HEALTH_COMPLAINT_OPTIONS.map((k) => {
+              const active = (customer.complaintCategory || []).includes(k);
+              return (
+                <button
+                  key={k} type="button" onClick={() => toggleComplaintCategory(k)}
+                  className={active ? undefined : "text-ink2"}
+                  style={{
+                    fontSize: 11.5, fontWeight: 600, padding: "3px 10px", borderRadius: 99,
+                    cursor: "pointer", transition: "all 0.15s",
+                    border: `1.5px solid ${active ? "#dc2626" : "var(--border)"}`,
+                    ...(active ? { background: "#dc26261a", color: "#dc2626" } : { background: "transparent" }),
+                  }}>
+                  {HEALTH_COMPLAINT_LABELS[k]}
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 

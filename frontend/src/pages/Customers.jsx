@@ -12,7 +12,7 @@ import CustomerCardList from "@/features/customers/components/CustomerCardList.j
 import NewCustomerModal from "@/features/customers/components/NewCustomerModal.jsx";
 import BulkActionBar from "@/features/customers/components/BulkActionBar.jsx";
 import {
-  formatRupiah, STAGE_LABELS, SOURCE_LABELS, HEALTH_LABELS,
+  formatRupiah, STAGE_LABELS, SOURCE_LABELS, HEALTH_LABELS, HEALTH_COMPLAINT_LABELS,
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
 } from "../utils/format.js";
 
@@ -252,6 +252,7 @@ export default function Customers() {
         "Berat Badan (kg)": c.latestBeratBadan || "",
         Layanan: c.latestLayanan || "",
         "Status Kesehatan": HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
+        "Kategori Keluhan": (c.complaintCategory || []).map((k) => HEALTH_COMPLAINT_LABELS[k] || k).join(", "),
         Tags: c.tags?.join(", ") || "",
         "Tipe Pelanggan": c.customerType === "CORPORATE" ? "Korporat" : "End User",
         Kota: c.city || "",

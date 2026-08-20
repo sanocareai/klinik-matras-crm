@@ -312,6 +312,56 @@ export const KOTA_LIST = [
   "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
 ];
 
+// D-028 (20 Agustus 2026, revisi multi-pilih) — dipakai di Order.complaintCategory
+// DAN Customer.complaintCategory (dua field independen, sama enum). Dipindah ke
+// sini (sebelumnya duplikat di OrderSection.jsx & InfoSection.jsx) supaya cuma
+// ada SATU daftar label, juga dipakai export Excel di Orders.jsx.
+export const HEALTH_COMPLAINT_LABELS = {
+  KEPALA_PUSING:  "Kepala Pusing",
+  SAKIT_PINGGANG: "Sakit Pinggang",
+  SAKIT_PUNGGUNG: "Sakit Punggung",
+  SAKIT_LEHER:    "Sakit Leher",
+  BAHU:           "Bahu",
+  PEGAL_PEGAL:    "Pegal-pegal",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+  LAINNYA:        "Lainnya",
+};
+export const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
+
+// D-029 (20 Agustus 2026) — merk/ukuran/keluhan kasur dulu disimpan JSON di
+// Order.notes (bukan kolom sendiri, migrasi database dianggap tidak sepadan
+// saat itu). Dipindah ke sini dari OrderSection.jsx (sebelumnya lokal, tidak
+// bisa dipakai export Excel di Orders.jsx).
+export function parseOrderNotes(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  try {
+    const p = JSON.parse(notes);
+    return {
+      merkKasur:       p.merkKasur || "",
+      ukuranKasur:     p.ukuranKasur || "",
+      keluhanCustomer: p.keluhanCustomer || "",
+    };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+  }
+}
+export function buildOrderNotes(info) {
+  return JSON.stringify({
+    merkKasur:       info.merkKasur || "",
+    ukuranKasur:     info.ukuranKasur || "",
+    keluhanCustomer: info.keluhanCustomer || "",
+  });
+}
+
+// D-026 fix (20 Agustus 2026): satu campaign (mis. "MDSP-Aug") sering punya
+// BEBERAPA kode voucher berbeda (MERDEKA10, MERDEKA8, dst) sebagai promo
+// TERPISAH dengan `name` yang sama persis — kode SELALU ditaruh duluan
+// (paling menonjol) karena itu satu-satunya pembeda antar promo serupa.
+export function promoLabel(p) {
+  return `${p.code} — ${p.name}`;
+}
+
 // Preset date range — KOMPATIBILITAS. Definisi kanonik seluruh preset sekarang
 // ada di lib/dateRange.js (skema tanggal, dipakai DateRangePicker gaya Google
 // Ads). Fungsi ini cuma memetakan key lama ("7d"/"30d"/"3m") ke id preset baru
