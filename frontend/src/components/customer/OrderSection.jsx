@@ -125,6 +125,18 @@ const BODY_AREA_LABELS = {
 function formatAngka(n) {
   return (n || 0).toLocaleString("id-ID");
 }
+// "Rp1.590.000" — dipakai KHUSUS di pesan WA (bukan formatRupiah() biasa,
+// yang sudah dipakai di tempat lain di file ini untuk tampilan angka TANPA
+// "Rp" pada beberapa badge — supaya tidak mengubah tampilan itu juga,
+// helper pesan WA dipisah sendiri).
+function formatRpWa(n) {
+  return `Rp${formatAngka(n)}`;
+}
+// Dirapikan 21 Agustus 2026 — sebelumnya rata "Label : nilai" polos (format
+// ketikan manual sales dari sebelum CRM ada). Sales melaporkan susah dibaca
+// cepat di HP saat grup ramai. Dikelompokkan per bagian + bold WhatsApp
+// (*teks*) supaya bisa di-scan sekilas; SEMUA field yang sebelumnya ada
+// tetap ada, tidak ada yang dihapus — cuma disusun ulang.
 function buildWaMessage(order, customer) {
   const info   = parseOrderNotes(order.notes);
   const berat  = (order.weightEntries || []).map((w) => w.beratKg).join(", ") || "-";
@@ -132,9 +144,9 @@ function buildWaMessage(order, customer) {
 
   const areaSelected = cats.filter((c) => BODY_AREA_LABELS[c]).map((c) => BODY_AREA_LABELS[c]);
   const keluhanLines = [];
-  if (areaSelected.length) keluhanLines.push(`- sakit Area ${areaSelected.join(", ")}`);
-  if (cats.includes("PEGAL_PEGAL")) keluhanLines.push("- Pegal area seluruh badan");
-  if (cats.includes("LAINNYA")) keluhanLines.push("- Lainnya");
+  if (areaSelected.length) keluhanLines.push(`  • sakit Area ${areaSelected.join(", ")}`);
+  if (cats.includes("PEGAL_PEGAL")) keluhanLines.push("  • Pegal area seluruh badan");
+  if (cats.includes("LAINNYA")) keluhanLines.push("  • Lainnya");
 
   const layanan     = (order.items || []).map((i) => i.layananName).join(", ") || "-";
   const finalBiaya  = order.value || 0;
@@ -145,29 +157,40 @@ function buildWaMessage(order, customer) {
   const biayaAwal = order.promo?.discountPercent
     ? Math.round(finalBiaya / (1 - order.promo.discountPercent / 100))
     : finalBiaya;
+  const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
 
   return [
-    `Nama : ${customer.name || "-"}`,
-    `Tlp : ${customer.phone || "-"}`,
-    `Alamat : ${customer.name || "-"}. \n${order.deliveryAddress || "-"}${order.deliveryCity ? `. ${order.deliveryCity}` : ""}.`,
-    `Berat badan pengguna : ${berat}`,
-    `Keluhan fisik saat bangun tidur :`,
-    keluhanLines.length ? keluhanLines.join("\n") : "-",
-    `Keluhan kasur : ${info.keluhanCustomer || "-"}`,
-    `Ukuran kasur : ${info.ukuranKasur || "-"}`,
-    `Merk kasur : ${info.merkKasur || "-"}`,
-    `Layanan yang di pilih : ${layanan}`,
-    `Biaya : ${formatAngka(biayaAwal)}`,
-    `Diskon : ${order.promo ? order.promo.code : "-"}`,
-    `Final Biaya : ${formatAngka(finalBiaya)}`,
-    `Ongkir : ${formatAngka(order.ongkir)}`,
-    `Ongkir claim garansi : ${formatAngka(order.ongkirKlaimGaransi)}`,
-    `Pick Up : ${order.pickupEstimate || "-"}`,
-    `Est Pick Up : ${order.pickupConfirmedDate ? formatTanggal(order.pickupConfirmedDate) : "-"}`,
-    `Kirim : ${order.deliveryEstimate || "-"}`,
-    `Est Kirim : ${order.deliveryConfirmedDate ? formatTanggal(order.deliveryConfirmedDate) : "-"}`,
-    `Cs : ${customer.assignedSales?.name || "-"}`,
-    `Share loct : ${order.locationUrl || "-"}`,
+    `📦 *ORDER BARU* — ${order.orderNumber || "-"}`,
+    ``,
+    `👤 *Data Pelanggan*`,
+    `Nama: ${customer.name || "-"}`,
+    `No. HP: ${customer.phone || "-"}`,
+    `Alamat: ${alamatLengkap}`,
+    ``,
+    `⚖️ *Kondisi Tubuh*`,
+    `Berat Badan: ${berat} kg`,
+    `Keluhan Fisik saat Bangun Tidur:`,
+    keluhanLines.length ? keluhanLines.join("\n") : "  -",
+    `Keluhan Kasur: ${info.keluhanCustomer || "-"}`,
+    ``,
+    `🛏️ *Spesifikasi Kasur*`,
+    `Ukuran: ${info.ukuranKasur || "-"}`,
+    `Merk: ${info.merkKasur || "-"}`,
+    `Layanan: ${layanan}`,
+    ``,
+    `💰 *Biaya*`,
+    `Harga Awal: ${formatRpWa(biayaAwal)}`,
+    `Diskon: ${order.promo ? order.promo.code : "-"}`,
+    `*Total: ${formatRpWa(finalBiaya)}*`,
+    `Ongkir: ${formatRpWa(order.ongkir)}`,
+    `Ongkir Klaim Garansi: ${formatRpWa(order.ongkirKlaimGaransi)}`,
+    ``,
+    `📅 *Jadwal*`,
+    `Pick Up: ${order.pickupEstimate || "-"}${order.pickupConfirmedDate ? ` (Pasti: ${formatTanggal(order.pickupConfirmedDate)})` : ""}`,
+    `Kirim: ${order.deliveryEstimate || "-"}${order.deliveryConfirmedDate ? ` (Pasti: ${formatTanggal(order.deliveryConfirmedDate)})` : ""}`,
+    ``,
+    `📍 Lokasi: ${order.locationUrl || "-"}`,
+    `🧑‍💼 CS: ${customer.assignedSales?.name || "-"}`,
   ].join("\n");
 }
 
