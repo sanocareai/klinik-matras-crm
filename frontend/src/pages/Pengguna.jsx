@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText, Check, UserX, UserCheck,
+  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
 import { formatTanggalWaktu } from "../utils/format.js";
 import { isAdminUser } from "@/lib/roles.js";
+import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
 
 // Label & warna peran — SEMUA 9 peran yang dikenal sistem otorisasi
 // (backend/src/constants/permissions.js ROLE_PERMISSIONS), bukan cuma
@@ -24,25 +25,74 @@ const ROLE_LABELS = {
   DRIVER: "Driver",
   FINANCE: "Keuangan",
 };
+// Sejak redesain 22 Agustus 2026 nilai ini cuma dipakai sebagai warna titik
+// RoleChip + ikon stat strip (bukan lagi latar blok penuh) — lihat RoleChip
+// di bawah. Warna sengaja tetap saturasi solid (bukan pastel): dipakai
+// sebagai aksen KECIL (dot 6px, ikon 16px), bukan area luas, jadi butuh
+// kontras lebih di kedua tema.
 const ROLE_COLORS = {
-  ADMIN:             { bg: "#ede9fe", color: "#5b21b6" },
-  SALES:             { bg: "#dbeafe", color: "#1e40af" },
-  PRODUCTION_LEAD:   { bg: "#fef3c7", color: "#92400e" },
-  PRODUCTION_WORKER: { bg: "#fef3c7", color: "#92400e" },
-  QC_LEAD:           { bg: "#fce7f3", color: "#9d174d" },
-  WAREHOUSE:         { bg: "#fef3c7", color: "#92400e" },
-  DISPATCHER:        { bg: "#d1fae5", color: "#065f46" },
-  DRIVER:            { bg: "#d1fae5", color: "#065f46" },
-  FINANCE:           { bg: "#ede9fe", color: "#5b21b6" },
+  ADMIN:             { color: "#7c3aed" },
+  SALES:             { color: "#2563eb" },
+  PRODUCTION_LEAD:   { color: "#b45309" },
+  PRODUCTION_WORKER: { color: "#b45309" },
+  QC_LEAD:           { color: "#be185d" },
+  WAREHOUSE:         { color: "#b45309" },
+  DISPATCHER:        { color: "#059669" },
+  DRIVER:            { color: "#059669" },
+  FINANCE:           { color: "#7c3aed" },
 };
 const ALL_ROLES = Object.keys(ROLE_LABELS);
 
+// Redesain 22 Agustus 2026 — versi lama tiap chip punya BLOK warna pastel
+// penuh sendiri (7 warna berbeda sekaligus untuk user multi-peran seperti
+// Natasha terlihat seperti "permen rainbow", ramai tanpa menambah info).
+// Sekarang satu gaya chip netral (bg-inset/text-ink2, konsisten di kedua
+// tema) + titik kecil warna peran — warna tetap membantu bedakan sekilas,
+// tapi tidak lagi mendominasi baris saat satu user punya banyak peran.
 function RoleChip({ role }) {
-  const { bg, color } = ROLE_COLORS[role] || { bg: "#f3f4f6", color: "#374151" };
+  const { color } = ROLE_COLORS[role] || { color: "var(--text-secondary)" };
   return (
-    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: bg, color, whiteSpace: "nowrap" }}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-inset px-2.5 py-1 text-[11px] font-semibold text-ink2">
+      <span aria-hidden className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ background: color }} />
       {ROLE_LABELS[role] || role}
     </span>
+  );
+}
+
+// Menu aksi per baris (Ubah Peran/Reset PW/Nonaktifkan/Hapus) — dipakai
+// SAMA oleh tabel desktop & kartu mobile (sebelumnya 2 baris tombol
+// terpisah yang gampang saling menyimpang). Mengganti 3-4 tombol berjejer
+// (kadang ikon polos tanpa label, kadang teks — tidak konsisten) dengan
+// SATU kebab, pola yang sama dengan menu profil di sidebar (Layout.jsx).
+function UserRowActions({ u, isMe, onEditRole, onResetPw, onToggleActive, onDelete }) {
+  const nonaktif = u.active === false;
+  return (
+    <Menu
+      trigger={
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+          title="Aksi pengguna"
+          aria-label={`Aksi untuk ${u.name}`}
+        >
+          <MoreVertical size={16} />
+        </button>
+      }
+    >
+      {!isMe && <MenuItem icon={Shield} onSelect={onEditRole}>Ubah Peran</MenuItem>}
+      <MenuItem icon={Key} onSelect={onResetPw}>Reset Password</MenuItem>
+      {!isMe && (
+        <MenuItem icon={nonaktif ? UserCheck : UserX} onSelect={onToggleActive}>
+          {nonaktif ? "Aktifkan Kembali" : "Nonaktifkan"}
+        </MenuItem>
+      )}
+      {!isMe && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={Trash2} destructive onSelect={onDelete}>Hapus Pengguna</MenuItem>
+        </>
+      )}
+    </Menu>
   );
 }
 
@@ -250,16 +300,34 @@ export default function Pengguna({ user: currentUser }) {
         </div>
       )}
 
-      {/* Stats — horizontal-scroll supaya aman di mobile walau peran ada 9 */}
+      {/* Stats — redesain 22 Agustus 2026: versi lama 9 blok pastel PENUH
+          berjejer terasa seperti papan reklame warna-warni. Sekarang kartu
+          netral (bg-surface/border, konsisten di kedua tema) + lencana ikon
+          kecil berwarna per peran — warnanya tetap membantu, tapi cuma di
+          ikon, bukan seluruh kartu, jadi baris statistik tidak bersaing
+          dengan tabel di bawahnya untuk perhatian. */}
       <div className="user-stats" style={{ marginBottom: 24, display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
         {roleStats.map(({ role, label, count }) => {
-          const { bg, color } = ROLE_COLORS[role] || { bg: "#f3f4f6", color: "#374151" };
+          const { color } = ROLE_COLORS[role] || { color: "var(--text-secondary)" };
           return (
-            <div key={role} style={{ flex: "0 0 auto", padding: "14px 20px", background: bg, borderRadius: 10, display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap" }}>
-              <ShieldCheck size={22} color={color} />
+            <div
+              key={role}
+              className="border-border bg-surface"
+              style={{
+                flex: "0 0 auto", padding: "11px 16px", borderRadius: 12, border: "1px solid",
+                display: "flex", alignItems: "center", gap: 11, whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{
+                width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+                background: color + "1a", color,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <ShieldCheck size={16} />
+              </span>
               <div>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 22, color }}>{count}</p>
-                <p style={{ margin: 0, fontSize: 12, color, fontWeight: 600 }}>{label}</p>
+                <p className="text-ink" style={{ margin: 0, fontWeight: 800, fontSize: 18, lineHeight: 1.15 }}>{count}</p>
+                <p className="text-ink3" style={{ margin: 0, fontSize: 11, fontWeight: 600 }}>{label}</p>
               </div>
             </div>
           );
@@ -281,10 +349,10 @@ export default function Pengguna({ user: currentUser }) {
               <tr>
                 <th>Pengguna</th>
                 <th>Peran</th>
-                <th>Pelanggan</th>
-                <th>Percakapan</th>
-                <th>Catatan</th>
-                <th>Aksi</th>
+                <th style={{ textAlign: "center" }}>Pelanggan</th>
+                <th style={{ textAlign: "center" }}>Percakapan</th>
+                <th style={{ textAlign: "center" }}>Catatan</th>
+                <th style={{ textAlign: "center" }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -314,48 +382,35 @@ export default function Pengguna({ user: currentUser }) {
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
                         <Users size={13} color="var(--text-muted)" />
-                        <span style={{ fontWeight: 700 }}>{u._count?.assignedCustomers || 0}</span>
+                        <span className={u._count?.assignedCustomers ? "text-ink" : "text-ink3"} style={{ fontWeight: 700 }}>
+                          {u._count?.assignedCustomers || 0}
+                        </span>
                       </div>
                     </td>
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
                         <MessageSquare size={13} color="var(--text-muted)" />
-                        <span style={{ fontWeight: 700 }}>{u._count?.assignedConversations || 0}</span>
+                        <span className={u._count?.assignedConversations ? "text-ink" : "text-ink3"} style={{ fontWeight: 700 }}>
+                          {u._count?.assignedConversations || 0}
+                        </span>
                       </div>
                     </td>
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
                         <FileText size={13} color="var(--text-muted)" />
-                        <span style={{ fontWeight: 700 }}>{u._count?.notes || 0}</span>
+                        <span className={u._count?.notes ? "text-ink" : "text-ink3"} style={{ fontWeight: 700 }}>
+                          {u._count?.notes || 0}
+                        </span>
                       </div>
                     </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {!isMe && (
-                          <button className="btn btn-ghost btn-sm" title="Ubah Peran"
-                            onClick={() => { setShowRoleEdit(u); setRoleEditError(""); }}>
-                            <Shield size={13} /> Peran
-                          </button>
-                        )}
-                        <button className="btn btn-ghost btn-sm" title="Reset Password"
-                          onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
-                          <Key size={13} /> Reset PW
-                        </button>
-                        {!isMe && (
-                          <button className="btn btn-ghost btn-sm"
-                            style={{ color: nonaktif ? "var(--color-success)" : "var(--color-warning)" }}
-                            title={nonaktif ? "Aktifkan Kembali" : "Nonaktifkan (mis. resign)"}
-                            onClick={() => handleToggleActive(u)}>
-                            {nonaktif ? <UserCheck size={13} /> : <UserX size={13} />}
-                          </button>
-                        )}
-                        {!isMe && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }}
-                            title="Hapus Pengguna" onClick={() => setShowDelete(u)}>
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
+                    <td style={{ textAlign: "center" }}>
+                      <UserRowActions
+                        u={u} isMe={isMe}
+                        onEditRole={() => { setShowRoleEdit(u); setRoleEditError(""); }}
+                        onResetPw={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}
+                        onToggleActive={() => handleToggleActive(u)}
+                        onDelete={() => setShowDelete(u)}
+                      />
                     </td>
                   </tr>
                 );
@@ -390,6 +445,16 @@ export default function Pengguna({ user: currentUser }) {
                     </div>
                     <div className="user-card-email">{u.email}</div>
                   </div>
+                  {/* Kebab di header kartu — pola sama dengan tabel desktop
+                      (UserRowActions), bukan lagi baris tombol terpisah di
+                      bawah supaya cuma ada SATU implementasi aksi. */}
+                  <UserRowActions
+                    u={u} isMe={isMe}
+                    onEditRole={() => { setShowRoleEdit(u); setRoleEditError(""); }}
+                    onResetPw={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}
+                    onToggleActive={() => handleToggleActive(u)}
+                    onDelete={() => setShowDelete(u)}
+                  />
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0" }}>
                   {effectiveRoles(u).map((role) => <RoleChip key={role} role={role} />)}
@@ -397,29 +462,6 @@ export default function Pengguna({ user: currentUser }) {
                 <div className="user-card-stats">
                   <span><Users size={12} /> {u._count?.assignedCustomers || 0} pelanggan</span>
                   <span><MessageSquare size={12} /> {u._count?.assignedConversations || 0} percakapan</span>
-                </div>
-                <div className="user-card-actions">
-                  {!isMe && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowRoleEdit(u); setRoleEditError(""); }}>
-                      <Shield size={13} /> Peran
-                    </button>
-                  )}
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}>
-                    <Key size={13} /> Reset PW
-                  </button>
-                  {!isMe && (
-                    <button className="btn btn-ghost btn-sm"
-                      style={{ color: nonaktif ? "var(--color-success)" : "var(--color-warning)" }}
-                      onClick={() => handleToggleActive(u)}>
-                      {nonaktif ? <UserCheck size={13} /> : <UserX size={13} />} {nonaktif ? "Aktifkan" : "Nonaktifkan"}
-                    </button>
-                  )}
-                  {!isMe && (
-                    <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }}
-                      onClick={() => setShowDelete(u)}>
-                      <Trash2 size={13} />
-                    </button>
-                  )}
                 </div>
               </div>
             );
