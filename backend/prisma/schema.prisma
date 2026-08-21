@@ -219,6 +219,13 @@ model User {
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
   jobPositionPings          JobPositionPing[]        @relation("JobPositionPingDriver")
+  // D-035 — armada: PIC kendaraan, biaya, servis, insiden
+  vehiclesAsPic             Vehicle[]                @relation("VehiclePic")
+  vehicleExpensesAsDriver   VehicleExpense[]         @relation("VehicleExpenseDriver")
+  vehicleExpensesRecorded   VehicleExpense[]         @relation("VehicleExpenseRecorder")
+  vehicleServicesRecorded   VehicleService[]         @relation("VehicleServiceRecorder")
+  vehicleIncidentsAsDriver  VehicleIncident[]        @relation("VehicleIncidentDriver")
+  vehicleIncidentsRecorded  VehicleIncident[]        @relation("VehicleIncidentRecorder")
   qcFitTests                QcFitTest[]              @relation("QcFitTestTester")
   productionTargets         ProductionTarget[]       @relation("ProductionTargetCreator")
   paymentsRecorded          Payment[]                @relation("PaymentRecorder")
@@ -1371,14 +1378,231 @@ model Vehicle {
   nextServiceDate DateTime? @map("next_service_date") @db.Date
   notes           String?
 
+  // ── Identitas fisik kendaraan (D-035, 22 Agustus 2026) ──────────────────
+  // SEMUA nullable: 1 kendaraan yang sudah terdaftar sebelum ini tidak boleh
+  // mendadak jadi tidak valid gara-gara kolom baru. Diisi bertahap.
+  brand         String? // Mitsubishi, Daihatsu, dst
+  model         String? // L300, Gran Max, dst
+  year          Int?
+  color         String?
+  chassisNumber String? @map("chassis_number") // nomor rangka
+  engineNumber  String? @map("engine_number")  // nomor mesin
+
+  // ── Dokumen & masa berlaku (D-035) ──────────────────────────────────────
+  // Tanggal kadaluarsa dipisah per dokumen (bukan satu kolom "dokumen
+  // kadaluarsa") karena masing-masing beda siklus & beda konsekuensi:
+  // STNK/pajak tahunan, KIR 6 bulanan untuk kendaraan niaga, asuransi
+  // mengikuti polis. Semua @db.Date — yang bermakna TANGGAL kalender, bukan
+  // instant (lihat aturan waktu di CLAUDE.md §11).
+  stnkNumber       String?   @map("stnk_number")
+  stnkExpiry       DateTime? @map("stnk_expiry") @db.Date
+  taxExpiry        DateTime? @map("tax_expiry") @db.Date        // pajak tahunan
+  kirExpiry        DateTime? @map("kir_expiry") @db.Date        // uji KIR (kendaraan niaga)
+  insurancePolicy  String?   @map("insurance_policy")
+  insuranceExpiry  DateTime? @map("insurance_expiry") @db.Date
+
+  // PIC supir tetap — SetNull, bukan Cascade: supir keluar TIDAK boleh
+  // menghapus kendaraannya. Ini "penanggung jawab harian", BUKAN pembatasan
+  // siapa yang boleh menyetir (penugasan sesungguhnya tetap di Job.driverId).
+  picDriverId String? @map("pic_driver_id")
+  picDriver   User?   @relation("VehiclePic", fields: [picDriverId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  jobs   Job[]
-  routes Route[]
+  jobs      Job[]
+  routes    Route[]
+  expenses  VehicleExpense[]
+  services  VehicleService[]
+  incidents VehicleIncident[]
 
   @@index([status])
+  @@index([picDriverId])
   @@map("vehicles")
+}
+
+// ── D-035: BIAYA OPERASIONAL KENDARAAN ────────────────────────────────────
+// Tujuannya BUKAN sekadar mencatat pengeluaran — tapi menjawab "mobil/supir
+// mana yang lebih hemat". Itu MUSTAHIL dijawab dari nominal rupiah saja:
+// supir yang jalan 300km jelas habis lebih banyak daripada yang jalan 50km,
+// dan itu bukan berarti dia boros.
+//
+// Karena itu DUA kolom di bawah yang membuat tabel ini ada gunanya:
+//   odometerKm → Rp per km (biaya nyata per jarak)
+//   liters     → KM PER LITER ← ini metrik sesungguhnya
+//
+// Bedanya penting: Rp/km ikut bergerak kalau harga BBM naik/turun, jadi tidak
+// bisa dipakai menilai orangnya. km/liter murni mengukur CARA BAWA MOBIL —
+// itu yang membedakan supir yang halus dari yang kasar, dan itu yang dicari.
+// Keduanya nullable karena cuma relevan untuk kategori BBM (tol/parkir tidak
+// punya liter), tapi UI WAJIB mendorong pengisiannya saat kategori = BBM.
+model VehicleExpense {
+  id        String  @id @default(uuid()) @db.Uuid
+  vehicleId String  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  // SIAPA yang mengeluarkan — inti akuntabilitas. SetNull supaya riwayat
+  // biaya tidak ikut hilang kalau akun supirnya dihapus.
+  driverId String? @map("driver_id")
+  driver   User?   @relation("VehicleExpenseDriver", fields: [driverId], references: [id], onDelete: SetNull)
+
+  date     DateTime        @db.Date
+  category ExpenseCategory
+  amount   Int // Rupiah, integer (konvensi sama dengan Order.value & Payment.amount)
+
+  odometerKm Int?   @map("odometer_km")
+  liters     Float? // desimal — pengisian BBM jarang bulat
+
+  receiptUrl String? @map("receipt_url") // foto struk
+  notes      String?
+
+  // Opsional: kalau pengeluaran memang bisa ditautkan ke rute/job tertentu.
+  // SENGAJA tidak wajib — di lapangan supir isi bensin untuk "hari itu",
+  // bukan per job, dan memaksa penautan akan membuat data tidak terisi.
+  routeId String? @map("route_id") @db.Uuid
+  route   Route?  @relation(fields: [routeId], references: [id], onDelete: SetNull)
+
+  recordedById String?  @map("recorded_by_id")
+  recordedBy   User?    @relation("VehicleExpenseRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([vehicleId, date])
+  @@index([driverId, date])
+  @@index([category, date])
+  @@map("vehicle_expenses")
+}
+
+// ── D-035: RIWAYAT SERVIS ─────────────────────────────────────────────────
+// MENGGANTIKAN pola lama `Vehicle.nextServiceDate` (satu kolom, tanpa
+// riwayat) — kolom itu SENGAJA DIPERTAHANKAN sebagai "jadwal berikutnya yang
+// berlaku" supaya papan/alert lama tidak rusak, tapi sumber kebenaran
+// riwayatnya sekarang di sini.
+//
+// odometerKm WAJIB (bukan opsional seperti di expense): interval servis
+// kendaraan niaga ditentukan KILOMETER, bukan tanggal. Servis "tiap 6 bulan"
+// untuk mobil yang jalan 200km/bulan dan 3000km/bulan itu dua hal berbeda.
+model VehicleService {
+  id        String  @id @default(uuid()) @db.Uuid
+  vehicleId String  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  date       DateTime    @db.Date
+  type       ServiceType
+  odometerKm Int         @map("odometer_km")
+  cost       Int // Rupiah
+  workshop   String? // nama bengkel
+  description String?
+  receiptUrl String?     @map("receipt_url")
+
+  // Jadwal berikutnya menurut nota bengkel — dua-duanya nullable, dipakai
+  // mana yang lebih dulu tercapai.
+  nextServiceKm   Int?      @map("next_service_km")
+  nextServiceDate DateTime? @map("next_service_date") @db.Date
+
+  recordedById String?  @map("recorded_by_id")
+  recordedBy   User?    @relation("VehicleServiceRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([vehicleId, date])
+  @@map("vehicle_services")
+}
+
+// ── D-035: CATATAN INSIDEN ────────────────────────────────────────────────
+// Dibuat setelah DUA kecelakaan pada kombinasi supir+mobil yang SAMA.
+//
+// ⚠️ TABEL INI BUKAN "SKOR KESELAMATAN". Dengan 3 supir dan segelintir
+// kejadian, angka perbandingan antar-supir apa pun masih noise statistik dan
+// akan MENYESATKAN kalau ditampilkan sebagai penilaian. Nilai tabel ini di
+// tahap sekarang adalah CATATAN yang rapi: bukti tertulis, biaya perbaikan
+// yang terlacak, dan pola yang lama-lama muncul sendiri. Baru setelah data
+// beberapa bulan terkumpul, perbandingan antar-supir layak dipercaya.
+// JANGAN membangun peringkat supir dari tabel ini sebelum itu.
+model VehicleIncident {
+  id        String  @id @default(uuid()) @db.Uuid
+  vehicleId String  @map("vehicle_id") @db.Uuid
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  // Supir yang memegang kendaraan saat kejadian. SetNull (riwayat insiden
+  // tidak boleh hilang), tapi driverName di bawah menyimpan SNAPSHOT nama —
+  // supaya catatan tetap terbaca utuh walau akunnya kelak dihapus.
+  driverId   String? @map("driver_id")
+  driver     User?   @relation("VehicleIncidentDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  driverName String? @map("driver_name")
+
+  date        DateTime         @db.Date
+  type        IncidentType
+  severity    IncidentSeverity
+  description String
+  photoUrls   String[]         @default([]) @map("photo_urls")
+  location    String?
+
+  repairCost Int?       @map("repair_cost") // Rupiah, null = belum diketahui
+  faultParty FaultParty @default(TIDAK_JELAS) @map("fault_party")
+
+  insuranceClaim ClaimStatus @default(TIDAK_DIKLAIM) @map("insurance_claim")
+
+  // Berapa hari kendaraan tidak bisa dipakai — biaya tersembunyi yang sering
+  // jauh lebih besar dari ongkos perbaikannya sendiri.
+  downtimeDays Int? @map("downtime_days")
+
+  resolvedAt DateTime? @map("resolved_at") @db.Date
+
+  recordedById String?  @map("recorded_by_id")
+  recordedBy   User?    @relation("VehicleIncidentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([vehicleId, date])
+  @@index([driverId, date])
+  @@map("vehicle_incidents")
+}
+
+enum ExpenseCategory {
+  BBM
+  TOL
+  PARKIR
+  CUCI
+  DENDA // tilang
+  LAINNYA
+}
+
+enum ServiceType {
+  RUTIN
+  PERBAIKAN
+  GANTI_OLI
+  GANTI_BAN
+  BODY_REPAIR
+  LAINNYA
+}
+
+enum IncidentType {
+  KECELAKAAN
+  LECET
+  MOGOK
+  TILANG
+  LAINNYA
+}
+
+enum IncidentSeverity {
+  RINGAN
+  SEDANG
+  BERAT
+}
+
+// Pihak yang bersalah — dipakai membedakan "supir kita kurang hati-hati"
+// dari "ditabrak orang". Tanpa pemisahan ini, mobil yang sering apes di
+// jalan terbaca sama buruknya dengan supir yang memang ugal-ugalan.
+enum FaultParty {
+  DRIVER_KITA
+  PIHAK_LAIN
+  TIDAK_JELAS
+}
+
+enum ClaimStatus {
+  TIDAK_DIKLAIM
+  DIAJUKAN
+  DISETUJUI
+  DITOLAK
 }
 
 // ─── RUTE (PRD §5.1 Route, FR-L-03) ─────────────────────────────────────────
@@ -1429,7 +1653,8 @@ model Route {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  jobs Job[]
+  jobs     Job[]
+  expenses VehicleExpense[]
 
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])

@@ -345,7 +345,13 @@ armadaRouter.get("/vehicles", requirePermission(P.JOB_READ), async (req, res) =>
 
 armadaRouter.post("/vehicles", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
-    const { plateNumber, type, capacitySlots, mileageKm, nextServiceDate, notes } = req.body;
+    const {
+      plateNumber, type, capacitySlots, mileageKm, nextServiceDate, notes,
+      // D-035 — detail fisik & dokumen (semua opsional, lihat schema.prisma)
+      brand, model, year, color, chassisNumber, engineNumber,
+      stnkNumber, stnkExpiry, taxExpiry, kirExpiry,
+      insurancePolicy, insuranceExpiry, picDriverId,
+    } = req.body;
     if (!plateNumber?.trim()) throw new ArmadaError("Nomor polisi wajib diisi");
     if (!type?.trim()) throw new ArmadaError("Tipe kendaraan wajib diisi");
     const slots = Number(capacitySlots);
@@ -359,6 +365,19 @@ armadaRouter.post("/vehicles", requirePermission(P.ROUTE_WRITE), async (req, res
         mileageKm: mileageKm !== undefined ? Number(mileageKm) : null,
         nextServiceDate: nextServiceDate ? toDateOnly(nextServiceDate) : null,
         notes: notes?.trim() || null,
+        brand: brand?.trim() || null,
+        model: model?.trim() || null,
+        year: year ? Number(year) : null,
+        color: color?.trim() || null,
+        chassisNumber: chassisNumber?.trim() || null,
+        engineNumber: engineNumber?.trim() || null,
+        stnkNumber: stnkNumber?.trim() || null,
+        stnkExpiry: stnkExpiry ? toDateOnly(stnkExpiry) : null,
+        taxExpiry: taxExpiry ? toDateOnly(taxExpiry) : null,
+        kirExpiry: kirExpiry ? toDateOnly(kirExpiry) : null,
+        insurancePolicy: insurancePolicy?.trim() || null,
+        insuranceExpiry: insuranceExpiry ? toDateOnly(insuranceExpiry) : null,
+        picDriverId: picDriverId || null,
       },
     });
     res.status(201).json(vehicle);
@@ -371,7 +390,12 @@ armadaRouter.post("/vehicles", requirePermission(P.ROUTE_WRITE), async (req, res
 
 armadaRouter.patch("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
-    const { plateNumber, type, capacitySlots, status, active, mileageKm, nextServiceDate, notes } = req.body;
+    const {
+      plateNumber, type, capacitySlots, status, active, mileageKm, nextServiceDate, notes,
+      brand, model, year, color, chassisNumber, engineNumber,
+      stnkNumber, stnkExpiry, taxExpiry, kirExpiry,
+      insurancePolicy, insuranceExpiry, picDriverId,
+    } = req.body;
     const vehicle = await prisma.vehicle.update({
       where: { id: req.params.id },
       data: {
@@ -383,6 +407,19 @@ armadaRouter.patch("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req
         ...(mileageKm !== undefined && { mileageKm: mileageKm === null ? null : Number(mileageKm) }),
         ...(nextServiceDate !== undefined && { nextServiceDate: nextServiceDate ? toDateOnly(nextServiceDate) : null }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
+        ...(brand !== undefined && { brand: brand?.trim() || null }),
+        ...(model !== undefined && { model: model?.trim() || null }),
+        ...(year !== undefined && { year: year ? Number(year) : null }),
+        ...(color !== undefined && { color: color?.trim() || null }),
+        ...(chassisNumber !== undefined && { chassisNumber: chassisNumber?.trim() || null }),
+        ...(engineNumber !== undefined && { engineNumber: engineNumber?.trim() || null }),
+        ...(stnkNumber !== undefined && { stnkNumber: stnkNumber?.trim() || null }),
+        ...(stnkExpiry !== undefined && { stnkExpiry: stnkExpiry ? toDateOnly(stnkExpiry) : null }),
+        ...(taxExpiry !== undefined && { taxExpiry: taxExpiry ? toDateOnly(taxExpiry) : null }),
+        ...(kirExpiry !== undefined && { kirExpiry: kirExpiry ? toDateOnly(kirExpiry) : null }),
+        ...(insurancePolicy !== undefined && { insurancePolicy: insurancePolicy?.trim() || null }),
+        ...(insuranceExpiry !== undefined && { insuranceExpiry: insuranceExpiry ? toDateOnly(insuranceExpiry) : null }),
+        ...(picDriverId !== undefined && { picDriverId: picDriverId || null }),
       },
     });
     res.json(vehicle);
@@ -390,6 +427,351 @@ armadaRouter.patch("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req
     if (err.code === "P2002") return res.status(409).json({ error: "Nomor polisi ini sudah terdaftar" });
     handleErr(err, res);
   }
+});
+
+// ═══ D-035: BIAYA, SERVIS, INSIDEN KENDARAAN ═══════════════════════════════
+//
+// PERMISSION: mencatat butuh ROUTE_WRITE (dispatcher/admin), membaca butuh
+// JOB_READ. Driver SENGAJA belum bisa input sendiri di v1 — di lapangan
+// supir menyerahkan struk fisik dan dispatcher yang memasukkan. Kolom
+// `driverId` tetap merekam SIAPA yang memakai/mengeluarkan, terlepas dari
+// siapa yang mengetik. Kalau nanti terbukti perlu supir input langsung di
+// SPBU (kualitas data odometer lebih akurat), itu penambahan terpisah.
+
+// GET /api/armada/expenses?vehicleId=&driverId=&from=&to=&category=
+armadaRouter.get("/expenses", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { vehicleId, driverId, from, to, category } = req.query;
+    const where = {
+      ...(vehicleId && { vehicleId }),
+      ...(driverId && { driverId }),
+      ...(category && { category }),
+      ...((from || to) && {
+        date: { ...(from && { gte: toDateOnly(from) }), ...(to && { lte: toDateOnly(to) }) },
+      }),
+    };
+    const rows = await prisma.vehicleExpense.findMany({
+      where,
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 500,
+    });
+    res.json(rows);
+  } catch (err) { handleErr(err, res); }
+});
+
+armadaRouter.post("/expenses", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { vehicleId, driverId, date, category, amount, odometerKm, liters, receiptUrl, notes, routeId } = req.body;
+    if (!vehicleId) throw new ArmadaError("Kendaraan wajib dipilih");
+    if (!date) throw new ArmadaError("Tanggal wajib diisi");
+    if (!category) throw new ArmadaError("Kategori wajib dipilih");
+    const nominal = Number(amount);
+    if (!Number.isFinite(nominal) || nominal <= 0) throw new ArmadaError("Nominal harus angka lebih dari 0");
+    // Liter cuma bermakna untuk BBM — menyimpannya di kategori lain bikin
+    // hitungan km/liter di ringkasan jadi salah (lihat catatan schema.prisma).
+    const litersNum = category === "BBM" && liters != null && liters !== "" ? Number(liters) : null;
+    if (litersNum != null && (!Number.isFinite(litersNum) || litersNum <= 0)) {
+      throw new ArmadaError("Jumlah liter harus angka lebih dari 0");
+    }
+    const odo = odometerKm != null && odometerKm !== "" ? Number(odometerKm) : null;
+    if (odo != null && (!Number.isFinite(odo) || odo < 0)) throw new ArmadaError("Odometer harus angka");
+
+    const row = await prisma.vehicleExpense.create({
+      data: {
+        vehicleId, driverId: driverId || null, date: toDateOnly(date), category,
+        amount: Math.round(nominal), odometerKm: odo, liters: litersNum,
+        receiptUrl: receiptUrl || null, notes: notes?.trim() || null,
+        routeId: routeId || null, recordedById: req.user.id,
+      },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+    });
+    // Odometer terbaru ikut memperbarui kilometer kendaraan — supaya angka km
+    // di daftar armada tidak perlu diketik ulang terpisah dan tidak menyimpang
+    // dari catatan pengisian BBM. Hanya kalau lebih besar (odometer tidak
+    // pernah mundur; input yang lebih kecil berarti salah ketik atau backdate).
+    if (odo != null) {
+      await prisma.vehicle.updateMany({
+        where: { id: vehicleId, OR: [{ mileageKm: null }, { mileageKm: { lt: odo } }] },
+        data: { mileageKm: odo },
+      });
+    }
+    res.status(201).json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+armadaRouter.delete("/expenses/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    await prisma.vehicleExpense.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) { handleErr(err, res); }
+});
+
+// ─── SERVIS ────────────────────────────────────────────────────────────────
+armadaRouter.get("/services", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { vehicleId, from, to } = req.query;
+    const rows = await prisma.vehicleService.findMany({
+      where: {
+        ...(vehicleId && { vehicleId }),
+        ...((from || to) && {
+          date: { ...(from && { gte: toDateOnly(from) }), ...(to && { lte: toDateOnly(to) }) },
+        }),
+      },
+      include: { vehicle: { select: { id: true, plateNumber: true } } },
+      orderBy: [{ date: "desc" }],
+      take: 500,
+    });
+    res.json(rows);
+  } catch (err) { handleErr(err, res); }
+});
+
+armadaRouter.post("/services", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { vehicleId, date, type, odometerKm, cost, workshop, description, receiptUrl, nextServiceKm, nextServiceDate } = req.body;
+    if (!vehicleId) throw new ArmadaError("Kendaraan wajib dipilih");
+    if (!date) throw new ArmadaError("Tanggal wajib diisi");
+    if (!type) throw new ArmadaError("Jenis servis wajib dipilih");
+    const odo = Number(odometerKm);
+    // WAJIB (beda dari expense) — interval servis kendaraan niaga ditentukan
+    // kilometer, bukan tanggal. Lihat catatan di schema.prisma.
+    if (!Number.isFinite(odo) || odo < 0) throw new ArmadaError("Odometer wajib diisi (angka)");
+    const biaya = Number(cost);
+    if (!Number.isFinite(biaya) || biaya < 0) throw new ArmadaError("Biaya harus angka");
+
+    const row = await prisma.$transaction(async (tx) => {
+      const created = await tx.vehicleService.create({
+        data: {
+          vehicleId, date: toDateOnly(date), type, odometerKm: odo, cost: Math.round(biaya),
+          workshop: workshop?.trim() || null, description: description?.trim() || null,
+          receiptUrl: receiptUrl || null,
+          nextServiceKm: nextServiceKm ? Number(nextServiceKm) : null,
+          nextServiceDate: nextServiceDate ? toDateOnly(nextServiceDate) : null,
+          recordedById: req.user.id,
+        },
+        include: { vehicle: { select: { id: true, plateNumber: true } } },
+      });
+      // Sinkronkan ke kolom lama Vehicle.nextServiceDate/mileageKm supaya
+      // papan & alert yang sudah ada tetap benar tanpa perlu tahu tabel baru.
+      await tx.vehicle.update({
+        where: { id: vehicleId },
+        data: {
+          ...(created.nextServiceDate && { nextServiceDate: created.nextServiceDate }),
+          mileageKm: odo,
+        },
+      });
+      return created;
+    });
+    res.status(201).json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// ─── INSIDEN ───────────────────────────────────────────────────────────────
+armadaRouter.get("/incidents", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { vehicleId, driverId, from, to } = req.query;
+    const rows = await prisma.vehicleIncident.findMany({
+      where: {
+        ...(vehicleId && { vehicleId }),
+        ...(driverId && { driverId }),
+        ...((from || to) && {
+          date: { ...(from && { gte: toDateOnly(from) }), ...(to && { lte: toDateOnly(to) }) },
+        }),
+      },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+      orderBy: [{ date: "desc" }],
+      take: 500,
+    });
+    res.json(rows);
+  } catch (err) { handleErr(err, res); }
+});
+
+armadaRouter.post("/incidents", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const {
+      vehicleId, driverId, date, type, severity, description, photoUrls,
+      location, repairCost, faultParty, insuranceClaim, downtimeDays,
+    } = req.body;
+    if (!vehicleId) throw new ArmadaError("Kendaraan wajib dipilih");
+    if (!date) throw new ArmadaError("Tanggal wajib diisi");
+    if (!type) throw new ArmadaError("Jenis insiden wajib dipilih");
+    if (!severity) throw new ArmadaError("Tingkat keparahan wajib dipilih");
+    if (!description?.trim()) throw new ArmadaError("Kronologi wajib diisi");
+
+    // Snapshot nama supir — catatan insiden harus tetap terbaca utuh walau
+    // akun supirnya kelak dihapus (FK-nya SetNull, lihat schema.prisma).
+    let driverName = null;
+    if (driverId) {
+      const d = await prisma.user.findUnique({ where: { id: driverId }, select: { name: true } });
+      driverName = d?.name || null;
+    }
+
+    const row = await prisma.vehicleIncident.create({
+      data: {
+        vehicleId, driverId: driverId || null, driverName,
+        date: toDateOnly(date), type, severity,
+        description: description.trim(),
+        photoUrls: Array.isArray(photoUrls) ? photoUrls : [],
+        location: location?.trim() || null,
+        repairCost: repairCost != null && repairCost !== "" ? Math.round(Number(repairCost)) : null,
+        ...(faultParty && { faultParty }),
+        ...(insuranceClaim && { insuranceClaim }),
+        downtimeDays: downtimeDays != null && downtimeDays !== "" ? Number(downtimeDays) : null,
+        recordedById: req.user.id,
+      },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+    });
+    res.status(201).json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// PATCH — biaya perbaikan & status klaim sering baru diketahui belakangan.
+armadaRouter.patch("/incidents/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { repairCost, faultParty, insuranceClaim, downtimeDays, resolvedAt, description, severity } = req.body;
+    const row = await prisma.vehicleIncident.update({
+      where: { id: req.params.id },
+      data: {
+        ...(repairCost !== undefined && { repairCost: repairCost === null || repairCost === "" ? null : Math.round(Number(repairCost)) }),
+        ...(faultParty !== undefined && { faultParty }),
+        ...(insuranceClaim !== undefined && { insuranceClaim }),
+        ...(downtimeDays !== undefined && { downtimeDays: downtimeDays === null || downtimeDays === "" ? null : Number(downtimeDays) }),
+        ...(resolvedAt !== undefined && { resolvedAt: resolvedAt ? toDateOnly(resolvedAt) : null }),
+        ...(description !== undefined && { description: description.trim() }),
+        ...(severity !== undefined && { severity }),
+      },
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+    });
+    res.json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// ─── RINGKASAN ARMADA (analitik) ───────────────────────────────────────────
+// GET /api/armada/fleet-summary?from=&to=
+//
+// Menjawab "mobil/supir mana yang lebih hemat" — DENGAN PENYEBUT, bukan cuma
+// total rupiah (lihat catatan panjang di schema.prisma#VehicleExpense).
+//
+// km/liter dihitung metode "tank-to-tank": (odometer tertinggi − terendah) ÷
+// total liter dalam periode. Ini PENDEKATAN, bukan angka presisi lab:
+// pengisian pertama di periode itu mengisi tangki yang sudah separuh terpakai
+// dari periode sebelumnya. Karena itu butuh MINIMAL 2 pengisian ber-odometer
+// untuk keluar angkanya — kalau kurang, dikembalikan null dan UI WAJIB
+// menampilkan "belum cukup data", BUKAN 0 (yang terbaca sebagai "boros total").
+armadaRouter.get("/fleet-summary", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const dateWhere = (from || to)
+      ? { date: { ...(from && { gte: toDateOnly(from) }), ...(to && { lte: toDateOnly(to) }) } }
+      : {};
+
+    const [vehicles, expenses, services, incidents] = await Promise.all([
+      prisma.vehicle.findMany({
+        where: { active: true },
+        select: {
+          id: true, plateNumber: true, brand: true, model: true, status: true, mileageKm: true,
+          stnkExpiry: true, taxExpiry: true, kirExpiry: true, insuranceExpiry: true,
+          picDriver: { select: { id: true, name: true } },
+        },
+        orderBy: { plateNumber: "asc" },
+      }),
+      prisma.vehicleExpense.findMany({
+        where: dateWhere,
+        select: { vehicleId: true, driverId: true, category: true, amount: true, odometerKm: true, liters: true,
+                  driver: { select: { id: true, name: true } } },
+      }),
+      prisma.vehicleService.findMany({ where: dateWhere, select: { vehicleId: true, cost: true } }),
+      prisma.vehicleIncident.findMany({
+        where: dateWhere,
+        select: { vehicleId: true, driverId: true, repairCost: true, downtimeDays: true, faultParty: true,
+                  driver: { select: { id: true, name: true } }, driverName: true },
+      }),
+    ]);
+
+    // Hitung km/liter + Rp/km untuk satu kumpulan pengeluaran.
+    function hitungEfisiensi(rows) {
+      const bbm = rows.filter((e) => e.category === "BBM");
+      const totalLiter = bbm.reduce((n, e) => n + (e.liters || 0), 0);
+      const odos = bbm.map((e) => e.odometerKm).filter((o) => Number.isFinite(o));
+      const cukupData = odos.length >= 2 && totalLiter > 0;
+      const jarakKm = cukupData ? Math.max(...odos) - Math.min(...odos) : null;
+      const biayaBbm = bbm.reduce((n, e) => n + e.amount, 0);
+      return {
+        totalLiter: totalLiter || null,
+        jarakKm: jarakKm && jarakKm > 0 ? jarakKm : null,
+        kmPerLiter: cukupData && jarakKm > 0 ? +(jarakKm / totalLiter).toFixed(2) : null,
+        rupiahPerKm: cukupData && jarakKm > 0 ? Math.round(biayaBbm / jarakKm) : null,
+        // Alasan angka di atas null — dipakai UI supaya bisa memberi tahu apa
+        // yang kurang, bukan sekadar menampilkan strip tanpa penjelasan.
+        alasanKosong: cukupData ? null
+          : odos.length < 2 ? "Butuh minimal 2 pengisian BBM dengan odometer"
+          : "Jumlah liter belum diisi",
+      };
+    }
+
+    function totalPerKategori(rows) {
+      const out = {};
+      for (const e of rows) out[e.category] = (out[e.category] || 0) + e.amount;
+      return out;
+    }
+
+    const perKendaraan = vehicles.map((v) => {
+      const eRows = expenses.filter((e) => e.vehicleId === v.id);
+      const sRows = services.filter((s) => s.vehicleId === v.id);
+      const iRows = incidents.filter((i) => i.vehicleId === v.id);
+      return {
+        ...v,
+        totalBiaya: eRows.reduce((n, e) => n + e.amount, 0),
+        perKategori: totalPerKategori(eRows),
+        efisiensi: hitungEfisiensi(eRows),
+        biayaServis: sRows.reduce((n, s) => n + s.cost, 0),
+        jumlahServis: sRows.length,
+        jumlahInsiden: iRows.length,
+        biayaPerbaikanInsiden: iRows.reduce((n, i) => n + (i.repairCost || 0), 0),
+        hariTidakBisaJalan: iRows.reduce((n, i) => n + (i.downtimeDays || 0), 0),
+      };
+    });
+
+    // Per supir — dikumpulkan dari pengeluaran & insiden yang punya driverId.
+    const driverIds = [...new Set([
+      ...expenses.map((e) => e.driverId),
+      ...incidents.map((i) => i.driverId),
+    ].filter(Boolean))];
+    const perSupir = driverIds.map((id) => {
+      const eRows = expenses.filter((e) => e.driverId === id);
+      const iRows = incidents.filter((i) => i.driverId === id);
+      const nama = eRows[0]?.driver?.name || iRows[0]?.driver?.name || iRows[0]?.driverName || "—";
+      return {
+        driverId: id,
+        name: nama,
+        totalBiaya: eRows.reduce((n, e) => n + e.amount, 0),
+        perKategori: totalPerKategori(eRows),
+        efisiensi: hitungEfisiensi(eRows),
+        jumlahInsiden: iRows.length,
+        // Dipisah dari jumlah total: "ditabrak orang" TIDAK sama dengan
+        // "kurang hati-hati" (lihat enum FaultParty di schema.prisma).
+        insidenSalahSendiri: iRows.filter((i) => i.faultParty === "DRIVER_KITA").length,
+        biayaPerbaikanInsiden: iRows.reduce((n, i) => n + (i.repairCost || 0), 0),
+      };
+    }).sort((a, b) => b.totalBiaya - a.totalBiaya);
+
+    res.json({ periode: { from: from || null, to: to || null }, perKendaraan, perSupir });
+  } catch (err) { handleErr(err, res); }
 });
 
 // ─── RUTE (Route) — Delivery Tahap 3, Route Planner ─────────────────────────
