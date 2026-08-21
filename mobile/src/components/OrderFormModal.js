@@ -33,14 +33,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, ScrollView,
-  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES } from "../utils/format";
-import { useKeyboardHeight } from "../lib/useKeyboardHeight";
+import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import { stageLabels, stageColors } from "../theme";
 
 // FITUR (tambahan): Tahap Pipeline (New/Qualified/.../Paid) SEBELUMNYA cuma
@@ -145,8 +144,13 @@ export default function OrderFormModal({
 }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const { height: screenHeight } = useWindowDimensions();
-  const keyboardHeight = useKeyboardHeight();
+  // overlayStyle MENDORONG sheet naik ke atas keyboard (paddingBottom pada
+  // overlay flex-end); maxHeight membatasi tingginya. Keduanya WAJIB bersama
+  // — lihat lib/useSheetMaxHeight.js untuk kenapa mengecilkan tinggi saja
+  // (pola lama file ini, sebelum fix ini) tidak menyelesaikan apa pun: sheet
+  // tetap menempel di DASAR layar (overlay justifyContent:"flex-end"), jadi
+  // tetap di belakang keyboard walau tingginya sudah dikecilkan.
+  const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.88);
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
@@ -502,23 +506,26 @@ export default function OrderFormModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => !saving && onClose()}>
-      {/* BUG (fix): form ini banyak TextInput (Berat Badan, Keluhan, Harga
-          Total, Layanan) di dalam RN <Modal> — Modal Android SELALU bikin
-          native Dialog/Window terpisah dari Activity, TIDAK PERNAH ikut
-          windowSoftInputMode=adjustResize Activity-nya sama sekali (limitasi
-          RN, bukan hal baru). Percobaan sebelumnya (KeyboardAvoidingView
-          behavior="height") masih tidak reliable dalam praktik — "height"
-          tetap bergantung ke pengukuran layout yang bisa meleset di dalam
-          Dialog window terpisah ini. Fix: hitung LANGSUNG maxHeight modal =
-          88% tinggi layar DIKURANGI tinggi keyboard asli (dari
-          useKeyboardHeight(), berbasis event Keyboard core RN yang tidak
-          bergantung ke adjustResize sama sekali) — modal dipaksa mengecil
-          proporsional deterministik tiap keyboard muncul, header (judul+X)
-          selalu tetap kelihatan, ScrollView di dalamnya jadi lebih pendek
-          jadi field yang lagi diisi (termasuk Catatan di bagian bawah form)
-          bisa di-scroll ke atas keyboard alih-alih ketutup total. */}
-      <View style={styles.overlay}>
-        <View style={[styles.modal, { maxHeight: screenHeight * 0.88 - keyboardHeight }]}>
+      {/* BUG (fix 21 Agt 2026): form ini banyak TextInput (Berat Badan,
+          Keluhan, Ongkir, Alamat Kirim, Harga Total, Layanan) di dalam RN
+          <Modal> — Modal Android SELALU bikin native Dialog/Window terpisah
+          dari Activity, TIDAK PERNAH ikut windowSoftInputMode=adjustResize
+          Activity-nya sama sekali (limitasi RN, bukan hal baru).
+          Versi SEBELUM fix ini cuma mengecilkan `maxHeight` modal (tinggi
+          layar dikurangi tinggi keyboard) TANPA memindahkan posisinya —
+          TERNYATA TIDAK CUKUP: overlay di bawah pakai `justifyContent:
+          "flex-end"`, jadi sheet tetap MENEMPEL DI DASAR LAYAR walau
+          tingginya sudah dikecilkan, alias tetap di belakang keyboard
+          persis seperti sebelum "diperbaiki". Field baru yang ditambahkan
+          belakangan (D-027/D-028/D-029/D-033) ikut kena karena menambah
+          field ke form yang sudah salah pola ini.
+          Fix yang BENAR (sudah terbukti di ChatBaruModal.js/ForwardModal.js/
+          dst — lihat lib/useSheetMaxHeight.js): `overlayStyle` di bawah
+          MENDORONG sheet naik lewat paddingBottom pada overlay flex-end,
+          BUKAN cuma mengecilkan tinggi. Keduanya (posisi + tinggi) wajib
+          jalan bersama. */}
+      <View style={[styles.overlay, overlayStyle]}>
+        <View style={[styles.modal, { maxHeight: sheetMaxHeight }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{isEdit ? "Edit Order" : "Order Baru"}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
@@ -1025,9 +1032,10 @@ function createStyles(tokens) {
   return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   // maxHeight SENGAJA tidak diset statis di sini — selalu di-override lewat
-  // inline style di render (screenHeight * 0.88 - keyboardHeight, lihat
-  // useKeyboardHeight() di atas) supaya modal mengecil proporsional tiap
-  // keyboard muncul.
+  // inline style di render (sheetMaxHeight dari useSheetMaxHeight() di atas)
+  // supaya modal mengecil proporsional tiap keyboard muncul. overlayStyle
+  // (paddingBottom, ikut di-spread ke `overlay` saat render) yang mendorong
+  // posisinya naik — dua-duanya wajib jalan bersama, lihat catatan di render.
   modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
