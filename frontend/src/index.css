@@ -128,11 +128,21 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .sidebar-brand-name {
+  display: block;
   font-weight: 800; font-size: 17px; color: var(--text-primary);
-  letter-spacing: -0.02em; line-height: 1.1;
+  letter-spacing: -0.02em; line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar-brand-sub {
-  font-size: 11px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.01em;
+  /* BUG (fix): tanpa display:block ini adalah <span> INLINE — duduk di
+     baris yang sama dengan .sidebar-brand-name, jadi kata pertama subtitle
+     ("Sano") nempel langsung di belakang nama brand ("SANSS") tanpa jarak,
+     baru sisanya turun baris. Hasilnya "SANSSSano" lalu "Integrated Smart
+     System" di baris berikutnya — berantakan & tidak profesional. */
+  display: block;
+  font-size: 10.5px; color: var(--text-muted); margin-top: 2px; letter-spacing: 0.01em;
+  line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .sidebar-section { padding: 12px 12px 4px; }

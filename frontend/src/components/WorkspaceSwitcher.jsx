@@ -50,7 +50,7 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
       trigger={
         <button
           type="button"
-          title={collapsed ? judul : undefined}
+          title={judul}
           aria-label={`Workspace aktif: ${judul}. Klik untuk berpindah.`}
           className={cn(
             "mx-3 mb-2 flex items-center gap-2.5 rounded-btn border border-border bg-surface px-2.5 py-2 text-left transition-colors hover:bg-hovertint",
