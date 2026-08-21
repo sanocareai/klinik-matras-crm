@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
-  Megaphone, BarChart3, Zap, Settings, UserCog,
+  Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
@@ -92,22 +92,6 @@ const DIVISIONS = {
         items: [
           { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
           { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
-        ],
-      },
-      {
-        // BUG YANG DIPERBAIKI: section ini SEBELUMNYA adminOnly di level SEKSI,
-        // jadi SELURUH seksi (termasuk link "Pengaturan" itu sendiri) hilang
-        // total dari sidebar SALES — akibatnya SALES tidak pernah bisa membuka
-        // halaman Pengaturan sama sekali, walau pages/Pengaturan.jsx SUDAH
-        // punya logika sendiri yang mempersempit tampilan SALES ke section
-        // "Template Pesan" doang (lihat SALES_ALLOWED_SECTIONS di sana) — logika
-        // itu tidak pernah kepakai karena pintu masuknya sudah tertutup di sini.
-        // "Pengguna & Peran" TETAP admin-only (item-level, seperti section lain
-        // yang campur admin+non-admin, mis. DATA/Galeri Produk).
-        section: "PENGATURAN",
-        items: [
-          { to: "/pengaturan", label: "Pengaturan",       Icon: Settings },
-          { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog, adminOnly: true },
         ],
       },
     ],
@@ -237,6 +221,38 @@ const DIVISIONS = {
     ],
   },
 };
+
+// Nav Main Hub (/portal) — SEBELUMNYA kosong total (lihat komentar di atas
+// <nav>), tapi Pengaturan/Pengguna & Peran cuma pernah bisa dijangkau lewat
+// sidebar Growth walau isinya sama sekali bukan urusan Sales (template
+// pesan, jam operasional, dan sekarang 24 akun lintas 6 role — Produksi,
+// Armada, Gudang, Finance, dst, bukan cuma sales). Dipindah (bukan
+// digandakan) ke sini supaya letaknya sesuai cakupannya: lintas-divisi,
+// bukan milik satu workspace. Notifikasi ditambahkan sekalian — halamannya
+// (pages/Notifications.jsx, route /notifications) sudah lama ada tapi
+// sebelum ini tidak tertaut di sidebar mana pun sama sekali, cuma lewat
+// ikon lonceng di Topbar.
+//
+// SENGAJA TIDAK menambah item operasional (Dashboard/Order/Inbox dst) di
+// sini — itu tempatnya di sidebar masing-masing divisi. 5 kartu workspace
+// di halaman Hub sendiri sudah cukup untuk "masuk ke divisi mana"; kalau
+// Hub ikut menduplikasi menu operasional dia jadi divisi ke-6 yang
+// membingungkan, bukan lobi antar-divisi.
+const HUB_SECTIONS = [
+  {
+    section: "UMUM",
+    items: [
+      { to: "/notifications", label: "Notifikasi", Icon: Bell },
+    ],
+  },
+  {
+    section: "PENGATURAN",
+    items: [
+      { to: "/pengaturan", label: "Pengaturan",       Icon: Settings },
+      { to: "/pengguna",   label: "Pengguna & Peran", Icon: UserCog, adminOnly: true },
+    ],
+  },
+];
 
 // ⚠️ RAIL IKON 78px SUDAH DIHAPUS (refactor navigasi 2 Agustus 2026).
 // Dulu ada DUA elemen navigasi berdampingan di desktop: rail ikon di paling
@@ -522,18 +538,16 @@ export default function Layout({ user, onLogout, children }) {
           onNavigate={closeMobileMenu}
         />
 
-        {/* Navigation — menu DI DALAM workspace yang sedang dibuka.
-            Di Main Hub tidak dirender: hub bukan divisi, jadi tidak punya menu
-            operasional. Yang tampil di sana cuma brand + switcher + profil,
-            dan kartu workspace di halamannya sendiri yang jadi navigasi. */}
+        {/* Navigation — menu DI DALAM workspace yang sedang dibuka. Di Main Hub
+            dirender dari HUB_SECTIONS (lintas-divisi: Pengaturan, Pengguna &
+            Peran, Notifikasi) — BUKAN kosong seperti sebelumnya, dan bukan
+            menu operasional divisi mana pun. Lihat catatan di HUB_SECTIONS. */}
         <nav className="sidebar-nav">
-          {!onHub && (
-          <>
           {/* LayoutGroup: pill aktif geser mulus antar item (layoutId). Data nav,
               role gating, dan kondisi badge unread TIDAK berubah — cuma sumbernya
-              sekarang `division.sections`, bukan array statis tunggal. */}
+              sekarang `division.sections` (atau HUB_SECTIONS di Main Hub). */}
           <LayoutGroup>
-          {division.sections.map(({ section, adminOnly, items }) => {
+          {(onHub ? HUB_SECTIONS : division.sections).map(({ section, adminOnly, items }) => {
             if (adminOnly && !isAdmin) return null;
             return (
               <div key={section} className="nav-section">
@@ -561,8 +575,6 @@ export default function Layout({ user, onLogout, children }) {
             );
           })}
           </LayoutGroup>
-          </>
-          )}
         </nav>
 
         {/* Kartu promo "Tanya Sano" (DS v2.1) — fitur AI CRM, HANYA relevan di
