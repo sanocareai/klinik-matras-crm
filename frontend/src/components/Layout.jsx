@@ -238,6 +238,15 @@ const DIVISIONS = {
 // di halaman Hub sendiri sudah cukup untuk "masuk ke divisi mana"; kalau
 // Hub ikut menduplikasi menu operasional dia jadi divisi ke-6 yang
 // membingungkan, bukan lobi antar-divisi.
+// Path yang TERTAUT dari HUB_SECTIONS tapi TIDAK punya prefiks divisi apa
+// pun di divisionFromPath() — tanpa daftar ini, membuka salah satu dari
+// ketiganya jatuh ke fallback "growth" di divisionKey (lihat komentar di
+// sana), yang bikin sidebar & WorkspaceSwitcher diam-diam berpindah balik
+// ke Sales CRM padahal user baru saja klik dari Main Hub. BUG NYATA (22
+// Agustus 2026): persis inilah yang bikin klik Notifikasi/Pengaturan/
+// Pengguna & Peran di sidebar Hub "kelihatan seperti pindah ke CRM".
+const HUB_ONLY_PATHS = ["/notifications", "/pengaturan", "/pengguna"];
+
 const HUB_SECTIONS = [
   {
     section: "UMUM",
@@ -318,7 +327,10 @@ function playNotifSound() {
 export default function Layout({ user, onLogout, children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const onHub = location.pathname === "/portal";
+  // Ikut "hub" untuk keperluan sidebar/switcher: /portal SUNGGUHAN, ATAU
+  // salah satu halaman lintas-divisi yang cuma tertaut dari sana (lihat
+  // HUB_ONLY_PATHS) — keduanya sama-sama "bukan milik divisi mana pun".
+  const onHub = location.pathname === "/portal" || HUB_ONLY_PATHS.includes(location.pathname);
   // Divisi yang lagi aktif — SATU fungsi ini dipakai untuk RAIL (ikon mana
   // yang menyala) MAUPUN sidebar lebar (konten mana yang ditampilkan).
   // Command center (/portal/:key) py kunci divisi LANGSUNG dari path-nya
