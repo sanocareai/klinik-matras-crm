@@ -12,7 +12,7 @@
     "jsEngine": "hermes",
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 17,
+      "versionCode": 18,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -82,7 +82,8 @@
         }
       ],
       "expo-image",
-      "expo-asset"
+      "expo-asset",
+      "@react-native-community/datetimepicker"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

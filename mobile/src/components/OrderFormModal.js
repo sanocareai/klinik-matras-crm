@@ -40,6 +40,7 @@ import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
+import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
 
 // FITUR (tambahan): Tahap Pipeline (New/Qualified/.../Paid) SEBELUMNYA cuma
@@ -889,12 +890,16 @@ export default function OrderFormModal({
             />
 
             <Text style={styles.label}>Tanggal Pick Up Pasti</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (diisi setelah jadwal dikunci)"
-              placeholderTextColor={tokens.color.textMuted}
+            {/* Kolom DateTime asli di database (bukan teks bebas seperti
+                Estimasi di atas) — dulu diketik manual "YYYY-MM-DD", rawan
+                salah nyata (kebiasaan nulis DD-MM-YYYY jadi tersimpan
+                sebagai tanggal lain tanpa ketahuan). Web sudah pakai
+                <input type="date">, ini menyamakan mobile ke pola yang
+                sama lewat date picker native — lihat DateField.js. */}
+            <DateField
               value={pickupConfirmedDate}
-              onChangeText={setPickupConfirmedDate}
+              onChange={setPickupConfirmedDate}
+              placeholder="Diisi setelah jadwal dikunci"
             />
 
             {/* D-033: pasangan pengiriman — diisi begitu produksi hampir/sudah selesai. */}
@@ -908,12 +913,10 @@ export default function OrderFormModal({
             />
 
             <Text style={styles.label}>Tanggal Kirim Pasti</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (diisi setelah jadwal dikunci)"
-              placeholderTextColor={tokens.color.textMuted}
+            <DateField
               value={deliveryConfirmedDate}
-              onChangeText={setDeliveryConfirmedDate}
+              onChange={setDeliveryConfirmedDate}
+              placeholder="Diisi setelah jadwal dikunci"
             />
 
             <Text style={styles.label}>Link Lokasi</Text>
