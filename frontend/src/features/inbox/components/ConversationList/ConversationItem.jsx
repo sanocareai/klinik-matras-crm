@@ -1,12 +1,18 @@
 import React, { memo, useRef, useState } from "react";
-import { Pin, Users, Eye, CheckCheck } from "lucide-react";
+import { Pin, Users, Eye, CheckCheck, Check } from "lucide-react";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
 import { useConversation, useActiveId, useConversationStore } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
 import TransferPickerPopover from "./TransferPickerPopover.jsx";
+import PeekPreview from "./PeekPreview.jsx";
 import { isAdminUser } from "@/lib/roles.js";
+
+// Peek Preview (port dari mobile) — hover sebentar di baris ini, popup
+// muncul dekat kursor. Delay mencegah popup muncul tiap kursor lewat
+// sekilas saat scroll (bukan hover sungguhan).
+const PEEK_HOVER_DELAY_MS = 450;
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
@@ -22,15 +28,17 @@ function isCurrentUserAdmin() {
   }
 }
 
-function ConversationItemBase({ id }) {
+function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onEnterSelection }) {
   // Subscribe GRANULAR — hanya re-render item ini kalau conversation dengan
   // id ini berubah, bukan seluruh list (itu poin utama pola "pass id saja").
   const c = useConversation(id);
   const activeId = useActiveId();
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
   const [transferPicker, setTransferPicker] = useState(null); // { x, y }
+  const [peek, setPeek] = useState(null); // { x, y }
   const longPressTimerRef = useRef(null);
   const longPressAt = useRef(0);
+  const peekTimerRef = useRef(null);
   const isAdmin = isCurrentUserAdmin();
 
   if (!c) return null;
@@ -87,11 +95,13 @@ function ConversationItemBase({ id }) {
   }
 
   function handleContextMenu(e) {
+    if (selectionMode) return;
     e.preventDefault();
     openContextMenu(e.clientX, e.clientY);
   }
 
   function handleTouchStart(e) {
+    if (selectionMode) return;
     const touch = e.touches[0];
     longPressTimerRef.current = setTimeout(() => openContextMenu(touch.clientX, touch.clientY), 600);
   }
@@ -100,24 +110,52 @@ function ConversationItemBase({ id }) {
 
   function handleClick() {
     if (Date.now() - longPressAt.current < 800) return;
+    if (peek) return; // popup sedang terbuka — klik row seharusnya tidak ikut buka chat
+    if (selectionMode) { onToggleSelect?.(id); return; }
     selectConversation();
+  }
+
+  function handleAvatarClick(e) {
+    e.stopPropagation();
+    if (selectionMode) onToggleSelect?.(id); else onEnterSelection?.(id);
+  }
+
+  function handleMouseEnter(e) {
+    if (selectionMode) return;
+    const x = e.clientX, y = e.clientY;
+    clearTimeout(peekTimerRef.current);
+    peekTimerRef.current = setTimeout(() => setPeek({ x, y }), PEEK_HOVER_DELAY_MS);
+  }
+  function handleMouseLeave() {
+    clearTimeout(peekTimerRef.current);
   }
 
   return (
     <button
-      className={`conversation-item${isActive ? " active" : ""}${isUnread ? " unread" : ""}${isRead && !isUnread ? " conv-item-read" : ""}`}
+      className={`conversation-item${isActive ? " active" : ""}${isUnread ? " unread" : ""}${isRead && !isUnread ? " conv-item-read" : ""}${selected ? " conv-item-selected" : ""}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchMove={handleTouchMove}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       style={{ WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none" }}
     >
-      <div className="conv-avatar-wrap">
+      {/* Klik avatar = masuk/keluar mode pilih massal — pola sama dengan
+          mobile (ConversationItem.js). role="button" murni untuk semantik,
+          e.stopPropagation di handleAvatarClick sudah cegah bentrok dengan
+          onClick baris. */}
+      <div className="conv-avatar-wrap" onClick={handleAvatarClick} role="button" tabIndex={-1}>
         {isGroup ? (
           <div className="conv-group-avatar"><Users size={18} /></div>
         ) : (
           <Avatar name={name} src={c.customer?.profilePictureUrl} size="md" />
+        )}
+        {selectionMode && (
+          <span className={`conv-select-checkbox${selected ? " selected" : ""}`}>
+            {selected && <Check size={11} color="#fff" strokeWidth={3} />}
+          </span>
         )}
       </div>
       <div className="conversation-item-body">
@@ -179,6 +217,16 @@ function ConversationItemBase({ id }) {
             </button>
           </div>
         </>
+      )}
+
+      {peek && (
+        <PeekPreview
+          conversation={c}
+          x={peek.x}
+          y={peek.y}
+          onClose={() => setPeek(null)}
+          onOpenChat={() => { setPeek(null); selectConversation(); }}
+        />
       )}
 
       {transferPicker && (

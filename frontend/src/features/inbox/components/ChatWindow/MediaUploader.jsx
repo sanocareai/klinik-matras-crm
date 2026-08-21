@@ -1,6 +1,142 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles } from "lucide-react";
+import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles, MapPin, User, Navigation } from "lucide-react";
 import { useMessageStore } from "../../stores/messageStore.js";
+import { api } from "../../../../api.js";
+
+// "Kirim Lokasi" — port dari mobile/src/components/KirimLokasiModal.js.
+// TIDAK ADA peta visual/nearby-places di sini (sama alasan seperti mobile:
+// butuh Google Maps/Places API key berbayar yang belum ada). Alamat didapat
+// dari reverse geocoding Nominatim/OpenStreetMap — GRATIS, tanpa API key,
+// gagal di sini WAJAR & tidak boleh memblokir kirim (koordinatnya sendiri
+// sudah cukup).
+function susunAlamat(a) {
+  if (!a) return null;
+  const bagian = [a.road, a.suburb || a.village, a.city || a.town, a.state].filter(Boolean);
+  return bagian.length ? bagian.join(", ") : null;
+}
+
+function LocationModal({ conversationId, onClose, onSent }) {
+  const [status, setStatus] = useState("memuat"); // memuat | siap | error
+  const [pesanError, setPesanError] = useState("");
+  const [koordinat, setKoordinat] = useState(null);
+  const [alamat, setAlamat] = useState(null);
+  const [mengirim, setMengirim] = useState(false);
+
+  React.useEffect(() => {
+    if (!navigator.geolocation) {
+      setStatus("error");
+      setPesanError("Browser ini tidak mendukung akses lokasi");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        setKoordinat({ lat, lng, akurasi: pos.coords.accuracy });
+        setStatus("siap");
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`)
+          .then((r) => r.json())
+          .then((data) => setAlamat(susunAlamat(data?.address)))
+          .catch(() => {});
+      },
+      (err) => { setStatus("error"); setPesanError(err.message || "Gagal mengambil lokasi — pastikan izin lokasi diizinkan"); },
+      { enableHighAccuracy: false, timeout: 15000 },
+    );
+  }, []);
+
+  async function handleKirim() {
+    if (!koordinat || mengirim) return;
+    setMengirim(true);
+    try {
+      const msg = await api.sendLocation(conversationId, { lat: koordinat.lat, lng: koordinat.lng, name: alamat });
+      useMessageStore.getState().upsertMessage(conversationId, msg);
+      onSent?.();
+    } catch (err) {
+      setStatus("error");
+      setPesanError(err.message || "Gagal kirim lokasi");
+    } finally {
+      setMengirim(false);
+    }
+  }
+
+  return (
+    <div className="media-preview-overlay" onClick={onClose}>
+      <div className="media-preview-modal small-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="media-preview-header">
+          <span>Kirim Lokasi</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="location-modal-body">
+          {status === "memuat" && <p className="location-modal-hint">Mengambil lokasi saat ini…</p>}
+          {status === "error" && <p className="location-modal-error">{pesanError}</p>}
+          {status === "siap" && (
+            <div className="location-modal-card">
+              <div className="location-modal-icon"><Navigation size={20} color="#fff" /></div>
+              <div>
+                <div className="location-modal-title">Lokasi Saat Ini</div>
+                <div className="location-modal-addr">{alamat || "Mencari alamat…"}</div>
+                {Number.isFinite(koordinat?.akurasi) && (
+                  <div className="location-modal-akurasi">Akurasi ±{Math.round(koordinat.akurasi)} m</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="media-preview-footer">
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={handleKirim} disabled={status !== "siap" || mengirim}>
+            {mengirim ? "Mengirim..." : "Kirim Lokasi Ini"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "Kirim Kontak" — port dari mobile (AttachComposer.js#kirimKontak), tapi
+// TANPA picker kontak HP (Contact Picker API dukungan browser buruk — cuma
+// Chrome Android) — sales isi nama+nomor manual, lebih reliable lintas
+// browser/device daripada API yang setengah didukung.
+function ContactModal({ conversationId, onClose, onSent }) {
+  const [name, setName]   = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [mengirim, setMengirim] = useState(false);
+
+  async function handleKirim() {
+    if (!name.trim() || !phone.trim() || mengirim) return;
+    setMengirim(true);
+    setError("");
+    try {
+      const msg = await api.sendContact(conversationId, { name: name.trim(), phone: phone.trim() });
+      useMessageStore.getState().upsertMessage(conversationId, msg);
+      onSent?.();
+    } catch (err) {
+      setError(err.message || "Gagal kirim kontak");
+    } finally {
+      setMengirim(false);
+    }
+  }
+
+  return (
+    <div className="media-preview-overlay" onClick={onClose}>
+      <div className="media-preview-modal small-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="media-preview-header">
+          <span>Kirim Kontak</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="contact-modal-body">
+          <input className="contact-modal-input" placeholder="Nama" value={name} onChange={(e) => setName(e.target.value)} disabled={mengirim} autoFocus />
+          <input className="contact-modal-input" placeholder="Nomor HP (mis. 0812xxxx)" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mengirim} />
+          {error && <span className="media-preview-error">{error}</span>}
+        </div>
+        <div className="media-preview-footer">
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={handleKirim} disabled={!name.trim() || !phone.trim() || mengirim}>
+            {mengirim ? "Mengirim..." : "Kirim Kontak"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 const MAX_FILE_MB = 50; // batas nginx client_max_body_size di production (bukan limit multer 64MB — nginx yang lebih ketat)
@@ -75,6 +211,8 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
   const [hd, setHd]               = useState(false); // false = Standar (default, dikompresi)
   const [sending, setSending]     = useState(false);
   const [progressByUid, setProgressByUid] = useState({});
+  const [showLocation, setShowLocation] = useState(false);
+  const [showContact, setShowContact]   = useState(false);
 
   function addFiles(fileList) {
     const files = Array.from(fileList || []).filter((f) => {
@@ -187,9 +325,24 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
                   <span className="attach-item-label">Produk</span>
                 </button>
               )}
+              <button className="attach-item" onClick={() => { setShowLocation(true); setShowSheet(false); }}>
+                <div className="attach-item-icon" style={{ background: "#16a34a26" }}><MapPin size={24} style={{ color: "#16a34a" }} /></div>
+                <span className="attach-item-label">Lokasi</span>
+              </button>
+              <button className="attach-item" onClick={() => { setShowContact(true); setShowSheet(false); }}>
+                <div className="attach-item-icon" style={{ background: "#db277726" }}><User size={24} style={{ color: "#db2777" }} /></div>
+                <span className="attach-item-label">Kontak</span>
+              </button>
             </div>
           </div>
         </div>
+      )}
+
+      {showLocation && (
+        <LocationModal conversationId={conversationId} onClose={() => setShowLocation(false)} onSent={() => setShowLocation(false)} />
+      )}
+      {showContact && (
+        <ContactModal conversationId={conversationId} onClose={() => setShowContact(false)} onSent={() => setShowContact(false)} />
       )}
 
       {/* Modal preview grid sebelum kirim */}

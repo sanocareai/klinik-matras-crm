@@ -483,8 +483,23 @@ export const api = {
     request(`/conversations/${conversationId}/messages/${messageId}/load-media`, { method: "POST" }),
   sendMedia: (conversationId, formData) =>
     requestFormData(`/conversations/${conversationId}/media`, formData),
+  // Port dari mobile (mobile/src/api.js) — endpoint backend sudah lama ada,
+  // web belum pernah punya UI untuk memicunya.
+  sendLocation: (conversationId, { lat, lng, name }) =>
+    request(`/conversations/${conversationId}/send-location`, {
+      method: "POST", body: JSON.stringify({ lat, lng, name }),
+    }),
+  sendContact: (conversationId, { name, phone }) =>
+    request(`/conversations/${conversationId}/send-contact`, {
+      method: "POST", body: JSON.stringify({ name, phone }),
+    }),
   takeoverConversation: (id) =>
     request(`/conversations/${id}/takeover`, { method: "POST" }),
+  // Peek Preview (port dari mobile) — beberapa pesan terakhir TANPA
+  // menandai percakapan sudah dibaca (endpoint terpisah dari getMessages
+  // yang punya side-effect mark-as-read).
+  peekConversation: (id, limit = 5) =>
+    request(`/conversations/${id}/peek?limit=${limit}`),
   // Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini
   // (takeover & transfer manual) — dipakai banner "Riwayat Penanganan" di
   // ChatWindow, beda dari handoverNote (cuma catatan TERAKHIR).

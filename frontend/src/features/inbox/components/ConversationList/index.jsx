@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquarePlus, X, Pin, PinOff, Check, Circle } from "lucide-react";
 import FilterTabs from "./FilterTabs.jsx";
 import SearchBar from "./SearchBar.jsx";
 import ChatBaruDialog from "./ChatBaruDialog.jsx";
 import ConversationItem from "./ConversationItem.jsx";
 import { ConversationListSkeleton } from "../Skeletons.jsx";
 import { useConversations } from "../../hooks/useConversations.js";
+import { api } from "../../../../api.js";
 import {
   useOrderedIds, useFilter, useConvSearchQuery, useConversationStore,
 } from "../../stores/conversationStore.js";
@@ -39,6 +40,10 @@ function matches(c, filter, userId, query) {
   return true;
 }
 
+// Multi-select massal (port dari mobile ChatListScreen.js) — SENGAJA
+// dibatasi ke aksi yang sudah ada endpoint per-item aman (pin, tandai
+// dibaca), TIDAK menambah kapabilitas baru (mis. hapus percakapan) yang
+// butuh diskusi produk sendiri soal retensi data CRM.
 export default function ConversationList({ userId }) {
   const navigate = useNavigate();
   const [chatBaruOpen, setChatBaruOpen] = useState(false);
@@ -46,6 +51,56 @@ export default function ConversationList({ userId }) {
   const search = useConvSearchQuery();
   const orderedIds = useOrderedIds();
   const conversationsById = useConversationStore((s) => s.conversationsById);
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  const enterSelection = useCallback((id) => {
+    setSelectionMode(true);
+    setSelectedIds(new Set([id]));
+  }, []);
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }, []);
+  const exitSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  async function bulkAction(patchFn) {
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(ids.map((id) => patchFn(id)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) alert(`${failed} dari ${ids.length} percakapan gagal diproses.`);
+    exitSelection();
+  }
+  function bulkPin() {
+    bulkAction((id) => api.updateConversation(id, { pinned: true }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, pinned: true, pinnedAt: new Date().toISOString() })
+    ));
+  }
+  function bulkUnpin() {
+    bulkAction((id) => api.updateConversation(id, { pinned: false }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, pinned: false, pinnedAt: null })
+    ));
+  }
+  function bulkMarkRead() {
+    bulkAction((id) => api.markConversationRead(id).then(() =>
+      useConversationStore.getState().upsertConversation({ id, unread: false, unreadCount: 0, isRead: true })
+    ));
+  }
+  function bulkMarkUnread() {
+    bulkAction((id) => api.updateConversation(id, { unread: true, isRead: false }).then(() =>
+      useConversationStore.getState().upsertConversation({ id, unread: true, isRead: false })
+    ));
+  }
+  const selectedConvs = [...selectedIds].map((id) => conversationsById[id]).filter(Boolean);
+  const allSelectedPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.pinned);
 
   const { isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useConversations({ filter, search, userId });
@@ -69,21 +124,34 @@ export default function ConversationList({ userId }) {
         onJadi={(hasil) => navigate(`/inbox?conv=${hasil.conversationId}`)}
       />
 
-      <div style={{ display: "flex", gap: 8, padding: "8px 10px 0", alignItems: "center" }}>
-        <div style={{ flex: 1, minWidth: 0 }}><SearchBar /></div>
-        <button
-          onClick={() => setChatBaruOpen(true)}
-          title="Chat baru — ketik nomor langsung, seperti di WhatsApp"
-          style={{
-            flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-            width: 34, height: 34, borderRadius: 8, cursor: "pointer",
-            border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
-            color: "var(--primary, #2563eb)",
-          }}
-        >
-          <MessageSquarePlus size={17} />
-        </button>
-      </div>
+      {selectionMode ? (
+        <div className="conv-selection-toolbar">
+          <button className="btn-icon" onClick={exitSelection} title="Batal"><X size={18} /></button>
+          <span className="conv-selection-count">{selectedIds.size} dipilih</span>
+          <div style={{ flex: 1 }} />
+          <button className="btn-icon" onClick={allSelectedPinned ? bulkUnpin : bulkPin} title={allSelectedPinned ? "Lepas Sematan" : "Sematkan"}>
+            {allSelectedPinned ? <PinOff size={18} /> : <Pin size={18} />}
+          </button>
+          <button className="btn-icon" onClick={bulkMarkRead} title="Tandai Sudah Dibaca"><Check size={18} /></button>
+          <button className="btn-icon" onClick={bulkMarkUnread} title="Tandai Belum Dibaca"><Circle size={18} /></button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, padding: "8px 10px 0", alignItems: "center" }}>
+          <div style={{ flex: 1, minWidth: 0 }}><SearchBar /></div>
+          <button
+            onClick={() => setChatBaruOpen(true)}
+            title="Chat baru — ketik nomor langsung, seperti di WhatsApp"
+            style={{
+              flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+              width: 34, height: 34, borderRadius: 8, cursor: "pointer",
+              border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
+              color: "var(--primary, #2563eb)",
+            }}
+          >
+            <MessageSquarePlus size={17} />
+          </button>
+        </div>
+      )}
       <FilterTabs />
       <div className="conv-virtuoso-wrap">
         {isLoading && visibleIds.length === 0 && (
@@ -98,7 +166,15 @@ export default function ConversationList({ userId }) {
             data={visibleIds}
             endReached={handleEndReached}
             computeItemKey={(_, id) => id}
-            itemContent={(_, id) => <ConversationItem id={id} />}
+            itemContent={(_, id) => (
+              <ConversationItem
+                id={id}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(id)}
+                onToggleSelect={toggleSelect}
+                onEnterSelection={enterSelection}
+              />
+            )}
           />
         )}
       </div>
