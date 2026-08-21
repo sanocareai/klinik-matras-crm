@@ -12,7 +12,7 @@
 // PATCH /orders/:id/complaint.
 import React, { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput } from "react-native";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle, PackageSearch } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle, PackageSearch, Send } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import { navigateToOrderTimeline } from "../lib/navigationRef";
@@ -68,6 +68,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [complaintDetail, setComplaintDetail] = useState("");
   const [savingComplaint, setSavingComplaint] = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
 
   function handleDelete() {
     Alert.alert("Hapus order ini?", "Semua item & data terkait juga akan dihapus.", [
@@ -94,6 +95,22 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
       onRefresh();
     } catch (err) {
       Alert.alert("Gagal ubah status", err.message);
+    }
+  }
+
+  // Paritas dengan tombol "Kirim ke Grup WA" di web (OrderSection.jsx) —
+  // sebelumnya di mobile HANYA ada di layar "Rincian" terpisah
+  // (OrderTimelineScreen.js), sales harus tahu untuk buka Rincian dulu.
+  // Ditambahkan langsung di card supaya sama kemudahannya dengan web.
+  async function handleSendWaGroup() {
+    setSendingWa(true);
+    try {
+      await api.sendOrderWaSummary(order.id);
+      Alert.alert("Terkirim", "Ringkasan order sudah dikirim ke grup WA.");
+    } catch (err) {
+      Alert.alert("Gagal kirim", err.message);
+    } finally {
+      setSendingWa(false);
     }
   }
 
@@ -162,6 +179,10 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
             >
               <PackageSearch size={12} color={tokens.color.accent} strokeWidth={2.2} />
               <Text style={styles.rincianBtnText}>Rincian</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.waBtn} onPress={handleSendWaGroup} disabled={sendingWa}>
+              <Send size={12} color={tokens.color.accent} strokeWidth={2.2} />
+              <Text style={styles.waBtnText}>{sendingWa ? "Mengirim…" : "Kirim WA"}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => onEdit(order)}>
               <Text style={styles.editBtnText}>Edit</Text>
@@ -302,6 +323,8 @@ function createStyles(tokens) {
   actionRow: { flexDirection: "row", gap: 6, justifyContent: "flex-end", marginBottom: 10 },
   rincianBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: tokens.color.accentSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginRight: "auto" },
   rincianBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.accent },
+  waBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  waBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.accent },
   editBtn: { backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   editBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   deleteBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fee2e2", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
