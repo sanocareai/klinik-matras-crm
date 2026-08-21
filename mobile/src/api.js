@@ -358,6 +358,11 @@ export const api = {
   getOrderPayments: (orderId) => request(`/armada/payments?orderId=${orderId}`),
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
+  // D-032 paritas mobile (21 Agustus 2026) — "Kirim ke Grup WA" dari
+  // Rincian Pesanan, endpoint SAMA dengan web (OrderSection.jsx).
+  // buildWaMessage() dijalankan di backend, mobile cuma memicu.
+  sendOrderWaSummary: (orderId) =>
+    request(`/orders/${orderId}/send-wa-summary`, { method: "POST" }),
 
   // Galeri Produk — dipakai OrderFormModal sebagai pemilih cepat nama+harga
   // layanan (Product TIDAK terhubung langsung ke Order/OrderItem di schema,

@@ -21,7 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
-  CheckCircle2, Hash,
+  CheckCircle2, Hash, Send,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
@@ -47,6 +47,7 @@ function StatusTab({ orderId, tokens, styles }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sendingWa, setSendingWa] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -59,16 +60,39 @@ function StatusTab({ orderId, tokens, styles }) {
     return () => { alive = false; };
   }, [orderId]);
 
+  async function handleSendWaGroup() {
+    setSendingWa(true);
+    try {
+      await api.sendOrderWaSummary(orderId);
+      Alert.alert("Terkirim", "Ringkasan order sudah dikirim ke grup WA.");
+    } catch (err) {
+      Alert.alert("Gagal kirim", err.message);
+    } finally {
+      setSendingWa(false);
+    }
+  }
+
   if (loading) return <ActivityIndicator color={tokens.color.accent} style={{ marginTop: 24 }} />;
   if (error) return <Text style={styles.errorText}>{error}</Text>;
+
+  const sendWaButton = (
+    <TouchableOpacity style={styles.sendWaBtn} onPress={handleSendWaGroup} disabled={sendingWa}>
+      <Send size={13} color={tokens.color.accent} strokeWidth={2.2} />
+      <Text style={styles.sendWaBtnText}>{sendingWa ? "Mengirim…" : "Kirim ke Grup WA"}</Text>
+    </TouchableOpacity>
+  );
+
   if (data?.riwayatKosong) {
     return (
-      <View style={styles.emptyWrap}>
-        <Timer size={28} color={tokens.color.textMuted} strokeWidth={1.6} />
-        <Text style={styles.emptyTitle}>Belum ada riwayat</Text>
-        <Text style={styles.emptyText}>
-          Sistem baru mulai merekam perpindahan status order — riwayat akan terisi begitu status order ini diubah berikutnya.
-        </Text>
+      <View>
+        {sendWaButton}
+        <View style={styles.emptyWrap}>
+          <Timer size={28} color={tokens.color.textMuted} strokeWidth={1.6} />
+          <Text style={styles.emptyTitle}>Belum ada riwayat</Text>
+          <Text style={styles.emptyText}>
+            Sistem baru mulai merekam perpindahan status order — riwayat akan terisi begitu status order ini diubah berikutnya.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -76,6 +100,7 @@ function StatusTab({ orderId, tokens, styles }) {
   const timeline = data?.timeline || [];
   return (
     <View style={{ paddingTop: 4 }}>
+      {sendWaButton}
       <View style={styles.timelineRow}>
         <View style={styles.timelineDotWrap}>
           <View style={[styles.timelineDot, { backgroundColor: tokens.color.textMuted }]} />
@@ -403,6 +428,8 @@ function createStyles(tokens) {
     emptyTitle: { fontSize: 13, fontWeight: "700", color: tokens.color.textSecondary },
     emptyText: { fontSize: 12, color: tokens.color.textMuted, textAlign: "center", lineHeight: 17 },
 
+    sendWaBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: tokens.color.accentSoft, borderRadius: 12, paddingVertical: 11, marginBottom: 14 },
+    sendWaBtnText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent },
     timelineRow: { flexDirection: "row", gap: 10 },
     timelineDotWrap: { alignItems: "center", width: 12 },
     timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 3 },
