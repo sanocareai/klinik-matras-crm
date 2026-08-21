@@ -21,12 +21,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
-  CheckCircle2, Hash, Send, MapPin, Link2,
+  CheckCircle2, Hash, Send, MapPin, Link2, Bed, Weight, HeartPulse, Banknote,
+  CalendarClock, Tag, MessageSquareText,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
 import {
-  formatRupiah, shortDate, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  formatRupiah, shortDate, shortDateWithYear, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
 } from "../utils/format";
 
 const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
@@ -42,6 +44,157 @@ const KATEGORI = [
   { key: "PRODUKSI",    label: "Proses Produksi", Icon: Wrench,   hex: "#2563EB" },
   { key: "PENGIRIMAN",  label: "Pengiriman", Icon: Truck,         hex: "#16A34A" },
 ];
+
+// D-030 paritas penuh (22 Agustus 2026) — awalnya cuma Alamat + Link Lokasi
+// yang ditambahkan (permintaan pertama), lalu diperluas ke SEMUA field yang
+// sudah ada di DetailPesananSection web (OrderTimelineDrawer.jsx): Kasur &
+// Layanan, Keluhan, Berat Badan, Kondisi Kesehatan, Ongkir, Jadwal Pick
+// Up/Kirim, Promo. Semua field ini SUDAH ikut terbawa di GET /orders (tidak
+// ada endpoint baru) — mobile cuma belum pernah merendernya.
+const DETAIL_TONE = {
+  address:  { Icon: MapPin,            hex: "#ea580c" },
+  link:     { Icon: Link2,             hex: "#0891b2" },
+  bed:      { Icon: Bed,               hex: "#7c3aed" },
+  weight:   { Icon: Weight,            hex: "#2563eb" },
+  note:     { Icon: MessageSquareText, hex: "#4b5563" },
+  health:   { Icon: HeartPulse,        hex: "#dc2626" },
+  money:    { Icon: Banknote,          hex: "#16a34a" },
+  pickup:   { Icon: CalendarClock,     hex: "#0891b2" },
+  delivery: { Icon: Truck,             hex: "#16a34a" },
+  promo:    { Icon: Tag,               hex: "#db2777" },
+};
+
+function DetailRow({ tone, label, children, styles, tokens }) {
+  const { Icon, hex } = DETAIL_TONE[tone];
+  return (
+    <View style={styles.detailRow}>
+      <View style={[styles.detailIconWrap, { backgroundColor: hex + "1f" }]}>
+        <Icon size={12} color={hex} strokeWidth={2.2} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <View style={{ marginTop: 2 }}>{children}</View>
+      </View>
+    </View>
+  );
+}
+
+function DetailPesananSection({ order, tokens, styles }) {
+  const info = parseOrderNotes(order.notes);
+  const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
+  const layanan = (order.items || []).map((it) => it.layananName).filter(Boolean).join(", ");
+  const kasur = [info.merkKasur, info.ukuranKasur].filter(Boolean).join(" · ");
+  const punyaAlamat = order.deliveryAddress || order.deliveryCity;
+
+  // Tidak ada satu pun field detail terisi (order sangat lama/kosong) —
+  // jangan tampilkan kotak kosong sama sekali, sama seperti perilaku
+  // addressBox sebelumnya.
+  const adaSatuPun = punyaAlamat || order.locationUrl || kasur || layanan
+    || info.keluhanCustomer || berat || order.healthStatus
+    || order.ongkir || order.ongkirKlaimGaransi
+    || order.pickupEstimate || order.pickupConfirmedDate
+    || order.deliveryEstimate || order.deliveryConfirmedDate
+    || order.promo;
+  if (!adaSatuPun) return null;
+
+  return (
+    <View style={styles.detailBox}>
+      <DetailRow tone="address" label="Alamat Pengiriman" styles={styles} tokens={tokens}>
+        {punyaAlamat ? (
+          <Text style={styles.detailText}>
+            {order.deliveryAddress || ""}
+            {order.deliveryCity ? <Text style={{ fontWeight: "700" }}> · {order.deliveryCity}</Text> : null}
+          </Text>
+        ) : (
+          <Text style={styles.detailMuted}>—</Text>
+        )}
+      </DetailRow>
+
+      {order.locationUrl && (
+        <DetailRow tone="link" label="Link Lokasi" styles={styles} tokens={tokens}>
+          <TouchableOpacity
+            onPress={() => Linking.openURL(order.locationUrl).catch(() =>
+              Alert.alert("Gagal buka link", "Link lokasi ini sepertinya tidak valid.")
+            )}
+          >
+            <Text style={[styles.detailText, { color: tokens.color.accent, fontWeight: "600" }]}>Buka lokasi ↗</Text>
+          </TouchableOpacity>
+        </DetailRow>
+      )}
+
+      {(kasur || layanan) && (
+        <DetailRow tone="bed" label="Kasur & Layanan" styles={styles} tokens={tokens}>
+          {!!kasur && <Text style={styles.detailText}>{kasur}</Text>}
+          {!!layanan && <Text style={[styles.detailText, kasur && { marginTop: 2, color: tokens.color.textSecondary }]}>{layanan}</Text>}
+        </DetailRow>
+      )}
+
+      {!!info.keluhanCustomer && (
+        <DetailRow tone="note" label="Keluhan Kasur" styles={styles} tokens={tokens}>
+          <Text style={styles.detailText}>{info.keluhanCustomer}</Text>
+        </DetailRow>
+      )}
+
+      {!!berat && (
+        <DetailRow tone="weight" label="Berat Badan" styles={styles} tokens={tokens}>
+          <Text style={styles.detailText}>{berat}</Text>
+        </DetailRow>
+      )}
+
+      {!!order.healthStatus && (
+        <DetailRow tone="health" label="Kondisi Kesehatan" styles={styles} tokens={tokens}>
+          <Text style={styles.detailText}>
+            <Text style={{ fontWeight: "700", color: order.healthStatus === "SAKIT" ? tokens.color.danger : tokens.color.success }}>
+              {HEALTH_LABELS[order.healthStatus] || order.healthStatus}
+            </Text>
+            {(order.complaintCategory || []).length > 0 && (
+              <Text style={{ color: tokens.color.textSecondary }}>
+                {" — "}{order.complaintCategory.map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", ")}
+              </Text>
+            )}
+          </Text>
+        </DetailRow>
+      )}
+
+      {(order.ongkir || order.ongkirKlaimGaransi) && (
+        <DetailRow tone="money" label="Ongkir" styles={styles} tokens={tokens}>
+          <Text style={styles.detailText}>
+            {order.ongkir ? formatRupiah(order.ongkir) : "Rp0"}
+            {order.ongkirKlaimGaransi ? ` · Klaim Garansi: ${formatRupiah(order.ongkirKlaimGaransi)}` : ""}
+          </Text>
+        </DetailRow>
+      )}
+
+      {(order.pickupEstimate || order.pickupConfirmedDate) && (
+        <DetailRow tone="pickup" label="Jadwal Pick Up" styles={styles} tokens={tokens}>
+          {!!order.pickupEstimate && <Text style={styles.detailText}>{order.pickupEstimate}</Text>}
+          {!!order.pickupConfirmedDate && (
+            <Text style={[styles.detailText, order.pickupEstimate && { marginTop: 2, color: tokens.color.textSecondary }]}>
+              Pasti: {shortDateWithYear(order.pickupConfirmedDate)}
+            </Text>
+          )}
+        </DetailRow>
+      )}
+
+      {(order.deliveryEstimate || order.deliveryConfirmedDate) && (
+        <DetailRow tone="delivery" label="Jadwal Kirim" styles={styles} tokens={tokens}>
+          {!!order.deliveryEstimate && <Text style={styles.detailText}>{order.deliveryEstimate}</Text>}
+          {!!order.deliveryConfirmedDate && (
+            <Text style={[styles.detailText, order.deliveryEstimate && { marginTop: 2, color: tokens.color.textSecondary }]}>
+              Pasti: {shortDateWithYear(order.deliveryConfirmedDate)}
+            </Text>
+          )}
+        </DetailRow>
+      )}
+
+      {!!order.promo && (
+        <DetailRow tone="promo" label="Promo" styles={styles} tokens={tokens}>
+          <Text style={styles.detailText}>{promoLabel(order.promo)}</Text>
+        </DetailRow>
+      )}
+    </View>
+  );
+}
 
 function StatusTab({ orderId, tokens, styles }) {
   const [data, setData] = useState(null);
@@ -381,38 +534,11 @@ export default function OrderTimelineScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Alamat Pengiriman + Link Lokasi — paritas dengan
-          DetailPesananSection di web (OrderTimelineDrawer.jsx). Datanya
-          SUDAH ikut terbawa di GET /orders (deliveryAddress/deliveryCity/
-          locationUrl bukan field baru di endpoint, cuma belum pernah
-          dirender di layar mobile ini) — jadi tidak perlu fetch tambahan.
-          Cuma tampil kalau salah satu field-nya terisi, supaya order lama
-          yang belum diisi sales tidak menyisakan kotak kosong. */}
-      {order && (order.deliveryAddress || order.deliveryCity || order.locationUrl) && (
-        <View style={styles.addressBox}>
-          <View style={styles.addressHeadRow}>
-            <MapPin size={13} color={tokens.color.textMuted} strokeWidth={2.2} />
-            <Text style={styles.addressLabel}>ALAMAT PENGIRIMAN</Text>
-          </View>
-          {(order.deliveryAddress || order.deliveryCity) && (
-            <Text style={styles.addressText}>
-              {order.deliveryAddress || ""}
-              {order.deliveryCity ? ` · ${order.deliveryCity}` : ""}
-            </Text>
-          )}
-          {order.locationUrl && (
-            <TouchableOpacity
-              style={styles.locationLinkRow}
-              onPress={() => Linking.openURL(order.locationUrl).catch(() =>
-                Alert.alert("Gagal buka link", "Link lokasi ini sepertinya tidak valid.")
-              )}
-            >
-              <Link2 size={13} color={tokens.color.accent} strokeWidth={2.2} />
-              <Text style={styles.locationLinkText}>Buka Lokasi di Peta</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      {/* Detail Pesanan — paritas penuh dengan DetailPesananSection di web
+          (OrderTimelineDrawer.jsx). Semua field ini SUDAH ikut terbawa di
+          GET /orders (bukan field baru di endpoint, cuma belum pernah
+          dirender di layar mobile ini) — jadi tidak perlu fetch tambahan. */}
+      {order && <DetailPesananSection order={order} tokens={tokens} styles={styles} />}
 
       <View style={styles.tabBar}>
         {TABS.map(({ key, label, Icon }) => {
@@ -450,15 +576,18 @@ function createStyles(tokens) {
     summaryCard: { flex: 1, backgroundColor: tokens.color.card, borderRadius: 12, padding: 10 },
     summaryLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
     summaryValue: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 2 },
-    addressBox: {
+    detailBox: {
       backgroundColor: tokens.color.card, borderRadius: 12, padding: 12,
-      marginHorizontal: 16, marginBottom: 10,
+      marginHorizontal: 16, marginBottom: 10, gap: 10,
     },
-    addressHeadRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 5 },
-    addressLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
-    addressText: { fontSize: 12.5, color: tokens.color.textPrimary, lineHeight: 18 },
-    locationLinkRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 },
-    locationLinkText: { fontSize: 12.5, fontWeight: "600", color: tokens.color.accent },
+    detailRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+    detailIconWrap: {
+      width: 22, height: 22, borderRadius: 7, alignItems: "center", justifyContent: "center",
+      marginTop: 1,
+    },
+    detailLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
+    detailText: { fontSize: 12.5, color: tokens.color.textPrimary, lineHeight: 18 },
+    detailMuted: { fontSize: 12.5, color: tokens.color.textMuted },
     tabBar: { flexDirection: "row", marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
     tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
     tabBtnActive: { backgroundColor: tokens.color.card },

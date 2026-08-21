@@ -99,6 +99,60 @@ export function shortDate(dateStr) {
   return `${d.getDate()} ${bulan[d.getMonth()]}`;
 }
 
+// "22 Agu 2026" — sama pola shortDate() tapi dengan tahun, dipakai untuk
+// tanggal "Pasti" (Pick Up/Kirim) di OrderTimelineScreen.js — tanpa tahun,
+// tanggal yang beda tahun (mis. Januari tahun depan) jadi ambigu.
+export function shortDateWithYear(dateStr) {
+  const d = new Date(dateStr);
+  const bulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+  return `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Kondisi kesehatan & kategori keluhan (D-028) — SAMA PERSIS dengan
+// frontend/src/utils/format.js, dipakai OrderTimelineScreen.js.
+export const HEALTH_LABELS = {
+  SAKIT:       "Sakit",
+  TIDAK_SAKIT: "Tidak Sakit",
+};
+export const HEALTH_COMPLAINT_LABELS = {
+  KEPALA_PUSING:  "Kepala Pusing",
+  SAKIT_PINGGANG: "Sakit Pinggang",
+  SAKIT_PUNGGUNG: "Sakit Punggung",
+  SAKIT_LEHER:    "Sakit Leher",
+  BAHU:           "Bahu",
+  PEGAL_PEGAL:    "Pegal-pegal",
+  SARAF_KEJEPIT:  "Saraf Kejepit",
+  SKOLIOSIS:      "Skoliosis",
+  LAINNYA:        "Lainnya",
+};
+
+// D-029 — merk/ukuran/keluhan kasur disimpan JSON di Order.notes (bukan
+// kolom sendiri). SAMA PERSIS dengan parseOrderNotes() di
+// frontend/src/utils/format.js — dipusatkan di sini (bukan didefinisikan
+// lagi di OrderTimelineScreen.js) karena OrderCard.js & OrderFormModal.js
+// SUDAH punya salinan lokal identik (parseNotes()); tempat baru manapun
+// yang butuh ini sebaiknya pakai yang di sini, bukan menambah salinan ketiga.
+export function parseOrderNotes(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  try {
+    const p = JSON.parse(notes);
+    return {
+      merkKasur:       p.merkKasur || "",
+      ukuranKasur:     p.ukuranKasur || "",
+      keluhanCustomer: p.keluhanCustomer || "",
+    };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+  }
+}
+
+// "MERDEKA17 — Diskon 17% Kemerdekaan" — SAMA PERSIS dengan promoLabel() di
+// frontend/src/utils/format.js. Kode voucher didahulukan (D-026, lihat
+// catatan di sana) karena satu campaign bisa punya beberapa kode berbeda.
+export function promoLabel(p) {
+  return `${p.code} — ${p.name}`;
+}
+
 // "14:05" untuk timestamp di bubble chat
 export function clockTime(dateStr) {
   const d = new Date(dateStr);
