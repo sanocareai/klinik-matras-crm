@@ -531,10 +531,16 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });
-    // "not ADMIN" seperti sebelumnya (semua role non-admin tetap ikut,
-    // termasuk PRODUCTION_LEAD dkk kalau kebetulan ada — perilaku lama
-    // dipertahankan), DITAMBAH admin yang sudah diberi peran tambahan SALES.
-    const users = usersRaw.filter((u) => u.role !== "ADMIN" || grantedSalesIds.has(u.id));
+    // BUG DIPERBAIKI (22 Agustus 2026): filter LAMA "role !== ADMIN" berarti
+    // "siapa pun yang bukan admin" — aman selama satu-satunya role non-admin
+    // di sistem memang SALES, tapi begitu akun Produksi/Driver/dst ditambah
+    // (lihat CLAUDE.md §19), SEMUANYA ikut nyasar ke laporan sales/widget
+    // "Top Performing Reps" di Dashboard (ditemukan nyata: driver baru
+    // langsung nangkring di Top Reps dengan Rp0). Diperbaiki jadi pola yang
+    // SAMA dengan /sales-performance di bawah: role === SALES SAJA, ditambah
+    // siapa pun yang sungguh diberi peran SALES tambahan (grantedSalesIds,
+    // D-010 multi-role) — bukan "siapa saja yang kebetulan bukan admin".
+    const users = usersRaw.filter((u) => u.role === "SALES" || grantedSalesIds.has(u.id));
 
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
