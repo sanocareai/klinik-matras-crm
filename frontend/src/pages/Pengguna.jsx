@@ -8,6 +8,7 @@ import Avatar from "../components/Avatar.jsx";
 import { formatTanggalWaktu } from "../utils/format.js";
 import { isAdminUser } from "@/lib/roles.js";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
+import { PageContainer } from "@/components/ui/page.jsx";
 
 // Label & warna peran — SEMUA 9 peran yang dikenal sistem otorisasi
 // (backend/src/constants/permissions.js ROLE_PERMISSIONS), bukan cuma
@@ -279,8 +280,14 @@ export default function Pengguna({ user: currentUser }) {
     role, label: ROLE_LABELS[role], count: users.filter((u) => effectiveRoles(u).includes(role)).length,
   })).filter((s) => s.count > 0);
 
+  // BUG (fix, 22 Agustus 2026): halaman ini SATU-SATUNYA yang tidak pernah
+  // dibungkus PageContainer (komponen ui/page.jsx yang KOMENTARNYA SENDIRI
+  // menyebut "Pengguna" sebagai salah satu halaman yang harusnya dibetulkan
+  // olehnya) — root-nya <div> polos di dalam .app-content/.page-body yang
+  // sama-sama padding:0, jadi seluruh isi (judul, stat card, tabel) mentok
+  // ke tepi sidebar/browser tanpa jarak sama sekali.
   return (
-    <div>
+    <PageContainer>
       {/* Header */}
       <div className="page-header">
         <div>
@@ -641,6 +648,6 @@ export default function Pengguna({ user: currentUser }) {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
