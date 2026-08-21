@@ -5,6 +5,7 @@ import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary.jsx";
+import { rolesOf } from "./lib/roles.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
@@ -63,6 +64,18 @@ const WarehouseReports = lazy(() => import("./pages/warehouse/WarehouseReports.j
 
 // Fallback ringan saat chunk halaman sedang di-download — konsisten dengan
 // pola skeleton yang sudah dipakai di seluruh app.
+// Pendaratan /armada bergantung peran — lihat catatan di route "/armada".
+// Driver murni (tanpa ADMIN/DISPATCHER) tidak punya JOB_READ, jadi dashboard
+// dispatcher akan gagal memuat untuk mereka; kirim ke daftar job miliknya.
+function ArmadaLanding() {
+  let driverOnly = false;
+  try {
+    const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
+    driverOnly = roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+  } catch { /* user tidak terbaca — perlakukan sebagai non-driver */ }
+  return <Navigate to={driverOnly ? "/armada/jobs" : "/armada/dashboard"} replace />;
+}
+
 function RouteFallback() {
   return (
     <div className="page-loading">
@@ -253,7 +266,12 @@ export default function App() {
                 keberapa halamannya datang. Sidebar menampilkan sembilan menu
                 sekaligus, jadi menu yang menghasilkan 404 akan terbaca sebagai
                 sistem rusak. */}
-            <Route path="/armada"           element={<Navigate to="/armada/dashboard" replace />} />
+            {/* Driver diarahkan ke layar kerjanya, BUKAN dashboard dispatcher:
+                /armada/dashboard butuh JOB_READ yang tidak dimiliki driver
+                (cuma JOB_OWN_READ), jadi redirect lama membuat driver mendarat
+                di halaman yang pasti gagal memuat. Ketahuan 21 Agustus 2026
+                saat uji kesiapan divisi memakai akun driver sungguhan. */}
+            <Route path="/armada"           element={<ArmadaLanding />} />
             <Route path="/armada/dashboard" element={<ArmadaDashboard />} />
             {/* Tahap 2: halaman Jadwal & Penugasan membungkus <Armada /> —
                 mode "Papan" di dalamnya merender halaman lama APA ADANYA

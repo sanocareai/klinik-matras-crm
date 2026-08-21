@@ -367,7 +367,19 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
 // berjalan siap diputuskan, BLOCKED = percobaan QC sebelumnya gagal dan
 // belum di-restart). Query kecil (unit di bengkel jumlahnya puluhan, bukan
 // ribuan) jadi lookup log per unit di sini aman tanpa index tambahan.
-productionRouter.get("/qc-queue", requirePermission(P.QC_WRITE), async (req, res) => {
+// PERMISSION: UNIT_READ, bukan QC_WRITE (diperbaiki 21 Agustus 2026).
+// Endpoint ini MEMBACA daftar unit yang menunggu QC — bukan memutuskan
+// hasilnya. Sebelumnya dijaga QC_WRITE, sehingga Kepala Produksi (
+// PRODUCTION_LEAD) dapat 403 dan TIDAK BISA melihat unit mana saja yang
+// tertahan di gerbang QC — padahal itu antrean di lantai produksinya
+// sendiri, dan Uji Berat Badan WAJIB dilewati SETIAP unit (satu-satunya
+// tahap requires_qc=true), jadi dia buta terhadap penyebab paling umum
+// unit berhenti bergerak.
+//
+// Pemisahan tugas TIDAK berubah: yang MEMUTUSKAN verdict tetap hanya
+// pemegang QC_WRITE lewat POST /units/:id/stages/:stageId/qc (lihat
+// routes/units.js). Melihat antrean ≠ meluluskan QC.
+productionRouter.get("/qc-queue", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
     const units = await prisma.unit.findMany({
       where: { currentStage: { requiresQc: true } },

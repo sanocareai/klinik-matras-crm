@@ -10,6 +10,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
+import { rolesOf } from "@/lib/roles.js";
 import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
@@ -51,7 +52,31 @@ const TABS = [
 const selectClass =
   "h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent";
 
+// Driver TIDAK punya JOB_READ (cuma JOB_OWN_READ — lihat
+// backend/src/constants/permissions.js), jadi seluruh tampilan "Daftar" di
+// bawah — GET /armada/jobs + GET /armada/drivers — dijawab 403 untuk mereka.
+//
+// BUG NYATA (21 Agustus 2026, ketahuan saat uji kesiapan divisi dengan akun
+// driver sungguhan): driver yang membuka /armada/jobs mendarat di tampilan
+// DISPATCHER yang gagal memuat, bukan daftar job miliknya sendiri. Halaman
+// driver-nya sebenarnya SUDAH ADA dan berfungsi (Armada.jsx punya cabang
+// isDriverOnly yang merender "Job Saya" + <DriverJobs />), tapi tidak pernah
+// tercapai karena default `view` = "list" milik dispatcher.
+//
+// Karena itu driver-only diserahkan LANGSUNG ke <Armada />, tanpa pemilih
+// tampilan (Daftar/Papan tidak berarti apa-apa untuk driver — dia cuma punya
+// satu tampilan) dan tanpa memanggil endpoint yang memang bukan haknya.
+function isDriverOnlyUser() {
+  try {
+    const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
+    return roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+  } catch {
+    return false;
+  }
+}
+
 export default function ArmadaJobs() {
+  const driverOnly = isDriverOnlyUser();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [view, setView] = useState(() => localStorage.getItem("armada-jobs-view") || "list");
@@ -117,7 +142,9 @@ export default function ArmadaJobs() {
     }
   }, [debounced, tanggal, fStatus, fDriver, tab]);
 
-  useEffect(() => { load(); }, [load]);
+  // Jangan panggil endpoint dispatcher untuk driver — hasilnya pasti 403 dan
+  // cuma mengotori konsol (lihat catatan isDriverOnlyUser di atas).
+  useEffect(() => { if (!driverOnly) load(); }, [load, driverOnly]);
 
   function gantiView(v) {
     setView(v);
@@ -161,6 +188,10 @@ export default function ArmadaJobs() {
   // padding dan max-width GANDA (konten menyempit dua kali). Jadi di mode ini
   // halaman ini hanya menyisipkan pemilih tampilan di atasnya, lalu
   // menyerahkan seluruh sisanya ke Armada apa adanya.
+  // Driver: langsung ke layar kerjanya sendiri ("Job Saya" + <DriverJobs />
+  // di dalam Armada.jsx), tanpa pemilih tampilan dispatcher.
+  if (driverOnly) return <Armada />;
+
   if (view === "board") {
     return (
       <>
