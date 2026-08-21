@@ -173,7 +173,7 @@ function JobCard({ job, drivers, onChanged, route }) {
               value={driverId}
               onChange={(e) => saveDriver(e.target.value)}
               disabled={busy}
-              className="h-9 flex-1 rounded-lg border border-border bg-white px-2 text-xs text-ink outline-none focus:border-accent"
+              className="h-9 flex-1 rounded-lg border border-border bg-surface px-2 text-xs text-ink outline-none focus:border-accent"
             >
               <option value="">Belum ditugaskan</option>
               {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}

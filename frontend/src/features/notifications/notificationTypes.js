@@ -22,12 +22,21 @@
 // workspace membedakan ASAL, bukan tingkat kegentingan. Kalau tiap workspace
 // diberi warna sendiri (hijau/ungu/oranye), mata akan membaca warna itu
 // sebagai prioritas — padahal prioritas punya kanalnya sendiri di bawah.
+// BUG (fix, dark mode): badge di sini SEBELUMNYA pakai hex mentah
+// (mis. "bg-[#E8F0FF] text-[#1457D9]") alih-alih token — hex mentah TIDAK
+// ikut [data-theme="dark"], jadi badge tetap latar nyaris-putih walau
+// seluruh kartu di sekitarnya sudah gelap (kontribusi ke laporan "full
+// white" 21 Agustus 2026, lihat juga fix serupa di NotificationItem.jsx).
+// Diganti ke tangga bg-blue-*/text-blue-* (DS v2.1, styles/tailwind.css) —
+// nilainya SAMA PERSIS secara visual di light mode (mis. text-blue-700 =
+// #1457D9, identik dengan hex lama), tapi otomatis jadi tint gelap yang
+// benar di dark mode karena tokennya ditukar per tema di tokens.css.
 export const NOTIF_WORKSPACES = {
-  growth:    { label: "Sales CRM",  badge: "bg-[#E8F0FF] text-[#1457D9]" },
-  bengkel:   { label: "Production", badge: "bg-[#EEF3FF] text-[#2F73F2]" },
-  warehouse: { label: "Warehouse",  badge: "bg-[#E4EDFF] text-[#0E3B96]" },
-  armada:    { label: "Delivery",   badge: "bg-[#F0F5FF] text-[#4E8BFF]" },
-  system:    { label: "System",     badge: "bg-[#EDF1F7] text-[#536981]" },
+  growth:    { label: "Sales CRM",  badge: "bg-blue-100 text-blue-700" },
+  bengkel:   { label: "Production", badge: "bg-blue-50 text-blue-600" },
+  warehouse: { label: "Warehouse",  badge: "bg-blue-200 text-blue-800" },
+  armada:    { label: "Delivery",   badge: "bg-blue-50 text-blue-500" },
+  system:    { label: "System",     badge: "bg-inset text-ink3" },
 };
 
 // ── Tipe notifikasi → ke mana klik membawanya ────────────────────────────

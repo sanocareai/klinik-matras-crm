@@ -26,18 +26,29 @@ export default function NotificationItem({ notif, onActivate, compact = false })
         compact ? "py-3" : "py-3.5",
         "hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
         // Belum dibaca (#12): latar biru sangat muda + garis kiri biru.
-        // Yang dibaca dibiarkan putih polos — kontras antar keduanya yang
-        // membuat "belum dibaca" terbaca sekilas tanpa menghitung titik.
-        belumDibaca && "bg-[#F5F8FF]"
+        // Yang dibaca dibiarkan warna surface biasa — kontras antar keduanya
+        // yang membuat "belum dibaca" terbaca sekilas tanpa menghitung titik.
+        //
+        // BUG (fix, dark mode): sebelumnya `bg-[#F5F8FF]` — hex MENTAH, bukan
+        // token, jadi TIDAK ikut [data-theme="dark"]. Warna itu (nyaris
+        // putih) dipasang di ATAS surface dark (nyaris hitam) dengan teks
+        // `text-ink` (nyaris putih di dark mode) di atasnya — hasilnya blok
+        // putih penuh dengan tulisan nyaris tak kelihatan, persis laporan
+        // user (screenshot notifikasi 21 Agustus 2026). `bg-accentbg` adalah
+        // token DS v2 yang SAMA PERSIS dengan #F5F8FF secara visual di light
+        // mode (dari --accent-bg light: rgba(20,87,217,0.10)) tapi otomatis
+        // jadi tint biru gelap yang benar di dark mode (rgba(10,132,255,0.16)
+        // di atas surface gelap) — lihat styles/tailwind.css @theme inline.
+        belumDibaca && "bg-accentbg"
       )}
     >
       {belumDibaca && (
-        <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-[#1457D9]" />
+        <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent" />
       )}
 
-      {/* Titik biru penanda belum dibaca */}
+      {/* Titik biru penanda belum dibaca — sama alasan token di atas. */}
       <span className="mt-1.5 flex w-2 shrink-0 justify-center" aria-hidden>
-        {belumDibaca && <span className="h-2 w-2 rounded-full bg-[#1457D9]" />}
+        {belumDibaca && <span className="h-2 w-2 rounded-full bg-accent" />}
       </span>
 
       <div className="min-w-0 flex-1">
