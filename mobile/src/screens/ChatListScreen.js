@@ -82,7 +82,18 @@ const EMPTY_STATE = {
 // re-filter di client karena store bersifat global/akumulatif (percakapan
 // dari tab lain yang pernah di-fetch tetap ada di cache) — lihat komentar
 // di conversationStore.js.
-function matches(c, filter, userId, query) {
+// searchMatchedIds: Set id percakapan yang cocok dengan `query` menurut
+// SERVER (GET /conversations?search=, lihat useConversations di bawah) —
+// null kalau belum ada hasil (masih fetching) atau query kosong. WAJIB
+// dipakai untuk kecocokan teks, BUKAN dihitung ulang di sini dari field
+// lokal (nama/nomor/nama grup) seperti versi sebelumnya: server sudah
+// mencocokkan ISI PESAN sejak 28 Juli 2026 (backend/src/routes/
+// conversations.js), tapi field itu tidak pernah tersimpan di
+// conversationsById (cuma metadata percakapan, bukan daftar pesan) —
+// menghitung ulang di client cuma bisa mengecek nama/nomor/grup lagi,
+// membuat percakapan yang cocok LEWAT ISI PESAN diam-diam hilang dari
+// hasil pencarian walau server sudah benar mengembalikannya.
+function matches(c, filter, userId, query, searchMatchedIds) {
   if (!c) return false;
   if (filter === "MINE" && c.assignedToId !== userId) return false;
   if (filter === "OPEN" && c.status !== "OPEN") return false;
@@ -107,11 +118,7 @@ function matches(c, filter, userId, query) {
     const isUnread = !!c.unread || (c.unreadCount ?? 0) > 0;
     if (!isUnread) return false;
   }
-  if (query) {
-    const hay = [c.customer?.name, c.customer?.phone, c.groupName]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (!hay.includes(query)) return false;
-  }
+  if (query && !searchMatchedIds?.has(c.id)) return false;
   return true;
 }
 
@@ -220,8 +227,18 @@ export default function ChatListScreen({ navigation }) {
   const selectedConvs = [...selectedIds].map((id) => conversationsById[id]).filter(Boolean);
   const allSelectedPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.pinned);
 
-  const { isLoading, isError, error, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
+  const { data, isLoading, isError, error, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
     useConversations({ filter, search, userId: user?.id });
+
+  // Id percakapan yang cocok `search` MENURUT SERVER (termasuk isi pesan) —
+  // lihat catatan panjang di matches() kenapa ini tidak dihitung ulang dari
+  // field lokal. `data` di sini SELALU hasil query untuk `search` yang
+  // SEDANG aktif (queryKey ikut berubah tiap search berubah, lihat
+  // useConversations.js), jadi tidak perlu filter tambahan by staleness.
+  const searchMatchedIds = useMemo(() => {
+    if (!search.trim()) return null;
+    return new Set((data?.pages ?? []).flatMap((p) => p?.data ?? []).map((c) => c.id));
+  }, [data, search]);
 
   // Badge jumlah per tab — dipisah dari list utama (fitur pelengkap, kalau
   // gagal list tetap tampil normal).
@@ -235,8 +252,8 @@ export default function ChatListScreen({ navigation }) {
 
   const visibleIds = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q));
-  }, [orderedIds, conversationsById, filter, user?.id, search]);
+    return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q, searchMatchedIds));
+  }, [orderedIds, conversationsById, filter, user?.id, search, searchMatchedIds]);
 
   function handleSearchChange(v) {
     setSearchInput(v);
