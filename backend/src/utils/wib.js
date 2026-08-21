@@ -85,3 +85,50 @@ export function formatWIB(date = new Date(), opts = {}) {
 //
 // Tanpa ini, order jam 00:00-07:00 WIB tanggal 1 akan masuk bucket BULAN
 // SEBELUMNYA (karena di UTC masih tanggal terakhir bulan lalu).
+
+// ─── TANGGAL KALENDER SAJA (kolom Prisma @db.Date) ──────────────────────────
+//
+// Untuk kolom `@db.Date` (pickupConfirmedDate/deliveryConfirmedDate di Order),
+// Postgres menyimpan TANGGAL saja tanpa jam/zona. Prisma tetap menuntut objek
+// Date, lalu memakai bagian tanggal versi **UTC** dari objek itu.
+//
+// ⚠️ JANGAN pakai startOfDayWIB() di sini. startOfDayWIB("2026-08-21")
+// menghasilkan 2026-08-20T17:00:00Z — bagian tanggal UTC-nya 20 Agustus, jadi
+// tanggal yang tersimpan MUNDUR SEHARI dari yang diketik sales. Untuk kolom
+// date-only yang benar justru UTC midnight polos.
+//
+// Melempar Error ber-statusCode 400 (bukan mengembalikan Invalid Date) supaya
+// route memberi pesan yang bisa ditindaklanjuti sales. BUG NYATA
+// (21 Agustus 2026): sebelum ini ada, `new Date(<teks bebas>)` menghasilkan
+// Invalid Date yang lolos sampai Prisma, dan sales cuma melihat dump
+// `prisma.order.create()` mentah di layar HP. Aplikasi versi lama masih
+// mengirim teks bebas seperti "21 agustus 2026" ke field ini.
+export function parseTanggalKalender(input, namaField = "Tanggal") {
+  if (input === undefined || input === null || input === "") return null;
+
+  // Terima "YYYY-MM-DD" ATAU ISO penuh ("...T00:00:00.000Z") — klien lama
+  // mengirim hasil .toISOString() utuh saat mengedit order yang sudah ada.
+  const teks = String(input).trim();
+  const cocok = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/.exec(teks);
+  if (!cocok) {
+    throw Object.assign(
+      new Error(
+        `${namaField} harus format YYYY-MM-DD (contoh: 2026-08-21). ` +
+        `Kalau tanggalnya belum pasti, kosongkan saja dan tulis di kolom Estimasi.`
+      ),
+      { statusCode: 400 }
+    );
+  }
+
+  const [, th, bl, hr] = cocok;
+  const d = new Date(`${th}-${bl}-${hr}T00:00:00.000Z`);
+  // Menangkap tanggal yang formatnya benar tapi isinya mustahil (2026-02-31,
+  // 2026-13-01) — Date "menggulung" ke bulan berikutnya tanpa error.
+  if (Number.isNaN(d.getTime()) || d.getUTCMonth() + 1 !== Number(bl) || d.getUTCDate() !== Number(hr)) {
+    throw Object.assign(
+      new Error(`${namaField} tidak valid: tanggal ${teks} tidak ada di kalender.`),
+      { statusCode: 400 }
+    );
+  }
+  return d;
+}

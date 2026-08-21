@@ -9,7 +9,7 @@ import { rolesOf } from "../middleware/authorize.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
-import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
@@ -188,13 +188,17 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(ongkir              !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
           ...(ongkirKlaimGaransi  !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
           ...(pickupEstimate      !== undefined && { pickupEstimate: pickupEstimate || null }),
-          // "YYYY-MM-DD" polos ditolak Prisma untuk kolom @db.Date — lihat
-          // catatan panjang di customers.js POST /:id/orders (bug nyata
-          // 21 Agustus 2026 yang menjatuhkan seluruh backend).
-          ...(pickupConfirmedDate !== undefined && { pickupConfirmedDate: pickupConfirmedDate ? new Date(pickupConfirmedDate) : null }),
+          // "YYYY-MM-DD" polos ditolak Prisma untuk kolom @db.Date, dan teks
+          // bebas dari aplikasi versi lama menghasilkan Invalid Date — dua-duanya
+          // ditangani parseTanggalKalender(). Lihat catatan di utils/wib.js.
+          ...(pickupConfirmedDate !== undefined && {
+            pickupConfirmedDate: parseTanggalKalender(pickupConfirmedDate, "Tanggal Pick Up Pasti"),
+          }),
           // D-033: pasangan pengiriman dari pickupEstimate/pickupConfirmedDate.
           ...(deliveryEstimate      !== undefined && { deliveryEstimate: deliveryEstimate || null }),
-          ...(deliveryConfirmedDate !== undefined && { deliveryConfirmedDate: deliveryConfirmedDate ? new Date(deliveryConfirmedDate) : null }),
+          ...(deliveryConfirmedDate !== undefined && {
+            deliveryConfirmedDate: parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti"),
+          }),
           ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
         },
         include: {

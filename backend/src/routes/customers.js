@@ -8,7 +8,7 @@ import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
-import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { buatFileVCard } from "../services/vcard.js";
 
 export const customerRouter = express.Router();
@@ -603,6 +603,14 @@ customerRouter.post("/:id/orders", async (req, res) => {
   const cat = category || "LAYANAN";
 
   try {
+    // Validasi tanggal DULU, sebelum generateOrderNumber() — generate nomor
+    // menaikkan counter OrderSequence secara permanen (transaksi sendiri,
+    // tidak ikut rollback transaksi di bawah). Kalau validasi ditaruh
+    // belakangan, tiap kali sales salah ketik tanggal ada satu nomor order
+    // yang terbakar dan urutannya bolong.
+    const tglPickup   = parseTanggalKalender(pickupConfirmedDate,   "Tanggal Pick Up Pasti");
+    const tglDelivery = parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti");
+
     // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
     // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
     const orderNumber = await generateOrderNumber(cat);
@@ -632,19 +640,14 @@ customerRouter.post("/:id/orders", async (req, res) => {
           ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
           ...(pickupEstimate && { pickupEstimate }),
           // pickupConfirmedDate/deliveryConfirmedDate adalah kolom @db.Date —
-          // klien (mobile DateField.js, web <input type="date">) kirim string
-          // "YYYY-MM-DD" polos, yang DITOLAK Prisma ("premature end of input.
-          // Expected ISO-8601 DateTime") kalau dikirim apa adanya. new Date()
-          // mengubahnya jadi objek Date yang diterima Prisma. BUG NYATA
-          // (21 Agustus 2026): validation error ini tidak ketangkap di mana
-          // pun sampai ke process, dan karena tidak ada unhandledRejection
-          // handler di index.js, Node MENJATUHKAN SELURUH backend (bukan cuma
-          // gagal 1 request) — semua user kena 502 sampai Docker restart
-          // container. Lihat juga penambahan try/catch di sini dan pengaman
-          // proses di index.js.
-          ...(pickupConfirmedDate && { pickupConfirmedDate: new Date(pickupConfirmedDate) }),
+          // klien kirim "YYYY-MM-DD" polos, yang DITOLAK Prisma kalau dikirim
+          // apa adanya. parseTanggalKalender() mengubahnya jadi Date DAN
+          // menolak teks bebas dengan pesan yang bisa dibaca sales (aplikasi
+          // versi lama masih mengirim "21 agustus 2026" ke sini). Lihat
+          // catatan lengkap di utils/wib.js.
+          ...(tglPickup   && { pickupConfirmedDate: tglPickup }),
           ...(deliveryEstimate && { deliveryEstimate }),
-          ...(deliveryConfirmedDate && { deliveryConfirmedDate: new Date(deliveryConfirmedDate) }),
+          ...(tglDelivery && { deliveryConfirmedDate: tglDelivery }),
           ...(locationUrl && { locationUrl }),
         },
         include: { items: true },
