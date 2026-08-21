@@ -14,11 +14,30 @@
 **GitHub repo:** https://github.com/sanocareai/klinik-matras-crm
 **Website utama:** sanomatrassehat.com (DNS nameserver di Vercel, bukan Hostinger)
 
-**Tim pengguna sistem (7 orang):**
-- 1 OWNER/Admin: Gilang (admin@klinikmatras.com)
-- 1 Admin: Novi (novi@klinikmatras.com)
-- 5 Sales: Risel, Farhan, Mila, Kiki, Sales 6
+**Tim pengguna sistem (24 akun per 21 Agustus 2026):**
+
+Growth (sudah lama aktif):
+- OWNER/Admin: Gilang (admin@klinikmatras.com) · Admin: Novi
+- 8 Sales: Risel, Farhan, Mila, Kiki, Ervina, Fadlan, Andes, Rifki
+
+Operasional (ditambahkan 21 Agustus 2026 — lihat §19):
+- 2 Owner/Admin: Juri, Kemal
+- Kepala Produksi: Imam (PRODUCTION_LEAD)
+- Admin Produksi: Ferdy (PRODUCTION_LEAD, tangan kanan Imam)
+- Natasha: SEMUA 9 peran (permintaan eksplisit owner — lihat peringatan §19)
+- 3 Driver: Apriansyah, Agung, Alwan
+
+Akun uji "Uji — …" (bengkel@/qc@/gudang@/dispatcher@/driver@/finance@) MASIH
+ADA dan belum dipakai apa pun (0 jejak aktivitas). Aman dihapus kapan saja.
+
+- Email: `namadepan@klinikmatras.com`, semua huruf kecil
 - Password semua: kasursehat1 (sementara, perlu diubah per user)
+
+⚠️ **TIDAK ADA orang khusus untuk QC, Gudang, Dispatcher, dan Finance** —
+keempatnya hanya dipegang Natasha. Konsekuensi paling tajam ada di QC: `fit_test`
+("Uji Berat Badan") adalah SATU-SATUNYA tahap `requires_qc=true` dan `is_optional
+=false`, jadi SETIAP unit wajib melewatinya. Selama cuma Natasha yang punya
+QC_LEAD, seluruh lini produksi berhenti di gerbang itu kalau dia berhalangan.
 
 **Volume operasional saat ini:**
 - 50-100 pesan/hari dari WhatsApp (Instagram belum terintegrasi)
@@ -1348,3 +1367,57 @@ percakapan dangkal langsung mentok 100 → distribusi production 165 TINGGI /
 (138/27/35) dan dikunci tes di `tests/mcp-chat.test.js`. Kalau menyetel ulang
 bobotnya, jalankan tes itu DAN cek ulang distribusinya di production — jangan
 menilai dari satu contoh percakapan saja.
+
+---
+
+## 19. KESIAPAN OPERASIONAL LINTAS DIVISI (21 Agustus 2026)
+
+Audit + perbaikan sebelum praktek bareng tiap divisi. Angka diverifikasi
+langsung ke database produksi dengan `COUNT(*)` (BUKAN `pg_stat_user_tables`,
+yang estimasinya basi dan sempat melaporkan tabel terisi sebagai 0).
+
+**Kondisi data:** Sales CRM hidup (3.325 pelanggan, 96.719 pesan, 318 order,
+317 unit). Master data operasional LENGKAP (12 routing_stages, 6 service_catalog,
+11 modul, 15 material, 61 produk, 1 gudang, 1 kendaraan). Tapi eksekusi NOL:
+0 unit_stage_logs, 0 jobs, 0 qc_fit_tests, 0 payments, 0 stock_movements.
+
+**Penyebabnya bukan kode, tapi ketiadaan akun ber-peran** — sudah diperbaiki
+dengan penambahan 8 akun di §1.
+
+### ⚠️ Lubang integritas yang MASIH TERBUKA
+
+**`Order.paymentStatus` tidak terhubung ke tabel `payments`.** 149 order
+berstatus LUNAS + 1 DP, tapi tabel `payments` KOSONG — status itu dropdown yang
+diklik sales, tanpa catatan siapa menerima uang, kapan, lewat apa. Jangan
+backfill (berarti mengarang tanggal & penerima); jadikan `paymentStatus`
+TURUNAN dari `payments` untuk transaksi baru.
+
+### Bug yang ditemukan & diperbaiki di sesi ini
+
+Ketiganya lolos selama ini karena SELURUH pengujian sebelumnya memakai akun
+ADMIN, yang punya semua hak — begitu diuji dengan akun peran sungguhan,
+langsung ketahuan. **Kalau menambah fitur per-divisi, uji dengan akun peran
+itu, jangan admin.**
+
+1. `GET /production/qc-queue` dijaga `QC_WRITE` padahal cuma MEMBACA antrean →
+   Kepala Produksi 403, buta terhadap unit yang tertahan di gerbang QC.
+   Diturunkan ke `UNIT_READ`. Keputusan verdict TETAP `QC_WRITE`
+   (`POST /units/:id/stages/:stageId/qc`) — pemisahan tugas tidak berubah.
+2. `/armada` mengarahkan SEMUA orang ke `/armada/dashboard` yang butuh
+   `JOB_READ` → driver (cuma `JOB_OWN_READ`) mendarat di halaman yang pasti
+   gagal. Sekarang driver diarahkan ke `/armada/jobs`.
+3. `/armada/jobs` default ke tampilan "Daftar" milik dispatcher → 403 beruntun
+   untuk driver, padahal layar driver ("Job Saya" + `DriverJobs`) SUDAH ADA di
+   `Armada.jsx` tapi tidak pernah tercapai. Driver-only sekarang langsung ke
+   sana, dan sidebar Delivery untuk driver dipangkas dari 9 menu jadi 1.
+
+### Yang MASIH data contoh (jangan dibaca sebagai angka nyata)
+
+- `/armada/dashboard` & `/portal` — sebagian widget dari `deliveryMock.js`
+- `/armada/tracking` — `trackingMock.js`, **100% simulasi**: koordinat 0–100 di
+  kanvas abstrak, nama driver karangan. TIDAK ADA tabel/endpoint posisi GPS
+  di backend sama sekali.
+- Halaman Gudang — `warehouseMock.js` (backend nyata, tabel masih kosong)
+
+Semuanya sudah menandai diri dengan badge "Contoh". Jangan hapus badge itu
+sebelum sumber datanya benar-benar diganti ke endpoint nyata.
