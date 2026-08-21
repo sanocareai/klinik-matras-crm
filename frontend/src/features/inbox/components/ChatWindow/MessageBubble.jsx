@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
 import { parseWaFormatting, extractMapsLocation } from "../../../../utils/waFormat.jsx";
+import { gantiMention } from "../../../../utils/mention.js";
 import { ACK, ackToTicks } from "../../utils/ackLevel.js";
 import { api } from "../../../../api.js";
 import { useMessageStore } from "../../stores/messageStore.js";
@@ -218,7 +219,7 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 menit — sama dengan backend (conv
 const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 2 hari 12 jam — SAMA dengan backend, cuma gating tampilan
 
 function MessageBubbleBase({
-  message: m, conversationId, isGroup, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
+  message: m, conversationId, isGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   // Revisi 28 Jul 2026 — GANTI POLA INTERAKSI: dulu aksi pesan (Balas/
@@ -298,7 +299,10 @@ function MessageBubbleBase({
   // ditampilkan via MediaPlaceholderCard di bawah — JANGAN dobel-render
   // sebagai bubble-text terpisah juga.
   const isBracketPlaceholder = typeof m.content === "string" && /^\[.+\]$/.test(m.content);
-  const text = (!isRevoked && !isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
+  const rawText = (!isRevoked && !isStructured && !isJsonError(m.content) && m.content && !(hasMedia && !m.mediaUrl && isBracketPlaceholder)) ? m.content : "";
+  // "@<LID>" → "@Nama" — cuma berlaku di grup (mentionMap kosong di chat
+  // individual, gantiMention no-op saat itu). Lihat utils/mention.js.
+  const text = isGroup ? gantiMention(rawText, mentionMap) : rawText;
   // Link lokasi tempel-manual (bukan share-lokasi native WhatsApp, lihat
   // catatan di utils/waFormat.jsx) — kalau terdeteksi, render kartu lokasi
   // yang sama seperti mediaType:"location" asli, bukan teks link polos.

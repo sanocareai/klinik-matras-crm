@@ -23,6 +23,14 @@ function matches(c, filter, userId, query) {
   if (filter === "OPEN" && c.status !== "OPEN") return false;
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
+  // `isUnanswered` datang dari backend (GET /conversations) — pesan
+  // TERAKHIR arahnya INBOUND (sales sudah baca, belum sempat balas).
+  if (filter === "UNANSWERED" && !c.isUnanswered) return false;
+  // `unread` boolean = sumber kebenaran (BUKAN unreadCount ?? unread —
+  // lihat catatan bug di mobile/src/screens/ChatListScreen.js#matches:
+  // unreadCount bisa 0 padahal unread=true dari toggle manual "Tandai
+  // Belum Dibaca", `??` tidak fallback untuk 0).
+  if (filter === "UNREAD" && !(c.unread || (c.unreadCount ?? 0) > 0)) return false;
   if (query) {
     const hay = [c.customer?.name, c.customer?.phone, c.customer?.instagramHandle, c.groupName]
       .filter(Boolean).join(" ").toLowerCase();

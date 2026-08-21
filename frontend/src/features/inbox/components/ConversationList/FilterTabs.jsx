@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { Reorder } from "framer-motion";
-import { UserCheck, Megaphone } from "lucide-react";
+import { UserCheck, Megaphone, MailWarning, MessageCircleWarning } from "lucide-react";
 import { useFilter, useConversationStore } from "../../stores/conversationStore.js";
 
 const TAB_DEFS = {
   MINE:      { label: "Milik Saya" },
   ALL:       { label: "Semua" },
+  // Belum Dibaca = sales belum BUKA chat-nya sama sekali. Belum Dibalas =
+  // pesan TERAKHIR dari CUSTOMER (arah INBOUND), sales sudah baca tapi
+  // belum sempat balas — definisi sama persis dengan badge "Ambil Alih
+  // (belum dibalas 1j+)" yang sudah ada di sini, dan dengan tab mobile
+  // (D-031, mobile/src/screens/ChatListScreen.js). Sebelumnya CUMA ada di
+  // mobile — backend (?unread=/?unanswered=true) sudah lama mendukung.
+  UNREAD:     { label: "Belum Dibaca" },
+  UNANSWERED: { label: "Belum Dibalas" },
   OPEN:      { label: "Terbuka" },
   PENDING:   { label: "Pending" },
   CLOSED:    { label: "Selesai" },
@@ -21,7 +29,7 @@ const TAB_DEFS = {
 // localStorage pengguna lama dianggap tidak valid (jumlah key beda), dan
 // bacaUrutan() jatuh ke DEFAULT_ORDER ini — yaitu justru perilaku yang
 // diinginkan: semua orang langsung melihat tab baru.
-const DEFAULT_ORDER = ["MINE", "ALL", "OPEN", "PENDING", "CLOSED", "BROADCAST"];
+const DEFAULT_ORDER = ["MINE", "ALL", "UNREAD", "UNANSWERED", "OPEN", "PENDING", "CLOSED", "BROADCAST"];
 
 const STORAGE_KEY = "sano-inbox-filter-order";
 
@@ -78,6 +86,8 @@ export default function FilterTabs() {
           whileDrag={{ scale: 1.06, boxShadow: "0 4px 14px rgba(0,0,0,0.16)", zIndex: 1 }}
         >
           {key === "MINE" && <UserCheck size={12} style={{ marginRight: 3 }} />}
+          {key === "UNREAD" && <MailWarning size={12} style={{ marginRight: 3 }} />}
+          {key === "UNANSWERED" && <MessageCircleWarning size={12} style={{ marginRight: 3 }} />}
           {key === "BROADCAST" && <Megaphone size={12} style={{ marginRight: 3 }} />}
           {TAB_DEFS[key].label}
         </Reorder.Item>

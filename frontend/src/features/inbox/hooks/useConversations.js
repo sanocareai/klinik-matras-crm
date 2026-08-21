@@ -3,15 +3,17 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../../../api.js";
 import { useConversationStore } from "../stores/conversationStore.js";
 
-// Filter store ('ALL'|'OPEN'|'PENDING'|'CLOSED'|'MINE') → status yang
-// dikenal backend (enum ConversationStatus: OPEN/PENDING/RESOLVED — bukan
-// "CLOSED", lihat CLAUDE.md §10). 'MINE' tidak difilter lewat status,
-// tapi lewat assignedToId (lihat di bawah).
+// Filter store ('ALL'|'OPEN'|'PENDING'|'CLOSED'|'MINE'|'UNREAD'|'UNANSWERED')
+// → status yang dikenal backend (enum ConversationStatus: OPEN/PENDING/
+// RESOLVED — bukan "CLOSED", lihat CLAUDE.md §10). 'MINE' tidak difilter
+// lewat status, tapi lewat assignedToId (lihat di bawah). 'UNREAD'/
+// 'UNANSWERED' sama pola dengan mobile (hooks/useConversations.js) —
+// ?unread=true / ?unanswered=true, BUKAN status.
 function filterToStatus(filter) {
   if (filter === "OPEN") return "OPEN";
   if (filter === "PENDING") return "PENDING";
   if (filter === "CLOSED") return "RESOLVED";
-  return undefined; // 'ALL' | 'MINE' | 'BROADCAST'
+  return undefined; // 'ALL' | 'MINE' | 'BROADCAST' | 'UNREAD' | 'UNANSWERED'
 }
 
 // Tag universal yang dipasang backend ke SETIAP penerima broadcast — lihat
@@ -31,10 +33,12 @@ export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   // kampanye, supaya sales bisa menggarapnya sebagai satu antrean sendiri
   // dan tidak tercampur chat masuk biasa.
   const tag = filter === "BROADCAST" ? TAG_BROADCAST : undefined;
+  const unread = filter === "UNREAD" ? true : undefined;
+  const unanswered = filter === "UNANSWERED" ? true : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId, tag }],
-    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, cursor: pageParam || undefined }),
+    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered }],
+    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, unread, unanswered, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });

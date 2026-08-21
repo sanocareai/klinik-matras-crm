@@ -9,6 +9,7 @@ import {
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
+import { buatPetaMention } from "../../../../utils/mention.js";
 import CustomerPanel from "../CustomerPanel/index.jsx";
 import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
@@ -152,6 +153,23 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [selectedIds, setSelectedIds]     = useState(() => new Set());
 
   const allMessages = useMessagesForConv(conversationId);
+
+  // Mention "@<LID>" → "@Nama" di bubble grup — port dari mobile (D-031
+  // lanjutan, 21 Agustus 2026). Sebelumnya web menampilkan LID mentah
+  // (mis. "@201086224863438") karena tidak pernah fetch daftar anggota
+  // grup untuk menerjemahkannya, walau backend & mobile sudah lama
+  // mendukung ini. isGroupForFetch dihitung terpisah dari `isGroup` di
+  // bawah (yang baru ada SETELAH early-return !conversation) supaya hook
+  // ini tetap aman dipanggil tanpa syarat di setiap render.
+  const isGroupForFetch = conversation?.type === "GROUP";
+  const [participants, setParticipants] = useState([]);
+  useEffect(() => {
+    if (!isGroupForFetch || !conversationId) { setParticipants([]); return; }
+    let alive = true;
+    api.getParticipants(conversationId).then((data) => { if (alive) setParticipants(data); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isGroupForFetch, conversationId]);
+  const mentionMap = React.useMemo(() => buatPetaMention(participants), [participants]);
 
   const messageListRef  = useRef(null);
   const mediaUploaderRef = useRef(null); // diisi Composer -> MediaUploader, dipakai untuk drag-drop & paste dari luar composer
@@ -514,6 +532,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         ref={messageListRef}
         conversation={conversation}
         loading={messagesLoading}
+        mentionMap={mentionMap}
         onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
         onEdit={(msg) => useComposerStore.getState().startEditingMessage(conversationId, msg)}

@@ -58,7 +58,7 @@ function buildItems(messages) {
 // perbaikan di fase berikutnya kalau perlu betul-betul sticky.
 const MessageList = forwardRef(function MessageList(
   {
-    conversation, onReply, onForward, onEdit, onRetry, loading,
+    conversation, onReply, onForward, onEdit, onRetry, loading, mentionMap,
     onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selectedIds, onToggleSelect,
   },
   ref,
@@ -221,6 +221,7 @@ const MessageList = forwardRef(function MessageList(
                 message={m}
                 conversationId={conversationId}
                 isGroup={isGroup}
+                mentionMap={mentionMap}
                 onReply={onReply}
                 onForward={onForward}
                 onEdit={onEdit}

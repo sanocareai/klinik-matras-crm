@@ -407,6 +407,9 @@ export const api = {
       if (statusOrParams.assignedToId) params.set("assignedToId", statusOrParams.assignedToId);
       // Filter tag pelanggan — dipakai chip "Broadcast" di Inbox.
       if (statusOrParams.tag)          params.set("tag", statusOrParams.tag);
+      // Belum Dibaca / Belum Dibalas — sama pola dengan mobile (api.js).
+      if (statusOrParams.unread)       params.set("unread", "true");
+      if (statusOrParams.unanswered)   params.set("unanswered", "true");
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
@@ -425,6 +428,10 @@ export const api = {
       body: JSON.stringify({ phone, session, name }),
     }),
   getConversation: (id) => request(`/conversations/${id}`),
+  // Anggota grup + nama yang sudah di-resolve — dipakai untuk terjemahkan
+  // mention "@<LID>" jadi "@Nama" di bubble (lihat utils/mention.js). Sama
+  // endpoint dengan mobile (mobile/src/api.js).
+  getParticipants: (conversationId) => request(`/conversations/${conversationId}/participants`),
   getUnreadCount: () => request("/conversations/unread-count"),
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
   getMessages: (conversationId) =>
