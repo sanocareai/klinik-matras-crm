@@ -25,19 +25,17 @@ function buildDateWhere(from, to, field = "createdAt") {
   return { [field]: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } };
 }
 
-// Peran EFEKTIF (D-010, aditif): beberapa admin/leader (mis. Novi) KADANG
-// turun tangan pegang percakapan & closing sendiri, walau peran utamanya
-// (kolom `User.role` lama) tetap ADMIN. Sistem multi-role (UserRole, lihat
-// POST/DELETE /api/users/:id/roles, UI di Pengguna & Peran) sudah bisa
-// memberi peran TAMBAHAN "SALES" ke akun begitu — tapi laporan sales di
-// bawah ini sebelumnya hanya membaca kolom `role` tunggal, jadi admin yang
-// sudah diberi peran tambahan SALES tetap tidak pernah muncul di
-// Laporan Sales / Target Sales. Helper ini mengembalikan Set userId yang
-// punya peran SALES lewat pemberian tambahan (bukan cuma kolom `role`).
-async function grantedSalesUserIds() {
-  const rows = await prisma.userRole.findMany({ where: { role: "SALES" }, select: { userId: true } });
-  return new Set(rows.map((r) => r.userId));
-}
+// ⚠️ Sebelumnya ada helper grantedSalesUserIds() di sini yang menghitung
+// siapa pun DIBERI peran SALES tambahan (multi-role D-010) dan
+// memasukkannya ke Laporan Sales / Target Sales. DIHAPUS 22 Agustus 2026:
+// terbukti salah untuk kasus nyata — Natasha diberi SEMUA peran (termasuk
+// SALES) supaya bisa MENGAKSES data lintas divisi (CLAUDE.md §1), bukan
+// karena dia sales performer. Leaderboard sales sekarang HANYA membaca
+// `User.role === "SALES"` (peran UTAMA), titik — lihat /sales-report dan
+// /sales-performance di bawah. Kalau nanti memang ada admin yang betulan
+// berjualan dan perlu ikut dinilai di sini, itu keputusan eksplisit yang
+// ditulis langsung di filter masing-masing endpoint, bukan helper generik
+// yang diam-diam menganggap "punya akses SALES" = "adalah sales".
 
 // Periode sebelumnya dengan PANJANG SAMA, tepat bersambung sebelum `from`.
 // Contoh: 1-30 Juni (30 hari) → periode sebelumnya 2-31 Mei (30 hari).
@@ -520,7 +518,6 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
     const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
 
-    const grantedSalesIds = await grantedSalesUserIds();
     // active: true — sales yang sudah dinonaktifkan (mis. resign) hilang
     // dari baris per-sales di sini, TAPI order/percakapan yang pernah dia
     // tangani tetap ada di database dan tetap dihitung penuh di angka
@@ -536,11 +533,20 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     // di sistem memang SALES, tapi begitu akun Produksi/Driver/dst ditambah
     // (lihat CLAUDE.md §19), SEMUANYA ikut nyasar ke laporan sales/widget
     // "Top Performing Reps" di Dashboard (ditemukan nyata: driver baru
-    // langsung nangkring di Top Reps dengan Rp0). Diperbaiki jadi pola yang
-    // SAMA dengan /sales-performance di bawah: role === SALES SAJA, ditambah
-    // siapa pun yang sungguh diberi peran SALES tambahan (grantedSalesIds,
-    // D-010 multi-role) — bukan "siapa saja yang kebetulan bukan admin".
-    const users = usersRaw.filter((u) => u.role === "SALES" || grantedSalesIds.has(u.id));
+    // langsung nangkring di Top Reps dengan Rp0).
+    //
+    // REVISI KEDUA (sama hari) — percobaan pertama masih menambahkan
+    // `grantedSalesIds.has(u.id)` (siapa pun yang DIBERI peran SALES
+    // tambahan lewat multi-role D-010), dengan asumsi itu berarti "admin
+    // yang juga jualan". TERNYATA SALAH untuk kasus nyata: Natasha diberi
+    // SEMUA 9 peran (termasuk SALES) supaya bisa MENGAKSES data lintas
+    // divisi (lihat CLAUDE.md §1) — itu urusan hak akses, BUKAN pernyataan
+    // "dia sales performer yang harus dinilai di leaderboard". Ditegaskan
+    // eksplisit oleh owner: leaderboard ini HANYA untuk role SALES primer.
+    // Kalau nanti memang ada admin yang betulan berjualan dan perlu masuk
+    // sini, keputusannya harus eksplisit di baris ini, bukan otomatis ikut
+    // menempel gara-gara punya akses SALES untuk alasan lain.
+    const users = usersRaw.filter((u) => u.role === "SALES");
 
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
@@ -1114,7 +1120,6 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
     const startOfMonth = startOfMonthWIB(year, month);
     const endOfMonth   = endOfMonthExclusiveWIB(year, month); // exclusive
 
-    const grantedSalesIds = await grantedSalesUserIds();
     // active: true — sama seperti /sales-report, sales nonaktif hilang dari
     // widget Target Sales, tapi order historisnya tidak hilang dari mana pun.
     const salesUsersRaw = await prisma.user.findMany({
@@ -1122,9 +1127,11 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
       select: { id: true, name: true, avatarUrl: true, role: true },
       orderBy: { name: "asc" },
     });
-    // role === SALES seperti sebelumnya, DITAMBAH admin/leader yang sudah
-    // diberi peran tambahan SALES (lihat catatan grantedSalesUserIds di atas).
-    const salesUsers = salesUsersRaw.filter((u) => u.role === "SALES" || grantedSalesIds.has(u.id));
+    // role === SALES SAJA (diperbaiki 22 Agustus 2026 bersamaan dengan
+    // /sales-report — lihat catatan panjang di sana). Punya peran SALES
+    // TAMBAHAN untuk akses lintas divisi (mis. Natasha) BUKAN berarti masuk
+    // hitungan target/performa sales.
+    const salesUsers = salesUsersRaw.filter((u) => u.role === "SALES");
 
     const targets = await prisma.salesTarget.findMany({ where: { year, month } });
     const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
