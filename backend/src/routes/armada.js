@@ -1060,6 +1060,90 @@ armadaRouter.post("/jobs/:id/photos", requirePermission(P.JOB_OWN_WRITE), upload
   }
 });
 
+// POST /api/armada/jobs/:id/positions — driver kirim ping GPS (D-034).
+//
+// BATCH, bukan satu titik: HP driver di lapangan sering offline, jadi ping
+// diantre lokal (pola sama dengan syncQueue.js/submitJobAction.js yang sudah
+// dipakai foto bukti) lalu dikirim SEKALIGUS begitu sinyal kembali. Endpoint
+// tunggal-titik akan memaksa mobile melakukan N request berurutan untuk
+// mengosongkan antrean — mahal dan gampang gagal separuh jalan.
+//
+// SENGAJA TIDAK membatasi status job (EN_ROUTE saja) di sini — kalau job
+// sudah ARRIVED/COMPLETED saat ping yang diantre lama akhirnya terkirim,
+// pingnya tetap tercatat (riwayat rute yang jujur), cuma dispatcher tidak
+// akan menganggapnya "posisi sekarang" (lihat GET /jobs/:id/positions/latest
+// yang membaca status job juga).
+armadaRouter.post("/jobs/:id/positions", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    await loadOwnedJob(req);
+    const pings = Array.isArray(req.body.pings) ? req.body.pings : [req.body];
+    const valid = pings.filter((p) =>
+      Number.isFinite(p?.lat) && Number.isFinite(p?.lng) && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180 && p.recordedAt
+    );
+    if (valid.length === 0) throw new ArmadaError("Tidak ada ping valid (lat/lng/recordedAt wajib)");
+
+    await prisma.jobPositionPing.createMany({
+      data: valid.map((p) => ({
+        jobId: req.params.id,
+        driverId: req.user.id,
+        lat: p.lat,
+        lng: p.lng,
+        accuracy: Number.isFinite(p.accuracy) ? p.accuracy : null,
+        recordedAt: new Date(p.recordedAt),
+      })),
+    });
+    res.status(201).json({ diterima: valid.length, ditolak: pings.length - valid.length });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/tracking — posisi TERAKHIR tiap job yang SEDANG EN_ROUTE,
+// untuk papan Live Tracking dispatcher (D-034, menggantikan trackingMock.js).
+// DISTINCT ON per job — bukan JOIN biasa, karena yang dibutuhkan cuma 1 baris
+// (ping terbaru) per job, bukan seluruh riwayat.
+//
+// TIDAK ADA filter tanggal "hari ini" — status EN_ROUTE itu sendiri SUDAH
+// berarti "job ini sedang berlangsung sekarang" (cuma dicapai lewat
+// POST .../start, yang cuma masuk akal driver panggil di hari job-nya).
+// Menambah filter `scheduledDate >= new Date()` di sini justru berisiko kena
+// bug kelas yang dilarang CLAUDE.md §11: container jalan UTC, `new Date()`
+// tanpa lewat utils/wib.js bisa menghitung "hari ini" mundur/maju 7 jam dari
+// yang dimaksud WIB.
+armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const jobs = await prisma.job.findMany({
+      where: { status: "EN_ROUTE" },
+      include: {
+        driver: { select: { id: true, name: true } },
+        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+      },
+    });
+    if (jobs.length === 0) return res.json([]);
+
+    const latest = await prisma.$queryRaw`
+      SELECT DISTINCT ON (job_id) job_id, lat, lng, accuracy, recorded_at
+      FROM job_position_pings
+      WHERE job_id = ANY(${jobs.map((j) => j.id)})
+      ORDER BY job_id, recorded_at DESC
+    `;
+    const byJob = new Map(latest.map((p) => [p.job_id, p]));
+
+    res.json(jobs.map((j) => {
+      const p = byJob.get(j.id);
+      return {
+        jobId: j.id, type: j.type, addressText: j.addressText,
+        driverName: j.driver?.name || null,
+        orderNumber: j.order?.orderNumber || null,
+        customerName: j.order?.customer?.name || null,
+        lastPosition: p ? { lat: p.lat, lng: p.lng, accuracy: p.accuracy, recordedAt: p.recorded_at } : null,
+      };
+    }));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // POST /api/armada/jobs/:id/start — driver mulai perjalanan.
 armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
   try {

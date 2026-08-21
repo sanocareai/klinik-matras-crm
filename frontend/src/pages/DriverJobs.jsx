@@ -9,6 +9,7 @@ import { formatRupiah } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
 import { submitOrQueue } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
+import { useDriverTracking } from "../hooks/useDriverTracking.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -556,6 +557,11 @@ export default function DriverJobs() {
   }, [refreshQueue, load]);
 
   useEffect(() => { load(); refreshQueue(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // D-034 — Live Tracking nyata: kirim ping GPS selama ADA job berstatus
+  // EN_ROUTE. Tidak melakukan apa pun (tidak minta izin lokasi sekalipun)
+  // kalau tidak ada job yang sedang berjalan — lihat catatan di hook.
+  useDriverTracking(jobs);
 
   useEffect(() => {
     function handleOnline() { setOffline(false); syncNow(); }

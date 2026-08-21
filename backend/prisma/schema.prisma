@@ -218,6 +218,7 @@ model User {
   messageTemplates          MessageTemplate[]
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
+  jobPositionPings          JobPositionPing[]        @relation("JobPositionPingDriver")
   qcFitTests                QcFitTest[]              @relation("QcFitTestTester")
   productionTargets         ProductionTarget[]       @relation("ProductionTargetCreator")
   paymentsRecorded          Payment[]                @relation("PaymentRecorder")
@@ -1204,6 +1205,7 @@ model Job {
   units         JobUnit[]
   payments      Payment[]
   revisionLinks UnitRevision[]
+  positionPings JobPositionPing[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -1212,6 +1214,46 @@ model Job {
   @@index([vehicleId])
   @@index([podStatus])
   @@map("jobs")
+}
+
+// Ping GPS driver selama job aktif — Live Tracking NYATA (D-034, 22 Agustus
+// 2026), menggantikan features/armada/data/trackingMock.js (simulasi murni,
+// belum pernah ada tabel/endpoint untuk ini — lihat catatan panjang di sana).
+//
+// APPEND-ONLY per job, pola sama dengan UnitStageLog: "posisi terakhir"
+// dihitung dari ping ber-recordedAt TERBESAR untuk job itu (query di
+// route, tidak ada kolom "posisi sekarang" terpisah yang bisa basi/beda
+// dari log-nya). PRD FR-L-06 minta ping tiap 2 menit selama rute aktif.
+//
+// recordedAt (jam GPS diambil di HP) SENGAJA terpisah dari createdAt (jam
+// server menerima) — HP driver di lapangan sering offline, ping diantre lalu
+// dikirim BERSAMAAN begitu sinyal kembali (pola sama dengan
+// syncQueue.js/submitJobAction.js yang sudah dipakai foto bukti & tanda
+// tangan). Tanpa pemisahan ini, satu batch ping yang telat terkirim akan
+// terlihat seolah driver "teleport" tiba-tiba, padahal cuma jeda kirim.
+model JobPositionPing {
+  id       String @id @default(uuid()) @db.Uuid
+  jobId    String @map("job_id") @db.Uuid
+  job      Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  // Nullable: onDelete SetNull di bawah mengharuskannya. String? bukan
+  // berarti ping-nya boleh tanpa driver saat dibuat — endpoint selalu
+  // mengisinya dari req.user.id, cuma jadi null KALAU akun driver-nya
+  // kemudian dihapus (riwayat rute tetap ada, pemiliknya saja tak terlacak).
+  driverId String? @map("driver_id")
+  // SetNull, BUKAN Cascade — sama alasan dengan UnitStageLog.actor: driver
+  // resign/dihapus TIDAK BOLEH menghapus riwayat rute yang sudah terjadi.
+  driver   User?   @relation("JobPositionPingDriver", fields: [driverId], references: [id], onDelete: SetNull)
+
+  lat      Float
+  lng      Float
+  accuracy Float? // meter, dari Location.Accuracy di HP — dipakai UI beri tahu "posisi kurang akurat"
+
+  recordedAt DateTime @map("recorded_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([jobId, recordedAt])
+  @@index([driverId, recordedAt])
+  @@map("job_position_pings")
 }
 
 // Hasil review Proof of Delivery. Bukan "lulus/gagal" biasa — REJECTED
