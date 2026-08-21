@@ -21,7 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
-  CheckCircle2, Hash, Send,
+  CheckCircle2, Hash, Send, MapPin, Link2,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useTokens } from "../constants/theme";
@@ -381,6 +381,39 @@ export default function OrderTimelineScreen({ route, navigation }) {
         </View>
       )}
 
+      {/* Alamat Pengiriman + Link Lokasi — paritas dengan
+          DetailPesananSection di web (OrderTimelineDrawer.jsx). Datanya
+          SUDAH ikut terbawa di GET /orders (deliveryAddress/deliveryCity/
+          locationUrl bukan field baru di endpoint, cuma belum pernah
+          dirender di layar mobile ini) — jadi tidak perlu fetch tambahan.
+          Cuma tampil kalau salah satu field-nya terisi, supaya order lama
+          yang belum diisi sales tidak menyisakan kotak kosong. */}
+      {order && (order.deliveryAddress || order.deliveryCity || order.locationUrl) && (
+        <View style={styles.addressBox}>
+          <View style={styles.addressHeadRow}>
+            <MapPin size={13} color={tokens.color.textMuted} strokeWidth={2.2} />
+            <Text style={styles.addressLabel}>ALAMAT PENGIRIMAN</Text>
+          </View>
+          {(order.deliveryAddress || order.deliveryCity) && (
+            <Text style={styles.addressText}>
+              {order.deliveryAddress || ""}
+              {order.deliveryCity ? ` · ${order.deliveryCity}` : ""}
+            </Text>
+          )}
+          {order.locationUrl && (
+            <TouchableOpacity
+              style={styles.locationLinkRow}
+              onPress={() => Linking.openURL(order.locationUrl).catch(() =>
+                Alert.alert("Gagal buka link", "Link lokasi ini sepertinya tidak valid.")
+              )}
+            >
+              <Link2 size={13} color={tokens.color.accent} strokeWidth={2.2} />
+              <Text style={styles.locationLinkText}>Buka Lokasi di Peta</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       <View style={styles.tabBar}>
         {TABS.map(({ key, label, Icon }) => {
           const active = tab === key;
@@ -417,6 +450,15 @@ function createStyles(tokens) {
     summaryCard: { flex: 1, backgroundColor: tokens.color.card, borderRadius: 12, padding: 10 },
     summaryLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
     summaryValue: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 2 },
+    addressBox: {
+      backgroundColor: tokens.color.card, borderRadius: 12, padding: 12,
+      marginHorizontal: 16, marginBottom: 10,
+    },
+    addressHeadRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 5 },
+    addressLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
+    addressText: { fontSize: 12.5, color: tokens.color.textPrimary, lineHeight: 18 },
+    locationLinkRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 },
+    locationLinkText: { fontSize: 12.5, fontWeight: "600", color: tokens.color.accent },
     tabBar: { flexDirection: "row", marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
     tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
     tabBtnActive: { backgroundColor: tokens.color.card },
