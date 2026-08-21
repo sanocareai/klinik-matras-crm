@@ -299,8 +299,8 @@ export default function Pengguna({ user: currentUser }) {
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>
                             {u.name}
-                            {isMe && <span style={{ marginLeft: 6, fontSize: 10, background: "#ede9fe", color: "#5b21b6", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Anda</span>}
-                            {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "#f3f4f6", color: "#6b7280", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
+                            {isMe && <span style={{ marginLeft: 6, fontSize: 10, background: "var(--accent-bg)", color: "var(--accent)", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Anda</span>}
+                            {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "var(--bg-inset)", color: "var(--text-muted)", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{u.email}</div>
                         </div>
@@ -386,7 +386,7 @@ export default function Pengguna({ user: currentUser }) {
                     <div className="user-card-name">
                       {u.name}
                       {isMe && <span className="user-card-you">Anda</span>}
-                      {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "#f3f4f6", color: "#6b7280", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
+                      {nonaktif && <span style={{ marginLeft: 6, fontSize: 10, background: "var(--bg-inset)", color: "var(--text-muted)", fontWeight: 700, padding: "1px 6px", borderRadius: 8 }}>Nonaktif</span>}
                     </div>
                     <div className="user-card-email">{u.email}</div>
                   </div>
@@ -511,19 +511,19 @@ export default function Pengguna({ user: currentUser }) {
                       onClick={() => handleToggleRole(role)}
                       style={{
                         display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-                        borderRadius: 8, border: `1px solid ${checked ? "var(--primary)" : "var(--border)"}`,
-                        background: checked ? "#eff6ff" : "#fff", cursor: busy ? "wait" : "pointer",
+                        borderRadius: 8, border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                        background: checked ? "var(--accent-bg)" : "var(--bg-surface)", cursor: busy ? "wait" : "pointer",
                         textAlign: "left", opacity: busy ? 0.6 : 1,
                       }}>
                       <span style={{
                         width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                        border: `1.5px solid ${checked ? "var(--primary)" : "var(--border)"}`,
-                        background: checked ? "var(--primary)" : "transparent",
+                        border: `1.5px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                        background: checked ? "var(--accent)" : "transparent",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>
                         {checked && <Check size={13} color="#fff" />}
                       </span>
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>{ROLE_LABELS[role]}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)" }}>{ROLE_LABELS[role]}</span>
                     </button>
                   );
                 })}
@@ -585,7 +585,7 @@ export default function Pengguna({ user: currentUser }) {
               <p style={{ fontSize: 14, lineHeight: 1.6 }}>
                 Apakah Anda yakin ingin menghapus pengguna <strong>{showDelete.name}</strong>?
               </p>
-              <div style={{ padding: "12px 16px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 13, color: "#991b1b" }}>
+              <div style={{ padding: "12px 16px", background: "var(--red-bg)", border: "1px solid var(--red)", borderRadius: 8, fontSize: 13, color: "var(--red)" }}>
                 <strong>Perhatian:</strong> Aksi ini tidak dapat dibatalkan. Semua percakapan dan pelanggan yang ditugaskan ke pengguna ini akan dilepas (tidak dihapus).
                 Penghapusan akan gagal jika pengguna masih memiliki catatan pelanggan.
               </div>
