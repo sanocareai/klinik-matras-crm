@@ -29,6 +29,8 @@ export default function DateRangePicker({ value, onChange }) {
   // Tanggal 1 sudah dipilih, menunggu tanggal ke-2.
   const [picking, setPicking] = useState(false);
   const [anchor, setAnchor] = useState(() => todayWIB().subtract(1, "month"));
+  // Panel rata KIRI atau KANAN terhadap pemicu — lihat catatan di efek bawah.
+  const [alignLeft, setAlignLeft] = useState(false);
   const rootRef = useRef(null);
 
   // Sinkron ulang draft tiap panel dibuka — kalau ditutup pakai Batal, draft
@@ -42,6 +44,32 @@ export default function DateRangePicker({ value, onChange }) {
       setAnchor(dasar.startOf("month").subtract(1, "month"));
     }
   }, [open, value]);
+
+  // BUG NYATA (21 Agustus 2026): panel dulu SELALU `right-0` — tepi KANAN
+  // panel menempel ke tepi kanan pemicu. Itu benar hanya kalau pemicu berada
+  // di sisi KANAN layar (Laporan/Dashboard). Di halaman Order pemicu ada di
+  // KIRI, jadi panel selebar 620px membentang ~400px ke luar tepi kiri
+  // viewport dan kalender bulan pertama terpotong (kolom hari "K J S", baris
+  // "3 4" / "10 11" ikut hilang) sekaligus menutupi kartu ringkasan.
+  //
+  // Sekarang arah rata dipilih dari ruang yang BENAR-BENAR tersedia: kalau
+  // panel muat kalau ditarik ke kanan dari tepi kiri pemicu, pakai rata kiri;
+  // kalau tidak, kembali ke rata kanan (perilaku lama). Dihitung saat dibuka
+  // DAN saat ukuran jendela berubah — bukan sekali di mount, karena header
+  // memakai flex-wrap sehingga posisi pemicu bergeser mengikuti lebar layar.
+  useEffect(() => {
+    if (!open) return;
+    function hitungArah() {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const lebarPanel = Math.min(window.innerWidth * 0.92, 620);
+      const PAD = 8;
+      setAlignLeft(rect.left + lebarPanel <= window.innerWidth - PAD);
+    }
+    hitungArah();
+    window.addEventListener("resize", hitungArah);
+    return () => window.removeEventListener("resize", hitungArah);
+  }, [open]);
 
   // Tutup dengan Esc / klik di luar.
   useEffect(() => {
@@ -140,7 +168,10 @@ export default function DateRangePicker({ value, onChange }) {
         <div
           role="dialog"
           aria-label="Pilih rentang tanggal"
-          className="absolute right-0 top-11 z-50 flex w-[min(92vw,620px)] flex-col overflow-hidden rounded-2xl bg-surface shadow-popover sm:flex-row"
+          className={cn(
+            "absolute top-11 z-50 flex w-[min(92vw,620px)] flex-col overflow-hidden rounded-2xl bg-surface shadow-popover sm:flex-row",
+            alignLeft ? "left-0" : "right-0"
+          )}
         >
           {/* ── KIRI: preset ── */}
           <div className="flex max-h-[62vh] shrink-0 flex-col overflow-y-auto border-line sm:max-h-[440px] sm:w-[210px] sm:border-r">
