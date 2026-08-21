@@ -70,7 +70,13 @@ async function request(path, options = {}) {
     }
     return res.json();
   } catch (err) {
-    if (err.name === "AbortError") throw new Error("Koneksi timeout — coba lagi");
+    // BUG (fix 21 Agustus 2026): cek `err.name === "AbortError"` saja TIDAK
+    // cukup — fetch bawaan Expo SDK 57 melempar "Fetch request has been
+    // canceled" dengan name yang BEDA, jadi timeout kita sendiri lolos ke
+    // user sebagai "fetch failed: Fetch request has been canceled" yang
+    // tidak berarti apa-apa buat sales. Tanya controller-nya langsung —
+    // itu sumber kebenaran yang tidak tergantung nama error runtime.
+    if (controller.signal.aborted) throw new Error("Koneksi timeout — coba lagi");
     throw err;
   } finally {
     clearTimeout(timeoutId);
@@ -130,7 +136,9 @@ async function uploadFile(path, file, fields, fieldName = "file") {
     }
     return JSON.parse(result.body);
   } catch (err) {
-    if (err.name === "AbortError") throw new Error("Koneksi timeout — coba lagi");
+    // Sama seperti di request() — tanya controller-nya, jangan andalkan
+    // err.name yang berbeda antar implementasi fetch/upload Expo.
+    if (controller.signal.aborted) throw new Error("Koneksi timeout — coba lagi");
     throw err;
   } finally {
     clearTimeout(timeoutId);

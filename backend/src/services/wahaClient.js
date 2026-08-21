@@ -27,6 +27,29 @@ function headers() {
   return h;
 }
 
+// Batas tunggu kirim pesan ke WAHA. SENGAJA lebih pendek dari timeout klien
+// (mobile 30 detik, lihat mobile/src/api.js) supaya backend selalu sempat
+// menjawab dengan pesan error yang bisa dibaca sales, bukan membiarkan klien
+// mati sendiri dengan "fetch failed" yang tidak menjelaskan apa pun.
+export const WAHA_SEND_TIMEOUT_MS = 20000;
+
+// fetch + timeout. Node 18+ punya AbortSignal.timeout(), tapi errornya
+// (TimeoutError) tidak menjelaskan operasi mana yang menggantung — dibungkus
+// di sini supaya log & pesan ke user menyebut nama fungsinya.
+async function fetchDenganTimeout(url, options, timeoutMs, fnName) {
+  try {
+    return await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new Error(
+        `WAHA ${fnName} tidak merespons dalam ${Math.round(timeoutMs / 1000)} detik — ` +
+        `WhatsApp/WAHA sedang bermasalah atau tujuannya tidak valid. Pesan TIDAK dikirim.`
+      );
+    }
+    throw err;
+  }
+}
+
 // WAHA NOWEB kadang mengirim media URL dengan hostname 'localhost' di dalam webhook payload.
 // Dari backend container, 'localhost' berarti backend itu sendiri — bukan WAHA.
 // Fungsi ini replace hostname/port dengan yang ada di WAHA_BASE_URL (contoh: http://waha:3000).
@@ -66,11 +89,17 @@ export async function sendText(to, text, quotedMessageId = null, session, mentio
   const body = { session, chatId, text };
   if (quotedMessageId) body.quotedMessageId = quotedMessageId;
   if (mentions?.length) body.mentions = mentions;
-  const res = await fetch(`${WAHA_BASE_URL}/api/sendText`, {
+  // Timeout WAJIB: tanpa ini, WAHA yang menggantung membuat request backend
+  // menggantung juga TANPA BATAS. Nyata: JID grup tidak valid membuat engine
+  // GOWS menunggu "get group members" ~75 detik per percobaan — klien mobile
+  // (30 detik) sudah menyerah duluan dan sales cuma melihat "fetch failed".
+  // 20 detik dipilih supaya backend SELALU sempat menjawab dengan pesan yang
+  // jelas sebelum klien menyerah; kirim teks yang sehat butuh < 5 detik.
+  const res = await fetchDenganTimeout(`${WAHA_BASE_URL}/api/sendText`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify(body),
-  });
+  }, WAHA_SEND_TIMEOUT_MS, "sendText");
   if (!res.ok) throw new Error(`WAHA sendText gagal (${res.status}): ${await res.text()}`);
   return res.json();
 }
@@ -573,6 +602,24 @@ export function isLidLikePhone(value) {
   return !digits.startsWith("62") && digits.length >= 14;
 }
 
+// JID grup PLACEHOLDER — bukan alamat WhatsApp asli.
+//
+// scripts/fix-group-conversations.js & backfill-group-names.js membuat
+// `unknown-<cuid>@g.us` untuk percakapan grup lama yang JID aslinya sudah
+// tidak bisa diketahui lagi. Itu SENGAJA (supaya percakapannya tetap bisa
+// dibaca di Inbox), tapi alamat itu TIDAK ADA di WhatsApp.
+//
+// ⚠️ Kenapa ini WAJIB diblok sebelum request: WAHA tidak menolak JID palsu
+// dengan cepat — engine GOWS malah menunggu "get group members" sampai
+// timeout ~75 DETIK per percobaan, lalu sendWithSessionFallback mencoba
+// sesi berikutnya (75 detik lagi). Klien (mobile 30 detik) sudah menyerah
+// jauh sebelum itu dan sales cuma melihat "fetch failed" tanpa petunjuk
+// apa pun. Kejadian nyata 21 Agustus 2026: grup ber-JID placeholder
+// ditandai sebagai grup sales, tombol "Kirim ke Grup WA" selalu gagal.
+export function isPlaceholderGroupJid(value) {
+  return String(value || "").startsWith("unknown-");
+}
+
 // Bangun chatId untuk WAHA + TOLAK LID sebelum request terkirim.
 // Dipakai semua fungsi kirim/ubah pesan supaya aturannya tidak bisa drift
 // (sebelumnya hanya sendText yang punya cek, dan cuma console.warn — jadi
@@ -580,6 +627,13 @@ export function isLidLikePhone(value) {
 function buildChatId(to, fnName) {
   const raw = String(to || "").trim();
   if (!raw) throw new Error(`${fnName}: nomor/JID tujuan kosong`);
+  if (isPlaceholderGroupJid(raw)) {
+    throw new Error(
+      `Grup ini tidak punya alamat WhatsApp asli (${raw}) — kemungkinan grup lama ` +
+      `yang datanya belum lengkap. Pesan TIDAK dikirim. Pilih grup lain yang ` +
+      `pesannya masih aktif masuk ke Inbox.`
+    );
+  }
   if (isLidLikePhone(raw)) {
     // Pesan error dalam Bahasa Indonesia — ini muncul ke sales di UI lewat
     // response 502 di routes/conversations.js, jadi harus bisa ditindaklanjuti.

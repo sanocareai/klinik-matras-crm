@@ -14,7 +14,7 @@ import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.j
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
-import { sendText } from "../services/wahaClient.js";
+import { sendText, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
@@ -572,6 +572,15 @@ orderRouter.post("/:id/send-wa-summary", async (req, res) => {
 
     const target = resolveSendTarget(group);
     if (!target) return res.status(400).json({ error: "groupJid grup ini tidak tersedia" });
+    // Dicek DI SINI juga (bukan cuma di buildChatId) supaya sales dapat 409
+    // dengan instruksi konkret, bukan 502 "Gagal kirim ke WhatsApp: ..." yang
+    // terdengar seperti WhatsApp-nya bermasalah padahal salah pilih grup.
+    if (isPlaceholderGroupJid(target)) {
+      return res.status(409).json({
+        error: "Grup WA order yang dipilih tidak punya alamat WhatsApp asli (grup lama, data belum lengkap). " +
+               "Admin perlu memilih ulang grup di halaman Order — pilih grup yang pesannya masih aktif masuk ke Inbox.",
+      });
+    }
 
     const text = buildWaMessage(order, order.customer);
 

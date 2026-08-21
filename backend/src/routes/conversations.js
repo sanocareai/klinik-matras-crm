@@ -8,7 +8,7 @@ import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo } from "../services/wahaClient.js";
+import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
@@ -223,6 +223,16 @@ conversationRouter.put("/sales-group", requireAdmin, async (req, res) => {
     const target = await prisma.conversation.findUnique({ where: { id: conversationId } });
     if (!target) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
     if (target.type !== "GROUP") return res.status(400).json({ error: "Hanya percakapan GRUP yang bisa ditandai" });
+    // Tolak di sini juga, bukan cuma saat kirim — kalau grup placeholder
+    // boleh dipilih, admin baru tahu salah pilih berminggu-minggu kemudian
+    // saat sales pertama menekan "Kirim ke Grup WA" dan gagal. Lihat
+    // isPlaceholderGroupJid() di services/wahaClient.js.
+    if (isPlaceholderGroupJid(target.groupJid)) {
+      return res.status(400).json({
+        error: "Grup ini tidak punya alamat WhatsApp asli (data grup lama belum lengkap) — " +
+               "pilih grup yang pesannya masih aktif masuk ke Inbox.",
+      });
+    }
 
     await prisma.$transaction([
       prisma.conversation.updateMany({ where: { isSalesGroup: true }, data: { isSalesGroup: false } }),
