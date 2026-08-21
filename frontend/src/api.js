@@ -173,6 +173,17 @@ export const api = {
   createVehicle: (data) => request("/armada/vehicles", { method: "POST", body: JSON.stringify(data) }),
   updateVehicle: (id, data) => request(`/armada/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Biaya/servis/insiden kendaraan (D-035)
+  getVehicleExpenses: (params = {}) => request(`/armada/expenses${buildQuery(params)}`),
+  createVehicleExpense: (data) => request("/armada/expenses", { method: "POST", body: JSON.stringify(data) }),
+  deleteVehicleExpense: (id) => request(`/armada/expenses/${id}`, { method: "DELETE" }),
+  getVehicleServices: (params = {}) => request(`/armada/services${buildQuery(params)}`),
+  createVehicleService: (data) => request("/armada/services", { method: "POST", body: JSON.stringify(data) }),
+  getVehicleIncidents: (params = {}) => request(`/armada/incidents${buildQuery(params)}`),
+  createVehicleIncident: (data) => request("/armada/incidents", { method: "POST", body: JSON.stringify(data) }),
+  updateVehicleIncident: (id, data) => request(`/armada/incidents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getFleetSummary: (params = {}) => request(`/armada/fleet-summary${buildQuery(params)}`),
+
   // Rute (Route Planner, Delivery Tahap 3)
   getRoutes: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();

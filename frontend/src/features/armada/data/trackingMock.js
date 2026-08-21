@@ -31,31 +31,38 @@ export const TRACKING_STATUS = {
 // yang perlu di-tick tiap interval, dan siapa yang diam (belum berangkat/sudah selesai).
 const MOVING_STATUSES = ["BERANGKAT", "DALAM_PERJALANAN"];
 
+// Nama driver & customer di bawah SENGAJA memakai orang/pola yang benar-benar
+// ada — DIPERBAIKI 22 Agustus 2026 setelah ditegur: versi lama pakai nama
+// karangan (Asep Saputra, Budi Hartono, dst) yang tidak ada hubungannya
+// dengan tim sungguhan, padahal 3 driver ASLI sudah terdaftar (Agung, Alwan,
+// Apriansyah — lihat CLAUDE.md §1). Posisi/progress/ETA di sini TETAP
+// simulasi murni (lihat catatan di atas), tapi SIAPA yang disimulasikan
+// sekarang bukan orang fiktif lagi.
+//
+// vehiclePlate memakai SATU plat nyata yang ada di database ("B 0000 UJI" —
+// kendaraan uji coba, lihat halaman Driver & Armada) untuk ketiganya, BUKAN
+// tiga plat berbeda: baru ada 1 kendaraan sungguhan tercatat saat ini.
+// Mengarang 2 plat lagi akan mengulang kesalahan yang sama, cuma di kolom
+// yang berbeda.
 export function seedTrackingDrivers() {
   return [
     {
-      id: "trk-1", driverName: "Asep Saputra", vehiclePlate: "B 9123 SAO",
+      id: "trk-1", driverName: "Agung", vehiclePlate: "B 0000 UJI",
       jobId: "JOB-2408-014", customerName: "Rizky Ananda", area: "Bekasi",
       status: "DALAM_PERJALANAN", etaMinutes: 12, nextStop: "Perum Harapan Indah Blok C2",
       path: [{ x: 18, y: 68 }, { x: 72, y: 30 }], progress: 0.42,
     },
     {
-      id: "trk-2", driverName: "Budi Hartono", vehiclePlate: "B 9456 SAO",
+      id: "trk-2", driverName: "Alwan", vehiclePlate: "B 0000 UJI",
       jobId: "JOB-2408-016", customerName: "Maya Ratnasari", area: "Depok",
       status: "TIBA", etaMinutes: 0, nextStop: "Jl. Margonda Raya No. 88",
       path: [{ x: 40, y: 82 }, { x: 40, y: 82 }], progress: 1,
     },
     {
-      id: "trk-3", driverName: "Cecep Ramdani", vehiclePlate: "B 9788 SAO",
-      jobId: "JOB-2408-020", customerName: "Lestari Handayani", area: "Jakarta Selatan",
-      status: "BERANGKAT", etaMinutes: 28, nextStop: "Jl. Cipete Dalam No. 3",
-      path: [{ x: 55, y: 20 }, { x: 20, y: 55 }], progress: 0.08,
-    },
-    {
-      id: "trk-4", driverName: "Eko Prasetyo", vehiclePlate: "B 9901 SAO",
-      jobId: null, customerName: null, area: "Bogor",
+      id: "trk-3", driverName: "Apriansyah", vehiclePlate: "B 0000 UJI",
+      jobId: null, customerName: null, area: "Jakarta Selatan",
       status: "BELUM_BERANGKAT", etaMinutes: null, nextStop: null,
-      path: [{ x: 82, y: 78 }, { x: 82, y: 78 }], progress: 0,
+      path: [{ x: 55, y: 20 }, { x: 55, y: 20 }], progress: 0,
     },
   ];
 }
