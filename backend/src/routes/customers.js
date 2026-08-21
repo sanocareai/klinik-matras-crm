@@ -602,56 +602,71 @@ customerRouter.post("/:id/orders", async (req, res) => {
 
   const cat = category || "LAYANAN";
 
-  // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
-  // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
-  const orderNumber = await generateOrderNumber(cat);
+  try {
+    // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
+    // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
+    const orderNumber = await generateOrderNumber(cat);
 
-  // Order + unit-unitnya lahir dalam SATU transaksi. Order tanpa unit persis
-  // keadaan yang sedang diperbaiki di sini; jangan biarkan kegagalan separuh
-  // jalan membuatnya lagi.
-  const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.order.create({
-      data: {
-        customerId: req.params.id,
-        value: 0,
-        quantity: quantity ? Number(quantity) : 1,
-        status: status || "PENDING",
-        category: cat,
-        orderNumber,
-        notes,
-        ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
-        ...(promoId && { promoId }),
-        ...(deliveryCity && { deliveryCity }),
-        ...(deliveryAddress && { deliveryAddress }),
-        ...(healthStatus && {
-          healthStatus,
-          complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
-        }),
-        ...(ongkir !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
-        ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
-        ...(pickupEstimate && { pickupEstimate }),
-        ...(pickupConfirmedDate && { pickupConfirmedDate }),
-        ...(deliveryEstimate && { deliveryEstimate }),
-        ...(deliveryConfirmedDate && { deliveryConfirmedDate }),
-        ...(locationUrl && { locationUrl }),
-      },
-      include: { items: true },
+    // Order + unit-unitnya lahir dalam SATU transaksi. Order tanpa unit persis
+    // keadaan yang sedang diperbaiki di sini; jangan biarkan kegagalan separuh
+    // jalan membuatnya lagi.
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          customerId: req.params.id,
+          value: 0,
+          quantity: quantity ? Number(quantity) : 1,
+          status: status || "PENDING",
+          category: cat,
+          orderNumber,
+          notes,
+          ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
+          ...(promoId && { promoId }),
+          ...(deliveryCity && { deliveryCity }),
+          ...(deliveryAddress && { deliveryAddress }),
+          ...(healthStatus && {
+            healthStatus,
+            complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
+          }),
+          ...(ongkir !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
+          ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
+          ...(pickupEstimate && { pickupEstimate }),
+          // pickupConfirmedDate/deliveryConfirmedDate adalah kolom @db.Date —
+          // klien (mobile DateField.js, web <input type="date">) kirim string
+          // "YYYY-MM-DD" polos, yang DITOLAK Prisma ("premature end of input.
+          // Expected ISO-8601 DateTime") kalau dikirim apa adanya. new Date()
+          // mengubahnya jadi objek Date yang diterima Prisma. BUG NYATA
+          // (21 Agustus 2026): validation error ini tidak ketangkap di mana
+          // pun sampai ke process, dan karena tidak ada unhandledRejection
+          // handler di index.js, Node MENJATUHKAN SELURUH backend (bukan cuma
+          // gagal 1 request) — semua user kena 502 sampai Docker restart
+          // container. Lihat juga penambahan try/catch di sini dan pengaman
+          // proses di index.js.
+          ...(pickupConfirmedDate && { pickupConfirmedDate: new Date(pickupConfirmedDate) }),
+          ...(deliveryEstimate && { deliveryEstimate }),
+          ...(deliveryConfirmedDate && { deliveryConfirmedDate: new Date(deliveryConfirmedDate) }),
+          ...(locationUrl && { locationUrl }),
+        },
+        include: { items: true },
+      });
+
+      const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
+      if (jumlahUnit > 0) {
+        await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
+        await syncOrderStatus(tx, created.id);
+      }
+
+      return tx.order.findUnique({
+        where: { id: created.id },
+        include: { items: true, units: { orderBy: { seq: "asc" } } },
+      });
     });
 
-    const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
-    if (jumlahUnit > 0) {
-      await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
-      await syncOrderStatus(tx, created.id);
-    }
-
-    return tx.order.findUnique({
-      where: { id: created.id },
-      include: { items: true, units: { orderBy: { seq: "asc" } } },
-    });
-  });
-
-  await syncCustomerOrderAggregate(req.params.id);
-  res.status(201).json(order);
+    await syncCustomerOrderAggregate(req.params.id);
+    res.status(201).json(order);
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ error: err.message });
+  }
 });
 
 // Update status / notes / orderNumber order

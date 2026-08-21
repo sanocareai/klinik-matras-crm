@@ -67,6 +67,25 @@ mkdirSync(jobPhotosDir,  { recursive: true });
 mkdirSync(paymentProofsDir, { recursive: true });
 mkdirSync(scopeRevisionPhotosDir, { recursive: true });
 
+// Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
+// wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
+// Ini jaring untuk yang TERLEWAT: sebelum ini ditambahkan, error async yang
+// tidak ketangkap di mana pun (mis. PrismaClientValidationError dari
+// customers.js POST /:id/orders, 21 Agustus 2026 — kolom tanggal dikirim
+// "YYYY-MM-DD" polos, Prisma menolak) jadi unhandledRejection, dan sejak
+// Node 15 default-nya MEMATIKAN SELURUH PROSES untuk itu. Akibatnya SATU
+// order gagal simpan menjatuhkan backend buat SEMUA user (7 sales + webhook
+// WhatsApp) sampai Docker restart container — bukan cuma request itu yang
+// gagal. Log-and-continue di sini menukar "crash sekali dalam beberapa
+// detik downtime" jadi "request itu saja yang gagal", jauh lebih aman untuk
+// tim kecil tanpa on-call.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] tidak ketangkap di route manapun:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException] tidak ketangkap di route manapun:", err);
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -150,6 +169,17 @@ app.get("*", (req, res) => {
     return res.status(200).send("Backend jalan. Buka http://localhost:5173 untuk development.");
   }
   res.sendFile(indexFile);
+});
+
+// Jaring terakhir untuk route yang lupa try/catch tapi memanggil next(err) —
+// tanpa ini Express diam-diam menutup koneksi tanpa respons JSON. Prisma
+// error TIDAK otomatis lewat sini kecuali route memanggil next(err) secara
+// eksplisit; proteksi untuk yang benar-benar lolos ada di
+// unhandledRejection/uncaughtException di atas.
+app.use((err, req, res, next) => {
+  console.error("[error middleware]", err);
+  if (res.headersSent) return next(err);
+  res.status(err.statusCode || 500).json({ error: err.message || "Terjadi kesalahan di server" });
 });
 
 const PORT = process.env.PORT || 4000;

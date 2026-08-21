@@ -188,10 +188,13 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(ongkir              !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
           ...(ongkirKlaimGaransi  !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
           ...(pickupEstimate      !== undefined && { pickupEstimate: pickupEstimate || null }),
-          ...(pickupConfirmedDate !== undefined && { pickupConfirmedDate: pickupConfirmedDate || null }),
+          // "YYYY-MM-DD" polos ditolak Prisma untuk kolom @db.Date — lihat
+          // catatan panjang di customers.js POST /:id/orders (bug nyata
+          // 21 Agustus 2026 yang menjatuhkan seluruh backend).
+          ...(pickupConfirmedDate !== undefined && { pickupConfirmedDate: pickupConfirmedDate ? new Date(pickupConfirmedDate) : null }),
           // D-033: pasangan pengiriman dari pickupEstimate/pickupConfirmedDate.
           ...(deliveryEstimate      !== undefined && { deliveryEstimate: deliveryEstimate || null }),
-          ...(deliveryConfirmedDate !== undefined && { deliveryConfirmedDate: deliveryConfirmedDate || null }),
+          ...(deliveryConfirmedDate !== undefined && { deliveryConfirmedDate: deliveryConfirmedDate ? new Date(deliveryConfirmedDate) : null }),
           ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
         },
         include: {
