@@ -312,7 +312,30 @@ export default function Layout({ user, onLogout, children }) {
   // Growth. Baru kalau BUKAN command center, pakai divisionFromPath (halaman
   // kerja asli: /inbox, /bengkel, /gudang, dst).
   const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
-  const division = DIVISIONS[divisionKey || "growth"];
+  const divisionBase = DIVISIONS[divisionKey || "growth"];
+
+  // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
+  // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
+  // POD, Kendala, Retur, Laporan) butuh JOB_READ/ROUTE_WRITE dan akan gagal
+  // memuat untuk mereka. Menampilkan menu yang pasti buntu membuat sistem
+  // terbaca rusak di mata driver — persis alasan yang sudah ditulis di App.jsx
+  // kenapa route placeholder dibuat, dibalik ke sisi navigasi.
+  //
+  // Ditemukan 21 Agustus 2026 saat uji kesiapan divisi dengan akun driver
+  // sungguhan (sebelumnya semua pengujian pakai admin, yang punya semua hak).
+  const division = React.useMemo(() => {
+    const roles = rolesOf(user);
+    const driverOnly = roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    if (divisionKey !== "armada" || !driverOnly) return divisionBase;
+    return {
+      ...divisionBase,
+      sections: [{
+        section: "TUGAS SAYA",
+        items: divisionBase.sections[0].items.filter((i) => i.to === "/armada/jobs")
+          .map((i) => ({ ...i, label: "Job Saya" })),
+      }],
+    };
+  }, [divisionBase, divisionKey, user]);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }

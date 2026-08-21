@@ -108,9 +108,12 @@ export default function ArmadaJobs() {
     return () => clearTimeout(t);
   }, [cari]);
 
+  // Daftar driver cuma dipakai filter dispatcher — GET /armada/drivers butuh
+  // JOB_WRITE, jadi untuk driver ini pasti 403 (lihat isDriverOnlyUser).
   useEffect(() => {
+    if (driverOnly) return;
     api.getDrivers().then(setDrivers).catch(() => {});
-  }, []);
+  }, [driverOnly]);
 
   const load = useCallback(async () => {
     setLoading(true);
