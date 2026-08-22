@@ -121,6 +121,14 @@ export default function ArmadaDashboard() {
               onChange={(e) => setTanggal(e.target.value)}
               className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent"
             />
+            {/* Shortcut ke tab Armada (bukan cuma Jadwal & Penugasan) — dispatcher
+                yang baru sadar kendaraannya belum lengkap (lihat panel "Butuh
+                Perhatian" di bawah) sebelumnya harus buka Driver & Armada lalu
+                klik tab Armada sendiri. ?tab=armada dibaca ArmadaResources.jsx
+                supaya langsung mendarat di tab yang benar. */}
+            <Button size="sm" variant="ghost" onClick={() => navigate("/armada/resources?tab=armada&action=tambah")}>
+              <TruckIcon size={14} /> Tambah Kendaraan
+            </Button>
             <Button size="sm" onClick={() => navigate("/armada/jobs")}>
               <Plus size={14} /> Buat Job
             </Button>

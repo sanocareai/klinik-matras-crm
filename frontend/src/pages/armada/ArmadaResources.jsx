@@ -790,7 +790,10 @@ function VehicleTab() {
   const [vehicles, setVehicles] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [formOpen, setFormOpen] = useState(false);
+  // ?action=tambah (dari shortcut "Tambah Kendaraan" di Dashboard) langsung
+  // membuka modal-nya — supaya benar-benar SATU klik dari luar halaman ini,
+  // bukan cuma mendarat di tab yang benar lalu masih harus klik lagi.
+  const [formOpen, setFormOpen] = useState(() => new URLSearchParams(window.location.search).get("action") === "tambah");
   const [detailVehicle, setDetailVehicle] = useState(null);
 
   const load = useCallback(() => {
@@ -982,8 +985,17 @@ function RingkasanBiayaTab() {
   );
 }
 
+// Tab awal dari ?tab= di URL — dipakai shortcut dari Dashboard ("+ Tambah
+// Kendaraan" langsung ke tab Armada, bukan mendarat di tab Driver lalu
+// harus klik lagi). Kalau nilainya tidak dikenal, jatuh ke default "driver"
+// biar tidak pernah menampilkan halaman kosong gara-gara query asing.
+function tabAwalDariUrl() {
+  const t = new URLSearchParams(window.location.search).get("tab");
+  return TABS.some((x) => x.key === t) ? t : "driver";
+}
+
 export default function ArmadaResources() {
-  const [tab, setTab] = useState("driver");
+  const [tab, setTab] = useState(tabAwalDariUrl);
 
   return (
     <PageContainer>
