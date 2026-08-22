@@ -14,9 +14,16 @@
 // production ada di kisaran 800-900 percakapan (kondisi awal, bukan kasus
 // langka) — notifikasi PER-LEAD di volume itu akan membanjiri WA admin setiap
 // siklus cron. Sebagai gantinya kirim SATU ringkasan (jumlah + beberapa
-// contoh tertua) dengan cooldown-nya sendiri. Kondisi 2 & eskalasi TETAP
-// per-conversation (sengaja) karena target notifikasinya beda-beda per sales
-// pemegang, jadi volume per sales jauh lebih kecil dan relevan personal.
+// contoh tertua) dengan cooldown-nya sendiri.
+//
+// CHANNEL (revisi 23 Agustus 2026 — grup WA "SANO SALES" sempat dicoba lalu
+// diminta dihentikan tim): SEMUA notifikasi kirim ke NOMOR PRIBADI, bukan
+// grup. Eskalasi 2x SLA dikelompokkan PER PENERIMA (1 pesan konsolidasi per
+// sales pemegang, bukan 1 grup/1 admin) — kalau pemegangnya jelas & nomornya
+// ada di config.salesPhoneDirectory, kirim langsung ke sales itu; kalau
+// belum di-assign atau nomornya tidak terdaftar, jatuh ke config.adminName
+// (default "Novi"). Lead-unassigned selalu ke admin (tidak ada pemegang
+// untuk dikelompokkan).
 //
 // KONFIGURASI: dibaca dari data/settings.json key "slaAlert" (lihat
 // DEFAULT_CONFIG di bawah untuk nilai default) — admin bisa ubah lewat
@@ -35,15 +42,10 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { sendText, getDefaultOpsSession, isPlaceholderGroupJid } from "./wahaClient.js";
+import { sendText, getDefaultOpsSession } from "./wahaClient.js";
 import { sendEmailAlert } from "./emailAlert.js";
 import { sendPushToUser } from "./expoPush.js";
 import { formatWIB, isWorkingHoursWIB } from "../utils/wib.js";
-// Reuse route helpers (sendWithSessionFallback/resolveSendTarget) — pola yang
-// SAMA sudah dipakai routes/orders.js "Kirim Ringkasan ke Grup WA" (D-032),
-// jadi import route→service ini bukan pola baru, cuma arah beda (service yang
-// import dari route, bukan sesama route).
-import { sendWithSessionFallback, resolveSendTarget } from "../routes/conversations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
@@ -64,7 +66,8 @@ const DEFAULT_CONFIG = {
   escalationMultiplier: 2, // eskalasi setelah 2x SLA
   reNotifyCooldownMinutes: 30, // jangan notif ulang breach yang sama dalam window ini
   maxFrtNotificationsPerCycle: 20, // batas push/notif individual per siklus — sisanya diproses siklus berikutnya (oldest-first)
-  salesPhoneDirectory: [], // [{ name: "Ervina", phone: "6285710834203" }, ...] — dipakai untuk @mention di pesan eskalasi
+  salesPhoneDirectory: [], // [{ name: "Ervina", phone: "6285710834203" }, ...] — resolusi nomor WA sales dari nama
+  adminName: "Novi", // penerima default notifikasi admin (lead unassigned, eskalasi tanpa pemegang) — harus ada di salesPhoneDirectory
 };
 
 function readSlaConfig() {
@@ -78,39 +81,35 @@ function readSlaConfig() {
   return { ...DEFAULT_CONFIG, ...stored };
 }
 
-// ── Notifikasi dasar ─────────────────────────────────────────────────────
-// Urutan channel: (1) grup WA "SANO SALES" (sama grup yang sudah dipakai
-// order.js "Kirim Ringkasan ke Grup WA", D-032) — owner/leader
-// produksi/admin yang jadi member grup ini semua ikut lihat, bukan cuma 1
-// nomor pribadi; (2) fallback nomor admin individual (BACKUP_NOTIFY_PHONE,
-// pola sama routes/internal.js) kalau grup belum diatur/gagal kirim;
-// (3) fallback email kalau dua-duanya gagal.
-async function notifyAdmin(pesan, label, mentions = []) {
-  const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isSalesGroup: true } })
-    .catch(() => null);
-  const groupTarget = group ? resolveSendTarget(group) : null;
+// Cari nomor sales dari config.salesPhoneDirectory (data/settings.json) —
+// matching case-insensitive by name karena User model TIDAK punya kolom
+// phone (lihat CLAUDE.md), jadi mapping ini disimpan terpisah, admin-editable
+// tanpa migration. Balikin null kalau tidak ketemu.
+function resolveSalesPhone(name, directory) {
+  if (!name || !Array.isArray(directory)) return null;
+  const match = directory.find((d) => d.name?.toLowerCase() === name.toLowerCase());
+  return match?.phone || null;
+}
 
-  if (groupTarget && !isPlaceholderGroupJid(groupTarget)) {
-    try {
-      await sendWithSessionFallback(group, (session) =>
-        sendText(groupTarget, pesan, null, session, mentions.length ? mentions : null)
-      );
-      console.log(`[sla-alert] Notifikasi (${label}) terkirim ke grup SANO SALES`);
-      return;
-    } catch (err) {
-      console.warn(`[sla-alert] Gagal kirim ke grup SANO SALES (${label}), coba fallback nomor admin:`, err.message);
-    }
-  }
-
-  if (!ADMIN_PHONE) {
-    console.warn(`[sla-alert] Grup SANO SALES tidak tersedia & BACKUP_NOTIFY_PHONE belum diisi — skip notifikasi WA (${label})`);
+// ── Notifikasi WA individual (BUKAN grup — keputusan tim 23 Agustus 2026:
+// grup WA dicoba sebentar lalu diminta dihentikan) ──────────────────────────
+// Kirim ke NOMOR PRIBADI satu orang. Dipakai untuk 2 kasus:
+//   (a) admin/leader (default: Novi, config.adminName) — lead unassigned,
+//       eskalasi tanpa pemegang jelas / nomornya tidak terdaftar
+//   (b) sales pemegang percakapan langsung — eskalasi yang JELAS pemegangnya
+// Fallback: BACKUP_NOTIFY_PHONE (.env) kalau nomor dari directory tidak ada,
+// lalu email — pola sama seperti routes/internal.js waha-alert.
+async function notifyPhone(phone, pesan, label) {
+  const target = phone || ADMIN_PHONE;
+  if (!target) {
+    console.warn(`[sla-alert] Tidak ada nomor tujuan (directory kosong & BACKUP_NOTIFY_PHONE belum diisi) — skip WA (${label})`);
   } else {
     try {
-      await sendText(ADMIN_PHONE, pesan, null, getDefaultOpsSession());
-      console.log(`[sla-alert] Notifikasi WA (${label}) terkirim ke`, ADMIN_PHONE);
+      await sendText(target, pesan, null, getDefaultOpsSession());
+      console.log(`[sla-alert] Notifikasi WA (${label}) terkirim ke`, target);
       return;
     } catch (err) {
-      console.warn(`[sla-alert] Gagal kirim WA (${label}), coba email fallback:`, err.message);
+      console.warn(`[sla-alert] Gagal kirim WA (${label}) ke ${target}, coba email fallback:`, err.message);
     }
   }
 
@@ -122,26 +121,23 @@ async function notifyAdmin(pesan, label, mentions = []) {
   }
 }
 
-// Cari nomor sales dari config.salesPhoneDirectory (data/settings.json) —
-// matching case-insensitive by name karena User model TIDAK punya kolom
-// phone (lihat CLAUDE.md), jadi mapping ini disimpan terpisah, admin-editable
-// tanpa migration. Balikin null kalau tidak ketemu (pesan tetap jalan tanpa
-// mention, bukan error).
-function resolveSalesPhone(name, directory) {
-  if (!name || !Array.isArray(directory)) return null;
-  const match = directory.find((d) => d.name?.toLowerCase() === name.toLowerCase());
-  return match?.phone || null;
+// Kirim ke admin/leader default (config.adminName, default "Novi").
+async function notifyAdmin(config, pesan, label) {
+  const adminPhone = resolveSalesPhone(config.adminName, config.salesPhoneDirectory);
+  await notifyPhone(adminPhone, pesan, label);
 }
 
 // ── State dedup in-memory — lihat catatan header soal batasan restart ───────
 const unassignedAlertState = { lastNotifiedAt: 0 };
-// Eskalasi 2x SLA DIAGREGASI (bukan per-conversation) — alasan SAMA dengan
-// unassignedAlertState di atas: begitu backlog nyata di-deploy pertama kali,
-// production langsung punya 300+ conversation yang sudah lewat 2x SLA
-// SEKALIGUS (diverifikasi 22 Agustus 2026 — 363 escalation attempt dalam 1
-// siklus cron). Notifikasi PER-conversation di volume itu akan membanjiri WA
-// admin/supervisor persis seperti kondisi 1. Ringkasan + cooldown-nya sendiri.
-const escalationAlertState = { lastNotifiedAt: 0 };
+// Eskalasi 2x SLA DIAGREGASI PER PENERIMA (bukan per-conversation) — alasan:
+// begitu backlog nyata di-deploy pertama kali, production langsung punya
+// 300+ conversation yang sudah lewat 2x SLA SEKALIGUS (diverifikasi 22
+// Agustus 2026 — 363 escalation attempt dalam 1 siklus cron kalau dikirim
+// per-conversation). Sekarang dikelompokkan per SALES PEMEGANG — 1 sales
+// dengan 40 percakapan overdue dapat 1 pesan konsolidasi, bukan 40. Yang
+// tidak jelas pemegangnya (belum di-assign / nomornya tidak ada di
+// directory) masuk ke bucket "ADMIN" (Novi).
+const escalationRecipientState = new Map(); // key: userId | "ADMIN" -> lastNotifiedAt
 const frtNotified = new Map(); // conversationId -> { notifiedAt }
 
 let cycleRunning = false; // cegah tumpang tindih siklus kalau job lambat
@@ -186,7 +182,7 @@ async function checkUnassignedLeads(config, now) {
   ].filter(Boolean).join("\n");
 
   unassignedAlertState.lastNotifiedAt = now;
-  await notifyAdmin(pesan, "Lead Belum Di-assign");
+  await notifyAdmin(config, pesan, "Lead Belum Di-assign");
 }
 
 // ── Kondisi 2: pesan masuk belum dibalas (FRT) + eskalasi 2x SLA ───────────
@@ -222,7 +218,7 @@ async function checkUnansweredMessages(config, now) {
   const cooldownMs = config.reNotifyCooldownMinutes * 60_000;
 
   // Pisahkan dulu jadi 2 kelompok berdasarkan elapsed time — escalation
-  // (>=2x SLA) diagregasi jadi SATU notifikasi (lihat catatan escalationAlertState
+  // (>=2x SLA) diagregasi PER PENERIMA (lihat catatan escalationRecipientState
   // di atas), frt (1x-2x SLA) tetap per-conversation TAPI dibatasi jumlahnya per
   // siklus (maxFrtNotificationsPerCycle) supaya backlog awal yang besar tidak
   // membanjiri sales/admin sekaligus — sisanya diproses siklus-siklus berikutnya,
@@ -241,50 +237,78 @@ async function checkUnansweredMessages(config, now) {
     else frtBreaches.push(entry);
   }
 
-  // ── Eskalasi (agregat) ──────────────────────────────────────────────────
-  if (escalationBreaches.length && now - escalationAlertState.lastNotifiedAt >= cooldownMs) {
-    escalationBreaches.sort((a, b) => b.elapsedMinutes - a.elapsedMinutes); // paling lama nunggu duluan
-    const top5 = escalationBreaches.slice(0, 5);
-    const contohIds = top5.map((r) => r.customerId);
-    const assignedIds = [...new Set(top5.map((r) => r.assignedToId).filter(Boolean))];
-
-    const [customers, assignedUsers] = await Promise.all([
-      prisma.customer.findMany({ where: { id: { in: contohIds } }, select: { id: true, name: true, phone: true } }),
-      assignedIds.length
-        ? prisma.user.findMany({ where: { id: { in: assignedIds } }, select: { id: true, name: true } })
-        : Promise.resolve([]),
-    ]);
-    const customerMap = new Map(customers.map((c) => [c.id, c]));
+  // ── Eskalasi (agregat PER PENERIMA) ─────────────────────────────────────
+  if (escalationBreaches.length) {
+    const assignedIds = [...new Set(escalationBreaches.map((r) => r.assignedToId).filter(Boolean))];
+    const assignedUsers = assignedIds.length
+      ? await prisma.user.findMany({ where: { id: { in: assignedIds } }, select: { id: true, name: true } })
+      : [];
     const userMap = new Map(assignedUsers.map((u) => [u.id, u]));
 
-    const mentions = [];
-    const contoh = top5.map((r) => {
-      const c = customerMap.get(r.customerId);
-      const nama = c?.name || c?.phone || "(tanpa nama)";
-      const menit = Math.floor(r.elapsedMinutes);
+    // Kelompokkan per penerima: sales pemegang (kalau nomornya ada di
+    // directory) ATAU bucket "ADMIN" (belum di-assign / nomor tidak terdaftar).
+    const groups = new Map(); // key -> { phone, label, items: [] }
+    for (const r of escalationBreaches) {
       const sales = r.assignedToId ? userMap.get(r.assignedToId) : null;
-      if (!sales) return `- ${nama} — ${menit} menit (belum di-assign)`;
-
-      const phone = resolveSalesPhone(sales.name, config.salesPhoneDirectory);
-      if (phone) {
-        mentions.push(`${phone}@c.us`);
-        return `- ${nama} — ${menit} menit — Sales: @${phone} (${sales.name})`;
+      const phone = sales ? resolveSalesPhone(sales.name, config.salesPhoneDirectory) : null;
+      const key = phone ? r.assignedToId : "ADMIN";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          phone: phone || null,
+          label: phone ? sales.name : config.adminName,
+          items: [],
+        });
       }
-      return `- ${nama} — ${menit} menit — Sales: ${sales.name}`;
+      groups.get(key).items.push(r);
+    }
+
+    const contohIds = [...new Set(escalationBreaches.map((r) => r.customerId))];
+    const customers = await prisma.customer.findMany({
+      where: { id: { in: contohIds } },
+      select: { id: true, name: true, phone: true },
     });
-    const sisa = escalationBreaches.length - contoh.length;
+    const customerMap = new Map(customers.map((c) => [c.id, c]));
 
-    const pesan = [
-      `🔴 *${escalationBreaches.length} Percakapan Eskalasi SLA* (>2x SLA, ${escalationMinutes} menit)`,
-      "",
-      ...contoh,
-      sisa > 0 ? `...dan ${sisa} lainnya` : null,
-      "",
-      "Perlu penanganan supervisor segera — buka CRM > Inbox.",
-    ].filter(Boolean).join("\n");
+    for (const [key, group] of groups) {
+      const lastNotifiedAt = escalationRecipientState.get(key) || 0;
+      if (now - lastNotifiedAt < cooldownMs) continue;
 
-    escalationAlertState.lastNotifiedAt = now;
-    await notifyAdmin(pesan, "Eskalasi SLA Belum Dibalas", [...new Set(mentions)]);
+      group.items.sort((a, b) => b.elapsedMinutes - a.elapsedMinutes); // paling lama nunggu duluan
+      const top5 = group.items.slice(0, 5);
+      const contoh = top5.map((r) => {
+        const c = customerMap.get(r.customerId);
+        const nama = c?.name || c?.phone || "(tanpa nama)";
+        return `- ${nama} — ${Math.floor(r.elapsedMinutes)} menit`;
+      });
+      const sisa = group.items.length - contoh.length;
+
+      const isPersonal = key !== "ADMIN";
+      const pesan = [
+        isPersonal
+          ? `🔴 *Eskalasi SLA — ${group.items.length} Percakapan Anda Belum Dibalas* (>2x SLA, ${escalationMinutes} menit)`
+          : `🔴 *${group.items.length} Percakapan Eskalasi SLA* (>2x SLA, ${escalationMinutes} menit) — ${group.label}`,
+        "",
+        ...contoh,
+        sisa > 0 ? `...dan ${sisa} lainnya` : null,
+        "",
+        isPersonal
+          ? "Segera tindak lanjuti atau minta bantuan leader."
+          : "Perlu penanganan supervisor segera — buka CRM > Inbox.",
+      ].filter(Boolean).join("\n");
+
+      escalationRecipientState.set(key, now);
+      if (isPersonal) {
+        await notifyPhone(group.phone, pesan, "Eskalasi SLA Belum Dibalas");
+      } else {
+        await notifyAdmin(config, pesan, "Eskalasi SLA Belum Dibalas");
+      }
+    }
+
+    // Bersihkan state penerima yang sudah tidak punya breach lagi.
+    const activeKeys = new Set(groups.keys());
+    for (const key of escalationRecipientState.keys()) {
+      if (!activeKeys.has(key)) escalationRecipientState.delete(key);
+    }
   }
 
   // ── FRT breach level pertama (per-conversation, dibatasi per siklus) ────
@@ -316,7 +340,7 @@ async function checkUnansweredMessages(config, now) {
       // Belum ada pemegang — fallback ke channel umum (admin), konsisten
       // dengan acceptance criteria "atau ke channel umum kalau belum ada
       // pemegang".
-      await notifyAdmin(`⚠️ *${title}*\n\n${body}\n\nConversation belum di-assign ke sales manapun.`, title);
+      await notifyAdmin(config, `⚠️ *${title}*\n\n${body}\n\nConversation belum di-assign ke sales manapun.`, title);
     }
 
     state.notifiedAt = now;
