@@ -35,10 +35,15 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
-import { sendText, getDefaultOpsSession } from "./wahaClient.js";
+import { sendText, getDefaultOpsSession, isPlaceholderGroupJid } from "./wahaClient.js";
 import { sendEmailAlert } from "./emailAlert.js";
 import { sendPushToUser } from "./expoPush.js";
 import { formatWIB, isWorkingHoursWIB } from "../utils/wib.js";
+// Reuse route helpers (sendWithSessionFallback/resolveSendTarget) — pola yang
+// SAMA sudah dipakai routes/orders.js "Kirim Ringkasan ke Grup WA" (D-032),
+// jadi import route→service ini bukan pola baru, cuma arah beda (service yang
+// import dari route, bukan sesama route).
+import { sendWithSessionFallback, resolveSendTarget } from "../routes/conversations.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
@@ -59,6 +64,7 @@ const DEFAULT_CONFIG = {
   escalationMultiplier: 2, // eskalasi setelah 2x SLA
   reNotifyCooldownMinutes: 30, // jangan notif ulang breach yang sama dalam window ini
   maxFrtNotificationsPerCycle: 20, // batas push/notif individual per siklus — sisanya diproses siklus berikutnya (oldest-first)
+  salesPhoneDirectory: [], // [{ name: "Ervina", phone: "6285710834203" }, ...] — dipakai untuk @mention di pesan eskalasi
 };
 
 function readSlaConfig() {
@@ -72,11 +78,32 @@ function readSlaConfig() {
   return { ...DEFAULT_CONFIG, ...stored };
 }
 
-// ── Notifikasi dasar (WA admin dengan fallback email — pola sama persis
-// dengan routes/internal.js waha-alert) ─────────────────────────────────────
-async function notifyAdmin(pesan, label) {
+// ── Notifikasi dasar ─────────────────────────────────────────────────────
+// Urutan channel: (1) grup WA "SANO SALES" (sama grup yang sudah dipakai
+// order.js "Kirim Ringkasan ke Grup WA", D-032) — owner/leader
+// produksi/admin yang jadi member grup ini semua ikut lihat, bukan cuma 1
+// nomor pribadi; (2) fallback nomor admin individual (BACKUP_NOTIFY_PHONE,
+// pola sama routes/internal.js) kalau grup belum diatur/gagal kirim;
+// (3) fallback email kalau dua-duanya gagal.
+async function notifyAdmin(pesan, label, mentions = []) {
+  const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isSalesGroup: true } })
+    .catch(() => null);
+  const groupTarget = group ? resolveSendTarget(group) : null;
+
+  if (groupTarget && !isPlaceholderGroupJid(groupTarget)) {
+    try {
+      await sendWithSessionFallback(group, (session) =>
+        sendText(groupTarget, pesan, null, session, mentions.length ? mentions : null)
+      );
+      console.log(`[sla-alert] Notifikasi (${label}) terkirim ke grup SANO SALES`);
+      return;
+    } catch (err) {
+      console.warn(`[sla-alert] Gagal kirim ke grup SANO SALES (${label}), coba fallback nomor admin:`, err.message);
+    }
+  }
+
   if (!ADMIN_PHONE) {
-    console.warn(`[sla-alert] BACKUP_NOTIFY_PHONE belum diisi — skip notifikasi WA (${label})`);
+    console.warn(`[sla-alert] Grup SANO SALES tidak tersedia & BACKUP_NOTIFY_PHONE belum diisi — skip notifikasi WA (${label})`);
   } else {
     try {
       await sendText(ADMIN_PHONE, pesan, null, getDefaultOpsSession());
@@ -93,6 +120,17 @@ async function notifyAdmin(pesan, label) {
   } catch (err) {
     console.warn(`[sla-alert] Email fallback juga gagal (${label}):`, err.message);
   }
+}
+
+// Cari nomor sales dari config.salesPhoneDirectory (data/settings.json) —
+// matching case-insensitive by name karena User model TIDAK punya kolom
+// phone (lihat CLAUDE.md), jadi mapping ini disimpan terpisah, admin-editable
+// tanpa migration. Balikin null kalau tidak ketemu (pesan tetap jalan tanpa
+// mention, bukan error).
+function resolveSalesPhone(name, directory) {
+  if (!name || !Array.isArray(directory)) return null;
+  const match = directory.find((d) => d.name?.toLowerCase() === name.toLowerCase());
+  return match?.phone || null;
 }
 
 // ── State dedup in-memory — lihat catatan header soal batasan restart ───────
@@ -206,16 +244,33 @@ async function checkUnansweredMessages(config, now) {
   // ── Eskalasi (agregat) ──────────────────────────────────────────────────
   if (escalationBreaches.length && now - escalationAlertState.lastNotifiedAt >= cooldownMs) {
     escalationBreaches.sort((a, b) => b.elapsedMinutes - a.elapsedMinutes); // paling lama nunggu duluan
-    const contohIds = escalationBreaches.slice(0, 5).map((r) => r.customerId);
-    const customers = await prisma.customer.findMany({
-      where: { id: { in: contohIds } },
-      select: { id: true, name: true, phone: true },
-    });
+    const top5 = escalationBreaches.slice(0, 5);
+    const contohIds = top5.map((r) => r.customerId);
+    const assignedIds = [...new Set(top5.map((r) => r.assignedToId).filter(Boolean))];
+
+    const [customers, assignedUsers] = await Promise.all([
+      prisma.customer.findMany({ where: { id: { in: contohIds } }, select: { id: true, name: true, phone: true } }),
+      assignedIds.length
+        ? prisma.user.findMany({ where: { id: { in: assignedIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+    ]);
     const customerMap = new Map(customers.map((c) => [c.id, c]));
-    const contoh = escalationBreaches.slice(0, 5).map((r) => {
+    const userMap = new Map(assignedUsers.map((u) => [u.id, u]));
+
+    const mentions = [];
+    const contoh = top5.map((r) => {
       const c = customerMap.get(r.customerId);
       const nama = c?.name || c?.phone || "(tanpa nama)";
-      return `- ${nama} — ${Math.floor(r.elapsedMinutes)} menit`;
+      const menit = Math.floor(r.elapsedMinutes);
+      const sales = r.assignedToId ? userMap.get(r.assignedToId) : null;
+      if (!sales) return `- ${nama} — ${menit} menit (belum di-assign)`;
+
+      const phone = resolveSalesPhone(sales.name, config.salesPhoneDirectory);
+      if (phone) {
+        mentions.push(`${phone}@c.us`);
+        return `- ${nama} — ${menit} menit — Sales: @${phone} (${sales.name})`;
+      }
+      return `- ${nama} — ${menit} menit — Sales: ${sales.name}`;
     });
     const sisa = escalationBreaches.length - contoh.length;
 
@@ -229,7 +284,7 @@ async function checkUnansweredMessages(config, now) {
     ].filter(Boolean).join("\n");
 
     escalationAlertState.lastNotifiedAt = now;
-    await notifyAdmin(pesan, "Eskalasi SLA Belum Dibalas");
+    await notifyAdmin(pesan, "Eskalasi SLA Belum Dibalas", [...new Set(mentions)]);
   }
 
   // ── FRT breach level pertama (per-conversation, dibatasi per siklus) ────

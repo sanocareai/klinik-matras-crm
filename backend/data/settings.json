@@ -20,6 +20,14 @@
     "workingHourEnd": 17,
     "escalationMultiplier": 2,
     "reNotifyCooldownMinutes": 30,
-    "maxFrtNotificationsPerCycle": 20
+    "maxFrtNotificationsPerCycle": 20,
+    "salesPhoneDirectory": [
+      { "name": "Kiki", "phone": "6281281745422" },
+      { "name": "Rifki", "phone": "6285891624839" },
+      { "name": "Risel", "phone": "6287781861218" },
+      { "name": "Fadlan", "phone": "628881996001" },
+      { "name": "Ervina", "phone": "6285710834203" },
+      { "name": "Novi", "phone": "6285975004433" }
+    ]
   }
 }
