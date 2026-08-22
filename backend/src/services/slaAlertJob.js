@@ -58,6 +58,7 @@ const DEFAULT_CONFIG = {
   workingHourEnd: 17, // WIB, eksklusif
   escalationMultiplier: 2, // eskalasi setelah 2x SLA
   reNotifyCooldownMinutes: 30, // jangan notif ulang breach yang sama dalam window ini
+  maxFrtNotificationsPerCycle: 20, // batas push/notif individual per siklus — sisanya diproses siklus berikutnya (oldest-first)
 };
 
 function readSlaConfig() {
@@ -96,7 +97,14 @@ async function notifyAdmin(pesan, label) {
 
 // ── State dedup in-memory — lihat catatan header soal batasan restart ───────
 const unassignedAlertState = { lastNotifiedAt: 0 };
-const frtNotified = new Map(); // conversationId -> { notifiedAt, escalatedAt }
+// Eskalasi 2x SLA DIAGREGASI (bukan per-conversation) — alasan SAMA dengan
+// unassignedAlertState di atas: begitu backlog nyata di-deploy pertama kali,
+// production langsung punya 300+ conversation yang sudah lewat 2x SLA
+// SEKALIGUS (diverifikasi 22 Agustus 2026 — 363 escalation attempt dalam 1
+// siklus cron). Notifikasi PER-conversation di volume itu akan membanjiri WA
+// admin/supervisor persis seperti kondisi 1. Ringkasan + cooldown-nya sendiri.
+const escalationAlertState = { lastNotifiedAt: 0 };
+const frtNotified = new Map(); // conversationId -> { notifiedAt }
 
 let cycleRunning = false; // cegah tumpang tindih siklus kalau job lambat
 
@@ -175,57 +183,90 @@ async function checkUnansweredMessages(config, now) {
   const escalationMinutes = slaMinutes * config.escalationMultiplier;
   const cooldownMs = config.reNotifyCooldownMinutes * 60_000;
 
+  // Pisahkan dulu jadi 2 kelompok berdasarkan elapsed time — escalation
+  // (>=2x SLA) diagregasi jadi SATU notifikasi (lihat catatan escalationAlertState
+  // di atas), frt (1x-2x SLA) tetap per-conversation TAPI dibatasi jumlahnya per
+  // siklus (maxFrtNotificationsPerCycle) supaya backlog awal yang besar tidak
+  // membanjiri sales/admin sekaligus — sisanya diproses siklus-siklus berikutnya,
+  // diprioritaskan yang PALING LAMA menunggu (oldest-first).
   const stillBreaching = new Set();
+  const escalationBreaches = [];
+  const frtBreaches = [];
 
   for (const row of rows) {
     const elapsedMinutes = (now - new Date(row.lastInboundAt).getTime()) / 60_000;
     if (elapsedMinutes < slaMinutes) continue; // belum breach
 
     stillBreaching.add(row.conversationId);
-    const state = frtNotified.get(row.conversationId) || { notifiedAt: 0, escalatedAt: 0 };
+    const entry = { ...row, elapsedMinutes };
+    if (elapsedMinutes >= escalationMinutes) escalationBreaches.push(entry);
+    else frtBreaches.push(entry);
+  }
 
-    const shouldEscalate = elapsedMinutes >= escalationMinutes && now - state.escalatedAt >= cooldownMs;
-    const shouldNotify = !shouldEscalate && now - state.notifiedAt >= cooldownMs;
+  // ── Eskalasi (agregat) ──────────────────────────────────────────────────
+  if (escalationBreaches.length && now - escalationAlertState.lastNotifiedAt >= cooldownMs) {
+    escalationBreaches.sort((a, b) => b.elapsedMinutes - a.elapsedMinutes); // paling lama nunggu duluan
+    const contohIds = escalationBreaches.slice(0, 5).map((r) => r.customerId);
+    const customers = await prisma.customer.findMany({
+      where: { id: { in: contohIds } },
+      select: { id: true, name: true, phone: true },
+    });
+    const customerMap = new Map(customers.map((c) => [c.id, c]));
+    const contoh = escalationBreaches.slice(0, 5).map((r) => {
+      const c = customerMap.get(r.customerId);
+      const nama = c?.name || c?.phone || "(tanpa nama)";
+      return `- ${nama} — ${Math.floor(r.elapsedMinutes)} menit`;
+    });
+    const sisa = escalationBreaches.length - contoh.length;
 
-    if (!shouldEscalate && !shouldNotify) continue;
+    const pesan = [
+      `🔴 *${escalationBreaches.length} Percakapan Eskalasi SLA* (>2x SLA, ${escalationMinutes} menit)`,
+      "",
+      ...contoh,
+      sisa > 0 ? `...dan ${sisa} lainnya` : null,
+      "",
+      "Perlu penanganan supervisor segera — buka CRM > Inbox.",
+    ].filter(Boolean).join("\n");
+
+    escalationAlertState.lastNotifiedAt = now;
+    await notifyAdmin(pesan, "Eskalasi SLA Belum Dibalas");
+  }
+
+  // ── FRT breach level pertama (per-conversation, dibatasi per siklus) ────
+  frtBreaches.sort((a, b) => b.elapsedMinutes - a.elapsedMinutes); // paling lama nunggu duluan
+  let sentThisCycle = 0;
+
+  for (const row of frtBreaches) {
+    if (sentThisCycle >= config.maxFrtNotificationsPerCycle) break; // sisanya siklus berikutnya
+
+    const state = frtNotified.get(row.conversationId) || { notifiedAt: 0 };
+    if (now - state.notifiedAt < cooldownMs) continue; // sudah dinotif baru-baru ini
 
     const customer = await prisma.customer.findUnique({
       where: { id: row.customerId },
       select: { name: true, phone: true },
     });
     const nama = customer?.name || customer?.phone || "(tanpa nama)";
-    const menit = Math.floor(elapsedMinutes);
+    const menit = Math.floor(row.elapsedMinutes);
+    const title = "SLA Belum Dibalas";
+    const body = `${nama} sudah menunggu ${menit} menit tanpa balasan.`;
 
-    if (shouldEscalate) {
-      const pesan = [
-        `🔴 *Eskalasi SLA — Belum Dibalas ${menit} Menit*`,
-        "",
-        `Pelanggan: ${nama}`,
-        `Sudah melewati 2x SLA (${slaMinutes} menit) tanpa balasan sales.`,
-        "",
-        "Perlu penanganan supervisor segera.",
-      ].join("\n");
-      await notifyAdmin(pesan, "Eskalasi SLA Belum Dibalas");
-      state.escalatedAt = now;
+    if (row.assignedToId) {
+      await sendPushToUser(row.assignedToId, {
+        title,
+        body,
+        data: { type: "sla_breach", conversationId: row.conversationId },
+      });
     } else {
-      const title = "SLA Belum Dibalas";
-      const body = `${nama} sudah menunggu ${menit} menit tanpa balasan.`;
-      if (row.assignedToId) {
-        await sendPushToUser(row.assignedToId, {
-          title,
-          body,
-          data: { type: "sla_breach", conversationId: row.conversationId },
-        });
-      } else {
-        // Belum ada pemegang — fallback ke channel umum (admin), konsisten
-        // dengan acceptance criteria "atau ke channel umum kalau belum ada
-        // pemegang".
-        await notifyAdmin(`⚠️ *${title}*\n\n${body}\n\nConversation belum di-assign ke sales manapun.`, title);
-      }
-      state.notifiedAt = now;
+      // Belum ada pemegang — fallback ke channel umum (admin), konsisten
+      // dengan acceptance criteria "atau ke channel umum kalau belum ada
+      // pemegang".
+      await notifyAdmin(`⚠️ *${title}*\n\n${body}\n\nConversation belum di-assign ke sales manapun.`, title);
     }
 
+    state.notifiedAt = now;
     frtNotified.set(row.conversationId, state);
+    sentThisCycle++;
   }
 
   // Bersihkan entri yang sudah tidak breach lagi (sudah dibalas sales) —

@@ -19,6 +19,7 @@
     "workingHourStart": 8,
     "workingHourEnd": 17,
     "escalationMultiplier": 2,
-    "reNotifyCooldownMinutes": 30
+    "reNotifyCooldownMinutes": 30,
+    "maxFrtNotificationsPerCycle": 20
   }
 }
