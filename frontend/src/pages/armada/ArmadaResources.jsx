@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info } from "lucide-react";
+import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2 } from "lucide-react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -205,9 +205,60 @@ function InfoTab({ vehicle, drivers, onSaved }) {
 }
 
 // ── Sub-tab BIAYA: BBM/tol/parkir/dst ────────────────────────────────────
+// ── Pemilih foto struk/nota — upload LANGSUNG saat file dipilih (bukan
+// nunggu form disubmit), balikin URL yang tinggal disisipkan ke
+// receiptUrl. Dipakai bareng di form Biaya & Servis — "dokumentasinya"
+// yang diminta eksplisit, dibuat sesederhana mungkin: 1 tombol, 1 file.
+function ReceiptPicker({ url, onChange }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // supaya memilih file YANG SAMA lagi tetap memicu onChange
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("receipt", file);
+      const { url: uploaded } = await api.uploadVehicleReceiptStandalone(fd);
+      onChange(uploaded);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {url && (
+        <a href={url} target="_blank" rel="noreferrer" className="block h-9 w-9 shrink-0 overflow-hidden rounded-btn border border-border">
+          <img src={url} alt="Struk" className="h-full w-full object-cover" />
+        </a>
+      )}
+      <label className={`flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-btn border border-dashed px-2.5 text-[11.5px] transition-colors ${uploading ? "border-border text-ink3" : "border-border text-ink2 hover:border-accent hover:text-accent"}`}>
+        {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+        {url ? "Ganti Foto" : "Foto Struk"}
+        <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
+      </label>
+      {url && (
+        <button type="button" onClick={() => onChange(null)} className="shrink-0 text-ink3 hover:text-red" title="Hapus foto">
+          <X size={14} />
+        </button>
+      )}
+      {error && <span className="text-[11px] text-red">{error}</span>}
+    </div>
+  );
+}
+
+const KOSONG_EXPENSE = { date: "", category: "BBM", amount: "", odometerKm: "", liters: "", driverId: "", receiptUrl: "", notes: "" };
+
 function BiayaTab({ vehicle, drivers }) {
   const [rows, setRows] = useState(null);
-  const [form, setForm] = useState({ date: "", category: "BBM", amount: "", odometerKm: "", liters: "", driverId: "", notes: "" });
+  const [form, setForm] = useState(KOSONG_EXPENSE);
+  const [editingId, setEditingId] = useState(null); // null = mode Tambah, terisi = mode Edit
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -216,23 +267,39 @@ function BiayaTab({ vehicle, drivers }) {
   }, [vehicle.id]);
   useEffect(() => { load(); }, [load]);
 
+  function mulaiEdit(r) {
+    setEditingId(r.id);
+    setForm({
+      date: r.date.slice(0, 10), category: r.category, amount: String(r.amount),
+      odometerKm: r.odometerKm ?? "", liters: r.liters ?? "", driverId: r.driverId || "",
+      receiptUrl: r.receiptUrl || "", notes: r.notes || "",
+    });
+    setError("");
+  }
+  function batalEdit() {
+    setEditingId(null);
+    setForm(KOSONG_EXPENSE);
+    setError("");
+  }
+
   async function submit(e) {
     e.preventDefault();
     if (!form.date || !form.amount) { setError("Tanggal dan nominal wajib diisi"); return; }
     setSaving(true);
     setError("");
     try {
-      await api.createVehicleExpense({
-        vehicleId: vehicle.id,
-        date: form.date,
-        category: form.category,
-        amount: Number(form.amount),
-        odometerKm: form.odometerKm || undefined,
-        liters: form.category === "BBM" && form.liters ? Number(form.liters) : undefined,
-        driverId: form.driverId || undefined,
-        notes: form.notes || undefined,
-      });
-      setForm({ date: "", category: "BBM", amount: "", odometerKm: "", liters: "", driverId: "", notes: "" });
+      const payload = {
+        date: form.date, category: form.category, amount: Number(form.amount),
+        odometerKm: form.odometerKm || null,
+        liters: form.category === "BBM" && form.liters ? Number(form.liters) : null,
+        driverId: form.driverId || null, receiptUrl: form.receiptUrl || null, notes: form.notes || null,
+      };
+      if (editingId) {
+        await api.updateVehicleExpense(editingId, payload);
+      } else {
+        await api.createVehicleExpense({ ...payload, vehicleId: vehicle.id });
+      }
+      batalEdit();
       load();
     } catch (err) {
       setError(err.message);
@@ -243,6 +310,7 @@ function BiayaTab({ vehicle, drivers }) {
 
   async function hapus(id) {
     if (!confirm("Hapus catatan biaya ini?")) return;
+    if (editingId === id) batalEdit();
     await api.deleteVehicleExpense(id);
     load();
   }
@@ -250,6 +318,11 @@ function BiayaTab({ vehicle, drivers }) {
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={submit} className="grid grid-cols-3 gap-2.5 rounded-2xl bg-inset/60 p-3">
+        {editingId && (
+          <div className="col-span-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-accent">
+            <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
+          </div>
+        )}
         <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
         <Field label="Kategori">
           <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
@@ -269,28 +342,43 @@ function BiayaTab({ vehicle, drivers }) {
             {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </Field>
+        <Field label="Dokumentasi" className="col-span-3">
+          <ReceiptPicker url={form.receiptUrl} onChange={(url) => setForm((f) => ({ ...f, receiptUrl: url || "" }))} />
+        </Field>
         <div className="col-span-3 flex items-center gap-2">
           <Input className="flex-1" placeholder="Catatan (opsional)" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
-          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : "Tambah"}</Button>
+          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Tambah"}</Button>
         </div>
         {error && <p className="col-span-3 text-[12px] text-red">{error}</p>}
       </form>
 
-      {rows === null ? <TableSkeletonRows rows={3} cols={5} /> : rows.length === 0 ? (
+      {rows === null ? <TableSkeletonRows rows={3} cols={6} /> : rows.length === 0 ? (
         <EmptyState icon={Wallet} title="Belum ada catatan biaya" description="Tambahkan pengisian BBM/tol/dst lewat form di atas." />
       ) : (
         <TableWrap>
           <Table>
-            <THead><TR><TH>Tanggal</TH><TH>Kategori</TH><TH>Supir</TH><TH>Odo/Liter</TH><TH>Nominal</TH><TH /></TR></THead>
+            <THead><TR><TH>Tanggal</TH><TH>Kategori</TH><TH>Supir</TH><TH>Odo/Liter</TH><TH>Struk</TH><TH>Nominal</TH><TH /></TR></THead>
             <TBody>
               {rows.map((r) => (
-                <TR key={r.id}>
+                <TR key={r.id} className={editingId === r.id ? "bg-accentbg/40" : undefined}>
                   <TD className="whitespace-nowrap text-ink2">{fmtTanggal(r.date)}</TD>
                   <TD>{EXPENSE_CATEGORIES[r.category] || r.category}</TD>
                   <TD className="text-ink2">{r.driver?.name || "—"}</TD>
                   <TD className="text-ink3">{r.odometerKm ? `${r.odometerKm} km` : "—"}{r.liters ? ` · ${r.liters} L` : ""}</TD>
+                  <TD>
+                    {r.receiptUrl ? (
+                      <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="block h-8 w-8 overflow-hidden rounded-btn border border-border">
+                        <img src={r.receiptUrl} alt="Struk" className="h-full w-full object-cover" />
+                      </a>
+                    ) : <span className="text-ink3">—</span>}
+                  </TD>
                   <TD numeric className="font-semibold text-ink">{formatRupiah(r.amount)}</TD>
-                  <TD><button type="button" className="text-[11px] text-red hover:underline" onClick={() => hapus(r.id)}>Hapus</button></TD>
+                  <TD>
+                    <div className="flex items-center gap-2.5">
+                      <button type="button" className="text-[11px] font-semibold text-accent hover:underline" onClick={() => mulaiEdit(r)}>Edit</button>
+                      <button type="button" className="text-[11px] text-red hover:underline" onClick={() => hapus(r.id)}>Hapus</button>
+                    </div>
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -302,9 +390,12 @@ function BiayaTab({ vehicle, drivers }) {
 }
 
 // ── Sub-tab SERVIS ────────────────────────────────────────────────────────
+const KOSONG_SERVICE = { date: "", type: "RUTIN", odometerKm: "", cost: "", workshop: "", description: "", receiptUrl: "", nextServiceKm: "", nextServiceDate: "" };
+
 function ServisTab({ vehicle }) {
   const [rows, setRows] = useState(null);
-  const [form, setForm] = useState({ date: "", type: "RUTIN", odometerKm: "", cost: "", workshop: "", description: "", nextServiceKm: "", nextServiceDate: "" });
+  const [form, setForm] = useState(KOSONG_SERVICE);
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -313,19 +404,34 @@ function ServisTab({ vehicle }) {
   }, [vehicle.id]);
   useEffect(() => { load(); }, [load]);
 
+  function mulaiEdit(r) {
+    setEditingId(r.id);
+    setForm({
+      date: r.date.slice(0, 10), type: r.type, odometerKm: String(r.odometerKm), cost: String(r.cost),
+      workshop: r.workshop || "", description: r.description || "", receiptUrl: r.receiptUrl || "",
+      nextServiceKm: r.nextServiceKm ?? "", nextServiceDate: r.nextServiceDate?.slice(0, 10) || "",
+    });
+    setError("");
+  }
+  function batalEdit() { setEditingId(null); setForm(KOSONG_SERVICE); setError(""); }
+
   async function submit(e) {
     e.preventDefault();
     if (!form.date || !form.odometerKm || !form.cost) { setError("Tanggal, odometer, dan biaya wajib diisi"); return; }
     setSaving(true);
     setError("");
     try {
-      await api.createVehicleService({
-        vehicleId: vehicle.id, date: form.date, type: form.type,
-        odometerKm: Number(form.odometerKm), cost: Number(form.cost),
-        workshop: form.workshop || undefined, description: form.description || undefined,
-        nextServiceKm: form.nextServiceKm || undefined, nextServiceDate: form.nextServiceDate || undefined,
-      });
-      setForm({ date: "", type: "RUTIN", odometerKm: "", cost: "", workshop: "", description: "", nextServiceKm: "", nextServiceDate: "" });
+      const payload = {
+        date: form.date, type: form.type, odometerKm: Number(form.odometerKm), cost: Number(form.cost),
+        workshop: form.workshop || null, description: form.description || null, receiptUrl: form.receiptUrl || null,
+        nextServiceKm: form.nextServiceKm || null, nextServiceDate: form.nextServiceDate || null,
+      };
+      if (editingId) {
+        await api.updateVehicleService(editingId, payload);
+      } else {
+        await api.createVehicleService({ ...payload, vehicleId: vehicle.id });
+      }
+      batalEdit();
       load();
     } catch (err) {
       setError(err.message);
@@ -337,6 +443,11 @@ function ServisTab({ vehicle }) {
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={submit} className="grid grid-cols-3 gap-2.5 rounded-2xl bg-inset/60 p-3">
+        {editingId && (
+          <div className="col-span-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-accent">
+            <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
+          </div>
+        )}
         <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
         <Field label="Jenis">
           <select className={inputCls} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
@@ -348,27 +459,38 @@ function ServisTab({ vehicle }) {
         <Field label="Bengkel"><Input value={form.workshop} onChange={(e) => setForm((f) => ({ ...f, workshop: e.target.value }))} /></Field>
         <Field label="Servis berikutnya (km)"><Input type="number" value={form.nextServiceKm} onChange={(e) => setForm((f) => ({ ...f, nextServiceKm: e.target.value }))} /></Field>
         <Field label="Servis berikutnya (tanggal)"><input type="date" className={inputCls} value={form.nextServiceDate} onChange={(e) => setForm((f) => ({ ...f, nextServiceDate: e.target.value }))} /></Field>
+        <Field label="Dokumentasi" className="col-span-3">
+          <ReceiptPicker url={form.receiptUrl} onChange={(url) => setForm((f) => ({ ...f, receiptUrl: url || "" }))} />
+        </Field>
         <div className="col-span-2 flex items-center gap-2">
           <Input className="flex-1" placeholder="Keterangan (opsional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : "Tambah"}</Button>
+          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Tambah"}</Button>
         </div>
         {error && <p className="col-span-3 text-[12px] text-red">{error}</p>}
       </form>
 
-      {rows === null ? <TableSkeletonRows rows={3} cols={5} /> : rows.length === 0 ? (
+      {rows === null ? <TableSkeletonRows rows={3} cols={6} /> : rows.length === 0 ? (
         <EmptyState icon={Wrench} title="Belum ada riwayat servis" />
       ) : (
         <TableWrap>
           <Table>
-            <THead><TR><TH>Tanggal</TH><TH>Jenis</TH><TH>Odometer</TH><TH>Bengkel</TH><TH>Biaya</TH></TR></THead>
+            <THead><TR><TH>Tanggal</TH><TH>Jenis</TH><TH>Odometer</TH><TH>Bengkel</TH><TH>Nota</TH><TH>Biaya</TH><TH /></TR></THead>
             <TBody>
               {rows.map((r) => (
-                <TR key={r.id}>
+                <TR key={r.id} className={editingId === r.id ? "bg-accentbg/40" : undefined}>
                   <TD className="whitespace-nowrap text-ink2">{fmtTanggal(r.date)}</TD>
                   <TD>{SERVICE_TYPES[r.type] || r.type}</TD>
                   <TD className="text-ink3">{r.odometerKm} km</TD>
                   <TD className="text-ink2">{r.workshop || "—"}</TD>
+                  <TD>
+                    {r.receiptUrl ? (
+                      <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="block h-8 w-8 overflow-hidden rounded-btn border border-border">
+                        <img src={r.receiptUrl} alt="Nota" className="h-full w-full object-cover" />
+                      </a>
+                    ) : <span className="text-ink3">—</span>}
+                  </TD>
                   <TD numeric className="font-semibold text-ink">{formatRupiah(r.cost)}</TD>
+                  <TD><button type="button" className="text-[11px] font-semibold text-accent hover:underline" onClick={() => mulaiEdit(r)}>Edit</button></TD>
                 </TR>
               ))}
             </TBody>
@@ -380,12 +502,47 @@ function ServisTab({ vehicle }) {
 }
 
 // ── Sub-tab INSIDEN ───────────────────────────────────────────────────────
+const KOSONG_INCIDENT = {
+  date: "", driverId: "", type: "KECELAKAAN", severity: "RINGAN", description: "",
+  location: "", repairCost: "", faultParty: "TIDAK_JELAS", downtimeDays: "",
+};
+
+// Upload multi-foto SETELAH insiden tersimpan (beda dari ReceiptPicker
+// biaya/servis yang upload-lalu-tempel — kecelakaan sering butuh beberapa
+// sudut foto, dan foto pertama biasanya baru ada sesudah insiden dicatat
+// buru-buru dari lapangan). Tombol ini muncul di tiap kartu, foto langsung
+// bertambah ke galeri tanpa perlu buka form edit.
+function TambahFotoInsiden({ incidentId, onUploaded }) {
+  const [uploading, setUploading] = useState(false);
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("photos", f));
+      const updated = await api.uploadVehicleIncidentPhotos(incidentId, fd);
+      onUploaded(updated);
+    } catch (err) {
+      alert("Gagal upload foto: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+  return (
+    <label className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-chip border border-dashed border-border px-2 text-[11px] text-ink2 hover:border-accent hover:text-accent">
+      {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+      {uploading ? "Mengunggah…" : "Tambah Foto"}
+      <input type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} disabled={uploading} />
+    </label>
+  );
+}
+
 function InsidenTab({ vehicle, drivers }) {
   const [rows, setRows] = useState(null);
-  const [form, setForm] = useState({
-    date: "", driverId: "", type: "KECELAKAAN", severity: "RINGAN", description: "",
-    location: "", repairCost: "", faultParty: "TIDAK_JELAS", downtimeDays: "",
-  });
+  const [form, setForm] = useState(KOSONG_INCIDENT);
+  const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -394,20 +551,38 @@ function InsidenTab({ vehicle, drivers }) {
   }, [vehicle.id]);
   useEffect(() => { load(); }, [load]);
 
+  function mulaiEdit(r) {
+    setEditingId(r.id);
+    setForm({
+      date: r.date.slice(0, 10), driverId: r.driverId || "", type: r.type, severity: r.severity,
+      description: r.description, location: r.location || "", repairCost: r.repairCost ?? "",
+      faultParty: r.faultParty, downtimeDays: r.downtimeDays ?? "",
+    });
+    setError("");
+  }
+  function batalEdit() { setEditingId(null); setForm(KOSONG_INCIDENT); setError(""); }
+
+  function updateRowLocal(updated) {
+    setRows((list) => list.map((r) => (r.id === updated.id ? updated : r)));
+  }
+
   async function submit(e) {
     e.preventDefault();
     if (!form.date || !form.description.trim()) { setError("Tanggal dan kronologi wajib diisi"); return; }
     setSaving(true);
     setError("");
     try {
-      await api.createVehicleIncident({
-        vehicleId: vehicle.id, driverId: form.driverId || undefined,
-        date: form.date, type: form.type, severity: form.severity, description: form.description.trim(),
-        location: form.location || undefined,
-        repairCost: form.repairCost || undefined,
-        faultParty: form.faultParty, downtimeDays: form.downtimeDays || undefined,
-      });
-      setForm({ date: "", driverId: "", type: "KECELAKAAN", severity: "RINGAN", description: "", location: "", repairCost: "", faultParty: "TIDAK_JELAS", downtimeDays: "" });
+      const payload = {
+        driverId: form.driverId || null, date: form.date, type: form.type, severity: form.severity,
+        description: form.description.trim(), location: form.location || null,
+        repairCost: form.repairCost || null, faultParty: form.faultParty, downtimeDays: form.downtimeDays || null,
+      };
+      if (editingId) {
+        await api.updateVehicleIncident(editingId, payload);
+      } else {
+        await api.createVehicleIncident({ ...payload, vehicleId: vehicle.id });
+      }
+      batalEdit();
       load();
     } catch (err) {
       setError(err.message);
@@ -417,8 +592,8 @@ function InsidenTab({ vehicle, drivers }) {
   }
 
   async function updateKlaim(id, insuranceClaim) {
-    await api.updateVehicleIncident(id, { insuranceClaim });
-    load();
+    const updated = await api.updateVehicleIncident(id, { insuranceClaim });
+    updateRowLocal(updated);
   }
 
   const severityTone = { RINGAN: "text-ink2", SEDANG: "text-orange", BERAT: "text-red" };
@@ -431,6 +606,11 @@ function InsidenTab({ vehicle, drivers }) {
       </div>
 
       <form onSubmit={submit} className="grid grid-cols-3 gap-2.5 rounded-2xl bg-inset/60 p-3">
+        {editingId && (
+          <div className="col-span-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-accent">
+            <Pencil size={12} /> Mengedit insiden — <button type="button" onClick={batalEdit} className="underline">batal</button>
+          </div>
+        )}
         <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
         <Field label="Supir">
           <select className={inputCls} value={form.driverId} onChange={(e) => setForm((f) => ({ ...f, driverId: e.target.value }))}>
@@ -461,7 +641,7 @@ function InsidenTab({ vehicle, drivers }) {
           <textarea rows={3} className={inputCls + " resize-none py-2"} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
         </Field>
         <div className="col-span-3 flex justify-end">
-          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : "Catat Insiden"}</Button>
+          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Catat Insiden"}</Button>
         </div>
         {error && <p className="col-span-3 text-[12px] text-red">{error}</p>}
       </form>
@@ -471,19 +651,32 @@ function InsidenTab({ vehicle, drivers }) {
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
-            <div key={r.id} className="rounded-2xl bg-surface p-3 shadow-card">
+            <div key={r.id} className={`rounded-2xl p-3 shadow-card ${editingId === r.id ? "bg-accentbg/40" : "bg-surface"}`}>
               <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                 <span className="font-bold text-ink">{INCIDENT_TYPES[r.type] || r.type}</span>
                 <span className={`font-semibold ${severityTone[r.severity]}`}>{SEVERITIES[r.severity]}</span>
                 <span className="text-ink3">· {fmtTanggal(r.date)}</span>
                 <span className="text-ink3">· {r.driver?.name || r.driverName || "Supir tidak dicatat"}</span>
                 <span className="ml-auto text-ink3">{FAULT_PARTIES[r.faultParty]}</span>
+                <button type="button" className="text-[11px] font-semibold text-accent hover:underline" onClick={() => mulaiEdit(r)}>Edit</button>
               </div>
               <p className="mt-1.5 text-[12.5px] text-ink2">{r.description}</p>
+
+              {r.photoUrls?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {r.photoUrls.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer" className="block h-14 w-14 overflow-hidden rounded-btn border border-border">
+                      <img src={url} alt={`Foto insiden ${i + 1}`} className="h-full w-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11.5px] text-ink3">
                 {r.location && <span>📍 {r.location}</span>}
                 {r.repairCost != null && <span>Biaya: <b className="text-ink">{formatRupiah(r.repairCost)}</b></span>}
                 {r.downtimeDays != null && <span>{r.downtimeDays} hari tidak jalan</span>}
+                <TambahFotoInsiden incidentId={r.id} onUploaded={updateRowLocal} />
                 <label className="ml-auto flex items-center gap-1.5">
                   Klaim:
                   <select

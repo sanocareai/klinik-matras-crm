@@ -60,12 +60,16 @@ const paymentProofsDir = path.join(__dirname, "../data/payment-proofs");
 // Bukti temuan bongkar & bukti persetujuan customer (PRD §7.4) — dir SENDIRI,
 // terpisah dari foto proses produksi: kepentingan hukum & umur simpannya beda.
 const scopeRevisionPhotosDir = path.join(__dirname, "../data/scope-revision-photos");
+// Foto struk BBM/tol/dst + nota servis (D-035) — dir sendiri, sama pola
+// dengan scope-revision-photos di atas: dokumen finansial, bukan foto proses.
+const vehicleReceiptsDir = path.join(__dirname, "../data/vehicle-receipts");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
 mkdirSync(jobPhotosDir,  { recursive: true });
 mkdirSync(paymentProofsDir, { recursive: true });
 mkdirSync(scopeRevisionPhotosDir, { recursive: true });
+mkdirSync(vehicleReceiptsDir, { recursive: true });
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -96,6 +100,7 @@ app.use("/media/unit-photos", express.static(unitPhotosDir));
 app.use("/media/job-photos",  express.static(jobPhotosDir));
 app.use("/media/payment-proofs", express.static(paymentProofsDir));
 app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
+app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 app.use("/media/products", express.static(productsDir));
 
 app.use("/api/webhooks",     webhookRouter);

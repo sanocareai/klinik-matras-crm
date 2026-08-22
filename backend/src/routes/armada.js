@@ -52,6 +52,28 @@ const upload = multer({
   },
 });
 
+// Foto struk/nota — dokumentasi biaya & servis kendaraan (D-035, ditambah
+// 22 Agustus 2026 atas permintaan eksplisit "buat pengisiannya simple dan
+// ada dokumentasinya"). Dir & batas SAMA dengan `upload` di atas, cuma
+// tujuan foldernya beda — dipisah supaya dokumen finansial tidak bercampur
+// dengan foto proses job di disk.
+const vehicleReceiptsDir = path.join(__dirname, "../../data/vehicle-receipts");
+if (!fs.existsSync(vehicleReceiptsDir)) fs.mkdirSync(vehicleReceiptsDir, { recursive: true });
+const uploadReceipt = multer({
+  storage: multer.diskStorage({
+    destination: vehicleReceiptsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".jpg";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar yang diperbolehkan"));
+    cb(null, true);
+  },
+});
+
 class ArmadaError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
@@ -513,6 +535,68 @@ armadaRouter.delete("/expenses/:id", requirePermission(P.ROUTE_WRITE), async (re
   } catch (err) { handleErr(err, res); }
 });
 
+// PATCH — koreksi catatan biaya (salah ketik nominal/kategori/odometer,
+// dst) tanpa perlu hapus+buat ulang. TIDAK termasuk vehicleId/routeId —
+// pindah kendaraan berarti catatan yang berbeda, bukan koreksi.
+armadaRouter.patch("/expenses/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { date, category, amount, odometerKm, liters, driverId, receiptUrl, notes } = req.body;
+    const data = {};
+    if (date !== undefined) data.date = toDateOnly(date);
+    if (category !== undefined) data.category = category;
+    if (amount !== undefined) {
+      const n = Number(amount);
+      if (!Number.isFinite(n) || n <= 0) throw new ArmadaError("Nominal harus angka lebih dari 0");
+      data.amount = Math.round(n);
+    }
+    if (odometerKm !== undefined) data.odometerKm = odometerKm === null || odometerKm === "" ? null : Number(odometerKm);
+    if (liters !== undefined) data.liters = liters === null || liters === "" ? null : Number(liters);
+    if (driverId !== undefined) data.driverId = driverId || null;
+    if (receiptUrl !== undefined) data.receiptUrl = receiptUrl || null;
+    if (notes !== undefined) data.notes = notes?.trim() || null;
+
+    const row = await prisma.vehicleExpense.update({
+      where: { id: req.params.id },
+      data,
+      include: {
+        vehicle: { select: { id: true, plateNumber: true } },
+        driver: { select: { id: true, name: true } },
+      },
+    });
+    // Odometer boleh dikoreksi TURUN (beda dari POST create yang cuma naik
+    // otomatis) — di sini user secara eksplisit mengedit, jadi kepercayaan
+    // ada di input manusia, bukan aturan "odometer tidak pernah mundur".
+    res.json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/armada/expenses/:id/receipt — upload foto struk untuk catatan
+// biaya yang SUDAH ADA (alur: catat dulu nominalnya cepat, foto menyusul —
+// atau sebaliknya, upload dulu baru catat, lihat POST /receipts/upload).
+armadaRouter.post("/expenses/:id/receipt", requirePermission(P.ROUTE_WRITE), uploadReceipt.single("receipt"), async (req, res) => {
+  try {
+    if (!req.file) throw new ArmadaError("File foto wajib disertakan");
+    const url = `/media/vehicle-receipts/${req.file.filename}`;
+    const row = await prisma.vehicleExpense.update({
+      where: { id: req.params.id }, data: { receiptUrl: url },
+      include: { vehicle: { select: { id: true, plateNumber: true } }, driver: { select: { id: true, name: true } } },
+    });
+    res.json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/armada/receipts/upload — upload BEBAS (belum tentu untuk
+// expense yang sudah ada, dipakai form "Tambah" supaya foto bisa dipilih
+// SEBELUM baris expense-nya disimpan — pengisian jadi satu langkah, bukan
+// simpan-dulu-baru-upload). Balikin URL saja, disisipkan ke body POST
+// /expenses / POST /services sebagai receiptUrl.
+armadaRouter.post("/receipts/upload", requirePermission(P.ROUTE_WRITE), uploadReceipt.single("receipt"), async (req, res) => {
+  try {
+    if (!req.file) throw new ArmadaError("File foto wajib disertakan");
+    res.json({ url: `/media/vehicle-receipts/${req.file.filename}` });
+  } catch (err) { handleErr(err, res); }
+});
+
 // ─── SERVIS ────────────────────────────────────────────────────────────────
 armadaRouter.get("/services", requirePermission(P.JOB_READ), async (req, res) => {
   try {
@@ -569,6 +653,51 @@ armadaRouter.post("/services", requirePermission(P.ROUTE_WRITE), async (req, res
       return created;
     });
     res.status(201).json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// PATCH — koreksi catatan servis (pola sama dengan PATCH /expenses/:id).
+armadaRouter.patch("/services/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { date, type, odometerKm, cost, workshop, description, receiptUrl, nextServiceKm, nextServiceDate } = req.body;
+    const data = {};
+    if (date !== undefined) data.date = toDateOnly(date);
+    if (type !== undefined) data.type = type;
+    if (odometerKm !== undefined) {
+      const n = Number(odometerKm);
+      if (!Number.isFinite(n) || n < 0) throw new ArmadaError("Odometer harus angka");
+      data.odometerKm = n;
+    }
+    if (cost !== undefined) {
+      const n = Number(cost);
+      if (!Number.isFinite(n) || n < 0) throw new ArmadaError("Biaya harus angka");
+      data.cost = Math.round(n);
+    }
+    if (workshop !== undefined) data.workshop = workshop?.trim() || null;
+    if (description !== undefined) data.description = description?.trim() || null;
+    if (receiptUrl !== undefined) data.receiptUrl = receiptUrl || null;
+    if (nextServiceKm !== undefined) data.nextServiceKm = nextServiceKm === null || nextServiceKm === "" ? null : Number(nextServiceKm);
+    if (nextServiceDate !== undefined) data.nextServiceDate = nextServiceDate ? toDateOnly(nextServiceDate) : null;
+
+    const row = await prisma.vehicleService.update({
+      where: { id: req.params.id }, data,
+      include: { vehicle: { select: { id: true, plateNumber: true } } },
+    });
+    res.json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/armada/services/:id/receipt — upload foto nota servis, sama pola
+// dengan POST /expenses/:id/receipt.
+armadaRouter.post("/services/:id/receipt", requirePermission(P.ROUTE_WRITE), uploadReceipt.single("receipt"), async (req, res) => {
+  try {
+    if (!req.file) throw new ArmadaError("File foto wajib disertakan");
+    const url = `/media/vehicle-receipts/${req.file.filename}`;
+    const row = await prisma.vehicleService.update({
+      where: { id: req.params.id }, data: { receiptUrl: url },
+      include: { vehicle: { select: { id: true, plateNumber: true } } },
+    });
+    res.json(row);
   } catch (err) { handleErr(err, res); }
 });
 
@@ -656,6 +785,24 @@ armadaRouter.patch("/incidents/:id", requirePermission(P.ROUTE_WRITE), async (re
         vehicle: { select: { id: true, plateNumber: true } },
         driver: { select: { id: true, name: true } },
       },
+    });
+    res.json(row);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/armada/incidents/:id/photos — upload MULTI-foto (kejadian
+// kecelakaan biasanya butuh beberapa sudut: kerusakan mobil, plat lawan,
+// lokasi) — beda dari receipt tunggal expense/service. Menambahkan ke
+// photoUrls yang sudah ada, bukan menimpa (foto boleh diupload bertahap).
+armadaRouter.post("/incidents/:id/photos", requirePermission(P.ROUTE_WRITE), uploadReceipt.array("photos", 6), async (req, res) => {
+  try {
+    if (!req.files?.length) throw new ArmadaError("File foto wajib disertakan");
+    const urls = req.files.map((f) => `/media/vehicle-receipts/${f.filename}`);
+    const existing = await prisma.vehicleIncident.findUniqueOrThrow({ where: { id: req.params.id }, select: { photoUrls: true } });
+    const row = await prisma.vehicleIncident.update({
+      where: { id: req.params.id },
+      data: { photoUrls: [...existing.photoUrls, ...urls] },
+      include: { vehicle: { select: { id: true, plateNumber: true } }, driver: { select: { id: true, name: true } } },
     });
     res.json(row);
   } catch (err) { handleErr(err, res); }

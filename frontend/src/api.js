@@ -176,12 +176,20 @@ export const api = {
   // Biaya/servis/insiden kendaraan (D-035)
   getVehicleExpenses: (params = {}) => request(`/armada/expenses${buildQuery(params)}`),
   createVehicleExpense: (data) => request("/armada/expenses", { method: "POST", body: JSON.stringify(data) }),
+  updateVehicleExpense: (id, data) => request(`/armada/expenses/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteVehicleExpense: (id) => request(`/armada/expenses/${id}`, { method: "DELETE" }),
+  uploadVehicleExpenseReceipt: (id, formData) => requestFormData(`/armada/expenses/${id}/receipt`, formData),
   getVehicleServices: (params = {}) => request(`/armada/services${buildQuery(params)}`),
   createVehicleService: (data) => request("/armada/services", { method: "POST", body: JSON.stringify(data) }),
+  updateVehicleService: (id, data) => request(`/armada/services/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  uploadVehicleServiceReceipt: (id, formData) => requestFormData(`/armada/services/${id}/receipt`, formData),
   getVehicleIncidents: (params = {}) => request(`/armada/incidents${buildQuery(params)}`),
   createVehicleIncident: (data) => request("/armada/incidents", { method: "POST", body: JSON.stringify(data) }),
   updateVehicleIncident: (id, data) => request(`/armada/incidents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  uploadVehicleIncidentPhotos: (id, formData) => requestFormData(`/armada/incidents/${id}/photos`, formData),
+  // Upload struk BEBAS (belum tentu tertaut baris — dipakai form "Tambah"
+  // supaya foto bisa dipilih SEBELUM entri disimpan; lihat api docs).
+  uploadVehicleReceiptStandalone: (formData) => requestFormData("/armada/receipts/upload", formData),
   getFleetSummary: (params = {}) => request(`/armada/fleet-summary${buildQuery(params)}`),
 
   // Rute (Route Planner, Delivery Tahap 3)
