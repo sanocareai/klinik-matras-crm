@@ -47,6 +47,7 @@ import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
+import { startSlaAlertJob } from "./services/slaAlertJob.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -198,6 +199,7 @@ server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
   logStatusMcp();
   startReconciliationJob();
+  startSlaAlertJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.

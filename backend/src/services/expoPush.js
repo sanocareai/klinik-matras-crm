@@ -5,6 +5,41 @@ import { prisma } from "../db.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
+// Kirim ke satu batch token (maks 100, batas Expo per request), bersihkan
+// token yang sudah tidak valid (app di-uninstall, dll). Dipakai bersama oleh
+// sendPushToAllUsers (semua device) dan sendPushToUser (1 user tertentu).
+async function sendToTokenBatch(chunk, { title, body, data }) {
+  const messages = chunk.map((t) => ({
+    to: t.token,
+    title,
+    body,
+    data,
+    sound: "default",
+    channelId: "pesan-masuk", // channel Android, dibuat oleh aplikasi mobile
+  }));
+
+  try {
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(messages),
+    });
+    const json = await res.json();
+
+    const tickets = json.data || [];
+    for (let j = 0; j < tickets.length; j++) {
+      if (tickets[j]?.status === "error" &&
+          tickets[j]?.details?.error === "DeviceNotRegistered") {
+        await prisma.pushToken
+          .delete({ where: { token: chunk[j].token } })
+          .catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn("[push] Gagal kirim batch:", err.message);
+  }
+}
+
 // Kirim notifikasi ke SEMUA device yang terdaftar (semua user).
 // Fire-and-forget: kegagalan push tidak boleh mengganggu alur webhook.
 export async function sendPushToAllUsers({ title, body, data = {} }) {
@@ -20,36 +55,26 @@ export async function sendPushToAllUsers({ title, body, data = {} }) {
 
   // Expo membatasi 100 pesan per request
   for (let i = 0; i < tokens.length; i += 100) {
-    const chunk = tokens.slice(i, i + 100);
-    const messages = chunk.map((t) => ({
-      to: t.token,
-      title,
-      body,
-      data,
-      sound: "default",
-      channelId: "pesan-masuk", // channel Android, dibuat oleh aplikasi mobile
-    }));
+    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data });
+  }
+}
 
-    try {
-      const res = await fetch(EXPO_PUSH_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(messages),
-      });
-      const json = await res.json();
+// Kirim notifikasi ke SEMUA device milik SATU user (dipakai alert SLA yang
+// menyasar sales pemegang percakapan, bukan broadcast ke seluruh tim).
+// Fire-and-forget, sama seperti sendPushToAllUsers — kegagalan tidak boleh
+// menghentikan job pemanggil.
+export async function sendPushToUser(userId, { title, body, data = {} }) {
+  if (!userId) return;
+  let tokens;
+  try {
+    tokens = await prisma.pushToken.findMany({ where: { userId } });
+  } catch (err) {
+    console.warn("[push] Lewati, tabel PushToken belum siap:", err.message);
+    return;
+  }
+  if (!tokens.length) return;
 
-      // Bersihkan token yang sudah tidak valid (app di-uninstall, dll)
-      const tickets = json.data || [];
-      for (let j = 0; j < tickets.length; j++) {
-        if (tickets[j]?.status === "error" &&
-            tickets[j]?.details?.error === "DeviceNotRegistered") {
-          await prisma.pushToken
-            .delete({ where: { token: chunk[j].token } })
-            .catch(() => {});
-        }
-      }
-    } catch (err) {
-      console.warn("[push] Gagal kirim batch:", err.message);
-    }
+  for (let i = 0; i < tokens.length; i += 100) {
+    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data });
   }
 }

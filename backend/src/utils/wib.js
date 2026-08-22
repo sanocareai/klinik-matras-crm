@@ -76,6 +76,15 @@ export function formatWIB(date = new Date(), opts = {}) {
   return `${teks} WIB`;
 }
 
+// Jam kerja WIB (dipakai job SLA/backlog — services/slaAlertJob.js) — start/end
+// dalam jam 24-jam WIB, end EKSKLUSIF (mis. start=8, end=17 → 08:00-16:59 WIB
+// dianggap jam kerja, 17:00 ke atas sudah "luar jam kerja").
+export function isWorkingHoursWIB(date = new Date(), { start = 8, end = 17 } = {}) {
+  const shifted = new Date(date.getTime() + WIB_OFFSET_MS);
+  const hour = shifted.getUTCHours();
+  return hour >= start && hour < end;
+}
+
 // CATATAN untuk $queryRaw (lihat analytics.js): kolom Prisma `DateTime` di
 // Postgres adalah `timestamp without time zone` yang ISINYA UTC. Supaya
 // date_trunc() mengelompokkan menurut kalender WIB (bukan UTC), kolomnya

@@ -9,5 +9,16 @@
   "wahaSession": "default",
   "targetBulanan": 600000000,
   "currencyLocale": "id-ID",
-  "timezone": "Asia/Jakarta"
+  "timezone": "Asia/Jakarta",
+  "slaAlert": {
+    "enabled": true,
+    "cronExpression": "*/5 * * * *",
+    "unassignedThresholdMinutes": 10,
+    "frtWorkingHoursMinutes": 15,
+    "frtOffHoursMinutes": 30,
+    "workingHourStart": 8,
+    "workingHourEnd": 17,
+    "escalationMultiplier": 2,
+    "reNotifyCooldownMinutes": 30
+  }
 }
