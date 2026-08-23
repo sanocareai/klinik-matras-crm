@@ -20,9 +20,13 @@ function filterToStatus(filter) {
   return undefined; // 'ALL' | 'MINE' | 'UNREAD' | 'UNANSWERED'
 }
 
-export function useConversations({ filter = "ALL", search = "", userId } = {}) {
+export function useConversations({ filter = "ALL", search = "", userId, salesFilterId } = {}) {
   const status = filterToStatus(filter);
-  const assignedToId = filter === "MINE" ? userId : undefined;
+  // salesFilterId ("Filter per Sales", fitur baru) MENANG atas MINE kalau
+  // dua-duanya somehow aktif — lihat conversationStore.js#setSalesFilter,
+  // yang sudah memaksa filter balik ke ALL begitu salesFilter dipilih, jadi
+  // konflik ini seharusnya tidak pernah terjadi lewat UI normal.
+  const assignedToId = salesFilterId || (filter === "MINE" ? userId : undefined);
   const unread = filter === "UNREAD" ? true : undefined;
   const unanswered = filter === "UNANSWERED" ? true : undefined;
 

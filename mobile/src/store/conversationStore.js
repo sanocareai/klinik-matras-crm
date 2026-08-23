@@ -24,12 +24,25 @@ export const useConversationStore = create((set) => ({
   activeConversationId: null,
   filter: "ALL", // 'ALL' | 'OPEN' | 'PENDING' | 'CLOSED' | 'MINE'
   searchQuery: "",
+  // Filter TAMBAHAN "per Sales" (fitur baru) — { id, name } | null. Beda dari
+  // tab MINE (yang selalu berarti "punya SAYA"): ini memilih SIAPA PUN
+  // (biasanya dipakai admin), independen dari filter status/UNREAD/UNANSWERED
+  // di atas — lihat ChatListScreen.js#matches untuk cara keduanya digabung.
+  salesFilter: null,
   conversationsById: {},
   conversationOrder: [], // array of ids, sudah terurut
 
   setActive: (id) => set({ activeConversationId: id }),
   setFilter: (filter) => set({ filter }),
   setSearch: (searchQuery) => set({ searchQuery }),
+  // Pilih tab MINE + salesFilter aktif sekaligus itu membingungkan (dua-duanya
+  // sama-sama mengklaim arti "assignedTo siapa") — begitu salesFilter dipilih,
+  // tab yang lagi MINE otomatis balik ke ALL supaya hasil kelihatan konsisten
+  // dengan chip filter yang tampil.
+  setSalesFilter: (salesFilter) => set((state) => ({
+    salesFilter,
+    filter: salesFilter && state.filter === "MINE" ? "ALL" : state.filter,
+  })),
 
   // Insert/update 1 percakapan (dari fetch detail, event socket, dll) + re-sort.
   upsertConversation: (conv) => set((state) => {
@@ -78,6 +91,7 @@ export const useActiveId = () => useConversationStore((s) => s.activeConversatio
 export const useConversation = (id) => useConversationStore((s) => (id ? s.conversationsById[id] : undefined));
 export const useOrderedIds = () => useConversationStore((s) => s.conversationOrder);
 export const useFilter = () => useConversationStore((s) => s.filter);
+export const useSalesFilter = () => useConversationStore((s) => s.salesFilter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
 
 // Total unread lintas SEMUA percakapan (cache global) — dipakai badge ikon

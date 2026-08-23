@@ -14,7 +14,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
-  Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning,
+  Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning, Users,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -24,10 +24,11 @@ import ConversationItem from "../components/ConversationItem";
 import PressableScale from "../components/PressableScale";
 import ReorderFiltersModal from "../components/ReorderFiltersModal";
 import ChatBaruModal from "../components/ChatBaruModal";
+import SalesFilterModal from "../components/SalesFilterModal";
 import { InboxListSkeleton } from "../components/SkeletonLoader";
 import { useConversations } from "../hooks/useConversations";
 import {
-  useConversationStore, useOrderedIds, useFilter, useConvSearchQuery,
+  useConversationStore, useOrderedIds, useFilter, useConvSearchQuery, useSalesFilter,
 } from "../store/conversationStore";
 
 // Urutan tab tersimpan per-perangkat (bukan per-akun) — pola sama dengan
@@ -93,9 +94,15 @@ const EMPTY_STATE = {
 // menghitung ulang di client cuma bisa mengecek nama/nomor/grup lagi,
 // membuat percakapan yang cocok LEWAT ISI PESAN diam-diam hilang dari
 // hasil pencarian walau server sudah benar mengembalikannya.
-function matches(c, filter, userId, query, searchMatchedIds) {
+function matches(c, filter, userId, query, searchMatchedIds, salesFilter) {
   if (!c) return false;
-  if (filter === "MINE" && c.assignedToId !== userId) return false;
+  // "Filter per Sales" (fitur baru) MENANG atas MINE — sama urutan prioritas
+  // dengan assignedToId di useConversations.js. Begitu salesFilter aktif,
+  // MINE tab diabaikan (sudah otomatis dialihkan ke ALL saat filter dipilih,
+  // lihat conversationStore.js#setSalesFilter, ini jaring pengaman kedua).
+  if (salesFilter) {
+    if (c.assignedToId !== salesFilter.id) return false;
+  } else if (filter === "MINE" && c.assignedToId !== userId) return false;
   if (filter === "OPEN" && c.status !== "OPEN") return false;
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
@@ -127,6 +134,7 @@ export default function ChatListScreen({ navigation }) {
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user, logout } = useAuth();
   const filter = useFilter();
+  const salesFilter = useSalesFilter();
   const search = useConvSearchQuery();
   const orderedIds = useOrderedIds();
   // Subscribe ke SELURUH conversationsById (bukan granular) memang tidak
@@ -150,6 +158,7 @@ export default function ChatListScreen({ navigation }) {
   const [tabOrder, setTabOrder] = useState(defaultTabOrder);
   const [reorderModalVisible, setReorderModalVisible] = useState(false);
   const [chatBaruVisible, setChatBaruVisible] = useState(false);
+  const [salesFilterModalVisible, setSalesFilterModalVisible] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(TAB_ORDER_KEY).then((raw) => {
@@ -228,7 +237,7 @@ export default function ChatListScreen({ navigation }) {
   const allSelectedPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.pinned);
 
   const { data, isLoading, isError, error, isRefetching, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } =
-    useConversations({ filter, search, userId: user?.id });
+    useConversations({ filter, search, userId: user?.id, salesFilterId: salesFilter?.id });
 
   // Id percakapan yang cocok `search` MENURUT SERVER (termasuk isi pesan) —
   // lihat catatan panjang di matches() kenapa ini tidak dihitung ulang dari
@@ -252,8 +261,8 @@ export default function ChatListScreen({ navigation }) {
 
   const visibleIds = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q, searchMatchedIds));
-  }, [orderedIds, conversationsById, filter, user?.id, search, searchMatchedIds]);
+    return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q, searchMatchedIds, salesFilter));
+  }, [orderedIds, conversationsById, filter, user?.id, search, searchMatchedIds, salesFilter]);
 
   function handleSearchChange(v) {
     setSearchInput(v);
@@ -359,6 +368,18 @@ export default function ChatListScreen({ navigation }) {
               <Text style={styles.title}>Inbox</Text>
               <Text style={styles.subtitle}>{user?.name} · {user?.role === "ADMIN" ? "Admin" : "Sales"}</Text>
             </View>
+            {/* Filter per Sales (fitur baru) — pilih siapa pun (bukan cuma
+                diri sendiri lewat tab MINE) untuk menyaring daftar percakapan
+                ke yang assignedToId-nya orang itu. Ikon jadi warna accent +
+                lingkaran soft begitu ada filter aktif, sama pola visual
+                dengan MessageSquarePlus di sebelahnya. */}
+            <TouchableOpacity onPress={() => setSalesFilterModalVisible(true)} style={styles.headerIconBtn}>
+              <Users
+                size={20}
+                color={salesFilter ? tokens.color.accent : tokens.color.textPrimary}
+                strokeWidth={2}
+              />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => setSearchOpen(true)} style={styles.headerIconBtn}>
               <Search size={20} color={tokens.color.textPrimary} strokeWidth={2} />
             </TouchableOpacity>
@@ -382,6 +403,22 @@ export default function ChatListScreen({ navigation }) {
           </>
         )}
       </View>
+
+      {/* Chip filter per Sales aktif — cuma tampil kalau ada, tap X untuk
+          hapus filter (setara memilih "Semua Sales" di modal). */}
+      {salesFilter && (
+        <View style={styles.salesFilterChipRow}>
+          <View style={styles.salesFilterChip}>
+            <Users size={13} color={tokens.color.accent} strokeWidth={2.2} />
+            <Text style={styles.salesFilterChipText} numberOfLines={1}>
+              Sales: {salesFilter.name}
+            </Text>
+            <TouchableOpacity onPress={() => useConversationStore.getState().setSalesFilter(null)} hitSlop={8}>
+              <X size={14} color={tokens.color.accent} strokeWidth={2.4} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Tab pill horizontal scrollable */}
       <ScrollView
@@ -438,6 +475,13 @@ export default function ChatListScreen({ navigation }) {
         onClose={() => setReorderModalVisible(false)}
       />
 
+      <SalesFilterModal
+        visible={salesFilterModalVisible}
+        selectedId={salesFilter?.id}
+        onClose={() => setSalesFilterModalVisible(false)}
+        onSelect={(u) => useConversationStore.getState().setSalesFilter(u ? { id: u.id, name: u.name } : null)}
+      />
+
       {/* Setelah percakapan berhasil dibuat/ditemukan, langsung dibuka —
           sama seperti perilaku openChat dari daftar. Nama diambil dari
           respons backend (bisa dari WhatsApp kalau kontak baru, atau nama
@@ -472,7 +516,9 @@ export default function ChatListScreen({ navigation }) {
       ) : visibleIds.length === 0 ? (
         <View style={styles.emptyWrap}>
           <empty.Icon size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
-          <Text style={styles.emptyText}>{empty.text}</Text>
+          <Text style={styles.emptyText}>
+            {salesFilter ? `Tidak ada percakapan milik ${salesFilter.name}` : empty.text}
+          </Text>
         </View>
       ) : (
         <FlashList
@@ -521,6 +567,13 @@ function createStyles(tokens) {
     paddingHorizontal: 14, paddingVertical: 9, fontSize: 14, color: tokens.color.textPrimary,
     borderWidth: 1, borderColor: tokens.color.border,
   },
+  salesFilterChipRow: { paddingHorizontal: 16, marginBottom: 8 },
+  salesFilterChip: {
+    flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
+    backgroundColor: tokens.color.accentSoft, borderRadius: tokens.radius.chip,
+    paddingHorizontal: 10, paddingVertical: 6, maxWidth: "100%",
+  },
+  salesFilterChipText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, flexShrink: 1 },
   tabsWrap: { flexGrow: 0, marginBottom: 4 },
   tabsContent: { paddingHorizontal: 12, gap: 8, paddingBottom: 8 },
   pill: {
