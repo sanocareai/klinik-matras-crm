@@ -481,7 +481,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     : null;
 
   return (
-    <div style={{ padding: "12px 14px", background: "#fafafa", borderTop: "1px solid var(--border)" }}>
+    <div style={{ padding: "12px 14px", background: "var(--bg-secondary)", borderTop: "1px solid var(--border)" }}>
       {/* Tombol aksi */}
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginBottom: 10 }}>
         {!editing ? (
@@ -517,7 +517,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
               className="btn btn-sm"
               onClick={handleDelete}
               disabled={deleting}
-              style={{ background: "#fee2e2", color: "#991b1b", border: "none", cursor: "pointer", borderRadius: 6, padding: "4px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+              style={{ background: "var(--red-bg)", color: "var(--red)", border: "none", cursor: "pointer", borderRadius: 6, padding: "4px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
             >
               <Trash2 size={12} /> {deleting ? "..." : "Hapus"}
             </button>
@@ -535,12 +535,12 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {/* D-025: penjelasan kunci — kenapa tombol Edit nonaktif, dan apa yang
           harus dilakukan sales kalau pelanggan minta revisi. */}
       {locked && (
-        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#f3f4f6", borderRadius: 8, border: "1px solid #d1d5db" }}>
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Lock size={12} color="#4b5563" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>Order terkunci</span>
+            <Lock size={12} color="var(--text-secondary)" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Order terkunci</span>
           </div>
-          <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "#4b5563", lineHeight: 1.5 }}>
+          <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
             Sudah LUNAS — cuma admin yang bisa mengedit lagi.{" "}
             {order.status === "DELIVERED"
               ? 'Kalau pelanggan minta revisi, tandai lewat tombol "Ajukan Revisi" di bawah supaya admin tahu dan bisa menindaklanjuti.'
@@ -551,14 +551,14 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
       {/* Badge komplain (jika sudah ada) */}
       {order.hasComplaint && (
-        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#fee2e2", borderRadius: 8, border: "1px solid #fca5a5" }}>
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: "var(--red-bg)", borderRadius: 8, border: "1px solid var(--red)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <AlertTriangle size={13} color="#dc2626" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#991b1b" }}>Ada Komplain</span>
-            <span style={{ fontSize: 11, color: "#b91c1c", marginLeft: "auto" }}>{formatTanggal(order.complaintDate)}</span>
+            <AlertTriangle size={13} color="var(--red)" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--red)" }}>Ada Komplain</span>
+            <span style={{ fontSize: 11, color: "var(--red)", marginLeft: "auto" }}>{formatTanggal(order.complaintDate)}</span>
           </div>
           {order.complaintDetail && (
-            <p style={{ margin: 0, fontSize: 12, color: "#7f1d1d" }}>{order.complaintDetail}</p>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--text-primary)" }}>{order.complaintDetail}</p>
           )}
         </div>
       )}
@@ -589,7 +589,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           )}
           {order.statusLocked ? (
             <>
-              <span style={{ fontSize: 10.5, color: "#92400e", background: "#fef3c7", padding: "2px 7px", borderRadius: 6 }}>
+              <span style={{ fontSize: 10.5, color: "var(--orange)", background: "var(--orange-bg)", padding: "2px 7px", borderRadius: 6 }}>
                 🔒 Diubah manual{order.statusOverrideBy?.name ? ` oleh ${order.statusOverrideBy.name}` : ""}
               </span>
               <button className="btn btn-ghost btn-sm" disabled={overrideBusy} onClick={releaseOverride}>
@@ -1013,19 +1013,19 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           {!showComplaintForm ? (
             <button
               onClick={() => setShowComplaintForm(true)}
-              style={{ fontSize: 12, color: "#dc2626", background: "none", border: "1px solid #fca5a5", borderRadius: 6, cursor: "pointer", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}
+              style={{ fontSize: 12, color: "var(--red)", background: "none", border: "1px solid var(--red)", borderRadius: 6, cursor: "pointer", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}
             >
               <AlertTriangle size={12} /> + Ajukan Revisi / Komplain
             </button>
           ) : (
-            <div style={{ padding: 10, background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8 }}>
-              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Detail Revisi / Komplain</p>
+            <div style={{ padding: 10, background: "var(--red-bg)", border: "1px solid var(--red)", borderRadius: 8 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "var(--red)" }}>Detail Revisi / Komplain</p>
               <textarea
                 value={complaintDetail}
                 onChange={(e) => setComplaintDetail(e.target.value)}
                 placeholder="Jelaskan masalah/revisi yang diminta customer — admin akan meninjau dan menindaklanjuti..."
                 rows={3}
-                style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid #fca5a5", resize: "vertical", boxSizing: "border-box" }}
+                style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--red)", resize: "vertical", boxSizing: "border-box" }}
               />
               <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                 <button
@@ -1605,7 +1605,7 @@ export default function OrderSection({ customer, onUpdate }) {
                   <React.Fragment key={o.id}>
                     <tr
                       onClick={() => toggleExpand(o.id)}
-                      style={{ borderTop: "1px solid var(--border)", cursor: "pointer", background: isOpen ? "#f8fafc" : "white", transition: "background 0.1s" }}
+                      style={{ borderTop: "1px solid var(--border)", cursor: "pointer", background: isOpen ? "var(--bg-secondary)" : "var(--bg-card)", transition: "background 0.1s" }}
                     >
                       <td style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -1715,5 +1715,5 @@ const metaLabel = {
 
 const chipStyle = {
   fontSize: 11, padding: "2px 8px", borderRadius: 99,
-  background: "#f3f4f6", color: "#374151", fontWeight: 500,
+  background: "var(--bg-secondary)", color: "var(--text-secondary)", fontWeight: 500,
 };

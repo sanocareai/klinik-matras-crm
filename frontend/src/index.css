@@ -3497,6 +3497,28 @@ body {
   color: var(--text-primary);
 }
 
+/* ── Bug ditemukan 24 Agustus 2026: field form APA PUN yang tidak diberi
+   className (mis. <textarea> polos di OrderSection.jsx "Ajukan Revisi",
+   atau input generik lainnya) jatuh ke base rule @layer base di atas
+   (baris ~319) — rule itu men-set background: white LANGSUNG, tanpa
+   variabel tema, dan sapuan mode gelap sebelum ini (5 Agustus 2026) cuma
+   menambal SELECTOR CLASS (.chat-textarea dkk), tidak pernah menyentuh
+   base element selector-nya sendiri. Akibatnya field input/select/textarea
+   manapun yang belum sempat dibungkus class khusus tetap putih terang di
+   tema Gelap — laporan asli: panel Order di Inbox tampak "masih putih"
+   padahal komponen di sekitarnya sudah gelap. Spesifisitas rule ini
+   ([data-theme=dark] + elemen) tetap KALAH dari rule class semisal
+   [data-theme=dark] .chat-textarea di atas, jadi aman ditambahkan tanpa
+   menimpa override yang sudah disetel khusus per komponen. */
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="email"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background: var(--bg-surface);
+}
+
 /* ── Background netral statis (badge abu netral, thumb placeholder,
      divider chip) → var(--bg-inset) ── */
 [data-theme="dark"] .first-responder-badge,
