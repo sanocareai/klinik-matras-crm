@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { X, Search, Package, Check, ChevronLeft, SendHorizonal } from "lucide-react";
 import { api } from "../api.js";
 
@@ -46,6 +46,20 @@ export function ProductPicker({ conversation, onClose, onSent }) {
     setCheckedIds(checkedIds.length === allIds.length ? [] : allIds);
   }
 
+  // clientId STABIL untuk kombinasi produk+gambar+opsi harga yang sedang
+  // dipilih (lihat komentar POST /:id/send-product di backend soal bug
+  // galeri produk terkirim dobel). SENGAJA useMemo (bukan digenerate ulang
+  // tiap handleSend dipanggil) — kalau sales klik "Kirim" lagi setelah
+  // alert gagal TANPA mengubah pilihan gambar, clientId yang dikirim tetap
+  // SAMA, jadi backend bisa kenali ini retry dan tidak kirim ulang gambar
+  // yang ternyata sudah sukses di percobaan sebelumnya. Berubah otomatis
+  // (clientId baru) begitu sales ganti produk/gambar/toggle harga — itu
+  // memang percobaan kirim yang beda, bukan retry.
+  const sendClientId = useMemo(
+    () => `client-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    [selected?.id, checkedIds.join(","), includePrice]
+  );
+
   // Preview caption yang akan dikirim
   function previewCaption() {
     if (!selected) return "";
@@ -59,13 +73,14 @@ export function ProductPicker({ conversation, onClose, onSent }) {
   }
 
   async function handleSend() {
-    if (!selected || !checkedIds.length) return;
+    if (!selected || !checkedIds.length || sending) return;
     setSending(true);
     try {
       const result = await api.sendProduct(conversation.id, {
         productId: selected.id,
         imageIds: checkedIds,
         includePrice,
+        clientId: sendClientId,
       });
       onSent(result.messages || []);
     } catch (err) {

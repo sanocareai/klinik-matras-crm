@@ -80,9 +80,23 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
     setCheckedIds(checkedIds.length === allIds.length ? [] : allIds);
   }
 
+  // clientId STABIL untuk kombinasi produk+gambar+opsi harga yang sedang
+  // dipilih — lihat komentar POST /:id/send-product di backend soal bug
+  // galeri produk terkirim DOBEL (screenshot produksi 23 Agustus 2026).
+  // SENGAJA useMemo (bukan digenerate ulang tiap handleSend dipanggil):
+  // kalau sales tap "Kirim" lagi setelah alert gagal TANPA ganti pilihan
+  // gambar, clientId yang dikirim tetap SAMA, jadi backend tahu ini retry
+  // dan tidak kirim ulang gambar yang ternyata sudah sukses sebelumnya.
+  // Berubah otomatis begitu produk/gambar/opsi harga diganti — itu memang
+  // percobaan kirim yang beda, bukan retry.
+  const sendClientId = useMemo(
+    () => `client-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    [selected?.id, checkedIds.join(","), includePrice]
+  );
+
   function handleSend() {
-    if (!selected || !checkedIds.length) return;
-    onSend({ productId: selected.id, imageIds: checkedIds, includePrice });
+    if (!selected || !checkedIds.length || sending) return;
+    onSend({ productId: selected.id, imageIds: checkedIds, includePrice, clientId: sendClientId });
   }
 
   // Produk baru langsung ditambahkan ke daftar (tanpa refetch) dan dibuka

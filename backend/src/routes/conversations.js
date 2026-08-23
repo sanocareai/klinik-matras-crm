@@ -1214,8 +1214,22 @@ conversationRouter.post("/:id/send-contact", async (req, res) => {
 // of null) begitu sales coba kirim galeri produk ke grup. Sekarang pakai
 // resolveSendTarget() yang sama dengan POST /:id/messages & /:id/media —
 // groupJid untuk GROUP, nomor customer untuk INDIVIDUAL.
+//
+// clientId (BUG DIPERBAIKI 23 Agustus 2026 — screenshot produksi: galeri
+// produk terkirim DOBEL, gambar+caption sama muncul 2x berurutan di
+// WhatsApp). Endpoint ini TIDAK PERNAH dapat proteksi clientId yang sudah
+// dipasang di POST /:id/messages sejak 28 Jul 2026 (lihat komentar di sana)
+// untuk masalah yang PERSIS SAMA: request timeout di klien (koneksi
+// lapangan naik-turun) padahal sendMedia() ke WAHA di server sudah
+// berhasil → klien anggap gagal → sales/UI retry → gambar terkirim ulang
+// SUNGGUHAN ke WhatsApp. Bedanya dari /:id/messages: satu panggilan di
+// sini bisa membuat BANYAK Message (1 per gambar), jadi clientId dasar
+// dari klien diturunkan PER GAMBAR (`${clientId}:${imageId}`) — bukan cuma
+// supaya retry penuh idempotent, tapi retry PARSIAL (mis. gambar 1-2 dari
+// 3 sudah sempat terkirim sebelum timeout) hanya mengirim ULANG sisanya,
+// bukan mengulang semua dari awal.
 conversationRouter.post("/:id/send-product", async (req, res) => {
-  const { productId, imageIds, includePrice } = req.body;
+  const { productId, imageIds, includePrice, clientId } = req.body;
   if (!productId) return res.status(400).json({ error: "productId wajib diisi" });
 
   const conversation = await prisma.conversation.findUnique({
@@ -1256,11 +1270,31 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
   const savedMessages = [];
 
+  // clientId per gambar — lihat catatan di atas endpoint ini. Cek SEBELUM
+  // loop supaya retry (penuh ATAU parsial) tidak mengirim ulang gambar yang
+  // sudah pernah sukses di percobaan sebelumnya.
+  const imageClientId = (img) => (clientId ? `${clientId}:${img.id}` : null);
+  let alreadySent = new Map(); // imageClientId -> Message
+  if (clientId) {
+    const existing = await prisma.message.findMany({
+      where: { clientId: { in: selectedImages.map(imageClientId) } },
+    });
+    alreadySent = new Map(existing.map((m) => [m.clientId, m]));
+  }
+
   for (let i = 0; i < selectedImages.length; i++) {
     const img      = selectedImages[i];
     const isLast   = i === selectedImages.length - 1;
     const caption  = isLast ? formatCaption() : "";
     const fileUrl  = `${BACKEND_INTERNAL_URL}${img.url}`;
+    const cid      = imageClientId(img);
+
+    if (cid && alreadySent.has(cid)) {
+      // Gambar ini sudah sukses terkirim di percobaan sebelumnya (retry) —
+      // JANGAN kirim ulang ke WAHA, cukup ikutkan hasil lama di response.
+      savedMessages.push(alreadySent.get(cid));
+      continue;
+    }
 
     try {
       // sendWithSessionFallback pakai conversation.sessionId kalau sudah ada;
@@ -1278,15 +1312,24 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
         )
       );
       conversation.sessionId = session;
-      const msg = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: "OUTBOUND",
-          content: caption,
-          mediaType: "image",
-          mediaUrl: img.url,
-        },
-      });
+      let msg;
+      try {
+        msg = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            direction: "OUTBOUND",
+            content: caption,
+            mediaType: "image",
+            mediaUrl: img.url,
+            clientId: cid,
+          },
+        });
+      } catch (e) {
+        if (e.code !== "P2002" || !cid) throw e;
+        // Race sempit — sama pola dengan POST /:id/messages: 2 request
+        // ber-clientId sama lolos cek alreadySent di atas nyaris bersamaan.
+        msg = await prisma.message.findUnique({ where: { clientId: cid } });
+      }
       savedMessages.push(msg);
     } catch (err) {
       console.error(`[send-product] Gagal kirim gambar ${img.id}:`, err.message);
