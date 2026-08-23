@@ -149,8 +149,23 @@ async function notifyDriverGroup(job, photoUrls, headline) {
 // daftar "available" supaya dispatcher bisa membuat job baru.
 const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
+// Unit.status "AWAITING_PICKUP"/"READY_FOR_DELIVERY" TIDAK cukup untuk
+// menandai unit layak dijadwalkan — order induknya bisa saja sudah
+// CANCELLED atau malah sudah DELIVERED (data lama sebelum sync status
+// unit<->order konsisten). Tanpa filter ini, GET /board menampilkan unit
+// itu sebagai "available" dan dispatcher bisa membuat job (+ trigger WA
+// asli ke customer) untuk order yang sudah mati. Bug nyata ditemukan
+// 23 Agustus 2026: tes end-to-end memilih unit AWAITING_PICKUP yang
+// order-nya CANCELLED sejak 13 hari sebelumnya — 57 dari 190 unit
+// AWAITING_PICKUP saat itu punya order CANCELLED, 65 lagi order-nya
+// sudah DELIVERED. Dipakai DUA tempat: menyaring daftar "available" (GET
+// /board) DAN validasi server-side saat job benar-benar dibuat (POST
+// /jobs) — supaya tidak bisa dilewati dengan mengirim unitId langsung.
+const ELIGIBLE_ORDER_STATUS = { PICKUP: ["PENDING", "PICKUP"], DELIVERY: ["READY"] };
+
 const jobInclude = {
   driver: { select: { id: true, name: true } },
+  vehicle: { select: { id: true, plateNumber: true } },
   payments: {
     select: { id: true, amount: true, method: true, createdAt: true, verifications: { select: { id: true } } },
   },
@@ -1336,7 +1351,11 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
 
     const eligibleStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
     const available = await prisma.unit.findMany({
-      where: { status: { in: eligibleStatus }, id: { notIn: alreadyBookedUnitIds } },
+      where: {
+        status: { in: eligibleStatus },
+        id: { notIn: alreadyBookedUnitIds },
+        order: { status: { in: ELIGIBLE_ORDER_STATUS[type] } },
+      },
       include: {
         order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
       },
@@ -1458,14 +1477,17 @@ armadaRouter.get("/jobs/:id", requirePermission(P.JOB_OWN_READ), async (req, res
   }
 });
 
-// POST /api/armada/jobs { type, unitIds, scheduledDate?, driverId?, timeWindow?, addressText? }
+// POST /api/armada/jobs { type, unitIds, scheduledDate?, driverId?, vehicleId?, timeWindow?, addressText? }
 armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
-    const { type, unitIds, scheduledDate, driverId, timeWindow, addressText, accessNotes } = req.body;
+    const { type, unitIds, scheduledDate, driverId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
     if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
     if (!Array.isArray(unitIds) || unitIds.length === 0) throw new ArmadaError("Pilih minimal 1 unit");
 
-    const units = await prisma.unit.findMany({ where: { id: { in: unitIds } } });
+    const units = await prisma.unit.findMany({
+      where: { id: { in: unitIds } },
+      include: { order: { select: { status: true } } },
+    });
     if (units.length !== unitIds.length) throw new ArmadaError("Ada unit yang tidak ditemukan");
 
     // PRD §5.2: satu job pickup/delivery hanya boleh membawa unit dari SATU
@@ -1481,6 +1503,20 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
         `Unit ${wrongStatus.unitCode} berstatus ${wrongStatus.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
       );
     }
+    // Validasi server-side, BUKAN cuma filter tampilan GET /board — kalau
+    // cuma disaring di daftar "available", unitId tetap bisa dikirim
+    // langsung lewat API dan lolos (lihat catatan ELIGIBLE_ORDER_STATUS).
+    const wrongOrderStatus = units.find((u) => !ELIGIBLE_ORDER_STATUS[type].includes(u.order.status));
+    if (wrongOrderStatus) {
+      throw new ArmadaError(
+        `Unit ${wrongOrderStatus.unitCode} order-nya berstatus ${wrongOrderStatus.order.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
+      );
+    }
+
+    if (vehicleId) {
+      const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+      if (!vehicle || !vehicle.active) throw new ArmadaError("Kendaraan tidak ditemukan atau tidak aktif");
+    }
 
     const geo = addressText ? await bestEffortGeocode(addressText) : null;
 
@@ -1490,6 +1526,7 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
         orderId: [...orderIds][0],
         scheduledDate: toDateOnly(scheduledDate),
         driverId: driverId || null,
+        vehicleId: vehicleId || null,
         timeWindow: timeWindow || null,
         addressText: addressText || null,
         lat: geo?.lat ?? null,
@@ -1525,10 +1562,17 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
-    const { scheduledDate, driverId, timeWindow, addressText, accessNotes } = req.body;
+    const { scheduledDate, driverId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
     const data = {};
     if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
     if (driverId !== undefined) data.driverId = driverId || null;
+    if (vehicleId !== undefined) {
+      if (vehicleId) {
+        const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!vehicle || !vehicle.active) throw new ArmadaError("Kendaraan tidak ditemukan atau tidak aktif");
+      }
+      data.vehicleId = vehicleId || null;
+    }
     if (timeWindow !== undefined) data.timeWindow = timeWindow;
     if (accessNotes !== undefined) data.accessNotes = accessNotes;
     // Re-geocode HANYA kalau alamat teksnya benar-benar berubah — supaya

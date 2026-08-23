@@ -66,8 +66,9 @@ function formatDuration(s) {
 // route: opsional — { index, isFirst, isLast, onMoveUp, onMoveDown, busy,
 // legToNext } — hanya diisi kalau job ini bagian dari grup driver+tanggal
 // yang punya >1 stop (FR-L-03: kontrol urutan rute manual).
-function JobCard({ job, drivers, onChanged, route }) {
+function JobCard({ job, drivers, vehicles, onChanged, route }) {
   const [driverId, setDriverId] = useState(job.driverId || "");
+  const [vehicleId, setVehicleId] = useState(job.vehicleId || "");
   const [address, setAddress] = useState(job.addressText || "");
   // D-032 — alamat SALES/rencana (Order.deliveryAddress/deliveryCity,
   // D-027), dipakai SEBAGAI SARAN, bukan auto-fill langsung — field ini
@@ -88,6 +89,17 @@ function JobCard({ job, drivers, onChanged, route }) {
     setBusy(true);
     try {
       await api.updateArmadaJob(job.id, { driverId: newDriverId || null });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveVehicle(newVehicleId) {
+    setVehicleId(newVehicleId);
+    setBusy(true);
+    try {
+      await api.updateArmadaJob(job.id, { vehicleId: newVehicleId || null });
       onChanged();
     } finally {
       setBusy(false);
@@ -180,6 +192,18 @@ function JobCard({ job, drivers, onChanged, route }) {
             </select>
           </div>
           <div className="mt-2 flex items-center gap-2">
+            <Truck className="h-3.5 w-3.5 shrink-0 text-ink3" />
+            <select
+              value={vehicleId}
+              onChange={(e) => saveVehicle(e.target.value)}
+              disabled={busy}
+              className="h-9 flex-1 rounded-lg border border-border bg-surface px-2 text-xs text-ink outline-none focus:border-accent"
+            >
+              <option value="">Belum ada kendaraan</option>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber}</option>)}
+            </select>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-ink3" />
             <input
               value={address}
@@ -216,6 +240,7 @@ function JobCard({ job, drivers, onChanged, route }) {
       ) : (
         <div className="mt-3 space-y-1 text-xs text-ink2">
           {job.driver && <p className="flex items-center gap-1.5"><User className="h-3 w-3" /> {job.driver.name}</p>}
+          {job.vehicle && <p className="flex items-center gap-1.5"><Truck className="h-3 w-3" /> {job.vehicle.plateNumber}</p>}
           {job.addressText && <p className="flex items-center gap-1.5"><MapPin className="h-3 w-3" /> {job.addressText}</p>}
           {job.status === "FAILED" && job.failureReason && (
             <p className="rounded bg-redbg px-2 py-1 text-red">{job.failureReason}</p>
@@ -236,7 +261,7 @@ function JobCard({ job, drivers, onChanged, route }) {
 // ── Grup job per driver — urutan rute manual (FR-L-03) ───────────────────
 // Kontrol urutan+jarak/durasi HANYA muncul kalau driver ini punya >1 job
 // aktif di tanggal itu (satu job saja tidak ada "rute" untuk diurutkan).
-function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, onChanged }) {
+function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, vehicles, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState(null);
   const hasRoute = jobs.length > 1;
@@ -283,7 +308,7 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, onC
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {jobs.map((job, i) => (
           <JobCard
-            key={job.id} job={job} drivers={drivers} onChanged={onChanged}
+            key={job.id} job={job} drivers={drivers} vehicles={vehicles} onChanged={onChanged}
             route={hasRoute ? {
               index: i, isFirst: i === 0, isLast: i === jobs.length - 1,
               onMoveUp: () => move(i, -1), onMoveDown: () => move(i, 1), busy,
@@ -459,6 +484,7 @@ export default function Armada() {
   const [date, setDate] = useState(todayWibISO());
   const [board, setBoard] = useState(null);
   const [drivers, setDrivers] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -468,9 +494,10 @@ export default function Armada() {
 
   const load = useCallback(async () => {
     try {
-      const [b, d] = await Promise.all([api.getArmadaBoard(type, date), api.getDrivers()]);
+      const [b, d, v] = await Promise.all([api.getArmadaBoard(type, date), api.getDrivers(), api.getVehicles()]);
       setBoard(b);
       setDrivers(d);
+      setVehicles((v.vehicles || []).filter((x) => x.active));
     } catch (e) {
       setError(e.message);
     }
@@ -623,7 +650,7 @@ export default function Armada() {
                   {Object.entries(grouped).map(([driverId, jobs]) => (
                     <DriverRouteGroup
                       key={driverId} driverId={driverId} driverName={jobs[0].driver?.name || "Driver"}
-                      jobs={jobs} date={date} type={type} drivers={drivers} onChanged={load}
+                      jobs={jobs} date={date} type={type} drivers={drivers} vehicles={vehicles} onChanged={load}
                     />
                   ))}
                   {unassigned.length > 0 && (
@@ -633,7 +660,7 @@ export default function Armada() {
                       )}
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                         {unassigned.map((job) => (
-                          <JobCard key={job.id} job={job} drivers={drivers} onChanged={load} />
+                          <JobCard key={job.id} job={job} drivers={drivers} vehicles={vehicles} onChanged={load} />
                         ))}
                       </div>
                     </div>
