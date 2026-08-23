@@ -55,10 +55,15 @@ async function sendCustomerText(customerId, text) {
   if (!conversation?.customer?.phone) return; // tidak ada nomor — diam, bukan error keras
   const target = conversation.customer.phone;
 
-  const { session } = await sendWithSessionFallback(conversation, (s) => sendText(target, text, null, s));
+  // externalId dari WAHA WAJIB disimpan (pola sama dengan conversations.js
+  // ~L682) — tanpa ini webhook echo "fromMe" untuk pesan yang sama tidak
+  // bisa dedup by externalId, dan disimpan LAGI sebagai baris Message baru
+  // (bug nyata, ditemukan 23 Agustus 2026: notifyPickupScheduled tampil
+  // dobel di riwayat chat CRM, walau WhatsApp customer cuma terima 1x).
+  const { result: wahaMsg, session } = await sendWithSessionFallback(conversation, (s) => sendText(target, text, null, s));
 
   const msg = await prisma.message.create({
-    data: { conversationId: conversation.id, direction: "OUTBOUND", content: text },
+    data: { conversationId: conversation.id, direction: "OUTBOUND", content: text, externalId: wahaMsg?.id || null },
   });
   const updated = await prisma.conversation.update({
     where: { id: conversation.id },
