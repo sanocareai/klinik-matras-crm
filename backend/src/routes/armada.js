@@ -1650,10 +1650,15 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
     });
     if (jobs.length === 0) return res.json([]);
 
+    // job_id di job_position_pings bertipe uuid — tanpa cast ::uuid[] di
+    // sini, driver Postgres node-postgres mengirim array param sebagai
+    // text[] dan query gagal total ("operator does not exist: uuid = text",
+    // ditemukan 23 Agustus 2026 saat tes end-to-end job pickup nyata:
+    // endpoint ini 500 setiap kali dipanggil, papan Live Tracking mati).
     const latest = await prisma.$queryRaw`
       SELECT DISTINCT ON (job_id) job_id, lat, lng, accuracy, recorded_at
       FROM job_position_pings
-      WHERE job_id = ANY(${jobs.map((j) => j.id)})
+      WHERE job_id = ANY(${jobs.map((j) => j.id)}::uuid[])
       ORDER BY job_id, recorded_at DESC
     `;
     const byJob = new Map(latest.map((p) => [p.job_id, p]));
