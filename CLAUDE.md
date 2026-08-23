@@ -181,13 +181,28 @@ customer yang di-merge. Sekarang sudah dipindahkan di dalam satu transaksi.
 
 **Cara cek cepat apakah masih ada data LID:**
 ```sql
-SELECT id, name, phone FROM "Customer"
-WHERE phone IS NOT NULL
-  AND (phone NOT LIKE '62%' OR length(phone) > 13 OR phone LIKE '%@%');
+-- Cuma "@" yang benar-benar menandakan JID mentah bocor ke kolom phone.
+SELECT id, name, phone FROM "Customer" WHERE phone LIKE '%@%';
 -- HARUS 0 baris
 SELECT reason, COUNT(*) FROM "UnresolvedMessage" GROUP BY reason;
 -- LID_UNRESOLVABLE naik terus = WAHA tidak bisa resolve, perlu diperiksa
 ```
+
+⚠️ **JANGAN pakai query lama `phone NOT LIKE '62%' OR length(phone) > 13`
+sebagai penanda data rusak** — dulu tertulis di sini dengan catatan "HARUS 0
+baris", dan itu SALAH. Diperiksa 23 Agustus 2026: query itu mengembalikan 46
+baris yang SEMUANYA DATA SAH.
+
+- **42 baris `length > 13`** — nomor Three/Smartfren (prefix `62895`, `62882`,
+  `62887`) memang 14 karakter. 41 dari 42 punya pesan MASUK sungguhan, jadi
+  jelas pelanggan asli, bukan LID.
+- **4 baris `NOT LIKE '62%'`** — pelanggan luar negeri: `+20` Mesir, `+966`
+  Arab Saudi, `+44` Inggris, `+855` Kamboja.
+
+Menjalankan "pembersihan" berdasarkan query lama itu akan MENGHAPUS/menge-null
+nomor pelanggan nyata. Panjang & prefix nomor BUKAN indikator LID — LID
+dikenali dari bentuk JID-nya (`@lid`/`@c.us`), itulah yang dites
+`isLidLikePhone()` di services/wahaClient.js.
 
 **Sisa risiko yang masih terbuka:**
 - `resolvePhoneFromLid()` langkah 4 sengaja mengembalikan LID apa adanya kalau
@@ -1421,3 +1436,62 @@ itu, jangan admin.**
 
 Semuanya sudah menandai diri dengan badge "Contoh". Jangan hapus badge itu
 sebelum sumber datanya benar-benar diganti ke endpoint nyata.
+
+---
+
+## 20. LABEL LEAD & ALUR PENUGASAN SALES (23 Agustus 2026)
+
+### Tiga field berbeda, sering tertukar
+
+| Field | Arti | Berubah saat |
+|---|---|---|
+| `Customer.assignedSalesId` | **Pemilik lead** — dipakai label "Sales Person" di Pelanggan/Pipeline & laporan | takeover, transfer |
+| `Conversation.assignedToId` | **Yang SEDANG memegang percakapan** | takeover, transfer |
+| `Conversation.firstResponderId` | **Yang PERTAMA membalas** — kredit historis, IMMUTABLE | tidak pernah (sekali diisi) |
+
+Dua yang pertama SELALU disinkronkan oleh `POST /:id/takeover` dan
+`PATCH /:id` (transfer). `firstResponderId` sengaja TIDAK ikut berubah —
+itu gunanya: mengukur kecepatan respons pertama tetap menempel ke orang
+yang benar-benar mengetik balasannya, walau lead-nya sudah pindah tangan.
+
+### Alur Novi (leader sales)
+
+Novi ber-role **ADMIN**, bukan SALES. Konsekuensi yang DISENGAJA:
+- Dia bisa memegang & closing lead sendiri (assignedSalesId boleh = Novi)
+- Tapi dia **TIDAK muncul** di Laporan Sales / Target Sales / Top
+  Performing Reps — filternya `role === "SALES"` saja (lihat §sales-report
+  di routes/analytics.js). Ini benar sesuai aturan bisnis: closing leader
+  tidak dihitung sebagai angka sales.
+- Kalau Novi mengoper lead ke sales, pakai **transfer** (admin-only) —
+  itu yang menyinkronkan `assignedSalesId` ke sales tujuan.
+
+### ⚠️ Bug yang sudah diperbaiki — jangan diulang
+
+1. **Badge list Inbox ambigu** (23 Agt). Baris percakapan cuma menampilkan
+   `firstResponder` TANPA label, sementara header chat menampilkan
+   `assignedTo` — jadi baris bilang "Novi" tapi begitu diklik jadi "Kiki".
+   Dua-duanya benar, tapi mustahil dibedakan. Sekarang badge utama =
+   pemegang SEKARANG, dan "pertama balas" cuma tampil kalau ORANG BERBEDA,
+   diawali `1st:`.
+2. **Transfer tidak menyinkronkan `assignedSalesId`** (diperbaiki 27 Juli,
+   commit dc3604b). Transfer SEBELUM tanggal itu meninggalkan 20 pelanggan
+   dengan label sales basi — sudah di-backfill 23 Agustus (aturan: ikut
+   pemegang percakapan TERAKHIR AKTIF; backup di tabel
+   `backup_assigned_sales_20260823`).
+3. **Baris "CS:" pesan WA order** membaca `assignedSales` (pemilik lead),
+   bukan siapa yang mengirim — Kiki closing tapi tertulis Risel. Sekarang
+   pakai `req.user.name` (backend) / user login (frontend).
+
+**Cek konsistensi label lead:**
+```sql
+SELECT c.name, us.name AS label, ua.name AS pemegang_chat
+FROM "Conversation" conv
+JOIN "Customer" c ON c.id = conv."customerId"
+LEFT JOIN "User" us ON us.id = c."assignedSalesId"
+LEFT JOIN "User" ua ON ua.id = conv."assignedToId"
+WHERE conv."assignedToId" IS NOT NULL
+  AND c."assignedSalesId" IS DISTINCT FROM conv."assignedToId";
+```
+Baris yang muncul TIDAK otomatis berarti rusak: pelanggan dengan BEBERAPA
+percakapan wajar punya chat lama yang dulu dipegang orang lain. Yang perlu
+dicurigai cuma kalau percakapan TERBARU-nya yang berbeda dari label.
