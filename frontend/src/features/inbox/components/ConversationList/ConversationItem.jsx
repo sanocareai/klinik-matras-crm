@@ -184,11 +184,23 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
             {STATUS_LABEL[c.status] || c.status}
           </span>
           {sessionLabel && <span className="session-badge">{sessionLabel}</span>}
-          {/* Sales yang PERTAMA balas — beda dari assignedTo (siapa yang
-              SEDANG pegang), tetap tampil walau sudah di-takeover berkali-kali. */}
-          {c.firstResponder && (
-            <span className="first-responder-badge" title="Pertama kali membalas">
-              {c.firstResponder.name}
+          {/* DUA badge berbeda arti — sebelumnya CUMA firstResponder yang
+              tampil, TANPA label, sehingga terbaca sebagai "pemegang lead".
+              BUG NYATA (23 Agustus 2026): baris HENDRO menampilkan "Novi"
+              (yang pertama membalas) padahal header chat menampilkan "Kiki"
+              (yang sekarang memegang) — dua-duanya benar, tapi tidak ada
+              cara membedakannya. Sekarang pemegang SEKARANG jadi badge utama
+              (itu yang dicari sales saat menyortir inbox), dan "pertama
+              balas" cuma tampil kalau memang ORANG YANG BERBEDA, dengan
+              awalan "1st:" supaya tidak pernah tertukar lagi. */}
+          {c.assignedTo && (
+            <span className="lead-badge other" title={`Sedang dipegang ${c.assignedTo.name}`}>
+              {c.assignedTo.name}
+            </span>
+          )}
+          {c.firstResponder && c.firstResponder.id !== c.assignedTo?.id && (
+            <span className="first-responder-badge" title={`Pertama kali membalas: ${c.firstResponder.name}`}>
+              1st: {c.firstResponder.name}
             </span>
           )}
           {isRead && !isReplied && (
