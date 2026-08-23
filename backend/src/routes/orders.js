@@ -510,7 +510,15 @@ function parseOrderNotesForWa(notes) {
 }
 // Dirapikan 21 Agustus 2026 — lihat catatan lengkap di buildWaMessage() milik
 // OrderSection.jsx (kedua definisi ini WAJIB tetap sama persis).
-function buildWaMessage(order, customer) {
+// actorName: SIAPA yang mengirim pesan ini SEKARANG (req.user.name di
+// pemanggil) — BUKAN customer.assignedSales (pemilik lead di CRM, dua hal
+// ini bisa beda orang). BUG NYATA (22 Agustus 2026): Kiki menutup &
+// mengisi sebuah order, tapi baris "CS:" di pesan WA menampilkan Risel
+// karena leadnya memang pernah/masih ditugaskan ke Risel — customer bisa
+// dipegang satu sales sementara order yang sedang diproses dikerjakan
+// sales lain (transfer, backup, dst). Baris CS harus mencerminkan siapa
+// yang MENGIRIM pesan ini, bukan riwayat kepemilikan lead.
+function buildWaMessage(order, customer, actorName) {
   const info  = parseOrderNotesForWa(order.notes);
   const berat = (order.weightEntries || []).map((w) => w.beratKg).join(", ") || "-";
   const cats  = order.complaintCategory || [];
@@ -559,7 +567,7 @@ function buildWaMessage(order, customer) {
     `Kirim: ${order.deliveryEstimate || "-"}${order.deliveryConfirmedDate ? ` (Pasti: ${formatTanggalOrder(order.deliveryConfirmedDate)})` : ""}`,
     ``,
     `📍 Lokasi: ${order.locationUrl || "-"}`,
-    `🧑‍💼 CS: ${customer.assignedSales?.name || "-"}`,
+    `🧑‍💼 CS: ${actorName || customer.assignedSales?.name || "-"}`,
   ].join("\n");
 }
 
@@ -599,7 +607,7 @@ orderRouter.post("/:id/send-wa-summary", async (req, res) => {
       });
     }
 
-    const text = buildWaMessage(order, order.customer);
+    const text = buildWaMessage(order, order.customer, req.user.name);
 
     let wahaMsg;
     try {

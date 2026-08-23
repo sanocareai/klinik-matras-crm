@@ -24,6 +24,13 @@ import { isAdminUser } from "../../lib/roles.js";
 function currentUserIsAdmin() {
   try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
 }
+// Nama sales yang SEDANG login — dipakai baris "CS:" pesan WA (lihat
+// buildWaMessage) supaya menampilkan siapa yang benar-benar menutup/mengisi
+// order ini, bukan pemilik lead di CRM (Customer.assignedSales) yang bisa
+// beda orang.
+function currentUserName() {
+  try { return JSON.parse(localStorage.getItem("user") || "null")?.name || null; } catch { return null; }
+}
 
 // Jenis Layanan/Merk Kasur/Ukuran Kasur BUKAN lagi hardcode di sini — diambil
 // dari GET /api/master-data/order-options (satu sumber dipakai web & mobile,
@@ -137,7 +144,13 @@ function formatRpWa(n) {
 // cepat di HP saat grup ramai. Dikelompokkan per bagian + bold WhatsApp
 // (*teks*) supaya bisa di-scan sekilas; SEMUA field yang sebelumnya ada
 // tetap ada, tidak ada yang dihapus — cuma disusun ulang.
-function buildWaMessage(order, customer) {
+// actorName: SIAPA yang menyalin/mengirim pesan ini SEKARANG (user yang
+// sedang login) — BUKAN customer.assignedSales (pemilik lead, bisa beda
+// orang dari yang sedang menutup order ini). Lihat catatan sama di
+// backend/src/routes/orders.js#buildWaMessage — DUA definisi ini SENGAJA
+// tidak dibagi lewat import (beda sisi client/server), jangan biarkan
+// menyimpang, sinkronkan kalau salah satu diubah.
+function buildWaMessage(order, customer, actorName) {
   const info   = parseOrderNotes(order.notes);
   const berat  = (order.weightEntries || []).map((w) => w.beratKg).join(", ") || "-";
   const cats   = order.complaintCategory || [];
@@ -190,7 +203,7 @@ function buildWaMessage(order, customer) {
     `Kirim: ${order.deliveryEstimate || "-"}${order.deliveryConfirmedDate ? ` (Pasti: ${formatTanggal(order.deliveryConfirmedDate)})` : ""}`,
     ``,
     `📍 Lokasi: ${order.locationUrl || "-"}`,
-    `🧑‍💼 CS: ${customer.assignedSales?.name || "-"}`,
+    `🧑‍💼 CS: ${actorName || customer.assignedSales?.name || "-"}`,
   ].join("\n");
 }
 
@@ -258,7 +271,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
   async function handleCopyWaMessage() {
     try {
-      await navigator.clipboard.writeText(buildWaMessage(order, customer || {}));
+      await navigator.clipboard.writeText(buildWaMessage(order, customer || {}, currentUserName()));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
