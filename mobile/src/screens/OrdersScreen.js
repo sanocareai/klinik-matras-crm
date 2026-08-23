@@ -16,7 +16,7 @@ import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { Search, Package, AlertTriangle, MessageCircle, ChevronDown } from "lucide-react-native";
+import { Search, Package, AlertTriangle, MessageCircle, ChevronDown, Users, X } from "lucide-react-native";
 import { ScrollView } from "react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -25,6 +25,7 @@ import Avatar from "../components/Avatar";
 import PressableScale from "../components/PressableScale";
 import OrderCard from "../components/OrderCard";
 import OrderFormModal from "../components/OrderFormModal";
+import SalesFilterModal from "../components/SalesFilterModal";
 import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, ORDER_STATUSES,
@@ -111,6 +112,12 @@ export default function OrdersScreen() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [hanyaMandek, setHanyaMandek] = useState(false);
+  // Filter per Sales (fitur baru) — Order sendiri TIDAK punya kolom sales,
+  // kepemilikannya lewat customer.assignedSalesId (lihat schema.prisma).
+  // Backend GET /orders?salesId= sudah lama ada (dipakai dropdown web
+  // frontend/src/pages/Orders.jsx), di sini baru disambungkan ke mobile.
+  const [salesFilter, setSalesFilter] = useState(null); // { id, name } | null
+  const [salesModalVisible, setSalesModalVisible] = useState(false);
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null); // { total, value } dari perStatus
   const [loading, setLoading] = useState(true);
@@ -129,6 +136,7 @@ export default function OrdersScreen() {
       const params = {};
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      if (salesFilter) params.salesId = salesFilter.id;
       const data = await api.getOrders(params);
       setOrders(data.items || []);
       setSummary({
@@ -142,7 +150,7 @@ export default function OrdersScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, salesFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -235,7 +243,25 @@ export default function OrdersScreen() {
           value={searchInput}
           onChangeText={handleSearchChange}
         />
+        {/* Filter per Sales (fitur baru) — sama pola dgn ikon di header
+            Inbox (ChatListScreen.js), ditaruh di search bar di sini karena
+            layar ini tidak punya header icon row terpisah. */}
+        <PressableScale onPress={() => setSalesModalVisible(true)} style={styles.searchIconBtn}>
+          <Users size={18} color={salesFilter ? tokens.color.accent : tokens.color.textMuted} strokeWidth={2} />
+        </PressableScale>
       </View>
+
+      {salesFilter && (
+        <View style={styles.salesFilterChipRow}>
+          <View style={styles.salesFilterChip}>
+            <Users size={13} color={tokens.color.accent} strokeWidth={2.2} />
+            <Text style={styles.salesFilterChipText} numberOfLines={1}>Sales: {salesFilter.name}</Text>
+            <PressableScale onPress={() => setSalesFilter(null)} hitSlop={8}>
+              <X size={14} color={tokens.color.accent} strokeWidth={2.4} />
+            </PressableScale>
+          </View>
+        </View>
+      )}
 
       {/* Ringkasan singkat — bukan 4 kartu KPI seperti web (ruang HP
           terbatas), cukup 1 baris supaya sales tetap tahu skala tanpa
@@ -289,7 +315,7 @@ export default function OrdersScreen() {
         <View style={styles.emptyWrap}>
           <Package size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
           <Text style={styles.emptyText}>
-            {search || statusFilter || hanyaMandek ? "Tidak ada order yang cocok" : "Belum ada order"}
+            {search || statusFilter || hanyaMandek || salesFilter ? "Tidak ada order yang cocok" : "Belum ada order"}
           </Text>
         </View>
       ) : (
@@ -311,6 +337,14 @@ export default function OrdersScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 420 }}
         />
       )}
+
+      <SalesFilterModal
+        visible={salesModalVisible}
+        selectedId={salesFilter?.id}
+        filterRole="SALES"
+        onClose={() => setSalesModalVisible(false)}
+        onSelect={(u) => setSalesFilter(u ? { id: u.id, name: u.name } : null)}
+      />
 
       {editingOrder && (
         <OrderFormModal
@@ -341,6 +375,14 @@ function createStyles(tokens) {
       ...tokens.shadow.soft, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
     },
     searchInput: { flex: 1, fontSize: 14, color: tokens.color.textPrimary },
+    searchIconBtn: { padding: 2 },
+    salesFilterChipRow: { marginHorizontal: 16, marginBottom: 8 },
+    salesFilterChip: {
+      flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6,
+      backgroundColor: tokens.color.accentSoft, borderRadius: tokens.radius.chip,
+      paddingHorizontal: 10, paddingVertical: 6, maxWidth: "100%",
+    },
+    salesFilterChipText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent, flexShrink: 1 },
     summaryRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
       marginHorizontal: 16, marginBottom: 8,

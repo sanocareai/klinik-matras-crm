@@ -13,7 +13,15 @@ import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
 
-export default function SalesFilterModal({ visible, selectedId, onClose, onSelect }) {
+// filterRole (opsional, mis. "SALES") — batasi daftar ke user yang PUNYA
+// role itu di array `roles` (multi-role, D-010 — lihat GET /users di
+// backend/src/routes/users.js yang selalu fallback ke [role] tunggal kalau
+// belum ada baris UserRole). Dipakai OrdersScreen.js supaya pilihan cuma
+// sales sungguhan (sama seperti dropdown "Filter Sales" di web
+// frontend/src/pages/Orders.jsx yang menyaring `rolesOf(u).includes("SALES")`).
+// Kosongkan untuk tampilkan SEMUA user (dipakai ChatListScreen.js — chat bisa
+// dipegang admin juga, bukan cuma sales).
+export default function SalesFilterModal({ visible, selectedId, onClose, onSelect, filterRole }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [users, setUsers] = useState([]);
@@ -22,8 +30,14 @@ export default function SalesFilterModal({ visible, selectedId, onClose, onSelec
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
-    api.getUsers().then((list) => setUsers(list || [])).catch(() => {}).finally(() => setLoading(false));
-  }, [visible]);
+    api.getUsers()
+      .then((list) => {
+        const all = list || [];
+        setUsers(filterRole ? all.filter((u) => (u.roles || [u.role]).includes(filterRole)) : all);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [visible, filterRole]);
 
   function pick(user) {
     onSelect(user); // null = "Semua Sales" (hapus filter)
