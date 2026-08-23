@@ -56,8 +56,22 @@ export default function CalendarMonth({ month, from, to, hover, maxDate, onPick,
           const inRange   = lo && hi && s > lo && s < hi;
           const isToday   = s === todayWIB().format("YYYY-MM-DD");
           const isEdge    = isFrom || isTo;
+          // Fill rentang belah dua (isEdge tunggal) menyambung ke satu arah
+          // saja, bukan penuh — separuh lain milik lingkaran indikatornya.
+          const isSingleDay = isFrom && isTo;
 
           return (
+            // BUG (fix, 22 Agustus 2026): sebelumnya rounded-full dipasang
+            // LANGSUNG di <button> tanpa lebar tetap — di dalam grid-cols-7,
+            // button lebar-otomatis (cuma sebesar teks angkanya) sementara
+            // tinggi dipatok h-7, jadi "lingkaran" sebenarnya ELIPS gepeng
+            // dan tidak center di sel. Untuk rentang, bar bg-accentbg tengah
+            // juga tidak pernah benar-benar MENYAMBUNG antar sel karena
+            // lebarnya ikut teks, bukan lebar sel. Pola dua lapis di bawah
+            // (standar date-range picker: bar isian selebar SEL PENUH di
+            // belakang, indikator lingkaran ukuran tetap di depan) memisahkan
+            // dua tanggung jawab itu — bar boleh selebar apa pun sel-nya,
+            // lingkaran selalu w-7 h-7 (persegi asli, bukan turunan grid).
             <button
               key={s}
               type="button"
@@ -66,24 +80,35 @@ export default function CalendarMonth({ month, from, to, hover, maxDate, onPick,
               onMouseEnter={() => onHoverDate?.(s)}
               aria-label={s}
               aria-current={isToday ? "date" : undefined}
-              className={cn(
-                "relative h-7 text-[12px] tabular-nums transition-colors duration-100",
-                // Ujung rentang: sudut membulat hanya di sisi luar, supaya
-                // rentang terlihat menyambung seperti satu batang.
-                isEdge && "bg-accent font-bold text-white",
-                isFrom && !isTo && "rounded-l-full",
-                isTo && !isFrom && "rounded-r-full",
-                isFrom && isTo && "rounded-full",
-                inRange && "bg-accentbg text-accent",
-                !isEdge && !inRange && !disabled && "rounded-full text-ink2 hover:bg-hovertint",
-                disabled && "cursor-not-allowed text-ink3/40",
-                isToday && !isEdge && "font-bold text-accent"
-              )}
+              className="group relative h-8 w-full"
             >
-              {d.date()}
+              {!isSingleDay && (inRange || isEdge) && (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute inset-y-0.5 bg-accentbg",
+                    isFrom && !isTo && "left-1/2 right-0",
+                    isTo && !isFrom && "left-0 right-1/2",
+                    inRange && "left-0 right-0"
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  "relative z-[1] mx-auto flex h-7 w-7 items-center justify-center rounded-full",
+                  "text-[12px] tabular-nums transition-colors duration-100",
+                  isEdge && "bg-accent font-bold text-white",
+                  inRange && !isEdge && "text-accent",
+                  !isEdge && !inRange && !disabled && "text-ink2 group-hover:bg-hovertint",
+                  disabled && "cursor-not-allowed text-ink3/40",
+                  isToday && !isEdge && "font-bold text-accent"
+                )}
+              >
+                {d.date()}
+              </span>
               {/* Titik penanda "hari ini" — informasi tidak hanya lewat warna. */}
               {isToday && !isEdge && (
-                <span className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent" />
+                <span className="absolute bottom-0 left-1/2 z-[1] h-1 w-1 -translate-x-1/2 rounded-full bg-accent" />
               )}
             </button>
           );
