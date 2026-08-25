@@ -738,6 +738,24 @@ export default function ChatScreen({ route, navigation }) {
       },
     }));
     scrollToBottomSoon();
+
+    // BUG YANG DIPERBAIKI (26 Agustus 2026): retry SEBELUMNYA selalu lewat
+    // api.sendMessage(m.content, ...) — untuk voice note yang gagal, m.content
+    // kosong dan m.mediaUrl (URI file lokal, lihat VoiceRecorderBar.js#doSend)
+    // tidak pernah ikut dikirim ulang sama sekali; tombol "Coba lagi" pada
+    // bubble voice note gagal akan diam-diam mengirim PESAN TEKS KOSONG,
+    // bukan mengunggah ulang audionya.
+    if (m.mediaType === "audio" && m.mediaUrl) {
+      const file = { uri: m.mediaUrl, name: `voice-retry-${Date.now()}.webm`, type: "audio/webm" };
+      api.sendMedia(conversationId, file, "", "media", clientId)
+        .then((msg) => useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg))
+        // Media TIDAK dititipkan ke outbox teks (bentuk payload-nya khusus
+        // {content}, bukan file) — gagal lagi berarti langsung "failed" lagi,
+        // sama seperti percobaan pertama di VoiceRecorderBar.js.
+        .catch(() => useMessageStore.getState().markMessageFailed(conversationId, tempId));
+      return;
+    }
+
     api.sendMessage(conversationId, m.content, m.replyTo?.externalId || null, m.replyTo?.id || null, clientId)
       .then((msg) => useMessageStore.getState().replaceTempMessage(conversationId, tempId, msg))
       .catch(() => useOutboxStore.getState().enqueue({

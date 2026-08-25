@@ -32,7 +32,12 @@ export function getToken() {
 // mediaUrl dari backend berbentuk relatif ("/uploads/xxx") — jadikan absolut
 export function mediaUrl(pathOrUrl) {
   if (!pathOrUrl) return null;
-  if (pathOrUrl.startsWith("http")) return pathOrUrl;
+  // "file://..." — bubble optimistic voice note (VoiceRecorderBar.js) pakai
+  // URI rekaman LOKAL apa adanya sebagai mediaUrl sementara upload masih
+  // berjalan, supaya bisa langsung diputar sebelum server membalas. Tanpa
+  // guard ini, serverUrl ikut ditempel DI DEPAN path lokal itu (jadi
+  // "https://.../file:///data/..."), AudioPlayer gagal load diam-diam.
+  if (pathOrUrl.startsWith("http") || pathOrUrl.startsWith("file://")) return pathOrUrl;
   return serverUrl + pathOrUrl;
 }
 
@@ -248,9 +253,15 @@ export const api = {
   // file = { uri, name, type } dari image/document/kamera picker.
   // sendAs: "media" (inline foto/video/VN) | "document" (attachment) — default
   // "media", backend fallback otomatis ke "document" untuk audio non-ogg/webm.
-  sendMedia: (conversationId, file, caption = "", sendAs = "media") => {
+  // clientId (opsional) — dipakai VoiceRecorderBar.js supaya optimistic
+  // bubble (dibuat SEBELUM upload selesai) bisa direkonsiliasi ke pesan asli
+  // dari server via clientId yang sama, pola SAMA dengan sendMessage/
+  // handleRetry di ChatScreen.js. Backend (conversations.js POST /:id/media)
+  // juga jadi idempotent: retry dengan clientId yang sama tidak kirim dobel.
+  sendMedia: (conversationId, file, caption = "", sendAs = "media", clientId = null) => {
     const fields = { sendAs };
     if (caption) fields.caption = caption;
+    if (clientId) fields.clientId = clientId;
     return uploadFile(`/conversations/${conversationId}/media`, file, fields);
   },
 

@@ -1004,6 +1004,20 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
 
   console.log(`[media] Request masuk: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`);
 
+  // clientId (opsional) — SAMA POLA dengan POST /:id/messages di atas: kalau
+  // clientId ini SUDAH PERNAH diproses (mis. mobile retry upload voice note
+  // yang sebenarnya sukses tapi responsnya gagal ke klien karena koneksi
+  // lemah), balikin row yang sudah ada, JANGAN kirim dobel ke WhatsApp.
+  // Ditambahkan 26 Agustus 2026 (fix bubble voice note optimistic).
+  const { clientId } = req.body;
+  if (clientId) {
+    const existing = await prisma.message.findUnique({ where: { clientId } });
+    if (existing) {
+      fs.unlink(file.path, () => {}); // file upload baru tidak dipakai — sudah ada row lama
+      return res.json({ ...existing, clientId });
+    }
+  }
+
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
     include: { customer: true },
@@ -1092,12 +1106,20 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
     return res.status(400).json({ error: "Channel ini belum didukung (Phase 2)" });
   }
 
-  const message = await prisma.message.create({
-    data: { conversationId: conversation.id, direction: "OUTBOUND",
-            content: caption, mediaType, mediaUrl, externalId: waResult?.id || null,
-            ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
-            sentById: req.user.id },
-  });
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: { conversationId: conversation.id, direction: "OUTBOUND",
+              content: caption, mediaType, mediaUrl, externalId: waResult?.id || null,
+              ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
+              sentById: req.user.id, clientId: clientId || null },
+    });
+  } catch (e) {
+    if (e.code !== "P2002" || !clientId) throw e;
+    // Race sangat sempit — pola sama dengan POST /:id/messages: 2 request
+    // ber-clientId sama lolos cek idempotency di atas nyaris bersamaan.
+    message = await prisma.message.findUnique({ where: { clientId } });
+  }
   // Sama seperti POST /:id/messages — firstResponderId diisi sekali saja.
   const convUpdateDataMedia = { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, mediaType) };
   if (!conversation.firstResponderId) convUpdateDataMedia.firstResponderId = req.user.id;

@@ -313,19 +313,44 @@ export default function VoiceRecorderBar({ conversationId, onSent }) {
     await doSend(uri);
   }
 
+  // BUG YANG DIPERBAIKI (26 Agustus 2026): bubble voice note SEBELUMNYA baru
+  // muncul di message list SETELAH upload+kirim-ke-WhatsApp selesai bulat-
+  // bulat (bisa beberapa detik) — tidak ada bubble apa pun di antaranya,
+  // jadi terasa seperti gagal kirim total. WhatsApp asli (dan alur teks di
+  // ChatScreen.js#handleSend) langsung menampilkan bubble "sending" begitu
+  // proses kirim dimulai, BARU direkonsiliasi ke pesan asli setelah server
+  // membalas. Sekarang VoiceRecorderBar pakai pola clientId yang SAMA:
+  // tempId+clientId dibuat SEKALI di sini, bubble optimistic muncul SEKETIKA
+  // (pakai `uri` LOKAL apa adanya sebagai mediaUrl — AudioPlayer & mediaUrl()
+  // helper di api.js sudah bisa main file:// langsung, jadi bahkan BISA
+  // diputar sementara masih terkirim), lalu di-reconcile ke pesan asli via
+  // `onSent` yang sama (appendMessage di ChatScreen.js men-MERGE by clientId,
+  // BUKAN nyisip baris baru — lihat messageStore.js#appendMessage).
   async function doSend(uri) {
     setSending(true);
     const startedAt = Date.now();
+    const tempId = `temp-${Date.now()}`;
+    const clientId = `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    onSent?.({
+      id: tempId, clientId, conversationId, direction: "OUTBOUND",
+      content: "", mediaType: "audio", mediaUrl: uri,
+      createdAt: new Date().toISOString(), status: "sending",
+    });
     try {
       const file = { uri, name: `voice-${Date.now()}.webm`, type: "audio/webm" };
-      const msg = await api.sendMedia(conversationId, file, "", "media");
-      onSent?.(msg);
+      const msg = await api.sendMedia(conversationId, file, "", "media", clientId);
+      onSent?.({ ...msg, clientId });
     } catch (err) {
       const reconciled = await findRecentlySentMedia(conversationId, startedAt);
       if (reconciled) {
-        onSent?.(reconciled);
+        onSent?.({ ...reconciled, clientId });
       } else {
-        Alert.alert("Gagal kirim pesan suara", err.message);
+        // JANGAN hilang diam-diam — bubble tetap ada, cuma pindah ke status
+        // "failed" (ikon jam → tombol "Gagal terkirim — Coba lagi", sama
+        // seperti bubble teks gagal, lihat MessageBubble.js#isFailed).
+        // appendMessage men-MERGE patch minimal ini ke entry optimistic yang
+        // SUDAH ADA (dicocokkan lewat clientId), bukan menimpa field lain.
+        onSent?.({ id: tempId, clientId, status: "failed" });
       }
     } finally {
       setSending(false);
