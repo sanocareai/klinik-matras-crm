@@ -11,7 +11,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { TAG_BROADCAST } from "../services/broadcastPolicy.js";
-import { buildMessagePreview } from "../utils/messagePreview.js";
+import { buildMessagePreview, buildSearchSnippet } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { resolveMediaExt } from "../utils/mediaExt.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
@@ -555,6 +555,36 @@ conversationRouter.get("/", async (req, res) => {
   const hasMore = conversations.length > limit;
   const page    = hasMore ? conversations.slice(0, limit) : conversations;
 
+  // BUG YANG DIPERBAIKI (26 Agustus 2026): daftar percakapan SELALU
+  // menampilkan pesan TERAKHIR sebagai potongan preview, walau kecocokan
+  // `search` ada di pesan yang JAUH lebih lama — hasil pencarian jadi
+  // kelihatan "asal muncul" (preview-nya sama sekali tidak menyebut kata
+  // yang dicari), padahal kecocokannya sah. Sales melaporkan ini sebagai
+  // "fitur pencarian belum ada" — diverifikasi langsung ke database:
+  // kata yang dicari MEMANG ada di riwayat percakapan itu, cuma bukan di
+  // pesan terakhir. Sekarang cari SATU pesan yang benar-benar cocok
+  // (terbaru di antara yang cocok) per percakapan, kirim sebagai
+  // `searchMatch` — null kalau kecocokannya lewat nama/nomor/nama grup
+  // (bukan isi pesan mana pun).
+  let searchMatchByConvId = {};
+  if (search) {
+    const matchedMessages = await prisma.message.findMany({
+      where: {
+        conversationId: { in: page.map((c) => c.id) },
+        content: { contains: search, mode: "insensitive" },
+      },
+      orderBy: { createdAt: "desc" },
+      distinct: ["conversationId"],
+      select: { conversationId: true, content: true, mediaType: true },
+    });
+    searchMatchByConvId = Object.fromEntries(
+      matchedMessages.map((m) => [
+        m.conversationId,
+        { snippet: buildSearchSnippet(m.content, m.mediaType, search) },
+      ])
+    );
+  }
+
   const now = Date.now();
   const result = page.map(({ messages, ...conv }) => {
     const lastMsg          = messages[0] || null;
@@ -563,7 +593,10 @@ conversationRouter.get("/", async (req, res) => {
       ? Math.floor((now - new Date(lastMsg.createdAt).getTime()) / 60000)
       : null;
     const canTakeOver = !conv.assignedToId || (isUnanswered && (unansweredMinutes ?? 0) >= 60);
-    return { ...conv, messages, isUnanswered, unansweredMinutes, canTakeOver };
+    return {
+      ...conv, messages, isUnanswered, unansweredMinutes, canTakeOver,
+      searchMatch: searchMatchByConvId[conv.id] || null,
+    };
   });
 
   res.json({ data: result, nextCursor: hasMore ? page[page.length - 1].id : null });

@@ -3,7 +3,7 @@ import { Pin, Users, Eye, CheckCheck, Check } from "lucide-react";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
-import { useConversation, useActiveId, useConversationStore } from "../../stores/conversationStore.js";
+import { useConversation, useActiveId, useConversationStore, useConvSearchQuery } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
 import TransferPickerPopover from "./TransferPickerPopover.jsx";
 import PeekPreview from "./PeekPreview.jsx";
@@ -33,6 +33,7 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   // id ini berubah, bukan seluruh list (itu poin utama pola "pass id saja").
   const c = useConversation(id);
   const activeId = useActiveId();
+  const searchQuery = useConvSearchQuery();
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
   const [transferPicker, setTransferPicker] = useState(null); // { x, y }
   const [peek, setPeek] = useState(null); // { x, y }
@@ -169,8 +170,17 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
         </div>
 
         <div className="conversation-bottom">
+          {/* BUG YANG DIPERBAIKI (26 Agustus 2026): baris ini SELALU tampilkan
+              pesan TERAKHIR, walau kecocokan pencarian ada di pesan yang jauh
+              lebih lama — hasil pencarian jadi kelihatan "asal muncul" karena
+              baris preview-nya sama sekali tidak menyebut kata yang dicari.
+              Kalau lagi ada pencarian aktif DAN server menemukan pesan yang
+              cocok (c.searchMatch, lihat routes/conversations.js), tampilkan
+              potongan di SEKITAR kata itu — bukan pesan terakhir. */}
           <p className="last-message">
-            {lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
+            {searchQuery.trim() && c.searchMatch
+              ? c.searchMatch.snippet
+              : lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
           </p>
           {unreadCount > 0 && <span className="unread-count-badge">{unreadLabel}</span>}
         </div>

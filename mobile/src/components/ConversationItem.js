@@ -15,7 +15,7 @@ import TransferModal from "./TransferModal";
 import PeekPreviewModal from "./PeekPreviewModal";
 import { useTokens } from "../constants/theme";
 import { smartTimestamp } from "../utils/format";
-import { useConversation, useConversationStore } from "../store/conversationStore";
+import { useConversation, useConversationStore, useConvSearchQuery } from "../store/conversationStore";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import { lightHaptic } from "../lib/haptics";
@@ -51,7 +51,19 @@ function convName(c) {
 // Sekarang ikut level ack yang sebenarnya — pola warna SAMA dengan
 // AckTicks di MessageBubble.js (bubble chat): ack 0 jam kecil, ack 1
 // centang 1, ack 2 centang 2 abu-abu, ack 3 centang 2 BIRU #34B7F1.
-function lastPreviewParts(c, tokens) {
+// BUG YANG DIPERBAIKI (26 Agustus 2026): baris preview SELALU menampilkan
+// pesan TERAKHIR, walau kecocokan pencarian ada di pesan yang jauh lebih
+// lama — hasil pencarian jadi kelihatan "asal muncul" karena baris preview-
+// nya sama sekali tidak menyebut kata yang dicari (dilaporkan sales sebagai
+// "fitur pencarian belum ada", padahal kecocokannya sah, cuma tidak
+// kelihatan di mana). Kalau lagi ada pencarian aktif DAN server menemukan
+// pesan yang cocok (c.searchMatch, lihat routes/conversations.js), tampilkan
+// potongan di SEKITAR kata itu — bukan pesan terakhir, dan tanpa ikon
+// centang (ikon itu status pesan TERAKHIR, tidak relevan utk pesan lama).
+function lastPreviewParts(c, tokens, searchActive) {
+  if (searchActive && c.searchMatch) {
+    return { OutboundIcon: null, outboundIconColor: null, MediaIcon: null, text: c.searchMatch.snippet };
+  }
   const msg = c.messages?.[0];
   if (!msg) return { OutboundIcon: null, outboundIconColor: null, MediaIcon: null, text: "Belum ada pesan" };
   let OutboundIcon = null;
@@ -74,6 +86,7 @@ function lastPreviewParts(c, tokens) {
 // perlu diubah.
 function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSelect, onEnterSelection }) {
   const c = useConversation(id);
+  const searchQuery = useConvSearchQuery();
   const { user } = useAuth();
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -104,7 +117,8 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
   // Sudah dibuka tapi tidak unread lagi → dim (bukan pelanggan aktif butuh perhatian)
   const dim = isRead && !isUnread;
   const previewColor = dim ? tokens.color.textMuted : isUnread ? tokens.color.textPrimary : tokens.color.textSecondary;
-  const { OutboundIcon, outboundIconColor, MediaIcon, text: previewText } = lastPreviewParts(c, tokens);
+  const { OutboundIcon, outboundIconColor, MediaIcon, text: previewText } =
+    lastPreviewParts(c, tokens, !!searchQuery.trim());
 
   function toggleReadUnread() {
     lightHaptic();
