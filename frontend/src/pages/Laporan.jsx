@@ -39,14 +39,19 @@ export default function Laporan() {
   const [summary, setSummary]   = useState(null);
   const [perf, setPerf]         = useState(null);
   const [salesReport, setSalesReport] = useState(null);
-  // Khusus kartu "Target Bulanan Tim" di RingkasanTab.jsx — TIDAK BOLEH ikut
+  // Dipakai untuk SEMUA metrik "% Target"/progres target bulanan — kartu
+  // "Target Bulanan Tim" di RingkasanTab.jsx DAN kartu "Target Tim" +
+  // leaderboard + tabel rincian di SalesReportTab.jsx — TIDAK BOLEH ikut
   // `range` yang dipilih user (26 Agustus 2026, laporan owner: begitu default
-  // Laporan jadi "Hari ini", kartu ini jadi salah total — closing HARI INI
-  // dibandingkan ke target SEBULAN PENUH, kelihatan seperti nyaris 0% padahal
-  // sudah jauh lebih tinggi). Target itu sendiri sudah otomatis "bulan
-  // berjalan" (SalesTarget dicari dari nowPartsWIB() di backend, bukan dari
-  // `from`/`to`) — cuma progres pencapaiannya yang harus SELALU month-to-date
-  // juga, apa pun rentang yang sedang dipilih untuk sisa halaman.
+  // Laporan jadi "Hari ini", angka-angka ini jadi salah total — closing HARI
+  // INI dibandingkan ke target SEBULAN PENUH, kelihatan seperti nyaris 0%
+  // padahal sudah jauh lebih tinggi). Target itu sendiri sudah otomatis
+  // "bulan berjalan" (SalesTarget dicari dari nowPartsWIB() di backend, bukan
+  // dari `from`/`to`) — cuma progres pencapaiannya yang harus SELALU
+  // month-to-date juga, apa pun rentang yang sedang dipilih (hari ini/
+  // mingguan/bulanan/custom) untuk sisa halaman. Metrik LAIN yang memang
+  // seharusnya ikut range (Nilai Penjualan, Konversi, Order per sales, dst)
+  // TETAP baca dari `salesReport` biasa — tidak disentuh oleh state ini.
   const [salesReportBulanIni, setSalesReportBulanIni] = useState(null);
   const [funnel, setFunnel]     = useState([]);
   const [velocity, setVelocity] = useState(null);
@@ -185,6 +190,7 @@ export default function Laporan() {
               <TabsContent value="Sales">
                 <SalesReportTab
                   report={salesReport}
+                  targetReport={salesReportBulanIni}
                   grossTotalPerusahaan={summary?.uang?.grossValue}
                   onExport={handleExport} range={range}
                 />

@@ -58,7 +58,7 @@ const KOLOM = [
   { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
 ];
 
-export default function SalesReportTab({ report, grossTotalPerusahaan, onExport, range }) {
+export default function SalesReportTab({ report, targetReport, grossTotalPerusahaan, onExport, range }) {
   const cmp = compareLabel(range);
   const semuaRows = report?.rows || [];
   // Baris "Team Lead" (Novi) TERPISAH dari leaderboard/tabel 8 sales biasa
@@ -69,9 +69,22 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
   const rows  = semuaRows.filter((r) => !r.isTeamLead);
   const total = report?.total;
 
-  // Progres target TIM — lihat utils/teamTarget.js untuk kenapa ini SATU
-  // sumber kebenaran dipakai bersama RingkasanTab.jsx (kartu "Target Bulanan").
-  const { teamLeadRows, teamLead, teamGrossAll, teamOrdersAll, teamAovAll } = computeTeamTarget(report);
+  // Progres target TIM (Nilai/Order/AOV) — ini MEMANG ikut `range` yang
+  // dipilih (jawab "berapa closing tim di periode ini"). Lihat utils/teamTarget.js
+  // untuk kenapa ini SATU sumber kebenaran dipakai bersama RingkasanTab.jsx.
+  const { teamLeadRows, teamGrossAll, teamOrdersAll, teamAovAll } = computeTeamTarget(report);
+
+  // Semua "% Target"/progres-ke-target di bawah ini SENGAJA baca `targetReport`
+  // (selalu bulan berjalan, lihat catatan panjang di Laporan.jsx#salesReportBulanIni)
+  // — BUKAN `report` yang ikut `range`. Target itu sendiri bulanan; membagi
+  // closing SATU HARI dengan target SEBULAN PENUH selalu kelihatan nyaris 0%
+  // begitu range di-set "Hari ini", padahal progres bulanannya bisa saja sudah
+  // jauh lebih tinggi. Metrik AKTIVITAS (orders, conversionRate, dst di atas)
+  // TETAP ikut `range` — cuma bagian target yang dikunci ke bulan berjalan.
+  const targetInfo = computeTeamTarget(targetReport);
+  const targetByUserId = new Map(
+    (targetReport?.rows || []).filter((r) => !r.isTeamLead).map((r) => [r.userId, r])
+  );
 
   const aktif = rows.filter((r) => r.handled > 0);
   // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,
@@ -116,17 +129,14 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
         />
         <KpiCard
           index={2} label="Target Tim"
-          numericValue={(teamLead ? teamLead.teamPercentToTarget : total?.percentToTarget) || 0}
-          format={() => {
-            const pct = teamLead ? teamLead.teamPercentToTarget : total?.percentToTarget;
-            return pct != null ? `${pct}%` : "—";
-          }}
+          numericValue={targetInfo.percentToTarget || 0}
+          format={() => (targetInfo.percentToTarget != null ? `${targetInfo.percentToTarget}%` : "—")}
           sub={
-            teamLead
-              ? (teamLead.target > 0
-                  ? `${formatRupiahShort(teamLead.teamGrossValue)} / ${formatRupiahShort(teamLead.target)} (target tim)`
+            targetInfo.teamLead
+              ? (targetInfo.teamLead.target > 0
+                  ? `${formatRupiahShort(targetInfo.teamLead.teamGrossValue)} / ${formatRupiahShort(targetInfo.teamLead.target)} (target tim, bulan berjalan)`
                   : "Target tim belum diset (Pengaturan > Target Sales)")
-              : `${formatRupiahShort(total?.grossValue || 0)} / ${formatRupiahShort(total?.target || 0)} (jumlah target individu)`
+              : `${formatRupiahShort(targetInfo.teamGrossAll)} / ${formatRupiahShort(targetInfo.targetValue)} (jumlah target individu, bulan berjalan)`
           }
         />
         <KpiCard
@@ -146,19 +156,83 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
       >
         {teamLeadRows.length > 0 && (
           <div className="mb-3 flex flex-col gap-3 border-b border-line pb-3">
-            {teamLeadRows.map((r) => (
-              <div key={r.userId} className="flex flex-col gap-3 rounded-xl bg-blue-50 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
+            {teamLeadRows.map((r) => {
+              // Bar/% target row ini SELALU bulan berjalan (lihat catatan
+              // targetInfo di atas) — dicocokkan by userId ke rekan MTD-nya,
+              // TIDAK memakai r.teamGrossValue/r.target/r.teamPercentToTarget
+              // yang ikut range terpilih.
+              const mtd = targetInfo.teamLeadRows.find((m) => m.userId === r.userId);
+              return (
+                <div key={r.userId} className="flex flex-col gap-3 rounded-xl bg-blue-50 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <Avatar name={r.name} src={r.avatarUrl} size="md" />
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                        {r.name}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-ink">
+                          <Crown size={10} /> Team Lead
+                        </span>
+                      </p>
+                      <p className="text-xs text-ink3">
+                        Closing pribadi: {r.orders} order · {r.orderingCustomers} pelanggan order
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={cn(
+                      "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
+                      r.conversionRate == null ? "bg-inset text-ink3" : "bg-accentbg text-accent"
+                    )}
+                    title="Konversi PERSONAL Novi (bukan tim) — pelanggan yang pindah ke Transaksi dari percakapan yang dia pegang sendiri"
+                  >
+                    {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi pribadi
+                  </div>
+
+                  <div className="w-full sm:w-64">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-ink2">{formatRupiah(mtd?.teamGrossValue || 0)}</span>
+                      {mtd?.target > 0 && <span className="text-ink3">/ {formatRupiahShort(mtd.target)}</span>}
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-inset">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-[width] duration-700 ease-out",
+                          mtd?.teamPercentToTarget == null ? "bg-line"
+                          : mtd.teamPercentToTarget >= 100 ? "bg-green"
+                          : mtd.teamPercentToTarget >= 50 ? "bg-accent" : "bg-orange"
+                        )}
+                        style={{ width: `${Math.min(mtd?.teamPercentToTarget ?? 0, 100)}%` }}
+                      />
+                    </div>
+                    <span
+                      className="mt-1 inline-block text-[11px] text-ink3"
+                      title="Target TIM (gabungan closing timnya + closing pribadi), bulan berjalan — tidak ikut rentang tanggal di atas"
+                    >
+                      {mtd?.teamPercentToTarget != null
+                        ? `${mtd.teamPercentToTarget}% dari target tim bulan ini`
+                        : "Target tim belum diset (Pengaturan > Target Sales)"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex flex-col divide-y divide-line">
+          {rows.map((r) => {
+            // Bar/% target ini SELALU bulan berjalan (lihat catatan targetInfo
+            // di atas) — TIDAK memakai r.grossValue/r.target/r.percentToTarget
+            // yang ikut range terpilih (itu bisa cuma "Hari ini").
+            const mtd = targetByUserId.get(r.userId);
+            return (
+              <div key={r.userId} className="flex flex-col gap-3 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <Avatar name={r.name} src={r.avatarUrl} size="md" />
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
-                      {r.name}
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-ink">
-                        <Crown size={10} /> Team Lead
-                      </span>
-                    </p>
+                    <p className="truncate text-sm font-semibold text-ink">{r.name}</p>
                     <p className="text-xs text-ink3">
-                      Closing pribadi: {r.orders} order · {r.orderingCustomers} pelanggan order
+                      {r.orders} order · {r.orderingCustomers} pelanggan order
                     </p>
                   </div>
                 </div>
@@ -166,90 +240,39 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
                 <div
                   className={cn(
                     "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
-                    r.conversionRate == null ? "bg-inset text-ink3" : "bg-accentbg text-accent"
+                    r.conversionRate == null ? "bg-inset text-ink3"
+                    : median != null && r.conversionRate >= median * 1.2 ? "bg-greenbg text-green"
+                    : median != null && r.conversionRate <= median * 0.6 ? "bg-redbg text-red"
+                    : "bg-accentbg text-accent"
                   )}
-                  title="Konversi PERSONAL Novi (bukan tim) — pelanggan yang pindah ke Transaksi dari percakapan yang dia pegang sendiri"
+                  title="Pelanggan yang pindah ke stage Transaksi pada periode ini / percakapan yang ditangani pada periode ini"
                 >
-                  {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi pribadi
+                  {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi
                 </div>
 
-                <div className="w-full sm:w-64">
+                <div className="w-full sm:w-56">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-ink2">{formatRupiah(r.teamGrossValue)}</span>
-                    {r.target > 0 && <span className="text-ink3">/ {formatRupiahShort(r.target)}</span>}
+                    <span className="font-semibold text-ink2">{formatRupiah(mtd?.grossValue || 0)}</span>
+                    {mtd?.target > 0 && <span className="text-ink3">/ {formatRupiahShort(mtd.target)}</span>}
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-inset">
                     <div
                       className={cn(
                         "h-full rounded-full transition-[width] duration-700 ease-out",
-                        r.teamPercentToTarget == null ? "bg-line"
-                        : r.teamPercentToTarget >= 100 ? "bg-green"
-                        : r.teamPercentToTarget >= 50 ? "bg-accent" : "bg-orange"
+                        mtd?.percentToTarget == null ? "bg-line"
+                        : mtd.percentToTarget >= 100 ? "bg-green"
+                        : mtd.percentToTarget >= 50 ? "bg-accent" : "bg-orange"
                       )}
-                      style={{ width: `${Math.min(r.teamPercentToTarget ?? 0, 100)}%` }}
+                      style={{ width: `${Math.min(mtd?.percentToTarget ?? 0, 100)}%` }}
                     />
                   </div>
-                  <span
-                    className="mt-1 inline-block text-[11px] text-ink3"
-                    title="Target TIM (gabungan closing timnya + closing pribadi) — bukan target closing pribadi"
-                  >
-                    {r.teamPercentToTarget != null
-                      ? `${r.teamPercentToTarget}% dari target tim bulan ini`
-                      : "Target tim belum diset (Pengaturan > Target Sales)"}
+                  <span className="mt-1 inline-block text-[11px] text-ink3" title="Bulan berjalan — tidak ikut rentang tanggal di atas">
+                    {mtd?.percentToTarget != null ? `${mtd.percentToTarget}% dari target bulan ini` : "Target belum diset"}
                   </span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-        <div className="flex flex-col divide-y divide-line">
-          {rows.map((r) => (
-            <div key={r.userId} className="flex flex-col gap-3 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <Avatar name={r.name} src={r.avatarUrl} size="md" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink">{r.name}</p>
-                  <p className="text-xs text-ink3">
-                    {r.orders} order · {r.orderingCustomers} pelanggan order
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
-                  r.conversionRate == null ? "bg-inset text-ink3"
-                  : median != null && r.conversionRate >= median * 1.2 ? "bg-greenbg text-green"
-                  : median != null && r.conversionRate <= median * 0.6 ? "bg-redbg text-red"
-                  : "bg-accentbg text-accent"
-                )}
-                title="Pelanggan yang pindah ke stage Transaksi pada periode ini / percakapan yang ditangani pada periode ini"
-              >
-                {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi
-              </div>
-
-              <div className="w-full sm:w-56">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-ink2">{formatRupiah(r.grossValue)}</span>
-                  {r.target > 0 && <span className="text-ink3">/ {formatRupiahShort(r.target)}</span>}
-                </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-inset">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-[width] duration-700 ease-out",
-                      r.percentToTarget == null ? "bg-line"
-                      : r.percentToTarget >= 100 ? "bg-green"
-                      : r.percentToTarget >= 50 ? "bg-accent" : "bg-orange"
-                    )}
-                    style={{ width: `${Math.min(r.percentToTarget ?? 0, 100)}%` }}
-                  />
-                </div>
-                <span className="mt-1 inline-block text-[11px] text-ink3">
-                  {r.percentToTarget != null ? `${r.percentToTarget}% dari target bulan ini` : "Target belum diset"}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {takTeratribusi > 0 && (
@@ -298,67 +321,73 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
                 </tr>
               </thead>
               <tbody>
-                {teamLeadRows.map((r) => (
-                  <tr key={r.userId} className="border-b-2 border-line bg-blue-50">
-                    <td className="sticky left-0 z-10 whitespace-nowrap bg-blue-50 px-3 py-2.5 font-semibold text-ink">
-                      <span className="flex items-center gap-1.5">
+                {teamLeadRows.map((r) => {
+                  const mtd = targetInfo.teamLeadRows.find((m) => m.userId === r.userId);
+                  return (
+                    <tr key={r.userId} className="border-b-2 border-line bg-blue-50">
+                      <td className="sticky left-0 z-10 whitespace-nowrap bg-blue-50 px-3 py-2.5 font-semibold text-ink">
+                        <span className="flex items-center gap-1.5">
+                          {r.name}
+                          <Crown size={11} className="text-blue-ink" />
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular-nums text-ink" title="Konversi personal, bukan tim">
+                        {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.orderingCustomers}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
+                        {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
+                      </td>
+                      <td className={cn("px-3 py-2.5 text-right tabular-nums", r.spamRate > 15 ? "text-orange" : "text-ink3")}>
+                        {r.spamRate != null ? `${r.spamRate}%` : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
+                        {formatRupiahShort(r.grossValue)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
+                        {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2" title="Target TIM, bulan berjalan — tidak ikut rentang tanggal di atas">
+                        {mtd?.teamPercentToTarget != null ? `${mtd.teamPercentToTarget}% (tim)` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {rows.map((r) => {
+                  const mtd = targetByUserId.get(r.userId);
+                  return (
+                    <tr key={r.userId} className="border-b border-line last:border-0">
+                      <td className="sticky left-0 z-10 whitespace-nowrap bg-surface px-3 py-2.5 font-semibold text-ink">
                         {r.name}
-                        <Crown size={11} className="text-blue-ink" />
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
-                    <td className="px-3 py-2.5 text-right font-bold tabular-nums text-ink" title="Konversi personal, bukan tim">
-                      {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.orderingCustomers}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
-                      {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
-                    </td>
-                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.spamRate > 15 ? "text-orange" : "text-ink3")}>
-                      {r.spamRate != null ? `${r.spamRate}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
-                      {formatRupiahShort(r.grossValue)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
-                      {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2" title="Dihitung dari target TIM, bukan target pribadi">
-                      {r.teamPercentToTarget != null ? `${r.teamPercentToTarget}% (tim)` : "—"}
-                    </td>
-                  </tr>
-                ))}
-                {rows.map((r) => (
-                  <tr key={r.userId} className="border-b border-line last:border-0">
-                    <td className="sticky left-0 z-10 whitespace-nowrap bg-surface px-3 py-2.5 font-semibold text-ink">
-                      {r.name}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.conversionRate, median))}>
-                      {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.orderingCustomers}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
-                      {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
-                    </td>
-                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.spamRate > 15 ? "text-orange" : "text-ink3")}>
-                      {r.spamRate != null ? `${r.spamRate}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
-                      {formatRupiahShort(r.grossValue)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
-                      {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">
-                      {r.percentToTarget != null ? `${r.percentToTarget}%` : "—"}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
+                      <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.conversionRate, median))}>
+                        {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.orderingCustomers}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
+                        {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
+                      </td>
+                      <td className={cn("px-3 py-2.5 text-right tabular-nums", r.spamRate > 15 ? "text-orange" : "text-ink3")}>
+                        {r.spamRate != null ? `${r.spamRate}%` : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
+                        {formatRupiahShort(r.grossValue)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
+                        {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2" title="Bulan berjalan — tidak ikut rentang tanggal di atas">
+                        {mtd?.percentToTarget != null ? `${mtd.percentToTarget}%` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               {total && (
                 <tfoot>
@@ -383,8 +412,8 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
                       {total.aov > 0 ? formatRupiahShort(total.aov) : "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">
-                      {total.percentToTarget != null ? `${total.percentToTarget}%` : "—"}
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink" title="Bulan berjalan — tidak ikut rentang tanggal di atas">
+                      {targetReport?.total?.percentToTarget != null ? `${targetReport.total.percentToTarget}%` : "—"}
                     </td>
                   </tr>
                 </tfoot>
@@ -396,9 +425,13 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
             saat ini</strong> dan TIDAK mengikuti rentang tanggal — “stage sekarang”
             adalah keadaan, bukan kejadian di dalam periode. Semua kolom lain
             mengikuti rentang yang dipilih di atas.
-            {" "}Kolom target memakai target <strong>bulan berjalan</strong>
+            {" "}Kolom <strong>% Target</strong> SELALU memakai penjualan &
+            target <strong>bulan berjalan</strong>
             {report?.periodeTarget ? ` (${report.periodeTarget.month}/${report.periodeTarget.year})` : ""},
-            karena target disimpan per bulan di Pengaturan.
+            TIDAK ikut rentang tanggal yang dipilih di atas — kalau di-set
+            "Hari ini", % Target tetap menunjukkan progres SEBULAN PENUH
+            (bukan closing hari ini dibagi target sebulan, yang akan selalu
+            kelihatan nyaris 0%).
             {" "}"Total tim" di baris terakhir HANYA menjumlahkan 8 sales biasa —
             TIDAK termasuk closing pribadi Team Lead (beda dengan KPI "Nilai
             Penjualan Tim" di atas, yang sudah menggabungkan keduanya).
