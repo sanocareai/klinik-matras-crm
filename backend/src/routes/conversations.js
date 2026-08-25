@@ -1062,12 +1062,29 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   // klien WhatsApp diam-diam menolak/tidak mengunduh audio PTT stereo, tanpa
   // error apa pun balik ke WAHA (makanya ack tetap "terkirim ke server").
   // `-ac 1` memaksa mono terlepas dari berapa channel sumbernya.
+  //
+  // KOREKSI (26 Agustus 2026, lanjutan) — mono SAJA ternyata belum cukup,
+  // dites langsung kirim ke WhatsApp pribadi, masih tidak sampai walau
+  // ffprobe sudah konfirmasi channels=1. Sempat dicoba tambah `-ar 16000`
+  // (dugaan awal: syarat sample rate PTT) — TERNYATA SALAH ARAH. `ffprobe
+  // -show_entries stream_tags` ke file hasil konversi menunjukkan akar
+  // masalah sesungguhnya: ffmpeg IKUT MENYALIN metadata box KHAS MP4 dari
+  // file sumber (.m4a expo-audio) ke dalam stream Ogg — `major_brand=mp42`,
+  // `compatible_brands=isommp42`, dll — metadata yang TIDAK BERARTI APA-APA
+  // di container Ogg. Riset ke isu GitHub WAHA (devlikeapro/waha #1393)
+  // mengonfirmasi pola persis ini: metadata "nyasar"/korup dari sumber
+  // adalah penyebab umum WhatsApp mobile diam-diam menolak voice note walau
+  // WAHA & WhatsApp Web melaporkan sukses — BUKAN soal sample rate (issue
+  // yang sama malah merekomendasikan 48kHz, bukan 16kHz). `-map_metadata -1`
+  // membuang SEMUA metadata yang ikut kebawa, cuma menyisakan tag `encoder`
+  // bawaan ffmpeg sendiri (harmless, sudah dites tidak menyisakan tag
+  // mp4-style apa pun).
   if (file.mimetype.startsWith("audio/webm") || file.mimetype.startsWith("audio/mp4")) {
     const baseName    = file.filename.replace(/\.[^.]+$/, "");
     const oggFilename = `${baseName}.ogg`;
     const oggPath     = path.join(uploadsDir, oggFilename);
     try {
-      await execAsync(`ffmpeg -y -i "${file.path}" -vn -ac 1 -c:a libopus -f ogg "${oggPath}"`);
+      await execAsync(`ffmpeg -y -i "${file.path}" -vn -ac 1 -map_metadata -1 -c:a libopus -f ogg "${oggPath}"`);
       wahaFileMime = "audio/ogg";
       wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${oggFilename}`;
       wahaFileName = oggFilename; // pakai nama file OGG, bukan file asli
