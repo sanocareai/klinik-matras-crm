@@ -92,6 +92,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       monthlyCustomersRaw,
       channelBreakdownRaw,
       customersWithOrdersCount,
+      customersWithOrdersCountPrev,
       repeatCustomersCount,
     ] = await Promise.all([
       prisma.customer.count({ where: custWhereKonversi }),
@@ -188,6 +189,14 @@ analyticsRouter.get("/overview", async (req, res) => {
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }),
+      // Padanan periode sebelumnya, dipakai `growthConversion` di bawah —
+      // sama pola dengan totalCustomersPrev/orderAggPrev di atas.
+      prevRange ? prisma.customer.count({
+        where: {
+          createdAt: prevRange, pipelineStage: { not: "SPAM" },
+          orders: { some: { status: { not: "CANCELLED" } } },
+        },
+      }) : Promise.resolve(null),
 
       // Repeat order — lihat catatan sama di /business-summary.
       prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
@@ -206,12 +215,19 @@ analyticsRouter.get("/overview", async (req, res) => {
       return Math.round(((curr - prev) / prev) * 100);
     }
 
+    // Conversion rate periode ini vs sebelumnya (dipakai kartu "Conversion"
+    // di Dashboard — sebelumnya kartu ini SATU-SATUNYA dari 4 KPI yang tidak
+    // punya angka pertumbuhan sama sekali, cuma teks statis "X dari Y").
+    const conversionRateCurr = pctOrNull(customersWithOrdersCount, totalCustomers);
+    const conversionRatePrev = pctOrNull(customersWithOrdersCountPrev, totalCustomersPrev);
+
     res.json({
       // Pelanggan
       newCustomers: totalCustomers,
       totalCustomers,
       growthCustomers: growth(totalCustomers, totalCustomersPrev),
       customersWithOrders: customersWithOrdersCount,
+      growthConversion: growth(conversionRateCurr, conversionRatePrev),
       repeatCustomers: repeatCustomersCount,
       // Dari pelanggan yang pernah order, berapa persen order LAGI.
       repeatRate: pctOrNull(repeatCustomersCount, customersWithOrdersCount),

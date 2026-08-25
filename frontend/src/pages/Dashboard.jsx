@@ -3,7 +3,7 @@ import { Users, ShoppingCart, Wallet, Target } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { formatTanggalIndo, formatRupiahShort } from "../utils/format.js";
-import { makeRange } from "../lib/dateRange.js";
+import { makeRange, compareLabel } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
 import StatCard from "@/components/ui/stat-card.jsx";
 import RevenueOverview from "../features/dashboard/components/RevenueOverview.jsx";
@@ -48,6 +48,13 @@ export default function Dashboard({ user }) {
     ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
     : null;
   const userName = user?.name?.split(" ")[0] || "Anda";
+  // Label pembanding ikut PANJANG rentang yang sedang dipilih ("vs kemarin",
+  // "vs 7 hari sebelumnya", dst) — BUKAN teks statis. Backend (buildPrevRange
+  // di routes/analytics.js) sudah lama menghitung periode pembanding dengan
+  // benar; StatCard sebelumnya cuma punya default hardcode "vs last week"
+  // yang tidak pernah ikut menyesuaikan rentang yang dipilih. null kalau
+  // preset "Semua" (tidak ada periode pembanding yang valid).
+  const cmp = compareLabel(range);
 
   return (
     <PageContainer>
@@ -63,23 +70,24 @@ export default function Dashboard({ user }) {
           <StatCard
             label="New Leads" icon={Users} depth={1}
             value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
-            delta={ov?.growthCustomers}
+            delta={ov?.growthCustomers} deltaSuffix={cmp}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
           />
           <StatCard
             label="Total Orders" icon={ShoppingCart} depth={2}
             value={(ov?.totalOrders ?? 0).toLocaleString("id-ID")}
-            delta={ov?.growthOrders}
+            delta={ov?.growthOrders} deltaSuffix={cmp}
           />
           <StatCard
             label="Revenue" icon={Wallet} depth={3}
             value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
-            delta={ov?.growthOrderValue}
+            delta={ov?.growthOrderValue} deltaSuffix={cmp}
           />
           <StatCard
             label="Conversion" icon={Target} depth={4}
             value={konversi != null ? `${konversi}%` : "—"}
-            deltaSuffix={
+            delta={ov?.growthConversion} deltaSuffix={cmp}
+            note={
               ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
                  : "pelanggan yang order"
             }

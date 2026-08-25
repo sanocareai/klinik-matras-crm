@@ -148,6 +148,25 @@ export function makeCustomRange(from, to, { compare = false } = {}) {
   return { preset: "custom", from, to, n: 30, compare };
 }
 
+// Label pembanding pertumbuhan ("vs kemarin", "vs 7 hari sebelumnya", dst) —
+// SATU sumber kebenaran dipakai StatCard di Dashboard & semua tab Laporan.
+//
+// BUG YANG DIPERBAIKI (26 Agustus 2026): StatCard sebelumnya punya default
+// hardcode `deltaSuffix = "vs last week"` (Inggris, DIAM SAJA salah kalau
+// rentang yang dipilih bukan 7 hari — Dashboard defaultnya malah "Hari ini",
+// jadi label itu SELALU salah sejak awal, bukan cuma di beberapa kasus).
+// Backend (`buildPrevRange` di routes/analytics.js) SUDAH BENAR menghitung
+// periode pembanding sepanjang rentang yang sama persis — cuma labelnya di
+// frontend yang tidak pernah ikut menyesuaikan. Panjang dihitung LANGSUNG
+// dari from/to (bukan dari nama preset), supaya benar juga untuk rentang
+// custom & preset berbasis bulan (panjang harinya berubah-ubah).
+export function compareLabel(range) {
+  if (!range?.from || !range?.to) return null; // preset "Semua" — tidak ada pembanding
+  const hari = toWIB(range.to).diff(toWIB(range.from), "day") + 1;
+  if (hari <= 1) return range.preset === "today" ? "vs kemarin" : "vs hari sebelumnya";
+  return `vs ${hari} hari sebelumnya`;
+}
+
 // Panjang rentang dalam hari (inklusif). null kalau tanpa batas.
 export function rangeLengthDays(range) {
   if (!range?.from || !range?.to) return null;

@@ -21,7 +21,7 @@ const SKIN = {
 };
 
 export default function StatCard({
-  label, value, icon: Icon, depth = 1, delta, deltaSuffix = "vs last week",
+  label, value, icon: Icon, depth = 1, delta, deltaSuffix, note,
   onClick, className,
 }) {
   const s = SKIN[depth] || SKIN[1];
@@ -70,6 +70,9 @@ export default function StatCard({
       )}
       {!adaDelta && deltaSuffix && (
         <span className={cn("text-[11px]", s.sub)}>{deltaSuffix}</span>
+      )}
+      {note && (
+        <span className={cn("text-[11px]", s.sub)}>{note}</span>
       )}
     </div>
   );
