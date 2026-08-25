@@ -85,6 +85,76 @@ export function isWorkingHoursWIB(date = new Date(), { start = 8, end = 17 } = {
   return hour >= start && hour < end;
 }
 
+// ─── WAKTU RESPONS "JUJUR" TERHADAP JAM OPERASIONAL (25 Agustus 2026) ───────
+//
+// Dipakai KHUSUS untuk metrik LAPORAN (Rata-rata Respons, tren, kolom per
+// sales) — BUKAN untuk ambang SLA breach/takeover/eskalasi supervisor, yang
+// TETAP wall-clock 60 menit apa adanya (lihat catatan "SLA balas pertama"
+// di CLAUDE.md §18c: "SENGAJA sama dengan sla_breach... jangan diganti
+// sepihak"). Dua kebutuhan yang beda: SLA breach = "apakah melanggar ambang
+// operasional yang SAMA di seluruh sistem", laporan ini = "seberapa cepat
+// tim SEBENARNYA merespons kalau lagi kerja".
+//
+// MASALAH yang diperbaiki: rata-rata mentah (createdAt selisih apa adanya)
+// digelembungkan oleh pesan yang masuk MALAM lalu baru dibalas paginya —
+// jeda semalaman itu bukan sales lambat, tapi memang di luar jam kerja
+// (owner melaporkan rata-rata 14 jam 30 menit yang jelas tidak masuk akal
+// untuk tim yang aktif membalas siang hari).
+//
+// PENDEKATAN: BUKAN filter kaku "cuma hitung kalau dua-duanya di jam
+// 09-21" (itu JUSTRU salah ke arah lain — balasan jam 22:00 utk pesan
+// 21:30 akan ke-nolkan/salah hitung, padahal itu balasan cepat & nyata,
+// dan owner mengonfirmasi sales/leader kadang memang balas di luar jam
+// operasional). Sebagai gantinya: buang HANYA jendela tutup (21:00→09:00
+// WIB) yang BENAR-BENAR terlewati UTUH di antara pesan & balasan — kalau
+// balasannya sendiri terjadi DI DALAM jendela tutup itu (jam berapa pun),
+// jendela itu TIDAK dibuang sama sekali, dan selisih wall-clock asli
+// dipakai apa adanya. Simetris untuk pagi (balas jam 07:00 utk pesan jam
+// 06:45 → tidak ada jendela utuh yang terlewati, dihitung apa adanya).
+export function effectiveResponseMinutes(fromUtc, toUtc, { start = 9, end = 21 } = {}) {
+  const from = new Date(fromUtc);
+  const to = new Date(toUtc);
+  if (!(to > from)) return 0;
+
+  let totalMinutes = (to.getTime() - from.getTime()) / 60_000;
+  const closedHours = 24 - (end - start); // 09-21 → 12 jam tutup semalam
+
+  // Jendela tutup PERTAMA yang mungkin relevan: jam `end`:00 WIB di hari
+  // pesan masuk (direpresentasikan via trik shift+getUTC* yang sama dengan
+  // isWorkingHoursWIB di atas — BUKAN tanggal UTC asli).
+  const fromShifted = new Date(from.getTime() + WIB_OFFSET_MS);
+  let closeShifted = new Date(Date.UTC(
+    fromShifted.getUTCFullYear(), fromShifted.getUTCMonth(), fromShifted.getUTCDate(), end, 0, 0
+  ));
+
+  // Iterasi tiap hari — berhenti begitu jendela tutup itu sendiri sudah
+  // >= waktu balasan (tidak ada lagi jendela yang bisa "utuh terlewati").
+  for (let guard = 0; guard < 366; guard++) {
+    const closeUtc = new Date(closeShifted.getTime() - WIB_OFFSET_MS);
+    if (closeUtc >= to) break;
+    const openNextUtc = new Date(closeUtc.getTime() + closedHours * 3_600_000);
+    // Jendela UTUH terlewati hanya kalau balasan terjadi SETELAH jam buka
+    // berikutnya (openNextUtc <= to). Kalau balasan justru jatuh DI DALAM
+    // jendela ini (to < openNextUtc), jangan buang apa pun — biarkan
+    // wall-clock asli yang bicara (lihat catatan simetri di atas).
+    //
+    // Yang dibuang HANYA irisan jendela dengan (from, to) — BUKAN
+    // closedHours mentah. Kalau pesan sendiri baru masuk SETELAH jendela
+    // ini mulai (mis. pesan jam 23:00, jendela mulai 21:00), sebagian
+    // jendela (21:00-23:00) terjadi SEBELUM pesan ada — jangan ikut
+    // dibuang, atau elapsed time yang belum pernah terjadi ikut terpotong
+    // (bug nyata: kasus "pesan 23:00 → balasan 09:05" sempat menghasilkan
+    // 0 menit alih-alih ~5 menit sebelum irisan ini diperbaiki).
+    if (openNextUtc <= to) {
+      const overlapStart = closeUtc > from ? closeUtc : from;
+      totalMinutes -= (openNextUtc.getTime() - overlapStart.getTime()) / 60_000;
+    }
+    closeShifted = new Date(closeShifted.getTime() + 24 * 3_600_000);
+  }
+
+  return Math.max(0, totalMinutes);
+}
+
 // CATATAN untuk $queryRaw (lihat analytics.js): kolom Prisma `DateTime` di
 // Postgres adalah `timestamp without time zone` yang ISINYA UTC. Supaya
 // date_trunc() mengelompokkan menurut kalender WIB (bukan UTC), kolomnya

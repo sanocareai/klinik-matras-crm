@@ -4,7 +4,20 @@ import { requireAuth } from "../middleware/auth.js";
 import {
   startOfDayWIB, endOfDayExclusiveWIB,
   startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB,
+  effectiveResponseMinutes,
 } from "../utils/wib.js";
+
+// Rata-rata dari array pasangan {inboundAt, outboundAt} pakai
+// effectiveResponseMinutes (jam operasional 09-21 WIB) per pasangan, BUKAN
+// AVG(EXTRACT(EPOCH...)) mentah di SQL — lihat catatan panjang di
+// utils/wib.js soal kenapa (rata-rata mentah digelembungkan pesan malam
+// yang baru dibalas paginya). Dipakai di 4 tempat: /sales-report per-sales,
+// /performance tim & tren bulanan, /response-time-series.
+function avgEffectiveMinutes(pairs) {
+  if (!pairs.length) return null;
+  const total = pairs.reduce((s, r) => s + effectiveResponseMinutes(r.inboundAt, r.outboundAt), 0);
+  return total / pairs.length;
+}
 import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
 import { pctOrNull } from "../services/conversionMetrics.js";
 
@@ -637,9 +650,11 @@ async function computeSalesRow(u, ctx) {
     // berbulan-bulan kemudian), waktu respons A yang sebenarnya cepat
     // malah tercatat sebagai milik B — mencemari rata-rata B dengan
     // performa orang lain.
+    // Ambil PASANGAN mentah (bukan AVG di SQL) — rata-ratanya dihitung di JS
+    // via effectiveResponseMinutes (jam operasional 09-21 WIB), lihat
+    // avgEffectiveMinutes() & catatan panjang di utils/wib.js.
     prisma.$queryRaw`
-      SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
-             COUNT(*)::int AS sample
+      SELECT i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
       FROM (
         SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
         FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
@@ -797,8 +812,11 @@ async function computeSalesRow(u, ctx) {
     handledOwn: handled - (takeoverRaw[0]?.n || 0),
     stalled: stalledRaw[0]?.n || 0,
     replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
-    avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
-    respondedSample: respRaw[0]?.sample || 0,
+    avgResponseMinutes: (() => {
+      const avg = avgEffectiveMinutes(respRaw);
+      return avg != null ? Math.round(avg) : null;
+    })(),
+    respondedSample: respRaw.length,
     // `neverReplied` = percakapan yang RESOLVED tanpa satu pun balasan
     // (lihat catatan query di atas) — digabung ke slaBreach supaya
     // selalu ikut tampil di kolom "SLA >1j" yang sudah ada, tapi juga
@@ -1023,8 +1041,13 @@ analyticsRouter.get("/performance", async (req, res) => {
     // (JOIN ke Conversation supaya grup WA internal tidak ikut terhitung)
     let avgResponseMinutes = null;
     try {
-      const result = await prisma.$queryRaw`
-        SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
+      // Pasangan mentah, rata-rata dihitung di JS via avgEffectiveMinutes
+      // (jam operasional 09-21 WIB) — lihat catatan panjang di utils/wib.js.
+      // Rata-rata WALL-CLOCK mentah sebelumnya digelembungkan pesan malam
+      // yang baru dibalas paginya (dilaporkan owner: rata-rata 14 jam 30
+      // menit yang tidak masuk akal).
+      const pairs = await prisma.$queryRaw`
+        SELECT i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
         FROM (
           SELECT "conversationId", MIN("createdAt") as "createdAt"
           FROM "Message" WHERE direction = 'INBOUND'
@@ -1038,9 +1061,8 @@ analyticsRouter.get("/performance", async (req, res) => {
         JOIN "Conversation" c ON c.id = i."conversationId"
         WHERE o."createdAt" > i."createdAt" AND c."type" = 'INDIVIDUAL'
       `;
-      avgResponseMinutes = result[0]?.avg_minutes
-        ? Math.round(Number(result[0].avg_minutes))
-        : null;
+      const avg = avgEffectiveMinutes(pairs);
+      avgResponseMinutes = avg != null ? Math.round(avg) : null;
     } catch (_) {}
 
     // Tren bulanan avg response time (6 bulan terakhir) — dipakai sparkline
@@ -1053,9 +1075,12 @@ analyticsRouter.get("/performance", async (req, res) => {
     // Bucket WIB, bukan UTC — lihat catatan di /overview.
     let monthlyResponseTime = [];
     try {
+      // Bucket + pasangan mentah (bukan AVG di SQL) — dirata-ratakan per
+      // bulan di JS via avgEffectiveMinutes, sama alasan dengan
+      // avgResponseMinutes di atas.
       const rows = await prisma.$queryRaw`
         SELECT to_char(date_trunc('month', i."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
-               AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
+               i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
         FROM (
           SELECT "conversationId", MIN("createdAt") as "createdAt"
           FROM "Message" WHERE direction = 'INBOUND'
@@ -1070,12 +1095,18 @@ analyticsRouter.get("/performance", async (req, res) => {
         WHERE o."createdAt" > i."createdAt"
           AND c."type" = 'INDIVIDUAL'
           AND i."createdAt" >= NOW() - INTERVAL '6 months'
-        GROUP BY 1
-        ORDER BY 1
       `;
-      monthlyResponseTime = rows.map((r) => ({
-        month: r.month,
-        value: r.avg_minutes != null ? Math.round(Number(r.avg_minutes)) : 0,
+      const byMonth = new Map();
+      for (const r of rows) {
+        if (!byMonth.has(r.month)) byMonth.set(r.month, []);
+        byMonth.get(r.month).push(r);
+      }
+      monthlyResponseTime = [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, pairs]) => ({
+        month,
+        value: (() => {
+          const avg = avgEffectiveMinutes(pairs);
+          return avg != null ? Math.round(avg) : 0;
+        })(),
       }));
     } catch (_) {}
 
@@ -1335,11 +1366,16 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
     const { from, to } = req.query;
     const win = seriesWindow(from, to);
 
+    // Bucket + PASANGAN mentah (bukan AVG/COUNT FILTER di SQL untuk
+    // avg_minutes) — avgResponseSeries dihitung di JS via
+    // effectiveResponseMinutes (jam operasional 09-21 WIB, lihat catatan
+    // panjang di utils/wib.js), slaBreachSeries TETAP wall-clock 60 menit
+    // apa adanya (ambang operasional, tidak boleh ikut berubah — lihat
+    // catatan avgEffectiveMinutes di atas file ini).
     const respRows = win.harian
       ? await prisma.$queryRaw`
           SELECT to_char(date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
-                 AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60)::float AS avg_minutes,
-                 COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60)::int AS sla_breach
+                 i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
           FROM "Conversation" c
           JOIN (
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
@@ -1350,12 +1386,10 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
             FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
           ) o ON o."conversationId" = c.id
           WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND o."createdAt" > i."createdAt"
-          GROUP BY 1 ORDER BY 1`
+            AND o."createdAt" > i."createdAt"`
       : await prisma.$queryRaw`
           SELECT to_char(date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
-                 AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60)::float AS avg_minutes,
-                 COUNT(*) FILTER (WHERE EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60)::int AS sla_breach
+                 i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
           FROM "Conversation" c
           JOIN (
             SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
@@ -1366,8 +1400,7 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
             FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
           ) o ON o."conversationId" = c.id
           WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND o."createdAt" > i."createdAt"
-          GROUP BY 1 ORDER BY 1`;
+            AND o."createdAt" > i."createdAt"`;
 
     const neverRepliedRows = win.harian
       ? await prisma.$queryRaw`
@@ -1387,11 +1420,20 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
             AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
           GROUP BY 1 ORDER BY 1`;
 
+    const byBucket = new Map();
+    for (const r of respRows) {
+      if (!byBucket.has(r.bucket)) byBucket.set(r.bucket, []);
+      byBucket.get(r.bucket).push(r);
+    }
     const avgMap = {};
     const slaMap = {};
-    for (const r of respRows) {
-      avgMap[r.bucket] = r.avg_minutes != null ? Number(r.avg_minutes) : null;
-      slaMap[r.bucket] = (slaMap[r.bucket] || 0) + (r.sla_breach || 0);
+    for (const [bucket, pairs] of byBucket) {
+      avgMap[bucket] = avgEffectiveMinutes(pairs);
+      // SLA breach TETAP wall-clock 60 menit mentah (ambang operasional yang
+      // sama dengan takeover/eskalasi — TIDAK ikut jadi jam-kerja-aware).
+      slaMap[bucket] = pairs.filter((r) =>
+        (new Date(r.outboundAt).getTime() - new Date(r.inboundAt).getTime()) / 60_000 > 60
+      ).length;
     }
     for (const r of neverRepliedRows) {
       slaMap[r.bucket] = (slaMap[r.bucket] || 0) + Number(r.n);
