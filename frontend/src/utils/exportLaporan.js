@@ -222,10 +222,19 @@ function sheetSales({ periode, report }) {
   // "Quoted (kini)" digabung jadi "Prospect (kini)" (satu stage sekarang).
   // "Pindah ke Paid" diperbaiki jadi "Pindah ke Transaksi" — label lama
   // sudah basi sejak PAID dihapus dari pipeline 30 Jul 2026, kelewat saat itu.
+  //
+  // Redesign konversi 25 Agustus 2026: "Konversi %" sekarang berbasis
+  // TRANSISI stage (r.conversionRate) — metrik utama, menggantikan basis
+  // order lama. "Konversi (Order) %" (r.orderConversionRate) tetap ada
+  // sebagai kolom sekunder — mengukur hal genuinely beda (order benar-benar
+  // dibuat, bukan cuma kartu Kanban digeser). "Spam %" baru — bukan metrik
+  // performa, pengawas risiko SPAM dipakai jalan pintas menghindari lead
+  // sulit (lihat backend routes/analytics.js /sales-report).
   const HEAD = [
     "Sales", "Ditangani Sendiri", "Warisan Takeover", "Dibalas", "Menggantung", "Avg Respons (mnt)",
-    "SLA >60mnt", "Prospect (kini)", "Pelanggan Order", "Konversi %",
-    "Pindah ke Transaksi", "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
+    "SLA >60mnt", "Prospect (kini)", "Pindah ke Transaksi", "Konversi %",
+    "Pelanggan Order", "Konversi (Order) %", "Spam %",
+    "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
     "Komplain", "% Komplain",
   ];
   sb.row(HEAD);
@@ -235,8 +244,8 @@ function sheetSales({ periode, report }) {
     num(r.handledOwn), num(r.handledTakeover), num(r.replied), num(r.stalled),
     num(r.avgResponseMinutes), num(r.slaBreach),
     num(r.funnel?.PROSPECT),
-    num(r.orderingCustomers), pct(r.orderConversionRate),
-    num(r.paidCustomers),
+    num(r.paidCustomers), pct(r.conversionRate),
+    num(r.orderingCustomers), pct(r.orderConversionRate), pct(r.spamRate),
     num(r.orders), rp(r.grossValue), rp(r.collectedValue), rp(r.aov),
     rp(r.target), num(r.percentToTarget, FMT.pct0),
     num(r.complaints), pct(r.complaintRate),
@@ -248,8 +257,8 @@ function sheetSales({ periode, report }) {
       "TOTAL TIM",
       num(t.handledOwn), num(t.handledTakeover), num(t.replied), num(t.stalled),
       "—", num(t.slaBreach), "—",
-      num(t.orderingCustomers), pct(t.orderConversionRate),
-      num(t.paidCustomers),
+      num(t.paidCustomers), pct(t.conversionRate),
+      num(t.orderingCustomers), pct(t.orderConversionRate), pct(t.spamRate),
       num(t.orders), rp(t.grossValue), rp(t.collectedValue), rp(t.aov),
       rp(t.target), num(t.percentToTarget, FMT.pct0),
       num(t.complaints), "—",
@@ -259,11 +268,11 @@ function sheetSales({ periode, report }) {
     // menghasilkan angka yang salah. Sengaja "—".
   }
 
-  // Restrukturisasi 24 Agustus 2026: array ini HARUS punya jumlah entri SAMA
-  // dengan HEAD.length (19, dulu 20 sebelum Qualified+Quoted digabung
-  // Prospect) — kalau tidak, lebar kolom di Excel bergeser 1 posisi untuk
-  // semua kolom setelah kolom yang dihapus.
-  const ws = sb.build([16, 16, 16, 10, 13, 17, 12, 16, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
+  // Array ini HARUS punya jumlah entri SAMA dengan HEAD.length (21, sejak
+  // penambahan kolom Konversi% primer + Spam% 25 Agt 2026) — kalau tidak,
+  // lebar kolom di Excel bergeser untuk semua kolom setelah yang berubah
+  // (pernah jadi bug nyata saat penggabungan Qualified+Quoted sebelumnya).
+  const ws = sb.build([16, 16, 16, 10, 13, 17, 12, 16, 15, 11, 16, 14, 10, 8, 18, 16, 14, 16, 10, 10, 12]);
   // Autofilter di baris header tabel — ini SATU-SATUNYA bantuan navigasi yang
   // benar-benar bertahan di community edition (freeze pane tidak).
   const headRow = sb.aoa.findIndex((r) => r[0] === "Sales");
@@ -361,7 +370,7 @@ function sheetPercakapan({ periode, perf, overview }) {
   sb.row(["Total percakapan", num(perf?.totalConversations), "Hanya chat individual — grup WA internal tidak dihitung"]);
   sb.row(["Terbuka", num(perf?.openCount), ""]);
   sb.row(["Selesai (RESOLVED)", num(perf?.resolvedCount), ""]);
-  sb.row(["Closing rate", num(perf?.closingRate, FMT.pct0), "% percakapan berstatus Selesai — metrik kebersihan inbox, BUKAN penjualan"]);
+  sb.row(["Tingkat Penyelesaian Chat", num(perf?.resolvedRate, FMT.pct0), "% percakapan berstatus Selesai — metrik kebersihan inbox, BUKAN penjualan"]);
   sb.row(["Rata-rata waktu respons pertama", num(perf?.avgResponseMinutes, FMT.menit), "Jeda pesan pertama customer → balasan pertama"]);
   sb.blank();
 

@@ -23,9 +23,15 @@ import { toApiParams } from "@/lib/dateRange.js";
 // 0% closing" yang membingungkan karena dua angka itu kelihatan berkaitan
 // padahal dari 2 definisi berbeda total. Sekarang pakai /analytics/
 // sales-report (endpoint yang sama dipakai Laporan > Sales Report,
-// SalesReportTab.jsx) — `orderConversionRate` di situ = % percakapan yang
-// DITANGANI sales ini yang customer-nya benar-benar bikin ORDER, jadi
-// sejalan dengan nilai Rupiah di sebelahnya (sama-sama berbasis order).
+// SalesReportTab.jsx).
+//
+// REVISI 25 Agustus 2026: ganti dari `orderConversionRate` ke
+// `conversionRate` — metrik UTAMA sekarang berbasis TRANSISI pipeline
+// (pindah ke stage TRANSACTION dalam periode / percakapan ditangani dalam
+// periode, SPAM dikecualikan), lebih akurat & konsisten dengan pipelineStage
+// sebagai sumber kebenaran funnel (restrukturisasi 7→4 stage 24 Agt 2026).
+// `orderConversionRate` (order benar-benar dibuat) tetap ada sebagai metrik
+// sekunder di SalesReportTab, cuma tidak dipakai di widget ringkas ini.
 export default function TopRepsCard({ range }) {
   const navigate = useNavigate();
   const params = useMemo(() => toApiParams(range), [range]);
@@ -64,7 +70,7 @@ export default function TopRepsCard({ range }) {
                 {formatRupiah(r.grossValue || 0)}
               </span>
               <span className="t-secondary w-24 shrink-0 text-right text-[11px] tabular-nums">
-                {r.orderConversionRate == null ? "—" : `${r.orderConversionRate}%`} closing
+                {r.conversionRate == null ? "—" : `${r.conversionRate}%`} closing
               </span>
             </div>
           ))}

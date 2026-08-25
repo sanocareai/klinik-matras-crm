@@ -37,7 +37,11 @@ export default function ConversationAnalytics({ data, loading, error }) {
           <>
             <Stat icon={MessageSquare} label="Total percakapan" value={p.totalConversations ?? 0} tint="bg-accentbg text-accent" />
             <Stat icon={Clock} label="Rata-rata respon" value={formatDuration(p.avgResponseMinutes)} tint="bg-orangebg text-orange" />
-            <Stat icon={CheckCircle2} label="Closing rate" value={`${p.closingRate ?? 0}%`} tint="bg-greenbg text-green" />
+            {/* DIRENAME dari closingRate/"Closing rate" (25 Agt 2026) — field
+                lama menyesatkan: ini rasio chat RESOLVED, kebersihan inbox,
+                BUKAN closing penjualan. Lihat backend routes/analytics.js
+                /performance. */}
+            <Stat icon={CheckCircle2} label="Tingkat Penyelesaian Chat" value={p.resolvedRate != null ? `${p.resolvedRate}%` : "—"} tint="bg-greenbg text-green" />
             <Stat icon={Inbox} label="Belum selesai" value={p.openCount ?? 0} tint="bg-inset text-ink2" />
           </>
         )}

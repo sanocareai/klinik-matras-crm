@@ -45,29 +45,25 @@ export default function PipelineFunnelCard({ range }) {
     value: formatRupiah(byStage[s]?.value ?? 0),
   }));
 
-  const lead = byStage.NEW?.count ?? 0;
-  const won  = byStage.TRANSACTION?.count ?? 0;
-  const konversi = lead > 0 ? Math.round((won / lead) * 100) : null;
+  const adaData = stages.some((s) => s.count > 0);
 
+  // Revisi 25 Agustus 2026: footer "Conversion Rate" DIHAPUS — sebelumnya
+  // dihitung sendiri di sini sebagai TRANSACTION count / NEW count, dua-duanya
+  // snapshot state HARI INI dari populasi yang tidak terkait (sebagian besar
+  // customer TRANSACTION sekarang sudah lama keluar dari NEW), jadi bukan
+  // conversion rate yang valid secara statistik. Metrik konversi sungguhan
+  // (berbasis transisi pipeline periode) ada di Laporan > Sales Report. Lebih
+  // baik tidak menampilkan angka daripada menampilkan angka yang salah makna
+  // — prinsip yang sama dipegang di seluruh sistem atribusi lead.
   return (
-    <SectionCard
-      title="Deal Pipeline"
-      footer={
-        <div className="flex items-center justify-between">
-          <span className="t-body">Conversion Rate</span>
-          <span className="text-[17px] font-bold tabular-nums text-blue-700">
-            {konversi != null ? `${konversi}%` : "—"}
-          </span>
-        </div>
-      }
-    >
+    <SectionCard title="Deal Pipeline">
       {q.isLoading ? (
         <div className="flex flex-col gap-2">
           {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 rounded-btn" />)}
         </div>
       ) : q.isError ? (
         <p className="t-secondary py-8 text-center">Gagal memuat data pipeline.</p>
-      ) : lead === 0 && won === 0 ? (
+      ) : !adaData ? (
         <p className="t-secondary py-8 text-center">Belum ada data pipeline pada periode ini.</p>
       ) : (
         <Funnel stages={stages} />

@@ -518,7 +518,10 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   <th className="pb-2 pr-3 font-medium">Sumber</th>
                   <th className="pb-2 pr-3 font-medium">Platform</th>
                   <th className="pb-2 pr-3 font-medium">Detail</th>
-                  <th className="pb-2 pr-3 text-right font-medium">Lead</th>
+                  <th className="pb-2 pr-3 text-right font-medium" title="Termasuk chat junk/salah sasaran (SPAM) — lihat kolom Spam di sebelah">Lead</th>
+                  <th className="pb-2 pr-3 text-right font-medium" title="Persentase lead dari sumber ini yang ditandai SPAM/chat junk — bukan penalti, diagnostik kualitas targeting. SPAM SENGAJA tidak dikecualikan dari Lead/Konversi di sini (beda dari Laporan Sales) supaya channel bertargeting buruk tidak tersembunyi">
+                    Spam
+                  </th>
                   <th className="pb-2 pr-3 text-right font-medium">Closing</th>
                   <th className="pb-2 pr-3 text-right font-medium" title="Berapa persen lead dari sumber ini yang akhirnya closing">
                     Konversi
@@ -553,6 +556,9 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                     <td className="py-2 pr-3 text-ink2">{LABEL_PLATFORM[row.platform] || "—"}</td>
                     <td className="max-w-[280px] truncate py-2 pr-3 text-ink3" title={row.detail}>{row.detail}</td>
                     <td className="py-2 pr-3 text-right font-semibold tabular-nums text-ink">{row.leads}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-ink3">
+                      {row.spamRate == null ? "—" : `${row.spamRate}%`}
+                    </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink2">{row.won}</td>
                     {/* null = penyebutnya nol ("belum ada closing"), BEDA dari
                         0% / Rp0. Ditampilkan "—" supaya tidak terbaca sebagai
@@ -580,6 +586,9 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   <tr className="border-t-2 border-line font-semibold">
                     <td className="py-2.5 pr-3 text-ink" colSpan={3}>Total seluruh sumber</td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.leads}</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
+                      {sourceDetail.total.spamRate == null ? "—" : `${sourceDetail.total.spamRate}%`}
+                    </td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.won}</td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
                       {sourceDetail.total.convRate == null ? "—" : `${sourceDetail.total.convRate}%`}

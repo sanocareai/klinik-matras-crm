@@ -633,7 +633,6 @@ export const api = {
   // Analytics
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
   getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
-  getAnalyticsCsPerformance: (params) => request("/analytics/cs-performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: (params) => request("/analytics/pipeline-funnel" + buildQuery(params)),
   // Sisi WAKTU pipeline (lama di stage + pergerakan) — pembaca tabel
   // pipeline_transitions. Data baru terkumpul sejak 25 Juli 2026, tidak

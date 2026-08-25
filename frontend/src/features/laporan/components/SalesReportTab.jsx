@@ -49,8 +49,15 @@ function RespTrendTip({ active, payload, label, granularity }) {
 
 // "Closing rate" LAMA = percakapan RESOLVED / total, dan di produksi hampir
 // nol karena tim tidak pernah menandai percakapan selesai — itu sebabnya KPI
-// "Closing Rate 1%" di Laporan lama menyesatkan. Konversi di sini =
-// pelanggan yang sampai tahap bayar / percakapan yang dipegang.
+// "Closing Rate 1%" di Laporan lama menyesatkan. Konversi di sini = pelanggan
+// yang PINDAH ke stage Transaksi / percakapan yang dipegang.
+//
+// REVISI 25 Agustus 2026: metrik utama "Konversi" pindah dari
+// orderConversionRate (order benar-benar dibuat) ke conversionRate (transisi
+// pipeline ke TRANSACTION) — datanya sudah >1 bulan terekam, dan ini
+// konsisten dengan pipelineStage sebagai sumber kebenaran funnel
+// (restrukturisasi 7→4 stage). orderConversionRate tetap ditampilkan sebagai
+// kolom sekunder "Konversi (Order)" — mengukur hal genuinely beda.
 function toneKonversi(v, median) {
   if (v == null) return "text-ink3";
   if (median != null && v >= median * 1.2) return "text-green";
@@ -74,8 +81,11 @@ const KOLOM = [
   // Restrukturisasi 24 Agustus 2026 (7→4 stage): kolom Qualified* + Quoted*
   // digabung jadi SATU (Prospect*) — dua-duanya sekarang satu stage PROSPECT.
   { k: "prospect",   label: "Prospect*",  title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Prospect (tidak mengikuti rentang tanggal)" },
+  { k: "paidCustomers", label: "Transaksi", title: "Pelanggan yang PINDAH ke stage Transaksi di dalam periode terpilih (dari riwayat transisi pipeline)" },
+  { k: "conversionRate", label: "Konversi", title: "Pindah ke Transaksi dalam periode / percakapan yang ditangani dalam periode — metrik konversi UTAMA, SPAM dikecualikan" },
   { k: "orderingCustomers", label: "Order-in", title: "Pelanggan yang membuat order DI DALAM periode terpilih" },
-  { k: "orderConversionRate", label: "Konversi", title: "Pelanggan yang order di periode ini / percakapan yang ditangani di periode ini" },
+  { k: "orderConversionRate", label: "Konversi (Order)", title: "Pelanggan yang order di periode ini / percakapan yang ditangani di periode ini — pelengkap, mengukur order yang benar-benar dibuat" },
+  { k: "spamRate",   label: "Spam %",     title: "Persentase lead yang DIA PEGANG ditandai SPAM — bukan metrik performa, layak ditinjau kalau jauh di atas rata-rata tim" },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
   { k: "grossValue", label: "Nilai",      title: "Nilai order masuk — belum tentu sudah terbayar" },
   { k: "aov",        label: "AOV",        title: "Rata-rata nilai per order" },
@@ -103,9 +113,9 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
   const aktif = rows.filter((r) => r.handled > 0);
   // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,
   // bukan ambang absolut yang dikarang — 5% bisa bagus atau buruk tergantung
-  // jenis lead. Memakai konversi berbasis ORDER karena datanya sudah ada
-  // sekarang (konversi berbasis transisi stage baru terkumpul sejak 25 Jul).
-  const konversiList = aktif.map((r) => r.orderConversionRate).filter((v) => v != null).sort((a, b) => a - b);
+  // jenis lead. Memakai conversionRate (transisi pipeline, metrik UTAMA sejak
+  // 25 Agustus 2026) — datanya sudah >1 bulan terekam.
+  const konversiList = aktif.map((r) => r.conversionRate).filter((v) => v != null).sort((a, b) => a - b);
   const median = konversiList.length > 0 ? konversiList[Math.floor(konversiList.length / 2)] : null;
 
   const maxHandled = Math.max(1, ...rows.map((r) => r.handledOwn));
@@ -140,10 +150,10 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
           sub={`${aktif.length} sales aktif dari ${rows.length}`}
         />
         <KpiCard
-          index={1} label="Konversi Tim (order)"
-          numericValue={total?.orderConversionRate || 0}
-          format={(v) => (total?.orderConversionRate != null ? `${v.toFixed(1)}%` : "—")}
-          sub={`${total?.orderingCustomers || 0} pelanggan order di periode ini`}
+          index={1} label="Konversi Tim"
+          numericValue={total?.conversionRate || 0}
+          format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
+          sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
         />
         <KpiCard
           index={2} hero label="Nilai Penjualan Tim"
@@ -212,14 +222,14 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
               <div
                 className={cn(
                   "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
-                  r.orderConversionRate == null ? "bg-inset text-ink3"
-                  : median != null && r.orderConversionRate >= median * 1.2 ? "bg-greenbg text-green"
-                  : median != null && r.orderConversionRate <= median * 0.6 ? "bg-redbg text-red"
+                  r.conversionRate == null ? "bg-inset text-ink3"
+                  : median != null && r.conversionRate >= median * 1.2 ? "bg-greenbg text-green"
+                  : median != null && r.conversionRate <= median * 0.6 ? "bg-redbg text-red"
                   : "bg-accentbg text-accent"
                 )}
-                title="Pelanggan yang order pada periode ini / percakapan yang ditangani pada periode ini"
+                title="Pelanggan yang pindah ke stage Transaksi pada periode ini / percakapan yang ditangani pada periode ini"
               >
-                {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"} konversi
+                {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi
               </div>
 
               <div className="w-full sm:w-56">
@@ -410,9 +420,16 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                       {r.slaBreach}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.orderingCustomers}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.orderConversionRate, median))}>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
+                    <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.conversionRate, median))}>
+                      {r.conversionRate != null ? `${r.conversionRate}%` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{r.orderingCustomers}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
                       {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}
+                    </td>
+                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.spamRate > 15 ? "text-orange" : "text-ink3")}>
+                      {r.spamRate != null ? `${r.spamRate}%` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.orders}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
@@ -440,10 +457,16 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                     <td className="px-3 py-2.5 text-right text-ink3">—</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-red">{total.slaBreach}</td>
                     <td className="px-3 py-2.5 text-right text-ink3">—</td>
-                    <td className="px-3 py-2.5 text-right text-ink3">—</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-green">{total.orderingCustomers}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-green">{total.paidCustomers}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">
+                      {total.conversionRate != null ? `${total.conversionRate}%` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink2">{total.orderingCustomers}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
                       {total.orderConversionRate != null ? `${total.orderConversionRate}%` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">
+                      {total.spamRate != null ? `${total.spamRate}%` : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.orders}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
@@ -461,7 +484,7 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
             </table>
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-ink3">
-            Kolom bertanda <strong>*</strong> (Qualified, Quoted) adalah <strong>posisi
+            Kolom bertanda <strong>*</strong> (Prospect) adalah <strong>posisi
             saat ini</strong> dan TIDAK mengikuti rentang tanggal — “stage sekarang”
             adalah keadaan, bukan kejadian di dalam periode. Semua kolom lain
             mengikuti rentang yang dipilih di atas.

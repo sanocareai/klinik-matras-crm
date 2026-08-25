@@ -6,6 +6,7 @@ import {
   startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB,
 } from "../utils/wib.js";
 import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
+import { pctOrNull } from "../services/conversionMetrics.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
@@ -294,6 +295,14 @@ analyticsRouter.get("/business-summary", async (req, res) => {
   try {
     const { from, to } = req.query;
     const custWhere  = buildDateWhere(from, to);
+    // Khusus untuk blok `konversi` di bawah (bukan cityGroups/leadSource dst
+    // yang tetap pakai custWhere biasa) — restrukturisasi 24 Agustus 2026:
+    // chat junk/salah sasaran yang ditandai SPAM tidak boleh ikut membesarkan
+    // penyebut totalCustomers, sama alasannya dengan fix `mine` di
+    // /sales-report. Sebelumnya blok ini TIDAK mengecualikan SPAM sama
+    // sekali (beda dari /sales-report yang sudah benar) — inkonsistensi yang
+    // diperbaiki di sini.
+    const custWhereKonversi = { ...custWhere, pipelineStage: { not: "SPAM" } };
     const orderWhere = { ...buildDateWhere(from, to), status: { not: "CANCELLED" } };
     const win = seriesWindow(from, to);
 
@@ -315,15 +324,15 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
 
       prisma.customer.count({ where: { ...custWhere, pipelineStage: "TRANSACTION" } }),
-      prisma.customer.count({ where: custWhere }),
-      prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
+      prisma.customer.count({ where: custWhereKonversi }),
+      prisma.customer.count({ where: { ...custWhereKonversi, orders: { some: { status: { not: "CANCELLED" } } } } }),
       // Repeat order — customer dengan >=2 order (CANCELLED sudah
       // dikecualikan di kolom denormalized ini, lihat customerOrderAggregate.js,
       // konsisten dengan customersWithOrders di atas). Indikator loyalitas:
       // AOV/Total Revenue bisa naik cuma karena lebih banyak pelanggan BARU,
       // padahal yang lebih murah didapat & lebih menandakan puas adalah
       // pelanggan LAMA yang balik order lagi.
-      prisma.customer.count({ where: { ...custWhere, orderCount: { gte: 2 } } }),
+      prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
 
       // PEMERIKSAAN INTEGRITAS: customer ditandai TRANSACTION (pesan sudah
       // dipastikan order) TAPI tidak punya satu pun order. Ini mustahil secara
@@ -431,12 +440,16 @@ analyticsRouter.get("/business-summary", async (req, res) => {
         paidCustomers,
         customersWithOrders,
         repeatCustomers,
-        paidRate:   totalCustomers > 0 ? Math.round((paidCustomers / totalCustomers) * 1000) / 10 : null,
-        orderRate:  totalCustomers > 0 ? Math.round((customersWithOrders / totalCustomers) * 1000) / 10 : null,
+        // totalCustomers/customersWithOrders/repeatCustomers di atas sudah
+        // mengecualikan SPAM (custWhereKonversi) — chat junk/salah sasaran
+        // tidak boleh ikut membesarkan penyebut, konsisten dengan
+        // /sales-report.
+        paidRate:   pctOrNull(paidCustomers, totalCustomers),
+        orderRate:  pctOrNull(customersWithOrders, totalCustomers),
         // Dari pelanggan yang PERNAH order, berapa persen order LAGI —
         // penyebutnya customersWithOrders (bukan totalCustomers), karena
         // yang belum pernah order sama sekali tidak relevan untuk "repeat".
-        repeatRate: customersWithOrders > 0 ? Math.round((repeatCustomers / customersWithOrders) * 1000) / 10 : null,
+        repeatRate: pctOrNull(repeatCustomers, customersWithOrders),
       },
 
       // Beban produksi per status order — ini antrean kerja tim, bukan
@@ -584,7 +597,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       const [
         handled, replied, resolved, stalledRaw,
         stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
-        neverReplied, paidRaw, orderingCustomers, takeoverRaw,
+        neverReplied, paidRaw, orderingCustomers, takeoverRaw, spamCount,
       ] = await Promise.all([
         prisma.conversation.count({ where: mine }),
         // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
@@ -748,9 +761,16 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         // Customer DISTINCT yang punya order dalam rentang — hasil konkret
         // yang datanya sudah ada sekarang (tidak bergantung pada riwayat
         // transisi yang baru mulai direkam).
+        //
+        // BUG DIPERBAIKI (25 Agustus 2026): sebelumnya pakai `mineAtribusi`
+        // (percakapan KAPAN SAJA pernah dipegang, tidak dibatasi tanggal) —
+        // populasi pembilang ini TIDAK SEPADAN dengan `handled` (penyebut
+        // orderConversionRate, yang dibatasi percakapan dibuat DALAM
+        // periode). Sekarang pakai `mine` (sama seperti `handled`) supaya
+        // pembilang & penyebut orderConversionRate dari populasi yang sama.
         prisma.customer.count({
           where: {
-            conversations: { some: mineAtribusi },
+            conversations: { some: mine },
             orders: { some: { ...buildDateWhere(from, to), status: { not: "CANCELLED" } } },
           },
         }),
@@ -781,6 +801,16 @@ analyticsRouter.get("/sales-report", async (req, res) => {
               WHERE he."conversationId" = c.id
               ORDER BY he."createdAt" DESC LIMIT 1
             ) IS NOT NULL`,
+
+        // Percakapan (dibuat dalam rentang, dia pegang) yang customer-nya
+        // ditandai SPAM — populasi SAMA dengan `mine`, cuma tanpa pengecualian
+        // SPAM-nya. Dipakai untuk `spamRate`: bukan untuk menghukum, tapi
+        // pengawas risiko SPAM dipakai sebagai jalan pintas menghindari lead
+        // sulit (lihat catatan `mine` di atas soal pengecualian SPAM dari
+        // conversionRate/orderConversionRate).
+        prisma.conversation.count({
+          where: { ...convWhere, assignedToId: u.id, customer: { pipelineStage: "SPAM" } },
+        }),
       ]);
 
       const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
@@ -827,19 +857,24 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         // ALIRAN PERIODE — ikut berubah saat tanggal diganti.
         paidCustomers: paidPeriode,
         orderingCustomers,
-        // Konversi = customer yang PINDAH ke Transaction dalam periode /
-        // percakapan ditangani dalam periode (SPAM sudah dikecualikan dari
-        // `handled` lewat `mine`). Dua-duanya aliran periode → sepadan.
-        // null (UI: "—") kalau riwayat transisi belum ada datanya di periode
-        // ini, supaya tidak terbaca sebagai "0% closing".
-        conversionRate: adaDataTransisi && handled > 0
-          ? Math.round((paidPeriode / handled) * 1000) / 10
-          : null,
-        // Konversi berbasis ORDER — datanya sudah ada sekarang, jadi ini yang
-        // bisa dipercaya sebelum riwayat transisi terkumpul.
-        orderConversionRate: handled > 0
-          ? Math.round((orderingCustomers / handled) * 1000) / 10
-          : null,
+        // Konversi UTAMA (25 Agustus 2026: dijadikan metrik "Konversi" utama
+        // di UI, menggantikan orderConversionRate) = customer yang PINDAH ke
+        // Transaction dalam periode / percakapan ditangani dalam periode
+        // (SPAM sudah dikecualikan dari `handled` lewat `mine`). Dua-duanya
+        // aliran periode dari populasi yang sama → sepadan. null (UI: "—")
+        // kalau riwayat transisi belum ada datanya di periode ini, supaya
+        // tidak terbaca sebagai "0% closing".
+        conversionRate: adaDataTransisi ? pctOrNull(paidPeriode, handled) : null,
+        // Konversi SEKUNDER berbasis ORDER — pelengkap conversionRate,
+        // mengukur hal yang genuinely beda (order benar-benar dibuat, bukan
+        // cuma kartu Kanban digeser). Populasi pembilang sudah diselaraskan
+        // dengan `handled` (lihat catatan di query `orderingCustomers`).
+        orderConversionRate: pctOrNull(orderingCustomers, handled),
+        // Berapa % lead yang DIA PEGANG ditandai SPAM — bukan metrik
+        // performa, tapi pengawas: kalau tiba-tiba jauh di atas rata-rata
+        // tim, layak ditinjau manual (lihat catatan query `spamCount`).
+        spamCount,
+        spamRate: pctOrNull(spamCount, handled + spamCount),
 
         // Hasil
         orders,
@@ -878,10 +913,11 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       collectedValue: a.collectedValue + r.collectedValue,
       paidCustomers: a.paidCustomers + r.paidCustomers,
       orderingCustomers: a.orderingCustomers + r.orderingCustomers,
+      spamCount: a.spamCount + r.spamCount,
       slaBreach: a.slaBreach + r.slaBreach, neverReplied: a.neverReplied + r.neverReplied,
       complaints: a.complaints + r.complaints,
       target: a.target + r.target,
-    }), { handled: 0, replied: 0, handledOwn: 0, handledTakeover: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, slaBreach: 0, neverReplied: 0, complaints: 0, target: 0 });
+    }), { handled: 0, replied: 0, handledOwn: 0, handledTakeover: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, spamCount: 0, slaBreach: 0, neverReplied: 0, complaints: 0, target: 0 });
 
     res.json({
       periodeTarget: { year, month },
@@ -893,10 +929,9 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       total: {
         ...t,
         replyRate:      t.handled > 0 ? Math.round((t.replied / t.handled) * 100) : null,
-        conversionRate: adaDataTransisi && t.handled > 0
-          ? Math.round((t.paidCustomers / t.handled) * 1000) / 10 : null,
-        orderConversionRate: t.handled > 0
-          ? Math.round((t.orderingCustomers / t.handled) * 1000) / 10 : null,
+        conversionRate: adaDataTransisi ? pctOrNull(t.paidCustomers, t.handled) : null,
+        orderConversionRate: pctOrNull(t.orderingCustomers, t.handled),
+        spamRate:       pctOrNull(t.spamCount, t.handled + t.spamCount),
         aov:            t.orders  > 0 ? Math.round(t.grossValue / t.orders) : 0,
         percentToTarget: t.target > 0 ? Math.round((t.grossValue / t.target) * 100) : null,
       },
@@ -920,9 +955,11 @@ analyticsRouter.get("/performance", async (req, res) => {
       prisma.conversation.count({ where: { ...convWhere, status: "RESOLVED" } }),
     ]);
 
-    const closingRate = totalConversations > 0
-      ? Math.round((resolvedCount / totalConversations) * 100)
-      : 0;
+    // DIRENAME dari `closingRate` (25 Agustus 2026) — nama lama menyesatkan:
+    // ini rasio percakapan berstatus RESOLVED, metrik kebersihan inbox, BUKAN
+    // closing penjualan. Untuk konversi penjualan sungguhan lihat
+    // /sales-report `conversionRate`.
+    const resolvedRate = pctOrNull(resolvedCount, totalConversations, 0);
 
     // Rata-rata response time: selisih pesan INBOUND pertama vs OUTBOUND pertama per conv
     // (JOIN ke Conversation supaya grup WA internal tidak ikut terhitung)
@@ -985,85 +1022,9 @@ analyticsRouter.get("/performance", async (req, res) => {
     } catch (_) {}
 
     res.json({
-      totalConversations, openCount, resolvedCount, closingRate,
+      totalConversations, openCount, resolvedCount, resolvedRate,
       avgResponseMinutes, monthlyResponseTime,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-analyticsRouter.get("/cs-performance", async (req, res) => {
-  try {
-    const { from, to } = req.query;
-    // type: INDIVIDUAL — grup WA internal (kalau pernah ke-assign lewat
-    // takeover) tidak boleh ikut menghitung performa CS per sales.
-    const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
-
-    const users = await prisma.user.findMany({ where: { role: { not: "ADMIN" } } });
-
-    const rows = await Promise.all(
-      users.map(async (u) => {
-        const where = { ...convWhere, assignedToId: u.id };
-        const [total, resolved, orderAgg] = await Promise.all([
-          prisma.conversation.count({ where }),
-          prisma.conversation.count({ where: { ...where, status: "RESOLVED" } }),
-          // BUG (fix): sebelumnya `{ gte: new Date(from), lte: new Date(to) }`
-          // — `new Date("2026-07-25")` = 25 Juli 00:00 UTC, jadi batas ATAS
-          // jatuh di AWAL hari terakhir. Seluruh order di hari terakhir
-          // rentang HILANG dari kolom "Total Nilai Order" per sales (dan
-          // 7 jam pertama tiap hari WIB ikut bergeser). Sekarang pakai
-          // buildDateWhere() yang sama dengan metrik lain — satu sumber
-          // kebenaran batas periode.
-          prisma.order.aggregate({
-            where: {
-              ...buildDateWhere(from, to),
-              customer: { assignedSalesId: u.id },
-              status: { not: "CANCELLED" },
-            },
-            _sum: { value: true },
-          }),
-        ]);
-
-        let avgResponseMinutes = null;
-        try {
-          const result = await prisma.$queryRaw`
-            SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) as avg_minutes
-            FROM (
-              SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
-              FROM "Message" m
-              JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'INBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-              GROUP BY m."conversationId"
-            ) i
-            JOIN (
-              SELECT m."conversationId", MIN(m."createdAt") as "createdAt"
-              FROM "Message" m
-              JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'OUTBOUND' AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-              GROUP BY m."conversationId"
-            ) o ON i."conversationId" = o."conversationId"
-            WHERE o."createdAt" > i."createdAt"
-          `;
-          avgResponseMinutes = result[0]?.avg_minutes
-            ? Math.round(Number(result[0].avg_minutes))
-            : null;
-        } catch (_) {}
-
-        return {
-          userId: u.id,
-          name: u.name,
-          avatarUrl: u.avatarUrl,
-          totalConversations: total,
-          closingRate: total > 0 ? Math.round((resolved / total) * 100) : 0,
-          avgResponseMinutes,
-          totalOrderValue: orderAgg._sum.value || 0,
-        };
-      })
-    );
-
-    res.json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1076,20 +1037,27 @@ analyticsRouter.get("/source-performance", async (req, res) => {
     const { from, to } = req.query;
     const custDateWhere = buildDateWhere(from, to);
 
-    // pipelineStage != SPAM di kedua query (leads & won) — restrukturisasi 24
-    // Agustus 2026: chat junk/salah sasaran yang sudah ditandai SPAM tidak
-    // boleh ikut membesarkan penyebut `leads`, sama alasannya dengan fix
-    // `mine` di /sales-report.
+    // SPAM SENGAJA TIDAK dikecualikan di sini (beda dari /sales-report &
+    // /business-summary) — restrukturisasi 24 Agustus 2026: ini metrik
+    // KUALITAS CHANNEL/SUMBER, bukan performa sales. Channel dengan targeting
+    // buruk yang banyak menghasilkan chat junk/salah sasaran HARUS kelihatan
+    // buruk di sini (leads mentah, termasuk spam) — kalau SPAM dibuang dari
+    // penyebut, channel itu malah tampak bagus (convRate/nilaiPerLead dihitung
+    // cuma dari sisa lead "layak"), menyembunyikan pemborosan belanja iklan.
+    // `spamRate` per sumber ditambahkan sebagai diagnostik kualitas terpisah.
     const sources = await prisma.customer.groupBy({
       by: ["leadSource"],
-      where: { ...custDateWhere, pipelineStage: { not: "SPAM" } },
+      where: custDateWhere,
       _count: { id: true },
     });
 
     const result = await Promise.all(sources.map(async (s) => {
-      const [won, orderAgg] = await Promise.all([
+      const [won, spamCount, orderAgg] = await Promise.all([
         prisma.customer.count({
           where: { leadSource: s.leadSource, pipelineStage: "TRANSACTION", ...custDateWhere },
+        }),
+        prisma.customer.count({
+          where: { leadSource: s.leadSource, pipelineStage: "SPAM", ...custDateWhere },
         }),
         prisma.order.aggregate({
           where: {
@@ -1099,11 +1067,14 @@ analyticsRouter.get("/source-performance", async (req, res) => {
           _sum: { value: true },
         }),
       ]);
+      const leads = s._count.id;
       return {
         source:     s.leadSource,
-        leads:      s._count.id,
+        leads,
         won,
-        convRate:   s._count.id > 0 ? Math.round((won / s._count.id) * 100) : 0,
+        convRate:   pctOrNull(won, leads),
+        spamCount,
+        spamRate:   pctOrNull(spamCount, leads),
         totalValue: orderAgg._sum.value || 0,
       };
     }));
@@ -1447,11 +1418,16 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
  * Dikembalikan null (bukan 0) kalau penyebutnya nol — "belum ada closing"
  * BEDA dari "rata-ratanya nol rupiah", dan UI harus bisa membedakannya.
  */
-function metrikKualitas(leads, won, totalValue) {
+function metrikKualitas(leads, won, totalValue, spam = 0) {
   return {
-    convRate: leads > 0 ? Math.round((won / leads) * 1000) / 10 : null,
+    convRate: pctOrNull(won, leads),
     nilaiPerLead: leads > 0 ? Math.round(totalValue / leads) : null,
     avgOrderValue: won > 0 ? Math.round(totalValue / won) : null,
+    // SPAM SENGAJA TIDAK dikecualikan dari `leads` — lihat catatan panjang di
+    // /source-performance (metrik kualitas channel, beda tujuan dari
+    // /sales-report). spamRate = diagnostik terpisah, bukan dikurangkan dari
+    // convRate/nilaiPerLead.
+    spamRate: pctOrNull(spam, leads),
   };
 }
 
@@ -1490,16 +1466,17 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         c."leadSourceDetail"                                                       AS detail,
         COUNT(DISTINCT c.id)::int                                                  AS leads,
         COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'TRANSACTION')::int AS won,
+        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'SPAM')::int        AS spam_count,
         COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint   AS total_value
       FROM "Customer" c
       LEFT JOIN "Order" o ON o."customerId" = c.id
       WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-        AND c."pipelineStage" <> 'SPAM'
       GROUP BY 1, 2`;
 
     const semua = baris.map((b) => {
       const leads = Number(b.leads);
       const won = Number(b.won);
+      const spam = Number(b.spam_count);
       // bigint dari Postgres — JSON.stringify melempar error untuk BigInt,
       // jadi WAJIB dikonversi sebelum dikirim.
       const totalValue = Number(b.total_value);
@@ -1509,8 +1486,9 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         platform: platformDariDetail(b.detail),
         leads,
         won,
+        spamCount: spam,
         totalValue,
-        ...metrikKualitas(leads, won, totalValue),
+        ...metrikKualitas(leads, won, totalValue, spam),
       };
     });
 
@@ -1523,8 +1501,9 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     const total = semua.reduce((a, r) => ({
       leads: a.leads + r.leads,
       won: a.won + r.won,
+      spamCount: a.spamCount + r.spamCount,
       totalValue: a.totalValue + r.totalValue,
-    }), { leads: 0, won: 0, totalValue: 0 });
+    }), { leads: 0, won: 0, spamCount: 0, totalValue: 0 });
 
     // ── Jembatan rekonsiliasi ke Ringkasan/Dashboard ──────────────────────
     // Pertanyaan yang berulang muncul (15-16 Agt 2026): "kenapa nilai order
@@ -1548,20 +1527,21 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     if (sisa.length > 0) {
       const l = sisa.reduce((a, r) => a + r.leads, 0);
       const w = sisa.reduce((a, r) => a + r.won, 0);
+      const sp = sisa.reduce((a, r) => a + r.spamCount, 0);
       const v = sisa.reduce((a, r) => a + r.totalValue, 0);
       tampil.push({
         source: "LAINNYA",
         detail: `${sisa.length} sumber lain dengan lead sedikit`,
         platform: PLATFORM.UNKNOWN,
-        leads: l, won: w, totalValue: v,
-        ...metrikKualitas(l, w, v),
+        leads: l, won: w, spamCount: sp, totalValue: v,
+        ...metrikKualitas(l, w, v, sp),
         agregat: true,
       });
     }
 
     res.json({
       data: tampil,
-      total: { ...total, ...metrikKualitas(total.leads, total.won, total.totalValue) },
+      total: { ...total, ...metrikKualitas(total.leads, total.won, total.totalValue, total.spamCount) },
       // Dinyatakan eksplisit supaya UI bisa menjelaskan angkanya ke pengguna
       // — lihat catatan panjang di atas soal beda definisi periode.
       basisPeriode: "customer_dibuat",
