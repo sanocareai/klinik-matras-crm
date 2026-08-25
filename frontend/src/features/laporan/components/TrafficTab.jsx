@@ -9,6 +9,7 @@ import dayjs from "dayjs";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { formatDuration, formatRupiah, SOURCE_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
+import { compareLabel } from "@/lib/dateRange.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 
@@ -80,6 +81,7 @@ const LABEL_PLATFORM = {
 };
 
 export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
+  const cmp = compareLabel(rangeParams);
   // Filter tanggal ikut dibawa ke halaman Pelanggan — tanpa ini, klik
   // "Google Ads" di laporan 30 hari membuka daftar SELURUH waktu, jadi
   // angka yang dilihat di laporan tidak pernah cocok dengan daftarnya.
@@ -134,14 +136,14 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
         <KpiCard
           index={0} hero label="Total Lead Masuk"
           numericValue={traffic.totalLeads || 0}
-          growth={traffic.growthPct}
+          growth={traffic.growthPct} compareLabel={cmp}
           sub={`periode sebelumnya: ${(traffic.prevTotalLeads || 0).toLocaleString("id-ID")} lead`}
         />
         <KpiCard
           index={1} label="Rata-rata per Hari"
           numericValue={traffic.rataRataHarian ?? 0}
           format={(v) => v.toLocaleString("id-ID", { maximumFractionDigits: 1 })}
-          growth={traffic.rataRataGrowthPct}
+          growth={traffic.rataRataGrowthPct} compareLabel={cmp}
           sub={traffic.rataRataHarianPrev != null
             ? `periode sebelumnya: ${traffic.rataRataHarianPrev.toLocaleString("id-ID", { maximumFractionDigits: 1 })} lead/hari`
             : "Belum ada periode pembanding"}

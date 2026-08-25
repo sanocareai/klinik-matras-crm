@@ -3,6 +3,7 @@ import { Download, Info, Crown } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
+import { compareLabel } from "@/lib/dateRange.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -56,7 +57,8 @@ const KOLOM = [
   { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
 ];
 
-export default function SalesReportTab({ report, grossTotalPerusahaan, onExport }) {
+export default function SalesReportTab({ report, grossTotalPerusahaan, onExport, range }) {
+  const cmp = compareLabel(range);
   const semuaRows = report?.rows || [];
   // Baris "Team Lead" (Novi) TERPISAH dari leaderboard/tabel 8 sales biasa
   // di bawah sini (25 Agustus 2026) — target dia mewakili target TIM
@@ -124,6 +126,7 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport 
           index={0} hero label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
           format={(v) => formatRupiah(Math.round(v))}
+          growth={report?.growthTeamGrossValue} compareLabel={cmp}
           sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
         />
         <KpiCard

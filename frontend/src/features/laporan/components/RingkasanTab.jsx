@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import { api } from "@/api.js";
 import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { compareLabel } from "@/lib/dateRange.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -97,7 +98,8 @@ function ChartTip({ active, payload, label, granularity }) {
   );
 }
 
-export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab }) {
+export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab, range }) {
+  const cmp = compareLabel(range);
   const uang     = summary?.uang;
   const konversi = summary?.konversi;
   const series   = summary?.revenueSeries || [];
@@ -135,7 +137,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           label="Nilai Penjualan"
           numericValue={uang?.grossValue || 0}
           format={(v) => formatRupiah(Math.round(v))}
-          growth={overview?.growthOrderValue}
+          growth={overview?.growthOrderValue} compareLabel={cmp}
           sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
         />
         <KpiCard

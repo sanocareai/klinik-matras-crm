@@ -64,6 +64,21 @@ function buildPrevRange(from, to) {
   };
 }
 
+// Persentase pertumbuhan curr vs prev — SATU sumber kebenaran dipakai
+// /overview, /sales-report, /performance (dan endpoint lain nanti), supaya
+// aturan null-safety di bawah cuma perlu benar SEKALI.
+//
+// BUG YANG DIPERBAIKI (26 Jul 2026): dulu `prev === 0 && curr > 0` →
+// return 100, jadi UI menampilkan badge "+100%" percaya diri padahal
+// periode pembanding KOSONG (sistem baru jalan, belum ada baseline).
+// "+100%" itu bukan pertumbuhan — itu pembagian dengan nol. Sekarang
+// null = "tidak bisa dihitung", frontend merender "—", BUKAN angka palsu.
+function growth(curr, prev) {
+  if (prev === null || prev === undefined) return null;
+  if (prev === 0) return null;
+  return Math.round(((curr - prev) / prev) * 100);
+}
+
 analyticsRouter.get("/overview", async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -201,19 +216,6 @@ analyticsRouter.get("/overview", async (req, res) => {
       // Repeat order — lihat catatan sama di /business-summary.
       prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
     ]);
-
-    // BUG YANG DIPERBAIKI (26 Jul 2026): dulu `prev === 0 && curr > 0` →
-    // return 100, jadi UI menampilkan badge "+100%" percaya diri padahal
-    // periode pembanding KOSONG (sistem baru jalan, belum ada baseline).
-    // "+100%" itu bukan pertumbuhan — itu pembagian dengan nol. Di Laporan
-    // produksi SEMUA kartu tampil "+100%" bersamaan, yang jelas menyesatkan
-    // owner. Sekarang null = "tidak bisa dihitung", dan frontend merender
-    // "—" / "belum ada pembanding", BUKAN angka palsu.
-    function growth(curr, prev) {
-      if (prev === null || prev === undefined) return null;
-      if (prev === 0) return null;
-      return Math.round(((curr - prev) / prev) * 100);
-    }
 
     // Conversion rate periode ini vs sebelumnya (dipakai kartu "Conversion"
     // di Dashboard — sebelumnya kartu ini SATU-SATUNYA dari 4 KPI yang tidak
@@ -1014,6 +1016,40 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       teamLeadUsers.map(async (u) => ({ ...(await computeSalesRow(u, ctx)), isTeamLead: true }))
     );
 
+    // Nilai Penjualan Tim periode SEBELUMNYA — dipakai badge pertumbuhan di
+    // kartu hero SalesReportTab.jsx. SENGAJA BUKAN dengan menjalankan ulang
+    // computeSalesRow() untuk tiap sales (endpoint ini sudah berat, 8+ sales
+    // x ~15 query paralel masing-masing — menjalankannya dua kali demi 1
+    // angka pertumbuhan tidak sepadan). Query tunggal ini secara matematis
+    // SAMA dengan menjumlah orderAgg._sum.value per-sales (assignedToId
+    // adalah FK tunggal, jadi tidak ada percakapan yang ke-double-count
+    // lintas sales) — populasinya DISENGAJA sama persis dengan
+    // `mineAtribusi` di computeSalesRow (lihat catatan panjang di atas),
+    // digabung utk 8 sales AKTIF + team lead sekaligus jadi SATU angka
+    // (growth rate tidak valid dijumlah terpisah lintas sub-populasi).
+    const prevRangeSales = buildPrevRange(from, to);
+    const allTeamIds = [...users.map((u) => u.id), ...teamLeadUsers.map((u) => u.id)];
+    const teamGrossPrevAgg = prevRangeSales ? await prisma.order.aggregate({
+      where: {
+        createdAt: prevRangeSales, status: { not: "CANCELLED" },
+        customer: { conversations: { some: { assignedToId: { in: allTeamIds }, type: "INDIVIDUAL" } } },
+      },
+      _sum: { value: true },
+    }) : null;
+
+    // "Percakapan Ditangani" (total.handled) periode sebelumnya — dipakai
+    // kartu KPI yang sama di PerformaTimTab.jsx. Populasi SAMA PERSIS dengan
+    // `mine` di computeSalesRow (8 sales AKTIF, TIDAK termasuk team lead —
+    // total.handled memang tidak menjumlahkan teamLeadRows, lihat reduce di
+    // atas), jadi query gabungan pakai assignedToId IN 8 sales itu saja.
+    const handledPrevRaw = prevRangeSales ? await prisma.conversation.count({
+      where: {
+        createdAt: prevRangeSales, type: "INDIVIDUAL",
+        assignedToId: { in: users.map((u) => u.id) },
+        customer: { pipelineStage: { not: "SPAM" } },
+      },
+    }) : null;
+
     // "Menggantung SEKARANG" lintas periode — sinyal operasional yang tidak
     // boleh hilang hanya karena user memilih rentang "hari ini". Dipisah dari
     // kolom per-periode supaya tidak tercampur (lihat catatan `stalled`).
@@ -1058,6 +1094,15 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       target: a.target + r.target,
     }), { handled: 0, replied: 0, handledOwn: 0, handledTakeover: 0, stalled: 0, orders: 0, grossValue: 0, collectedValue: 0, paidCustomers: 0, orderingCustomers: 0, spamCount: 0, slaBreach: 0, neverReplied: 0, complaints: 0, target: 0 });
 
+    // Sama seperti "teamGrossAll" yang SUDAH dihitung frontend (SalesReportTab.jsx
+    // — total.grossValue + closing pribadi team lead) — dihitung ULANG di sini
+    // supaya growth% dibandingkan terhadap populasi yang SAMA PERSIS, bukan
+    // cuma total.grossValue (8 sales) yang akan meleset kalau team lead ikut
+    // closing sendiri.
+    const teamGrossAllCurr = t.grossValue + teamLeadRows.reduce((s, r) => s + r.grossValue, 0);
+    const growthTeamGrossValue = growth(teamGrossAllCurr, prevRangeSales ? (teamGrossPrevAgg?._sum.value || 0) : null);
+    const growthHandled = growth(t.handled, handledPrevRaw);
+
     res.json({
       periodeTarget: { year, month },
       // Dipakai UI untuk memutuskan menampilkan "—" vs 0% pada konversi
@@ -1065,6 +1110,8 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       adaDataTransisi,
       stalledNow: stalledNowRaw[0]?.n || 0,
       unassignedInPeriod: unassignedInPeriodRaw,
+      growthTeamGrossValue,
+      growthHandled,
       // teamLeadRows DITARUH SETELAH sort — dia tidak ikut ranking-by-revenue
       // 8 sales biasa (lihat catatan di atas). Frontend memisahkannya via
       // `isTeamLead`, bukan lewat posisi di array ini.
@@ -1091,8 +1138,9 @@ analyticsRouter.get("/performance", async (req, res) => {
     // type: INDIVIDUAL — grup WA internal bukan percakapan lead, tidak boleh
     // ikut menghitung Total Percakapan/Closing Rate di Laporan.
     const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
+    const prevRangePerf = buildPrevRange(from, to);
 
-    const [totalConversations, openCount, resolvedCount, statusGroups] = await Promise.all([
+    const [totalConversations, openCount, resolvedCount, statusGroups, totalConversationsPrev] = await Promise.all([
       prisma.conversation.count({ where: convWhere }),
       prisma.conversation.count({ where: { ...convWhere, status: "OPEN" } }),
       prisma.conversation.count({ where: { ...convWhere, status: "RESOLVED" } }),
@@ -1103,7 +1151,11 @@ analyticsRouter.get("/performance", async (req, res) => {
       // lama selalu kosong. Pola sama persis dengan channelBreakdown yang
       // sudah ada & benar di /overview.
       prisma.conversation.groupBy({ by: ["status"], where: convWhere, _count: { _all: true } }),
+      // Periode sebelumnya (panjang sama) — dipakai badge pertumbuhan kartu
+      // "Total Percakapan" di PerformaTimTab.jsx.
+      prevRangePerf ? prisma.conversation.count({ where: { createdAt: prevRangePerf, type: "INDIVIDUAL" } }) : Promise.resolve(null),
     ]);
+    const growthTotalConversations = growth(totalConversations, totalConversationsPrev);
 
     // DIRENAME dari `closingRate` (25 Agustus 2026) — nama lama menyesatkan:
     // ini rasio percakapan berstatus RESOLVED, metrik kebersihan inbox, BUKAN
@@ -1186,6 +1238,7 @@ analyticsRouter.get("/performance", async (req, res) => {
 
     res.json({
       totalConversations, openCount, resolvedCount, resolvedRate,
+      growthTotalConversations,
       avgResponseMinutes, monthlyResponseTime,
       statusBreakdown: statusGroups.map((g) => ({ status: g.status, count: g._count._all })),
     });

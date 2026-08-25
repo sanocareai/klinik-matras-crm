@@ -161,7 +161,7 @@ export default function Laporan() {
               <TabsContent value="Ringkasan">
                 <RingkasanTab
                   summary={summary} overview={overview} perf={perf}
-                  funnel={funnel} onGoTab={setTab}
+                  funnel={funnel} onGoTab={setTab} range={range}
                 />
               </TabsContent>
 
@@ -169,7 +169,7 @@ export default function Laporan() {
                 <SalesReportTab
                   report={salesReport}
                   grossTotalPerusahaan={summary?.uang?.grossValue}
-                  onExport={handleExport}
+                  onExport={handleExport} range={range}
                 />
               </TabsContent>
 
@@ -182,7 +182,7 @@ export default function Laporan() {
                   perf={perf} summary={summary}
                   respTimeSeries={respTimeSeries}
                   channelBreakdown={overview?.channelBreakdown || []}
-                  salesReport={salesReport}
+                  salesReport={salesReport} range={range}
                 />
               </TabsContent>
 

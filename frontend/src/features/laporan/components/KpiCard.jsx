@@ -18,7 +18,7 @@ import InfoTooltip from "./InfoTooltip.jsx";
 // (bg-blue-50) sebagai penanda "ini KPI utama tab ini", teksnya SELALU warna
 // gelap normal — tidak ada cabang warna teks terpisah lagi.
 export default function KpiCard({
-  label, numericValue, format, growth, sparkline, hero = false, sub, index = 0, tooltip,
+  label, numericValue, format, growth, compareLabel, sparkline, hero = false, sub, index = 0, tooltip,
 }) {
   const animated = useCountUp(numericValue);
   const displayValue = format ? format(animated) : Math.round(animated).toLocaleString("id-ID");
@@ -62,12 +62,19 @@ export default function KpiCard({
             <GrowthIcon size={11} /> {growthLabel}
           </div>
         )}
+        {/* BUG YANG DIPERBAIKI (26 Agustus 2026): dulu fallback hardcode
+            "vs periode sebelumnya" — tidak pernah bilang PANJANG periodenya
+            (7 hari? kemarin? bulan lalu?), padahal backend sudah menghitung
+            pembanding dengan panjang yang benar (buildPrevRange). Sekarang
+            caller WAJIB kirim compareLabel (dari lib/dateRange.js) supaya
+            teksnya selalu cocok dengan rentang tanggal yang sedang dipilih. */}
+        {hasGrowth && compareLabel && (
+          <span className="text-[11px] text-ink3">{compareLabel}</span>
+        )}
       </div>
 
-      {(sub || hasGrowth) && (
-        <p className="mt-1 text-xs text-ink3">
-          {sub || "vs periode sebelumnya"}
-        </p>
+      {sub && (
+        <p className="mt-1 text-xs text-ink3">{sub}</p>
       )}
 
       {sparkline && sparkline.length >= 2 && (

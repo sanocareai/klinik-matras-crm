@@ -7,6 +7,7 @@ import { AlertTriangle, Crown } from "lucide-react";
 import { formatDuration, formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
+import { compareLabel } from "@/lib/dateRange.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -89,7 +90,8 @@ function RespTrendTip({ active, payload, label, granularity }) {
 // dipertahankan sebagai pengecualian sengaja — satu-satunya tempat yang
 // menampilkan revenue di tab ini, karena tujuannya diagnostik (korelasi
 // "respons lambat → penjualan turun"), bukan laporan penjualan.
-export default function PerformaTimTab({ perf, summary, respTimeSeries, channelBreakdown, salesReport }) {
+export default function PerformaTimTab({ perf, summary, respTimeSeries, channelBreakdown, salesReport, range }) {
+  const cmp = compareLabel(range);
   const statusBreakdown = perf?.statusBreakdown || [];
   const totalStatus = statusBreakdown.reduce((s, r) => s + (r.count || 0), 0);
   const totalChannel = channelBreakdown.reduce((s, r) => s + (r.count || 0), 0);
@@ -135,10 +137,14 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard index={0} label="Total Percakapan" numericValue={perf?.totalConversations || 0} />
+        <KpiCard
+          index={0} label="Total Percakapan" numericValue={perf?.totalConversations || 0}
+          growth={perf?.growthTotalConversations} compareLabel={cmp}
+        />
         <KpiCard
           index={1} label="Percakapan Ditangani"
           numericValue={total?.handled || 0}
+          growth={salesReport?.growthHandled} compareLabel={cmp}
           sub={`${aktif.length} sales aktif dari ${rows.length}`}
         />
         <KpiCard
