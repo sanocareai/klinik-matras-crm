@@ -98,9 +98,11 @@ function ChartTip({ active, payload, label, granularity }) {
   );
 }
 
-export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab, range, salesReport }) {
+export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab, range, targetReport }) {
   const cmp = compareLabel(range);
-  const { teamGrossAll, percentToTarget, targetValue } = computeTeamTarget(salesReport);
+  // targetReport SENGAJA month-to-date TETAP, tidak ikut `range` yang
+  // dipilih — lihat catatan panjang di Laporan.jsx#salesReportBulanIni.
+  const { teamGrossAll, percentToTarget, targetValue } = computeTeamTarget(targetReport);
   const sumberLead = [...(overview?.leadSourceBreakdown || [])].sort((a, b) => b.count - a.count);
   const sumberLeadMax = Math.max(1, ...sumberLead.map((r) => r.count));
   const sumberLeadTotal = sumberLead.reduce((s, r) => s + r.count, 0);
@@ -144,7 +146,14 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
       {targetValue > 0 && (
         <div className="rounded-2xl bg-surface p-5 shadow-card">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-medium text-ink3">Target Bulanan Tim</p>
+            <p className="text-[13px] font-medium text-ink3">
+              Target Bulanan Tim
+              {/* Selalu bulan berjalan — TIDAK ikut date picker di atas (lihat
+                  catatan Laporan.jsx#salesReportBulanIni). Ditandai eksplisit
+                  supaya tidak membingungkan saat rentang lain (mis. "Hari
+                  ini") sedang dipilih untuk sisa halaman. */}
+              <span className="ml-1.5 font-normal text-ink4">· bulan berjalan</span>
+            </p>
             <span className="text-xs text-ink3">
               {formatRupiah(teamGrossAll)} <span className="text-ink3">/ {formatRupiah(targetValue)}</span>
             </span>

@@ -39,6 +39,15 @@ export default function Laporan() {
   const [summary, setSummary]   = useState(null);
   const [perf, setPerf]         = useState(null);
   const [salesReport, setSalesReport] = useState(null);
+  // Khusus kartu "Target Bulanan Tim" di RingkasanTab.jsx — TIDAK BOLEH ikut
+  // `range` yang dipilih user (26 Agustus 2026, laporan owner: begitu default
+  // Laporan jadi "Hari ini", kartu ini jadi salah total — closing HARI INI
+  // dibandingkan ke target SEBULAN PENUH, kelihatan seperti nyaris 0% padahal
+  // sudah jauh lebih tinggi). Target itu sendiri sudah otomatis "bulan
+  // berjalan" (SalesTarget dicari dari nowPartsWIB() di backend, bukan dari
+  // `from`/`to`) — cuma progres pencapaiannya yang harus SELALU month-to-date
+  // juga, apa pun rentang yang sedang dipilih untuk sisa halaman.
+  const [salesReportBulanIni, setSalesReportBulanIni] = useState(null);
   const [funnel, setFunnel]     = useState([]);
   const [velocity, setVelocity] = useState(null);
   const [respTimeSeries, setRespTimeSeries] = useState(null);
@@ -57,7 +66,7 @@ export default function Laporan() {
     if (setengahJadi) return;
     setLoading(true);
     try {
-      const [ov, sm, pf, fn, sr, vl, rts, tr, lsd] = await Promise.all([
+      const [ov, sm, pf, fn, sr, vl, rts, tr, lsd, srBulanIni] = await Promise.all([
         api.getAnalyticsOverview(params),
         api.getBusinessSummary(params),
         api.getAnalyticsPerformance(params),
@@ -74,11 +83,15 @@ export default function Laporan() {
         api.getResponseTimeSeries(params).catch(() => null),
         api.getTrafficReport(params).catch(() => null),
         api.getLeadSourceDetail(params).catch(() => null),
+        // Lihat catatan panjang di useState salesReportBulanIni — SENGAJA
+        // pakai preset "this_month", BUKAN `params`/`range` yang sedang aktif.
+        api.getSalesReport(toApiParams(makeRange("this_month"))).catch(() => null),
       ]);
       setOverview(ov);
       setSummary(sm);
       setPerf(pf);
       setSalesReport(sr);
+      setSalesReportBulanIni(srBulanIni);
       setVelocity(vl);
       setRespTimeSeries(rts);
       setTraffic(tr);
@@ -165,7 +178,7 @@ export default function Laporan() {
                 <RingkasanTab
                   summary={summary} overview={overview} perf={perf}
                   funnel={funnel} onGoTab={setTab} range={range}
-                  salesReport={salesReport}
+                  targetReport={salesReportBulanIni}
                 />
               </TabsContent>
 
