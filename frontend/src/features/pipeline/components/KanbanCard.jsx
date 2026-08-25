@@ -18,26 +18,26 @@ const ORDER_STATUS_TONE = {
 
 // Titik warna per stage — mengikuti STAGE_VARIANT di utils/format.js
 // (sano-color-system.md §4). Sengaja class statis, bukan dibangun runtime,
-// supaya ke-scan Tailwind.
+// supaya ke-scan Tailwind. Restrukturisasi 24 Agustus 2026 (7→4 stage):
+// QUALIFIED/QUOTED/BOOKED/SCHEDULED digabung PROSPECT (accent), COMPLETED/
+// REVIEWED digabung TRANSACTION (green). SPAM baru — abu-abu netral.
 export const STAGE_DOT = {
-  NEW:       "bg-orange",
-  QUALIFIED: "bg-accent",
-  QUOTED:    "bg-accent",
-  BOOKED:    "bg-accent",
-  SCHEDULED: "bg-accent",
-  COMPLETED: "bg-green",
-  REVIEWED:  "bg-green",
+  NEW:         "bg-orange",
+  PROSPECT:    "bg-accent",
+  TRANSACTION: "bg-green",
+  SPAM:        "bg-inset",
 };
 
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
 // 14 hari dipilih supaya tidak berisik: siklus jual kasur di sini berhari-hari
 // (lihat laporan Kecepatan Pipeline), jadi 7 hari akan menandai deal normal.
-// COMPLETED/REVIEWED DIKECUALIKAN: itu stage AKHIR — "lama tidak disentuh" di
-// sana artinya sudah selesai, bukan mandek (dulu PAID/REVIEWED sebelum PAID
-// dihapus dari pipeline 30 Jul 2026).
+// TRANSACTION/SPAM DIKECUALIKAN: TRANSACTION adalah stage AKHIR "berhasil"
+// (dulu COMPLETED/REVIEWED) — "lama tidak disentuh" di sana artinya sudah
+// selesai, bukan mandek. SPAM juga bukan kandidat "mandek" — itu memang
+// sengaja dibiarkan, bukan lead yang lupa ditindaklanjuti.
 const STALE_DAYS = 14;
 export function isStale(card, stage) {
-  if (stage === "COMPLETED" || stage === "REVIEWED") return false;
+  if (stage === "TRANSACTION" || stage === "SPAM") return false;
   return (card?.daysSince || 0) >= STALE_DAYS;
 }
 

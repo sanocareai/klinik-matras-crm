@@ -71,8 +71,9 @@ const KOLOM = [
   { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
   { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
   { k: "slaBreach",  label: "SLA >1j",    title: "Balasan pertama >60 menit, DITAMBAH percakapan yang ditutup (RESOLVED) tanpa satu pun balasan sama sekali — supaya lead yang diabaikan total sampai ditutup tidak lolos dari radar" },
-  { k: "qualified",  label: "Qualified*", title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Qualified (tidak mengikuti rentang tanggal)" },
-  { k: "quoted",     label: "Quoted*",    title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Quoted (tidak mengikuti rentang tanggal)" },
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): kolom Qualified* + Quoted*
+  // digabung jadi SATU (Prospect*) — dua-duanya sekarang satu stage PROSPECT.
+  { k: "prospect",   label: "Prospect*",  title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Prospect (tidak mengikuti rentang tanggal)" },
   { k: "orderingCustomers", label: "Order-in", title: "Pelanggan yang membuat order DI DALAM periode terpilih" },
   { k: "orderConversionRate", label: "Konversi", title: "Pelanggan yang order di periode ini / percakapan yang ditangani di periode ini" },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
@@ -408,8 +409,7 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                     <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
                       {r.slaBreach}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.QUALIFIED ?? 0}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.QUOTED ?? 0}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.orderingCustomers}</td>
                     <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.orderConversionRate, median))}>
                       {r.orderConversionRate != null ? `${r.orderConversionRate}%` : "—"}

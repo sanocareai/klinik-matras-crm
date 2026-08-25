@@ -20,7 +20,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 
 // ─── ENUM (cermin schema.prisma — sumber kebenaran tetap schema.prisma) ──────
 
-export const PIPELINE_STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+export const PIPELINE_STAGES = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
 export const ORDER_STATUS = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
 export const ORDER_CATEGORY = ["LAYANAN", "SEWA", "BARU"];
 export const PAYMENT_STATUS = ["BELUM_BAYAR", "DP", "LUNAS"];

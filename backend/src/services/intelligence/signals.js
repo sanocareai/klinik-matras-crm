@@ -40,12 +40,16 @@ export function detectSignals(ctx) {
     .join(" ");
   const detectedIntents = detectIntents(recentInboundText);
 
-  const quotationAbandoned = stage === "QUOTED" && daysSince != null && daysSince > T.abandonedQuoteDays;
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): `quotationAbandoned` →
+  // `prospectStalled` — dulu spesifik "sudah di-QUOTED tapi diam", sekarang
+  // digeneralisasi ke "macet di PROSPECT terlalu lama" karena QUOTED tidak
+  // ada lagi sebagai stage tersendiri.
+  const prospectStalled = stage === "PROSPECT" && daysSince != null && daysSince > T.stalledProspectDays;
   const isReturning = orderCount >= 1;
 
   return {
     stage, orderCount, orderValue, lastOrderDaysAgo, complaintsOpen,
     lastMessageAt, lastInbound, daysSince, waitingMinutes, activityCount,
-    detectedIntents, quotationAbandoned, isReturning,
+    detectedIntents, prospectStalled, isReturning,
   };
 }

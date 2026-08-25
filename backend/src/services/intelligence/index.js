@@ -60,12 +60,20 @@ async function loadCandidates(prisma, scope, kind) {
   const recentDays = kind === "opportunity" ? T.opportunityRecentDays : T.candidateRecentDays;
   const recentCut = new Date(Date.now() - recentDays * 86_400_000);
 
+  // pipelineStage != SPAM WAJIB di KEDUA kind (restrukturisasi 24 Agustus
+  // 2026) — spam tidak boleh pernah muncul di "butuh perhatian"/"hot lead"
+  // mana pun. Ditulis eksplisit di AND (bukan cuma lewat filter stage
+  // PROSPECT di kind "opportunity") karena kandidat "priority" bisa lolos
+  // lewat OR lain (percakapan aktif / komplain terbuka) tanpa menyentuh
+  // cabang stage sama sekali.
+  const notSpam = { pipelineStage: { not: "SPAM" } };
+
   const where = kind === "opportunity"
-    ? { AND: [roleWhere, { pipelineStage: { in: ["QUALIFIED", "QUOTED"] } }, { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: recentCut } } } }] }
-    : { AND: [roleWhere, { OR: [
+    ? { AND: [roleWhere, notSpam, { pipelineStage: "PROSPECT" }, { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: recentCut } } } }] }
+    : { AND: [roleWhere, notSpam, { OR: [
         { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: recentCut } } } },
         { orders: { some: { hasComplaint: true } } },
-        { pipelineStage: "QUOTED" },
+        { pipelineStage: "PROSPECT" },
       ] }] };
 
   return prisma.customer.findMany({ where, select: CUSTOMER_SELECT, take: 80 });

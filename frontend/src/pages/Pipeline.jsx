@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Download, RefreshCw, Search, X, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { formatRupiah, formatRupiahShort, STAGE_LABELS } from "../utils/format.js";
+import { formatRupiah, formatRupiahShort, STAGE_LABELS, PIPELINE_STAGES } from "../utils/format.js";
 import { useCountUp } from "../hooks/useCountUp.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -16,7 +16,10 @@ import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
-const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+// Konsolidasi 24 Agustus 2026 (restrukturisasi pipeline 7→4): daftar stage
+// SEBELUMNYA hardcode lokal di sini (duplikat dari format.js) — sekarang
+// diambil dari PIPELINE_STAGES supaya cuma ada SATU sumber kebenaran.
+const STAGES = PIPELINE_STAGES.map((p) => p.value);
 
 // Kartu yang dirender per kolom sebelum tombol "Muat lebih banyak".
 //
@@ -130,7 +133,7 @@ export default function Pipeline() {
     });
     try {
       // Ini juga yang mencatat baris pipeline_transitions di backend (satu
-      // transaksi) dan memicu webhook lead.won kalau toStage = COMPLETED —
+      // transaksi) dan memicu webhook lead.won kalau toStage = TRANSACTION —
       // lihat routes/customers.js PATCH /:id.
       await api.updateCustomer(card.id, { pipelineStage: toStage });
     } catch (err) {

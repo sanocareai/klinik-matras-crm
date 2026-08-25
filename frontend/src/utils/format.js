@@ -110,20 +110,19 @@ export function tagClass(tag) {
 // mengikuti exit-criteria operasional nyata. LOST dihapus dari pipeline utama
 // (data lama dipetakan ke QUALIFIED lewat migrasi backend).
 // Revisi 30 Jul 2026: PAID dihapus (8 → 7 stage) — redundan dengan
-// Order.paymentStatus (BELUM_BAYAR/DP/LUNAS) yang sudah ada per-order, lebih
-// presisi karena 1 pelanggan bisa punya beberapa order dengan status bayar
-// beda-beda (data lama PAID dipetakan ke COMPLETED lewat migrasi backend).
-// "Berhasil" sebenarnya sekarang COMPLETED (pekerjaan selesai dikerjakan),
-// bukan BOOKED — lihat backend/prisma/schema.prisma untuk definisi
-// exit-criteria tiap stage.
+// Order.paymentStatus (BELUM_BAYAR/DP/LUNAS) yang sudah ada per-order.
+// Revisi 24 Agustus 2026: 7 stage → 4 (NEW/PROSPECT/TRANSACTION/SPAM).
+// Order.status sekarang men-track progres operasional secara independen
+// (PENDING/PICKUP/PROCESSING/READY/DELIVERED), jadi pipelineStage cukup
+// menjawab posisi lead di funnel — QUALIFIED+QUOTED digabung PROSPECT,
+// BOOKED/SCHEDULED/COMPLETED/REVIEWED digabung TRANSACTION. SPAM baru:
+// chat junk/salah sasaran, DIKECUALIKAN dari perhitungan Closing Rate.
+// Lihat backend/prisma/schema.prisma untuk mapping data lengkap.
 export const STAGE_LABELS = {
   NEW: "New",
-  QUALIFIED: "Qualified",
-  QUOTED: "Quoted",
-  BOOKED: "Booked",
-  SCHEDULED: "Scheduled",
-  COMPLETED: "Completed",
-  REVIEWED: "Already Reviewed",
+  PROSPECT: "Prospek / Potensi",
+  TRANSACTION: "Scheduled / Transaksi",
+  SPAM: "Spam",
 };
 
 export const ORDER_STATUS_LABELS = {
@@ -196,13 +195,10 @@ export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELI
 // accent (biru) = sedang berjalan (4 stage tengah, sengaja SATU warna supaya
 // progres tidak terasa "loncat-loncat"), green = benar-benar berhasil.
 export const STAGE_VARIANT = {
-  NEW:       "warning", // oranye — baru masuk, belum diproses
-  QUALIFIED: "info",    // biru — sedang berjalan
-  QUOTED:    "info",
-  BOOKED:    "info",
-  SCHEDULED: "info",
-  COMPLETED: "success", // hijau — berhasil sebenarnya (pekerjaan selesai; dulu PAID sebelum dihapus 30 Jul 2026)
-  REVIEWED:  "success", // hijau — bonus: sudah kasih testimoni
+  NEW:         "warning", // oranye — baru masuk, belum diproses
+  PROSPECT:    "info",    // biru — sedang berjalan (negosiasi/follow up)
+  TRANSACTION: "success", // hijau — berhasil (pesan sudah dipastikan jadi order)
+  SPAM:        "neutral", // abu-abu — dikecualikan dari performa, bukan status "sedang berjalan"
 };
 
 export const CONV_STATUS_LABELS = {

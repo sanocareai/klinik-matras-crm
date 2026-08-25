@@ -73,22 +73,20 @@ export const avatarColors = [
 // Revisi 30 Jul 2026: PAID dihapus (7 stage) — redundan dengan
 // Order.paymentStatus per-order. COMPLETED sekarang jadi stage "berhasil"
 // (dulu warna PAID), REVIEWED tetap hijau lebih gelap sebagai bonus akhir.
+// Revisi 24 Agustus 2026: 7 stage → 4 (NEW/PROSPECT/TRANSACTION/SPAM) — cermin
+// frontend/src/utils/format.js STAGE_VARIANT web. Order.status sekarang
+// men-track progres operasional secara independen. SPAM baru — abu-abu
+// netral, dikecualikan dari Closing Rate (lihat backend routes/analytics.js).
 export const stageColors = {
   NEW: "#f59e0b",
-  QUALIFIED: "#2563eb",
-  QUOTED: "#7c3aed",
-  BOOKED: "#0891b2",
-  SCHEDULED: "#4f46e5",
-  COMPLETED: "#16a34a",
-  REVIEWED: "#059669",
+  PROSPECT: "#2563eb",
+  TRANSACTION: "#16a34a",
+  SPAM: "#6b7280",
 };
 
 export const stageLabels = {
   NEW: "New",
-  QUALIFIED: "Qualified",
-  QUOTED: "Quoted",
-  BOOKED: "Booked",
-  SCHEDULED: "Scheduled",
-  COMPLETED: "Completed",
-  REVIEWED: "Already Reviewed",
+  PROSPECT: "Prospek / Potensi",
+  TRANSACTION: "Scheduled / Transaksi",
+  SPAM: "Spam",
 };

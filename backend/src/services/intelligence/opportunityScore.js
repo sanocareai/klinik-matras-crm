@@ -22,8 +22,10 @@ export function computeOpportunity(s) {
   }
   score += Math.min(kwPts, W.keywordCap);
 
-  if (s.stage === "QUOTED") score += W.stageQuoted;
-  else if (s.stage === "QUALIFIED") score += W.stageQualified;
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): satu stage aktif tersisa
+  // (PROSPECT) — lihat catatan OPPORTUNITY_WEIGHTS.stageProspect di weights.js
+  // soal kenapa dipatok ke bobot QUOTED lama.
+  if (s.stage === "PROSPECT") score += W.stageProspect;
 
   if (s.activityCount >= T.activeConvMessages) { score += W.activeConversation; signals.push("Percakapan aktif"); }
   if (s.isReturning) { score += W.returning; signals.push("Repeat customer"); }

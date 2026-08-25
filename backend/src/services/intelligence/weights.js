@@ -19,11 +19,18 @@ export const KEYWORDS = {
 };
 
 // Ambang batas (menit / hari / jumlah).
+//
+// Revisi 24 Agustus 2026 (restrukturisasi pipeline 7→4 — lihat
+// schema.prisma enum PipelineStage): `abandonedQuoteDays` → `stalledProspectDays`.
+// Dulu spesifik "sudah di-QUOTED tapi diam" (belum lanjut ke BOOKED); sekarang
+// PROSPECT adalah SATU-SATUNYA stage aktif pra-transaksi, jadi maknanya
+// digeneralisasi jadi "macet di PROSPECT terlalu lama" — nilai ambang (3 hari)
+// TIDAK berubah, cuma cakupannya lebih luas (dulu cuma yang sudah di-quote).
 export const THRESHOLDS = {
   unansweredMinutes: 180,   // >3 jam = follow-up menunggu
   inactivity30: 30,
   inactivity60: 60,
-  abandonedQuoteDays: 3,    // QUOTED tapi diam >3 hari (belum lanjut ke BOOKED)
+  stalledProspectDays: 3,   // PROSPECT tapi diam >3 hari (belum lanjut ke TRANSACTION atau SPAM)
   repeatOrderDays: 365,     // customer lama, order terakhir >12 bulan
   activeConvMessages: 3,    // percakapan aktif = >=3 pesan dalam recentActivityDays
   recentActivityDays: 3,
@@ -36,12 +43,17 @@ export const HEALTH_WEIGHTS = {
   base: 50,
   orderBase: 20,
   orderValueMax: 15, orderValuePer: 5_000_000,
-  // Revisi 30 Jul 2026: pipeline 7-stage (PAID dihapus, lihat schema.prisma
-  // enum PipelineStage) — makin dekat ke COMPLETED (berhasil sebenarnya),
-  // makin tinggi bobotnya. REVIEWED sedikit di atas COMPLETED (sudah kasih
-  // testimoni = relasi paling sehat). Nilai awal wajar, silakan di-tune
-  // dari perilaku sales nyata (lihat catatan file ini).
-  stage: { NEW: 0, QUALIFIED: 5, QUOTED: 10, BOOKED: 12, SCHEDULED: 13, COMPLETED: 15, REVIEWED: 16 },
+  // Revisi 24 Agustus 2026: pipeline 7-stage LAMA (NEW/QUALIFIED/QUOTED/
+  // BOOKED/SCHEDULED/COMPLETED/REVIEWED) turun jadi 4 (NEW/PROSPECT/
+  // TRANSACTION/SPAM) — resolusi 6-tingkat sengaja hilang sesuai keputusan
+  // bisnis (Order.status sekarang men-track progres operasional secara
+  // terpisah, pipelineStage cukup posisi lead di funnel). Sinyal "sudah
+  // kasih review" (REVIEWED lama, +16) DIHAPUS, bukan dipindah — pipelineStage
+  // tidak lagi membedakan itu. SPAM TIDAK PUNYA bobot di sini sama sekali:
+  // customer ber-stage SPAM difilter keluar SEBELUM sampai ke health score
+  // (lihat index.js loadCandidates) — bukan diberi skor 0/negatif, memang
+  // tidak pernah dinilai.
+  stage: { NEW: 0, PROSPECT: 10, TRANSACTION: 18 },
   recency: { d2: 15, d7: 10, d14: 5 },
   complaintPenalty: 25,
   inactivity: { d60: 25, d30: 15 },
@@ -52,10 +64,10 @@ export const HEALTH_WEIGHTS = {
 export const PRIORITY_WEIGHTS = {
   complaintOpen: 30,
   unansweredBase: 25, unansweredPerDay: 3, unansweredMaxExtra: 10,
-  quotationAbandoned: 20,
+  prospectStalled: 20, // dulu quotationAbandoned — lihat THRESHOLDS.stalledProspectDays
   intentAny: 10,
   highValue: 10, highValueMin: 5_000_000,
-  stageQuoted: 8,
+  stageProspect: 8, // dulu stageQuoted — PROSPECT sekarang satu-satunya stage aktif pra-transaksi
   recentActive: 7,
 };
 
@@ -63,7 +75,12 @@ export const PRIORITY_WEIGHTS = {
 export const OPPORTUNITY_WEIGHTS = {
   keyword: { price: 20, ready: 15, catalog: 12, size: 10, promo: 8, installment: 8 },
   keywordCap: 45,
-  stageQuoted: 20, stageQualified: 8,
+  // Dulu stageQuoted:20 + stageQualified:8 (dua tingkatan). Sekarang cuma
+  // PROSPECT — dipatok ke nilai QUOTED lama (bobot tertinggi) karena
+  // diferensiasi "baru masuk vs sudah serius nego" sekarang murni datang
+  // dari sinyal keyword di atas (price/ready/catalog/dst), bukan lagi dari
+  // sub-tingkatan stage.
+  stageProspect: 20,
   activeConversation: 15,
   returning: 10,
 };

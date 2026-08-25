@@ -32,12 +32,12 @@ export function deriveNextAction(ctx) {
     return { label: "Tangani komplain — telepon langsung", reason: "Ada komplain terbuka. Trust rapuh, tangani cepat.", tone: "danger" };
   if (ctx.lastInbound && ctx.waitingMinutes > 180)
     return { label: "Balas follow-up yang menunggu", reason: `Pesan terakhir dari customer belum dibalas ${Math.floor(ctx.waitingMinutes / 60)} jam.`, tone: "warning" };
-  if (ctx.stage === "QUOTED")
-    return { label: "Tindak lanjuti penawaran", reason: "Penawaran sudah dikirim — dorong ke keputusan.", tone: "brand" };
   if (ctx.daysSince != null && ctx.daysSince > 30)
     return { label: "Reaktivasi — kirim info/penawaran baru", reason: `Sudah ${ctx.daysSince} hari tanpa interaksi.`, tone: "brand" };
-  if (ctx.orderCount === 0 && ctx.stage === "QUALIFIED")
-    return { label: "Tawarkan rekomendasi kasur", reason: "Prospek terkualifikasi, belum ada order.", tone: "brand" };
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): QUOTED (cabang sebelumnya
+  // di sini) dan QUALIFIED digabung jadi satu stage PROSPECT.
+  if (ctx.orderCount === 0 && ctx.stage === "PROSPECT")
+    return { label: "Tawarkan rekomendasi kasur", reason: "Prospek aktif, belum ada order.", tone: "brand" };
   return { label: "Jaga hubungan — pantau berkala", reason: "Hubungan sehat, tidak ada yang mendesak.", tone: "neutral" };
 }
 
@@ -46,7 +46,9 @@ export function buildOverviewText(ctx, categoryLabel) {
   const parts = [];
   parts.push(ctx.orderCount > 0 ? `${ctx.orderCount} order (${formatRupiahShort(ctx.orderValue)})` : "belum ada order");
   if (ctx.daysSince != null) parts.push(ctx.daysSince <= 0 ? "aktif hari ini" : `aktif ${ctx.daysSince} hari lalu`);
-  if (ctx.stage === "QUOTED") parts.push("sedang di tahap penawaran");
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): PROSPECT sekarang
+  // satu-satunya stage aktif pra-transaksi (dulu QUOTED punya teks sendiri).
+  if (ctx.stage === "PROSPECT") parts.push("sedang dalam negosiasi/follow up");
   if (ctx.complaintsCount > 0) parts.push(`${ctx.complaintsCount} komplain terbuka`);
   if (ctx.lastInbound && ctx.waitingMinutes > 180) parts.push("ada follow-up belum dibalas");
   const body = parts.join(", ");

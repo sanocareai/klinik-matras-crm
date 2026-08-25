@@ -5,7 +5,9 @@ import { rpShort } from "./format.js";
 export function generateInsight(s, scores) {
   const parts = [];
   parts.push(s.orderCount > 0 ? `Riwayat pembelian ${s.orderCount} order (${rpShort(s.orderValue)})` : "Belum ada riwayat pembelian");
-  if (s.stage === "QUOTED") parts.push("sedang di tahap penawaran");
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): PROSPECT sekarang satu-
+  // satunya stage aktif pra-transaksi (dulu QUOTED punya teks sendiri).
+  if (s.stage === "PROSPECT") parts.push("sedang dalam negosiasi/follow up");
   if (s.daysSince != null) parts.push(s.daysSince <= 0 ? "aktif hari ini" : `aktif ${s.daysSince} hari lalu`);
 
   let text = parts.join(", ") + ".";

@@ -1115,13 +1115,16 @@ body {
   border: 2px solid transparent; cursor: pointer; transition: all 0.12s;
   background: #f1f5f9; color: var(--text-muted);
 }
-.stage-btn.active-new       { background: #fef3c7; color: #92400e; border-color: #fde68a; }
-.stage-btn.active-qualified { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
-.stage-btn.active-quoted    { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
-.stage-btn.active-booked    { background: #cffafe; color: #155e75; border-color: #a5f3fc; }
-.stage-btn.active-scheduled { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
-.stage-btn.active-completed { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
-.stage-btn.active-reviewed  { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+/* Restrukturisasi 24 Agustus 2026 (7→4 stage): active-qualified/quoted →
+   active-prospect (biru, dipertahankan dari active-qualified lama);
+   active-booked/scheduled/completed/reviewed → active-transaction (hijau,
+   dipertahankan dari active-completed lama, warna "berhasil"). active-spam
+   BARU — abu-abu netral, sengaja beda dari abu-abu default .stage-btn
+   supaya tetap kelihatan "terpilih" walau bukan status yang dirayakan. */
+.stage-btn.active-new         { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.stage-btn.active-prospect    { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+.stage-btn.active-transaction { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.stage-btn.active-spam        { background: #e5e7eb; color: #374151; border-color: #d1d5db; }
 .stage-btn:not([class*="active"]):hover { background: #e2e8f0; color: var(--text-main); }
 
 /* ─── FUNNEL CHART ───────────────────────────────────────── */

@@ -13,7 +13,12 @@ import { toApiParams } from "@/lib/dateRange.js";
 // nyata di tiap tahap operasional.
 // Revisi 30 Jul 2026: PAID dihapus (7 stage) — COMPLETED sekarang jadi tahap
 // "berhasil" (dipakai juga sebagai pembilang conversion rate di bawah).
-const TAHAP = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+// Revisi 24 Agustus 2026: 7 stage → 4 (NEW/PROSPECT/TRANSACTION/SPAM). SPAM
+// SENGAJA TIDAK ditampilkan di corong ini — corong menggambarkan progres
+// lead MENYEMPIT ke arah closing, dan chat junk bukan bagian dari narasi
+// itu (dikecualikan juga dari Closing Rate, lihat routes/analytics.js
+// /sales-report). SPAM tetap terlihat di tempat lain (Kanban Pipeline).
+const TAHAP = ["NEW", "PROSPECT", "TRANSACTION"];
 
 // ─── DEAL PIPELINE ───────────────────────────────────────────────────────────
 // DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — sekarang mengikuti SATU
@@ -41,7 +46,7 @@ export default function PipelineFunnelCard({ range }) {
   }));
 
   const lead = byStage.NEW?.count ?? 0;
-  const won  = byStage.COMPLETED?.count ?? 0;
+  const won  = byStage.TRANSACTION?.count ?? 0;
   const konversi = lead > 0 ? Math.round((won / lead) * 100) : null;
 
   return (

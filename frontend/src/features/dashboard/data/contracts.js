@@ -26,7 +26,7 @@
  * @property {string} id             = customerId
  * @property {string} name
  * @property {string} phone
- * @property {"NEW"|"QUALIFIED"|"QUOTED"|"BOOKED"|"SCHEDULED"|"COMPLETED"|"REVIEWED"} stage
+ * @property {"NEW"|"PROSPECT"|"TRANSACTION"|"SPAM"} stage
  * @property {number} score          0–100 = signalScore saat ini (kompat UI)
  * @property {number} signalScore    skor rule-based sinyal (eksplisit)
  * @property {number|null} aiConfidence RESERVED — keyakinan model AI (Phase 4), null utk sekarang
@@ -67,10 +67,10 @@ export const MOCK_RECOMMENDATIONS = {
 
 export const MOCK_HOT_LEADS = {
   items: [
-    { id: "c1", name: "Bapak Andi", phone: "6281234567890", stage: "QUOTED",    score: 92, reason: "Sinyal beli kuat, belum di-follow up 3 jam", signals: ["Tanya harga", "Sudah dikirim penawaran", "Belum dibalas 3j"], nextAction: "Follow up sekarang — kirim rincian harga", valueEstimate: 8500000, assignedTo: null,     lastMessageAt: iso(185), sessionLabel: "CS-1" },
-    { id: "c2", name: "Ibu Sari",   phone: "6285698765432", stage: "QUALIFIED", score: 84, reason: "Data lengkap, minat tinggi",                  signals: ["Berat badan terkirim", "Keluhan jelas", "Balas cepat"], nextAction: "Tawarkan rekomendasi kasur + jadwalkan", valueEstimate: 6200000, assignedTo: "Farhan", lastMessageAt: iso(52),  sessionLabel: "CS-2" },
-    { id: "c3", name: "Bapak Joko", phone: "6281199887766", stage: "QUOTED",    score: 78, reason: "Minta katalog, sinyal beli",                  signals: ["Minta foto katalog", "Sudah dikirim penawaran"], nextAction: "Kirim katalog + tanyakan ukuran", valueEstimate: 5000000, assignedTo: "Mila",   lastMessageAt: iso(240), sessionLabel: "CS-1" },
-    { id: "c4", name: "Ibu Rina",   phone: "6285611223344", stage: "QUALIFIED", score: 71, reason: "Responsif, tanya cara order",                 signals: ["Tanya cara order", "Balas cepat"], nextAction: "Bantu proses order & konfirmasi alamat", valueEstimate: 0, assignedTo: null, lastMessageAt: iso(18), sessionLabel: "CS-1" },
+    { id: "c1", name: "Bapak Andi", phone: "6281234567890", stage: "PROSPECT", score: 92, reason: "Sinyal beli kuat, belum di-follow up 3 jam", signals: ["Tanya harga", "Sudah dikirim penawaran", "Belum dibalas 3j"], nextAction: "Follow up sekarang — kirim rincian harga", valueEstimate: 8500000, assignedTo: null,     lastMessageAt: iso(185), sessionLabel: "CS-1" },
+    { id: "c2", name: "Ibu Sari",   phone: "6285698765432", stage: "PROSPECT", score: 84, reason: "Data lengkap, minat tinggi",                  signals: ["Berat badan terkirim", "Keluhan jelas", "Balas cepat"], nextAction: "Tawarkan rekomendasi kasur + jadwalkan", valueEstimate: 6200000, assignedTo: "Farhan", lastMessageAt: iso(52),  sessionLabel: "CS-2" },
+    { id: "c3", name: "Bapak Joko", phone: "6281199887766", stage: "PROSPECT", score: 78, reason: "Minta katalog, sinyal beli",                  signals: ["Minta foto katalog", "Sudah dikirim penawaran"], nextAction: "Kirim katalog + tanyakan ukuran", valueEstimate: 5000000, assignedTo: "Mila",   lastMessageAt: iso(240), sessionLabel: "CS-1" },
+    { id: "c4", name: "Ibu Rina",   phone: "6285611223344", stage: "PROSPECT", score: 71, reason: "Responsif, tanya cara order",                 signals: ["Tanya cara order", "Balas cepat"], nextAction: "Bantu proses order & konfirmasi alamat", valueEstimate: 0, assignedTo: null, lastMessageAt: iso(18), sessionLabel: "CS-1" },
   ],
 };
 

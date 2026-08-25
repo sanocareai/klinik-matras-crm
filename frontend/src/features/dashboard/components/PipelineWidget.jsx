@@ -1,13 +1,16 @@
 import React, { useMemo } from "react";
 import { motion } from "framer-motion";
-import { STAGE_LABELS, formatRupiahShort } from "../../../utils/format.js";
+import { STAGE_LABELS, PIPELINE_STAGES, formatRupiahShort } from "../../../utils/format.js";
 
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
 };
 
-const MAIN_STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+// Konsolidasi 24 Agustus 2026 (restrukturisasi pipeline 7→4): diambil dari
+// PIPELINE_STAGES, SPAM dikecualikan — widget ini menampilkan "deal" per
+// stage, chat junk bukan deal (sama alasannya dengan PipelineFunnelCard.jsx).
+const MAIN_STAGES = PIPELINE_STAGES.map((p) => p.value).filter((s) => s !== "SPAM");
 
 export default function PipelineWidget({ funnel, loading }) {
   const byStage = useMemo(() => {

@@ -14,10 +14,13 @@ export function computePriority(s) {
     score += W.unansweredBase + Math.min(W.unansweredMaxExtra, daysWaiting * W.unansweredPerDay);
     reasons.push(`Belum dibalas ${Math.floor(s.waitingMinutes / 60)} jam`);
   }
-  if (s.quotationAbandoned) { score += W.quotationAbandoned; reasons.push("Penawaran belum direspons"); }
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): `quotationAbandoned` →
+  // `prospectStalled` (lihat signals.js) — dulu spesifik "sudah di-quote
+  // tapi diam", sekarang digeneralisasi "macet di PROSPECT terlalu lama".
+  if (s.prospectStalled) { score += W.prospectStalled; reasons.push("Prospek belum direspons lanjut"); }
   if (s.detectedIntents.length > 0) { score += W.intentAny; reasons.push("Ada sinyal minat"); }
   if (s.orderValue >= W.highValueMin) { score += W.highValue; reasons.push(`Nilai transaksi tinggi (${rpShort(s.orderValue)})`); }
-  if (s.stage === "QUOTED") { score += W.stageQuoted; }
+  if (s.stage === "PROSPECT") { score += W.stageProspect; }
   if (s.daysSince != null && s.daysSince <= 2) { score += W.recentActive; }
 
   score = Math.max(0, Math.min(100, Math.round(score)));

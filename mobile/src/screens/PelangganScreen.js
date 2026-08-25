@@ -31,7 +31,7 @@ import { FlashList } from "@shopify/flash-list";
 import { Search, MapPin, Users as UsersIcon, ChevronDown, LayoutGrid, List as ListIcon } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
-import { stageColors } from "../theme";
+import { stageColors, stageLabels } from "../theme";
 import { formatRupiah } from "../utils/format";
 import { useAuth } from "../context/AuthContext";
 import Avatar from "../components/Avatar";
@@ -42,16 +42,14 @@ const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 25;
 const VIEW_MODE_KEY = "pelangganViewMode"; // "list" | "board" — persist AsyncStorage
 
-// Label pipeline KHUSUS layar ini (chip/board) — beda dari stageLabels
-// global di theme.js (dipakai CustomerProfileContent.js pipeline-pill
-// editor, TIDAK diubah supaya tidak ada efek samping di layar lain). Warna
-// TETAP reuse stageColors global (konsisten dengan badge stage yang sudah
-// dipakai di mana-mana).
-const STAGE_ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
-const PIPELINE_LABELS = {
-  NEW: "New", QUALIFIED: "Qualified", QUOTED: "Quoted", BOOKED: "Booked",
-  SCHEDULED: "Scheduled", COMPLETED: "Completed", REVIEWED: "Already Reviewed",
-};
+// Konsolidasi 24 Agustus 2026 (restrukturisasi pipeline 7→4): SEBELUMNYA
+// layar ini punya salinan label sendiri (STAGE_ORDER/PIPELINE_LABELS)
+// terpisah dari stageLabels global di theme.js, sengaja dibiarkan drift
+// supaya tidak ada efek samping ke layar lain. Sekarang jumlah stage jauh
+// lebih kecil (4, bukan 7) jadi risiko itu juga mengecil — dikonsolidasi ke
+// satu sumber kebenaran (theme.js), sama pola dengan web (utils/format.js).
+const STAGE_ORDER = Object.keys(stageLabels);
+const PIPELINE_LABELS = stageLabels;
 const STAGE_TABS = [{ key: "ALL", label: "Semua" }, ...STAGE_ORDER.map((s) => ({ key: s, label: PIPELINE_LABELS[s] }))];
 
 function daysSinceChat(lastMessageAt) {

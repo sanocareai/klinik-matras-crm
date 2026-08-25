@@ -12,21 +12,22 @@ import Sparkline from "./Sparkline.jsx";
 // "Label 'Penawaran' masih muncul di beberapa tempat"); sekarang satu sumber.
 // Revisi 30 Jul 2026: PAID dihapus (7 stage) — COMPLETED sekarang yang
 // punya makna "berhasil" bareng REVIEWED.
+// Revisi 24 Agustus 2026: 7 stage → 4 (NEW/PROSPECT/TRANSACTION/SPAM).
+// QUALIFIED/QUOTED/BOOKED/SCHEDULED digabung PROSPECT, COMPLETED/REVIEWED
+// digabung TRANSACTION. SPAM abu-abu netral — bukan "berhasil", bukan
+// "sedang berjalan", jadi dapat treatment visual sendiri.
 const STAGE_BG = {
-  NEW: "bg-inset", QUALIFIED: "bg-inset", QUOTED: "bg-inset",
-  BOOKED: "bg-inset", SCHEDULED: "bg-inset",
-  COMPLETED: "bg-greenbg", REVIEWED: "bg-greenbg",
+  NEW: "bg-inset", PROSPECT: "bg-inset",
+  TRANSACTION: "bg-greenbg", SPAM: "bg-inset",
 };
-// Bar progres per stage — accent, kecuali COMPLETED/REVIEWED yang semantik.
+// Bar progres per stage — accent, kecuali TRANSACTION yang semantik.
 const STAGE_BAR = {
-  NEW: "bg-accent", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
-  BOOKED: "bg-accent", SCHEDULED: "bg-accent",
-  COMPLETED: "bg-green", REVIEWED: "bg-green",
+  NEW: "bg-accent", PROSPECT: "bg-accent",
+  TRANSACTION: "bg-green", SPAM: "bg-ink3",
 };
 const STAGE_DOT = {
-  NEW: "bg-orange", QUALIFIED: "bg-accent", QUOTED: "bg-accent",
-  BOOKED: "bg-accent", SCHEDULED: "bg-accent",
-  COMPLETED: "bg-green", REVIEWED: "bg-green",
+  NEW: "bg-orange", PROSPECT: "bg-accent",
+  TRANSACTION: "bg-green", SPAM: "bg-ink3",
 };
 
 // "3.4" → "3,4 hari" · "0.5" → "12 jam" (di bawah 1 hari lebih enak dibaca
@@ -41,12 +42,13 @@ function formatDurasiHari(hari) {
   return `${hari.toString().replace(".", ",")} hari`;
 }
 
-// Stage yang paling lama tertahan = kemungkinan bottleneck. COMPLETED/REVIEWED
-// dikecualikan (itu stage AKHIR — "lama di COMPLETED" tidak berarti macet,
-// cuma belum pindah lagi / memang sudah selesai).
+// Stage yang paling lama tertahan = kemungkinan bottleneck. TRANSACTION/SPAM
+// dikecualikan (TRANSACTION itu stage AKHIR "berhasil" — "lama di TRANSACTION"
+// tidak berarti macet, cuma belum pindah lagi / memang sudah selesai. SPAM
+// juga bukan kandidat bottleneck — memang sengaja dibiarkan di sana).
 function cariBottleneck(avgDaysInStage) {
   const kandidat = (avgDaysInStage || []).filter(
-    (r) => r.stage !== "COMPLETED" && r.stage !== "REVIEWED" && r.avgDays != null && r.sample > 0
+    (r) => r.stage !== "TRANSACTION" && r.stage !== "SPAM" && r.avgDays != null && r.sample > 0
   );
   if (kandidat.length === 0) return null;
   return kandidat.reduce((a, b) => (b.avgDays > a.avgDays ? b : a));
@@ -217,11 +219,10 @@ export default function PipelineTab({ funnel, velocity }) {
         description="Berapa pelanggan MASUK ke tiap stage pada periode ini (beda dari tabel di atas yang menghitung posisi saat ini)"
         empty={adaData ? null : pesanKosong}
       >
-        {/* grid-cols-5 dulu dipakai untuk 5 stage lama; sekarang 8 stage jadi
-            baris kedua cuma terisi 3 dari 5 kolom (rapat kiri, sisa ruang
-            kanan kosong tak rata). 2 → 4 → 8 kolom membagi 8 item rata di
-            tiap breakpoint (4+4, atau 1 baris penuh di layar lebar). */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+        {/* Restrukturisasi 24 Agustus 2026: 8 stage → 4, grid disederhanakan
+            (2x2 di mobile, 1 baris penuh 4 kolom mulai sm — tidak perlu lagi
+            breakpoint xl:grid-cols-8 yang dulu dipakai untuk 8 item). */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {movedTo.map((row) => (
             <div key={row.stage} className="rounded-xl bg-inset/60 p-3">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ink2">

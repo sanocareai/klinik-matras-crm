@@ -385,7 +385,7 @@ export function registerReadOnlyTools(server) {
       title: "Ringkasan pipeline",
       description:
         "Jumlah pelanggan dan total nilai order di setiap pipeline stage " +
-        "(NEW → QUALIFIED → QUOTED → BOOKED → SCHEDULED → COMPLETED → REVIEWED). " +
+        "(NEW → PROSPECT → TRANSACTION, atau SPAM untuk chat junk/salah sasaran). " +
         "Opsional dibatasi per sales. Bisa juga menampilkan jumlah perpindahan stage pada periode tertentu.",
       inputSchema: {
         salesId: z.string().optional().describe("Batasi ke pelanggan milik sales ini."),

@@ -132,14 +132,20 @@ enum ConversationType {
 // cuma tambal masalah yang akar sebabnya stage ini sendiri redundan —
 // dihapus total, bukan disinkronkan terus-menerus. Lihat migrasi
 // 20260730_remove_paid_pipeline_stage untuk mapping data lama (PAID -> COMPLETED).
+// Revisi 24 Agustus 2026: dari 7 nilai jadi 4 — Order sudah punya OrderStatus
+// sendiri (PENDING/PICKUP/PROCESSING/READY/DELIVERED/CANCELLED) yang men-track
+// fulfillment per-order secara independen, jadi pipelineStage cukup menjawab
+// "posisi lead ini di funnel", bukan menduplikasi progres operasional
+// (BOOKED/SCHEDULED/COMPLETED/REVIEWED lama — lihat migrasi
+// 20260824100000_pipeline_stage_4_wave untuk mapping data & alasan lengkap).
+// SPAM ditambahkan supaya chat junk bisa dikecualikan eksplisit dari
+// perhitungan Closing Rate (routes/analytics.js) — sebelumnya chat 1-2x
+// balas/salah sasaran ikut jadi penyebut laporan performa sales.
 enum PipelineStage {
   NEW // Lead baru masuk WhatsApp, belum kirim data diri
-  QUALIFIED // Data minimum lengkap (kota, ukuran, foto, keluhan) + area layanan cocok + ada intent
-  QUOTED // Sudah dikasih harga/rekomendasi
-  BOOKED // Setuju harga+jadwal, penuhi syarat booking
-  SCHEDULED // Sudah dijadwalkan pickup/kunjungan teknisi
-  COMPLETED // Pekerjaan selesai dikerjakan — SEKARANG stage terakhir "operasional", dianggap "berhasil" (dulu diwakili PAID)
-  REVIEWED // Sudah kasih review Google Maps / testimoni WhatsApp
+  PROSPECT // Sedang bernegosiasi/follow up — dulu QUALIFIED+QUOTED
+  TRANSACTION // Pesan sudah dipastikan jadi order — dulu BOOKED/SCHEDULED/COMPLETED/REVIEWED; detail fulfillment sepenuhnya urusan Order.status
+  SPAM // Chat tidak merespons (1-2x balas), pesan tidak jelas, atau salah sasaran — DIKECUALIKAN dari Closing Rate & semua kandidat intelligence/hot-leads
 }
 
 enum MessageDirection {

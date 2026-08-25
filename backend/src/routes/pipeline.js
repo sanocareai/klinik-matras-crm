@@ -39,7 +39,7 @@ pipelineRouter.get("/board", async (req, res) => {
     });
 
     const now = Date.now();
-    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+    const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
 
     const board = {};
     STAGES.forEach((s) => { board[s] = []; });

@@ -314,7 +314,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.customer.groupBy({ by: ["city"], where: custWhere, _count: { _all: true } }),
       prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
 
-      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["COMPLETED", "REVIEWED"] } } }),
+      prisma.customer.count({ where: { ...custWhere, pipelineStage: "TRANSACTION" } }),
       prisma.customer.count({ where: custWhere }),
       prisma.customer.count({ where: { ...custWhere, orders: { some: { status: { not: "CANCELLED" } } } } }),
       // Repeat order — customer dengan >=2 order (CANCELLED sudah
@@ -325,17 +325,17 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // pelanggan LAMA yang balik order lagi.
       prisma.customer.count({ where: { ...custWhere, orderCount: { gte: 2 } } }),
 
-      // PEMERIKSAAN INTEGRITAS: customer ditandai Completed/Already Reviewed
-      // TAPI tidak punya satu pun order. Ini mustahil secara bisnis — kalau
-      // pekerjaannya sudah selesai, harus ada order yang dikerjakan. Penyebabnya stage digeser manual
-      // di Kanban tanpa membuat order, jadi PENDAPATANNYA TIDAK PERNAH
-      // TERCATAT. Ini yang membuat angka seperti "1 pelanggan bayar tapi Rp0"
-      // muncul di Laporan Sales — bukan salah hitung, tapi data yang memang
-      // tidak lengkap. TIDAK difilter tanggal: ini utang data yang harus
-      // dibereskan, kapan pun terjadinya.
+      // PEMERIKSAAN INTEGRITAS: customer ditandai TRANSACTION (pesan sudah
+      // dipastikan order) TAPI tidak punya satu pun order. Ini mustahil secara
+      // bisnis — kalau order sudah dipastikan, harus ada order yang tercatat.
+      // Penyebabnya stage digeser manual di Kanban tanpa membuat order, jadi
+      // PENDAPATANNYA TIDAK PERNAH TERCATAT. Ini yang membuat angka seperti
+      // "1 pelanggan bayar tapi Rp0" muncul di Laporan Sales — bukan salah
+      // hitung, tapi data yang memang tidak lengkap. TIDAK difilter tanggal:
+      // ini utang data yang harus dibereskan, kapan pun terjadinya.
       prisma.customer.count({
         where: {
-          pipelineStage: { in: ["COMPLETED", "REVIEWED"] },
+          pipelineStage: "TRANSACTION",
           NOT: { orders: { some: { status: { not: "CANCELLED" } } } },
         },
       }),
@@ -572,7 +572,13 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       //                 padahal perusahaan jelas ada penjualan. Itu yang
       //                 terjadi sebelum perbaikan ini (dan yang membuat
       //                 "7 percakapan · Rp0 · 14.3% konversi" tampak aneh).
-      const mine = { ...convWhere, assignedToId: u.id };
+      // `mine` DIKECUALIKAN dari pipelineStage SPAM (restrukturisasi 24
+      // Agustus 2026) — inilah fix untuk masalah "closing rate tercemar chat
+      // junk": `mine` adalah penyebut conversionRate & orderConversionRate
+      // (lewat `handled` di bawah), jadi chat 1-2x balas/salah sasaran yang
+      // sudah ditandai SPAM tidak lagi ikut membesarkan penyebut & menekan
+      // persentase closing sales yang sebenarnya bagus.
+      const mine = { ...convWhere, assignedToId: u.id, customer: { pipelineStage: { not: "SPAM" } } };
       const mineAtribusi = { type: "INDIVIDUAL", assignedToId: u.id };
 
       const [
@@ -722,19 +728,20 @@ analyticsRouter.get("/sales-report", async (req, res) => {
           where: { ...mine, status: "RESOLVED", messages: { none: { direction: "OUTBOUND" } } },
         }),
 
-        // Berapa customer PINDAH ke COMPLETED (dulu PAID, dihapus dari
-        // pipeline — lihat schema.prisma enum PipelineStage) di dalam
-        // rentang — konversi sebagai ALIRAN periode, bukan keadaan. Ini
-        // pembilang conversion rate yang sepadan dengan penyebutnya
-        // (percakapan ditangani pada periode yang sama). Sebelumnya
-        // pembilangnya memakai "stage sekarang" (keadaan sepanjang waktu)
-        // sementara penyebutnya periode — campur aduk, dan itu yang membuat
-        // 14.3% muncul bersamaan dengan Rp0.
+        // Berapa customer PINDAH ke TRANSACTION (dulu COMPLETED, dihapus saat
+        // restrukturisasi pipeline 7→4 stage 24 Agustus 2026 — lihat
+        // schema.prisma enum PipelineStage) di dalam rentang — konversi
+        // sebagai ALIRAN periode, bukan keadaan. Ini pembilang conversion
+        // rate yang sepadan dengan penyebutnya (percakapan ditangani pada
+        // periode yang sama, DIKECUALIKAN dari SPAM — lihat `mine`).
+        // Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
+        // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
+        // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
         prisma.$queryRaw`
           SELECT COUNT(DISTINCT pt.customer_id)::int AS n
           FROM pipeline_transitions pt
           JOIN "Conversation" c ON c."customerId" = pt.customer_id
-          WHERE pt.to_stage = 'COMPLETED'
+          WHERE pt.to_stage = 'TRANSACTION'
             AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
             AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
 
@@ -778,7 +785,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
 
       const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
       const stageCount = (s) => byStage[s] || 0;
-      const paidSekarang = stageCount("COMPLETED") + stageCount("REVIEWED");
+      const paidSekarang = stageCount("TRANSACTION");
       const paidPeriode = paidRaw[0]?.n || 0;
       const orders = orderAgg._count._all;
       const gross = orderAgg._sum.value || 0;
@@ -812,17 +819,17 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         // POSISI SAAT INI (bukan aliran periode) — sengaja tidak difilter
         // tanggal, dan UI WAJIB melabelinya begitu.
         funnel: {
-          NEW: stageCount("NEW"), QUALIFIED: stageCount("QUALIFIED"), QUOTED: stageCount("QUOTED"),
-          BOOKED: stageCount("BOOKED"), SCHEDULED: stageCount("SCHEDULED"),
-          COMPLETED: stageCount("COMPLETED"), REVIEWED: stageCount("REVIEWED"),
+          NEW: stageCount("NEW"), PROSPECT: stageCount("PROSPECT"),
+          TRANSACTION: stageCount("TRANSACTION"), SPAM: stageCount("SPAM"),
         },
         paidCustomersNow: paidSekarang,
 
         // ALIRAN PERIODE — ikut berubah saat tanggal diganti.
         paidCustomers: paidPeriode,
         orderingCustomers,
-        // Konversi = customer yang PINDAH ke Paid dalam periode / percakapan
-        // ditangani dalam periode. Dua-duanya aliran periode → sepadan.
+        // Konversi = customer yang PINDAH ke Transaction dalam periode /
+        // percakapan ditangani dalam periode (SPAM sudah dikecualikan dari
+        // `handled` lewat `mine`). Dua-duanya aliran periode → sepadan.
         // null (UI: "—") kalau riwayat transisi belum ada datanya di periode
         // ini, supaya tidak terbaca sebagai "0% closing".
         conversionRate: adaDataTransisi && handled > 0
@@ -1069,16 +1076,20 @@ analyticsRouter.get("/source-performance", async (req, res) => {
     const { from, to } = req.query;
     const custDateWhere = buildDateWhere(from, to);
 
+    // pipelineStage != SPAM di kedua query (leads & won) — restrukturisasi 24
+    // Agustus 2026: chat junk/salah sasaran yang sudah ditandai SPAM tidak
+    // boleh ikut membesarkan penyebut `leads`, sama alasannya dengan fix
+    // `mine` di /sales-report.
     const sources = await prisma.customer.groupBy({
       by: ["leadSource"],
-      where: custDateWhere,
+      where: { ...custDateWhere, pipelineStage: { not: "SPAM" } },
       _count: { id: true },
     });
 
     const result = await Promise.all(sources.map(async (s) => {
       const [won, orderAgg] = await Promise.all([
         prisma.customer.count({
-          where: { leadSource: s.leadSource, pipelineStage: "COMPLETED", ...custDateWhere },
+          where: { leadSource: s.leadSource, pipelineStage: "TRANSACTION", ...custDateWhere },
         }),
         prisma.order.aggregate({
           where: {
@@ -1193,7 +1204,7 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
       })
     );
 
-    const ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+    const ORDER = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
     const sorted = ORDER.map((s) => stageValues.find((r) => r.stage === s) || { stage: s, count: 0, value: 0 });
 
     res.json(sorted);
@@ -1469,16 +1480,21 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     // COUNT(DISTINCT c.id) WAJIB: LEFT JOIN ke Order menggandakan baris
     // customer sebanyak ordernya, jadi COUNT(*) biasa akan menghitung
     // pelanggan ber-3-order sebagai 3 lead.
+    // pipelineStage <> 'SPAM' di WHERE (restrukturisasi 24 Agustus 2026) —
+    // chat junk/salah sasaran yang sudah ditandai SPAM tidak boleh ikut
+    // membesarkan penyebut `leads`, sama alasannya dengan fix `mine` di
+    // /sales-report & `sources` di /source-performance.
     const baris = await prisma.$queryRaw`
       SELECT
-        c."leadSource"                                                           AS source,
-        c."leadSourceDetail"                                                     AS detail,
-        COUNT(DISTINCT c.id)::int                                                AS leads,
-        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'COMPLETED')::int AS won,
-        COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint AS total_value
+        c."leadSource"                                                             AS source,
+        c."leadSourceDetail"                                                       AS detail,
+        COUNT(DISTINCT c.id)::int                                                  AS leads,
+        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'TRANSACTION')::int AS won,
+        COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint   AS total_value
       FROM "Customer" c
       LEFT JOIN "Order" o ON o."customerId" = c.id
       WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        AND c."pipelineStage" <> 'SPAM'
       GROUP BY 1, 2`;
 
     const semua = baris.map((b) => {
@@ -1858,13 +1874,14 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
         GROUP BY 1
       `,
 
-      // Tren bulanan masuk COMPLETED (dulu PAID, dihapus dari pipeline) —
-      // bucket WIB (lihat catatan di /overview)
+      // Tren bulanan masuk TRANSACTION (dulu COMPLETED, dihapus saat
+      // restrukturisasi pipeline 7→4 stage 24 Agustus 2026) — bucket WIB
+      // (lihat catatan di /overview)
       prisma.$queryRaw`
         SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS month,
                COUNT(*)::int AS value
         FROM pipeline_transitions
-        WHERE to_stage = 'COMPLETED'
+        WHERE to_stage = 'TRANSACTION'
           AND created_at >= NOW() - INTERVAL '6 months'
         GROUP BY 1 ORDER BY 1
       `,
@@ -1876,12 +1893,12 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
       `,
     ]);
 
-    const STAGES = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+    const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
     const durasiMap = Object.fromEntries(durasiRaw.map((r) => [r.stage, r]));
     const masukMap  = Object.fromEntries(masukStageRaw.map((r) => [r.stage, r.count]));
 
     res.json({
-      // Selalu 7 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
+      // Selalu 4 stage (urut kanonik) supaya UI tidak perlu handle stage hilang
       avgDaysInStage: STAGES.map((s) => ({
         stage:   s,
         avgDays: durasiMap[s]?.avg_days != null ? Number(Number(durasiMap[s].avg_days).toFixed(1)) : null,
@@ -2038,8 +2055,16 @@ analyticsRouter.get("/follow-ups", async (req, res) => {
 // Recommendations hanya menampilkan HITUNGAN agregat (bukan daftar customer),
 // jadi tidak menduplikasi nama. Kalau nanti ingin saling-eksklusif, koordinasikan
 // via customerId lintas endpoint (belum diperlukan sekarang).
+// HOT_WEIGHTS.stage REDESIGN (24 Agustus 2026, restrukturisasi pipeline
+// 7→4): dulu {QUOTED:35, QUALIFIED:20} — dua stage aktif dengan bobot
+// beda, QUOTED lebih tinggi karena "sudah ditawari harga". Sekarang cuma
+// ada SATU stage aktif (PROSPECT), jadi diferensiasi "seberapa panas"
+// dipindah SEPENUHNYA ke sinyal intent keyword di bawah (price/catalog/
+// order) — customer PROSPECT yang pesannya mengandung kata harga/order
+// otomatis lebih tinggi skornya lewat `intent`, bukan lewat field stage
+// yang sudah tidak membedakan itu lagi.
 const HOT_WEIGHTS = {
-  stage:   { QUOTED: 35, QUALIFIED: 20 },
+  stage:   { PROSPECT: 20 },
   recency: [[30, 25], [120, 18], [360, 10], [1440, 5]], // [maxMenit, poin]
   intent:  { price: 15, catalog: 10, order: 12 },        // cap total 25
   unansweredBonus: 10,                                    // pesan terakhir INBOUND & nunggu >2j
@@ -2058,14 +2083,14 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
       : { OR: [{ assignedSalesId: userId }, { assignedSalesId: null }] };
     const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
 
-    // SCALABILITY: kandidat dibatasi (stage QUALIFIED/QUOTED + aktif 7 hari +
+    // SCALABILITY: kandidat dibatasi (stage PROSPECT + aktif 7 hari +
     // take 80), skoring di JS. Aman di skala saat ini. Kalau customer aktif
     // membengkak: pindahkan penyaringan kandidat & pra-agregasi (mis. MAX order
     // value, recency) ke SQL/prisma.aggregate atau materialized view, dan simpan
     // signalScore terhitung (cron) daripada menghitung tiap request.
     const customers = await prisma.customer.findMany({
       where: {
-        pipelineStage: { in: ["QUALIFIED", "QUOTED"] },
+        pipelineStage: "PROSPECT",
         ...scope,
         conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: sevenDaysAgo } } },
       },
@@ -2099,14 +2124,21 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
       const signals = [];
 
       // — skoring transparan —
+      // Sinyal intent dihitung SEKALI di sini (dulu di-test ulang 2x per jenis
+      // di reason/nextAction) — sekaligus jadi sub-sinyal yang menggantikan
+      // peran QUOTED lama untuk membedakan "prospek biasa" vs "prospek yang
+      // sudah tunjukkan minat beli konkret" (lihat catatan HOT_WEIGHTS.stage).
+      const sinyalHarga = INTENT_RE.price.test(text);
+      const sinyalKatalog = INTENT_RE.catalog.test(text);
+      const sinyalOrder = INTENT_RE.order.test(text);
+
       let score = HOT_WEIGHTS.stage[c.pipelineStage] || 0;
-      if (c.pipelineStage === "QUOTED") signals.push("Sudah dikirim penawaran");
       for (const [maxMin, pts] of HOT_WEIGHTS.recency) { if (minsSince <= maxMin) { score += pts; break; } }
 
       let intentPts = 0;
-      if (INTENT_RE.price.test(text))   { intentPts += HOT_WEIGHTS.intent.price;   signals.push("Tanya harga"); }
-      if (INTENT_RE.catalog.test(text)) { intentPts += HOT_WEIGHTS.intent.catalog; signals.push("Minta katalog/foto"); }
-      if (INTENT_RE.order.test(text))   { intentPts += HOT_WEIGHTS.intent.order;   signals.push("Sinyal order"); }
+      if (sinyalHarga)   { intentPts += HOT_WEIGHTS.intent.price;   signals.push("Tanya harga"); }
+      if (sinyalKatalog) { intentPts += HOT_WEIGHTS.intent.catalog; signals.push("Minta katalog/foto"); }
+      if (sinyalOrder)   { intentPts += HOT_WEIGHTS.intent.order;   signals.push("Sinyal order"); }
       score += Math.min(intentPts, 25);
 
       const unanswered = lastMsg?.direction === "INBOUND" && minsSince > 120;
@@ -2114,10 +2146,12 @@ analyticsRouter.get("/hot-leads", async (req, res) => {
 
       score = Math.max(0, Math.min(100, Math.round(score)));
       const reason = unanswered ? "Sinyal beli, belum di-follow up"
-        : c.pipelineStage === "QUOTED" ? "Sudah ditawari, minat tinggi" : "Prospek aktif, minat tinggi";
-      const nextAction = INTENT_RE.price.test(text) ? "Follow up — kirim rincian harga"
-        : INTENT_RE.catalog.test(text) ? "Kirim katalog + tanyakan ukuran"
-        : c.pipelineStage === "QUOTED" ? "Tindak lanjuti penawaran" : "Tawarkan rekomendasi + jadwalkan";
+        : (sinyalHarga || sinyalOrder) ? "Sudah tunjukkan minat beli, minat tinggi"
+        : "Prospek aktif, minat tinggi";
+      const nextAction = sinyalHarga ? "Follow up — kirim rincian harga"
+        : sinyalKatalog ? "Kirim katalog + tanyakan ukuran"
+        : sinyalOrder ? "Bantu proses order — konfirmasi detail & pembayaran"
+        : "Tawarkan rekomendasi + jadwalkan";
 
       return {
         id: c.id, name: c.name || "Tanpa nama", phone: c.phone || "",

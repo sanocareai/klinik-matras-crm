@@ -27,7 +27,9 @@ import OrderFormModal from "./OrderFormModal";
 import { ProfileSkeleton } from "./SkeletonLoader";
 import PressableScale from "./PressableScale";
 
-const STAGE_ORDER = ["NEW", "QUALIFIED", "QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"];
+// Konsolidasi 24 Agustus 2026 (restrukturisasi pipeline 7→4): daftar stage
+// diambil dari stageLabels (theme.js) — dulu salinan hardcode lokal.
+const STAGE_ORDER = Object.keys(stageLabels);
 const LEAD_SOURCE_LABELS = {
   META_ADS: "Iklan Meta", GOOGLE_ADS: "Google Ads", WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM: "Instagram", WHATSAPP_DIRECT: "WA Langsung", REFERRAL: "Referral", OTHER: "Lainnya",

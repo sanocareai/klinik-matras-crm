@@ -519,11 +519,12 @@ customerRouter.patch("/:id", async (req, res) => {
     // dispatchLeadWon() sudah menangkap semua error di dalam; .catch() di sini
     // hanya jaring terakhir supaya tidak ada unhandled rejection.
     //
-    // Revisi 30 Jul 2026: trigger pindah dari PAID (dihapus dari pipeline,
-    // lihat schema.prisma enum PipelineStage) ke COMPLETED — sekarang stage
-    // terakhir "operasional" sebelum Reviewed, paling dekat maknanya dengan
-    // "deal selesai" yang dulu diwakili Paid.
-    if (transisi?.toStage === "COMPLETED") {
+    // Revisi 24 Agustus 2026: trigger pindah dari COMPLETED (dihapus dari
+    // pipeline, lihat schema.prisma enum PipelineStage — restrukturisasi
+    // 7→4 stage) ke TRANSACTION — sekarang stage yang berarti "pesan sudah
+    // dipastikan jadi order", paling dekat maknanya dengan "deal selesai"
+    // yang dulu diwakili Completed.
+    if (transisi?.toStage === "TRANSACTION") {
       dispatchLeadWon(prisma, {
         customerId:  customer.id,
         fromStage:   transisi.fromStage,

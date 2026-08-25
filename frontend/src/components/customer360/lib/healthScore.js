@@ -19,12 +19,12 @@ export function computeHealthScore(ctx) {
     score += 20 + Math.min(15, Math.round((ctx.orderValue / 5_000_000) * 15));
     signals.push({ type: "positive", label: `${ctx.orderCount} order · ${formatRupiahShort(ctx.orderValue)}` });
   }
-  if (ctx.stage === "REVIEWED") { score += 16; signals.push({ type: "positive", label: "Sudah kasih review" }); }
-  else if (ctx.stage === "COMPLETED") { score += 15; signals.push({ type: "positive", label: "Pekerjaan selesai" }); }
-  else if (ctx.stage === "SCHEDULED") { score += 13; signals.push({ type: "positive", label: "Sudah dijadwalkan" }); }
-  else if (ctx.stage === "BOOKED") { score += 12; signals.push({ type: "positive", label: "Sudah booking" }); }
-  else if (ctx.stage === "QUOTED") { score += 10; signals.push({ type: "positive", label: "Aktivitas penawaran" }); }
-  else if (ctx.stage === "QUALIFIED") { score += 5; signals.push({ type: "positive", label: "Prospek terkualifikasi" }); }
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage, cermin backend
+  // services/intelligence/healthScore.js — bobot disamakan): sinyal "Sudah
+  // kasih review" (REVIEWED lama) DIHAPUS, bukan dipindah — pipelineStage
+  // tidak lagi membedakan itu. SPAM sengaja tidak dapat cabang di sini.
+  if (ctx.stage === "TRANSACTION") { score += 18; signals.push({ type: "positive", label: "Sudah jadi order" }); }
+  else if (ctx.stage === "PROSPECT") { score += 10; signals.push({ type: "positive", label: "Prospek aktif" }); }
 
   if (ctx.daysSince != null && ctx.daysSince <= 2) { score += 15; signals.push({ type: "positive", label: ctx.daysSince <= 0 ? "Aktif hari ini" : `Aktif ${ctx.daysSince} hari lalu` }); }
   else if (ctx.daysSince != null && ctx.daysSince <= 7) { score += 10; signals.push({ type: "positive", label: `Aktif ${ctx.daysSince} hari lalu` }); }
@@ -45,7 +45,7 @@ export function computeHealthScore(ctx) {
   if (ctx.daysSince != null) {
     if (ctx.complaintsCount > 0) { trend = "down"; trendLabel = "Menurun — ada komplain"; }
     else if (ctx.daysSince > 30) { trend = "down"; trendLabel = "Menurun — makin pasif"; }
-    else if (ctx.daysSince <= 3 && (ctx.orderCount > 0 || ["QUOTED", "BOOKED", "SCHEDULED", "COMPLETED", "REVIEWED"].includes(ctx.stage))) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
+    else if (ctx.daysSince <= 3 && (ctx.orderCount > 0 || ctx.stage === "TRANSACTION")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
     else { trend = "flat"; trendLabel = "Stabil"; }
   }
 

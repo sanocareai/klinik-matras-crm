@@ -218,10 +218,14 @@ function sheetSales({ periode, report }) {
   }
   sb.blank();
 
+  // Restrukturisasi 24 Agustus 2026 (7→4 stage): "Qualified (kini)" +
+  // "Quoted (kini)" digabung jadi "Prospect (kini)" (satu stage sekarang).
+  // "Pindah ke Paid" diperbaiki jadi "Pindah ke Transaksi" — label lama
+  // sudah basi sejak PAID dihapus dari pipeline 30 Jul 2026, kelewat saat itu.
   const HEAD = [
     "Sales", "Ditangani Sendiri", "Warisan Takeover", "Dibalas", "Menggantung", "Avg Respons (mnt)",
-    "SLA >60mnt", "Qualified (kini)", "Quoted (kini)", "Pelanggan Order", "Konversi %",
-    "Pindah ke Paid", "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
+    "SLA >60mnt", "Prospect (kini)", "Pelanggan Order", "Konversi %",
+    "Pindah ke Transaksi", "Order", "Nilai Penjualan", "Sudah Lunas", "AOV", "Target", "% Target",
     "Komplain", "% Komplain",
   ];
   sb.row(HEAD);
@@ -230,7 +234,7 @@ function sheetSales({ periode, report }) {
     r.name,
     num(r.handledOwn), num(r.handledTakeover), num(r.replied), num(r.stalled),
     num(r.avgResponseMinutes), num(r.slaBreach),
-    num(r.funnel?.QUALIFIED), num(r.funnel?.QUOTED),
+    num(r.funnel?.PROSPECT),
     num(r.orderingCustomers), pct(r.orderConversionRate),
     num(r.paidCustomers),
     num(r.orders), rp(r.grossValue), rp(r.collectedValue), rp(r.aov),
@@ -243,7 +247,7 @@ function sheetSales({ periode, report }) {
     sb.row([
       "TOTAL TIM",
       num(t.handledOwn), num(t.handledTakeover), num(t.replied), num(t.stalled),
-      "—", num(t.slaBreach), "—", "—",
+      "—", num(t.slaBreach), "—",
       num(t.orderingCustomers), pct(t.orderConversionRate),
       num(t.paidCustomers),
       num(t.orders), rp(t.grossValue), rp(t.collectedValue), rp(t.aov),
@@ -255,7 +259,11 @@ function sheetSales({ periode, report }) {
     // menghasilkan angka yang salah. Sengaja "—".
   }
 
-  const ws = sb.build([16, 16, 16, 10, 13, 17, 12, 16, 15, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
+  // Restrukturisasi 24 Agustus 2026: array ini HARUS punya jumlah entri SAMA
+  // dengan HEAD.length (19, dulu 20 sebelum Qualified+Quoted digabung
+  // Prospect) — kalau tidak, lebar kolom di Excel bergeser 1 posisi untuk
+  // semua kolom setelah kolom yang dihapus.
+  const ws = sb.build([16, 16, 16, 10, 13, 17, 12, 16, 16, 11, 15, 8, 18, 16, 14, 16, 10, 10, 12]);
   // Autofilter di baris header tabel — ini SATU-SATUNYA bantuan navigasi yang
   // benar-benar bertahan di community edition (freeze pane tidak).
   const headRow = sb.aoa.findIndex((r) => r[0] === "Sales");

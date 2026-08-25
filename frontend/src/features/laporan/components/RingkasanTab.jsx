@@ -372,7 +372,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                 value={f.count} max={funnelMax}
                 display={f.count.toLocaleString("id-ID")}
                 sub={f.value > 0 ? formatRupiahShort(f.value) : "—"}
-                tone={f.stage === "COMPLETED" || f.stage === "REVIEWED" ? "green" : f.stage === "NEW" ? "orange" : "accent"}
+                tone={f.stage === "TRANSACTION" ? "green" : f.stage === "NEW" ? "orange" : f.stage === "SPAM" ? "muted" : "accent"}
               />
             ))}
           </div>

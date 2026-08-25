@@ -20,7 +20,7 @@ function ctx({ stage = "NEW", orders = [], msgs = [] }) {
 
 test("complaint escalation → resolve complaint, urgent, health down", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "COMPLETED",
+    stage: "TRANSACTION",
     orders: [{ value: 5_000_000, status: "DELIVERED", hasComplaint: true, createdAt: dayAgo(40) }],
     msgs: [{ direction: "OUTBOUND", content: "baik pak", createdAt: dayAgo(2) }], // kontak terakhir 2 hari
   }));
@@ -33,7 +33,7 @@ test("complaint escalation → resolve complaint, urgent, health down", () => {
 
 test("hot buying intent → opportunity tinggi + intents terdeteksi", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "QUOTED",
+    stage: "PROSPECT",
     orders: [{ value: 6_000_000, status: "PROCESSING", hasComplaint: false, createdAt: dayAgo(5) }],
     msgs: [{ direction: "INBOUND", content: "harganya berapa ya? boleh minta katalog & foto?", createdAt: minAgo(30) }],
   }));
@@ -56,7 +56,7 @@ test("cold customer → health Berisiko, reaktivasi, priority low", () => {
 
 test("unanswered customer → balas follow-up, alasan 'belum dibalas'", () => {
   const i = buildCustomerIntelligence(ctx({
-    stage: "QUALIFIED", orders: [],
+    stage: "PROSPECT", orders: [],
     msgs: [{ direction: "INBOUND", content: "masih tersedia?", createdAt: minAgo(240) }], // 4 jam, belum dibalas
   }));
   assert.match(i.nextAction.action, /balas follow-up/i);
@@ -65,7 +65,7 @@ test("unanswered customer → balas follow-up, alasan 'belum dibalas'", () => {
 });
 
 test("determinisme → dua panggilan identik", () => {
-  const f = () => buildCustomerIntelligence(ctx({ stage: "QUOTED", orders: [{ value: 8_500_000, hasComplaint: true, createdAt: dayAgo(10) }], msgs: [{ direction: "INBOUND", content: "harga berapa", createdAt: minAgo(200) }] }));
+  const f = () => buildCustomerIntelligence(ctx({ stage: "PROSPECT", orders: [{ value: 8_500_000, hasComplaint: true, createdAt: dayAgo(10) }], msgs: [{ direction: "INBOUND", content: "harga berapa", createdAt: minAgo(200) }] }));
   const a = f(), b = f();
   assert.deepEqual({ h: a.health.score, p: a.priority.score, o: a.opportunity.score }, { h: b.health.score, p: b.priority.score, o: b.opportunity.score });
 });
