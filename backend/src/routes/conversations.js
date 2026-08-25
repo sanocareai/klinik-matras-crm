@@ -1051,12 +1051,23 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   // Browser merekam dalam audio/webm;codecs=opus (Chrome/Edge/Brave/Opera)
   // ATAU audio/mp4 (Safari desktop & iOS, lihat VoiceRecorder.jsx frontend)
   // → perlu konversi container ke OGG via FFmpeg untuk kedua kasus.
+  //
+  // BUG YANG DIPERBAIKI (26 Agustus 2026): voice note dari Aplikasi HP tidak
+  // pernah SAMPAI ke WhatsApp penerima sama sekali — WAHA lapor "berhasil"
+  // (ack SERVER), tapi tidak pernah muncul di HP tujuan. Ditemukan lewat
+  // ffprobe langsung ke file hasil konversi: STEREO (2 channel) — rekaman
+  // expo-audio (RecordingPresets.HIGH_QUALITY di mobile) default stereo,
+  // dan command ffmpeg di bawah SEBELUMNYA cuma ganti container/codec, TIDAK
+  // pernah memaksa mono. WhatsApp mensyaratkan voice note (PTT) MONO —
+  // klien WhatsApp diam-diam menolak/tidak mengunduh audio PTT stereo, tanpa
+  // error apa pun balik ke WAHA (makanya ack tetap "terkirim ke server").
+  // `-ac 1` memaksa mono terlepas dari berapa channel sumbernya.
   if (file.mimetype.startsWith("audio/webm") || file.mimetype.startsWith("audio/mp4")) {
     const baseName    = file.filename.replace(/\.[^.]+$/, "");
     const oggFilename = `${baseName}.ogg`;
     const oggPath     = path.join(uploadsDir, oggFilename);
     try {
-      await execAsync(`ffmpeg -y -i "${file.path}" -vn -c:a libopus -f ogg "${oggPath}"`);
+      await execAsync(`ffmpeg -y -i "${file.path}" -vn -ac 1 -c:a libopus -f ogg "${oggPath}"`);
       wahaFileMime = "audio/ogg";
       wahaFileUrl  = `${BACKEND_INTERNAL_URL}/uploads/${oggFilename}`;
       wahaFileName = oggFilename; // pakai nama file OGG, bukan file asli
