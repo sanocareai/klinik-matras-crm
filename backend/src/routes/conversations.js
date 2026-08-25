@@ -388,11 +388,18 @@ conversationRouter.get("/cek-nomor", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor, unread, tag, unanswered } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?unassigned=true — tab "Belum Diambil" di Inbox (lihat FilterTabs.jsx).
+  // Percakapan yang assignedToId-nya masih kosong, alias belum ada satu pun
+  // sales yang klaim — populasi yang SAMA dengan `unassignedInPeriod` di
+  // /analytics/sales-report (routes/analytics.js), cuma di sini TANPA batas
+  // tanggal karena tujuannya operasional ("apa yang harus diambil SEKARANG"),
+  // bukan laporan periode.
+  if (unassigned === "true") where.assignedToId = null;
   // ?unanswered=true — tab "Belum Dibalas" mobile (ChatListScreen.js). Sama
   // definisi `isUnanswered` yang sudah dihitung di bawah untuk tiap baris
   // (pesan TERAKHIR arahnya INBOUND) — TANPA filter server-side ini,
@@ -408,6 +415,27 @@ conversationRouter.get("/", async (req, res) => {
       ) sub WHERE sub.direction = 'INBOUND'
     `;
     where.id = { in: rows.map((r) => r.id) };
+  }
+  // ?stalled=true — tab "Menggantung" di Inbox. LEBIH KETAT dari
+  // ?unanswered=true di atas: bukan cuma "pesan terakhir dari customer",
+  // tapi sudah TERASSIGN ke sales DAN sudah lebih dari 60 menit tanpa
+  // balasan — definisi yang SAMA PERSIS dengan `stalledNow`/`stalled` di
+  // /analytics/sales-report (routes/analytics.js) dan dengan badge "Ambil
+  // Alih (belum dibalas 1j+)" yang sudah ada di ChatWindow.jsx. Sengaja
+  // dipisah dari ?unassigned=true (tab lain) — dua jenis "belum ditangani"
+  // yang beda: satu belum ada yang pegang sama sekali, satu SUDAH dipegang
+  // tapi telat dibalas.
+  if (stalled === "true") {
+    const rows = await prisma.$queryRaw`
+      SELECT sub."conversationId" AS id FROM (
+        SELECT DISTINCT ON (m."conversationId") m."conversationId", m.direction, m."createdAt"
+        FROM "Message" m
+        ORDER BY m."conversationId", m."createdAt" DESC
+      ) sub WHERE sub.direction = 'INBOUND' AND sub."createdAt" < NOW() - INTERVAL '60 minutes'
+    `;
+    where.id = { in: rows.map((r) => r.id) };
+    where.assignedToId = { not: null };
+    where.status = { not: "RESOLVED" };
   }
   // ?tag=... — saring percakapan berdasarkan tag pelanggannya. Dipakai
   // chip "Broadcast" di Inbox: setelah kampanye mengirim, penerimanya

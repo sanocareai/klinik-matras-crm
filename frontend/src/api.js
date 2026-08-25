@@ -435,6 +435,10 @@ export const api = {
       // Belum Dibaca / Belum Dibalas — sama pola dengan mobile (api.js).
       if (statusOrParams.unread)       params.set("unread", "true");
       if (statusOrParams.unanswered)   params.set("unanswered", "true");
+      // Belum Diambil (assignedToId kosong) — tab baru 25 Agustus 2026.
+      if (statusOrParams.unassigned)   params.set("unassigned", "true");
+      // Menggantung (assigned, belum dibalas >60 menit) — tab baru 25 Agustus 2026.
+      if (statusOrParams.stalled)      params.set("stalled", "true");
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();

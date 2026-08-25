@@ -35,10 +35,16 @@ export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   const tag = filter === "BROADCAST" ? TAG_BROADCAST : undefined;
   const unread = filter === "UNREAD" ? true : undefined;
   const unanswered = filter === "UNANSWERED" ? true : undefined;
+  // "Belum Diambil" — percakapan assignedToId masih kosong, lihat catatan
+  // di backend routes/conversations.js GET /.
+  const unassigned = filter === "UNASSIGNED" ? true : undefined;
+  // "Menggantung" — assigned TAPI belum dibalas >60 menit, lihat catatan
+  // di backend routes/conversations.js GET /.
+  const stalled = filter === "STALLED" ? true : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered }],
-    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, unread, unanswered, cursor: pageParam || undefined }),
+    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered, unassigned, stalled }],
+    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, unread, unanswered, unassigned, stalled, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });

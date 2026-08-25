@@ -21,6 +21,11 @@ import {
 function matches(c, filter, userId, query) {
   if (!c) return false;
   if (filter === "MINE" && c.assignedToId !== userId) return false;
+  if (filter === "UNASSIGNED" && c.assignedToId) return false;
+  // "Menggantung" — assigned, pesan terakhir INBOUND, >60 menit. `isUnanswered`/
+  // `unansweredMinutes` datang dari backend (GET /conversations), sama field yang
+  // dipakai badge "Ambil Alih (belum dibalas 1j+)" di ChatWindow.jsx.
+  if (filter === "STALLED" && !(c.assignedToId && c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && c.status !== "RESOLVED")) return false;
   if (filter === "OPEN" && c.status !== "OPEN") return false;
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
