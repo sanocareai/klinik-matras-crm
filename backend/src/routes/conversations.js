@@ -10,6 +10,7 @@ import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
+import { TAG_BROADCAST } from "../services/broadcastPolicy.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { resolveMediaExt } from "../utils/mediaExt.js";
@@ -206,7 +207,10 @@ conversationRouter.get("/latest-unread", async (req, res) => {
 // Jumlah percakapan per tab filter Inbox (Semua/Terbuka/Pending/Selesai/Milik Saya)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/counts", async (req, res) => {
-  const [semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalasRows] = await Promise.all([
+  const [
+    semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalasRows,
+    belumDiambil, broadcast, menggantungRows,
+  ] = await Promise.all([
     prisma.conversation.count(),
     prisma.conversation.count({ where: { status: "OPEN" } }),
     prisma.conversation.count({ where: { status: "PENDING" } }),
@@ -226,9 +230,35 @@ conversationRouter.get("/counts", async (req, res) => {
         ORDER BY m."conversationId", m."createdAt" DESC
       ) sub WHERE sub.direction = 'INBOUND'
     `,
+    // Badge tab "Belum Diambil"/"Menggantung"/"Broadcast" (25 Agustus 2026,
+    // paritas dengan web — lihat FilterTabs.jsx & mobile ChatListScreen.js).
+    // TIDAK menambah filter `type` di sini walau kedengarannya masuk akal —
+    // ?unassigned=true/?stalled=true di GET / atas TIDAK membatasi type,
+    // jadi badge harus hitung populasi yang SAMA PERSIS, kalau tidak angka
+    // badge & jumlah baris yang benar-benar tampil pas tab dibuka bisa beda.
+    prisma.conversation.count({ where: { assignedToId: null } }),
+    prisma.conversation.count({ where: { customer: { tags: { has: TAG_BROADCAST } } } }),
+    // "Menggantung": sama definisi dengan ?stalled=true di GET / dan
+    // `stalledNow` di routes/analytics.js /sales-report — JANGAN dibuat
+    // definisi kedua yang bisa menyimpang.
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n
+      FROM "Conversation" c
+      JOIN (
+        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
+        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
+      ) m ON m."conversationId" = c.id
+      WHERE c."assignedToId" IS NOT NULL
+        AND c.status != 'RESOLVED'
+        AND m.direction = 'INBOUND'
+        AND m."createdAt" < NOW() - INTERVAL '60 minutes'`,
   ]);
   const belumDibalas = Number(belumDibalasRows[0]?.count || 0);
-  res.json({ semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalas });
+  const menggantung = menggantungRows[0]?.n || 0;
+  res.json({
+    semua, terbuka, pending, selesai, milikSaya, belumDibaca, belumDibalas,
+    belumDiambil, broadcast, menggantung,
+  });
 });
 
 // D-032 (21 Agustus 2026) — grup WA yang menerima ringkasan order (tombol
