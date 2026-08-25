@@ -2,12 +2,10 @@ import React, { useMemo } from "react";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import dayjs from "dayjs";
 import { AlertTriangle, Crown } from "lucide-react";
 import { formatDuration, formatRupiah, formatRupiahShort } from "@/utils/format.js";
-import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
-import { compareLabel } from "@/lib/dateRange.js";
+import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -45,7 +43,7 @@ function TrenTip({ active, payload, label, granularity }) {
   const avgMinutes = payload.find((p) => p.dataKey === "avgMinutes")?.value;
   return (
     <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
-      <p className="t-caption mb-1">{granularity === "day" ? formatTanggalPendek(label) : label}</p>
+      <p className="t-caption mb-1">{formatBucketTick(label, granularity)}</p>
       <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
         <span className="h-2 w-2 rounded-full bg-accent" /> Penjualan: {formatRupiah(revenue || 0)}
       </p>
@@ -66,7 +64,7 @@ function RespTrendTip({ active, payload, label, granularity }) {
   const sla = payload.find((p) => p.dataKey === "slaBreach")?.value;
   return (
     <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
-      <p className="t-caption mb-1">{granularity === "day" ? formatTanggalPendek(label) : label}</p>
+      <p className="t-caption mb-1">{formatBucketTick(label, granularity)}</p>
       {avg != null && (
         <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
           <span className="h-2 w-2 rounded-full bg-accent" /> Avg respons: {Math.round(avg)} mnt
@@ -120,7 +118,7 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
     }));
   }, [summary, respTimeSeries]);
   const granularity = summary?.granularity || respTimeSeries?.granularity || "day";
-  const tickX = (v) => (granularity === "day" ? dayjs(v).format("D MMM") : v);
+  const tickX = (v) => formatBucketTick(v, granularity);
 
   // Deret tren respons+SLA (dipindah dari SalesReportTab.jsx) — beda dari
   // trenData di atas: itu revenue+respons, ini murni respons+pelanggaran SLA

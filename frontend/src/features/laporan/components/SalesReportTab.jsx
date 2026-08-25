@@ -1,9 +1,10 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { Download, Info, Crown } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel } from "@/lib/dateRange.js";
+import { computeTeamTarget } from "../utils/teamTarget.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -68,31 +69,9 @@ export default function SalesReportTab({ report, grossTotalPerusahaan, onExport,
   const rows  = semuaRows.filter((r) => !r.isTeamLead);
   const total = report?.total;
 
-  // Progres target TIM Novi = closing pribadinya + closing 8 sales (total
-  // tim) dibagi target tim miliknya — BUKAN cuma grossValue pribadinya
-  // (yang akan selalu jauh dari Rp600jt kalau dilihat sendirian, karena
-  // memang bukan dia yang closing semuanya). grossValue/handled/dst di
-  // baris ini TETAP angka personalnya (menjawab "closing berapa bagian").
-  const teamLeadRows = useMemo(() => semuaRows
-    .filter((r) => r.isTeamLead)
-    .map((r) => {
-      const teamGrossValue = r.grossValue + (total?.grossValue || 0);
-      return {
-        ...r,
-        teamGrossValue,
-        teamPercentToTarget: r.target > 0 ? Math.round((teamGrossValue / r.target) * 100) : null,
-      };
-    }), [semuaRows, total]);
-  const teamLead = teamLeadRows[0] || null;
-
-  // KPI "Nilai Penjualan Tim" DISAMAKAN dengan angka di baris Novi (25
-  // Agustus 2026 — sebelumnya KPI ini cuma jumlah 8 sales/`total.grossValue`,
-  // sementara baris Novi menjumlahkan closing pribadinya + 8 sales, jadi dua
-  // "Nilai Penjualan Tim" berbeda muncul di layar yang sama. Novi bagian dari
-  // tim, closing-nya HARUS ikut terhitung di angka headline "tim".
-  const teamGrossAll = (total?.grossValue || 0) + teamLeadRows.reduce((s, r) => s + r.grossValue, 0);
-  const teamOrdersAll = (total?.orders || 0) + teamLeadRows.reduce((s, r) => s + r.orders, 0);
-  const teamAovAll = teamOrdersAll > 0 ? Math.round(teamGrossAll / teamOrdersAll) : 0;
+  // Progres target TIM — lihat utils/teamTarget.js untuk kenapa ini SATU
+  // sumber kebenaran dipakai bersama RingkasanTab.jsx (kartu "Target Bulanan").
+  const { teamLeadRows, teamLead, teamGrossAll, teamOrdersAll, teamAovAll } = computeTeamTarget(report);
 
   const aktif = rows.filter((r) => r.handled > 0);
   // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,

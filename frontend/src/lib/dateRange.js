@@ -160,6 +160,23 @@ export function makeCustomRange(from, to, { compare = false } = {}) {
 // frontend yang tidak pernah ikut menyesuaikan. Panjang dihitung LANGSUNG
 // dari from/to (bukan dari nama preset), supaya benar juga untuk rentang
 // custom & preset berbasis bulan (panjang harinya berubah-ubah).
+// Label sumbu-X untuk titik deret waktu backend (bucket "YYYY-MM-DDTHH" /
+// "YYYY-MM-DD" / "YYYY-MM", lihat seriesWindow()/namaBucketWIB() di
+// routes/analytics.js) — SATU tempat, dipakai RingkasanTab/PerformaTimTab/
+// RevenueOverview supaya ketiganya menampilkan bucket per-jam ("05:00") yang
+// SAMA persis, bukan tiga cara format berbeda yang bisa saling drift.
+//
+// PENTING: bucket "hour"/"day" SUDAH berupa jam-dinding WIB (dihitung server
+// dari instant UTC + geser 7 jam, lihat namaBucketWIB()) — BUKAN instant UTC
+// asli. JANGAN dilewatkan ke toWIB()/dayjs(...).tz() lagi (itu untuk
+// instant SUNGGUHAN, dobel-konversi bucket yang sudah WIB akan salah jam).
+// Ekstraksi jam di sini murni potong string, bukan parse ulang timezone.
+export function formatBucketTick(bucket, granularity) {
+  if (granularity === "hour") return `${bucket.slice(11, 13)}:00`;
+  if (granularity === "day") return dayjs(bucket).format("D MMM");
+  return bucket; // "YYYY-MM" sudah cukup terbaca apa adanya
+}
+
 export function compareLabel(range) {
   if (!range?.from || !range?.to) return null; // preset "Semua" — tidak ada pembanding
   const hari = toWIB(range.to).diff(toWIB(range.from), "day") + 1;

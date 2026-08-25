@@ -3,11 +3,11 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { AlertTriangle, ArrowRight } from "lucide-react";
-import dayjs from "dayjs";
 import { api } from "@/api.js";
-import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS } from "@/utils/format.js";
-import { formatTanggalPendek } from "@/utils/formatDate.js";
-import { compareLabel } from "@/lib/dateRange.js";
+import { cn } from "@/lib/utils.js";
+import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS, SOURCE_LABELS } from "@/utils/format.js";
+import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
+import { computeTeamTarget } from "../utils/teamTarget.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -89,7 +89,7 @@ function ChartTip({ active, payload, label, granularity }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
-      <p className="t-caption mb-1">{granularity === "day" ? formatTanggalPendek(label) : label}</p>
+      <p className="t-caption mb-1">{formatBucketTick(label, granularity)}</p>
       <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
         <span className="h-2 w-2 rounded-full bg-accent" />
         {formatRupiah(payload[0].value)}
@@ -98,8 +98,12 @@ function ChartTip({ active, payload, label, granularity }) {
   );
 }
 
-export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab, range }) {
+export default function RingkasanTab({ summary, overview, perf, funnel = [], onGoTab, range, salesReport }) {
   const cmp = compareLabel(range);
+  const { teamGrossAll, percentToTarget, targetValue } = computeTeamTarget(salesReport);
+  const sumberLead = [...(overview?.leadSourceBreakdown || [])].sort((a, b) => b.count - a.count);
+  const sumberLeadMax = Math.max(1, ...sumberLead.map((r) => r.count));
+  const sumberLeadTotal = sumberLead.reduce((s, r) => s + r.count, 0);
   const uang     = summary?.uang;
   const konversi = summary?.konversi;
   const series   = summary?.revenueSeries || [];
@@ -130,6 +134,40 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Target Bulanan — pertanyaan PERTAMA yang owner tanya ("apa kita on
+          track?"), sebelumnya tidak terjawab di tab ini sama sekali (KPI
+          Nilai Penjualan cuma angka mentah, tanpa konteks target). Data +
+          logika SAMA PERSIS dengan kartu "Target Tim" di tab Sales (lihat
+          utils/teamTarget.js) — sengaja tidak dihitung ulang terpisah di
+          sini. Disembunyikan total kalau belum ada target diset sama sekali
+          (targetValue 0), bukan tampil "0%" yang menyesatkan. */}
+      {targetValue > 0 && (
+        <div className="rounded-2xl bg-surface p-5 shadow-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[13px] font-medium text-ink3">Target Bulanan Tim</p>
+            <span className="text-xs text-ink3">
+              {formatRupiah(teamGrossAll)} <span className="text-ink3">/ {formatRupiah(targetValue)}</span>
+            </span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-3">
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-inset">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width] duration-700 ease-out",
+                  percentToTarget == null ? "bg-line"
+                  : percentToTarget >= 100 ? "bg-green"
+                  : percentToTarget >= 50 ? "bg-accent" : "bg-orange"
+                )}
+                style={{ width: `${Math.min(percentToTarget ?? 0, 100)}%` }}
+              />
+            </div>
+            <span className="shrink-0 text-lg font-extrabold tabular-nums text-ink">
+              {percentToTarget != null ? `${percentToTarget}%` : "—"}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── 1. UANG ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
@@ -229,7 +267,11 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         <ChartCard
           index={4}
           title="Tren Pendapatan"
-          description={gran === "day" ? "Nilai order per hari pada periode terpilih" : "Nilai order per bulan pada periode terpilih"}
+          description={
+            gran === "hour" ? "Nilai order per jam, hari ini"
+            : gran === "day" ? "Nilai order per hari pada periode terpilih"
+            : "Nilai order per bulan pada periode terpilih"
+          }
           empty={series.length === 0 ? "Belum ada data pada periode ini." : null}
         >
           <ResponsiveContainer width="100%" height={240}>
@@ -243,7 +285,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
               <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
               <XAxis
                 dataKey="bucket"
-                tickFormatter={(v) => (gran === "day" ? dayjs(v).format("D MMM") : v)}
+                tickFormatter={(v) => formatBucketTick(v, gran)}
                 tick={AXIS} axisLine={false} tickLine={false} dy={4}
                 interval="preserveStartEnd" minTickGap={28}
               />
@@ -358,7 +400,31 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         </ChartCard>
       </div>
 
-      {/* ── 4. PIPELINE RINGKAS + KOTA ────────────────────────────────── */}
+      {/* ── 4. SUMBER LEAD + PIPELINE + KOTA ──────────────────────────── */}
+      {/* "Dari mana pelanggan datang" — sebelumnya TIDAK ADA visibilitas
+          sumber lead sama sekali di tab ini (harus pindah ke tab Traffic).
+          SPAM dikecualikan (custWhereKonversi di backend) supaya jumlahnya
+          sepadan dengan KPI "New Leads" di atas — dulu leadSourceBreakdown
+          tidak punya konsumen UI sama sekali, jadi celah ini tidak ketahuan. */}
+      <ChartCard
+        index={7.5}
+        title="Sumber Lead"
+        description="Dari mana pelanggan baru datang, periode ini"
+        empty={sumberLead.length === 0 ? "Belum ada lead pada periode ini." : null}
+      >
+        <div className="flex flex-col gap-2.5">
+          {sumberLead.map((r) => (
+            <BarRow
+              key={r.leadSource}
+              label={SOURCE_LABELS[r.leadSource] || r.leadSource}
+              value={r.count} max={sumberLeadMax}
+              display={r.count.toLocaleString("id-ID")}
+              sub={sumberLeadTotal > 0 ? `${Math.round((r.count / sumberLeadTotal) * 100)}%` : undefined}
+            />
+          ))}
+        </div>
+      </ChartCard>
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ChartCard
           index={8}

@@ -1,4 +1,5 @@
 import express from "express";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
@@ -86,8 +87,10 @@ analyticsRouter.get("/overview", async (req, res) => {
     const convWhere  = buildDateWhere(from, to);
     const custWhere  = buildDateWhere(from, to);
     // Khusus untuk customer-count yang jadi dasar KPI "New Leads"/"Conversion"
-    // di Dashboard (bukan leadSourceGroups di bawah, yang tidak dipakai UI
-    // manapun) — restrukturisasi 25 Agustus 2026: chat junk/salah sasaran
+    // di Dashboard, DAN leadSourceGroups di bawah (RingkasanTab.jsx "Sumber
+    // Lead", sejak 26 Agustus 2026 — sebelumnya field ini punya scope SPAM
+    // berbeda dari "New Leads" karena tidak ada UI yang memakainya) —
+    // restrukturisasi 25 Agustus 2026: chat junk/salah sasaran
     // (SPAM) tidak boleh ikut membesarkan "New Leads" ataupun jadi penyebut
     // "Conversion", sama alasannya dengan custWhereKonversi di
     // /business-summary. Endpoint ini sebelumnya TERLEWAT saat fix itu
@@ -146,7 +149,14 @@ analyticsRouter.get("/overview", async (req, res) => {
             });
           })(),
 
-      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhere }),
+      // BUG YANG DIPERBAIKI (26 Agustus 2026, sambil memberi field ini
+      // konsumen UI PERTAMANYA — RingkasanTab.jsx "Sumber Lead"): dulu pakai
+      // `custWhere` (termasuk SPAM), padahal KPI "New Leads" di tab yang SAMA
+      // sudah lama pakai `custWhereKonversi` (SPAM dikecualikan). Kalau
+      // dibiarkan, jumlah breakdown per sumber tidak akan pernah sama dengan
+      // "New Leads" di atasnya — persis kelas bug conversion-rate yang sudah
+      // diperbaiki 25 Agustus 2026.
+      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhereKonversi }),
 
       // ⚠️ BUCKET BULANAN WAJIB WIB, BUKAN UTC.
       // Kolom "createdAt" adalah timestamp UTC, jadi date_trunc('month', ...)
@@ -263,20 +273,32 @@ analyticsRouter.get("/overview", async (req, res) => {
 });
 
 // ═══ DERET WAKTU ADAPTIF — HELPER BERSAMA ═════════════════════════════════
-// Dipakai /revenue-series, /business-summary, dan /sales-report supaya
+// Dipakai /revenue-series, /business-summary, /response-time-series supaya
 // granularitas & pengisian bucket kosong TIDAK diimplementasikan ulang
 // (dan tidak bisa saling drift) di tiap endpoint.
 //
-// Granularitas: <= 92 hari → HARIAN, lebih panjang → BULANAN. Alasannya
-// praktis: 30 hari dalam bucket BULANAN = 1 titik (grafik tampak kosong,
-// bug yang sudah pernah terjadi di kartu Sales Overview), sedangkan 1 tahun
-// harian = 365 titik yang tidak terbaca.
+// Granularitas 3 tingkat: rentang 1 HARI → per JAM (26 Agustus 2026,
+// permintaan owner — gaya dashboard marketplace seperti Shopee Seller
+// Center: pilih "Hari Ini" menunjukkan 24 titik per jam, bukan 1 titik
+// harian yang tidak menyampaikan apa pun untuk rentang sesingkat itu).
+// <= 92 hari → HARIAN. Lebih panjang → BULANAN (30 hari dalam bucket
+// bulanan = 1 titik, grafik tampak kosong — bug yang sudah pernah
+// terjadi di kartu Sales Overview; 1 tahun harian = 365 titik yang
+// tidak terbaca di kartu selebar itu).
 function seriesWindow(from, to) {
   const sekarang = nowPartsWIB();
   const mulai   = from ? startOfDayWIB(from) : startOfMonthWIB(sekarang.year, sekarang.month);
-  const selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
+  let   selesai = to   ? endOfDayExclusiveWIB(to) : new Date();
   const totalHari = Math.max(1, Math.round((selesai - mulai) / 86_400_000));
-  return { mulai, selesai, harian: totalHari <= 92 };
+  const granularity = totalHari <= 1 ? "hour" : totalHari <= 92 ? "day" : "month";
+  // "Hari Ini" (to = hari ini) — `selesai` dari endOfDayExclusiveWIB() adalah
+  // BATAS HARI PENUH (besok jam 00:00), padahal jam-jam yang belum terjadi
+  // belum ada datanya sama sekali. Dipotong sampai SEKARANG supaya grafik
+  // per-jam berhenti di jam saat ini (persis seperti Shopee) — bukan garis
+  // yang "anjlok ke 0" di jam-jam yang belum berjalan.
+  const now = new Date();
+  if (granularity === "hour" && selesai > now) selesai = now;
+  return { mulai, selesai, granularity };
 }
 
 // Nama bucket WIB dari sebuah instant UTC. `mulai` hasil startOfDayWIB()
@@ -284,25 +306,32 @@ function seriesWindow(from, to) {
 // LANGSUNG atas instant itu mengembalikan JUNI, bukan Juli. Pergeseran +7 jam
 // di sini yang membuat nama bucket cocok dengan hasil
 // `date_trunc(... AT TIME ZONE 'Asia/Jakarta')` di SQL.
-function namaBucketWIB(instant, harian) {
+function namaBucketWIB(instant, granularity) {
   const wib = new Date(instant.getTime() + 7 * 3600_000);
   const iso = wib.toISOString();
-  return harian ? iso.slice(0, 10) : iso.slice(0, 7);
+  if (granularity === "hour") return iso.slice(0, 13); // "YYYY-MM-DDTHH"
+  if (granularity === "day")  return iso.slice(0, 10); // "YYYY-MM-DD"
+  return iso.slice(0, 7);                              // "YYYY-MM"
 }
 
 // Bangun deret LENGKAP termasuk bucket bernilai 0. Bucket kosong WAJIB diisi:
-// kalau hari tanpa transaksi dilewati, garis grafik "melompat" dan terbaca
-// seolah penjualan berjalan kontinu.
-function fillBuckets({ mulai, selesai, harian }, map) {
+// kalau jam/hari tanpa transaksi dilewati, garis grafik "melompat" dan
+// terbaca seolah penjualan berjalan kontinu.
+function fillBuckets({ mulai, selesai, granularity }, map) {
   const points = [];
-  if (harian) {
+  if (granularity === "hour") {
+    for (let t = mulai.getTime(); t < selesai.getTime(); t += 3_600_000) {
+      const b = namaBucketWIB(new Date(t), "hour");
+      points.push({ bucket: b, value: map[b] || 0 });
+    }
+  } else if (granularity === "day") {
     for (let t = mulai.getTime(); t < selesai.getTime(); t += 86_400_000) {
-      const b = namaBucketWIB(new Date(t), true);
+      const b = namaBucketWIB(new Date(t), "day");
       points.push({ bucket: b, value: map[b] || 0 });
     }
   } else {
-    const awal  = namaBucketWIB(mulai, false);
-    const akhir = namaBucketWIB(new Date(selesai.getTime() - 1), false);
+    const awal  = namaBucketWIB(mulai, "month");
+    const akhir = namaBucketWIB(new Date(selesai.getTime() - 1), "month");
     let [y, m] = awal.split("-").map(Number);
     const [ay, am] = akhir.split("-").map(Number);
     while (y < ay || (y === ay && m <= am)) {
@@ -389,8 +418,16 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       }),
 
       // Deret pendapatan & pelanggan baru — granularitas mengikuti panjang
-      // rentang (lihat seriesWindow), jadi rentang 30 hari = 30 titik HARIAN.
-      win.harian
+      // rentang (lihat seriesWindow): 1 hari = per JAM, <=92 hari = HARIAN,
+      // lebih panjang = BULANAN.
+      win.granularity === "hour"
+        ? prisma.$queryRaw`
+            SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
+                   COALESCE(SUM(value), 0)::bigint AS value
+            FROM "Order" WHERE status != 'CANCELLED'
+              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`
+      : win.granularity === "day"
         ? prisma.$queryRaw`
             SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                    COALESCE(SUM(value), 0)::bigint AS value
@@ -404,7 +441,14 @@ analyticsRouter.get("/business-summary", async (req, res) => {
               AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`,
 
-      win.harian
+      win.granularity === "hour"
+        ? prisma.$queryRaw`
+            SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
+                   COUNT(*)::int AS value
+            FROM "Customer"
+            WHERE "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            GROUP BY 1 ORDER BY 1`
+      : win.granularity === "day"
         ? prisma.$queryRaw`
             SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                    COUNT(*)::int AS value
@@ -449,7 +493,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
     }
 
     res.json({
-      granularity: win.harian ? "day" : "month",
+      granularity: win.granularity,
 
       uang: {
         grossValue: gross,
@@ -1431,19 +1475,29 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
     const win = seriesWindow(from, to);
 
     // date_trunc di zona WIB — lihat catatan bucket WIB di /overview.
-    const rows = win.harian
-      ? await prisma.$queryRaw`
+    let rows;
+    if (win.granularity === "hour") {
+      rows = await prisma.$queryRaw`
+          SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
+                 COALESCE(SUM(value), 0)::bigint AS value
+          FROM "Order"
+          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+          GROUP BY 1 ORDER BY 1`;
+    } else if (win.granularity === "day") {
+      rows = await prisma.$queryRaw`
           SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                  COALESCE(SUM(value), 0)::bigint AS value
           FROM "Order"
           WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
-          GROUP BY 1 ORDER BY 1`
-      : await prisma.$queryRaw`
+          GROUP BY 1 ORDER BY 1`;
+    } else {
+      rows = await prisma.$queryRaw`
           SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
                  COALESCE(SUM(value), 0)::bigint AS value
           FROM "Order"
           WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
+    }
 
     const points = fillBuckets(win, Object.fromEntries(rows.map((r) => [r.bucket, Number(r.value)])));
     const total = points.reduce((s, p) => s + p.value, 0);
@@ -1461,7 +1515,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
     const totalOrders = orderCountAgg._count._all;
 
     res.json({
-      granularity: win.harian ? "day" : "month", points, total,
+      granularity: win.granularity, points, total,
       totalOrders, aov: totalOrders > 0 ? Math.round(total / totalOrders) : 0,
     });
   } catch (err) {
@@ -1499,53 +1553,42 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
     // panjang di utils/wib.js), slaBreachSeries TETAP wall-clock 60 menit
     // apa adanya (ambang operasional, tidak boleh ikut berubah — lihat
     // catatan avgEffectiveMinutes di atas file ini).
-    const respRows = win.harian
-      ? await prisma.$queryRaw`
-          SELECT to_char(date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
-                 i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
-          FROM "Conversation" c
-          JOIN (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m WHERE m.direction = 'INBOUND' GROUP BY 1
-          ) i ON i."conversationId" = c.id
-          JOIN (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
-          ) o ON o."conversationId" = c.id
-          WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND o."createdAt" > i."createdAt"`
-      : await prisma.$queryRaw`
-          SELECT to_char(date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
-                 i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
-          FROM "Conversation" c
-          JOIN (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m WHERE m.direction = 'INBOUND' GROUP BY 1
-          ) i ON i."conversationId" = c.id
-          JOIN (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
-          ) o ON o."conversationId" = c.id
-          WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND o."createdAt" > i."createdAt"`;
+    const bucketExpr =
+      win.granularity === "hour" ? `date_trunc('hour', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')`
+      : win.granularity === "day" ? `date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')`
+      : `date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')`;
+    const bucketFmt = win.granularity === "hour" ? 'YYYY-MM-DD"T"HH24' : win.granularity === "day" ? "YYYY-MM-DD" : "YYYY-MM";
 
-    const neverRepliedRows = win.harian
-      ? await prisma.$queryRaw`
-          SELECT to_char(date_trunc('day', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
-                 COUNT(*)::int AS n
-          FROM "Conversation" c
-          WHERE c."type" = 'INDIVIDUAL' AND c.status = 'RESOLVED'
-            AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
-          GROUP BY 1 ORDER BY 1`
-      : await prisma.$queryRaw`
-          SELECT to_char(date_trunc('month', c."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
-                 COUNT(*)::int AS n
-          FROM "Conversation" c
-          WHERE c."type" = 'INDIVIDUAL' AND c.status = 'RESOLVED'
-            AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
-            AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
-          GROUP BY 1 ORDER BY 1`;
+    // bucketExpr DIBANGUN dari `win.granularity` (3 nilai literal TETAP dari
+    // kode di atas, TIDAK PERNAH dari req.query/input user) sebelum
+    // disisipkan lewat Prisma.raw() ke $queryRaw — bukan string bebas yang
+    // lolos ke SQL mentah. bucketFmt tetap parameter BIASA (${bucketFmt}),
+    // cuma bucketExpr (ekspresi date_trunc, bukan nilai skalar) yang perlu
+    // disisipkan mentah karena to_char() butuh EKSPRESI di argumen pertama,
+    // bukan string.
+    const respRows = await prisma.$queryRaw`
+        SELECT to_char(${Prisma.raw(bucketExpr)}, ${bucketFmt}) AS bucket,
+               i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
+        FROM "Conversation" c
+        JOIN (
+          SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+          FROM "Message" m WHERE m.direction = 'INBOUND' GROUP BY 1
+        ) i ON i."conversationId" = c.id
+        JOIN (
+          SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+          FROM "Message" m WHERE m.direction = 'OUTBOUND' GROUP BY 1
+        ) o ON o."conversationId" = c.id
+        WHERE c."type" = 'INDIVIDUAL' AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+          AND o."createdAt" > i."createdAt"`;
+
+    const neverRepliedRows = await prisma.$queryRaw`
+        SELECT to_char(${Prisma.raw(bucketExpr)}, ${bucketFmt}) AS bucket,
+               COUNT(*)::int AS n
+        FROM "Conversation" c
+        WHERE c."type" = 'INDIVIDUAL' AND c.status = 'RESOLVED'
+          AND c."createdAt" >= ${win.mulai} AND c."createdAt" < ${win.selesai}
+          AND NOT EXISTS (SELECT 1 FROM "Message" m WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND')
+        GROUP BY 1 ORDER BY 1`;
 
     const byBucket = new Map();
     for (const r of respRows) {
@@ -1577,7 +1620,7 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
     }));
 
     res.json({
-      granularity: win.harian ? "day" : "month",
+      granularity: win.granularity,
       avgResponseSeries, slaBreachSeries,
     });
   } catch (err) {

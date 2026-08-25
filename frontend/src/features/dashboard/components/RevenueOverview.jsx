@@ -4,13 +4,11 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import dayjs from "dayjs";
 import SectionCard from "@/components/ui/section-card.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { api } from "@/api.js";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
-import { toApiParams, formatRangeText } from "@/lib/dateRange.js";
-import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { toApiParams, formatRangeText, formatBucketTick } from "@/lib/dateRange.js";
 import { cn } from "@/lib/utils.js";
 
 function ChartTip({ active, payload, label, granularity }) {
@@ -18,7 +16,7 @@ function ChartTip({ active, payload, label, granularity }) {
   return (
     <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
       <p className="t-caption mb-1">
-        {granularity === "day" ? formatTanggalPendek(label) : label}
+        {formatBucketTick(label, granularity)}
       </p>
       <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
         <span className="h-2 w-2 rounded-full bg-blue-600" />
@@ -69,8 +67,8 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
   const naik = delta != null && delta >= 0;
   const Arrow = naik ? TrendingUp : TrendingDown;
 
-  // Label sumbu X: harian → "26 Jul", bulanan → "2026-07".
-  const tickX = (v) => (granularity === "day" ? dayjs(v).format("D MMM") : v);
+  // Label sumbu X: per-jam → "05:00", harian → "26 Jul", bulanan → "2026-07".
+  const tickX = (v) => formatBucketTick(v, granularity);
 
   return (
     <SectionCard title="Sales Overview" className={className}>

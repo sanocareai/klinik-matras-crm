@@ -30,7 +30,10 @@ const namaFile = (r) => (r?.from && r?.to ? `${r.from}-${r.to}` : "semua");
 
 export default function Laporan() {
   const [tab, setTab] = useState("Ringkasan");
-  const [range, setRange] = useState(() => makeRange("last_30_days"));
+  // Default "Hari ini" (26 Agustus 2026, permintaan owner) — konsisten
+  // dengan Dashboard yang sudah lama begini. Charts otomatis ikut per JAM
+  // untuk rentang 1 hari (lihat seriesWindow() di routes/analytics.js).
+  const [range, setRange] = useState(() => makeRange("today"));
 
   const [overview, setOverview] = useState(null);
   const [summary, setSummary]   = useState(null);
@@ -162,6 +165,7 @@ export default function Laporan() {
                 <RingkasanTab
                   summary={summary} overview={overview} perf={perf}
                   funnel={funnel} onGoTab={setTab} range={range}
+                  salesReport={salesReport}
                 />
               </TabsContent>
 
