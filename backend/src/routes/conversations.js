@@ -123,6 +123,44 @@ export function resolveSendTarget(conversation) {
   return conversation.customer?.phone || null;
 }
 
+// Auto-assign lead ke sales yang PERTAMA kali balas, dari channel/jenis
+// pesan APA PUN (teks, media, lokasi, kontak, galeri produk) — dulu cuma
+// ada di POST /:id/messages, jadi kirim foto/lokasi/kontak sebagai
+// sentuhan pertama ke lead belum ber-pemilik TIDAK meng-klaim percakapan
+// sama sekali (assignedToId tetap null walau firstResponderId sudah
+// keisi). Disatukan jadi 1 helper (25 Agustus 2026) supaya tiap endpoint
+// kirim baru otomatis dapat perilaku yang sama, tidak perlu diingat-ingat
+// copy manual.
+//
+// JUGA mencatat HandoverEvent (reason: "auto-claim", createdAt disamakan
+// dengan pesan balasannya) — lihat catatan panjang di analytics.js
+// `respRaw`: klaim & balasan pertama adalah AKSI YANG SAMA di jalur ini,
+// jadi tanpa event ini metrik waktu respons per-sales tidak pernah tahu
+// kapan dia sungguhan mulai memegang percakapan, dan jeda antrean
+// (sebelum siapa pun mengklaim) ikut menghukum orang yang justru
+// menyelamatkan lead terbengkalai.
+async function autoClaimIfUnowned(conversation, user, messageCreatedAt) {
+  if (!rolesOf(user).includes("SALES")) return;
+  if (conversation.assignedToId) return;
+  if (conversation.type === "GROUP") return;
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data:  { assignedToId: user.id },
+  });
+  if (conversation.customer && !conversation.customer.assignedSalesId) {
+    await prisma.customer.update({
+      where: { id: conversation.customerId },
+      data:  { assignedSalesId: user.id },
+    });
+  }
+  await prisma.handoverEvent.create({
+    data: {
+      conversationId: conversation.id, fromUserId: null, toUserId: user.id,
+      reason: "auto-claim", createdAt: messageCreatedAt,
+    },
+  });
+}
+
 // Jumlah percakapan belum dibaca (untuk badge sidebar)
 // Harus di atas /:id agar Express tidak salah routing
 conversationRouter.get("/unread-count", async (req, res) => {
@@ -746,40 +784,9 @@ conversationRouter.post("/:id/messages", async (req, res) => {
   emitNewMessage(conversation.id, messagePayload);
   emitConversationUpdate(updatedConvSend);
 
-  // Auto-assign lead ke sales yang pertama kali balas — TIDAK berlaku untuk
-  // grup (Task 3d: grup tidak punya Customer/pipeline record, cuma chat-nya
-  // saja yang dibuka; conversation.customer null utk GROUP, akses
-  // .assignedSalesId di bawah akan crash kalau tidak di-guard).
-  if (rolesOf(req.user).includes("SALES") && !conversation.assignedToId && conversation.type !== "GROUP") {
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data:  { assignedToId: req.user.id },
-    });
-    if (!conversation.customer.assignedSalesId) {
-      await prisma.customer.update({
-        where: { id: conversation.customerId },
-        data:  { assignedSalesId: req.user.id },
-      });
-    }
-    // BUG YANG DIPERBAIKI (25 Agustus 2026): klaim lewat jalur INI (langsung
-    // ketik balasan ke lead belum ber-pemilik) TIDAK PERNAH mencatat
-    // HandoverEvent — cuma klaim eksplisit via tombol "Ambil Percakapan"
-    // (routes/conversations.js /:id/takeover) yang tercatat. Karena jalur
-    // auto-assign INI yang dipakai hampir semua sales (bukan tombol Ambil),
-    // query "waktu respons" per-sales di analytics.js yang mengandalkan
-    // HandoverEvent untuk membedakan "jeda antrean tim" vs "jeda pribadi"
-    // nyaris tidak pernah menemukan event apa pun — jeda antrean tetap ikut
-    // kehitung sebagai keterlambatan pribadi walau fix-nya sudah di-deploy.
-    // `createdAt` DISAMAKAN dengan `message.createdAt` (bukan `new Date()`
-    // saat ini) — klaim & balasan pertama adalah AKSI YANG SAMA di jalur
-    // ini, jadi jeda personal yang bisa diatribusikan ke dia = 0.
-    await prisma.handoverEvent.create({
-      data: {
-        conversationId: conversation.id, fromUserId: null, toUserId: req.user.id,
-        reason: "auto-claim", createdAt: message.createdAt,
-      },
-    });
-  }
+  // Auto-assign lead ke sales yang pertama kali balas + catat HandoverEvent
+  // — lihat autoClaimIfUnowned() di atas file ini.
+  await autoClaimIfUnowned(conversation, req.user, message.createdAt);
 
   res.status(201).json(messagePayload);
 });
@@ -1037,6 +1044,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
   });
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConvMedia);
+  await autoClaimIfUnowned(conversation, req.user, message.createdAt);
   console.log(`[media] Selesai, pesan tersimpan id=${message.id}`);
   res.status(201).json(message);
 });
@@ -1184,6 +1192,7 @@ conversationRouter.post("/:id/send-location", async (req, res) => {
   const updatedConv = await prisma.conversation.update({ where: { id: conversation.id }, data: convUpdate });
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConv);
+  await autoClaimIfUnowned(conversation, req.user, message.createdAt);
   res.status(201).json(message);
 });
 
@@ -1248,6 +1257,7 @@ conversationRouter.post("/:id/send-contact", async (req, res) => {
   const updatedConv = await prisma.conversation.update({ where: { id: conversation.id }, data: convUpdate });
   emitNewMessage(conversation.id, message);
   emitConversationUpdate(updatedConv);
+  await autoClaimIfUnowned(conversation, req.user, message.createdAt);
   res.status(201).json(message);
 });
 
@@ -1395,15 +1405,23 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
   }
 
   const lastSaved = savedMessages[savedMessages.length - 1];
+  // BUG YANG DIPERBAIKI (25 Agustus 2026): endpoint ini SEBELUMNYA tidak
+  // pernah mengisi firstResponderId — kalau galeri produk jadi sentuhan
+  // PERTAMA ke sebuah percakapan (bukan /:id/messages atau /:id/media
+  // duluan), "siapa yang balas pertama" tidak pernah tercatat sama sekali,
+  // sama seperti dua endpoint itu sebelum diperbaiki.
+  const productConvData = {
+    lastMessageAt: new Date(),
+    ...(lastSaved ? { lastMessagePreview: buildMessagePreview(lastSaved.content, lastSaved.mediaType) } : {}),
+  };
+  if (!conversation.firstResponderId && lastSaved) productConvData.firstResponderId = req.user.id;
   const updatedConvProduct = await prisma.conversation.update({
     where: { id: conversation.id },
-    data:  {
-      lastMessageAt: new Date(),
-      ...(lastSaved ? { lastMessagePreview: buildMessagePreview(lastSaved.content, lastSaved.mediaType) } : {}),
-    },
+    data:  productConvData,
   });
   savedMessages.forEach((m) => emitNewMessage(conversation.id, m));
   emitConversationUpdate(updatedConvProduct);
+  if (lastSaved) await autoClaimIfUnowned(conversation, req.user, lastSaved.createdAt);
 
   res.json({ sent: savedMessages.length, messages: savedMessages });
 });
