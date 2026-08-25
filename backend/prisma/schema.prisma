@@ -207,6 +207,17 @@ model User {
   // Order/Customer langsung, tidak difilter per-user.
   active Boolean @default(true)
 
+  // Leader sales (mis. Novi) — ber-role ADMIN tapi secara bisnis mengawasi
+  // tim sales & kadang closing sendiri. Flag EKSPLISIT (25 Agustus 2026),
+  // BUKAN diinfer dari role/nama — konsisten dengan preseden UserRole/D-010
+  // (Natasha): jangan pernah anggap "punya akses X" = "berperan sebagai X"
+  // (riwayat nyata: role SALES tambahan Natasha sempat salah dianggap
+  // performer sales, lihat catatan panjang di routes/analytics.js
+  // /sales-report). Dipakai untuk baris TERPISAH ("Team Lead") di Laporan
+  // Sales & untuk boleh diset targetnya di Pengaturan > Target Sales —
+  // TIDAK mengubah/melonggarkan filter role==="SALES" yang sudah ada.
+  isSalesTeamLead Boolean @default(false)
+
   assignedCustomers         Customer[]               @relation("AssignedSales")
   assignedConversations     Conversation[]           @relation("AssignedAgent")
   notes                     Note[]

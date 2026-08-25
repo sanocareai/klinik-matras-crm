@@ -526,6 +526,328 @@ analyticsRouter.get("/business-summary", async (req, res) => {
 // dipindah dari `assignedToId` ke `Conversation.firstResponderId`
 // (immutable, tidak ikut berpindah saat takeover) supaya kecepatan
 // membalas tetap menempel ke orang yang benar-benar mengetik balasannya.
+// Dipisah jadi fungsi (25 Agustus 2026, sebelumnya inline di dalam
+// users.map()) supaya bisa dipanggil ULANG untuk baris "Team Lead" (Novi)
+// tanpa duplikasi blok query yang panjang ini. Perhitungan PERSIS SAMA untuk
+// sales biasa maupun team lead — bedanya cuma siapa `u` yang dikirim &
+// bagaimana hasilnya dipakai di caller (team lead TIDAK ikut masuk ke Total
+// Tim, lihat /sales-report di bawah).
+async function computeSalesRow(u, ctx) {
+  const { convWhere, mulai, selesai, from, to, adaDataTransisi, targetMap } = ctx;
+  // DUA lingkup yang HARUS dibedakan — inilah sumber bug yang diperbaiki:
+  //
+  // `mine`        = percakapan yang DIBUAT dalam rentang → untuk metrik
+  //                 AKTIVITAS periode (ditangani, dibalas, respons, SLA).
+  // `mineAtribusi`= percakapan KAPAN SAJA → untuk MENGHUBUNGKAN order ke
+  //                 sales. Order hari ini bisa datang dari lead bulan lalu;
+  //                 kalau tautannya ikut difilter tanggal, order itu tidak
+  //                 teratribusi ke siapa pun dan kolom Nilai jadi Rp0
+  //                 padahal perusahaan jelas ada penjualan. Itu yang
+  //                 terjadi sebelum perbaikan ini (dan yang membuat
+  //                 "7 percakapan · Rp0 · 14.3% konversi" tampak aneh).
+  // `mine` DIKECUALIKAN dari pipelineStage SPAM (restrukturisasi 24
+  // Agustus 2026) — inilah fix untuk masalah "closing rate tercemar chat
+  // junk": `mine` adalah penyebut conversionRate & orderConversionRate
+  // (lewat `handled` di bawah), jadi chat 1-2x balas/salah sasaran yang
+  // sudah ditandai SPAM tidak lagi ikut membesarkan penyebut & menekan
+  // persentase closing sales yang sebenarnya bagus.
+  const mine = { ...convWhere, assignedToId: u.id, customer: { pipelineStage: { not: "SPAM" } } };
+  const mineAtribusi = { type: "INDIVIDUAL", assignedToId: u.id };
+
+  const [
+    handled, replied, resolved, stalledRaw,
+    stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
+    neverReplied, paidRaw, orderingCustomers, takeoverRaw, spamCount,
+  ] = await Promise.all([
+    prisma.conversation.count({ where: mine }),
+    // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
+    //
+    // CATATAN JUJUR soal metrik ini: di data nyata replyRate hampir SELALU
+    // 100%, karena `assignedToId` justru terisi PADA SAAT sales membalas.
+    // Jadi angka ini berguna sebagai pemeriksaan kewarasan (kalau <100%
+    // berarti ada percakapan diklaim tapi tidak pernah dibalas), BUKAN
+    // sebagai pembeda performa. Yang benar-benar membedakan adalah
+    // `stalled` di bawah — pola "dibalas sekali lalu hilang" yang jadi
+    // alasan fitur takeover dibuat (lihat CLAUDE.md §7C poin 4).
+    prisma.conversation.count({ where: { ...mine, messages: { some: { direction: "OUTBOUND" } } } }),
+    prisma.conversation.count({ where: { ...mine, status: "RESOLVED" } }),
+
+    // MENGGANTUNG dalam rentang: percakapan yang dia pegang (dibuat dalam
+    // rentang), pesan TERAKHIR dari customer, >60 menit tanpa balasan.
+    // Sengaja DIBATASI rentang supaya ikut berubah saat tanggal diganti —
+    // sebelumnya query ini tanpa filter tanggal, sehingga baris "0
+    // percakapan · 8 menggantung" bisa muncul (angka dari sepanjang waktu
+    // ditempel di sebelah angka periode). Angka "sekarang, lintas periode"
+    // tetap dilaporkan terpisah sebagai `stalledNow` di total tim.
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n
+      FROM "Conversation" c
+      JOIN (
+        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
+        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
+      ) m ON m."conversationId" = c.id
+      WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+        AND c.status != 'RESOLVED'
+        AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        AND m.direction = 'INBOUND'
+        AND m."createdAt" < NOW() - INTERVAL '60 minutes'`,
+
+    // Sebaran stage — POSISI SAAT INI dari seluruh customer yang
+    // percakapannya dia pegang (TIDAK difilter tanggal: "stage sekarang"
+    // adalah keadaan, bukan kejadian di dalam periode). Dilabeli jelas di UI supaya
+    // tidak dibaca sebagai kejadian dalam periode.
+    prisma.customer.groupBy({
+      by: ["pipelineStage"],
+      where: { conversations: { some: mineAtribusi } },
+      _count: { _all: true },
+    }),
+
+    // Order dalam rentang, TAUTAN sales tidak difilter tanggal (lihat
+    // catatan `mineAtribusi`).
+    prisma.order.aggregate({
+      where: {
+        ...buildDateWhere(from, to), status: { not: "CANCELLED" },
+        customer: { conversations: { some: mineAtribusi } },
+      },
+      _count: { _all: true }, _sum: { value: true },
+    }),
+    prisma.order.aggregate({
+      where: {
+        ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paymentStatus: "LUNAS",
+        customer: { conversations: { some: mineAtribusi } },
+      },
+      _sum: { value: true },
+    }),
+    prisma.order.count({
+      where: {
+        ...buildDateWhere(from, to), hasComplaint: true,
+        customer: { conversations: { some: mineAtribusi } },
+      },
+    }),
+
+    // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
+    // pertama), DIBATASI percakapan yang dibuat dalam rentang.
+    //
+    // ATRIBUSI DIPERBAIKI: JOIN memakai `c."firstResponderId"` (siapa
+    // yang SUNGGUHAN mengirim balasan pertama, diset SEKALI dan tidak
+    // pernah berubah — lihat model Conversation di schema.prisma), BUKAN
+    // `c."assignedToId"` (bisa berpindah tangan lewat "Ambil Alih").
+    // Sebelumnya field ini dipakai, jadi kalau sales A membalas cepat
+    // lalu percakapan di-takeover sales B (mis. lanjut chat basa-basi
+    // berbulan-bulan kemudian), waktu respons A yang sebenarnya cepat
+    // malah tercatat sebagai milik B — mencemari rata-rata B dengan
+    // performa orang lain.
+    prisma.$queryRaw`
+      SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
+             COUNT(*)::int AS sample
+      FROM (
+        SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+        FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+        WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+          AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        GROUP BY 1
+      ) i
+      JOIN (
+        SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+        FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+        WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+          AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        GROUP BY 1
+      ) o ON i."conversationId" = o."conversationId"
+      WHERE o."createdAt" > i."createdAt"`,
+
+    // SLA breach = percakapan (dibuat dalam rentang) yang respons
+    // pertamanya > 60 menit. Ambang 60 menit mengikuti aturan takeover
+    // yang sudah dipakai di Inbox. Sama seperti di atas, dihitung dari
+    // `firstResponderId` — siapa yang benar-benar terlambat membalas.
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n FROM (
+        SELECT i."conversationId"
+        FROM (
+          SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+          FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+          WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+          GROUP BY 1
+        ) i
+        JOIN (
+          SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
+          FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+          WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+          GROUP BY 1
+        ) o ON i."conversationId" = o."conversationId"
+        WHERE o."createdAt" > i."createdAt"
+          AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
+      ) t`,
+
+    // BUG YANG DIPERBAIKI (5 Agustus 2026): `respRaw`/SLA breach di atas
+    // memakai INNER JOIN inbound↔outbound — percakapan yang TIDAK
+    // PERNAH dibalas sama sekali (tidak ada pesan OUTBOUND) otomatis
+    // TIDAK IKUT terhitung sama sekali, bukannya dianggap "sangat
+    // terlambat". Kalau percakapan itu masih OPEN itu tertutup oleh
+    // `stalled` di atas (last message inbound & >60 menit, status
+    // != RESOLVED) — TAPI begitu ditandai RESOLVED (oleh siapa pun,
+    // termasuk auto-resolve), ia lolos dari stalled JUGA (excluded by
+    // status filter), jadi lolos dari SEMUA sinyal: avg respons, SLA
+    // breach, dan menggantung. Sales yang mengabaikan lead lalu
+    // percakapannya ditutup begitu saja tidak pernah tercatat sebagai
+    // pelanggaran apa pun. Dihitung terpisah di sini dan digabung ke
+    // `slaBreach` supaya tidak ada celah "menghilang" dari radar.
+    //
+    // Diatribusikan ke `assignedToId` (bukan `firstResponderId`, yang
+    // NULL untuk percakapan begini — tidak ada yang pernah membalas).
+    prisma.conversation.count({
+      where: { ...mine, status: "RESOLVED", messages: { none: { direction: "OUTBOUND" } } },
+    }),
+
+    // Berapa customer PINDAH ke TRANSACTION (dulu COMPLETED, dihapus saat
+    // restrukturisasi pipeline 7→4 stage 24 Agustus 2026 — lihat
+    // schema.prisma enum PipelineStage) di dalam rentang — konversi
+    // sebagai ALIRAN periode, bukan keadaan. Ini pembilang conversion
+    // rate yang sepadan dengan penyebutnya (percakapan ditangani pada
+    // periode yang sama, DIKECUALIKAN dari SPAM — lihat `mine`).
+    // Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
+    // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
+    // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
+    prisma.$queryRaw`
+      SELECT COUNT(DISTINCT pt.customer_id)::int AS n
+      FROM pipeline_transitions pt
+      JOIN "Conversation" c ON c."customerId" = pt.customer_id
+      WHERE pt.to_stage = 'TRANSACTION'
+        AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
+        AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
+
+    // Customer DISTINCT yang punya order dalam rentang — hasil konkret
+    // yang datanya sudah ada sekarang (tidak bergantung pada riwayat
+    // transisi yang baru mulai direkam).
+    //
+    // BUG DIPERBAIKI (25 Agustus 2026): sebelumnya pakai `mineAtribusi`
+    // (percakapan KAPAN SAJA pernah dipegang, tidak dibatasi tanggal) —
+    // populasi pembilang ini TIDAK SEPADAN dengan `handled` (penyebut
+    // orderConversionRate, yang dibatasi percakapan dibuat DALAM
+    // periode). Sekarang pakai `mine` (sama seperti `handled`) supaya
+    // pembilang & penyebut orderConversionRate dari populasi yang sama.
+    prisma.customer.count({
+      where: {
+        conversations: { some: mine },
+        orders: { some: { ...buildDateWhere(from, to), status: { not: "CANCELLED" } } },
+      },
+    }),
+
+    // Dari `handled` (percakapan yang SEKARANG dia pegang, dibuat dalam
+    // rentang), berapa yang datang lewat AMBIL/AMBIL ALIH dari orang lain
+    // — bukan dia yang klaim/pegang dari awal. HandoverEvent dicatat
+    // SETIAP kali assignedToId berpindah (lihat routes/conversations.js
+    // takeover & transfer), jadi event TERAKHIR per percakapan selalu
+    // mencerminkan siapa pemilik SEKARANG. Kalau event terakhir itu
+    // punya fromUserId (artinya pindah tangan dari seseorang, bukan
+    // klaim pertama dari percakapan yang belum ber-pemilik), percakapan
+    // ini "beban warisan", bukan tanggung jawab asli dia.
+    //
+    // BUG YANG DIPERBAIKI: sebelumnya `handled` dipakai apa adanya
+    // sebagai "Beban Percakapan" di Laporan — sales yang rajin
+    // Ambil Alih chat mangkrak (biasanya lead dingin yang sudah gagal
+    // duluan) angkanya jadi TERTINGGI, padahal bukan dia yang aktif
+    // menangani sejak awal, dan closing rate-nya wajar rendah karena
+    // yang dia warisi memang sudah sulit dikonversi.
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS n
+      FROM "Conversation" c
+      WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+        AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        AND (
+          SELECT he."fromUserId" FROM "HandoverEvent" he
+          WHERE he."conversationId" = c.id
+          ORDER BY he."createdAt" DESC LIMIT 1
+        ) IS NOT NULL`,
+
+    // Percakapan (dibuat dalam rentang, dia pegang) yang customer-nya
+    // ditandai SPAM — populasi SAMA dengan `mine`, cuma tanpa pengecualian
+    // SPAM-nya. Dipakai untuk `spamRate`: bukan untuk menghukum, tapi
+    // pengawas risiko SPAM dipakai sebagai jalan pintas menghindari lead
+    // sulit (lihat catatan `mine` di atas soal pengecualian SPAM dari
+    // conversionRate/orderConversionRate).
+    prisma.conversation.count({
+      where: { ...convWhere, assignedToId: u.id, customer: { pipelineStage: "SPAM" } },
+    }),
+  ]);
+
+  const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
+  const stageCount = (s) => byStage[s] || 0;
+  const paidSekarang = stageCount("TRANSACTION");
+  const paidPeriode = paidRaw[0]?.n || 0;
+  const orders = orderAgg._count._all;
+  const gross = orderAgg._sum.value || 0;
+  const target = targetMap[u.id] || 0;
+
+  return {
+    userId: u.id, name: u.name, avatarUrl: u.avatarUrl,
+
+    // Aktivitas
+    // `handled` = total percakapan yang SEKARANG dia pegang (beban kerja
+    // saat ini, termasuk warisan takeover — berguna untuk tahu antrean
+    // riil). `handledOwn` = bagian dari situ yang dia pegang dari awal
+    // (klaim pertama, bukan pindahan) — inilah yang mencerminkan
+    // performa penanganan sendiri. `handledTakeover` = sisanya (warisan
+    // dari Ambil/Ambil Alih orang lain). UI "Beban Percakapan" dan
+    // leaderboard HARUS memakai `handledOwn`, bukan `handled` mentah.
+    handled, replied, resolved,
+    handledTakeover: takeoverRaw[0]?.n || 0,
+    handledOwn: handled - (takeoverRaw[0]?.n || 0),
+    stalled: stalledRaw[0]?.n || 0,
+    replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
+    avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
+    respondedSample: respRaw[0]?.sample || 0,
+    // `neverReplied` = percakapan yang RESOLVED tanpa satu pun balasan
+    // (lihat catatan query di atas) — digabung ke slaBreach supaya
+    // selalu ikut tampil di kolom "SLA >1j" yang sudah ada, tapi juga
+    // diekspos terpisah untuk UI yang mau menyorotnya secara eksplisit.
+    neverReplied: neverReplied || 0,
+    slaBreach: (slaBreach[0]?.n || 0) + (neverReplied || 0),
+
+    // POSISI SAAT INI (bukan aliran periode) — sengaja tidak difilter
+    // tanggal, dan UI WAJIB melabelinya begitu.
+    funnel: {
+      NEW: stageCount("NEW"), PROSPECT: stageCount("PROSPECT"),
+      TRANSACTION: stageCount("TRANSACTION"), SPAM: stageCount("SPAM"),
+    },
+    paidCustomersNow: paidSekarang,
+
+    // ALIRAN PERIODE — ikut berubah saat tanggal diganti.
+    paidCustomers: paidPeriode,
+    orderingCustomers,
+    // Konversi UTAMA (25 Agustus 2026: dijadikan metrik "Konversi" utama
+    // di UI, menggantikan orderConversionRate) = customer yang PINDAH ke
+    // Transaction dalam periode / percakapan ditangani dalam periode
+    // (SPAM sudah dikecualikan dari `handled` lewat `mine`). Dua-duanya
+    // aliran periode dari populasi yang sama → sepadan. null (UI: "—")
+    // kalau riwayat transisi belum ada datanya di periode ini, supaya
+    // tidak terbaca sebagai "0% closing".
+    conversionRate: adaDataTransisi ? pctOrNull(paidPeriode, handled) : null,
+    // Konversi SEKUNDER berbasis ORDER — pelengkap conversionRate,
+    // mengukur hal yang genuinely beda (order benar-benar dibuat, bukan
+    // cuma kartu Kanban digeser). Populasi pembilang sudah diselaraskan
+    // dengan `handled` (lihat catatan di query `orderingCustomers`).
+    orderConversionRate: pctOrNull(orderingCustomers, handled),
+    // Berapa % lead yang DIA PEGANG ditandai SPAM — bukan metrik
+    // performa, tapi pengawas: kalau tiba-tiba jauh di atas rata-rata
+    // tim, layak ditinjau manual (lihat catatan query `spamCount`).
+    spamCount,
+    spamRate: pctOrNull(spamCount, handled + spamCount),
+
+    // Hasil
+    orders,
+    grossValue: gross,
+    collectedValue: lunasAgg._sum.value || 0,
+    aov: orders > 0 ? Math.round(gross / orders) : 0,
+    target,
+    percentToTarget: target > 0 ? Math.round((gross / target) * 100) : null,
+    complaints: complaintCount,
+    complaintRate: orders > 0 ? Math.round((complaintCount / orders) * 1000) / 10 : null,
+  };
+}
+
 analyticsRouter.get("/sales-report", async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -546,7 +868,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     // Lihat catatan `active` di schema.prisma User.
     const usersRaw = await prisma.user.findMany({
       where: { active: true },
-      select: { id: true, name: true, avatarUrl: true, role: true },
+      select: { id: true, name: true, avatarUrl: true, role: true, isSalesTeamLead: true },
       orderBy: { name: "asc" },
     });
     // BUG DIPERBAIKI (22 Agustus 2026): filter LAMA "role !== ADMIN" berarti
@@ -581,320 +903,24 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       WHERE created_at >= ${mulai} AND created_at < ${selesai}`;
     const adaDataTransisi = (transisiPeriode[0]?.n || 0) > 0;
 
-    const rows = await Promise.all(users.map(async (u) => {
-      // DUA lingkup yang HARUS dibedakan — inilah sumber bug yang diperbaiki:
-      //
-      // `mine`        = percakapan yang DIBUAT dalam rentang → untuk metrik
-      //                 AKTIVITAS periode (ditangani, dibalas, respons, SLA).
-      // `mineAtribusi`= percakapan KAPAN SAJA → untuk MENGHUBUNGKAN order ke
-      //                 sales. Order hari ini bisa datang dari lead bulan lalu;
-      //                 kalau tautannya ikut difilter tanggal, order itu tidak
-      //                 teratribusi ke siapa pun dan kolom Nilai jadi Rp0
-      //                 padahal perusahaan jelas ada penjualan. Itu yang
-      //                 terjadi sebelum perbaikan ini (dan yang membuat
-      //                 "7 percakapan · Rp0 · 14.3% konversi" tampak aneh).
-      // `mine` DIKECUALIKAN dari pipelineStage SPAM (restrukturisasi 24
-      // Agustus 2026) — inilah fix untuk masalah "closing rate tercemar chat
-      // junk": `mine` adalah penyebut conversionRate & orderConversionRate
-      // (lewat `handled` di bawah), jadi chat 1-2x balas/salah sasaran yang
-      // sudah ditandai SPAM tidak lagi ikut membesarkan penyebut & menekan
-      // persentase closing sales yang sebenarnya bagus.
-      const mine = { ...convWhere, assignedToId: u.id, customer: { pipelineStage: { not: "SPAM" } } };
-      const mineAtribusi = { type: "INDIVIDUAL", assignedToId: u.id };
+    const ctx = { convWhere, mulai, selesai, from, to, adaDataTransisi, targetMap };
+    const rows = await Promise.all(users.map((u) => computeSalesRow(u, ctx)));
 
-      const [
-        handled, replied, resolved, stalledRaw,
-        stageGroups, orderAgg, lunasAgg, complaintCount, respRaw, slaBreach,
-        neverReplied, paidRaw, orderingCustomers, takeoverRaw, spamCount,
-      ] = await Promise.all([
-        prisma.conversation.count({ where: mine }),
-        // Dibalas = ada >=1 OUTBOUND. `some` di relasi messages.
-        //
-        // CATATAN JUJUR soal metrik ini: di data nyata replyRate hampir SELALU
-        // 100%, karena `assignedToId` justru terisi PADA SAAT sales membalas.
-        // Jadi angka ini berguna sebagai pemeriksaan kewarasan (kalau <100%
-        // berarti ada percakapan diklaim tapi tidak pernah dibalas), BUKAN
-        // sebagai pembeda performa. Yang benar-benar membedakan adalah
-        // `stalled` di bawah — pola "dibalas sekali lalu hilang" yang jadi
-        // alasan fitur takeover dibuat (lihat CLAUDE.md §7C poin 4).
-        prisma.conversation.count({ where: { ...mine, messages: { some: { direction: "OUTBOUND" } } } }),
-        prisma.conversation.count({ where: { ...mine, status: "RESOLVED" } }),
-
-        // MENGGANTUNG dalam rentang: percakapan yang dia pegang (dibuat dalam
-        // rentang), pesan TERAKHIR dari customer, >60 menit tanpa balasan.
-        // Sengaja DIBATASI rentang supaya ikut berubah saat tanggal diganti —
-        // sebelumnya query ini tanpa filter tanggal, sehingga baris "0
-        // percakapan · 8 menggantung" bisa muncul (angka dari sepanjang waktu
-        // ditempel di sebelah angka periode). Angka "sekarang, lintas periode"
-        // tetap dilaporkan terpisah sebagai `stalledNow` di total tim.
-        prisma.$queryRaw`
-          SELECT COUNT(*)::int AS n
-          FROM "Conversation" c
-          JOIN (
-            SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
-            FROM "Message" ORDER BY "conversationId", "createdAt" DESC
-          ) m ON m."conversationId" = c.id
-          WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-            AND c.status != 'RESOLVED'
-            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-            AND m.direction = 'INBOUND'
-            AND m."createdAt" < NOW() - INTERVAL '60 minutes'`,
-
-        // Sebaran stage — POSISI SAAT INI dari seluruh customer yang
-        // percakapannya dia pegang (TIDAK difilter tanggal: "stage sekarang"
-        // adalah keadaan, bukan aliran periode). Dilabeli jelas di UI supaya
-        // tidak dibaca sebagai kejadian dalam periode.
-        prisma.customer.groupBy({
-          by: ["pipelineStage"],
-          where: { conversations: { some: mineAtribusi } },
-          _count: { _all: true },
-        }),
-
-        // Order dalam rentang, TAUTAN sales tidak difilter tanggal (lihat
-        // catatan `mineAtribusi`).
-        prisma.order.aggregate({
-          where: {
-            ...buildDateWhere(from, to), status: { not: "CANCELLED" },
-            customer: { conversations: { some: mineAtribusi } },
-          },
-          _count: { _all: true }, _sum: { value: true },
-        }),
-        prisma.order.aggregate({
-          where: {
-            ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paymentStatus: "LUNAS",
-            customer: { conversations: { some: mineAtribusi } },
-          },
-          _sum: { value: true },
-        }),
-        prisma.order.count({
-          where: {
-            ...buildDateWhere(from, to), hasComplaint: true,
-            customer: { conversations: { some: mineAtribusi } },
-          },
-        }),
-
-        // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
-        // pertama), DIBATASI percakapan yang dibuat dalam rentang.
-        //
-        // ATRIBUSI DIPERBAIKI: JOIN memakai `c."firstResponderId"` (siapa
-        // yang SUNGGUHAN mengirim balasan pertama, diset SEKALI dan tidak
-        // pernah berubah — lihat model Conversation di schema.prisma), BUKAN
-        // `c."assignedToId"` (bisa berpindah tangan lewat "Ambil Alih").
-        // Sebelumnya field ini dipakai, jadi kalau sales A membalas cepat
-        // lalu percakapan di-takeover sales B (mis. lanjut chat basa-basi
-        // berbulan-bulan kemudian), waktu respons A yang sebenarnya cepat
-        // malah tercatat sebagai milik B — mencemari rata-rata B dengan
-        // performa orang lain.
-        prisma.$queryRaw`
-          SELECT AVG(EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60) AS avg_minutes,
-                 COUNT(*)::int AS sample
-          FROM (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-            WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-              AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-            GROUP BY 1
-          ) i
-          JOIN (
-            SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-            FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-            WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-              AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-            GROUP BY 1
-          ) o ON i."conversationId" = o."conversationId"
-          WHERE o."createdAt" > i."createdAt"`,
-
-        // SLA breach = percakapan (dibuat dalam rentang) yang respons
-        // pertamanya > 60 menit. Ambang 60 menit mengikuti aturan takeover
-        // yang sudah dipakai di Inbox. Sama seperti di atas, dihitung dari
-        // `firstResponderId` — siapa yang benar-benar terlambat membalas.
-        prisma.$queryRaw`
-          SELECT COUNT(*)::int AS n FROM (
-            SELECT i."conversationId"
-            FROM (
-              SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-              FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'INBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-                AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-              GROUP BY 1
-            ) i
-            JOIN (
-              SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
-              FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
-              WHERE m.direction = 'OUTBOUND' AND c."firstResponderId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-                AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-              GROUP BY 1
-            ) o ON i."conversationId" = o."conversationId"
-            WHERE o."createdAt" > i."createdAt"
-              AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
-          ) t`,
-
-        // BUG YANG DIPERBAIKI (5 Agustus 2026): `respRaw`/SLA breach di atas
-        // memakai INNER JOIN inbound↔outbound — percakapan yang TIDAK
-        // PERNAH dibalas sama sekali (tidak ada pesan OUTBOUND) otomatis
-        // TIDAK IKUT terhitung sama sekali, bukannya dianggap "sangat
-        // terlambat". Kalau percakapan itu masih OPEN itu tertutup oleh
-        // `stalled` di atas (last message inbound & >60 menit, status
-        // != RESOLVED) — TAPI begitu ditandai RESOLVED (oleh siapa pun,
-        // termasuk auto-resolve), ia lolos dari stalled JUGA (excluded by
-        // status filter), jadi lolos dari SEMUA sinyal: avg respons, SLA
-        // breach, dan menggantung. Sales yang mengabaikan lead lalu
-        // percakapannya ditutup begitu saja tidak pernah tercatat sebagai
-        // pelanggaran apa pun. Dihitung terpisah di sini dan digabung ke
-        // `slaBreach` supaya tidak ada celah "menghilang" dari radar.
-        //
-        // Diatribusikan ke `assignedToId` (bukan `firstResponderId`, yang
-        // NULL untuk percakapan begini — tidak ada yang pernah membalas).
-        prisma.conversation.count({
-          where: { ...mine, status: "RESOLVED", messages: { none: { direction: "OUTBOUND" } } },
-        }),
-
-        // Berapa customer PINDAH ke TRANSACTION (dulu COMPLETED, dihapus saat
-        // restrukturisasi pipeline 7→4 stage 24 Agustus 2026 — lihat
-        // schema.prisma enum PipelineStage) di dalam rentang — konversi
-        // sebagai ALIRAN periode, bukan keadaan. Ini pembilang conversion
-        // rate yang sepadan dengan penyebutnya (percakapan ditangani pada
-        // periode yang sama, DIKECUALIKAN dari SPAM — lihat `mine`).
-        // Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
-        // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
-        // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
-        prisma.$queryRaw`
-          SELECT COUNT(DISTINCT pt.customer_id)::int AS n
-          FROM pipeline_transitions pt
-          JOIN "Conversation" c ON c."customerId" = pt.customer_id
-          WHERE pt.to_stage = 'TRANSACTION'
-            AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
-            AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
-
-        // Customer DISTINCT yang punya order dalam rentang — hasil konkret
-        // yang datanya sudah ada sekarang (tidak bergantung pada riwayat
-        // transisi yang baru mulai direkam).
-        //
-        // BUG DIPERBAIKI (25 Agustus 2026): sebelumnya pakai `mineAtribusi`
-        // (percakapan KAPAN SAJA pernah dipegang, tidak dibatasi tanggal) —
-        // populasi pembilang ini TIDAK SEPADAN dengan `handled` (penyebut
-        // orderConversionRate, yang dibatasi percakapan dibuat DALAM
-        // periode). Sekarang pakai `mine` (sama seperti `handled`) supaya
-        // pembilang & penyebut orderConversionRate dari populasi yang sama.
-        prisma.customer.count({
-          where: {
-            conversations: { some: mine },
-            orders: { some: { ...buildDateWhere(from, to), status: { not: "CANCELLED" } } },
-          },
-        }),
-
-        // Dari `handled` (percakapan yang SEKARANG dia pegang, dibuat dalam
-        // rentang), berapa yang datang lewat AMBIL/AMBIL ALIH dari orang lain
-        // — bukan dia yang klaim/pegang dari awal. HandoverEvent dicatat
-        // SETIAP kali assignedToId berpindah (lihat routes/conversations.js
-        // takeover & transfer), jadi event TERAKHIR per percakapan selalu
-        // mencerminkan siapa pemilik SEKARANG. Kalau event terakhir itu
-        // punya fromUserId (artinya pindah tangan dari seseorang, bukan
-        // klaim pertama dari percakapan yang belum ber-pemilik), percakapan
-        // ini "beban warisan", bukan tanggung jawab asli dia.
-        //
-        // BUG YANG DIPERBAIKI: sebelumnya `handled` dipakai apa adanya
-        // sebagai "Beban Percakapan" di Laporan — sales yang rajin
-        // Ambil Alih chat mangkrak (biasanya lead dingin yang sudah gagal
-        // duluan) angkanya jadi TERTINGGI, padahal bukan dia yang aktif
-        // menangani sejak awal, dan closing rate-nya wajar rendah karena
-        // yang dia warisi memang sudah sulit dikonversi.
-        prisma.$queryRaw`
-          SELECT COUNT(*)::int AS n
-          FROM "Conversation" c
-          WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
-            AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
-            AND (
-              SELECT he."fromUserId" FROM "HandoverEvent" he
-              WHERE he."conversationId" = c.id
-              ORDER BY he."createdAt" DESC LIMIT 1
-            ) IS NOT NULL`,
-
-        // Percakapan (dibuat dalam rentang, dia pegang) yang customer-nya
-        // ditandai SPAM — populasi SAMA dengan `mine`, cuma tanpa pengecualian
-        // SPAM-nya. Dipakai untuk `spamRate`: bukan untuk menghukum, tapi
-        // pengawas risiko SPAM dipakai sebagai jalan pintas menghindari lead
-        // sulit (lihat catatan `mine` di atas soal pengecualian SPAM dari
-        // conversionRate/orderConversionRate).
-        prisma.conversation.count({
-          where: { ...convWhere, assignedToId: u.id, customer: { pipelineStage: "SPAM" } },
-        }),
-      ]);
-
-      const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
-      const stageCount = (s) => byStage[s] || 0;
-      const paidSekarang = stageCount("TRANSACTION");
-      const paidPeriode = paidRaw[0]?.n || 0;
-      const orders = orderAgg._count._all;
-      const gross = orderAgg._sum.value || 0;
-      const target = targetMap[u.id] || 0;
-
-      return {
-        userId: u.id, name: u.name, avatarUrl: u.avatarUrl,
-
-        // Aktivitas
-        // `handled` = total percakapan yang SEKARANG dia pegang (beban kerja
-        // saat ini, termasuk warisan takeover — berguna untuk tahu antrean
-        // riil). `handledOwn` = bagian dari situ yang dia pegang dari awal
-        // (klaim pertama, bukan pindahan) — inilah yang mencerminkan
-        // performa penanganan sendiri. `handledTakeover` = sisanya (warisan
-        // dari Ambil/Ambil Alih orang lain). UI "Beban Percakapan" dan
-        // leaderboard HARUS memakai `handledOwn`, bukan `handled` mentah.
-        handled, replied, resolved,
-        handledTakeover: takeoverRaw[0]?.n || 0,
-        handledOwn: handled - (takeoverRaw[0]?.n || 0),
-        stalled: stalledRaw[0]?.n || 0,
-        replyRate: handled > 0 ? Math.round((replied / handled) * 100) : null,
-        avgResponseMinutes: respRaw[0]?.avg_minutes != null ? Math.round(Number(respRaw[0].avg_minutes)) : null,
-        respondedSample: respRaw[0]?.sample || 0,
-        // `neverReplied` = percakapan yang RESOLVED tanpa satu pun balasan
-        // (lihat catatan query di atas) — digabung ke slaBreach supaya
-        // selalu ikut tampil di kolom "SLA >1j" yang sudah ada, tapi juga
-        // diekspos terpisah untuk UI yang mau menyorotnya secara eksplisit.
-        neverReplied: neverReplied || 0,
-        slaBreach: (slaBreach[0]?.n || 0) + (neverReplied || 0),
-
-        // POSISI SAAT INI (bukan aliran periode) — sengaja tidak difilter
-        // tanggal, dan UI WAJIB melabelinya begitu.
-        funnel: {
-          NEW: stageCount("NEW"), PROSPECT: stageCount("PROSPECT"),
-          TRANSACTION: stageCount("TRANSACTION"), SPAM: stageCount("SPAM"),
-        },
-        paidCustomersNow: paidSekarang,
-
-        // ALIRAN PERIODE — ikut berubah saat tanggal diganti.
-        paidCustomers: paidPeriode,
-        orderingCustomers,
-        // Konversi UTAMA (25 Agustus 2026: dijadikan metrik "Konversi" utama
-        // di UI, menggantikan orderConversionRate) = customer yang PINDAH ke
-        // Transaction dalam periode / percakapan ditangani dalam periode
-        // (SPAM sudah dikecualikan dari `handled` lewat `mine`). Dua-duanya
-        // aliran periode dari populasi yang sama → sepadan. null (UI: "—")
-        // kalau riwayat transisi belum ada datanya di periode ini, supaya
-        // tidak terbaca sebagai "0% closing".
-        conversionRate: adaDataTransisi ? pctOrNull(paidPeriode, handled) : null,
-        // Konversi SEKUNDER berbasis ORDER — pelengkap conversionRate,
-        // mengukur hal yang genuinely beda (order benar-benar dibuat, bukan
-        // cuma kartu Kanban digeser). Populasi pembilang sudah diselaraskan
-        // dengan `handled` (lihat catatan di query `orderingCustomers`).
-        orderConversionRate: pctOrNull(orderingCustomers, handled),
-        // Berapa % lead yang DIA PEGANG ditandai SPAM — bukan metrik
-        // performa, tapi pengawas: kalau tiba-tiba jauh di atas rata-rata
-        // tim, layak ditinjau manual (lihat catatan query `spamCount`).
-        spamCount,
-        spamRate: pctOrNull(spamCount, handled + spamCount),
-
-        // Hasil
-        orders,
-        grossValue: gross,
-        collectedValue: lunasAgg._sum.value || 0,
-        aov: orders > 0 ? Math.round(gross / orders) : 0,
-        target,
-        percentToTarget: target > 0 ? Math.round((gross / target) * 100) : null,
-        complaints: complaintCount,
-        complaintRate: orders > 0 ? Math.round((complaintCount / orders) * 1000) / 10 : null,
-      };
-    }));
+    // Baris "Team Lead" (Novi) — dihitung dengan FUNGSI YANG SAMA PERSIS
+    // (computeSalesRow) supaya angkanya sepadan/bisa dipercaya sama dengan
+    // baris sales biasa, TAPI dipanggil TERPISAH dari `users`/`rows` di atas
+    // dan ditambahkan SETELAH `t` (Total Tim) dihitung di bawah — sengaja
+    // TIDAK ikut masuk ke Total Tim 8 sales, supaya closing Novi tidak
+    // dobel-hitung ke angka tim yang sudah dihitung dari 8 sales itu sendiri.
+    // `target`-nya (dari SalesTarget miliknya sendiri) mewakili TARGET TIM
+    // gabungan (keputusan bisnis 25 Agustus 2026), bukan target closing
+    // pribadi — makanya frontend membandingkan progres ke target ini
+    // memakai grossValue TIM + grossValue pribadi Novi, bukan grossValue
+    // pribadi Novi saja (lihat SalesReportTab.jsx).
+    const teamLeadUsers = usersRaw.filter((u) => u.isSalesTeamLead);
+    const teamLeadRows = await Promise.all(
+      teamLeadUsers.map(async (u) => ({ ...(await computeSalesRow(u, ctx)), isTeamLead: true }))
+    );
 
     // "Menggantung SEKARANG" lintas periode — sinyal operasional yang tidak
     // boleh hilang hanya karena user memilih rentang "hari ini". Dipisah dari
@@ -947,7 +973,10 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       adaDataTransisi,
       stalledNow: stalledNowRaw[0]?.n || 0,
       unassignedInPeriod: unassignedInPeriodRaw,
-      rows: rows.sort((a, b) => b.grossValue - a.grossValue),
+      // teamLeadRows DITARUH SETELAH sort — dia tidak ikut ranking-by-revenue
+      // 8 sales biasa (lihat catatan di atas). Frontend memisahkannya via
+      // `isTeamLead`, bukan lewat posisi di array ini.
+      rows: [...rows.sort((a, b) => b.grossValue - a.grossValue), ...teamLeadRows],
       total: {
         ...t,
         replyRate:      t.handled > 0 ? Math.round((t.replied / t.handled) * 100) : null,
@@ -971,10 +1000,17 @@ analyticsRouter.get("/performance", async (req, res) => {
     // ikut menghitung Total Percakapan/Closing Rate di Laporan.
     const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
 
-    const [totalConversations, openCount, resolvedCount] = await Promise.all([
+    const [totalConversations, openCount, resolvedCount, statusGroups] = await Promise.all([
       prisma.conversation.count({ where: convWhere }),
       prisma.conversation.count({ where: { ...convWhere, status: "OPEN" } }),
       prisma.conversation.count({ where: { ...convWhere, status: "RESOLVED" } }),
+      // Ditambahkan 25 Agustus 2026 — ditemukan sambil menggabungkan tab
+      // Percakapan+Penjualan: PercakapanTab.jsx sudah lama membaca
+      // `perf.statusBreakdown` untuk chart "Status Percakapan", tapi field
+      // ini TIDAK PERNAH ada di response endpoint ini — chart itu sudah
+      // lama selalu kosong. Pola sama persis dengan channelBreakdown yang
+      // sudah ada & benar di /overview.
+      prisma.conversation.groupBy({ by: ["status"], where: convWhere, _count: { _all: true } }),
     ]);
 
     // DIRENAME dari `closingRate` (25 Agustus 2026) — nama lama menyesatkan:
@@ -1046,6 +1082,7 @@ analyticsRouter.get("/performance", async (req, res) => {
     res.json({
       totalConversations, openCount, resolvedCount, resolvedRate,
       avgResponseMinutes, monthlyResponseTime,
+      statusBreakdown: statusGroups.map((g) => ({ status: g.status, count: g._count._all })),
     });
   } catch (err) {
     console.error(err);

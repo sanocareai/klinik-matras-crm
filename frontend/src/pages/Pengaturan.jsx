@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Building2, Lock, Wifi, Download, Save, Eye, EyeOff, CheckCircle,
   MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Palette,
-  Bold, Italic, Strikethrough, Camera, Tag,
+  Bold, Italic, Strikethrough, Camera, Tag, Crown,
 } from "lucide-react";
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
@@ -490,7 +490,7 @@ function SalesTargetSection() {
     setLoading(true);
     try {
       const data = await api.getSalesTargets({ year, month });
-      setRows(data.map((r) => ({ userId: r.userId, name: r.name, targetValue: r.targetValue || 0 })));
+      setRows(data.map((r) => ({ userId: r.userId, name: r.name, targetValue: r.targetValue || 0, isSalesTeamLead: !!r.isSalesTeamLead })));
     } catch (err) {
       showMsg("error", "Gagal memuat data: " + err.message);
     } finally {
@@ -552,7 +552,22 @@ function SalesTargetSection() {
           <div className="mb-5 flex flex-col gap-2.5">
             {rows.map((row, idx) => (
               <div key={row.userId} className="flex items-center gap-3 rounded-btn bg-inset px-4 py-3">
-                <span className="min-w-[120px] text-sm font-semibold text-ink">{row.name}</span>
+                <div className="min-w-[120px]">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                    {row.name}
+                    {row.isSalesTeamLead && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                        title="Target TIM (gabungan closing timnya + closing pribadi) — bukan target closing pribadi seperti sales lain"
+                      >
+                        <Crown size={10} /> Team Lead
+                      </span>
+                    )}
+                  </span>
+                  {row.isSalesTeamLead && (
+                    <span className="mt-0.5 block text-[11px] text-ink3">Target tim (gabungan), bukan closing pribadi</span>
+                  )}
+                </div>
                 <div className="flex flex-1 items-center gap-1.5">
                   <span className="text-[13px] text-ink3">Rp</span>
                   <input

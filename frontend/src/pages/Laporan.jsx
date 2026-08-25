@@ -7,8 +7,7 @@ import { makeRange, toApiParams, formatRangeText } from "../lib/dateRange.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
 import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
-import PercakapanTab from "@/features/laporan/components/PercakapanTab.jsx";
-import PenjualanTab from "@/features/laporan/components/PenjualanTab.jsx";
+import PerformaTimTab from "@/features/laporan/components/PerformaTimTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
 import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
 import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
@@ -18,7 +17,9 @@ import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
 // "Performa CS" → "Sales": tab ini bukan lagi tabel performa 4 kolom, tapi
 // laporan penjualan per orang (beban percakapan → funnel → uang). Lihat
 // features/laporan/components/SalesReportTab.jsx.
-const TABS = ["Ringkasan", "Traffic", "Percakapan", "Penjualan", "Pipeline", "Sales"];
+// "Percakapan" + "Penjualan" DIGABUNG jadi "Performa Tim" (25 Agustus 2026,
+// permintaan owner) — lihat features/laporan/components/PerformaTimTab.jsx.
+const TABS = ["Ringkasan", "Traffic", "Performa Tim", "Pipeline", "Sales"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -165,12 +166,13 @@ export default function Laporan() {
                 <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
               </TabsContent>
 
-              <TabsContent value="Percakapan">
-                <PercakapanTab perf={perf} channelBreakdown={overview?.channelBreakdown || []} />
-              </TabsContent>
-
-              <TabsContent value="Penjualan">
-                <PenjualanTab overview={overview} summary={summary} />
+              <TabsContent value="Performa Tim">
+                <PerformaTimTab
+                  perf={perf} overview={overview} summary={summary}
+                  respTimeSeries={respTimeSeries}
+                  channelBreakdown={overview?.channelBreakdown || []}
+                  salesReport={salesReport}
+                />
               </TabsContent>
 
               <TabsContent value="Pipeline">

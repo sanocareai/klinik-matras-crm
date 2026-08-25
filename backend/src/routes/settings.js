@@ -43,8 +43,12 @@ settingsRouter.get("/sales-targets", requireAdmin, async (req, res) => {
   const month = Number(req.query.month || new Date().getMonth() + 1);
 
   try {
+    // OR isSalesTeamLead (25 Agustus 2026) — leader sales (mis. Novi) perlu
+    // bisa diset targetnya juga (target TIM, bukan closing pribadi), tapi
+    // dia role ADMIN jadi tidak lolos filter role==="SALES" biasa. TIDAK
+    // mengubah makna filter role==="SALES" untuk 8 sales reguler.
     const salesUsers = await prisma.user.findMany({
-      where: { role: "SALES" },
+      where: { OR: [{ role: "SALES" }, { isSalesTeamLead: true }] },
       orderBy: { name: "asc" },
     });
 
@@ -57,6 +61,7 @@ settingsRouter.get("/sales-targets", requireAdmin, async (req, res) => {
       userId:      u.id,
       name:        u.name,
       email:       u.email,
+      isSalesTeamLead: u.isSalesTeamLead,
       year,
       month,
       targetValue: targetMap[u.id]?.targetValue ?? 0,

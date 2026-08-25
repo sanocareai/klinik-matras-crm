@@ -426,8 +426,13 @@ const SHEET_PER_TAB = {
     ["Kota",      d.summary?.topCities?.length && sheetKota(d)],
   ],
   Traffic:   (d) => [["Traffic",    d.traffic && sheetTraffic(d)]],
-  Percakapan:(d) => [["Percakapan", d.perf && sheetPercakapan(d)]],
-  Penjualan: (d) => [["Penjualan",  d.summary && sheetPenjualan(d)]],
+  // "Percakapan" + "Penjualan" digabung jadi tab "Performa Tim" (25 Agustus
+  // 2026) — export-nya TETAP 2 sheet terpisah (fungsi sheetPercakapan/
+  // sheetPenjualan TIDAK diubah), cuma dipicu dari satu tombol tab yang sama.
+  "Performa Tim": (d) => [
+    ["Percakapan", d.perf && sheetPercakapan(d)],
+    ["Penjualan",  d.summary && sheetPenjualan(d)],
+  ],
   Pipeline:  (d) => [["Pipeline",   (d.funnel?.length || d.velocity) && sheetPipeline(d)]],
   Sales:     (d) => [["Sales",      d.salesReport?.rows?.length && sheetSales({ ...d, report: d.salesReport })]],
 };
