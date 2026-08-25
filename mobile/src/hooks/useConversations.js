@@ -17,8 +17,15 @@ function filterToStatus(filter) {
   if (filter === "OPEN") return "OPEN";
   if (filter === "PENDING") return "PENDING";
   if (filter === "CLOSED") return "RESOLVED";
-  return undefined; // 'ALL' | 'MINE' | 'UNREAD' | 'UNANSWERED'
+  return undefined; // 'ALL' | 'MINE' | 'UNREAD' | 'UNANSWERED' | 'UNASSIGNED' | 'STALLED' | 'BROADCAST'
 }
+
+// Tag universal yang dipasang backend ke SETIAP penerima broadcast — SAMA
+// PERSIS dengan frontend/src/features/inbox/hooks/useConversations.js
+// (TAG_BROADCAST), lihat backend/src/services/broadcastPolicy.js. Tab
+// "Belum Diambil"/"Menggantung"/"Broadcast" ditambahkan 25 Agustus 2026
+// supaya paritas dengan web — sebelumnya cuma ada di web.
+export const TAG_BROADCAST = "Broadcast";
 
 export function useConversations({ filter = "ALL", search = "", userId, salesFilterId } = {}) {
   const status = filterToStatus(filter);
@@ -27,13 +34,19 @@ export function useConversations({ filter = "ALL", search = "", userId, salesFil
   // yang sudah memaksa filter balik ke ALL begitu salesFilter dipilih, jadi
   // konflik ini seharusnya tidak pernah terjadi lewat UI normal.
   const assignedToId = salesFilterId || (filter === "MINE" ? userId : undefined);
+  const tag = filter === "BROADCAST" ? TAG_BROADCAST : undefined;
   const unread = filter === "UNREAD" ? true : undefined;
   const unanswered = filter === "UNANSWERED" ? true : undefined;
+  // "Belum Diambil" — percakapan assignedToId masih kosong. "Menggantung" —
+  // assigned TAPI belum dibalas >60 menit. Lihat catatan di backend
+  // routes/conversations.js GET / (definisi sama persis dengan web).
+  const unassigned = filter === "UNASSIGNED" ? true : undefined;
+  const stalled = filter === "STALLED" ? true : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId, unread, unanswered }],
+    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered, unassigned, stalled }],
     queryFn: ({ pageParam }) =>
-      api.getConversations({ status, search, assignedToId, unread, unanswered, cursor: pageParam || undefined }),
+      api.getConversations({ status, search, assignedToId, tag, unread, unanswered, unassigned, stalled, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });

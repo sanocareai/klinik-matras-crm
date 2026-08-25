@@ -14,7 +14,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
-  Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning, Users,
+  Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning, Users, UserX, Timer, Megaphone,
 } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -26,7 +26,7 @@ import ReorderFiltersModal from "../components/ReorderFiltersModal";
 import ChatBaruModal from "../components/ChatBaruModal";
 import SalesFilterModal from "../components/SalesFilterModal";
 import { InboxListSkeleton } from "../components/SkeletonLoader";
-import { useConversations } from "../hooks/useConversations";
+import { useConversations, TAG_BROADCAST } from "../hooks/useConversations";
 import {
   useConversationStore, useOrderedIds, useFilter, useConvSearchQuery, useSalesFilter,
 } from "../store/conversationStore";
@@ -54,6 +54,13 @@ const DEBOUNCE_MS = 300;
 // sebelumnya di ujung, mengharuskan scroll tab tiap buka Inbox.
 const TABS = [
   { key: "MINE", label: "Milik Saya" },
+  // Paritas dengan web (frontend FilterTabs.jsx) — ditambahkan 25 Agustus
+  // 2026, sebelumnya cuma ada di web. Definisi SAMA PERSIS: UNASSIGNED =
+  // assignedToId masih kosong (belum ada satu pun sales yang klaim).
+  // STALLED = sudah ada sales yang pegang, TAPI pesan terakhir customer
+  // sudah >60 menit tanpa balasan (lebih ketat dari UNANSWERED di bawah).
+  { key: "UNASSIGNED", label: "Belum Diambil" },
+  { key: "STALLED", label: "Menggantung" },
   { key: "ALL", label: "Semua" },
   { key: "UNREAD", label: "Belum Dibaca" },
   // D-031 (20 Agustus 2026) — "Belum Dibalas" BEDA dari "Belum Dibaca":
@@ -67,6 +74,9 @@ const TABS = [
   { key: "OPEN", label: "Terbuka" },
   { key: "PENDING", label: "Pending" },
   { key: "CLOSED", label: "Selesai" },
+  // Penerima broadcast — paritas dengan web (lihat TAG_BROADCAST di
+  // hooks/useConversations.js).
+  { key: "BROADCAST", label: "Broadcast" },
 ];
 
 const EMPTY_STATE = {
@@ -77,6 +87,9 @@ const EMPTY_STATE = {
   PENDING:    { Icon: Clock, text: "Tidak ada percakapan pending" },
   CLOSED:     { Icon: CheckCircle2, text: "Tidak ada percakapan selesai" },
   MINE:       { Icon: User, text: "Belum ada percakapan milik kamu" },
+  UNASSIGNED: { Icon: UserX, text: "Tidak ada percakapan belum diambil" },
+  STALLED:    { Icon: Timer, text: "Tidak ada percakapan menggantung" },
+  BROADCAST:  { Icon: Megaphone, text: "Belum ada penerima broadcast" },
 };
 
 // Cocokkan 1 conversation dengan filter + search AKTIF SEKARANG. Perlu
@@ -103,9 +116,15 @@ function matches(c, filter, userId, query, searchMatchedIds, salesFilter) {
   if (salesFilter) {
     if (c.assignedToId !== salesFilter.id) return false;
   } else if (filter === "MINE" && c.assignedToId !== userId) return false;
+  if (filter === "UNASSIGNED" && c.assignedToId) return false;
+  // "Menggantung" — assigned, pesan terakhir INBOUND, >60 menit. `isUnanswered`/
+  // `unansweredMinutes` datang dari backend (GET /conversations), definisi
+  // SAMA PERSIS dengan web (ConversationList/index.jsx#matches).
+  if (filter === "STALLED" && !(c.assignedToId && c.isUnanswered && (c.unansweredMinutes ?? 0) >= 60 && c.status !== "RESOLVED")) return false;
   if (filter === "OPEN" && c.status !== "OPEN") return false;
   if (filter === "PENDING" && c.status !== "PENDING") return false;
   if (filter === "CLOSED" && c.status !== "RESOLVED") return false;
+  if (filter === "BROADCAST" && !c.customer?.tags?.includes(TAG_BROADCAST)) return false;
   // `isUnanswered` datang dari backend (GET /conversations), dihitung dari
   // arah pesan TERAKHIR — lihat catatan definisi di TABS di atas.
   if (filter === "UNANSWERED" && !c.isUnanswered) return false;
@@ -435,7 +454,9 @@ export default function ChatListScreen({ navigation }) {
             t.key === "ALL" ? "semua" : t.key === "UNREAD" ? "belumDibaca" :
             t.key === "UNANSWERED" ? "belumDibalas" :
             t.key === "OPEN" ? "terbuka" : t.key === "PENDING" ? "pending" :
-            t.key === "CLOSED" ? "selesai" : "milikSaya"
+            t.key === "CLOSED" ? "selesai" :
+            t.key === "UNASSIGNED" ? "belumDiambil" : t.key === "STALLED" ? "menggantung" :
+            t.key === "BROADCAST" ? "broadcast" : "milikSaya"
           ] || 0;
           return (
             <PressableScale
