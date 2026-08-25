@@ -120,6 +120,7 @@ export default function OrdersScreen() {
   const [salesModalVisible, setSalesModalVisible] = useState(false);
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null); // { total, value } dari perStatus
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -133,12 +134,22 @@ export default function OrdersScreen() {
     if (!silent) setLoading(true);
     setErrorMsg(null);
     try {
-      const params = {};
+      // BUG YANG DIPERBAIKI (26 Agustus 2026): tidak pernah kirim `limit`,
+      // jadi diam-diam kena default backend (200, lihat routes/orders.js
+      // GET /) — TIDAK ADA hubungannya dengan periode/tanggal (endpoint ini
+      // tidak difilter tanggal sama sekali kalau `from`/`to` tidak dikirim).
+      // Production sekarang punya 344 order, jadi 144 di antaranya diam-diam
+      // hilang dari layar & dari angka "total" ini, tanpa peringatan apa pun
+      // — beda dari web (Orders.jsx) yang SUDAH mengecek `data.truncated`
+      // dan kasih tahu. Sekarang minta batas maksimal (500, plafon backend)
+      // dan tampilkan peringatan yang sama kalau tetap masih terpotong.
+      const params = { limit: 500 };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       if (salesFilter) params.salesId = salesFilter.id;
       const data = await api.getOrders(params);
       setOrders(data.items || []);
+      setTruncated(!!data.truncated);
       setSummary({
         total: (data.items || []).length,
         value: (data.items || []).reduce((s, o) => s + (o.value || 0), 0),
@@ -283,6 +294,13 @@ export default function OrdersScreen() {
         </View>
       )}
 
+      {!loading && truncated && (
+        <Text style={styles.truncatedNotice}>
+          Menampilkan {summary?.total ?? 0} order terbaru (dibatasi demi kecepatan). Pakai
+          pencarian atau filter untuk mempersempit.
+        </Text>
+      )}
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -388,6 +406,10 @@ function createStyles(tokens) {
       marginHorizontal: 16, marginBottom: 8,
     },
     summaryText: { fontSize: 12.5, color: tokens.color.textSecondary, fontWeight: "600" },
+    truncatedNotice: {
+      fontSize: 11, color: tokens.color.textMuted,
+      marginHorizontal: 16, marginBottom: 8, lineHeight: 15,
+    },
     mandekPill: {
       flexDirection: "row", alignItems: "center", gap: 4,
       paddingHorizontal: 9, paddingVertical: 4, borderRadius: tokens.radius.chip,
