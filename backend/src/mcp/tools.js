@@ -446,7 +446,9 @@ export function registerReadOnlyTools(server) {
       description:
         "Distribusi pelanggan per sumber lead (META_ADS, GOOGLE_ADS, WEBSITE_ORGANIC, INSTAGRAM, " +
         "WHATSAPP_DIRECT, REFERRAL, OTHER) beserta berapa yang akhirnya order dan total nilainya — " +
-        "dipakai untuk melihat channel mana yang paling menghasilkan.",
+        "dipakai untuk melihat channel mana yang paling menghasilkan. jumlahLead TERMASUK chat " +
+        "SPAM/junk (lihat jumlahSpam & spamRate) — sengaja tidak dibuang supaya channel bertargeting " +
+        "buruk tetap kelihatan buruk, bukan tersembunyi.",
       inputSchema: {
         dari: TANGGAL.optional().describe("Pelanggan dibuat sejak tanggal ini (WIB)."),
         sampai: TANGGAL.optional(),
@@ -456,16 +458,29 @@ export function registerReadOnlyTools(server) {
     async (args) => {
       const where = whereTanggal(args.dari, args.sampai);
 
-      const [semua, yangOrder] = await Promise.all([
+      // SPAM SENGAJA TIDAK dikecualikan dari `jumlahLead` (25 Agustus 2026) —
+      // ini metrik KUALITAS CHANNEL (sama seperti /source-performance di
+      // routes/analytics.js), bukan performa sales. Channel bertargeting
+      // buruk yang banyak menghasilkan chat junk/salah sasaran HARUS
+      // kelihatan buruk di sini; membuang SPAM dari penyebut akan
+      // menyembunyikan pemborosan belanja iklan. `spamRate` diekspos
+      // terpisah sebagai diagnostik.
+      const [semua, yangOrder, yangSpam] = await Promise.all([
         prisma.customer.groupBy({ by: ["leadSource"], where, _count: true, _sum: { orderValue: true } }),
         prisma.customer.groupBy({
           by: ["leadSource"],
           where: { ...where, orderCount: { gt: 0 } },
           _count: true,
         }),
+        prisma.customer.groupBy({
+          by: ["leadSource"],
+          where: { ...where, pipelineStage: "SPAM" },
+          _count: true,
+        }),
       ]);
 
       const petaOrder = Object.fromEntries(yangOrder.map((r) => [String(r.leadSource), r._count]));
+      const petaSpam = Object.fromEntries(yangSpam.map((r) => [String(r.leadSource), r._count]));
 
       return hasil({
         periode: { dari: args.dari ?? null, sampai: args.sampai ?? null, zonaWaktu: "WIB (Asia/Jakarta)" },
@@ -473,11 +488,14 @@ export function registerReadOnlyTools(server) {
           .map((r) => {
             const kunci = String(r.leadSource);
             const konversi = petaOrder[kunci] ?? 0;
+            const spam = petaSpam[kunci] ?? 0;
             return {
               sumberLead: r.leadSource ?? "BELUM_DIISI",
               jumlahLead: r._count,
               jumlahYangOrder: konversi,
               conversionRate: r._count ? Number(((konversi / r._count) * 100).toFixed(1)) : 0,
+              jumlahSpam: spam,
+              spamRate: r._count ? Number(((spam / r._count) * 100).toFixed(1)) : 0,
               totalNilaiOrder: r._sum.orderValue ?? 0,
             };
           })

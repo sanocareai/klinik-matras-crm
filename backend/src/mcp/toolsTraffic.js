@@ -125,7 +125,10 @@ export function registerTrafficTools(server) {
         "iklan Meta (URL post Instagram/Facebook dari atribusi Click-to-WhatsApp). Menjawab 'iklan " +
         "mana yang benar-benar menghasilkan penjualan, bukan cuma ramai chat'. " +
         "CATATAN PENTING: atribusi per-kreatif hanya tersedia untuk lead yang membawa data CTWA " +
-        "(aktif sejak 13 Agustus 2026), jadi cakupannya sebagian — lihat field cakupanCtwa di hasil.",
+        "(aktif sejak 13 Agustus 2026), jadi cakupannya sebagian — lihat field cakupanCtwa di hasil. " +
+        "`lead`/jumlah TERMASUK chat SPAM/junk (lihat spamRate per baris) — sengaja tidak dibuang " +
+        "supaya iklan bertargeting buruk tetap kelihatan buruk, bukan tersembunyi di balik penyebut " +
+        "yang sudah disaring.",
       inputSchema: {
         dari: TANGGAL.optional().describe("Lead yang masuk sejak tanggal ini (WIB). Kosong = sepanjang waktu."),
         sampai: TANGGAL.optional().describe("Sampai tanggal ini (WIB, inklusif)."),
@@ -142,7 +145,7 @@ export function registerTrafficTools(server) {
         ...(args.hanyaDikonfirmasi ? { leadSourceConfirmed: true } : {}),
       };
 
-      const [perSumber, perSumberOrder, totalLead, totalPunyaCtwa, perKreatif] = await Promise.all([
+      const [perSumber, perSumberOrder, perSumberSpam, totalLead, totalPunyaCtwa, perKreatif] = await Promise.all([
         prisma.customer.groupBy({
           by: ["leadSource"],
           where: whereDasar,
@@ -154,6 +157,15 @@ export function registerTrafficTools(server) {
           where: { ...whereDasar, orderCount: { gt: 0 } },
           _count: true,
         }),
+        // SPAM SENGAJA TIDAK dikecualikan dari `lead` di atas (25 Agustus
+        // 2026) — sama seperti /source-performance & ringkasan_sumber_lead:
+        // ini metrik kualitas channel, bukan performa sales. spamRate
+        // diekspos terpisah sebagai diagnostik, bukan dibuang dari penyebut.
+        prisma.customer.groupBy({
+          by: ["leadSource"],
+          where: { ...whereDasar, pipelineStage: "SPAM" },
+          _count: true,
+        }),
         prisma.customer.count({ where: whereDasar }),
         prisma.customer.count({ where: { ...whereDasar, ctwaClid: { not: null } } }),
         // Per kreatif iklan Meta. Agregat langsung di SQL supaya tidak menarik
@@ -162,6 +174,7 @@ export function registerTrafficTools(server) {
           SELECT "ctwa_source_url" AS kreatif,
                  COUNT(*)::int AS lead,
                  COUNT(*) FILTER (WHERE "orderCount" > 0)::int AS jadi_order,
+                 COUNT(*) FILTER (WHERE "pipelineStage" = 'SPAM')::int AS spam,
                  COALESCE(SUM("orderValue"), 0)::bigint AS nilai_order
           FROM "Customer"
           WHERE "ctwa_clid" IS NOT NULL
@@ -172,15 +185,19 @@ export function registerTrafficTools(server) {
       ]);
 
       const petaOrder = Object.fromEntries(perSumberOrder.map((r) => [String(r.leadSource), r._count]));
+      const petaSpam = Object.fromEntries(perSumberSpam.map((r) => [String(r.leadSource), r._count]));
       const sumber = perSumber
         .map((r) => {
           const kunci = String(r.leadSource);
           const jadiOrder = petaOrder[kunci] ?? 0;
+          const spam = petaSpam[kunci] ?? 0;
           return {
             sumberLead: r.leadSource ?? "BELUM_DIISI",
             lead: r._count,
             jadiOrder,
             conversionRate: r._count ? Number(((jadiOrder / r._count) * 100).toFixed(1)) : 0,
+            spam,
+            spamRate: r._count ? Number(((spam / r._count) * 100).toFixed(1)) : 0,
             totalNilaiOrder: Number(r._sum.orderValue ?? 0),
           };
         })
@@ -191,6 +208,8 @@ export function registerTrafficTools(server) {
         lead: r.lead,
         jadiOrder: r.jadi_order,
         conversionRate: r.lead ? Number(((r.jadi_order / r.lead) * 100).toFixed(1)) : 0,
+        spam: r.spam,
+        spamRate: r.lead ? Number(((r.spam / r.lead) * 100).toFixed(1)) : 0,
         totalNilaiOrder: Number(r.nilai_order),
       }));
 

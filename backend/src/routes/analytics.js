@@ -57,6 +57,15 @@ analyticsRouter.get("/overview", async (req, res) => {
     const orderWhere = buildDateWhere(from, to);
     const convWhere  = buildDateWhere(from, to);
     const custWhere  = buildDateWhere(from, to);
+    // Khusus untuk customer-count yang jadi dasar KPI "New Leads"/"Conversion"
+    // di Dashboard (bukan leadSourceGroups di bawah, yang tidak dipakai UI
+    // manapun) — restrukturisasi 25 Agustus 2026: chat junk/salah sasaran
+    // (SPAM) tidak boleh ikut membesarkan "New Leads" ataupun jadi penyebut
+    // "Conversion", sama alasannya dengan custWhereKonversi di
+    // /business-summary. Endpoint ini sebelumnya TERLEWAT saat fix itu
+    // dilakukan — ditemukan karena kartu "Conversion" di Dashboard tidak
+    // sinkron dengan Laporan.
+    const custWhereKonversi = { ...custWhere, pipelineStage: { not: "SPAM" } };
     const prevRange  = buildPrevRange(from, to);
 
     // Kalau ada date filter, hitung juga periode sebelumnya untuk persentase pertumbuhan
@@ -72,8 +81,8 @@ analyticsRouter.get("/overview", async (req, res) => {
       customersWithOrdersCount,
       repeatCustomersCount,
     ] = await Promise.all([
-      prisma.customer.count({ where: custWhere }),
-      prevRange ? prisma.customer.count({ where: { createdAt: prevRange } }) : Promise.resolve(null),
+      prisma.customer.count({ where: custWhereKonversi }),
+      prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" } } }) : Promise.resolve(null),
 
       prisma.order.aggregate({
         where: { ...orderWhere, status: { not: "CANCELLED" } },
@@ -162,13 +171,13 @@ analyticsRouter.get("/overview", async (req, res) => {
       // Jumlah pelanggan yang punya minimal 1 order
       prisma.customer.count({
         where: {
-          ...custWhere,
+          ...custWhereKonversi,
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }),
 
       // Repeat order — lihat catatan sama di /business-summary.
-      prisma.customer.count({ where: { ...custWhere, orderCount: { gte: 2 } } }),
+      prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
     ]);
 
     // BUG YANG DIPERBAIKI (26 Jul 2026): dulu `prev === 0 && curr > 0` →
@@ -192,8 +201,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       customersWithOrders: customersWithOrdersCount,
       repeatCustomers: repeatCustomersCount,
       // Dari pelanggan yang pernah order, berapa persen order LAGI.
-      repeatRate: customersWithOrdersCount > 0
-        ? Math.round((repeatCustomersCount / customersWithOrdersCount) * 1000) / 10 : null,
+      repeatRate: pctOrNull(repeatCustomersCount, customersWithOrdersCount),
 
       // Order
       totalOrders: orderAgg._count._all,

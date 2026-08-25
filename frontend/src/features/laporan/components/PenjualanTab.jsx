@@ -54,7 +54,11 @@ export default function PenjualanTab({ overview, summary }) {
           format={(v) => (avgPerOrder > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="per transaksi"
         />
-        <KpiCard index={3} label="Pelanggan Bertransaksi" numericValue={overview?.customersWithOrders || 0} />
+        {/* REVISI 25 Agustus 2026: dipindah dari overview.customersWithOrders
+            (endpoint /overview, waktu itu belum mengecualikan SPAM) ke
+            summary.konversi (dari /business-summary, sudah benar sejak awal)
+            — satu sumber kebenaran yang sama dengan tab Ringkasan. */}
+        <KpiCard index={3} label="Pelanggan Bertransaksi" numericValue={summary?.konversi?.customersWithOrders || 0} />
       </div>
 
       <ChartCard
