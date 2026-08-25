@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { toWIB, formatTanggal, formatTanggalPendek } from "@/utils/formatDate.js";
+import { toWIB, formatTanggal, formatTanggalPendek, formatJam } from "@/utils/formatDate.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SKEMA RENTANG TANGGAL — SATU SUMBER KEBENARAN
@@ -180,8 +180,19 @@ export function formatBucketTick(bucket, granularity) {
 export function compareLabel(range) {
   if (!range?.from || !range?.to) return null; // preset "Semua" — tidak ada pembanding
   const hari = toWIB(range.to).diff(toWIB(range.from), "day") + 1;
-  if (hari <= 1) return range.preset === "today" ? "vs kemarin" : "vs hari sebelumnya";
-  return `vs ${hari} hari sebelumnya`;
+  const dasar = hari <= 1
+    ? (range.preset === "today" ? "vs kemarin" : "vs hari sebelumnya")
+    : `vs ${hari} hari sebelumnya`;
+  // Kalau `to` = HARI INI yang belum selesai, tempel jendela jam elapsed
+  // (gaya Shopee Seller Center: "vs Kemarin pada 00.00-06.00") — cermin
+  // buildPrevRange() di backend/src/routes/analytics.js yang memotong
+  // periode pembanding ke elapsed time yang SAMA, bukan hari penuh. Tanpa
+  // ini growth% sudah benar tapi labelnya masih terkesan membandingkan
+  // hari penuh, jadi angkanya kelihatan aneh tanpa konteks jam.
+  if (range.to === fmt(todayWIB())) {
+    return `${dasar} pada 00.00-${formatJam(Date.now())}`;
+  }
+  return dasar;
 }
 
 // Panjang rentang dalam hari (inklusif). null kalau tanpa batas.
