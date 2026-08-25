@@ -761,6 +761,24 @@ conversationRouter.post("/:id/messages", async (req, res) => {
         data:  { assignedSalesId: req.user.id },
       });
     }
+    // BUG YANG DIPERBAIKI (25 Agustus 2026): klaim lewat jalur INI (langsung
+    // ketik balasan ke lead belum ber-pemilik) TIDAK PERNAH mencatat
+    // HandoverEvent — cuma klaim eksplisit via tombol "Ambil Percakapan"
+    // (routes/conversations.js /:id/takeover) yang tercatat. Karena jalur
+    // auto-assign INI yang dipakai hampir semua sales (bukan tombol Ambil),
+    // query "waktu respons" per-sales di analytics.js yang mengandalkan
+    // HandoverEvent untuk membedakan "jeda antrean tim" vs "jeda pribadi"
+    // nyaris tidak pernah menemukan event apa pun — jeda antrean tetap ikut
+    // kehitung sebagai keterlambatan pribadi walau fix-nya sudah di-deploy.
+    // `createdAt` DISAMAKAN dengan `message.createdAt` (bukan `new Date()`
+    // saat ini) — klaim & balasan pertama adalah AKSI YANG SAMA di jalur
+    // ini, jadi jeda personal yang bisa diatribusikan ke dia = 0.
+    await prisma.handoverEvent.create({
+      data: {
+        conversationId: conversation.id, fromUserId: null, toUserId: req.user.id,
+        reason: "auto-claim", createdAt: message.createdAt,
+      },
+    });
   }
 
   res.status(201).json(messagePayload);

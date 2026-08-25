@@ -671,6 +671,18 @@ async function computeSalesRow(u, ctx) {
     // (tim) atau /response-time-series, yang tetap harus menjawab
     // "berapa lama CUSTOMER menunggu balasan apa pun", bukan "salah
     // siapa". Jeda antrean tetap kelihatan lewat unassignedInPeriod.
+    //
+    // KOREKSI (25 Agustus 2026, sore) — fix di atas TIDAK BERFUNGSI untuk
+    // sebagian besar kasus nyata: klaim lewat "langsung ketik balasan ke
+    // lead belum ber-pemilik" (routes/conversations.js, auto-assign saat
+    // kirim pesan) TIDAK PERNAH mencatat HandoverEvent — cuma klik tombol
+    // "Ambil Percakapan" eksplisit yang tercatat, dan hampir semua sales
+    // memakai jalur pertama (diverifikasi: hanya 2 HandoverEvent cocok di
+    // seluruh Agustus 2026 utk kolom ini). Sekarang conversations.js JUGA
+    // mencatat HandoverEvent (reason:"auto-claim", createdAt disamakan
+    // dgn pesan balasannya) di jalur auto-assign itu, jadi query di sini
+    // akhirnya bertemu klaim yang dicari — clamp di atas efektif berlaku
+    // untuk KEDUA jalur klaim, bukan cuma yang jarang dipakai.
     prisma.$queryRaw`
       SELECT
         CASE WHEN claim."createdAt" IS NOT NULL AND claim."createdAt" > i."createdAt"
@@ -704,6 +716,12 @@ async function computeSalesRow(u, ctx) {
     // pertamanya > 60 menit. Ambang 60 menit mengikuti aturan takeover
     // yang sudah dipakai di Inbox. Sama seperti di atas, dihitung dari
     // `firstResponderId` — siapa yang benar-benar terlambat membalas.
+    //
+    // Pakai clamp klaim yang SAMA dengan `respRaw` di atas (LEFT JOIN
+    // LATERAL ke HandoverEvent) — tanpa ini, sales yang MENYELAMATKAN lead
+    // terbengkalai (antre lama sebelum diklaim) malah kena tanda "SLA
+    // terlanggar" untuk keterlambatan yang bukan salahnya. Lihat catatan
+    // panjang di `respRaw`.
     prisma.$queryRaw`
       SELECT COUNT(*)::int AS n FROM (
         SELECT i."conversationId"
@@ -721,8 +739,19 @@ async function computeSalesRow(u, ctx) {
             AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
           GROUP BY 1
         ) o ON i."conversationId" = o."conversationId"
+        LEFT JOIN LATERAL (
+          SELECT he."createdAt"
+          FROM "HandoverEvent" he
+          WHERE he."conversationId" = i."conversationId" AND he."toUserId" = ${u.id}
+            AND he."createdAt" <= o."createdAt"
+          ORDER BY he."createdAt" DESC
+          LIMIT 1
+        ) claim ON true
         WHERE o."createdAt" > i."createdAt"
-          AND EXTRACT(EPOCH FROM (o."createdAt" - i."createdAt")) / 60 > 60
+          AND EXTRACT(EPOCH FROM (
+            o."createdAt" - (CASE WHEN claim."createdAt" IS NOT NULL AND claim."createdAt" > i."createdAt"
+                                   THEN claim."createdAt" ELSE i."createdAt" END)
+          )) / 60 > 60
       ) t`,
 
     // BUG YANG DIPERBAIKI (5 Agustus 2026): `respRaw`/SLA breach di atas
