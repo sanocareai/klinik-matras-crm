@@ -3,7 +3,7 @@ import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import dayjs from "dayjs";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Crown } from "lucide-react";
 import { formatDuration, formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
@@ -17,6 +17,16 @@ const STATUS_COLOR = {
   OPEN: "bg-accent", PENDING: "bg-orange", RESOLVED: "bg-green",
 };
 const STATUS_LABEL = { OPEN: "Terbuka", PENDING: "Pending", RESOLVED: "Selesai" };
+
+// Kolom performa per-sales (dipindah dari KOLOM di SalesReportTab.jsx 25
+// Agustus 2026) — Nilai/Konversi/dst TIDAK ada di sini, itu urusan tab Sales.
+const KOLOM_PERFORMA = [
+  { k: "handledOwn", label: "Ditangani",  title: "Percakapan yang DIA KLAIM/PEGANG SENDIRI dari awal pada periode terpilih (tidak termasuk warisan Ambil Alih)" },
+  { k: "handledTakeover", label: "Warisan", title: "Percakapan yang berpindah ke dia lewat Ambil/Ambil Alih dari sales lain — bukan tanggung jawab penanganan asli dia" },
+  { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
+  { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
+  { k: "slaBreach",  label: "SLA >1j",    title: "Balasan pertama >60 menit, DITAMBAH percakapan yang ditutup (RESOLVED) tanpa satu pun balasan sama sekali — supaya lead yang diabaikan total sampai ditutup tidak lolos dari radar" },
+];
 
 function toneRespons(menit) {
   if (menit == null) return "text-ink3";
@@ -84,9 +94,10 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
   const totalStatus = statusBreakdown.reduce((s, r) => s + (r.count || 0), 0);
   const totalChannel = channelBreakdown.reduce((s, r) => s + (r.count || 0), 0);
 
-  // Baris sales biasa (tanpa Team Lead) — dipakai untuk chart per-sales di
-  // bawah, sama pola dengan SalesReportTab.jsx.
+  // Baris sales biasa (tanpa Team Lead) — dipakai untuk chart & tabel
+  // per-sales di bawah, sama pola dengan SalesReportTab.jsx.
   const rows = (salesReport?.rows || []).filter((r) => !r.isTeamLead);
+  const teamLeadRows = (salesReport?.rows || []).filter((r) => r.isTeamLead);
   const total = salesReport?.total;
   const aktif = rows.filter((r) => r.handled > 0);
   const maxHandled = Math.max(1, ...rows.map((r) => r.handledOwn));
@@ -313,8 +324,97 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
         </p>
       </ChartCard>
 
+      {/* ── Rincian performa per sales ───────────────────────────────────
+          Kolom kecepatan/beban chat (dipindah dari "Rincian Lengkap" di
+          SalesReportTab.jsx 25 Agustus 2026) — tabel Sales sekarang HANYA
+          kolom penjualan, tabel ini HANYA kolom performa. Data sumbernya
+          SAMA (`salesReport`), cuma kolom yang ditonjolkan beda. */}
+      {rows.length > 0 && (
+        <ChartCard index={8} title="Rincian Performa" description="Kecepatan & beban chat per sales — gulir ke samping untuk kolom lainnya. Metrik penjualan ada di tab Sales.">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-10 border-b border-line bg-surface px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
+                    Sales
+                  </th>
+                  {KOLOM_PERFORMA.map((c) => (
+                    <th
+                      key={c.k} title={c.title}
+                      className="whitespace-nowrap border-b border-line px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-ink3"
+                    >
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {teamLeadRows.map((r) => (
+                  <tr key={r.userId} className="border-b-2 border-line bg-blue-50">
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-blue-50 px-3 py-2.5 font-semibold text-ink">
+                      <span className="flex items-center gap-1.5">
+                        {r.name}
+                        <Crown size={11} className="text-blue-ink" />
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.handledTakeover}</td>
+                    <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", r.stalled > 0 ? "text-orange" : "text-ink3")}>
+                      {r.stalled}
+                    </td>
+                    <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", toneRespons(r.avgResponseMinutes))}>
+                      {formatDuration(r.avgResponseMinutes)}
+                    </td>
+                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
+                      {r.slaBreach}
+                    </td>
+                  </tr>
+                ))}
+                {rows.map((r) => (
+                  <tr key={r.userId} className="border-b border-line last:border-0">
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-surface px-3 py-2.5 font-semibold text-ink">
+                      {r.name}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.handledTakeover}</td>
+                    <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", r.stalled > 0 ? "text-orange" : "text-ink3")}>
+                      {r.stalled}
+                    </td>
+                    <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", toneRespons(r.avgResponseMinutes))}>
+                      {formatDuration(r.avgResponseMinutes)}
+                    </td>
+                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
+                      {r.slaBreach}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {total && (
+                <tfoot>
+                  <tr className="border-t-2 border-line font-bold">
+                    <td className="sticky left-0 z-10 bg-surface px-3 py-2.5 text-ink">Total tim</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.handledOwn}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{total.handledTakeover}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-orange">{total.stalled}</td>
+                    {/* Rata-rata respons tim SENGAJA em-dash: merata-ratakan
+                        rata-rata per orang tanpa membobot jumlah percakapan
+                        menghasilkan angka yang salah. */}
+                    <td className="px-3 py-2.5 text-right text-ink3">—</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-red">{total.slaBreach}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-ink3">
+            "Total tim" HANYA menjumlahkan 8 sales biasa — TIDAK termasuk
+            closing pribadi Team Lead, konsisten dengan tabel di tab Sales.
+          </p>
+        </ChartCard>
+      )}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <ChartCard index={8} title="Breakdown Channel" description="Asal percakapan masuk" empty={channelBreakdown.length === 0 ? "Belum ada data." : null}>
+        <ChartCard index={9} title="Breakdown Channel" description="Asal percakapan masuk" empty={channelBreakdown.length === 0 ? "Belum ada data." : null}>
           <div className="flex h-3 overflow-hidden rounded-full bg-inset">
             {channelBreakdown.map((row) => (
               <div
@@ -337,7 +437,7 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
           </div>
         </ChartCard>
 
-        <ChartCard index={9} title="Status Percakapan" description="Terbuka / Pending / Selesai" empty={statusBreakdown.length === 0 ? "Belum ada data." : null}>
+        <ChartCard index={10} title="Status Percakapan" description="Terbuka / Pending / Selesai" empty={statusBreakdown.length === 0 ? "Belum ada data." : null}>
           <div className="flex h-3 overflow-hidden rounded-full bg-inset">
             {statusBreakdown.map((row) => (
               <div
