@@ -18,7 +18,18 @@ import {
 // global/akumulatif — conversation yang pernah ke-load di bawah filter lain
 // tetap ada di cache, jadi list yang tampil harus selalu disaring ulang di
 // sini supaya konsisten dengan filter yang sedang aktif.
-function matches(c, filter, userId, query) {
+//
+// BUG YANG DIPERBAIKI (25 Agustus 2026): `query` SEBELUMNYA dicocokkan ulang
+// di sini dari field lokal (nama/nomor/IG/nama grup) — itu MEMBUANG hasil
+// yang server sudah benar temukan lewat ISI PESAN (backend/src/routes/
+// conversations.js `search` param sudah cocok ke Message.content sejak 28
+// Juli 2026), karena field itu tidak pernah tersimpan di conversationsById
+// (cuma metadata percakapan). Efeknya: cari kata yang cuma ada di isi pesan
+// (bukan di nama/nomor pelanggan) diam-diam mengembalikan 0 hasil di web,
+// walau backend & mobile (yang sudah diperbaiki lebih dulu, lihat
+// mobile/src/screens/ChatListScreen.js#matches) sudah benar. Sekarang pakai
+// `searchMatchedIds` (id yang dikonfirmasi SERVER), sama seperti mobile.
+function matches(c, filter, userId, query, searchMatchedIds) {
   if (!c) return false;
   if (filter === "MINE" && c.assignedToId !== userId) return false;
   if (filter === "UNASSIGNED" && c.assignedToId) return false;
@@ -37,11 +48,7 @@ function matches(c, filter, userId, query) {
   // unreadCount bisa 0 padahal unread=true dari toggle manual "Tandai
   // Belum Dibaca", `??` tidak fallback untuk 0).
   if (filter === "UNREAD" && !(c.unread || (c.unreadCount ?? 0) > 0)) return false;
-  if (query) {
-    const hay = [c.customer?.name, c.customer?.phone, c.customer?.instagramHandle, c.groupName]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (!hay.includes(query)) return false;
-  }
+  if (query && !searchMatchedIds?.has(c.id)) return false;
   return true;
 }
 
@@ -107,13 +114,24 @@ export default function ConversationList({ userId }) {
   const selectedConvs = [...selectedIds].map((id) => conversationsById[id]).filter(Boolean);
   const allSelectedPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.pinned);
 
-  const { isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useConversations({ filter, search, userId });
+
+  // Id percakapan yang cocok `search` MENURUT SERVER (termasuk isi pesan) —
+  // lihat catatan panjang di matches() kenapa ini tidak dihitung ulang dari
+  // field lokal. `data` di sini selalu hasil query untuk `search` yang
+  // SEDANG aktif (queryKey ikut berubah tiap search berubah), jadi tidak
+  // perlu filter tambahan by staleness. Pola sama persis dengan
+  // mobile/src/screens/ChatListScreen.js.
+  const searchMatchedIds = useMemo(() => {
+    if (!search.trim()) return null;
+    return new Set((data?.pages ?? []).flatMap((p) => p?.data ?? []).map((c) => c.id));
+  }, [data, search]);
 
   const visibleIds = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return orderedIds.filter((id) => matches(conversationsById[id], filter, userId, q));
-  }, [orderedIds, conversationsById, filter, userId, search]);
+    return orderedIds.filter((id) => matches(conversationsById[id], filter, userId, q, searchMatchedIds));
+  }, [orderedIds, conversationsById, filter, userId, search, searchMatchedIds]);
 
   function handleEndReached() {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
