@@ -54,14 +54,29 @@ function buildDateWhere(from, to, field = "createdAt") {
 
 // Periode sebelumnya dengan PANJANG SAMA, tepat bersambung sebelum `from`.
 // Contoh: 1-30 Juni (30 hari) → periode sebelumnya 2-31 Mei (30 hari).
+//
+// BUG YANG DIPERBAIKI (26 Agustus 2026): kalau `to` = HARI INI yang belum
+// selesai (mis. jam 10 pagi), periode SEKARANG cuma benar-benar berisi data
+// 00:00-10:00 (belum ada data masa depan) — tapi dulu dibandingkan ke
+// periode sebelumnya PENUH 24 jam. Itu bikin growth% selalu negatif di
+// jam-jam awal hari, bukan karena performa turun tapi cuma karena harinya
+// belum selesai. Ini persis yang diselesaikan Shopee Seller Center lewat
+// comparison window "vs Kemarin pada 00:00-X:00" — dipotong ke elapsed time
+// yang SAMA, bukan hari penuh. Sekarang `lt` ikut dipotong proporsional
+// (elapsedMs), jadi kedua sisi membandingkan jam yang sama-sama sudah
+// berjalan. Untuk periode yang SUDAH SELESAI (mis. "7 hari terakhir" yang
+// tidak mencakup hari ini), elapsedMs === panjangMs, jadi `lt` tetap sama
+// seperti sebelumnya — tidak ada regresi untuk kasus yang sudah benar.
 function buildPrevRange(from, to) {
   if (!from || !to) return null;
   const mulai   = startOfDayWIB(from);
   const selesai = endOfDayExclusiveWIB(to);
   const panjangMs = selesai - mulai;
+  const elapsedMs = Math.min(panjangMs, Math.max(0, Date.now() - mulai.getTime()));
+  const prevMulai = mulai.getTime() - panjangMs;
   return {
-    gte: new Date(mulai.getTime() - panjangMs),
-    lt:  mulai,
+    gte: new Date(prevMulai),
+    lt:  new Date(prevMulai + elapsedMs),
   };
 }
 
