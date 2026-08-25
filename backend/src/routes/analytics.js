@@ -911,6 +911,19 @@ analyticsRouter.get("/sales-report", async (req, res) => {
         AND m.direction = 'INBOUND'
         AND m."createdAt" < NOW() - INTERVAL '60 minutes'`;
 
+    // Percakapan DALAM PERIODE yang belum diambil siapa pun — ini bagian
+    // terbesar dari selisih "Total Percakapan" (/performance, semua
+    // percakapan) vs "Percakapan Ditangani" (total.handled di bawah, cuma
+    // yang dipegang salah satu sales AKTIF). Ditemukan 25 Agustus 2026 lewat
+    // pertanyaan user kenapa dua angka itu beda — sebelumnya selisihnya
+    // nyata tapi tidak pernah dijelaskan di UI mana pun. Sisa selisih kecil
+    // (percakapan dipegang admin/non-SALES seperti Novi/Natasha) SENGAJA
+    // tidak dipecah lagi di sini — porsinya kecil, tidak sepadan dengan
+    // query tambahan.
+    const unassignedInPeriodRaw = await prisma.conversation.count({
+      where: { ...convWhere, assignedToId: null },
+    });
+
     // Total tim — supaya UI tidak menjumlahkan sendiri (dan tidak salah
     // menjumlahkan rata-rata, kesalahan klasik di laporan seperti ini).
     const t = rows.reduce((a, r) => ({
@@ -933,6 +946,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
       // berbasis transisi stage.
       adaDataTransisi,
       stalledNow: stalledNowRaw[0]?.n || 0,
+      unassignedInPeriod: unassignedInPeriodRaw,
       rows: rows.sort((a, b) => b.grossValue - a.grossValue),
       total: {
         ...t,

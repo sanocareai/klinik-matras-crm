@@ -182,6 +182,7 @@ export default function Laporan() {
                   report={salesReport}
                   respTimeSeries={respTimeSeries}
                   grossTotalPerusahaan={summary?.uang?.grossValue}
+                  totalConversations={perf?.totalConversations}
                   onExport={handleExport}
                 />
               </TabsContent>

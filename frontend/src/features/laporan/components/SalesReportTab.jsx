@@ -92,7 +92,7 @@ const KOLOM = [
   { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
 ];
 
-export default function SalesReportTab({ report, respTimeSeries, grossTotalPerusahaan, onExport }) {
+export default function SalesReportTab({ report, respTimeSeries, grossTotalPerusahaan, totalConversations, onExport }) {
   const rows  = report?.rows || [];
   const total = report?.total;
 
@@ -147,7 +147,11 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
         <KpiCard
           index={0} label="Percakapan Ditangani"
           numericValue={total?.handled || 0}
-          sub={`${aktif.length} sales aktif dari ${rows.length}`}
+          sub={
+            totalConversations != null
+              ? `${aktif.length} sales aktif dari ${rows.length} · dari ${totalConversations.toLocaleString("id-ID")} total percakapan`
+              : `${aktif.length} sales aktif dari ${rows.length}`
+          }
         />
         <KpiCard
           index={1} label="Konversi Tim"
@@ -168,13 +172,26 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
         />
       </div>
 
-      {/* Menggantung = beban nyata yang masih menempel sekarang, bukan
-          statistik historis. Kalau ada, ini hal PERTAMA yang harus dikerjakan
-          tim hari ini — jadi ditaruh sebagai peringatan, bukan sekadar kolom. */}
-      {(report?.stalledNow > 0 || total?.slaBreach > 0) && (
+      {/* Menggantung/belum diambil = beban nyata yang masih menempel sekarang,
+          bukan statistik historis. Kalau ada, ini hal PERTAMA yang harus
+          dikerjakan tim hari ini — jadi ditaruh sebagai peringatan, bukan
+          sekadar kolom. */}
+      {(report?.stalledNow > 0 || total?.slaBreach > 0 || report?.unassignedInPeriod > 0) && (
         <div className="flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
           <AlertTriangle className="mt-0.5 shrink-0 text-orange" size={16} />
           <p className="text-xs leading-relaxed text-ink">
+            {/* BARU 25 Agustus 2026: ditemukan lewat pertanyaan "kenapa Total
+                Percakapan (tab Percakapan) beda dengan Percakapan Ditangani
+                di sini" — jawabannya sebagian besar adalah percakapan ini,
+                yang belum ke-assign ke siapa pun jadi tidak masuk hitungan
+                sales manapun. Ditaruh PALING AWAL karena ini yang paling
+                mendesak: bukan cuma lambat dibalas, malah belum ada yang pegang. */}
+            {report?.unassignedInPeriod > 0 && (
+              <><strong>{report.unassignedInPeriod} percakapan</strong> pada periode ini
+              BELUM DIAMBIL siapa pun — tidak masuk hitungan sales manapun di tabel
+              bawah, dan ini sebabnya "Percakapan Ditangani" di sini lebih kecil
+              dari "Total Percakapan" di tab Percakapan. </>
+            )}
             {report?.stalledNow > 0 && (
               <><strong>{report.stalledNow} percakapan</strong> sedang menggantung
               SEKARANG — pesan terakhir dari customer dan sudah lebih dari 60 menit

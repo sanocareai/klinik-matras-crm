@@ -35,9 +35,18 @@ export default function Dashboard({ user }) {
   const d = useDashboardData(range);
 
   const ov = d.overview.data;
+  // "Conversion" = PELANGGAN DISTINCT yang order (customersWithOrders) /
+  // total lead baru (totalCustomers) — BUKAN total jumlah order (totalOrders)
+  // dibagi lead. Sengaja begitu: satu pelanggan yang order 2x dalam periode
+  // yang sama tidak boleh dihitung sebagai "2 konversi". Ditemukan berulang
+  // kali menimbulkan pertanyaan "kenapa gak sama dengan Total Orders/New
+  // Leads?" — makanya angka mentahnya (bukan cuma %) ditampilkan di
+  // deltaSuffix di bawah, supaya bedanya kelihatan langsung tanpa perlu
+  // dijelaskan ulang tiap kali. null (bukan 0%) kalau belum ada lead sama
+  // sekali di periode ini.
   const konversi = ov && ov.totalCustomers > 0
     ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
-    : 0;
+    : null;
   const userName = user?.name?.split(" ")[0] || "Anda";
 
   return (
@@ -69,8 +78,11 @@ export default function Dashboard({ user }) {
           />
           <StatCard
             label="Conversion" icon={Target} depth={4}
-            value={`${konversi}%`}
-            deltaSuffix="pelanggan yang order"
+            value={konversi != null ? `${konversi}%` : "—"}
+            deltaSuffix={
+              ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
+                 : "pelanggan yang order"
+            }
           />
         </section>
 
