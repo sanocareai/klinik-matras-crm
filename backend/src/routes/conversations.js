@@ -1461,7 +1461,9 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     if (cid && alreadySent.has(cid)) {
       // Gambar ini sudah sukses terkirim di percobaan sebelumnya (retry) —
       // JANGAN kirim ulang ke WAHA, cukup ikutkan hasil lama di response.
-      savedMessages.push(alreadySent.get(cid));
+      const old = alreadySent.get(cid);
+      savedMessages.push(old);
+      emitNewMessage(conversation.id, old);
       continue;
     }
 
@@ -1500,6 +1502,17 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
         msg = await prisma.message.findUnique({ where: { clientId: cid } });
       }
       savedMessages.push(msg);
+      // BUG YANG DIPERBAIKI (26 Agustus 2026 — laporan "loading lama pas
+      // kirim banyak media"): sebelumnya SEMUA gambar di-emit BARENGAN di
+      // akhir (setelah loop+delay 1500ms/gambar selesai total), jadi HP
+      // sales cuma lihat 1 spinner diam berpuluh detik lalu SEMUA foto
+      // muncul sekaligus. Emit di sini — PER gambar, begitu benar-benar
+      // terkirim — supaya tiap foto langsung nongol di chat window secara
+      // real-time selagi loop masih jalan mengirim foto berikutnya. Delay
+      // 1500ms/gambar SENGAJA TETAP ADA (anti-ban WhatsApp, lihat catatan
+      // di atas) — ini cuma mengubah KAPAN klien tahu progresnya, bukan
+      // kecepatan kirim ke WhatsApp itu sendiri.
+      emitNewMessage(conversation.id, msg);
     } catch (err) {
       console.error(`[send-product] Gagal kirim gambar ${img.id}:`, err.message);
     }
@@ -1532,7 +1545,8 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
     where: { id: conversation.id },
     data:  productConvData,
   });
-  savedMessages.forEach((m) => emitNewMessage(conversation.id, m));
+  // emitNewMessage per-gambar SUDAH dilakukan di dalam loop di atas — di
+  // sini cuma perlu emitConversationUpdate (preview/lastMessageAt final).
   emitConversationUpdate(updatedConvProduct);
   if (lastSaved) await autoClaimIfUnowned(conversation, req.user, lastSaved.createdAt);
 
@@ -1655,6 +1669,10 @@ conversationRouter.post("/:id/send-documentation", async (req, res) => {
         },
       });
       savedMessages.push(msg);
+      // Sama seperti /send-product — emit per foto begitu terkirim, bukan
+      // dibatch di akhir, supaya progress terasa real-time (lihat catatan
+      // panjang di /send-product).
+      emitNewMessage(conversation.id, msg);
     } catch (err) {
       console.error(`[send-documentation] Gagal kirim foto ${url}:`, err.message);
     }
@@ -1676,7 +1694,7 @@ conversationRouter.post("/:id/send-documentation", async (req, res) => {
       ...(lastSaved ? { lastMessagePreview: buildMessagePreview(lastSaved.content, lastSaved.mediaType) } : {}),
     },
   });
-  savedMessages.forEach((m) => emitNewMessage(conversation.id, m));
+  // emitNewMessage per-foto sudah dilakukan di dalam loop di atas.
   emitConversationUpdate(updatedConvDoc);
 
   res.json({ sent: savedMessages.length, total: flatPhotos.length, messages: savedMessages });

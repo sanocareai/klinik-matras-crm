@@ -92,6 +92,9 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
   const [activeUid, setActiveUid] = useState(null);
   const [hd, setHd] = useState(false);
   const [sending, setSending] = useState(false);
+  // { done, total } — cuma dipakai saat kirim banyak (>1) sekaligus, supaya
+  // spinner polos tidak terasa seperti macet (lihat catatan di handleSendAll).
+  const [sendProgress, setSendProgress] = useState(null);
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [sendingProduct, setSendingProduct] = useState(false);
   const [kontakList, setKontakList] = useState(null); // null = picker tertutup
@@ -292,21 +295,34 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
     setActiveUid(null);
   }
 
+  // BUG (fix, ditemukan lewat laporan "loading lama pas kirim banyak media"):
+  // kirim ke WhatsApp WAJIB sekuensial satu-per-satu (lihat catatan di
+  // findRecentlySentMedia soal WAHA tidak bisa diandalkan menerima beberapa
+  // kirim media BERSAMAAN — itu TIDAK diubah di sini, tetap serial demi
+  // reliabilitas). TAPI kompresi gambar (kerja lokal murni, sama sekali
+  // tidak menyentuh WhatsApp/WAHA) sebelumnya ikut sekuensial DI DALAM loop
+  // yang sama — untuk 5-6 foto, waktu kompresi ikut menumpuk di depan tiap
+  // giliran kirim, padahal bisa dikerjakan SEKALIGUS lebih dulu. Dipisah:
+  // kompres semua paralel dulu, baru loop kirim (tetap serial). Progress
+  // "X/Y" ditambahkan supaya spinner polos yang lama tidak terasa macet.
   async function handleSendAll() {
     setSending(true);
+    const showProgress = items.length > 1;
+    if (showProgress) setSendProgress({ done: 0, total: items.length });
+
+    const prepared = await Promise.all(items.map(async (item) => {
+      if (item.mediaType === "image" && !hd) {
+        const uri = await compressImage(item.uri);
+        return { ...item, uri, type: "image/jpeg", name: item.name.replace(/\.[^.]+$/, ".jpg") };
+      }
+      return item;
+    }));
+
     const remaining = [];
-    for (const item of items) {
+    for (const item of prepared) {
       const startedAt = Date.now();
       try {
-        let uri = item.uri;
-        let type = item.type;
-        let name = item.name;
-        if (item.mediaType === "image" && !hd) {
-          uri = await compressImage(uri);
-          type = "image/jpeg";
-          name = name.replace(/\.[^.]+$/, ".jpg");
-        }
-        const file = { uri, name, type };
+        const file = { uri: item.uri, name: item.name, type: item.type };
         const sendAs = item.mediaType === "document" ? "document" : "media";
         const msg = await api.sendMedia(conversationId, file, item.caption.trim(), sendAs);
         onSent?.(msg);
@@ -318,10 +334,12 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
           remaining.push({ ...item, error: err.message });
         }
       }
+      if (showProgress) setSendProgress((p) => ({ ...p, done: p.done + 1 }));
     }
     setItems(remaining);
     if (!remaining.some((i) => i.uid === activeUid)) setActiveUid(remaining[0]?.uid || null);
     setSending(false);
+    setSendProgress(null);
   }
 
   // Grid pilihan lampiran — gaya WhatsApp: kotak-kotak berwarna, bukan daftar
@@ -538,9 +556,16 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
               onPress={handleSendAll}
               disabled={sending}
             >
-              {sending
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.previewSendText}>Kirim{items.length > 1 ? ` (${items.length})` : ""}</Text>}
+              {sending ? (
+                sendProgress ? (
+                  <View style={styles.sendProgressRow}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.previewSendText}>{sendProgress.done}/{sendProgress.total}</Text>
+                  </View>
+                ) : <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.previewSendText}>Kirim{items.length > 1 ? ` (${items.length})` : ""}</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -651,5 +676,6 @@ function createStyles(tokens) {
   },
   previewSendBtnDisabled: { opacity: 0.6 },
   previewSendText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  sendProgressRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   });
 }
