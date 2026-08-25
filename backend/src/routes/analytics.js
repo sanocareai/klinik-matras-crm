@@ -653,8 +653,29 @@ async function computeSalesRow(u, ctx) {
     // Ambil PASANGAN mentah (bukan AVG di SQL) — rata-ratanya dihitung di JS
     // via effectiveResponseMinutes (jam operasional 09-21 WIB), lihat
     // avgEffectiveMinutes() & catatan panjang di utils/wib.js.
+    //
+    // ATRIBUSI DIPERBAIKI LAGI (25 Agustus 2026) — kasus nyata yang
+    // ditemukan owner: lead masuk jam 09:20 TANPA ada yang pegang, baru
+    // diambil sales jam 10:00 lalu LANGSUNG dibalas. Sebelum ini, jeda
+    // 40 menit "menganggur di antrean" itu ikut kehitung sebagai waktu
+    // respons SALES yang mengambilnya — menghukum orang yang justru
+    // menyelamatkan lead terbengkalai, padahal 40 menit itu salah TIM
+    // (tidak ada yang ambil), bukan salah dia. `inboundAt` sekarang
+    // di-clamp ke waktu dia BENAR-BENAR memegang percakapan itu (klaim
+    // pertama TANPA fromUserId, atau ambil alih — HandoverEvent
+    // toUserId=dia, SEBELUM/pas balasan pertamanya), kalau itu LEBIH
+    // BARU dari pesan masuknya. Kalau dia sudah pegang dari awal (tidak
+    // ada jeda antrean), tidak ada bedanya dengan sebelumnya.
+    //
+    // SENGAJA cuma di sini (metrik PER-SALES) — bukan di /performance
+    // (tim) atau /response-time-series, yang tetap harus menjawab
+    // "berapa lama CUSTOMER menunggu balasan apa pun", bukan "salah
+    // siapa". Jeda antrean tetap kelihatan lewat unassignedInPeriod.
     prisma.$queryRaw`
-      SELECT i."createdAt" AS "inboundAt", o."createdAt" AS "outboundAt"
+      SELECT
+        CASE WHEN claim."createdAt" IS NOT NULL AND claim."createdAt" > i."createdAt"
+             THEN claim."createdAt" ELSE i."createdAt" END AS "inboundAt",
+        o."createdAt" AS "outboundAt"
       FROM (
         SELECT m."conversationId", MIN(m."createdAt") AS "createdAt"
         FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
@@ -669,6 +690,14 @@ async function computeSalesRow(u, ctx) {
           AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
         GROUP BY 1
       ) o ON i."conversationId" = o."conversationId"
+      LEFT JOIN LATERAL (
+        SELECT he."createdAt"
+        FROM "HandoverEvent" he
+        WHERE he."conversationId" = i."conversationId" AND he."toUserId" = ${u.id}
+          AND he."createdAt" <= o."createdAt"
+        ORDER BY he."createdAt" DESC
+        LIMIT 1
+      ) claim ON true
       WHERE o."createdAt" > i."createdAt"`,
 
     // SLA breach = percakapan (dibuat dalam rentang) yang respons
