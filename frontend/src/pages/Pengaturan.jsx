@@ -557,7 +557,7 @@ function SalesTargetSection() {
                     {row.name}
                     {row.isSalesTeamLead && (
                       <span
-                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                        className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-ink"
                         title="Target TIM (gabungan closing timnya + closing pribadi) — bukan target closing pribadi seperti sales lain"
                       >
                         <Crown size={10} /> Team Lead

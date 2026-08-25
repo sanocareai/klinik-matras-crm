@@ -242,13 +242,13 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
         {teamLeadRows.length > 0 && (
           <div className="mb-3 flex flex-col gap-3 border-b border-line pb-3">
             {teamLeadRows.map((r) => (
-              <div key={r.userId} className="flex flex-col gap-3 rounded-xl bg-amber-50 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
+              <div key={r.userId} className="flex flex-col gap-3 rounded-xl bg-blue-50 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <Avatar name={r.name} src={r.avatarUrl} size="md" />
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
                       {r.name}
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-ink">
                         <Crown size={10} /> Team Lead
                       </span>
                     </p>
@@ -501,11 +501,11 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
               </thead>
               <tbody>
                 {teamLeadRows.map((r) => (
-                  <tr key={r.userId} className="border-b-2 border-line bg-amber-50">
-                    <td className="sticky left-0 z-10 whitespace-nowrap bg-amber-50 px-3 py-2.5 font-semibold text-ink">
+                  <tr key={r.userId} className="border-b-2 border-line bg-blue-50">
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-blue-50 px-3 py-2.5 font-semibold text-ink">
                       <span className="flex items-center gap-1.5">
                         {r.name}
-                        <Crown size={11} className="text-amber-700" />
+                        <Crown size={11} className="text-blue-ink" />
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
