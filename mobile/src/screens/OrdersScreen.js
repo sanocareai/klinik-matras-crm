@@ -146,6 +146,12 @@ export default function OrdersScreen() {
       const params = { limit: 500 };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      // Tab "Semua" (statusFilter kosong) sekarang berarti "semua yang masih
+      // aktif" (26 Agustus 2026) -- 267 dari 344 order production sudah
+      // DELIVERED/CANCELLED, tidak perlu ikut ditrack. Klik tab "Delivered"/
+      // "Cancelled" eksplisit tetap menampilkannya seperti biasa (lihat
+      // catatan `hideFinished` di routes/orders.js).
+      else params.hideFinished = "true";
       if (salesFilter) params.salesId = salesFilter.id;
       const data = await api.getOrders(params);
       setOrders(data.items || []);

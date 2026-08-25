@@ -307,7 +307,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished } = req.query;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
 
     // Filter per sales & per tahap pipeline SAMA-SAMA lewat Customer (bukan
@@ -320,8 +320,19 @@ orderRouter.get("/", async (req, res) => {
       ...(pipelineStage && { pipelineStage }),
     };
 
+    // ?hideFinished=true — 26 Agustus 2026, ditemukan lewat pertanyaan owner
+    // soal "200 order" yang ternyata cuma plafon default (lihat catatan
+    // `limit` di atas), sementara dari 344 order production, 267 di
+    // antaranya (DELIVERED+CANCELLED) sudah selesai/tertutup dan tidak perlu
+    // ditrack lagi. TIDAK dipakai kalau `status` eksplisit dikirim (mis. tab
+    // "Delivered" diklik) — orang yang SENGAJA mau lihat status tertutup
+    // tetap bisa, ini cuma default "Semua" supaya berarti "semua yang masih
+    // aktif". SENGAJA bukan filter tanggal (mis. 30 hari) — order lama yang
+    // MASIH nyangkut di produksi (justru yang paling butuh perhatian, lihat
+    // fitur "mandek" di mobile OrdersScreen.js) tidak boleh ikut hilang
+    // hanya karena tanggal `createdAt`-nya sudah lewat dari jendela waktu.
     const where = {
-      ...(status        && { status }),
+      ...(status ? { status } : hideFinished === "true" ? { status: { notIn: ["DELIVERED", "CANCELLED"] } } : {}),
       ...(category      && { category }),
       ...(paymentStatus && { paymentStatus }),
       ...(hasComplaint === "true" && { hasComplaint: true }),
