@@ -10,6 +10,7 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { formatDuration, formatRupiah, SOURCE_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel } from "@/lib/dateRange.js";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 
@@ -138,6 +139,7 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           numericValue={traffic.totalLeads || 0}
           growth={traffic.growthPct} compareLabel={cmp}
           sub={`periode sebelumnya: ${(traffic.prevTotalLeads || 0).toLocaleString("id-ID")} lead`}
+          tooltip="Jumlah pelanggan baru (Customer dibuat) di periode yang dipilih di atas, dari semua sumber."
         />
         <KpiCard
           index={1} label="Rata-rata per Hari"
@@ -162,18 +164,21 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           numericValue={traffic.busiestHours?.[0]?.jam ?? 0}
           format={(v) => `${String(Math.round(v)).padStart(2, "0")}:00`}
           sub={traffic.busiestHours?.[0] ? `${traffic.busiestHours[0].leads} lead masuk di jam ini` : "—"}
+          tooltip="Jam WIB (00-23) dengan jumlah lead masuk terbanyak, dijumlahkan dari seluruh hari di periode yang dipilih."
         />
         <KpiCard
           index={4} label="Respons Rata-rata"
           numericValue={traffic.avgResponseMinutes ?? 0}
           format={(v) => traffic.avgResponseMinutes != null ? formatDuration(traffic.avgResponseMinutes) : "—"}
           sub="Rata-rata waktu balas pertama, terbobot per jumlah percakapan — bukan rata-rata dari 24 angka per-jam"
+          tooltip="Waktu dari pesan pertama pelanggan sampai balasan pertama sales, dihitung dalam jam operasional (09-21 WIB)."
         />
         <KpiCard
           index={5} label="Atribusi Sumber"
           numericValue={atribusi?.rate || 0}
           format={(v) => `${v.toFixed(1)}%`}
           sub={`${atribusi?.teridentifikasi || 0} dari ${atribusi?.total || 0} lead diketahui sumbernya`}
+          tooltip="Persentase lead yang sumbernya (iklan/organik) berhasil diketahui sistem — bukan metrik performa, tapi kelengkapan data tracking."
         />
       </div>
 
@@ -520,22 +525,36 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   <th className="pb-2 pr-3 font-medium">Sumber</th>
                   <th className="pb-2 pr-3 font-medium">Platform</th>
                   <th className="pb-2 pr-3 font-medium">Detail</th>
-                  <th className="pb-2 pr-3 text-right font-medium" title="Termasuk chat junk/salah sasaran (SPAM) — lihat kolom Spam di sebelah">Lead</th>
-                  <th className="pb-2 pr-3 text-right font-medium" title="Persentase lead dari sumber ini yang ditandai SPAM/chat junk — bukan penalti, diagnostik kualitas targeting. SPAM SENGAJA tidak dikecualikan dari Lead/Konversi di sini (beda dari Laporan Sales) supaya channel bertargeting buruk tidak tersembunyi">
-                    Spam
+                  <th className="pb-2 pr-3 text-right font-medium">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Lead
+                      <InfoTooltip text="Termasuk chat junk/salah sasaran (SPAM) — lihat kolom Spam di sebelah" />
+                    </span>
+                  </th>
+                  <th className="pb-2 pr-3 text-right font-medium">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Spam
+                      <InfoTooltip text="Persentase lead dari sumber ini yang ditandai SPAM/chat junk — bukan penalti, diagnostik kualitas targeting. SPAM SENGAJA tidak dikecualikan dari Lead/Konversi di sini (beda dari Laporan Sales) supaya channel bertargeting buruk tidak tersembunyi" />
+                    </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium">Closing</th>
-                  <th className="pb-2 pr-3 text-right font-medium" title="Berapa persen lead dari sumber ini yang akhirnya closing">
-                    Konversi
+                  <th className="pb-2 pr-3 text-right font-medium">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Konversi
+                      <InfoTooltip text="Berapa persen lead dari sumber ini yang akhirnya closing" />
+                    </span>
                   </th>
-                  <th className="pb-2 pr-3 text-right font-medium" title="Rata-rata nilai order dari yang closing">
-                    Rata2 Order
+                  <th className="pb-2 pr-3 text-right font-medium">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Rata2 Order
+                      <InfoTooltip text="Rata-rata nilai order dari yang closing" />
+                    </span>
                   </th>
-                  <th
-                    className="pb-2 pr-3 text-right font-medium text-ink2"
-                    title="Rupiah yang dihasilkan SATU lead dari sumber ini — angka paling menentukan untuk membandingkan iklan"
-                  >
-                    Nilai/Lead
+                  <th className="pb-2 pr-3 text-right font-medium text-ink2">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Nilai/Lead
+                      <InfoTooltip text="Rupiah yang dihasilkan SATU lead dari sumber ini — angka paling menentukan untuk membandingkan iklan" />
+                    </span>
                   </th>
                   <th className="pb-2 text-right font-medium">Nilai Order</th>
                 </tr>

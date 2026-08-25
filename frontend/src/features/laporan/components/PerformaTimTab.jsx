@@ -6,6 +6,7 @@ import { AlertTriangle, Crown } from "lucide-react";
 import { formatDuration, formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -138,23 +139,27 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
         <KpiCard
           index={0} label="Total Percakapan" numericValue={perf?.totalConversations || 0}
           growth={perf?.growthTotalConversations} compareLabel={cmp}
+          tooltip="Jumlah percakapan (WhatsApp/Instagram, bukan grup internal) yang dibuat di periode yang dipilih di atas."
         />
         <KpiCard
           index={1} label="Percakapan Ditangani"
           numericValue={total?.handled || 0}
           growth={salesReport?.growthHandled} compareLabel={cmp}
           sub={`${aktif.length} sales aktif dari ${rows.length}`}
+          tooltip="Percakapan yang dipegang 8 sales aktif (tidak termasuk Team Lead) di periode ini, chat SPAM dikecualikan."
         />
         <KpiCard
           index={2} label="Rata-rata Respons"
           numericValue={perf?.avgResponseMinutes || 0}
           format={() => formatDuration(perf?.avgResponseMinutes)}
           sub="jeda pesan pertama customer → balasan pertama"
+          tooltip="Rata-rata jeda pesan pertama customer sampai balasan pertama sales, dihitung dalam jam operasional (09-21 WIB), untuk percakapan yang MULAI di periode yang dipilih di atas."
         />
         <KpiCard
           index={3} label="Menggantung Sekarang"
           numericValue={salesReport?.stalledNow || 0}
           sub="lintas semua periode — belum dibalas >60 menit"
+          tooltip="Percakapan yang pesan TERAKHIRNYA dari customer, belum dibalas >60 menit — SENGAJA lintas semua periode (ini masalah HARI INI, bukan riwayat), tidak ikut rentang tanggal yang dipilih di atas."
         />
       </div>
 
@@ -344,10 +349,13 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
                   </th>
                   {KOLOM_PERFORMA.map((c) => (
                     <th
-                      key={c.k} title={c.title}
+                      key={c.k}
                       className="whitespace-nowrap border-b border-line px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-ink3"
                     >
-                      {c.label}
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {c.label}
+                        <InfoTooltip text={c.title} />
+                      </span>
                     </th>
                   ))}
                 </tr>

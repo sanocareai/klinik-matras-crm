@@ -1,6 +1,7 @@
 import React from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import InfoTooltip from "./info-tooltip.jsx";
 
 // ─── STAT CARD (DS v2.2) — kartu KPI berisian penuh ──────────────────────────
 // Gaya mengikuti kartu metrik Google Ads: BLOK BERWARNA PENUH, bukan kartu
@@ -21,7 +22,7 @@ const SKIN = {
 };
 
 export default function StatCard({
-  label, value, icon: Icon, depth = 1, delta, deltaSuffix, note,
+  label, value, icon: Icon, depth = 1, delta, deltaSuffix, note, tooltip,
   onClick, className,
 }) {
   const s = SKIN[depth] || SKIN[1];
@@ -50,7 +51,15 @@ export default function StatCard({
       </span>
 
       <div>
-        <p className={cn("text-[13px] font-medium", s.label)}>{label}</p>
+        <span className="flex items-center gap-1.5">
+          <p className={cn("text-[13px] font-medium", s.label)}>{label}</p>
+          {tooltip && (
+            <InfoTooltip
+              text={tooltip}
+              className={gelap ? "text-white/70 hover:text-white" : undefined}
+            />
+          )}
+        </span>
         <p className={cn("mt-1 text-[30px] font-bold leading-none tracking-[-0.02em] tabular-nums", s.value)}>
           {value}
         </p>

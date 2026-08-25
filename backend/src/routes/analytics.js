@@ -1226,6 +1226,15 @@ analyticsRouter.get("/performance", async (req, res) => {
     // (JOIN ke Conversation supaya grup WA internal tidak ikut terhitung)
     let avgResponseMinutes = null;
     try {
+      // BUG YANG DIPERBAIKI (26 Agustus 2026): query ini TIDAK PERNAH difilter
+      // tanggal — selalu menghitung rata-rata SEPANJANG WAKTU biarpun `range`
+      // di-set "Hari ini"/"7 hari"/dst, sementara SEMUA metrik lain di
+      // endpoint ini (totalConversations, resolvedRate, dst) sudah benar ikut
+      // `convWhere`. Sekarang dibatasi `c."createdAt"` (kapan percakapan itu
+      // MULAI) memakai batas WIB yang SAMA seperti `convWhere`, supaya
+      // konsisten dengan kartu lain di tab yang sama.
+      const mulaiResp   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
+      const selesaiResp = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
       // Pasangan mentah, rata-rata dihitung di JS via avgEffectiveMinutes
       // (jam operasional 09-21 WIB) — lihat catatan panjang di utils/wib.js.
       // Rata-rata WALL-CLOCK mentah sebelumnya digelembungkan pesan malam
@@ -1245,6 +1254,7 @@ analyticsRouter.get("/performance", async (req, res) => {
         ) o ON i."conversationId" = o."conversationId"
         JOIN "Conversation" c ON c.id = i."conversationId"
         WHERE o."createdAt" > i."createdAt" AND c."type" = 'INDIVIDUAL'
+          AND c."createdAt" >= ${mulaiResp} AND c."createdAt" < ${selesaiResp}
       `;
       const avg = avgEffectiveMinutes(pairs);
       avgResponseMinutes = avg != null ? Math.round(avg) : null;

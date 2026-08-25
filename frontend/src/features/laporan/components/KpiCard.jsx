@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown, Minus, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { useCountUp } from "@/hooks/useCountUp.js";
 import Sparkline from "./Sparkline.jsx";
-import InfoTooltip from "./InfoTooltip.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 
 // KPI card Laporan Analitik — gaya dashboard SaaS modern (referensi:
 // Ultraleads/Edaca): card bersih TANPA border (DS v2), label+titik menu "..."

@@ -1,6 +1,7 @@
 import React from "react";
 import { Download, Info, Crown } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel } from "@/lib/dateRange.js";
@@ -120,12 +121,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
           sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
+          tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas."
         />
         <KpiCard
           index={1} label="Konversi Tim"
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
+          tooltip="Pelanggan yang pindah ke stage Transaksi di periode ini, dibagi jumlah percakapan yang ditangani tim (8 sales, tanpa Team Lead)."
         />
         <KpiCard
           index={2} label="Target Tim"
@@ -138,12 +141,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                   : "Target tim belum diset (Pengaturan > Target Sales)")
               : `${formatRupiahShort(targetInfo.teamGrossAll)} / ${formatRupiahShort(targetInfo.targetValue)} (jumlah target individu, bulan berjalan)`
           }
+          tooltip="Progres closing tim terhadap target BULANAN — SELALU bulan berjalan, tidak ikut rentang tanggal yang dipilih di atas."
         />
         <KpiCard
           index={3} label="AOV Tim"
           numericValue={teamAovAll}
           format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="rata-rata nilai per order, seluruh tim"
+          tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
         />
       </div>
 
@@ -312,10 +317,13 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                   </th>
                   {KOLOM.map((c) => (
                     <th
-                      key={c.k} title={c.title}
+                      key={c.k}
                       className="whitespace-nowrap border-b border-line px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-ink3"
                     >
-                      {c.label}
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {c.label}
+                        <InfoTooltip text={c.title} />
+                      </span>
                     </th>
                   ))}
                 </tr>

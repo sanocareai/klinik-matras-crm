@@ -186,6 +186,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           format={(v) => formatRupiah(Math.round(v))}
           growth={overview?.growthOrderValue} compareLabel={cmp}
           sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
+          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas)."
         />
         <KpiCard
           index={1}
@@ -193,6 +194,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           numericValue={uang?.collectedValue || 0}
           format={(v) => formatRupiah(Math.round(v))}
           sub={uang?.collectedRate != null ? `${uang.collectedRate}% dari nilai penjualan` : "—"}
+          tooltip="Nilai order yang statusnya sudah ditandai LUNAS oleh sales, dari order di periode yang dipilih di atas."
         />
         <KpiCard
           index={2}
@@ -200,6 +202,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           numericValue={uang?.outstandingValue || 0}
           format={(v) => formatRupiah(Math.round(v))}
           sub="nilai order yang belum tercatat lunas"
+          tooltip="Nilai Penjualan dikurangi Sudah Lunas — order yang statusnya DP atau belum dibayar sama sekali."
         />
         <KpiCard
           index={3}
@@ -207,6 +210,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           numericValue={uang?.aov || 0}
           format={(v) => formatRupiah(Math.round(v))}
           sub="AOV — nilai penjualan / jumlah order"
+          tooltip="Nilai Penjualan dibagi jumlah order di periode yang dipilih — patokan cepat menilai order besar/kecil rata-rata."
         />
       </div>
 

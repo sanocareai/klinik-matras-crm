@@ -72,16 +72,19 @@ export default function Dashboard({ user }) {
             value={(ov?.newCustomers ?? 0).toLocaleString("id-ID")}
             delta={ov?.growthCustomers} deltaSuffix={cmp}
             onClick={() => setLeadsModal({ date: todayStr(), session: "all" })}
+            tooltip="Pelanggan baru (Customer dibuat) di periode yang dipilih, chat SPAM dikecualikan. Klik kartu untuk lihat daftarnya."
           />
           <StatCard
             label="Total Orders" icon={ShoppingCart} depth={2}
             value={(ov?.totalOrders ?? 0).toLocaleString("id-ID")}
             delta={ov?.growthOrders} deltaSuffix={cmp}
+            tooltip="Jumlah order yang dibuat di periode yang dipilih (order CANCELLED tidak dihitung)."
           />
           <StatCard
             label="Revenue" icon={Wallet} depth={3}
             value={formatRupiahShort(ov?.totalOrderValue ?? 0)}
             delta={ov?.growthOrderValue} deltaSuffix={cmp}
+            tooltip="Total nilai order MASUK di periode yang dipilih — belum tentu sudah dibayar lunas."
           />
           <StatCard
             label="Conversion" icon={Target} depth={4}
@@ -91,6 +94,7 @@ export default function Dashboard({ user }) {
               ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
                  : "pelanggan yang order"
             }
+            tooltip="Persentase pelanggan (dari seluruh pelanggan, bukan cuma periode ini) yang pernah membuat order."
           />
         </section>
 
