@@ -1,44 +1,20 @@
 import React, { useMemo } from "react";
-import { Download, AlertTriangle, Info, Crown } from "lucide-react";
-import {
-  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
-import dayjs from "dayjs";
+import { Download, Info, Crown } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
-import { formatRupiah, formatRupiahShort, formatDuration } from "@/utils/format.js";
-import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
 
-// Tooltip khusus tren respons/SLA — dua series beda satuan (menit vs
-// jumlah pelanggaran), jadi tidak bisa reuse ChartTip revenue yang cuma 1 nilai.
-function RespTrendTip({ active, payload, label, granularity }) {
-  if (!active || !payload?.length) return null;
-  const avg = payload.find((p) => p.dataKey === "avgMinutes")?.value;
-  const sla = payload.find((p) => p.dataKey === "slaBreach")?.value;
-  return (
-    <div className="rounded-btn bg-surface px-3 py-2 shadow-popover">
-      <p className="t-caption mb-1">{granularity === "day" ? formatTanggalPendek(label) : label}</p>
-      {avg != null && (
-        <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink">
-          <span className="h-2 w-2 rounded-full bg-accent" /> Avg respons: {Math.round(avg)} mnt
-        </p>
-      )}
-      <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-red">
-        <span className="h-2 w-2 rounded-full bg-red" /> SLA breach: {sla ?? 0}
-      </p>
-    </div>
-  );
-}
-
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
-// Pengganti tab "Performa CS" lama (4 kolom: percakapan, closing rate, avg
-// response, nilai order). Yang lama tidak bisa menjawab pertanyaan yang
-// sebenarnya dipakai untuk mengambil keputusan: siapa yang lambat merespons,
-// siapa yang percakapannya menumpuk tanpa dibalas, dan dari percakapan yang
-// dipegang berapa yang BENAR-BENAR jadi uang.
+// FOKUS PENJUALAN — siapa closing berapa, target, konversi. Metrik KECEPATAN
+// respons/beban chat (Ditangani, Warisan, Mengg., Avg Respons, SLA, Waktu
+// Respons Pertama, Tren SLA, Beban Percakapan) DIPINDAH ke tab "Performa Tim"
+// (25 Agustus 2026, permintaan owner: "laporan sales fokus penjualan, performa
+// tim fokus performa sales seperti kecepatan balas chat") — lihat
+// PerformaTimTab.jsx. Dua tab sama-sama baca `salesReport`/`report` yang SAMA,
+// cuma menonjolkan kolom yang berbeda.
 //
 // ⚠️ ATRIBUSI: semua angka memakai `Conversation.assignedToId` — "percakapan
 // yang saya pegang". BUKAN `Customer.assignedSalesId`. Lihat catatan panjang
@@ -65,19 +41,7 @@ function toneKonversi(v, median) {
   return "text-ink";
 }
 
-function toneRespons(menit) {
-  if (menit == null) return "text-ink3";
-  if (menit <= 30) return "text-green";
-  if (menit <= 120) return "text-ink";
-  return "text-red";
-}
-
 const KOLOM = [
-  { k: "handledOwn", label: "Ditangani",  title: "Percakapan yang DIA KLAIM/PEGANG SENDIRI dari awal pada periode terpilih (tidak termasuk warisan Ambil Alih)" },
-  { k: "handledTakeover", label: "Warisan", title: "Percakapan yang berpindah ke dia lewat Ambil/Ambil Alih dari sales lain — bukan tanggung jawab penanganan asli dia" },
-  { k: "stalled",    label: "Mengg.",     title: "Menggantung: dia pegang, pesan terakhir dari customer, >60 menit belum dibalas" },
-  { k: "avgResponseMinutes", label: "Avg Respons", title: "Rata-rata jeda pesan pertama customer → balasan pertama" },
-  { k: "slaBreach",  label: "SLA >1j",    title: "Balasan pertama >60 menit, DITAMBAH percakapan yang ditutup (RESOLVED) tanpa satu pun balasan sama sekali — supaya lead yang diabaikan total sampai ditutup tidak lolos dari radar" },
   // Restrukturisasi 24 Agustus 2026 (7→4 stage): kolom Qualified* + Quoted*
   // digabung jadi SATU (Prospect*) — dua-duanya sekarang satu stage PROSPECT.
   { k: "prospect",   label: "Prospect*",  title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Prospect (tidak mengikuti rentang tanggal)" },
@@ -92,7 +56,7 @@ const KOLOM = [
   { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
 ];
 
-export default function SalesReportTab({ report, respTimeSeries, grossTotalPerusahaan, totalConversations, onExport }) {
+export default function SalesReportTab({ report, grossTotalPerusahaan, onExport }) {
   const semuaRows = report?.rows || [];
   // Baris "Team Lead" (Novi) TERPISAH dari leaderboard/tabel 8 sales biasa
   // di bawah sini (25 Agustus 2026) — target dia mewakili target TIM
@@ -117,20 +81,16 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
         teamPercentToTarget: r.target > 0 ? Math.round((teamGrossValue / r.target) * 100) : null,
       };
     }), [semuaRows, total]);
+  const teamLead = teamLeadRows[0] || null;
 
-  // Gabung dua deret (avg respons per bucket, SLA breach per bucket) jadi
-  // satu array utk ComposedChart — keduanya SUDAH bucket yang sama & urutan
-  // yang sama dari backend (lihat /analytics/response-time-series), jadi
-  // cukup zip berdasarkan index, tidak perlu join by key.
-  const trendData = useMemo(() => {
-    const avgPts = respTimeSeries?.avgResponseSeries || [];
-    const slaPts = respTimeSeries?.slaBreachSeries || [];
-    return avgPts.map((p, i) => ({
-      bucket: p.bucket, avgMinutes: p.value, slaBreach: slaPts[i]?.value ?? 0,
-    }));
-  }, [respTimeSeries]);
-  const trendGranularity = respTimeSeries?.granularity || "day";
-  const trendTickX = (v) => (trendGranularity === "day" ? dayjs(v).format("D MMM") : v);
+  // KPI "Nilai Penjualan Tim" DISAMAKAN dengan angka di baris Novi (25
+  // Agustus 2026 — sebelumnya KPI ini cuma jumlah 8 sales/`total.grossValue`,
+  // sementara baris Novi menjumlahkan closing pribadinya + 8 sales, jadi dua
+  // "Nilai Penjualan Tim" berbeda muncul di layar yang sama. Novi bagian dari
+  // tim, closing-nya HARUS ikut terhitung di angka headline "tim".
+  const teamGrossAll = (total?.grossValue || 0) + teamLeadRows.reduce((s, r) => s + r.grossValue, 0);
+  const teamOrdersAll = (total?.orders || 0) + teamLeadRows.reduce((s, r) => s + r.orders, 0);
+  const teamAovAll = teamOrdersAll > 0 ? Math.round(teamGrossAll / teamOrdersAll) : 0;
 
   const aktif = rows.filter((r) => r.handled > 0);
   // Median dipakai untuk mewarnai baik/buruk secara RELATIF terhadap tim,
@@ -140,9 +100,7 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
   const konversiList = aktif.map((r) => r.conversionRate).filter((v) => v != null).sort((a, b) => a - b);
   const median = konversiList.length > 0 ? konversiList[Math.floor(konversiList.length / 2)] : null;
 
-  const maxHandled = Math.max(1, ...rows.map((r) => r.handledOwn));
-  const maxNilai   = Math.max(1, ...rows.map((r) => r.grossValue));
-  const maxRespons = Math.max(1, ...rows.map((r) => r.avgResponseMinutes || 0));
+  const maxNilai = Math.max(1, ...rows.map((r) => r.grossValue));
 
   // Selisih penjualan perusahaan vs yang bisa diatribusikan ke sales. Muncul
   // kalau ada order dari customer yang percakapannya belum di-assign ke
@@ -151,10 +109,6 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
   const takTeratribusi = grossTotalPerusahaan != null && total
     ? grossTotalPerusahaan - total.grossValue
     : 0;
-
-  const lambat = [...aktif]
-    .filter((r) => r.avgResponseMinutes != null)
-    .sort((a, b) => b.avgResponseMinutes - a.avgResponseMinutes);
 
   return (
     <div className="flex flex-col gap-5">
@@ -167,13 +121,10 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          index={0} label="Percakapan Ditangani"
-          numericValue={total?.handled || 0}
-          sub={
-            totalConversations != null
-              ? `${aktif.length} sales aktif dari ${rows.length} · dari ${totalConversations.toLocaleString("id-ID")} total percakapan`
-              : `${aktif.length} sales aktif dari ${rows.length}`
-          }
+          index={0} hero label="Nilai Penjualan Tim"
+          numericValue={teamGrossAll}
+          format={(v) => formatRupiah(Math.round(v))}
+          sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
         />
         <KpiCard
           index={1} label="Konversi Tim"
@@ -182,55 +133,27 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
         />
         <KpiCard
-          index={2} hero label="Nilai Penjualan Tim"
-          numericValue={total?.grossValue || 0}
-          format={(v) => formatRupiah(Math.round(v))}
-          sub={`${total?.orders || 0} order · AOV ${formatRupiahShort(total?.aov || 0)}`}
+          index={2} label="Target Tim"
+          numericValue={(teamLead ? teamLead.teamPercentToTarget : total?.percentToTarget) || 0}
+          format={() => {
+            const pct = teamLead ? teamLead.teamPercentToTarget : total?.percentToTarget;
+            return pct != null ? `${pct}%` : "—";
+          }}
+          sub={
+            teamLead
+              ? (teamLead.target > 0
+                  ? `${formatRupiahShort(teamLead.teamGrossValue)} / ${formatRupiahShort(teamLead.target)} (target tim)`
+                  : "Target tim belum diset (Pengaturan > Target Sales)")
+              : `${formatRupiahShort(total?.grossValue || 0)} / ${formatRupiahShort(total?.target || 0)} (jumlah target individu)`
+          }
         />
         <KpiCard
-          index={3} label="Menggantung Sekarang"
-          numericValue={report?.stalledNow || 0}
-          sub="lintas semua periode — belum dibalas >60 menit"
+          index={3} label="AOV Tim"
+          numericValue={teamAovAll}
+          format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
+          sub="rata-rata nilai per order, seluruh tim"
         />
       </div>
-
-      {/* Menggantung/belum diambil = beban nyata yang masih menempel sekarang,
-          bukan statistik historis. Kalau ada, ini hal PERTAMA yang harus
-          dikerjakan tim hari ini — jadi ditaruh sebagai peringatan, bukan
-          sekadar kolom. */}
-      {(report?.stalledNow > 0 || total?.slaBreach > 0 || report?.unassignedInPeriod > 0) && (
-        <div className="flex items-start gap-2.5 rounded-xl bg-orangebg px-3.5 py-3">
-          <AlertTriangle className="mt-0.5 shrink-0 text-orange" size={16} />
-          <p className="text-xs leading-relaxed text-ink">
-            {/* BARU 25 Agustus 2026: ditemukan lewat pertanyaan "kenapa Total
-                Percakapan (tab Percakapan) beda dengan Percakapan Ditangani
-                di sini" — jawabannya sebagian besar adalah percakapan ini,
-                yang belum ke-assign ke siapa pun jadi tidak masuk hitungan
-                sales manapun. Ditaruh PALING AWAL karena ini yang paling
-                mendesak: bukan cuma lambat dibalas, malah belum ada yang pegang. */}
-            {report?.unassignedInPeriod > 0 && (
-              <><strong>{report.unassignedInPeriod} percakapan</strong> pada periode ini
-              BELUM DIAMBIL siapa pun — tidak masuk hitungan sales manapun di tabel
-              bawah, dan ini sebabnya "Percakapan Ditangani" di sini lebih kecil
-              dari "Total Percakapan" di tab Percakapan. </>
-            )}
-            {report?.stalledNow > 0 && (
-              <><strong>{report.stalledNow} percakapan</strong> sedang menggantung
-              SEKARANG — pesan terakhir dari customer dan sudah lebih dari 60 menit
-              tanpa balasan (dihitung lintas semua periode, karena beban ini tetap
-              ada berapa pun rentang yang dipilih). </>
-            )}
-            {total?.slaBreach > 0 && (
-              <>Pada periode terpilih ada <strong>{total.slaBreach} percakapan</strong> yang
-              balasan pertamanya lewat 60 menit{total?.neverReplied > 0 && (
-                <> (termasuk <strong>{total.neverReplied}</strong> yang ditutup tanpa
-                dibalas sama sekali)</>
-              )}. </>
-            )}
-            Ini kebocoran lead yang paling murah untuk diperbaiki.
-          </p>
-        </div>
-      )}
 
       {/* ── Leaderboard ───────────────────────────────────────────────── */}
       <ChartCard
@@ -253,7 +176,7 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                       </span>
                     </p>
                     <p className="text-xs text-ink3">
-                      Closing pribadi: {r.handledOwn} percakapan · {formatDuration(r.avgResponseMinutes)}
+                      Closing pribadi: {r.orders} order · {r.orderingCustomers} pelanggan order
                     </p>
                   </div>
                 </div>
@@ -305,13 +228,7 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-ink">{r.name}</p>
                   <p className="text-xs text-ink3">
-                    {r.handledOwn} percakapan · {formatDuration(r.avgResponseMinutes)}
-                    {r.handledTakeover > 0 && (
-                      <span className="ml-1.5">· +{r.handledTakeover} warisan takeover</span>
-                    )}
-                    {r.stalled > 0 && (
-                      <span className="ml-1.5 font-semibold text-orange">· {r.stalled} menggantung</span>
-                    )}
+                    {r.orders} order · {r.orderingCustomers} pelanggan order
                   </p>
                 </div>
               </div>
@@ -366,122 +283,21 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
         )}
       </ChartCard>
 
-      {/* ── Waktu respons ────────────────────────────────────────────── */}
-      {lambat.length > 0 && (
-        <ChartCard
-          index={5}
-          title="Waktu Respons Pertama"
-          description="Rata-rata jeda pesan pertama customer → balasan pertama. Makin pendek makin baik."
-        >
-          <div className="flex flex-col gap-2.5">
-            {lambat.map((r) => (
-              <BarRow
-                key={r.userId}
-                label={r.name}
-                value={r.avgResponseMinutes} max={maxRespons}
-                display={formatDuration(r.avgResponseMinutes)}
-                sub={`${r.slaBreach}× >1j`}
-                tone={r.avgResponseMinutes <= 30 ? "green" : r.avgResponseMinutes <= 120 ? "accent" : "red"}
-              />
-            ))}
-          </div>
-          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
-            Sampel dihitung hanya dari percakapan yang benar-benar sudah dibalas,
-            jadi sales yang tidak membalas sama sekali TIDAK membuat angkanya
-            terlihat bagus — cek kolom “Menggantung”.
-          </p>
-        </ChartCard>
-      )}
-
-      {/* ── Tren waktu respons & SLA (TIM, dari waktu ke waktu) ─────────
-          Beda dari kartu di atas: itu snapshot SATU periode per-sales;
-          ini tren TIM sepanjang periode, supaya kelihatan membaik/memburuk
-          dari waktu ke waktu, bukan cuma angka sekarang. */}
-      {trendData.length > 0 && (
-        <ChartCard
-          index={6}
-          title="Tren Waktu Respons & Pelanggaran SLA"
-          description="Rata-rata waktu respons (garis) & jumlah pelanggaran SLA >60 menit (batang) tim, dari waktu ke waktu"
-        >
-          <ResponsiveContainer width="100%" height={230}>
-            <ComposedChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="4 4" stroke="var(--hairline)" vertical={false} />
-              <XAxis
-                dataKey="bucket" tickFormatter={trendTickX}
-                tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
-                axisLine={false} tickLine={false} dy={6}
-                interval="preserveStartEnd" minTickGap={28}
-              />
-              <YAxis
-                yAxisId="menit" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
-                axisLine={false} tickLine={false} width={42}
-                label={{ value: "menit", angle: -90, position: "insideLeft", fontSize: 10, fill: "var(--text-tertiary)" }}
-              />
-              <YAxis
-                yAxisId="sla" orientation="right" allowDecimals={false}
-                tick={{ fontSize: 11, fill: "var(--text-tertiary)" }}
-                axisLine={false} tickLine={false} width={30}
-              />
-              <Tooltip content={<RespTrendTip granularity={trendGranularity} />} cursor={{ fill: "var(--bg-hover)" }} />
-              <Bar yAxisId="sla" dataKey="slaBreach" fill="var(--red)" fillOpacity={0.35} radius={[3, 3, 0, 0]} />
-              <Line
-                yAxisId="menit" type="monotone" dataKey="avgMinutes"
-                stroke="var(--blue-600)" strokeWidth={2.5} dot={false}
-                connectNulls={false} activeDot={{ r: 4 }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
-            Garis terputus = periode tanpa data respons (bukan 0 menit).
-            Pelanggaran SLA termasuk percakapan yang ditutup tanpa satu pun
-            balasan — lihat catatan di kolom "SLA &gt;1j" pada tabel di bawah.
-          </p>
-        </ChartCard>
-      )}
-
-      {/* ── Beban vs hasil ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <ChartCard
-          index={6} title="Beban Percakapan"
-          description="Percakapan yang diklaim/dipegang sendiri sejak awal — tidak termasuk warisan Ambil Alih"
-        >
-          <div className="flex flex-col gap-2.5">
-            {rows.filter((r) => r.handledOwn > 0 || r.handledTakeover > 0).map((r) => (
-              <BarRow
-                key={r.userId} label={r.name} value={r.handledOwn} max={maxHandled}
-                display={`${r.handledOwn}`}
-                sub={r.handledTakeover > 0 ? `+${r.handledTakeover} warisan takeover` : undefined}
-              />
-            ))}
-          </div>
-          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
-            "Warisan takeover" = percakapan yang berpindah ke orang ini lewat
-            Ambil/Ambil Alih dari sales lain (biasanya lead mangkrak yang
-            sudah dingin) — sengaja dipisah supaya sales yang rajin
-            membersihkan chat mangkrak tidak tampak "paling sibuk" padahal
-            beban itu bukan hasil penanganannya sendiri sejak awal.
-          </p>
-        </ChartCard>
-
-        <ChartCard index={7} title="Nilai Penjualan" description="Hasil dari beban di sebelah">
-          <div className="flex flex-col gap-2.5">
-            {rows.filter((r) => r.grossValue > 0).map((r) => (
-              <BarRow
-                key={r.userId} label={r.name} value={r.grossValue} max={maxNilai}
-                display={formatRupiahShort(r.grossValue)} sub={`${r.orders} order`} tone="green"
-              />
-            ))}
-          </div>
-          <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
-            Bandingkan dua kolom ini: beban tinggi + nilai rendah berarti banyak
-            percakapan tapi sedikit yang dikonversi.
-          </p>
-        </ChartCard>
-      </div>
+      {/* ── Nilai Penjualan per sales ────────────────────────────────── */}
+      <ChartCard index={5} title="Nilai Penjualan per Sales" description="Perbandingan hasil closing tiap sales">
+        <div className="flex flex-col gap-2.5">
+          {rows.filter((r) => r.grossValue > 0).map((r) => (
+            <BarRow
+              key={r.userId} label={r.name} value={r.grossValue} max={maxNilai}
+              display={formatRupiahShort(r.grossValue)} sub={`${r.orders} order`} tone="green"
+            />
+          ))}
+        </div>
+      </ChartCard>
 
       {/* ── Tabel rinci ──────────────────────────────────────────────── */}
       {rows.length > 0 && (
-        <ChartCard index={8} title="Rincian Lengkap" description="Semua metrik per sales — gulir ke samping untuk kolom lainnya">
+        <ChartCard index={6} title="Rincian Penjualan" description="Metrik penjualan per sales — gulir ke samping untuk kolom lainnya. Metrik kecepatan respons/beban chat ada di tab Performa Tim.">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -507,17 +323,6 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                         {r.name}
                         <Crown size={11} className="text-blue-ink" />
                       </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.handledTakeover}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", r.stalled > 0 ? "text-orange" : "text-ink3")}>
-                      {r.stalled}
-                    </td>
-                    <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", toneRespons(r.avgResponseMinutes))}>
-                      {formatDuration(r.avgResponseMinutes)}
-                    </td>
-                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
-                      {r.slaBreach}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
@@ -548,17 +353,6 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-surface px-3 py-2.5 font-semibold text-ink">
                       {r.name}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{r.handledOwn}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.handledTakeover}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", r.stalled > 0 ? "text-orange" : "text-ink3")}>
-                      {r.stalled}
-                    </td>
-                    <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", toneRespons(r.avgResponseMinutes))}>
-                      {formatDuration(r.avgResponseMinutes)}
-                    </td>
-                    <td className={cn("px-3 py-2.5 text-right tabular-nums", r.slaBreach > 0 ? "text-red" : "text-ink3")}>
-                      {r.slaBreach}
-                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{r.funnel?.PROSPECT ?? 0}</td>
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-green">{r.paidCustomers}</td>
                     <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", toneKonversi(r.conversionRate, median))}>
@@ -588,14 +382,6 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
                 <tfoot>
                   <tr className="border-t-2 border-line font-bold">
                     <td className="sticky left-0 z-10 bg-surface px-3 py-2.5 text-ink">Total tim</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.handledOwn}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-ink3">{total.handledTakeover}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-orange">{total.stalled}</td>
-                    {/* Rata-rata respons tim SENGAJA em-dash: merata-ratakan
-                        rata-rata per orang tanpa membobot jumlah percakapan
-                        menghasilkan angka yang salah. */}
-                    <td className="px-3 py-2.5 text-right text-ink3">—</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-red">{total.slaBreach}</td>
                     <td className="px-3 py-2.5 text-right text-ink3">—</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-green">{total.paidCustomers}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">
@@ -631,6 +417,9 @@ export default function SalesReportTab({ report, respTimeSeries, grossTotalPerus
             {" "}Kolom target memakai target <strong>bulan berjalan</strong>
             {report?.periodeTarget ? ` (${report.periodeTarget.month}/${report.periodeTarget.year})` : ""},
             karena target disimpan per bulan di Pengaturan.
+            {" "}"Total tim" di baris terakhir HANYA menjumlahkan 8 sales biasa —
+            TIDAK termasuk closing pribadi Team Lead (beda dengan KPI "Nilai
+            Penjualan Tim" di atas, yang sudah menggabungkan keduanya).
           </p>
         </ChartCard>
       )}

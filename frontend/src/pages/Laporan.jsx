@@ -19,7 +19,10 @@ import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
 // features/laporan/components/SalesReportTab.jsx.
 // "Percakapan" + "Penjualan" DIGABUNG jadi "Performa Tim" (25 Agustus 2026,
 // permintaan owner) — lihat features/laporan/components/PerformaTimTab.jsx.
-const TABS = ["Ringkasan", "Traffic", "Performa Tim", "Pipeline", "Sales"];
+// "Sales" ditaruh persis setelah "Ringkasan" (25 Agustus 2026, permintaan
+// owner) — laporan sales (fokus penjualan) jadi tab kedua yang paling sering
+// dibuka, bukan di ujung.
+const TABS = ["Ringkasan", "Sales", "Traffic", "Performa Tim", "Pipeline"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -162,13 +165,21 @@ export default function Laporan() {
                 />
               </TabsContent>
 
+              <TabsContent value="Sales">
+                <SalesReportTab
+                  report={salesReport}
+                  grossTotalPerusahaan={summary?.uang?.grossValue}
+                  onExport={handleExport}
+                />
+              </TabsContent>
+
               <TabsContent value="Traffic">
                 <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
               </TabsContent>
 
               <TabsContent value="Performa Tim">
                 <PerformaTimTab
-                  perf={perf} overview={overview} summary={summary}
+                  perf={perf} summary={summary}
                   respTimeSeries={respTimeSeries}
                   channelBreakdown={overview?.channelBreakdown || []}
                   salesReport={salesReport}
@@ -177,16 +188,6 @@ export default function Laporan() {
 
               <TabsContent value="Pipeline">
                 <PipelineTab funnel={funnel} velocity={velocity} />
-              </TabsContent>
-
-              <TabsContent value="Sales">
-                <SalesReportTab
-                  report={salesReport}
-                  respTimeSeries={respTimeSeries}
-                  grossTotalPerusahaan={summary?.uang?.grossValue}
-                  totalConversations={perf?.totalConversations}
-                  onExport={handleExport}
-                />
               </TabsContent>
             </>
           )}
