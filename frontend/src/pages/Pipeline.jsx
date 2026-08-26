@@ -400,8 +400,12 @@ export default function Pipeline() {
                 </button>
               )}
             </div>
+            {/* min-w eksplisit — appearance:none (tokens.css) membuang jaminan
+                browser melebarkan <select> mengikuti opsi TERPANJANG (nama
+                sales terpanjang), bukan cuma yang sedang terpilih. Bug sama
+                yang sudah diperbaiki di Orders.jsx/CustomerFilters.jsx. */}
             <select
-              className="h-8 rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-8 min-w-[164px] rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               value={filterSales}
               onChange={(e) => setFilterSales(e.target.value)}
               aria-label="Filter sales person"

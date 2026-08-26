@@ -565,22 +565,31 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           title="Rincian per Iklan"
           description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
           actions={
-            <div className="flex items-center gap-1.5">
-              {loadingFilter && <Loader2 size={13} className="animate-spin text-ink3" />}
-              <div className="relative">
+            // flex-wrap (bukan cuma flex biasa) — di layar sempit, search box
+            // + select TIDAK dipaksa muat 1 baris bersama title (lihat catatan
+            // di ChartCard.jsx); kalau masih belum cukup lebar meski title
+            // sudah turun ke barisnya sendiri, 2 kontrol ini boleh pecah jadi
+            // 2 baris kecil di dalam slot actions sendiri, bukan kepotong.
+            <div className="flex flex-wrap items-center gap-1.5">
+              {loadingFilter && <Loader2 size={13} className="animate-spin text-ink3 shrink-0" />}
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink3" />
                 <input
                   type="search" value={fCari} onChange={(e) => setFCari(e.target.value)}
                   placeholder="Cari detail…"
                   aria-label="Cari kreatif/link di Rincian per Iklan"
-                  className="h-7 w-32 rounded-btn border-0 bg-inset pl-6 pr-2 text-[12px] text-ink2 placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  className="h-7 w-full min-w-[110px] rounded-btn border-0 bg-inset pl-6 pr-2 text-[12px] text-ink2 placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 sm:w-32"
                 />
               </div>
+              {/* min-w eksplisit — `appearance:none` (tokens.css) membuang
+                  jaminan browser melebarkan <select> mengikuti opsi TERPANJANG
+                  (bukan cuma yang sedang terpilih). Lihat bug sama yang
+                  ditemukan di FilterSelect Orders.jsx & CustomerFilters.jsx. */}
               <select
                 value={fSumber}
                 onChange={(e) => setFSumber(e.target.value)}
                 aria-label="Filter sumber di Rincian per Iklan"
-                className="h-7 rounded-btn border-0 bg-inset px-2 text-[12px] font-medium text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="h-7 min-w-[150px] flex-1 rounded-btn border-0 bg-inset px-2 text-[12px] font-medium text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 sm:flex-none"
               >
                 <option value="">Semua Sumber</option>
                 {opsiSumber.map((s) => (

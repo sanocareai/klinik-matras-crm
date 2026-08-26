@@ -15,9 +15,18 @@ import { PIPELINE_STAGES, LEAD_SOURCES } from "@/utils/format.js";
 // "SATU-SATUNYA warna dekoratif"). Border ditambah supaya kotaknya
 // kelihatan jelas batasnya di background gelap (sebelumnya bg-surface
 // polos nyaris menyatu dengan latar, jadi terasa "datar"/kurang hidup).
+// min-w-[164px] DEFAULT (26 Agustus 2026) — root fix, sama pola dengan
+// FilterSelect di Orders.jsx. `select` di sini SENGAJA appearance:none
+// (tokens.css), yang artinya browser TIDAK LAGI menjamin auto-lebar
+// mengikuti opsi TERPANJANG (cuma opsi yang SEDANG terpilih) — begitu user
+// pilih opsi lebih panjang dari lebar awal, teksnya kepotong tanpa jejak
+// (native select tidak kasih ellipsis/tooltip). BUG NYATA: 3 dari 4 select
+// di sini (`filterSource`/"Semua Sumber", `filterCity`/"Semua Kota",
+// `filterSales`/"Semua Sales Person") tidak pernah dapat perbaikan ini —
+// cuma `filterStage` yang sudah dikasih `min-w-[188px]` manual sebelumnya.
 function selectCls(active) {
   return cn(
-    "h-8 rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
+    "h-8 min-w-[164px] rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
     "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
     active
       ? "border-accent/40 bg-accentbg text-accent"
