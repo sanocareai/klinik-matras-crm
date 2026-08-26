@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame, ArrowRight, UserCheck, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame, ArrowRight, UserCheck, Loader2, Search, ArrowUp, ArrowDown } from "lucide-react";
 import dayjs from "dayjs";
 import { api } from "@/api.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
@@ -75,6 +75,25 @@ const WARNA_SUMBER = {
   LAINNYA: "var(--text-tertiary)",
 };
 
+// Header kolom yang bisa disortir di tabel "Rincian per Iklan" — panah cuma
+// muncul untuk kolom yang SEDANG aktif (biar header tidak ramai), sama pola
+// dengan TH sortable di components/ui/table.jsx.
+function SortableLabel({ label, sortKey, sortBy, sortDir, onSort }) {
+  const active = sortBy === sortKey;
+  return (
+    <button
+      type="button" onClick={() => onSort(sortKey)}
+      className={cn(
+        "inline-flex items-center gap-0.5 uppercase tracking-wide transition-colors hover:text-ink",
+        active && "text-ink2",
+      )}
+    >
+      {label}
+      {active && (sortDir === "asc" ? <ArrowUp size={10} /> : <ArrowDown size={10} />)}
+    </button>
+  );
+}
+
 const LABEL_PLATFORM = {
   FACEBOOK: "Facebook",
   INSTAGRAM: "Instagram",
@@ -125,30 +144,47 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
 
   const atribusi = traffic?.atribusi;
 
-  // ── Filter Sumber di "Rincian per Iklan" ──────────────────────────────
+  // ── Filter/pencarian/sortir di "Rincian per Iklan" ────────────────────
   // Backend memotong ke 30 baris teratas + gabung sisanya jadi "LAINNYA"
-  // (lihat catatan `BATAS` di routes/analytics.js) — kalau filter ini cuma
-  // menyaring `sourceDetail.data` yang SUDAH terpotong di client, baris
-  // sumber yang kebetulan jatuh ke dalam "LAINNYA" jadi tidak pernah bisa
-  // ditemukan lewat filter apa pun. Makanya filter Sumber SELF-FETCH ulang
-  // dari backend dengan ?source= — potongan 30 barisnya jadi berlaku
-  // SETELAH difilter, bukan sebelum, jadi tidak ada yang hilang diam-diam.
+  // (lihat catatan `BATAS` di routes/analytics.js) — kalau filter/pencarian
+  // ini cuma menyaring `sourceDetail.data` yang SUDAH terpotong di client,
+  // baris yang kebetulan jatuh ke dalam "LAINNYA" jadi tidak pernah bisa
+  // ditemukan lewat filter apa pun, dan sortir kolom selain Lead jadi cuma
+  // mengurutkan ULANG 30 baris ber-lead-terbanyak (bukan cari yang sebenarnya
+  // TERTINGGI di kolom itu). Makanya semuanya SELF-FETCH ulang dari backend
+  // (?source=&q=&sortBy=&sortDir=) — potongan 30 barisnya jadi berlaku
+  // SETELAH difilter/disortir, bukan sebelum.
   const [fSumber, setFSumber] = useState("");
+  const [fCari, setFCari] = useState("");
+  const [debouncedCari, setDebouncedCari] = useState("");
+  const [sortBy, setSortBy] = useState("leads");
+  const [sortDir, setSortDir] = useState("desc");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCari(fCari.trim()), 300);
+    return () => clearTimeout(t);
+  }, [fCari]);
+  function toggleSort(key) {
+    if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortBy(key); setSortDir("desc"); }
+  }
+  // Kombinasi default PERSIS = apa yang sudah dimuat prop `sourceDetail`
+  // (leads desc, tanpa filter/pencarian) — jadi tidak perlu fetch ulang
+  // kalau user belum menyentuh kontrol apa pun.
+  const isDefaultView = !fSumber && !debouncedCari && sortBy === "leads" && sortDir === "desc";
   const [filteredDetail, setFilteredDetail] = useState(null);
   const [loadingFilter, setLoadingFilter] = useState(false);
   useEffect(() => {
-    if (!fSumber) { setFilteredDetail(null); return; }
+    if (isDefaultView) { setFilteredDetail(null); return; }
     let batal = false;
     setLoadingFilter(true);
-    api.getLeadSourceDetail({ ...rangeParams, source: fSumber })
+    api.getLeadSourceDetail({ ...rangeParams, source: fSumber, q: debouncedCari, sortBy, sortDir })
       .then((res) => { if (!batal) setFilteredDetail(res); })
       .catch(() => { if (!batal) setFilteredDetail(null); })
       .finally(() => { if (!batal) setLoadingFilter(false); });
     return () => { batal = true; };
-  }, [fSumber, rangeParams?.from, rangeParams?.to]);
-  // "Semua Sumber" pakai prop asli (sudah dimuat bareng seluruh tab Traffic,
-  // tidak perlu fetch lagi) — cuma sumber SPESIFIK yang self-fetch di atas.
-  const detailAktif = fSumber ? filteredDetail : sourceDetail;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDefaultView, fSumber, debouncedCari, sortBy, sortDir, rangeParams?.from, rangeParams?.to]);
+  const detailAktif = isDefaultView ? sourceDetail : filteredDetail;
   // Opsi dropdown dari sumber yang BENAR-BENAR punya lead periode ini
   // (`atribusi.bySource`, sudah dimuat) — bukan daftar tetap yang bisa
   // menampilkan pilihan kosong (mis. "Referral" padahal 0 lead bulan ini).
@@ -531,6 +567,15 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           actions={
             <div className="flex items-center gap-1.5">
               {loadingFilter && <Loader2 size={13} className="animate-spin text-ink3" />}
+              <div className="relative">
+                <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink3" />
+                <input
+                  type="search" value={fCari} onChange={(e) => setFCari(e.target.value)}
+                  placeholder="Cari detail…"
+                  aria-label="Cari kreatif/link di Rincian per Iklan"
+                  className="h-7 w-32 rounded-btn border-0 bg-inset pl-6 pr-2 text-[12px] text-ink2 placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                />
+              </div>
               <select
                 value={fSumber}
                 onChange={(e) => setFSumber(e.target.value)}
@@ -563,14 +608,16 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
               Dua-duanya benar — untuk menilai iklan, yang dipakai adalah basis "kapan leadnya masuk".
               {/* Jembatan angka — supaya "kenapa beda dengan Ringkasan?" tidak
                   perlu ditanyakan berulang tiap ganti rentang tanggal. */}
-              {!fSumber && sourceDetail.leadLama?.order > 0 && (
+              {!fSumber && !debouncedCari && sourceDetail.leadLama?.order > 0 && (
                 <>
                   {" "}<strong>+ {formatRupiah(sourceDetail.leadLama.totalValue)}</strong> dari{" "}
                   <strong>{sourceDetail.leadLama.order} order lead lama</strong> yang baru closing
                   periode ini = <strong>{formatRupiah(sourceDetail.sesuaiRingkasan)}</strong> (cocok dengan Dashboard).
                 </>
               )}
-              {fSumber && <> Difilter ke <strong>{SOURCE_LABELS[fSumber] || fSumber}</strong> saja — total di bawah tidak dibandingkan ke Dashboard (itu menggabung semua sumber).</>}
+              {(fSumber || debouncedCari) && (
+                <> Sedang difilter{fSumber ? <> ke <strong>{SOURCE_LABELS[fSumber] || fSumber}</strong></> : null}{debouncedCari ? <> dengan kata kunci "<strong>{debouncedCari}</strong>"</> : null} — total di bawah tidak dibandingkan ke Dashboard (itu menggabung semua sumber).</>
+              )}
             </p>
           </div>
 
@@ -580,7 +627,9 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
             </p>
           ) : detailAktif.data.length === 0 ? (
             <p className="py-8 text-center text-[12.5px] text-ink3">
-              Tidak ada lead dari {SOURCE_LABELS[fSumber] || fSumber} pada periode ini.
+              Tidak ada lead yang cocok
+              {fSumber ? <> dari {SOURCE_LABELS[fSumber] || fSumber}</> : null}
+              {debouncedCari ? <> dengan kata kunci "{debouncedCari}"</> : null} pada periode ini.
             </p>
           ) : (
           <div className="overflow-x-auto">
@@ -592,36 +641,40 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   <th className="pb-2 pr-3 font-medium">Detail</th>
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
-                      Lead
+                      <SortableLabel label="Lead" sortKey="leads" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                       <InfoTooltip text="Termasuk chat junk/salah sasaran (SPAM) — lihat kolom Spam di sebelah" />
                     </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
-                      Spam
+                      <SortableLabel label="Spam" sortKey="spamRate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                       <InfoTooltip text="Persentase lead dari sumber ini yang ditandai SPAM/chat junk — bukan penalti, diagnostik kualitas targeting. SPAM SENGAJA tidak dikecualikan dari Lead/Konversi di sini (beda dari Laporan Sales) supaya channel bertargeting buruk tidak tersembunyi" />
                     </span>
                   </th>
-                  <th className="pb-2 pr-3 text-right font-medium">Closing</th>
+                  <th className="pb-2 pr-3 text-right font-medium">
+                    <SortableLabel label="Closing" sortKey="won" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                  </th>
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
-                      Konversi
+                      <SortableLabel label="Konversi" sortKey="convRate" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                       <InfoTooltip text="Konversi = (lead dari sumber ini yang closing/order) ÷ (total Lead dari sumber ini) × 100%. Beda dari Laporan Sales: di sini SPAM TIDAK dikecualikan dari penyebutnya (sengaja, supaya sumber bertargeting buruk tidak tersembunyi)." />
                     </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
-                      Rata2 Order
+                      <SortableLabel label="Rata2 Order" sortKey="avgOrderValue" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                       <InfoTooltip text="Rata2 Order (AOV sumber ini) = total Nilai Order ÷ jumlah Closing dari sumber ini — rata-rata besar 1 order yang closing." />
                     </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium text-ink2">
                     <span className="inline-flex items-center justify-end gap-1">
-                      Nilai/Lead
+                      <SortableLabel label="Nilai/Lead" sortKey="nilaiPerLead" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                       <InfoTooltip text="Nilai/Lead = total Nilai Order ÷ total Lead (BUKAN cuma yang closing) dari sumber ini — rupiah yang dihasilkan SATU lead rata-rata, angka paling menentukan untuk membandingkan iklan." />
                     </span>
                   </th>
-                  <th className="pb-2 text-right font-medium">Nilai Order</th>
+                  <th className="pb-2 text-right font-medium">
+                    <SortableLabel label="Nilai Order" sortKey="totalValue" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                  </th>
                 </tr>
               </thead>
               <tbody>

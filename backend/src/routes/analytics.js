@@ -1780,12 +1780,24 @@ const LEAD_SOURCE_VALUES = new Set([
 
 analyticsRouter.get("/lead-source-detail", async (req, res) => {
   try {
-    const { from, to, source } = req.query;
+    const { from, to, source, q, sortBy, sortDir } = req.query;
     // Filter opsional ?source= (26 Agustus 2026) — "Rincian per Iklan" cuma
     // bisa dilihat gabung-semua-sumber, jadi mencari "Meta Ads doang" berarti
     // scroll manual + jumlah sendiri di kepala. Divalidasi lewat whitelist
     // (bukan diteruskan mentah ke SQL) sebelum dipakai di query di bawah.
     const sourceFilter = LEAD_SOURCE_VALUES.has(source) ? source : null;
+    // Pencarian opsional ?q= di kolom detail (kreatif/link spesifik) — sama
+    // alasannya dengan sourceFilter: tanpa ini, mencari "kasur amblas" atau
+    // "77pJdJNsy" berarti scroll manual. Trim + panjang minimal 2 karakter
+    // (cegah query 1-huruf yang cocok ke hampir semua baris, tidak berguna).
+    const searchQuery = typeof q === "string" && q.trim().length >= 2 ? q.trim() : null;
+    // Sortir opsional (default: leads desc, PERSIS perilaku lama) — whitelist
+    // eksplisit, bukan `ORDER BY ${sortBy}` mentah yang rawan SQL injection
+    // KALAUPUN dieksekusi via raw SQL (di sini sortnya di JS, tapi konvensi
+    // whitelist tetap dipakai konsisten dengan sourceFilter di atas).
+    const SORT_FIELDS = new Set(["leads", "spamRate", "won", "convRate", "avgOrderValue", "nilaiPerLead", "totalValue"]);
+    const sortByField = SORT_FIELDS.has(sortBy) ? sortBy : "leads";
+    const sortDirection = sortDir === "asc" ? "asc" : "desc";
     // ⚠️ BUG BESAR YANG DIPERBAIKI (14 Agt 2026): dulu `where` di sini
     // menyertakan `leadSourceDetail: { not: null }`. Akibatnya SELURUH
     // pelanggan WHATSAPP_DIRECT (yang memang tidak punya detail) dibuang
@@ -1826,6 +1838,7 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       LEFT JOIN "Order" o ON o."customerId" = c.id
       WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
         ${sourceFilter ? Prisma.sql`AND c."leadSource" = ${sourceFilter}::"LeadSource"` : Prisma.empty}
+        ${searchQuery ? Prisma.sql`AND c."leadSourceDetail" ILIKE ${"%" + searchQuery + "%"}` : Prisma.empty}
       GROUP BY 1, 2`;
 
     const semua = baris.map((b) => {
@@ -1847,7 +1860,22 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       };
     });
 
-    semua.sort((a, b) => b.leads - a.leads);
+    // Sortir dinamis (default: leads desc, sama seperti sebelumnya). PENTING:
+    // ini terjadi SEBELUM potongan BATAS=30 di bawah — kalau urutannya
+    // dibalik (potong dulu baru sort), kolom mis. "Konversi" akan sortir
+    // cuma di antara 30 baris ber-lead-terbanyak, sementara iklan kecil tapi
+    // konversinya tinggi (yang justru paling menarik dicari lewat sort ini)
+    // sudah keburu terkubur jadi bagian dari baris "LAINNYA".
+    //
+    // null selalu di BELAKANG apa pun arahnya — "belum ada closing" (null)
+    // bukan "closing-nya jelek" (0%), jadi tidak boleh ikut lomba naik/turun.
+    semua.sort((a, b) => {
+      const av = a[sortByField], bv = b[sortByField];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return sortDirection === "asc" ? av - bv : bv - av;
+    });
 
     // Total SELURUH baris dihitung SEBELUM dipotong — dipakai UI untuk
     // menunjukkan bahwa tabel ini rekonsiliasi dengan angka Dashboard.
@@ -1910,6 +1938,9 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       sourceFilter, // null = semua sumber. Frontend pakai ini utk tahu kapan
                     // boleh menampilkan kalimat rekonsiliasi "cocok dengan
                     // Dashboard" (cuma valid saat null, lihat catatan di atas).
+      searchQuery,  // null = tidak sedang mencari kata kunci apa pun.
+      sortBy: sortByField, sortDir: sortDirection, // gema balik ke frontend
+                    // utk render panah arah di header kolom yang sedang aktif.
       leadLama,
       // = angka yang akan cocok dengan "Total Nilai Order" di Ringkasan/
       // Dashboard untuk periode yang SAMA. Kalau dua-duanya dibuka

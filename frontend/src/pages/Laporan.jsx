@@ -135,7 +135,7 @@ export default function Laporan() {
         tab,
         periode: formatRangeText(range),
         namaFile: `laporan-${tab.toLowerCase()}-${namaFile(range)}`,
-        summary, overview, perf, funnel, velocity, salesReport, traffic,
+        summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail,
       });
     } catch (e) {
       alert(e.message || "Gagal membuat file export.");

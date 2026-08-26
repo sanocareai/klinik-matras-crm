@@ -361,6 +361,69 @@ function sheetTraffic({ periode, traffic }) {
   return sb.build([16, ...Array.from({ length: 24 }, () => 9)]);
 }
 
+// ── Sheet: Rincian per Iklan ──────────────────────────────────────────────
+// BUG YANG DIPERBAIKI (26 Agustus 2026): "Export Traffic" sebelumnya sama
+// sekali TIDAK menyertakan tabel "Rincian per Iklan" (kreatif/link spesifik,
+// dari Customer.leadSourceDetail) — hanya agregat per platform (sheetTraffic
+// di atas). Padahal ini tabel yang paling sering ingin dibawa keluar CRM
+// (mis. dilampirkan ke evaluasi belanja iklan bulanan).
+//
+// SENGAJA mengekspor `sourceDetail` APA ADANYA (top 30 baris teratas + 1
+// baris "LAINNYA" gabungan, sama seperti yang pertama kali dimuat di layar
+// Laporan) — BUKAN state filter/pencarian/sortir lokal yang mungkin sedang
+// aktif di TrafficTab.jsx. Konsisten dengan sheet lain di file ini: export
+// selalu berarti "seluruh data tab ini", bukan "screenshot dari apa yang
+// kebetulan sedang difilter di layar".
+function sheetRincianIklan({ periode, sourceDetail }) {
+  const sb = new SheetBuilder();
+  judul(sb, "RINCIAN PER IKLAN", periode);
+
+  sb.row(["Basis periode: SEMUA order dari lead yang MASUK pada periode ini"]);
+  sb.row(["(termasuk yang baru closing belakangan) — beda dengan Ringkasan/Dashboard"]);
+  sb.row(["yang menghitung order yang DIBUAT pada periode ini. Lihat catatan di layar."]);
+  if (sourceDetail.leadLama?.order > 0) {
+    sb.row([
+      `+ Rp${sourceDetail.leadLama.totalValue.toLocaleString("id-ID")} dari ${sourceDetail.leadLama.order} order lead lama yang baru closing periode ini`,
+      `= Rp${sourceDetail.sesuaiRingkasan.toLocaleString("id-ID")} (cocok dengan Dashboard)`,
+    ]);
+  }
+  sb.blank();
+
+  sb.row(["Sumber", "Platform", "Detail", "Lead", "Spam %", "Closing", "Konversi %", "Rata2 Order", "Nilai/Lead", "Nilai Order"]);
+  (sourceDetail.data || []).forEach((row) => sb.row([
+    row.agregat ? row.source : (SOURCE_LABELS[row.source] || row.source),
+    LABEL_PLATFORM_EXPORT[row.platform] || "—",
+    row.detail || "(tidak diketahui)",
+    num(row.leads),
+    row.spamRate == null ? "—" : num(row.spamRate, FMT.pct0),
+    num(row.won),
+    row.convRate == null ? "—" : num(row.convRate, FMT.pct),
+    row.avgOrderValue == null ? "—" : rp(row.avgOrderValue),
+    row.nilaiPerLead == null ? "—" : rp(row.nilaiPerLead),
+    rp(row.totalValue),
+  ]));
+
+  if (sourceDetail.total) {
+    sb.blank();
+    sb.row([
+      "TOTAL SELURUH SUMBER", "", "",
+      num(sourceDetail.total.leads),
+      sourceDetail.total.spamRate == null ? "—" : num(sourceDetail.total.spamRate, FMT.pct0),
+      num(sourceDetail.total.won),
+      sourceDetail.total.convRate == null ? "—" : num(sourceDetail.total.convRate, FMT.pct),
+      sourceDetail.total.avgOrderValue == null ? "—" : rp(sourceDetail.total.avgOrderValue),
+      sourceDetail.total.nilaiPerLead == null ? "—" : rp(sourceDetail.total.nilaiPerLead),
+      rp(sourceDetail.total.totalValue),
+    ]);
+  }
+
+  return sb.build([18, 12, 40, 8, 8, 9, 10, 14, 14, 16]);
+}
+// Label singkat khusus Excel — beda dari LABEL_PLATFORM di TrafficTab.jsx
+// (yang untuk UI) supaya sheet ini tidak bergantung impor lintas folder
+// features/ → utils/ untuk satu objek kecil.
+const LABEL_PLATFORM_EXPORT = { FACEBOOK: "Facebook", INSTAGRAM: "Instagram", WHATSAPP: "WA Status", UNKNOWN: "—" };
+
 // ── Sheet: Percakapan ─────────────────────────────────────────────────────
 function sheetPercakapan({ periode, perf, overview }) {
   const sb = new SheetBuilder();
@@ -425,7 +488,10 @@ const SHEET_PER_TAB = {
     ["Ringkasan", d.summary && sheetRingkasan(d)],
     ["Kota",      d.summary?.topCities?.length && sheetKota(d)],
   ],
-  Traffic:   (d) => [["Traffic",    d.traffic && sheetTraffic(d)]],
+  Traffic:   (d) => [
+    ["Traffic",       d.traffic && sheetTraffic(d)],
+    ["Rincian Iklan", d.sourceDetail?.data?.length && sheetRincianIklan(d)],
+  ],
   // "Percakapan" + "Penjualan" digabung jadi tab "Performa Tim" (25 Agustus
   // 2026) — export-nya TETAP 2 sheet terpisah (fungsi sheetPercakapan/
   // sheetPenjualan TIDAK diubah), cuma dipicu dari satu tombol tab yang sama.
@@ -443,9 +509,9 @@ const SHEET_PER_TAB = {
  */
 export function exportLaporanWorkbook({
   periode, namaFile, tab,
-  summary, overview, perf, funnel, velocity, salesReport, traffic,
+  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail,
 }) {
-  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic };
+  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail };
   const wb = XLSX.utils.book_new();
 
   const builder = SHEET_PER_TAB[tab];
