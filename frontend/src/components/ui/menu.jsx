@@ -5,6 +5,20 @@ import { cn } from "@/lib/utils.js";
 // Dropdown menu aksesibel di atas Radix (keyboard nav, fokus, aria otomatis).
 // API tipis: <Menu trigger={<button/>}><MenuItem/>…</Menu>. Dipakai untuk menu
 // kontekstual/aksi & menu profil user. Lihat sano-components.md §B.4.
+//
+// BUG YANG DIPERBAIKI (26 Agustus 2026): z-index Content SEBELUMNYA 150 —
+// lebih RENDAH dari sidebar mobile (`.sidebar.mobile-open`, index.css,
+// z-index:400). Content di-Portal ke document.body sebagai SIBLING dari
+// <aside class="sidebar">, bukan child-nya, jadi menang/kalahnya murni
+// angka z-index, TIDAK peduli trigger-nya ada di dalam sidebar atau tidak.
+// Akibatnya WorkspaceSwitcher (trigger-nya DI DALAM sidebar) — begitu
+// sidebar mobile dibuka lalu tombol Workspace diklik — menu pilihannya
+// ter-render, tapi KETUTUP oleh panel sidebar sendiri (400 > 150). Dinaikkan
+// ke 1100 — di atas SEMUA overlay interaktif lain yang pernah dipasang di
+// codebase ini (drawer Customer 360 z-100, dialog Radix z-200/201, sidebar
+// mobile z-400, bottom sheet z-500, context-menu chat z-999, modal lama
+// z-1000) — TAPI tetap di bawah lapisan "selalu paling atas" yang memang
+// harus menang mutlak (tooltip z-1200, image viewer z-1300, toast z-9999).
 export function Menu({ trigger, children, align = "end", sideOffset = 6, className }) {
   return (
     <DropdownMenu.Root>
@@ -14,7 +28,7 @@ export function Menu({ trigger, children, align = "end", sideOffset = 6, classNa
           align={align}
           sideOffset={sideOffset}
           className={cn(
-            "z-[150] min-w-[180px] rounded-xl bg-surface p-1.5 shadow-popover outline-none",
+            "z-[1100] min-w-[180px] rounded-xl bg-surface p-1.5 shadow-popover outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
             className
           )}
