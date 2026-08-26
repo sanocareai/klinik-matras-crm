@@ -37,6 +37,7 @@ import {
 import { Image } from "expo-image";
 import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
+import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
 import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
@@ -224,6 +225,18 @@ export default function OrderFormModal({
 
   const isEdit = !!order;
   const isLayanan = category === "LAYANAN";
+
+  // BUG YANG DIPERBAIKI (26 Agustus 2026): backend MENOLAK PATCH/item-edit
+  // untuk order LUNAS kalau bukan admin (D-025, lihat routes/orders.js
+  // guardOrderLocked) — tapi form ini sebelumnya TIDAK TAHU itu sama sekali,
+  // jadi user bebas isi SELURUH form (Ongkir, Estimasi, Layanan, dst),
+  // baru ditolak lewat Alert generik pas tekan "Simpan Order" di paling
+  // akhir. Web (OrderSection.jsx) sudah lama kasih tahu di depan — mobile
+  // sekarang menyusul: banner + tombol submit dinonaktifkan SEBELUM user
+  // buang waktu isi form yang sudah pasti ditolak.
+  const { user } = useAuth();
+  const isAdmin = (Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role]).includes("ADMIN");
+  const locked = isEdit && order?.paymentStatus === "LUNAS" && !isAdmin;
   // order.pipelineStage cuma ada kalau caller-nya OrdersScreen.js (lihat
   // catatan panjang di deklarasi state pipelineStage di atas).
   const showPipelineEditor = isEdit && Object.prototype.hasOwnProperty.call(order, "pipelineStage");
@@ -540,6 +553,15 @@ export default function OrderFormModal({
               </TouchableOpacity>
             </View>
           </View>
+
+          {locked && (
+            <View style={styles.lockedBanner}>
+              <Text style={styles.lockedBannerText}>
+                Order ini sudah LUNAS — cuma admin yang bisa mengedit. Kalau pelanggan minta
+                revisi, tandai lewat "Ajukan Revisi" di profilnya.
+              </Text>
+            </View>
+          )}
 
           <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: "100%" }}>
             {/* Status — HANYA di mode edit (cek AddOrderForm web: form create
@@ -983,7 +1005,11 @@ export default function OrderFormModal({
               </>
             )}
 
-            <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={handleSubmit} disabled={saving || deleting}>
+            <TouchableOpacity
+              style={[styles.submitBtn, (saving || locked) && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={saving || deleting || locked}
+            >
               <Text style={styles.submitText}>{saving ? "Menyimpan…" : "Simpan Order"}</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -1040,6 +1066,11 @@ function createStyles(tokens) {
   // (paddingBottom, ikut di-spread ke `overlay` saat render) yang mendorong
   // posisinya naik — dua-duanya wajib jalan bersama, lihat catatan di render.
   modal: { backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingBottom: 24 },
+  lockedBanner: {
+    marginHorizontal: 16, marginTop: 10, padding: 12, borderRadius: 10,
+    backgroundColor: `${tokens.color.warning}22`, borderWidth: 1, borderColor: `${tokens.color.warning}55`,
+  },
+  lockedBannerText: { fontSize: 12.5, lineHeight: 18, color: tokens.color.textPrimary, fontWeight: "500" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   headerTitle: { fontWeight: "700", fontSize: 15, color: tokens.color.textPrimary },
   categoryRow: { flexDirection: "row", gap: 8 },
