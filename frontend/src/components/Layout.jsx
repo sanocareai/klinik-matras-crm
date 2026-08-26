@@ -89,6 +89,10 @@ const DIVISIONS = {
           // validasi manual TERPISAH (pelengkap audit_balasan_sales,
           // BUKAN pengganti), sengaja belum masuk Laporan/Dashboard utama.
           { to: "/quality-scorer", label: "Quality Scorer (AI)", Icon: Sparkles },
+          // Sales Risk Engine (26 Agustus 2026) — TERPISAH dari skorUrgensi/
+          // Priority Engine, laporan risiko kebocoran revenue akibat
+          // eksekusi sales gagal (bukan widget prioritas biasa).
+          { to: "/sales-risk", label: "Pelanggan Berisiko", Icon: AlertTriangle },
         ],
       },
       {

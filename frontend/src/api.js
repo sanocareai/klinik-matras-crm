@@ -666,6 +666,9 @@ export const api = {
   // memanggil LLM; /run dipakai utk trigger manual saat verifikasi.
   getQualityScorerWeeklyNarrative: () => request("/quality-scorer/weekly-narrative"),
   runQualityScorerWeeklyNarrativeNow: () => request("/quality-scorer/weekly-narrative/run", { method: "POST" }),
+  // Sales Risk Engine (26 Agustus 2026) — TERPISAH dari skorUrgensi/Priority
+  // Engine, deteksi risiko kebocoran revenue akibat eksekusi sales gagal.
+  getSalesRisk: (params) => request("/sales-risk" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
   getRecommendations: () => request("/analytics/recommendations"),

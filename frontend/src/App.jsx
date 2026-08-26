@@ -27,6 +27,7 @@ const Laporan       = lazy(() => import("./pages/Laporan.jsx"));
 const Pengaturan    = lazy(() => import("./pages/Pengaturan.jsx"));
 const PengaturanSales = lazy(() => import("./pages/PengaturanSales.jsx"));
 const QualityScorer   = lazy(() => import("./pages/QualityScorer.jsx"));
+const SalesRisk        = lazy(() => import("./pages/SalesRisk.jsx"));
 const Pengguna      = lazy(() => import("./pages/Pengguna.jsx"));
 const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
@@ -381,6 +382,7 @@ export default function App() {
             {/* AI Conversation Quality Scorer (26 Agustus 2026) — laporan
                 validasi manual TERPISAH, pelengkap audit_balasan_sales. */}
             <Route path="/quality-scorer" element={<QualityScorer />} />
+            <Route path="/sales-risk" element={<SalesRisk />} />
             <Route path="/pengguna"    element={<Pengguna user={user} />} />
             <Route path="/products"    element={<Products user={user} />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
