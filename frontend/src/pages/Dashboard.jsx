@@ -40,22 +40,19 @@ export default function Dashboard({ user }) {
   // dibagi lead. Sengaja begitu: satu pelanggan yang order 2x dalam periode
   // yang sama tidak boleh dihitung sebagai "2 konversi".
   //
-  // BUG YANG DIPERBAIKI (26 Agustus 2026): `totalCustomers`/`customersWithOrders`
-  // di atas ikut `range` yang dipilih (custWhereKonversi di backend) — artinya
-  // ini COHORT: "dari lead yang masuk DI PERIODE INI, berapa yang SUDAH
-  // closing (sampai sekarang)". Di-set "Hari ini", cohort-nya adalah lead
-  // yang BARU SAJA masuk hari itu juga — hampir tidak pernah sempat closing
-  // di HARI YANG SAMA, jadi Conversion nyaris selalu 0% dan disangka bug
-  // (dilaporkan owner: "kok Conversion 0% padahal ada order hari ini?" —
-  // order itu dari lead LAMA yang baru closing hari ini, bukan dari cohort
-  // hari ini, jadi memang benar tidak ikut kehitung di sini).
-  //
-  // Sekarang kartu ini SELALU pakai cohort BULAN INI (via `overviewMTD`,
-  // lihat useDashboardData.js), TIDAK ikut `range` — sama pola dengan
-  // "Target Bulanan Tim" di Laporan.
-  const ovMTD = d.overviewMTD.data;
-  const konversi = ovMTD && ovMTD.totalCustomers > 0
-    ? Math.round((ovMTD.customersWithOrders / ovMTD.totalCustomers) * 100)
+  // REVISI 26 Agustus 2026 (dua putaran): sempat di-decouple ke cohort
+  // BULAN BERJALAN TETAP (tidak ikut `range`), supaya "Hari ini" tidak
+  // selalu kelihatan 0% (leads yang BARU masuk hari itu memang hampir
+  // tidak pernah sempat closing di HARI YANG SAMA). TAPI itu merusak
+  // kegunaan lain yang owner pakai: bandingkan conversion rate Juli vs
+  // Agustus lewat date picker — kalau di-hardcode ke bulan berjalan,
+  // ganti rentang ke bulan lain tidak mengubah apa pun sama sekali.
+  // Dikembalikan ikut `range` lagi (permintaan owner) — "Hari ini" boleh
+  // kelihatan rendah/0% di jam-jam awal, itu wajar untuk cohort yang baru
+  // masuk, BUKAN bug; yang penting date picker berfungsi lagi untuk
+  // membandingkan periode/bulan mana pun.
+  const konversi = ov && ov.totalCustomers > 0
+    ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
     : null;
   const userName = user?.name?.split(" ")[0] || "Anda";
   // Label pembanding ikut PANJANG rentang yang sedang dipilih ("vs kemarin",
@@ -65,9 +62,6 @@ export default function Dashboard({ user }) {
   // yang tidak pernah ikut menyesuaikan rentang yang dipilih. null kalau
   // preset "Semua" (tidak ada periode pembanding yang valid).
   const cmp = compareLabel(range);
-  // Label pembanding KHUSUS kartu Conversion — ikut cohort bulan-berjalan
-  // (di atas), BUKAN `range` yang dipilih di date picker.
-  const cmpMTD = compareLabel(makeRange("this_month"));
 
   return (
     <PageContainer>
@@ -102,12 +96,12 @@ export default function Dashboard({ user }) {
           <StatCard
             label="Conversion" icon={Target} depth={4}
             value={konversi != null ? `${konversi}%` : "—"}
-            delta={ovMTD?.growthConversion} deltaSuffix={cmpMTD}
+            delta={ov?.growthConversion} deltaSuffix={cmp}
             note={
-              ovMTD ? `${(ovMTD.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ovMTD.totalCustomers ?? 0).toLocaleString("id-ID")} lead bulan ini`
-                 : "lead bulan ini yang sudah order"
+              ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
+                 : "pelanggan yang order"
             }
-            tooltip={`Conversion = (lead BULAN INI yang sudah order) ÷ (SELURUH lead bulan ini) × 100%. SELALU bulan berjalan, tidak ikut rentang tanggal yang dipilih di atas — kalau di-set "Hari ini", lead yang baru masuk hari itu memang hampir tidak pernah sempat closing hari yang sama juga. Contoh: ${ovMTD?.customersWithOrders ?? 0} ÷ ${ovMTD?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
+            tooltip={`Conversion = (lead di periode ini yang sudah order) ÷ (SELURUH lead baru DI PERIODE YANG DIPILIH) × 100%. Ikut date picker di atas — pilih Juli untuk lihat conversion Juli, Agustus untuk Agustus, dst. Kalau di-set "Hari ini", wajar kelihatan rendah/0% karena lead yang baru masuk hari itu belum tentu sempat closing hari yang sama juga. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
           />
         </section>
 
