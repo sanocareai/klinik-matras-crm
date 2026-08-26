@@ -2181,6 +2181,42 @@ model ConversationQualityScore {
   customerComprehensionNote  String?
   plainLanguageUsed          Boolean? // true = bahasa disederhanakan DAN sales aktif cek pemahaman customer
 
+  // RUBRIK BARU (27 Agustus 2026) — rubrik di atas (4 dimensi lama + E/F)
+  // DIGANTI TOTAL oleh 3 modul resmi SANO Care Sales Framework
+  // (docs/SANO_Sales_Framework/) atas keputusan owner: satu sumber
+  // kebenaran, bukan sistem paralel. Kolom LAMA di atas TIDAK dihapus
+  // (riwayat tetap ada, cuma jadi "legacy" — owner sudah setuju riwayat
+  // 6-dimensi lama tidak sebanding lagi dgn skor baru), TAPI TIDAK
+  // ditulis lagi mulai commit ini.
+  //
+  // objectionHandlingScore/Quote DI ATAS DIPAKAI ULANG (bukan kolom baru)
+  // utk dimensi Objection Handling versi modul baru — nama kolom sama,
+  // MAKNA beda mulai baris yang di-generate rubrik baru (bedakan lewat
+  // kolom `model`/`createdAt` relatif terhadap tanggal migrasi ini kalau
+  // perlu audit). objectionHandlingNote TIDAK dipakai lagi (diganti
+  // Strength/Weakness di bawah, sama seperti 2 dimensi baru).
+  //
+  // "note" tunggal DIGANTI Strength+Weakness terpisah (bukan digabung 1
+  // teks) — permintaan eksplisit owner supaya output gampang dibaca
+  // pemilik bisnis tanpa parsing teks. "Quote" dipakai sbg field "Contoh
+  // Percakapan" di UI.
+  communicationSkillScore    Int?
+  communicationSkillQuote    String?
+  communicationSkillStrength String?
+  communicationSkillWeakness String?
+  authoritySellingScore      Int?
+  authoritySellingQuote      String?
+  authoritySellingStrength   String?
+  authoritySellingWeakness   String?
+  objectionHandlingStrength  String?
+  objectionHandlingWeakness  String?
+
+  // Rekomendasi modul SANO Class — dihitung RULE-BASED (bukan LLM): dimensi
+  // dgn skor TERENDAH di antara 3 dimensi rubrik baru utk percakapan ini.
+  // Deterministik & murah, konsisten dgn prinsip "jangan reimplementasi
+  // via LLM kalau bisa dihitung langsung dari data yang sudah ada".
+  recommendedModule String?
+
   overallNote               String? // catatan coaching ringkasan, opsional
 
   model        String // model id dipakai saat grading (mis. claude-haiku-4-5-20251001)

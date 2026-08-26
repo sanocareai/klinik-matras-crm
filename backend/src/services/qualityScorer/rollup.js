@@ -1,16 +1,22 @@
 // ═══ ROLLUP MINGGUAN — AI Conversation Quality Scorer ════════════════════
 // Agregasi baris ConversationQualityScore per sales: rata-rata per dimensi,
 // tren vs minggu sebelumnya, dan 2-3 contoh terbaik/terlemah (dari overall
-// score = rata-rata 4 dimensi yang TERISI, dimensi null tidak ikut dihitung
-// supaya percakapan singkat yang wajar tidak sempat bahas 1-2 dimensi tidak
+// score = rata-rata dimensi yang TERISI, dimensi null tidak ikut dihitung
+// supaya percakapan singkat yang wajar tidak sempat bahas 1 dimensi tidak
 // dihukum seolah skornya 0 di situ).
+//
+// DIM_TO_COLUMN diperbarui 27 Agustus 2026 mengikuti rubrik SANO Sales
+// Framework (3 dimensi: Communication Skill/Authority Selling/Objection
+// Handling) — objectionHandlingScore DIPAKAI ULANG (kolom sama, makna baru
+// mulai baris yang di-generate rubrik baru), 2 lainnya kolom baru. Baris
+// LAMA (productKnowledge/consultationProcess/healthImpact) tetap ada di DB
+// sbg data legacy, TIDAK lagi dibaca rollup ini.
 import { prisma } from "../../db.js";
 import { CORE_DIMENSIONS, PATTERN_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 
 const DIM_TO_COLUMN = {
-  productKnowledge: "productKnowledgeScore",
-  consultationProcess: "consultationProcessScore",
-  healthImpact: "healthImpactScore",
+  communicationSkill: "communicationSkillScore",
+  authoritySelling: "authoritySellingScore",
   objectionHandling: "objectionHandlingScore",
 };
 
@@ -138,12 +144,14 @@ function formatExample(r) {
     overallScore: Math.round(r._overall * 10) / 10,
     pipelineStageAtSample: r.pipelineStageAtSample,
     sampledFor: r.sampledFor,
+    recommendedModule: r.recommendedModule,
     dimensions: Object.fromEntries(
       CORE_DIMENSIONS.map(({ key }) => {
         const col = DIM_TO_COLUMN[key];
         const quoteCol = `${col.replace("Score", "Quote")}`;
-        const noteCol = `${col.replace("Score", "Note")}`;
-        return [key, { score: r[col], quote: r[quoteCol], note: r[noteCol] }];
+        const strengthCol = `${col.replace("Score", "Strength")}`;
+        const weaknessCol = `${col.replace("Score", "Weakness")}`;
+        return [key, { score: r[col], quote: r[quoteCol], strength: r[strengthCol], weakness: r[weaknessCol] }];
       })
     ),
     overallNote: r.overallNote,

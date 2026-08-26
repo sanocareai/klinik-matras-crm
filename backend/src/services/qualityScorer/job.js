@@ -36,10 +36,12 @@ function normalizeFlag(v) {
 // valid, cuma salah lokasi. Dicoba nested DULU, baru fallback ke root,
 // supaya flag tidak hilang jadi null cuma gara-gara salah taruh, BUKAN
 // karena topiknya memang tidak muncul di percakapan.
+// "note" tunggal (rubrik lama) DIGANTI "strength"+"weakness" terpisah (27
+// Agustus 2026, rubrik SANO Sales Framework) — permintaan eksplisit owner.
 function dimResult(scores, dim) {
   const d = scores?.[dim.key];
   if (!d || d.score == null) {
-    return { score: null, quote: null, note: d?.note ?? null, flag: dim.flag ? null : undefined };
+    return { score: null, quote: null, strength: null, weakness: null, flag: dim.flag ? null : undefined };
   }
   let flag;
   if (dim.flag) {
@@ -49,7 +51,8 @@ function dimResult(scores, dim) {
   return {
     score: Number(d.score),
     quote: d.quote ?? null,
-    note: d.note ?? null,
+    strength: d.strength ?? null,
+    weakness: d.weakness ?? null,
     flag,
   };
 }
@@ -63,10 +66,23 @@ export function buildDimFields(scores) {
     const r = dimResult(scores, dim);
     dimFields[`${dim.key}Score`] = r.score;
     dimFields[`${dim.key}Quote`] = r.quote;
-    dimFields[`${dim.key}Note`] = r.note;
+    dimFields[`${dim.key}Strength`] = r.strength;
+    dimFields[`${dim.key}Weakness`] = r.weakness;
     if (dim.flag) dimFields[dim.flag.key] = r.flag;
   }
   return dimFields;
+}
+
+// Rekomendasi modul SANO Class — RULE-BASED (dimensi dgn skor TERENDAH di
+// antara yang terisi), BUKAN LLM. Deterministik & tanpa biaya tambahan.
+export function computeRecommendedModule(dimFields) {
+  let worst = null;
+  for (const dim of RUBRIC_DIMENSIONS) {
+    const score = dimFields[`${dim.key}Score`];
+    if (score == null) continue;
+    if (!worst || score < worst.score) worst = { score, label: dim.label };
+  }
+  return worst ? worst.label : null;
 }
 
 /**
@@ -142,6 +158,7 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
             pipelineStageAtSample: row.pipelineStage,
             sampledFor: mulai,
             ...dimFields,
+            recommendedModule: computeRecommendedModule(dimFields),
             overallNote: scores?.overallNote ?? null,
             model: QUALITY_SCORER_MODEL,
             inputTokens: usage.inputTokens || 0,

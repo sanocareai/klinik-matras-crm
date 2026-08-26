@@ -9,47 +9,59 @@
 import cron from "node-cron";
 import { prisma } from "../../db.js";
 import { chat } from "../providers/anthropicProvider.js";
-import { QUALITY_SCORER_MODEL, PATTERN_DIMENSIONS } from "../../config/qualityScorerRubric.js";
+import { QUALITY_SCORER_MODEL, CORE_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 import { getWeeklyRollup } from "./rollup.js";
 import { resolveApiKey } from "./grading.js";
 import { estimateCostUsd } from "./pricing.js";
 
 const NARRATIVE_WINDOW_DAYS = 7; // rolling 7 hari, konsisten dgn default /weekly
 
+// Direvisi 27 Agustus 2026 — rubrik SANO Sales Framework TIDAK punya
+// dimensi ber-flag (beda dari rubrik lama), jadi digest sekarang dibangun
+// dari rata-rata skor per dimensi (CORE_DIMENSIONS, sudah dihitung
+// rollup.js) + skor keseluruhan, bukan lagi frekuensi flag negatif.
 function buildDigestText(row) {
-  const lines = [`Sales: ${row.salesName}`, `Jumlah percakapan dinilai minggu ini: ${row.sampleCount}`];
-  for (const dim of PATTERN_DIMENSIONS) {
-    const pm = row.patternDimensions[dim.key];
-    lines.push(
-      `- ${pm.label}: rata-rata skor ${pm.avgScore ?? "-"} (minggu lalu ${pm.prevAvgScore ?? "-"}, tren ${pm.trend ?? "-"}), ` +
-      `flag negatif "${pm.flagKey}=false" pada ${pm.negativeFlagRatePct ?? "-"}% dari ${pm.sampleCountForFlag} percakapan yang relevan dinilai.`
-    );
+  const lines = [
+    `Sales: ${row.salesName}`,
+    `Jumlah percakapan dinilai minggu ini: ${row.sampleCount}`,
+    `Skor keseluruhan: ${row.overallAvg ?? "-"} (minggu lalu ${row.prevOverallAvg ?? "-"}, tren ${row.trend ?? "-"})`,
+  ];
+  for (const dim of CORE_DIMENSIONS) {
+    lines.push(`- ${dim.label}: rata-rata skor ${row.dimensions[dim.key] ?? "-"}/5`);
   }
   return lines.join("\n");
 }
 
-// Ambil beberapa kutipan sales yang mendasari flag NEGATIF (false) minggu
-// ini, LANGSUNG dari kolom quote/note yang sudah tersimpan (SUDAH di-mask
-// sejak proses grading harian) — tidak fetch transcript ulang.
-async function fetchNegativeExamples(salesUserId, weekStart, weekEnd) {
-  const examples = [];
-  for (const dim of PATTERN_DIMENSIONS) {
-    const rows = await prisma.conversationQualityScore.findMany({
-      where: {
-        salesUserId,
-        sampledFor: { gte: weekStart, lt: weekEnd },
-        [dim.flag.key]: false,
-      },
-      select: { [`${dim.key}Quote`]: true, [`${dim.key}Note`]: true },
-      take: 2,
-      orderBy: { createdAt: "desc" },
-    });
-    for (const r of rows) {
-      const quote = r[`${dim.key}Quote`];
-      if (quote) examples.push(`[${dim.label}] "${quote}" — catatan: ${r[`${dim.key}Note`] || "-"}`);
-    }
+// Dimensi dgn rata-rata TERENDAH minggu ini — dasar utk "modul SANO Class"
+// yang paling relevan dibahas, sama prinsip dgn recommendedModule per
+// percakapan (job.js), cuma di level MINGGUAN/PER-SALES.
+function findWeakestDimension(row) {
+  let weakest = null;
+  for (const dim of CORE_DIMENSIONS) {
+    const avg = row.dimensions[dim.key];
+    if (avg == null) continue;
+    if (!weakest || avg < weakest.avg) weakest = { key: dim.key, label: dim.label, avg };
   }
-  return examples;
+  return weakest;
+}
+
+// Ambil beberapa kutipan sales dgn skor RENDAH (<=3) di dimensi TERLEMAH
+// minggu ini, LANGSUNG dari kolom quote/weakness yang sudah tersimpan
+// (SUDAH di-mask sejak proses grading harian) — tidak fetch transcript ulang.
+async function fetchWeakExamples(salesUserId, weekStart, weekEnd, weakest) {
+  if (!weakest) return [];
+  const scoreCol = `${weakest.key}Score`;
+  const quoteCol = `${weakest.key}Quote`;
+  const weaknessCol = `${weakest.key}Weakness`;
+  const rows = await prisma.conversationQualityScore.findMany({
+    where: { salesUserId, sampledFor: { gte: weekStart, lt: weekEnd }, [scoreCol]: { lte: 3 } },
+    select: { [quoteCol]: true, [weaknessCol]: true, [scoreCol]: true },
+    take: 2,
+    orderBy: { [scoreCol]: "asc" },
+  });
+  return rows
+    .filter((r) => r[quoteCol])
+    .map((r) => `[${weakest.label}, skor ${r[scoreCol]}] "${r[quoteCol]}" — ${r[weaknessCol] || "-"}`);
 }
 
 function buildNarrativePrompt(row, examples) {
@@ -57,7 +69,7 @@ function buildNarrativePrompt(row, examples) {
 
 ATURAN:
 - Fokus ke POLA (bukan 1 kejadian tunggal) — sebut tren kalau ada perubahan dibanding minggu lalu.
-- Kalau ada flag negatif yang cukup sering (mis. di atas 30%), beri 1 saran konkret & spesifik.
+- Kalau ada dimensi dengan rata-rata rendah (di bawah 3), beri 1 saran konkret & spesifik merujuk ke modul SANO Class yang relevan (Communication Skill/Authority Selling/Objection Handling).
 - Kalau datanya terlalu sedikit (sampleCount kecil) atau semua metrik bagus, katakan itu apa adanya — JANGAN mengarang masalah yang tidak didukung angka.
 - Jawab HANYA teks ringkasan polos (tanpa markdown, tanpa JSON, maksimal 4 kalimat).
 
@@ -95,7 +107,8 @@ export async function runWeeklyNarrativeJob({ referenceNow = new Date() } = {}) 
     if (row.sampleCount === 0) continue; // tidak ada data minggu ini — hemat biaya, tidak ada yg dinarasikan
     summary.salesProcessed++;
     try {
-      const examples = await fetchNegativeExamples(row.salesUserId, weekStart, weekEnd);
+      const weakest = findWeakestDimension(row);
+      const examples = await fetchWeakExamples(row.salesUserId, weekStart, weekEnd, weakest);
       const prompt = buildNarrativePrompt(row, examples);
       const { reply, usage } = await chat({
         apiKey,

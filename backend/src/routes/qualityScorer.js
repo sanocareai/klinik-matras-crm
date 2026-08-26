@@ -28,9 +28,10 @@ qualityScorerRouter.get("/weekly", requireAdmin, async (req, res) => {
     res.json({
       ...rollup,
       dimensions: CORE_DIMENSIONS.map(({ key, label, description }) => ({ key, label, description })),
-      // Metadata dimensi E & F (Closing Assertiveness/Customer Comprehension)
-      // — TERPISAH dari `dimensions` di atas supaya section dashboard lama
-      // (yang membaca `dimensions`) sama sekali tidak berubah.
+      // Rubrik SANO Sales Framework (27 Agustus 2026) tidak punya dimensi
+      // ber-flag — PATTERN_DIMENSIONS selalu [] sekarang, jadi ini selalu
+      // array kosong. Dipertahankan (bukan dihapus) supaya frontend lama
+      // yang membaca field ini tidak perlu null-check tambahan.
       patternDimensionsMeta: PATTERN_DIMENSIONS.map(({ key, label, description, flag }) => ({
         key, label, description, flagKey: flag.key,
       })),

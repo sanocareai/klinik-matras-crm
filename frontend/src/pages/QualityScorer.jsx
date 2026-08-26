@@ -37,73 +37,38 @@ function ScoreCell({ value }) {
   return <span className={cn("font-bold tabular-nums", tone)}>{value.toFixed(1)}</span>;
 }
 
-// ═══ Pola Perilaku Berulang (Closing & Komunikasi) — 26 Agustus 2026 ═════
-// Section BARU, terpisah dari leaderboard di atas — TIDAK mengubah apa pun
-// di section lama. `pm` = row.patternDimensions[dimKey] dari /weekly.
-function NegativeFlagRate({ pm }) {
-  if (pm.negativeFlagRatePct == null) return <span className="text-[12px] text-ink3">Belum ada data relevan</span>;
-  const tone = pm.negativeFlagRatePct >= 40 ? "text-red" : pm.negativeFlagRatePct >= 20 ? "text-orange" : "text-green";
-  return (
-    <span className={cn("text-[12px] font-semibold tabular-nums", tone)}>
-      {pm.negativeFlagRatePct}% tanpa {pm.flagKey === "closingAskPresent" ? "closing ask" : "bahasa sederhana/cek paham"}
-      <span className="ml-1 font-normal text-ink3">({pm.sampleCountForFlag} percakapan relevan)</span>
-    </span>
-  );
-}
-
-function PatternDimensionCard({ meta, pm }) {
-  return (
-    <div className="flex flex-1 min-w-[220px] flex-col gap-1 rounded-btn bg-inset p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[12px] font-bold text-ink">{meta.label}</span>
-        <div className="flex items-center gap-1.5">
-          <ScoreCell value={pm.avgScore} />
-          <TrendBadge trend={pm.trend} />
-        </div>
-      </div>
-      <NegativeFlagRate pm={pm} />
-    </div>
-  );
-}
-
-function PatternSalesCard({ row, patternDimensionsMeta, narrative }) {
-  const [open, setOpen] = useState(false);
+// ═══ Ringkasan Naratif Mingguan — 27 Agustus 2026 ═════════════════════════
+// Diperbarui: rubrik SANO Sales Framework tidak punya dimensi ber-flag,
+// jadi section ini disederhanakan jadi murni ringkasan naratif per sales
+// (tanpa kartu metrik pola Closing/Komunikasi yang sudah tidak relevan).
+function NarrativeSalesCard({ row, narrative }) {
   return (
     <div className="rounded-btn bg-surface p-4 shadow-card">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-3 text-left">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="min-w-[140px] flex-1 font-semibold text-ink">{row.salesName}</span>
         <span className="text-[11px] text-ink3">{row.sampleCount} percakapan minggu ini</span>
-        {open ? <ChevronUp size={16} className="text-ink3" /> : <ChevronDown size={16} className="text-ink3" />}
-      </button>
-      <div className="mt-3 flex flex-wrap gap-3">
-        {patternDimensionsMeta.map((meta) => (
-          <PatternDimensionCard key={meta.key} meta={meta} pm={row.patternDimensions[meta.key]} />
-        ))}
       </div>
-      {open && (
-        <div className="mt-3 border-t border-line pt-3">
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Ringkasan Pola Mingguan (AI)</p>
-          {narrative ? (
-            <p className="text-[12.5px] italic text-ink2">"{narrative.narrative}"</p>
-          ) : (
-            <p className="text-[12px] text-ink3">Belum ada ringkasan minggu ini — job jalan tiap Senin 04:00 WIB, atau klik "Jalankan Ringkasan Mingguan" di atas.</p>
-          )}
-        </div>
-      )}
+      <div className="mt-2 border-t border-line pt-2">
+        {narrative ? (
+          <p className="text-[12.5px] italic text-ink2">"{narrative.narrative}"</p>
+        ) : (
+          <p className="text-[12px] text-ink3">Belum ada ringkasan minggu ini — job jalan tiap Senin 04:00 WIB, atau klik "Jalankan Ringkasan Mingguan" di atas.</p>
+        )}
+      </div>
     </div>
   );
 }
 
 function PatternSection({ data, narrativesBySales, onRunNarrative, runningNarrative, narrativeMsg }) {
-  if (!data || !data.patternDimensionsMeta) return null;
+  if (!data) return null;
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <CardTitle>Pola Perilaku Berulang — Closing & Komunikasi</CardTitle>
+            <CardTitle>Ringkasan Naratif Mingguan</CardTitle>
             <CardDescription>
-              Dimensi tambahan (Closing Assertiveness & Customer Comprehension) + ringkasan naratif mingguan (1 panggilan AI/sales/minggu) untuk bahan SANO Class.
+              Coaching note per sales berdasarkan pola minggu ini (1 panggilan AI/sales/minggu) — bahan sesi SANO Class.
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onRunNarrative} disabled={runningNarrative}>
@@ -124,12 +89,7 @@ function PatternSection({ data, narrativesBySales, onRunNarrative, runningNarrat
           <p className="py-4 text-center text-sm text-ink3">Belum ada data untuk periode ini.</p>
         ) : (
           data.perSales.map((row) => (
-            <PatternSalesCard
-              key={row.salesUserId}
-              row={row}
-              patternDimensionsMeta={data.patternDimensionsMeta}
-              narrative={narrativesBySales.get(row.salesUserId)}
-            />
+            <NarrativeSalesCard key={row.salesUserId} row={row} narrative={narrativesBySales.get(row.salesUserId)} />
           ))
         )}
       </div>
@@ -137,24 +97,37 @@ function PatternSection({ data, narrativesBySales, onRunNarrative, runningNarrat
   );
 }
 
+// Diperbarui 27 Agustus 2026 — "note" tunggal diganti Strength/Weakness
+// terpisah (rubrik SANO Sales Framework), + badge Rekomendasi Modul SANO
+// Class (dihitung rule-based di backend, bukan ditulis di sini).
 function ExampleCard({ example, dimensions }) {
   return (
     <div className="rounded-btn bg-inset p-3 text-[12.5px]">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <span className="font-bold text-ink">Skor keseluruhan: {example.overallScore.toFixed(1)}</span>
-        <Badge variant="neutral">{example.pipelineStageAtSample}</Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge variant="neutral">{example.pipelineStageAtSample}</Badge>
+          {example.recommendedModule && <Badge variant="brand">Rekomendasi: {example.recommendedModule}</Badge>}
+        </div>
       </div>
       {example.overallNote && <p className="mb-2 italic text-ink2">"{example.overallNote}"</p>}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {dimensions.map(({ key, label }) => {
           const d = example.dimensions[key];
           if (!d || d.score == null) return null;
           return (
-            <div key={key} className="border-t border-line pt-1.5 first:border-0 first:pt-0">
-              <span className="font-semibold text-ink2">{label}: </span>
-              <span className="font-bold tabular-nums">{d.score}/5</span>
-              {d.note && <span className="text-ink3"> — {d.note}</span>}
-              {d.quote && <p className="mt-0.5 truncate text-ink3" title={d.quote}>&ldquo;{d.quote}&rdquo;</p>}
+            <div key={key} className="border-t border-line pt-2 first:border-0 first:pt-0">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-semibold text-ink2">{label}</span>
+                <span className="font-bold tabular-nums">{d.score}/5</span>
+              </div>
+              {d.strength && <p className="text-ink3">✓ {d.strength}</p>}
+              {d.weakness && <p className="text-ink3">△ {d.weakness}</p>}
+              {d.quote && (
+                <p className="mt-1 truncate text-ink3" title={d.quote}>
+                  <span className="font-semibold">Contoh percakapan: </span>&ldquo;{d.quote}&rdquo;
+                </p>
+              )}
             </div>
           );
         })}
@@ -272,7 +245,7 @@ export default function QualityScorer() {
     <PageContainer>
       <PageHeader
         title="AI Conversation Quality Scorer"
-        subtitle="Laporan validasi manual — pelengkap audit_balasan_sales, BUKAN pengganti. Belum masuk Dashboard produksi."
+        subtitle="Penilaian berdasarkan kurikulum SANO Care Sales Framework (Communication Skill, Authority Selling, Objection Handling) — pelengkap audit_balasan_sales, BUKAN pengganti."
         actions={
           <>
             <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
