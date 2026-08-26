@@ -97,6 +97,26 @@ export async function buildPriorityList(prisma, scope) {
     .slice(0, 15);
 }
 
+// Kandidat LINTAS SEMUA SALES, TANPA cap 15 hasil akhir (26 Agustus 2026) —
+// dipakai job/alert batch (mis. staleLeadAlertJob.js) yang butuh SEMUA
+// pelanggan urgency tinggi apa adanya, bukan widget "top 15" per-user seperti
+// buildPriorityList. Pre-filter SAMA PERSIS dengan kind="priority" di
+// loadCandidates di atas (recent activity/komplain terbuka/PROSPECT, SPAM
+// selalu dikecualikan) — supaya query tetap bounded & konsisten dengan
+// definisi "kandidat priority" yang sudah ada, BUKAN scan seluruh tabel
+// Customer. `limit` cuma jaring pengaman (default null = tanpa batas);
+// hasil nyata di production ~2.900 baris (26 Agustus 2026, verifikasi query).
+export async function loadAllPriorityCandidates(prisma, { limit } = {}) {
+  const recentCut = new Date(Date.now() - T.candidateRecentDays * 86_400_000);
+  const notSpam = { pipelineStage: { not: "SPAM" } };
+  const where = { AND: [notSpam, { OR: [
+    { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: recentCut } } } },
+    { orders: { some: { hasComplaint: true } } },
+    { pipelineStage: "PROSPECT" },
+  ] }] };
+  return prisma.customer.findMany({ where, select: CUSTOMER_SELECT, ...(limit ? { take: limit } : {}) });
+}
+
 export async function buildOpportunityList(prisma, scope) {
   const candidates = await loadCandidates(prisma, scope, "opportunity");
   return candidates

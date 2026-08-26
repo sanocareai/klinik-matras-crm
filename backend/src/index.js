@@ -49,6 +49,7 @@ import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
+import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
 
@@ -204,6 +205,7 @@ server.listen(PORT, () => {
   logStatusMcp();
   startReconciliationJob();
   startSlaAlertJob();
+  startStaleLeadAlertJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
