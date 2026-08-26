@@ -865,13 +865,29 @@ async function computeSalesRow(u, ctx) {
     // Sebelumnya pembilangnya memakai "stage sekarang" (keadaan
     // sepanjang waktu) sementara penyebutnya periode — campur aduk, dan
     // itu yang membuat 14.3% muncul bersamaan dengan Rp0.
+    //
+    // BUG YANG DIPERBAIKI (26 Agustus 2026, dilaporkan owner: "konversi
+    // pribadi Novi 200%, tidak valid"): query ini cuma mensyaratkan
+    // `c."assignedToId" = u.id` (assignment SEKARANG, tanpa batas
+    // tanggal) — populasinya "SEMUA percakapan yang PERNAH ada, assign
+    // ke dia sekarang, customer-nya pindah Transaksi di periode ini".
+    // Penyebutnya (`handled`, lewat `mine`) mensyaratkan percakapan
+    // DIBUAT di periode ini. Dua populasi beda: customer dengan
+    // percakapan LAMA (dibuat jauh sebelum periode, TIDAK ikut
+    // `handled`) yang baru closing HARI INI tetap ikut menaikkan
+    // pembilang di sini — pembilang bisa lebih besar dari penyebutnya,
+    // menghasilkan >100% (persis kasus Novi: sedikit percakapan BARU
+    // hari itu, tapi beberapa customer LAMA closing hari yang sama).
+    // Sekarang `c."createdAt"` ikut dibatasi periode yang SAMA seperti
+    // `mine`, supaya pembilang selalu subset yang valid dari penyebut.
     prisma.$queryRaw`
       SELECT COUNT(DISTINCT pt.customer_id)::int AS n
       FROM pipeline_transitions pt
       JOIN "Conversation" c ON c."customerId" = pt.customer_id
       WHERE pt.to_stage = 'TRANSACTION'
         AND pt.created_at >= ${mulai} AND pt.created_at < ${selesai}
-        AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'`,
+        AND c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
+        AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}`,
 
     // Customer DISTINCT yang punya order dalam rentang — hasil konkret
     // yang datanya sudah ada sekarang (tidak bergantung pada riwayat
