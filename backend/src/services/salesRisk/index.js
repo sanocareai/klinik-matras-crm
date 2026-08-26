@@ -11,7 +11,13 @@ import { buildSalesRisk } from "./riskScore.js";
 
 const DEFAULT_CANDIDATE_LIMIT = 3000; // sama jaring pengaman dgn staleLeadAlertJob.js
 
-export async function buildSalesRiskForCustomer(customer) {
+// PURE — TIDAK async (tidak ada I/O di dalamnya). Sebelumnya sempat ditulis
+// `async` tanpa alasan, yang MEMBUAT `.map()` di computeAllSalesRisks
+// mengembalikan array of unresolved Promise (bukan objek risk) — ketahuan
+// dari live test: severityCounts punya bucket "undefined" dan totalAtRisk=0
+// padahal 2879 kandidat discan. Diperbaiki dengan menghapus `async` di sini,
+// bukan menambah await di caller — fungsi ini memang tidak butuh Promise.
+export function buildSalesRiskForCustomer(customer) {
   const signals = detectSalesRiskSignals(customer);
   const risk = buildSalesRisk(signals, customer);
   return {
