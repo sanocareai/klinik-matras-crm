@@ -255,6 +255,14 @@ analyticsRouter.get("/overview", async (req, res) => {
       growthCustomers: growth(totalCustomers, totalCustomersPrev),
       customersWithOrders: customersWithOrdersCount,
       growthConversion: growth(conversionRateCurr, conversionRatePrev),
+      // Angka MENTAH periode sebelumnya (26 Agustus 2026) — sebelum ini
+      // frontend cuma dapat `growthConversion` (persentase PERUBAHAN
+      // relatif, mis. "-32%"), yang sendirian gampang disalahbaca seolah
+      // "32 poin persen" atau langsung dikurangkan dari angka sekarang.
+      // Dengan field ini, kartu Dashboard bisa bilang "dari 6,5%" secara
+      // eksplisit, bukan cuma menyuruh pengguna menebak-nebak dari persen
+      // perubahannya sendiri.
+      conversionRatePrev,
       repeatCustomers: repeatCustomersCount,
       // Dari pelanggan yang pernah order, berapa persen order LAGI.
       repeatRate: pctOrNull(repeatCustomersCount, customersWithOrdersCount),

@@ -62,6 +62,18 @@ export default function Dashboard({ user }) {
   // yang tidak pernah ikut menyesuaikan rentang yang dipilih. null kalau
   // preset "Semua" (tidak ada periode pembanding yang valid).
   const cmp = compareLabel(range);
+  // BUG YANG DIPERBAIKI (26 Agustus 2026, laporan owner): kartu Conversion
+  // cuma menampilkan PERSENTASE PERUBAHAN relatif (mis. "-32.0%") di
+  // sebelah angka konversi sekarang (mis. "4%") — gampang disalahbaca
+  // seolah -32 itu POIN PERSEN yang bisa langsung dikurangkan dari 4,
+  // padahal itu perubahan RELATIF terhadap angka periode sebelumnya
+  // (mis. 4% itu turun ~32% DARI 6,5%, bukan "4% dikurang 32%"). Sekarang
+  // ditulis eksplisit "dari X%" pakai angka mentah periode sebelumnya
+  // (conversionRatePrev, baru diekspos backend) supaya tidak perlu
+  // menghitung ulang sendiri di kepala.
+  const konversiPrevText = ov?.conversionRatePrev != null
+    ? `dari ${ov.conversionRatePrev.toFixed(1).replace(".", ",")}%`
+    : null;
 
   return (
     <PageContainer>
@@ -96,12 +108,12 @@ export default function Dashboard({ user }) {
           <StatCard
             label="Conversion" icon={Target} depth={4}
             value={konversi != null ? `${konversi}%` : "—"}
-            delta={ov?.growthConversion} deltaSuffix={cmp}
+            delta={ov?.growthConversion} deltaSuffix={konversiPrevText ? `${konversiPrevText} (${cmp})` : cmp}
             note={
               ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
                  : "pelanggan yang order"
             }
-            tooltip={`Conversion = (lead di periode ini yang sudah order) ÷ (SELURUH lead baru DI PERIODE YANG DIPILIH) × 100%. Ikut date picker di atas — pilih Juli untuk lihat conversion Juli, Agustus untuk Agustus, dst. Kalau di-set "Hari ini", wajar kelihatan rendah/0% karena lead yang baru masuk hari itu belum tentu sempat closing hari yang sama juga. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
+            tooltip={`Conversion = (lead di periode ini yang sudah order) ÷ (SELURUH lead baru DI PERIODE YANG DIPILIH) × 100%. Ikut date picker di atas — pilih Juli untuk lihat conversion Juli, Agustus untuk Agustus, dst. Kalau di-set "Hari ini", wajar kelihatan rendah/0% karena lead yang baru masuk hari itu belum tentu sempat closing hari yang sama juga. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%. Angka persen di sebelah kiri (mis. "-32%") adalah PERUBAHAN RELATIF dari periode sebelumnya, bukan poin persen — lihat "dari X%" di sebelahnya untuk angka mentahnya.`}
           />
         </section>
 
