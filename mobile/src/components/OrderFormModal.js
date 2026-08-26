@@ -227,16 +227,20 @@ export default function OrderFormModal({
   const isLayanan = category === "LAYANAN";
 
   // BUG YANG DIPERBAIKI (26 Agustus 2026): backend MENOLAK PATCH/item-edit
-  // untuk order LUNAS kalau bukan admin (D-025, lihat routes/orders.js
+  // untuk order LUNAS kalau bukan admin/sales (D-025, lihat routes/orders.js
   // guardOrderLocked) — tapi form ini sebelumnya TIDAK TAHU itu sama sekali,
   // jadi user bebas isi SELURUH form (Ongkir, Estimasi, Layanan, dst),
   // baru ditolak lewat Alert generik pas tekan "Simpan Order" di paling
   // akhir. Web (OrderSection.jsx) sudah lama kasih tahu di depan — mobile
   // sekarang menyusul: banner + tombol submit dinonaktifkan SEBELUM user
   // buang waktu isi form yang sudah pasti ditolak.
+  //
+  // REVISI (sama hari, permintaan owner): SALES ikut diizinkan mengedit,
+  // tidak lagi admin-only — cermin persis guardOrderLocked() di backend.
   const { user } = useAuth();
-  const isAdmin = (Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role]).includes("ADMIN");
-  const locked = isEdit && order?.paymentStatus === "LUNAS" && !isAdmin;
+  const userRoles = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role];
+  const canEditLunas = userRoles.includes("ADMIN") || userRoles.includes("SALES");
+  const locked = isEdit && order?.paymentStatus === "LUNAS" && !canEditLunas;
   // order.pipelineStage cuma ada kalau caller-nya OrdersScreen.js (lihat
   // catatan panjang di deklarasi state pipelineStage di atas).
   const showPipelineEditor = isEdit && Object.prototype.hasOwnProperty.call(order, "pipelineStage");
@@ -557,8 +561,8 @@ export default function OrderFormModal({
           {locked && (
             <View style={styles.lockedBanner}>
               <Text style={styles.lockedBannerText}>
-                Order ini sudah LUNAS — cuma admin yang bisa mengedit. Kalau pelanggan minta
-                revisi, tandai lewat "Ajukan Revisi" di profilnya.
+                Order ini sudah LUNAS — cuma admin/sales yang bisa mengedit. Kalau pelanggan
+                minta revisi, tandai lewat "Ajukan Revisi" di profilnya.
               </Text>
             </View>
           )}

@@ -12,17 +12,22 @@ import {
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
 } from "../../utils/format.js";
-import { isAdminUser } from "../../lib/roles.js";
+import { isAdminUser, rolesOf } from "../../lib/roles.js";
 
-// D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari
-// SALES/role lain — cuma admin yang bisa mengedit lagi. Backend
-// (guardOrderLocked() di routes/orders.js) yang benar-benar menegakkan ini;
-// helper di sini cuma untuk UI supaya sales tidak klik lalu kaget oleh error.
-// Pemicunya SEMPAT status DELIVERED, diubah setelah tes pilot: order yang
-// sudah terkirim tapi BELUM lunas (COD belum ditagih, dst) ternyata tetap
-// butuh diedit sales — uang yang sudah pindah tangan itu yang perlu dijaga.
-function currentUserIsAdmin() {
-  try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
+// D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
+// lain. Backend (guardOrderLocked() di routes/orders.js) yang benar-benar
+// menegakkan ini; helper di sini cuma untuk UI supaya user tidak klik lalu
+// kaget oleh error. Pemicunya SEMPAT status DELIVERED, diubah setelah tes
+// pilot: order yang sudah terkirim tapi BELUM lunas (COD belum ditagih,
+// dst) ternyata tetap butuh diedit sales — uang yang sudah pindah tangan
+// itu yang perlu dijaga.
+// Revisi 26 Agustus 2026 (permintaan owner): SALES ikut diizinkan
+// mengedit, tidak lagi admin-only — cermin persis guardOrderLocked().
+function canEditLunasOrder() {
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    return isAdminUser(user) || rolesOf(user).includes("SALES");
+  } catch { return false; }
 }
 // Nama sales yang SEDANG login — dipakai baris "CS:" pesan WA (lihat
 // buildWaMessage) supaya menampilkan siapa yang benar-benar menutup/mengisi
@@ -216,7 +221,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   // terkunci untuk non-admin begitu order LUNAS. Status TIDAK ikut
   // dikunci — itu jalur D-006/override sendiri, tombol "Ubah Status" di
   // bawah tetap aktif seperti biasa untuk semua role.
-  const locked = order.paymentStatus === "LUNAS" && !currentUserIsAdmin();
+  const locked = order.paymentStatus === "LUNAS" && !canEditLunasOrder();
 
   const [editing, setEditing]             = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
@@ -509,7 +514,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
               className="btn btn-ghost btn-sm"
               onClick={() => setEditing(true)}
               disabled={locked}
-              title={locked ? "Order sudah LUNAS — cuma admin yang bisa mengedit" : undefined}
+              title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa mengedit" : undefined}
             >
               {locked && <Lock size={11} style={{ marginRight: 4 }} />}Edit
             </button>
@@ -541,10 +546,10 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Order terkunci</span>
           </div>
           <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-            Sudah LUNAS — cuma admin yang bisa mengedit lagi.{" "}
+            Sudah LUNAS — cuma admin/sales yang bisa mengedit lagi.{" "}
             {order.status === "DELIVERED"
               ? 'Kalau pelanggan minta revisi, tandai lewat tombol "Ajukan Revisi" di bawah supaya admin tahu dan bisa menindaklanjuti.'
-              : "Kalau ada koreksi yang perlu dilakukan, hubungi admin langsung."}
+              : "Kalau ada koreksi yang perlu dilakukan, hubungi admin/sales yang menangani."}
           </p>
         </div>
       )}

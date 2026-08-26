@@ -61,12 +61,20 @@ async function syncOrderValue(orderId) {
 }
 
 // D-025 (revisi 19 Agustus 2026): kunci transaksi — order yang SUDAH LUNAS
-// (bukan sekadar sudah terkirim) tidak boleh diedit SALES/role lain lagi,
-// cuma ADMIN. Dipasang di semua endpoint yang mengubah field NON-STATUS
-// (item layanan, harga, catatan, berat badan, pembayaran, jumlah unit) —
-// status sendiri TETAP ikut alur D-006 (dihitung otomatis / override
-// eksplisit), itu sudah punya jalur audit terpisah, jadi TIDAK ikut dikunci
-// di sini (lihat pemisahan di PATCH /:id di bawah).
+// (bukan sekadar sudah terkirim) tidak boleh diedit role lain lagi, cuma
+// ADMIN. Dipasang di semua endpoint yang mengubah field NON-STATUS (item
+// layanan, harga, catatan, berat badan, pembayaran, jumlah unit) — status
+// sendiri TETAP ikut alur D-006 (dihitung otomatis / override eksplisit),
+// itu sudah punya jalur audit terpisah, jadi TIDAK ikut dikunci di sini
+// (lihat pemisahan di PATCH /:id di bawah).
+//
+// REVISI 26 Agustus 2026 (permintaan owner): SALES ikut diizinkan mengedit,
+// bukan cuma ADMIN — order.js masih dijaga dari role LAIN (produksi,
+// driver, gudang, dst) yang memang tidak seharusnya pernah sampai ke
+// endpoint ini. Audit trail (OrderRevisionLog di bawah) TETAP tercatat
+// untuk SIAPA PUN yang berhasil mengedit LUNAS (dulu cuma tercatat untuk
+// admin) — supaya kelonggaran akses ini tidak menghilangkan jejak siapa
+// mengubah apa, cuma memperluas SIAPA yang boleh.
 //
 // ⚠️ PEMICU AWALNYA `status === "DELIVERED"`, DIUBAH setelah tes pilot nyata:
 // order yang SUDAH TERKIRIM tapi BELUM LUNAS (mis. COD belum ditagih, invoice
@@ -97,13 +105,16 @@ async function guardOrderLocked(req, res, orderId, aksi) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, paymentStatus: true } });
   if (!order) { res.status(404).json({ error: "Order tidak ditemukan" }); return null; }
   if (order.paymentStatus === "LUNAS") {
-    if (!rolesOf(req.user).includes("ADMIN")) {
+    const roles = rolesOf(req.user);
+    if (!roles.includes("ADMIN") && !roles.includes("SALES")) {
       res.status(403).json({
-        error: `Order ini sudah LUNAS — cuma admin yang bisa ${aksi}. ` +
-          `Kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya supaya admin tahu dan bisa menindaklanjuti.`,
+        error: `Order ini sudah LUNAS — cuma admin/sales yang bisa ${aksi}. ` +
+          `Kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya.`,
       });
       return null;
     }
+    // Tercatat untuk SIAPA PUN yang lolos (admin ATAU sales) — audit trail
+    // tetap utuh walau aksesnya sekarang lebih longgar dari sebelumnya.
     await prisma.orderRevisionLog.create({
       data: { orderId, editedById: req.user?.id || null, note: aksi.charAt(0).toUpperCase() + aksi.slice(1) },
     }).catch((e) => console.warn("[order-lock] gagal catat revision log:", e.message));

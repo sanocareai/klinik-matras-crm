@@ -23,13 +23,14 @@ import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 
-// D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari
-// SALES/role lain — cuma admin yang bisa mengedit lagi (backend menegakkan
-// ini di routes/orders.js, guardOrderLocked()). Pemicunya SEMPAT status
-// DELIVERED, diubah setelah tes pilot: order yang sudah terkirim tapi
-// BELUM lunas (COD belum ditagih, dst) ternyata tetap butuh diedit sales.
+// D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
+// lain (backend menegakkan ini di routes/orders.js, guardOrderLocked()).
+// Pemicunya SEMPAT status DELIVERED, diubah setelah tes pilot: order yang
+// sudah terkirim tapi BELUM lunas (COD belum ditagih, dst) ternyata tetap
+// butuh diedit sales. Revisi 26 Agustus 2026: SALES ikut diizinkan
+// mengedit, tidak lagi admin-only — cermin persis guardOrderLocked().
 // Helper ini cuma untuk UI: nonaktifkan kontrol yang akan ditolak, supaya
-// sales tidak klik lalu kaget oleh error, bukan sumber kebenaran otorisasi.
+// user tidak klik lalu kaget oleh error, bukan sumber kebenaran otorisasi.
 function currentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
 }
@@ -253,7 +254,7 @@ function PaymentStatusSelect({ order, onChange, className, locked }) {
       onClick={(e) => e.stopPropagation()}
       disabled={locked}
       aria-label={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
-      title={locked ? "Order sudah LUNAS — cuma admin yang bisa ubah pembayaran" : undefined}
+      title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa ubah pembayaran" : undefined}
       className={cn(
         "appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
@@ -361,9 +362,18 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
 export default function Orders() {
   const navigate = useNavigate();
   // D-025: cuma untuk menonaktifkan kontrol pembayaran di UI kalau order
-  // sudah DELIVERED — backend (guardOrderLocked di routes/orders.js) yang
-  // benar-benar menegakkan kuncinya.
+  // sudah LUNAS — backend (guardOrderLocked di routes/orders.js) yang
+  // benar-benar menegakkan kuncinya. `isAdmin` dipakai TERPISAH di bawah
+  // untuk gerbang admin-only lain (SalesGroupSettings) yang TIDAK ikut
+  // longgar ke SALES — jangan disatukan dengan canEditLunas.
   const isAdmin = useMemo(() => isAdminUser(currentUser()), []);
+  // REVISI 26 Agustus 2026 (permintaan owner): SALES ikut diizinkan
+  // mengedit order LUNAS, bukan cuma admin — cermin persis perubahan
+  // guardOrderLocked() di backend.
+  const canEditLunas = useMemo(() => {
+    const roles = rolesOf(currentUser());
+    return isAdmin || roles.includes("SALES");
+  }, [isAdmin]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -789,7 +799,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !isAdmin} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -859,7 +869,7 @@ export default function Orders() {
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.paymentStatus === "LUNAS" && !isAdmin} />
+                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.paymentStatus === "LUNAS" && !canEditLunas} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
                         {formatRupiah(o.value || 0)}
