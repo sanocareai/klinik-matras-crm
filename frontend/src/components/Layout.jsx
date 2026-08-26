@@ -6,7 +6,7 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine,
+  Boxes, ScanLine, Tag,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -92,6 +92,21 @@ const DIVISIONS = {
         items: [
           { to: "/copilot",    label: "Tanya Sano", Icon: Sparkles },
           { to: "/automation", label: "Otomasi",    Icon: Zap, adminOnly: true },
+        ],
+      },
+      // Dipindah DARI /pengaturan (Main Hub) — 26 Agustus 2026, permintaan
+      // owner: Template Pesan/Target Sales/Promo pengaturan khusus CRM,
+      // bukan lintas-divisi, jadi tempatnya di sini, bukan Hub. Section
+      // sendiri TIDAK adminOnly (Template Pesan boleh dibuka SALES untuk
+      // kelola template pribadinya) — Target Sales & Promo digerbang per-
+      // ITEM (adminOnly) karena keduanya memang admin-only, sama seperti
+      // gerbang di dalam PengaturanSales.jsx sendiri.
+      {
+        section: "PENGATURAN CRM",
+        items: [
+          { to: "/pengaturan-sales?section=template",     label: "Template Pesan", Icon: MessageSquare },
+          { to: "/pengaturan-sales?section=target-sales", label: "Target Sales",   Icon: TrendingUp, adminOnly: true },
+          { to: "/pengaturan-sales?section=promo",        label: "Promo",          Icon: Tag, adminOnly: true },
         ],
       },
     ],
@@ -224,14 +239,24 @@ const DIVISIONS = {
 
 // Nav Main Hub (/portal) — SEBELUMNYA kosong total (lihat komentar di atas
 // <nav>), tapi Pengaturan/Pengguna & Peran cuma pernah bisa dijangkau lewat
-// sidebar Growth walau isinya sama sekali bukan urusan Sales (template
-// pesan, jam operasional, dan sekarang 24 akun lintas 6 role — Produksi,
-// Armada, Gudang, Finance, dst, bukan cuma sales). Dipindah (bukan
-// digandakan) ke sini supaya letaknya sesuai cakupannya: lintas-divisi,
-// bukan milik satu workspace. Notifikasi ditambahkan sekalian — halamannya
-// (pages/Notifications.jsx, route /notifications) sudah lama ada tapi
-// sebelum ini tidak tertaut di sidebar mana pun sama sekali, cuma lewat
-// ikon lonceng di Topbar.
+// sidebar Growth walau ISI-nya (saat itu) sama sekali bukan urusan Sales
+// (template pesan, jam operasional, dan sekarang 24 akun lintas 6 role —
+// Produksi, Armada, Gudang, Finance, dst, bukan cuma sales). Dipindah
+// (bukan digandakan) ke sini supaya letaknya sesuai cakupannya: lintas-
+// divisi, bukan milik satu workspace. Notifikasi ditambahkan sekalian —
+// halamannya (pages/Notifications.jsx, route /notifications) sudah lama
+// ada tapi sebelum ini tidak tertaut di sidebar mana pun sama sekali, cuma
+// lewat ikon lonceng di Topbar.
+//
+// REVISI 26 Agustus 2026 (permintaan owner): /pengaturan TIDAK LAGI berisi
+// SEMUA pengaturan seperti saat komentar di atas ditulis — Template Pesan/
+// Target Sales/Promo (section "PENGATURAN CRM" di DIVISIONS.growth di
+// atas) DIPINDAH BALIK ke sidebar Growth, karena ketiganya genuinely
+// pengaturan khusus CRM (dipakai sales sehari-hari), bukan lintas-divisi
+// seperti sisa isi /pengaturan (Profil Perusahaan, Status WhatsApp,
+// Tampilan, Keamanan Akun, Data & Backup) yang TETAP di sini. Jangan
+// baca komentar di atas sebagai "seluruh Pengaturan ada di Hub" — itu
+// benar untuk Pengguna & Peran + 5 section lintas-divisi itu saja.
 //
 // SENGAJA TIDAK menambah item operasional (Dashboard/Order/Inbox dst) di
 // sini — itu tempatnya di sidebar masing-masing divisi. 5 kartu workspace

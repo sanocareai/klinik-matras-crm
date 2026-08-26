@@ -25,6 +25,7 @@ const Broadcast     = lazy(() => import("./pages/Broadcast.jsx"));
 const Automation    = lazy(() => import("./pages/Automation.jsx"));
 const Laporan       = lazy(() => import("./pages/Laporan.jsx"));
 const Pengaturan    = lazy(() => import("./pages/Pengaturan.jsx"));
+const PengaturanSales = lazy(() => import("./pages/PengaturanSales.jsx"));
 const Pengguna      = lazy(() => import("./pages/Pengguna.jsx"));
 const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
@@ -372,6 +373,10 @@ export default function App() {
             <Route path="/automation"  element={<Automation />} />
             <Route path="/laporan"     element={<Laporan />} />
             <Route path="/pengaturan"  element={<Pengaturan user={user} onUserUpdate={handleUserUpdate} />} />
+            {/* Template Pesan/Target Sales/Promo dipindah dari /pengaturan (Main
+                Hub) ke sini (26 Agustus 2026) — pengaturan khusus CRM, dijangkau
+                lewat sidebar workspace "Sales CRM & Omnichannel", bukan Hub. */}
+            <Route path="/pengaturan-sales" element={<PengaturanSales user={user} />} />
             <Route path="/pengguna"    element={<Pengguna user={user} />} />
             <Route path="/products"    element={<Products user={user} />} />
             <Route path="/tracking"    element={<TrackingLinks />} />

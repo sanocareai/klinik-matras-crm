@@ -71,7 +71,7 @@ export default function TargetSalesWidget() {
           <p className="target-sales-empty-text">
             Target bulan ini belum di-set untuk Sales Person manapun.
           </p>
-          <Link to="/pengaturan?section=target-sales" className="btn btn-primary btn-sm">
+          <Link to="/pengaturan-sales?section=target-sales" className="btn btn-primary btn-sm">
             Atur Target Sales
           </Link>
         </div>
