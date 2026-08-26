@@ -1,7 +1,8 @@
 import React from "react";
-import { X, Users, Building2 } from "lucide-react";
+import { X, Users, Building2, GitBranch, Tag, MapPin, UserRound } from "lucide-react";
 import { SearchInput } from "@/components/ui/search-input.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { cn } from "@/lib/utils.js";
 import { PIPELINE_STAGES, LEAD_SOURCES } from "@/utils/format.js";
 
@@ -9,30 +10,12 @@ import { PIPELINE_STAGES, LEAD_SOURCES } from "@/utils/format.js";
 // pages/Customers.jsx (Wave 5B) supaya halaman induk jadi orkestrator saja.
 // SEMUA state tetap dipegang induk — komponen ini murni presentasional
 // (controlled), jadi tidak ada sumber kebenaran kedua.
-
-// Select filter: netral (belum dipilih apa-apa) vs aktif (accent — satu-
-// satunya warna dekoratif di design system ini, lihat styles/tailwind.css
-// "SATU-SATUNYA warna dekoratif"). Border ditambah supaya kotaknya
-// kelihatan jelas batasnya di background gelap (sebelumnya bg-surface
-// polos nyaris menyatu dengan latar, jadi terasa "datar"/kurang hidup).
-// min-w-[164px] DEFAULT (26 Agustus 2026) — root fix, sama pola dengan
-// FilterSelect di Orders.jsx. `select` di sini SENGAJA appearance:none
-// (tokens.css), yang artinya browser TIDAK LAGI menjamin auto-lebar
-// mengikuti opsi TERPANJANG (cuma opsi yang SEDANG terpilih) — begitu user
-// pilih opsi lebih panjang dari lebar awal, teksnya kepotong tanpa jejak
-// (native select tidak kasih ellipsis/tooltip). BUG NYATA: 3 dari 4 select
-// di sini (`filterSource`/"Semua Sumber", `filterCity`/"Semua Kota",
-// `filterSales`/"Semua Sales Person") tidak pernah dapat perbaikan ini —
-// cuma `filterStage` yang sudah dikasih `min-w-[188px]` manual sebelumnya.
-function selectCls(active) {
-  return cn(
-    "h-8 min-w-[164px] rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
-    "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-    active
-      ? "border-accent/40 bg-accentbg text-accent"
-      : "border-line bg-surface text-ink2 hover:border-accent/30"
-  );
-}
+//
+// 4 dropdown filter di sini SEBELUMNYA native <select> — diganti total ke
+// FilterDropdown (26 Agustus 2026) karena bug "opsi kepotong" (appearance:
+// none tokens.css membuang jaminan auto-lebar bawaan browser) sudah muncul
+// berulang kali (Order, Pelanggan, Pipeline, Laporan), ditambal satu-satu
+// tiap kali muncul lagi. Lihat catatan panjang di filter-dropdown.jsx.
 
 // Quick chip: warna aktif berbeda per chip supaya cepat dikenali (VIP ungu,
 // belum order oranye, tidak aktif abu) — dipertahankan dari versi CSS lama.
@@ -125,30 +108,37 @@ export default function CustomerFilters({
       {/* Dropdown filter — baris terpisah, flex-wrap turun ke baris baru
           kalau tidak muat, bukan menyusutkan lebar tiap dropdown. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* min-w eksplisit (26 Agustus 2026) — label pipeline sekarang ada
-            yang sepanjang "Scheduled / Transaksi" (21 karakter), dan select
-            ini appearance:none (tokens.css) jadi browser tidak lagi menjamin
-            auto-lebar mengikuti opsi terpanjang. Tanpa ini teksnya bisa
-            kepotong tanpa jejak (native select tidak kasih ellipsis/tooltip). */}
-        <select className={cn(selectCls(!!filterStage), "min-w-[188px]")} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
-          <option value="">Semua Stage</option>
-          {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-        </select>
+        <FilterDropdown
+          icon={GitBranch} activeColor="#ea580c"
+          value={filterStage} onChange={onFilterStage}
+          options={PIPELINE_STAGES.map(({ value, label }) => ({ value, label }))}
+          placeholder="Semua Stage"
+          ariaLabel="Filter stage"
+        />
 
-        <select className={selectCls(!!filterSource)} value={filterSource} onChange={(e) => onFilterSource(e.target.value)} aria-label="Filter sumber lead">
-          <option value="">Semua Sumber</option>
-          {LEAD_SOURCES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-        </select>
+        <FilterDropdown
+          icon={Tag} activeColor="#7c3aed"
+          value={filterSource} onChange={onFilterSource}
+          options={LEAD_SOURCES.map(({ value, label }) => ({ value, label }))}
+          placeholder="Semua Sumber"
+          ariaLabel="Filter sumber lead"
+        />
 
-        <select className={selectCls(!!filterCity)} value={filterCity} onChange={(e) => onFilterCity(e.target.value)} aria-label="Filter kota">
-          <option value="">Semua Kota</option>
-          {cities.map((city) => <option key={city} value={city}>{city}</option>)}
-        </select>
+        <FilterDropdown
+          icon={MapPin} activeColor="#16a34a"
+          value={filterCity} onChange={onFilterCity}
+          options={cities.map((city) => ({ value: city, label: city }))}
+          placeholder="Semua Kota"
+          ariaLabel="Filter kota"
+        />
 
-        <select className={selectCls(!!filterSales)} value={filterSales} onChange={(e) => onFilterSales(e.target.value)} aria-label="Filter sales person">
-          <option value="">Semua Sales Person</option>
-          {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+        <FilterDropdown
+          icon={UserRound} activeColor="#2563eb"
+          value={filterSales} onChange={onFilterSales}
+          options={salesUsers.map((u) => ({ value: u.id, label: u.name }))}
+          placeholder="Semua Sales Person"
+          ariaLabel="Filter sales person"
+        />
 
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={onReset}>

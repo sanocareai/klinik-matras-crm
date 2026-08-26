@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { Download, RefreshCw, Search, X, AlertTriangle, LayoutGrid, List } from "lucide-react";
+import { Download, RefreshCw, Search, X, AlertTriangle, LayoutGrid, List, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import {
@@ -18,6 +18,7 @@ import { rolesOf } from "@/lib/roles.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -400,21 +401,15 @@ export default function Pipeline() {
                 </button>
               )}
             </div>
-            {/* min-w eksplisit — appearance:none (tokens.css) membuang jaminan
-                browser melebarkan <select> mengikuti opsi TERPANJANG (nama
-                sales terpanjang), bukan cuma yang sedang terpilih. Bug sama
-                yang sudah diperbaiki di Orders.jsx/CustomerFilters.jsx. */}
-            <select
-              className="h-8 min-w-[164px] rounded-lg bg-surface px-2 text-[13px] text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-              value={filterSales}
-              onChange={(e) => setFilterSales(e.target.value)}
-              aria-label="Filter sales person"
-            >
-              <option value="">Semua Sales</option>
-              {users.filter((u) => rolesOf(u).some((r) => r === "SALES" || r === "ADMIN")).map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
+            <FilterDropdown
+              icon={UserRound} activeColor="#2563eb"
+              value={filterSales} onChange={setFilterSales}
+              options={users
+                .filter((u) => rolesOf(u).some((r) => r === "SALES" || r === "ADMIN"))
+                .map((u) => ({ value: u.id, label: u.name }))}
+              placeholder="Semua Sales"
+              ariaLabel="Filter sales person"
+            />
             <Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
               onClick={() => setHanyaMandek((v) => !v)}

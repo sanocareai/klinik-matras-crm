@@ -11,23 +11,25 @@ import { cn } from "@/lib/utils.js";
 // diisi, header tetap kolom biasa seperti sebelumnya — tidak ada perubahan
 // visual di chart lain yang belum pakai prop ini.
 //
-// BUG YANG DIPERBAIKI (26 Agustus 2026): versi pertama SELALU `flex-row` +
-// `shrink-0` pada actions, apa pun lebar layar. Di kartu Laporan yang
-// sempit (mobile/PWA, atau ChartCard di kolom grid 2-lebar), title +
-// deskripsi + search box + select berebut satu baris yang tidak cukup —
-// keduanya sama-sama menolak menyusut, jadi actions-nya kepotong/tumpang
-// tindih dengan title alih-alih turun ke baris baru. Sekarang default
-// TUMPUK vertikal (`flex-col`), baru sejajar mulai breakpoint `sm:` ke atas
-// — pola sama dengan grid KPI di TrafficTab.jsx sendiri.
+// BUG YANG DIPERBAIKI (26 Agustus 2026, DUA PUTARAN):
+// Putaran 1 sempat pakai breakpoint tetap (`sm:flex-row`) — TERNYATA
+// kambuh lagi di lebar MENENGAH: title+deskripsi (kalimat panjang) tetap
+// `flex-row` di atas 640px meski actions (search+select) tidak lagi
+// muat di sebelahnya, dan karena TIDAK ADA `flex-wrap` di baris HEADER itu
+// sendiri, actions-nya kepotong/tumpang-tindih dengan sudut kartu alih-alih
+// turun baris. Ini PERSIS kelas bug yang sudah didokumentasikan panjang di
+// `components/ui/page.jsx` (PageHeader) — perbaikannya juga sama: JANGAN
+// pakai breakpoint tetap sama sekali, pakai `flex-wrap` supaya blok actions
+// pindah ke barisnya sendiri kapan pun tidak muat, di lebar berapa pun.
 export default function ChartCard({ title, description, children, empty, className, index = 0, actions }) {
   return (
     <Card className={cn("animate-fade-rise", className)} style={{ animationDelay: `${index * 70}ms` }}>
-      <CardHeader className={actions ? "flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between" : undefined}>
-        <div className="flex flex-col gap-1">
+      <CardHeader className={actions ? "flex-row flex-wrap items-start justify-between gap-3" : undefined}>
+        <div className="min-w-[160px] flex-1 flex flex-col gap-1">
           <CardTitle>{title}</CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </div>
-        {actions && <div className="w-full sm:w-auto sm:shrink-0">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </CardHeader>
       <CardContent>
         {empty ? (

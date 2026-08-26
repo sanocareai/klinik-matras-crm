@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { badgeVariants } from "@/components/ui/badge.jsx";
 import { TH } from "@/components/ui/table.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
@@ -76,43 +77,6 @@ const FILTER_TONE = {
   promo:      { icon: Percent,    hex: "#db2777" },
   pipeline:   { icon: GitBranch,  hex: "#ea580c" },
 };
-// min-w-[164px] DEFAULT (26 Agustus 2026) — root fix, bukan tambal-sulam
-// per pemanggil. `select` di sini SENGAJA appearance:none (tokens.css)
-// supaya ikut gaya DS, tapi itu artinya browser TIDAK LAGI menjamin
-// auto-lebar mengikuti opsi terpanjang seperti select native biasa. Kalau
-// dibiarkan default, teks placeholder-nya sendiri ("Semua Pembayaran",
-// 17 karakter) sudah cukup panjang untuk kepotong tanpa jejak (native
-// select tidak kasih ellipsis/tooltip) — bug yang sama sempat diperbaiki
-// SATU-SATU per pemanggil (cuma tone="pipeline"), lalu muncul lagi di
-// tone="pembayaran" yang terlewat. Sekarang default di komponen supaya
-// tidak berulang tiap kali ada label baru yang lebih panjang. Pemanggil
-// tetap bisa override lewat `className` (mis. Pipeline pakai 188px,
-// sedikit lebih lebar untuk "Scheduled / Transaksi").
-function FilterSelect({ tone, active, className, children, ...props }) {
-  const t = FILTER_TONE[tone];
-  const Icon = t.icon;
-  return (
-    <div className="relative">
-      <Icon
-        size={13}
-        className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
-        style={{ color: active ? t.hex : "var(--text-tertiary)" }}
-      />
-      <select
-        {...props}
-        className={cn(
-          "h-8 min-w-[164px] rounded-lg pl-7 pr-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-          active ? "font-semibold" : "text-ink2",
-          className
-        )}
-        style={active ? { background: `${t.hex}1f`, color: t.hex } : { background: "var(--bg-surface)" }}
-      >
-        {children}
-      </select>
-    </div>
-  );
-}
-
 // ── Pengaturan Grup WA Order (D-032) — ADMIN only, sekali setup ──────────
 // Sengaja MINIMAL (satu dropdown + tombol simpan), pola SAMA PERSIS dengan
 // DriverGroupSettings di Armada.jsx — konfigurasi sekali di awal, bukan aksi
@@ -714,65 +678,49 @@ export default function Orders() {
                 </button>
               )}
             </div>
-            <FilterSelect
-              tone="status" active={!!fStatus}
-              value={fStatus} onChange={(e) => setFStatus(e.target.value)}
-              aria-label="Filter status order"
-            >
-              <option value="">Semua Status</option>
-              {SEMUA_STATUS.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>)}
-            </FilterSelect>
-            <FilterSelect
-              tone="kategori" active={!!fKategori}
-              value={fKategori} onChange={(e) => setFKategori(e.target.value)}
-              aria-label="Filter kategori"
-            >
-              <option value="">Semua Kategori</option>
-              {Object.entries(KATEGORI_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </FilterSelect>
-            <FilterSelect
-              tone="pembayaran" active={!!fBayar}
-              value={fBayar} onChange={(e) => setFBayar(e.target.value)}
-              aria-label="Filter status pembayaran"
-            >
-              <option value="">Semua Pembayaran</option>
-              {Object.entries(PAYMENT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </FilterSelect>
-            <FilterSelect
-              tone="sales" active={!!fSales}
-              value={fSales} onChange={(e) => setFSales(e.target.value)}
-              aria-label="Filter sales person"
-            >
-              <option value="">Semua Sales</option>
-              {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </FilterSelect>
-            {/* min-w eksplisit (26 Agustus 2026) — label pipeline sekarang ada
-                yang sepanjang "Scheduled / Transaksi" (21 karakter). `select`
-                di sini SENGAJA appearance:none (lihat tokens.css) supaya ikut
-                gaya DS, tapi itu artinya browser TIDAK LAGI menjamin
-                auto-lebar mengikuti opsi terpanjang — tanpa min-w ini,
-                sebagian browser melebarkan kotak cuma seukuran teks yang
-                SEDANG terpilih, jadi begitu user pilih opsi yang lebih
-                panjang dari lebar awal, teksnya bisa kepotong tanpa jejak
-                (native select tidak kasih ellipsis/tooltip). */}
-            <FilterSelect
-              tone="pipeline" active={!!fPipeline}
-              value={fPipeline} onChange={(e) => setFPipeline(e.target.value)}
-              aria-label="Filter tahap pipeline"
-              className="min-w-[188px]"
-            >
-              <option value="">Semua Pipeline</option>
-              {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-            </FilterSelect>
+            <FilterDropdown
+              icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
+              value={fStatus} onChange={setFStatus}
+              options={SEMUA_STATUS.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+              placeholder="Semua Status"
+              ariaLabel="Filter status order"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.kategori.icon} activeColor={FILTER_TONE.kategori.hex}
+              value={fKategori} onChange={setFKategori}
+              options={Object.entries(KATEGORI_LABELS).map(([value, label]) => ({ value, label }))}
+              placeholder="Semua Kategori"
+              ariaLabel="Filter kategori"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.pembayaran.icon} activeColor={FILTER_TONE.pembayaran.hex}
+              value={fBayar} onChange={setFBayar}
+              options={Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+              placeholder="Semua Pembayaran"
+              ariaLabel="Filter status pembayaran"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.sales.icon} activeColor={FILTER_TONE.sales.hex}
+              value={fSales} onChange={setFSales}
+              options={salesUsers.map((u) => ({ value: u.id, label: u.name }))}
+              placeholder="Semua Sales"
+              ariaLabel="Filter sales person"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.pipeline.icon} activeColor={FILTER_TONE.pipeline.hex}
+              value={fPipeline} onChange={setFPipeline}
+              options={PIPELINE_STAGES.map(({ value, label }) => ({ value, label }))}
+              placeholder="Semua Pipeline"
+              ariaLabel="Filter tahap pipeline"
+            />
             {promos.length > 0 && (
-              <FilterSelect
-                tone="promo" active={!!fPromo}
-                value={fPromo} onChange={(e) => setFPromo(e.target.value)}
-                aria-label="Filter promo"
-              >
-                <option value="">Semua Promo</option>
-                {promos.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
-              </FilterSelect>
+              <FilterDropdown
+                icon={FILTER_TONE.promo.icon} activeColor={FILTER_TONE.promo.hex}
+                value={fPromo} onChange={setFPromo}
+                options={promos.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
+                placeholder="Semua Promo"
+                ariaLabel="Filter promo"
+              />
             )}
             <Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
