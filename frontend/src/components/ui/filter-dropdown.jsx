@@ -42,6 +42,8 @@ export function FilterDropdown({
   triggerClassName,
   ariaLabel,
   align = "start",
+  disabled = false,
+  title,
 }) {
   const active = value !== "" && value != null;
   const current = options.find((o) => o.value === value);
@@ -53,10 +55,13 @@ export function FilterDropdown({
       trigger={
         <button
           type="button"
+          disabled={disabled}
           aria-label={ariaLabel}
+          title={title}
           className={cn(
             "flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150",
             "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+            disabled ? "cursor-not-allowed opacity-60" : undefined,
             active
               ? "border-accent/40 bg-accentbg text-accent"
               : "border-line bg-surface text-ink2 hover:border-accent/30",

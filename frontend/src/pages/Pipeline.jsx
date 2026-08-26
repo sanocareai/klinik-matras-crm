@@ -9,7 +9,7 @@ import {
 import { useCountUp } from "../hooks/useCountUp.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
+import { Badge, badgeVariants } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableEmptyRow } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
@@ -19,6 +19,7 @@ import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -107,18 +108,13 @@ function PipelineTableView({ rows, sortKey, sortDir, onSort, onOpenRow, onMoveTo
                     {r.phone && <p className="text-[11px] text-ink3">{r.phone}</p>}
                   </TD>
                   <TD onClick={(e) => e.stopPropagation()}>
-                    <select
+                    <BadgeDropdown
                       value={r.stage}
-                      onChange={(e) => onMoveToStage(r, e.target.value)}
-                      className="rounded-chip border-none bg-transparent p-0 text-[11px] font-medium uppercase tracking-[0.05em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                    >
-                      {PIPELINE_STAGES.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                    <Badge variant={stageVariant(r.stage)} className="mt-1 block w-fit">
-                      {STAGE_LABELS[r.stage] || r.stage}
-                    </Badge>
+                      onChange={(v) => onMoveToStage(r, v)}
+                      options={PIPELINE_STAGES}
+                      getChipClass={(v) => badgeVariants({ variant: stageVariant(v) })}
+                      ariaLabel={`Ubah tahap pipeline untuk ${r.name || "pelanggan"}`}
+                    />
                   </TD>
                   <TD>{r.city || "—"}</TD>
                   <TD>{r.assignedSales?.name || "—"}</TD>
@@ -159,7 +155,6 @@ export default function Pipeline() {
   const [cari, setCari]       = useState("");
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [moveMenu, setMoveMenu] = useState(null); // ID card yang menu-nya terbuka
   // Filter tanggal pelanggan MASUK (Customer.createdAt) — default "Hari ini",
   // sama seperti Dashboard. "Semua" (all_time) dipakai kalau ingin lihat
   // seluruh papan tanpa batas tanggal, karena kebanyakan deal di pipeline
@@ -515,11 +510,9 @@ export default function Pipeline() {
                           stage={stage}
                           stages={STAGES}
                           dragging={draggingId === card.id}
-                          menuOpen={moveMenu === card.id}
                           onDragStart={(e) => onDragStart(e, card, stage)}
                           onDragEnd={onDragEnd}
-                          onToggleMenu={() => setMoveMenu(moveMenu === card.id ? null : card.id)}
-                          onMoveToStage={(s) => { setMoveMenu(null); moveCardToStage(card, stage, s); }}
+                          onMoveToStage={(s) => moveCardToStage(card, stage, s)}
                           onOpenChat={() => bukaChat(card)}
                         />
                       ))}

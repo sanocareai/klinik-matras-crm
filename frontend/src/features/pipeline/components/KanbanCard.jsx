@@ -1,6 +1,7 @@
 import React from "react";
 import { MoreVertical, AlertTriangle } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
+import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
 import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 
@@ -52,8 +53,8 @@ export function isStale(card, stage) {
 // Drag & drop TETAP HTML5 native (bukan library) — persis seperti sebelumnya.
 // Yang berubah hanya tampilan + state `dragging`.
 export default function KanbanCard({
-  card, stage, stages, dragging, menuOpen,
-  onDragStart, onDragEnd, onToggleMenu, onMoveToStage, onOpenChat,
+  card, stage, stages, dragging,
+  onDragStart, onDragEnd, onMoveToStage, onOpenChat,
 }) {
   const stale = isStale(card, stage);
   const nama  = card.name || card.phone || "—";
@@ -110,38 +111,36 @@ export default function KanbanCard({
 
         {/* Tombol pindah stage — WAJIB ADA: drag & drop tidak bekerja di touch,
             jadi ini satu-satunya cara memindah deal dari HP.
-            data-no-chat: klik di area ini tidak boleh ikut membuka chat. */}
-        <div className="relative shrink-0" data-no-chat>
-          <button
-            className="rounded-md p-1 text-ink3 transition-colors duration-150 hover:bg-hovertint hover:text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-            title="Pindah stage"
-            aria-label={`Pindah ${nama} ke stage lain`}
-            aria-expanded={menuOpen}
-            onClick={(e) => { e.stopPropagation(); onToggleMenu(); }}
+            data-no-chat: klik di area ini tidak boleh ikut membuka chat.
+            Menu Radix (bukan lagi popover rakitan sendiri) — Portal ke
+            document.body jadi tidak pernah kepotong kartu/kolom tetangga,
+            dan animasinya konsisten dgn dropdown filter lain di seluruh app.
+            Uncontrolled (Radix urus buka/tutup sendiri) — sebelumnya parent
+            (Pipeline.jsx) melacak `moveMenu` biar cuma 1 yang terbuka
+            sekaligus, tapi Radix sudah otomatis menutup menu lain saat
+            trigger lain diklik (dianggap "klik di luar"), jadi state itu
+            tidak diperlukan lagi. */}
+        <div data-no-chat>
+          <Menu
+            trigger={
+              <button
+                className="rounded-md p-1 text-ink3 transition-colors duration-150 hover:bg-hovertint hover:text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                title="Pindah stage"
+                aria-label={`Pindah ${nama} ke stage lain`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical size={14} />
+              </button>
+            }
           >
-            <MoreVertical size={14} />
-          </button>
-
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-20" onClick={onToggleMenu} />
-              <div className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl bg-surface py-1 shadow-popover">
-                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-ink3">
-                  Pindah ke
-                </p>
-                {stages.filter((s) => s !== stage).map((s) => (
-                  <button
-                    key={s}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-ink2 transition-colors duration-150 hover:bg-hovertint"
-                    onClick={() => onMoveToStage(s)}
-                  >
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", STAGE_DOT[s] || "bg-ink3")} />
-                    {STAGE_LABELS[s] || s}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+            <MenuLabel>Pindah ke</MenuLabel>
+            {stages.filter((s) => s !== stage).map((s) => (
+              <MenuItem key={s} onSelect={() => onMoveToStage(s)}>
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", STAGE_DOT[s] || "bg-ink3")} />
+                {STAGE_LABELS[s] || s}
+              </MenuItem>
+            ))}
+          </Menu>
         </div>
       </div>
 

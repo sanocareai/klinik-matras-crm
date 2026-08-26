@@ -20,6 +20,7 @@ import { badgeVariants } from "@/components/ui/badge.jsx";
 import { TH } from "@/components/ui/table.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
@@ -161,26 +162,18 @@ const isMandek = (o) =>
 // ikut hitungan otomatis) sampai dilepas dari drawer profil pelanggan >
 // tab Order. Kunci 🔒 menandai order yang sedang di-override.
 function StatusSelect({ order, onChange, className }) {
-  const tone = STATUS_TONE[order.status] || { chip: "bg-inset text-ink2" };
   return (
-    <select
+    <BadgeDropdown
       value={order.status}
-      onChange={(e) => onChange(order, e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      title={order.statusLocked ? "Status di-override manual — ikut hitungan otomatis lagi lewat drawer profil pelanggan" : "Status dihitung otomatis dari unit"}
-      aria-label={`Ubah status order ${order.orderNumber || ""}`}
-      className={cn(
-        "cursor-pointer appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold uppercase",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-        tone.chip, className
-      )}
-    >
-      {SEMUA_STATUS.map((s) => (
-        <option key={s} value={s}>
-          {order.statusLocked && s === order.status ? "🔒 " : ""}{ORDER_STATUS_LABELS[s] || s}
-        </option>
-      ))}
-    </select>
+      onChange={(v) => onChange(order, v)}
+      options={SEMUA_STATUS.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+      getChipClass={(v) => (STATUS_TONE[v] || { chip: "bg-inset text-ink2" }).chip}
+      locked={!!order.statusLocked}
+      lockedTitle="Status di-override manual — ikut hitungan otomatis lagi lewat drawer profil pelanggan"
+      title="Status dihitung otomatis dari unit"
+      ariaLabel={`Ubah status order ${order.orderNumber || ""}`}
+      triggerClassName={className}
+    />
   );
 }
 
@@ -192,22 +185,14 @@ function StatusSelect({ order, onChange, className }) {
 // Pelanggan/Pipeline (stageVariant), supaya tidak ada skema warna kedua.
 function PipelineStageSelect({ order, onChange, className }) {
   return (
-    <select
+    <BadgeDropdown
       value={order.pipelineStage || "NEW"}
-      onChange={(e) => onChange(order, e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      aria-label={`Ubah tahap pipeline untuk ${order.customerName || "pelanggan"}`}
-      className={cn(
-        badgeVariants({ variant: stageVariant(order.pipelineStage) }),
-        "cursor-pointer appearance-none border-0 py-0.5 pl-2 pr-1 text-[10px]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-        className
-      )}
-    >
-      {PIPELINE_STAGES.map(({ value, label }) => (
-        <option key={value} value={value}>{label}</option>
-      ))}
-    </select>
+      onChange={(v) => onChange(order, v)}
+      options={PIPELINE_STAGES}
+      getChipClass={(v) => badgeVariants({ variant: stageVariant(v) })}
+      ariaLabel={`Ubah tahap pipeline untuk ${order.customerName || "pelanggan"}`}
+      triggerClassName={className}
+    />
   );
 }
 
@@ -226,25 +211,16 @@ const PAYMENT_TONE = {
 };
 function PaymentStatusSelect({ order, onChange, className, locked }) {
   return (
-    <select
+    <BadgeDropdown
       value={order.paymentStatus || "BELUM_BAYAR"}
-      onChange={(e) => onChange(order, e.target.value)}
-      onClick={(e) => e.stopPropagation()}
+      onChange={(v) => onChange(order, v)}
+      options={PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
+      getChipClass={(v) => PAYMENT_TONE[v]}
       disabled={locked}
-      aria-label={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
       title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa ubah pembayaran" : undefined}
-      className={cn(
-        "appearance-none rounded-chip border-0 py-0.5 pl-2 pr-1 text-[10px] font-semibold",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-        locked ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-        PAYMENT_TONE[order.paymentStatus || "BELUM_BAYAR"],
-        className
-      )}
-    >
-      {PAYMENT_STATUSES.map((s) => (
-        <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s] || s}</option>
-      ))}
-    </select>
+      ariaLabel={`Ubah status pembayaran untuk ${order.customerName || "pelanggan"}`}
+      triggerClassName={className}
+    />
   );
 }
 

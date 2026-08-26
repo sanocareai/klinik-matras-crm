@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
+import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
@@ -582,11 +584,13 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             {ORDER_STATUS_LABELS[order.status] || order.status}
           </span>
           {editing ? (
-            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} style={selStyle}>
-              {PAYMENT_STATUSES.map((s) => (
-                <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s] || s}</option>
-              ))}
-            </select>
+            <BadgeDropdown
+              value={paymentStatus}
+              onChange={setPaymentStatus}
+              options={PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
+              getChipStyle={(v) => PAYMENT_STATUS_BADGE[v] || PAYMENT_STATUS_BADGE.BELUM_BAYAR}
+              ariaLabel="Ubah status pembayaran"
+            />
           ) : (
             <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"] }}>
               {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
@@ -626,11 +630,14 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
               dipakai untuk kasus di luar pola normal (order dibatalkan, dsb).
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
-              <select value={overrideStatus} onChange={(e) => setOverrideStatus(e.target.value)} style={selStyleFull}>
-                {ORDER_STATUSES.map((s) => (
-                  <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>
-                ))}
-              </select>
+              <BadgeDropdown
+                value={overrideStatus}
+                onChange={setOverrideStatus}
+                options={ORDER_STATUSES.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+                getChipStyle={(v) => ORDER_STATUS_BADGE[v] || ORDER_STATUS_BADGE.PENDING}
+                ariaLabel="Pilih status pengganti"
+                triggerClassName="w-full"
+              />
               <input
                 value={overrideNote} onChange={(e) => setOverrideNote(e.target.value)}
                 placeholder="Alasan override (opsional)"
@@ -707,20 +714,24 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <div>
             <FieldLabel tone="bed" small>Merk Kasur</FieldLabel>
             {isLayanan ? (
-              <select value={merkKasur} onChange={(e) => setMerkKasur(e.target.value)} style={selStyleFull}>
-                <option value="">—</option>
-                {orderOptions.merkKasur.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <FilterDropdown
+                value={merkKasur} onChange={setMerkKasur}
+                options={orderOptions.merkKasur.map((m) => ({ value: m, label: m }))}
+                placeholder="—" ariaLabel="Pilih merk kasur"
+                triggerClassName="w-full max-w-none"
+              />
             ) : (
               <div style={{ fontSize: 13, fontWeight: 700, padding: "5px 0", color: "#166534" }}>Sano ✓</div>
             )}
           </div>
           <div>
             <FieldLabel tone="size" small>Ukuran</FieldLabel>
-            <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={selStyleFull}>
-              <option value="">—</option>
-              {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+            <FilterDropdown
+              value={ukuran} onChange={setUkuran}
+              options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
+              placeholder="—" ariaLabel="Pilih ukuran kasur"
+              triggerClassName="w-full max-w-none"
+            />
           </div>
         </div>
       ) : (info.merkKasur || info.ukuranKasur || !isLayanan) ? (
@@ -736,10 +747,14 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         <div>
           <FieldLabel tone="address" small>Kota</FieldLabel>
           {editing ? (
-            <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={selStyleFull} disabled={locked}>
-              <option value="">— Pilih Kota —</option>
-              {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
-            </select>
+            <FilterDropdown
+              value={deliveryCity} onChange={setDeliveryCity}
+              options={KOTA_LIST.map((k) => ({ value: k, label: k }))}
+              placeholder="— Pilih Kota —" ariaLabel="Pilih kota pengiriman"
+              disabled={locked}
+              title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa mengedit" : undefined}
+              triggerClassName="w-full max-w-none"
+            />
           ) : (
             <div style={{ fontSize: 13 }}>{order.deliveryCity || <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
           )}
@@ -917,16 +932,22 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       <div style={{ marginBottom: 8 }}>
         <FieldLabel tone="promo" small>Promo</FieldLabel>
         {editing ? (
-          <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={selStyleFull} disabled={locked}>
-            <option value="">Tanpa promo</option>
-            {order.promo && !promos.some((p) => p.id === order.promo.id) && (
+          <FilterDropdown
+            value={promoId} onChange={setPromoId}
+            options={[
               // Promo yang dipakai order ini sudah tidak aktif lagi — tetap
               // tampilkan sebagai pilihan supaya tidak diam-diam tergeser
               // begitu dropdown dibuka, tapi tandai jelas.
-              <option value={order.promo.id}>{promoLabel(order.promo)} (sudah berakhir)</option>
-            )}
-            {promos.map((p) => <option key={p.id} value={p.id}>{promoLabel(p)}</option>)}
-          </select>
+              ...(order.promo && !promos.some((p) => p.id === order.promo.id)
+                ? [{ value: order.promo.id, label: `${promoLabel(order.promo)} (sudah berakhir)` }]
+                : []),
+              ...promos.map((p) => ({ value: p.id, label: promoLabel(p) })),
+            ]}
+            placeholder="Tanpa promo" ariaLabel="Pilih promo"
+            disabled={locked}
+            title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa mengedit" : undefined}
+            triggerClassName="w-full max-w-none"
+          />
         ) : order.promo ? (
           <div><span style={chipStyle}>{promoLabel(order.promo)}</span></div>
         ) : (
@@ -1268,10 +1289,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         <div style={{ marginBottom: 10 }}>
           <FieldLabel tone="bed">Merk Kasur</FieldLabel>
           {isLayanan ? (
-            <select value={merkKasur} onChange={(e) => setMerk(e.target.value)} style={formSelect}>
-              <option value="">— Pilih Merk —</option>
-              {orderOptions.merkKasur.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <FilterDropdown
+              value={merkKasur} onChange={setMerk}
+              options={orderOptions.merkKasur.map((m) => ({ value: m, label: m }))}
+              placeholder="— Pilih Merk —" ariaLabel="Pilih merk kasur"
+              triggerClassName="w-full max-w-none"
+            />
           ) : (
             <div style={{ fontSize: 13, fontWeight: 700, padding: "7px 0", color: "#166534" }}>Sano ✓</div>
           )}
@@ -1279,19 +1302,23 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 
         <div style={{ marginBottom: 10 }}>
           <FieldLabel tone="size">Ukuran Kasur</FieldLabel>
-          <select value={ukuran} onChange={(e) => setUkuran(e.target.value)} style={formSelect}>
-            <option value="">— Pilih Ukuran —</option>
-            {orderOptions.ukuranKasur.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+          <FilterDropdown
+            value={ukuran} onChange={setUkuran}
+            options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
+            placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran kasur"
+            triggerClassName="w-full max-w-none"
+          />
         </div>
         {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
             1 customer bisa order untuk alamat berbeda-beda. */}
         <div style={{ marginBottom: 10 }}>
           <FieldLabel tone="address">Kota</FieldLabel>
-          <select value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} style={formSelect}>
-            <option value="">— Pilih Kota —</option>
-            {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
+          <FilterDropdown
+            value={deliveryCity} onChange={setDeliveryCity}
+            options={KOTA_LIST.map((k) => ({ value: k, label: k }))}
+            placeholder="— Pilih Kota —" ariaLabel="Pilih kota pengiriman"
+            triggerClassName="w-full max-w-none"
+          />
         </div>
         <div style={{ marginBottom: 14 }}>
           <FieldLabel tone="address">Alamat</FieldLabel>
@@ -1407,10 +1434,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         {promos.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <FieldLabel tone="promo">Promo (opsional)</FieldLabel>
-            <select value={promoId} onChange={(e) => setPromoId(e.target.value)} style={formSelect}>
-              <option value="">Tanpa promo</option>
-              {promos.map((p) => <option key={p.id} value={p.id}>{promoLabel(p)}</option>)}
-            </select>
+            <FilterDropdown
+              value={promoId} onChange={setPromoId}
+              options={promos.map((p) => ({ value: p.id, label: promoLabel(p) }))}
+              placeholder="Tanpa promo" ariaLabel="Pilih promo"
+              triggerClassName="w-full max-w-none"
+            />
           </div>
         )}
 
