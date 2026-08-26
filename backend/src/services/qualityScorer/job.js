@@ -27,17 +27,46 @@ function normalizeFlag(v) {
 // Generik utk SEMUA dimensi (4 lama tanpa flag, 2 baru dengan flag) — dim
 // tanpa `flag` menghasilkan `flag: undefined` (tidak ditulis ke DB sama
 // sekali oleh caller), PERSIS perilaku sebelum dimensi E/F ditambahkan.
+//
+// FALLBACK top-level (26 Agustus 2026, investigasi live): walau prompt
+// (qualityScorerRubric.js) sudah instruksikan flag ditaruh BERSARANG di
+// dalam objek dimensinya (`scores[dim.key][dim.flag.key]`), LLM kadang
+// (diverifikasi: 17-58% dari baris yang skornya terisi) malah menaruhnya
+// sebagai key TERPISAH di root JSON (`scores[dim.flag.key]`) — masih JSON
+// valid, cuma salah lokasi. Dicoba nested DULU, baru fallback ke root,
+// supaya flag tidak hilang jadi null cuma gara-gara salah taruh, BUKAN
+// karena topiknya memang tidak muncul di percakapan.
 function dimResult(scores, dim) {
   const d = scores?.[dim.key];
   if (!d || d.score == null) {
     return { score: null, quote: null, note: d?.note ?? null, flag: dim.flag ? null : undefined };
   }
+  let flag;
+  if (dim.flag) {
+    const nested = normalizeFlag(d[dim.flag.key]);
+    flag = nested !== null ? nested : normalizeFlag(scores?.[dim.flag.key]);
+  }
   return {
     score: Number(d.score),
     quote: d.quote ?? null,
     note: d.note ?? null,
-    flag: dim.flag ? normalizeFlag(d[dim.flag.key]) : undefined,
+    flag,
   };
+}
+
+// Diekspor (bukan cuma dipakai lokal di runQualityScorerJob) supaya script
+// backfill satu-off bisa memakai EKSTRAKSI YANG SAMA PERSIS, bukan menyalin
+// ulang logikanya — kalau nanti prompt/skema berubah lagi, cukup 1 tempat.
+export function buildDimFields(scores) {
+  const dimFields = {};
+  for (const dim of RUBRIC_DIMENSIONS) {
+    const r = dimResult(scores, dim);
+    dimFields[`${dim.key}Score`] = r.score;
+    dimFields[`${dim.key}Quote`] = r.quote;
+    dimFields[`${dim.key}Note`] = r.note;
+    if (dim.flag) dimFields[dim.flag.key] = r.flag;
+  }
+  return dimFields;
 }
 
 /**
@@ -101,19 +130,7 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
         const costUsd = estimateCostUsd(usage);
         summary.totalCostUsd += costUsd;
 
-        // Dibangun generik dari RUBRIC_DIMENSIONS (6 dimensi) — utk 4
-        // dimensi lama menghasilkan field {key}Score/{key}Quote/{key}Note
-        // PERSIS sama seperti sebelumnya (cuma cara menulisnya yang
-        // digeneralisasi, bukan nilainya). 2 dimensi baru menambah field
-        // flag booleannya sendiri (closingAskPresent/plainLanguageUsed).
-        const dimFields = {};
-        for (const dim of RUBRIC_DIMENSIONS) {
-          const r = dimResult(scores, dim);
-          dimFields[`${dim.key}Score`] = r.score;
-          dimFields[`${dim.key}Quote`] = r.quote;
-          dimFields[`${dim.key}Note`] = r.note;
-          if (dim.flag) dimFields[dim.flag.key] = r.flag;
-        }
+        const dimFields = buildDimFields(scores);
 
         await prisma.conversationQualityScore.upsert({
           where: { conversationId_sampledFor: { conversationId: row.conversationId, sampledFor: mulai } },

@@ -189,7 +189,7 @@ function formatScoringGuide(guide) {
 // ditambahkan (tidak ada baris tambahan apa pun).
 function formatDimensionBlock(d) {
   const flagLine = d.flag
-    ? `\n\nFlag boolean WAJIB (kunci JSON: "${d.flag.key}"): ${d.flag.question} Jawab true/false tegas kalau score dimensi ini terisi; kembalikan null HANYA kalau score-nya juga null.`
+    ? `\n\nFlag boolean WAJIB (kunci JSON: "${d.flag.key}"): ${d.flag.question} Jawab true/false tegas kalau score dimensi ini terisi; kembalikan null HANYA kalau score-nya juga null. PENTING — LOKASI: "${d.flag.key}" harus jadi key DI DALAM objek "${d.key}" ini (sejajar dengan "score"/"quote"/"note"), BUKAN key terpisah di level atas/root JSON.`
     : "";
   return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}`;
 }
@@ -218,7 +218,7 @@ ATURAN PENTING:
 - Kalau topik satu dimensi TIDAK PERNAH muncul di percakapan ini (mis. tidak ada keberatan sama sekali untuk "objectionHandling", atau percakapan terlalu singkat untuk membahas dampak kesehatan), kembalikan score: null untuk dimensi itu dan jelaskan singkat di note kenapa null — JANGAN memaksa angka 1-5 untuk sesuatu yang tidak terjadi.
 - "quote" adalah kutipan LANGSUNG (1-2 kalimat) dari pesan SALES yang jadi bukti utama skor itu — kutip persis, jangan parafrase. null kalau skornya juga null.
 - "note" adalah SATU baris catatan coaching (bahasa Indonesia, actionable, maksimal ~25 kata) — apa yang sudah bagus ATAU apa yang perlu diperbaiki sales ini ke depan.
-- Beberapa dimensi (lihat definisi di bawah) juga punya flag boolean WAJIB selain score — flag itu HARUS true/false tegas (bukan teks bebas) kalau score dimensi itu terisi, dan ikut null hanya kalau score-nya juga null.
+- Beberapa dimensi (lihat definisi di bawah) juga punya flag boolean WAJIB selain score — flag itu HARUS true/false tegas (bukan teks bebas) kalau score dimensi itu terisi, dan ikut null hanya kalau score-nya juga null. Flag itu WAJIB jadi key DI DALAM objek dimensinya sendiri (sejajar dengan score/quote/note) — JANGAN PERNAH ditaruh sebagai key terpisah di level atas/root JSON, sekalipun nama key-nya sudah unik.
 - Fokus HANYA pada pesan dari SALES (OUTBOUND). Pesan customer (INBOUND) dipakai sebagai KONTEKS untuk menilai respons sales, bukan dinilai sendiri.
 - Ini PELENGKAP sistem deteksi pelanggaran yang sudah ada secara terpisah (klaim garansi salah, janji medis, dst) — JANGAN ulang menilai pelanggaran compliance di sini, fokus ke SUBSTANSI/KUALITAS percakapan.
 
@@ -230,7 +230,7 @@ REFERENSI PENGETAHUAN PRODUK & KESEHATAN (dipakai untuk menilai akurasi di dimen
 
 ${kbContext || "(Tidak ada referensi termuat — nilai product knowledge/dampak kesehatan berdasarkan kewajaran umum saja, tandai overallNote bahwa referensi tidak tersedia.)"}
 
-FORMAT OUTPUT — WAJIB JSON valid, TANPA teks lain di luar JSON, dengan struktur PERSIS ini:
+FORMAT OUTPUT — WAJIB JSON valid, TANPA teks lain di luar JSON, dengan struktur PERSIS ini (PERHATIKAN: setiap flag boolean ada DI DALAM kurung kurawal objek dimensinya masing-masing, BUKAN key terpisah sejajar "overallNote" di root):
 {
 ${outputSpec},
   "overallNote": "satu kalimat ringkasan coaching keseluruhan percakapan ini"
