@@ -94,7 +94,7 @@ export default function Dashboard({ user }) {
               ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
                  : "pelanggan yang order"
             }
-            tooltip="Persentase pelanggan (dari seluruh pelanggan, bukan cuma periode ini) yang pernah membuat order."
+            tooltip={`Conversion = (pelanggan yang PERNAH order) ÷ (SELURUH pelanggan, bukan cuma periode ini) × 100%. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
           />
         </section>
 

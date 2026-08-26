@@ -541,19 +541,19 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
                       Konversi
-                      <InfoTooltip text="Berapa persen lead dari sumber ini yang akhirnya closing" />
+                      <InfoTooltip text="Konversi = (lead dari sumber ini yang closing/order) ÷ (total Lead dari sumber ini) × 100%. Beda dari Laporan Sales: di sini SPAM TIDAK dikecualikan dari penyebutnya (sengaja, supaya sumber bertargeting buruk tidak tersembunyi)." />
                     </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium">
                     <span className="inline-flex items-center justify-end gap-1">
                       Rata2 Order
-                      <InfoTooltip text="Rata-rata nilai order dari yang closing" />
+                      <InfoTooltip text="Rata2 Order (AOV sumber ini) = total Nilai Order ÷ jumlah Closing dari sumber ini — rata-rata besar 1 order yang closing." />
                     </span>
                   </th>
                   <th className="pb-2 pr-3 text-right font-medium text-ink2">
                     <span className="inline-flex items-center justify-end gap-1">
                       Nilai/Lead
-                      <InfoTooltip text="Rupiah yang dihasilkan SATU lead dari sumber ini — angka paling menentukan untuk membandingkan iklan" />
+                      <InfoTooltip text="Nilai/Lead = total Nilai Order ÷ total Lead (BUKAN cuma yang closing) dari sumber ini — rupiah yang dihasilkan SATU lead rata-rata, angka paling menentukan untuk membandingkan iklan." />
                     </span>
                   </th>
                   <th className="pb-2 text-right font-medium">Nilai Order</th>

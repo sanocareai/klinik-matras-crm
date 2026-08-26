@@ -47,16 +47,16 @@ function toneKonversi(v, median) {
 const KOLOM = [
   // Restrukturisasi 24 Agustus 2026 (7→4 stage): kolom Qualified* + Quoted*
   // digabung jadi SATU (Prospect*) — dua-duanya sekarang satu stage PROSPECT.
-  { k: "prospect",   label: "Prospect*",  title: "POSISI SAAT INI: pelanggan yang sekarang berada di tahap Prospect (tidak mengikuti rentang tanggal)" },
-  { k: "paidCustomers", label: "Transaksi", title: "Pelanggan yang PINDAH ke stage Transaksi di dalam periode terpilih (dari riwayat transisi pipeline)" },
-  { k: "conversionRate", label: "Konversi", title: "Pindah ke Transaksi dalam periode / percakapan yang ditangani dalam periode — metrik konversi UTAMA, SPAM dikecualikan" },
-  { k: "orderingCustomers", label: "Order-in", title: "Pelanggan yang membuat order DI DALAM periode terpilih" },
-  { k: "orderConversionRate", label: "Konversi (Order)", title: "Pelanggan yang order di periode ini / percakapan yang ditangani di periode ini — pelengkap, mengukur order yang benar-benar dibuat" },
-  { k: "spamRate",   label: "Spam %",     title: "Persentase lead yang DIA PEGANG ditandai SPAM — bukan metrik performa, layak ditinjau kalau jauh di atas rata-rata tim" },
+  { k: "prospect",   label: "Prospect*",  title: "POSISI SAAT INI (bukan hitungan periode): jumlah pelanggan yang SEKARANG ada di tahap Prospect, dari semua percakapan yang dia pegang — tidak mengikuti rentang tanggal di atas." },
+  { k: "paidCustomers", label: "Transaksi", title: "Jumlah pelanggan yang PINDAH ke stage Transaksi di dalam periode yang dipilih — dihitung dari riwayat perpindahan stage (pipeline_transitions), bukan posisi sekarang." },
+  { k: "conversionRate", label: "Konversi", title: "Konversi = (pelanggan pindah ke Transaksi di periode ini) ÷ (percakapan yang dia tangani di periode ini) × 100%. Contoh: 20 percakapan ditangani, 4 pindah ke Transaksi → 4 ÷ 20 = 20%. Metrik konversi UTAMA — chat SPAM dikecualikan dari penyebutnya." },
+  { k: "orderingCustomers", label: "Order-in", title: "Jumlah pelanggan (bukan jumlah order) yang membuat MINIMAL 1 order di dalam periode yang dipilih." },
+  { k: "orderConversionRate", label: "Konversi (Order)", title: "Konversi (Order) = (pelanggan yang order di periode ini) ÷ (percakapan yang dia tangani di periode ini) × 100%. Beda dari kolom Konversi: ini mengukur order yang BENAR-BENAR dibuat, bukan cuma kartu pindah stage." },
+  { k: "spamRate",   label: "Spam %",     title: "Spam % = (chat yang dia pegang ditandai SPAM) ÷ (chat SPAM + chat yang dia tangani) × 100%. Bukan penalti performa — cuma pengawas, layak ditinjau kalau jauh di atas rata-rata tim." },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
-  { k: "grossValue", label: "Nilai",      title: "Nilai order masuk — belum tentu sudah terbayar" },
-  { k: "aov",        label: "AOV",        title: "Rata-rata nilai per order" },
-  { k: "percentToTarget", label: "% Target", title: "Nilai order dibanding target bulan berjalan" },
+  { k: "grossValue", label: "Nilai",      title: "Total nilai (Rupiah) semua order masuk di periode ini — belum tentu sudah terbayar lunas." },
+  { k: "aov",        label: "AOV",        title: "AOV (Average Order Value) = total Nilai ÷ jumlah Order di periode ini — rata-rata besar 1 order." },
+  { k: "percentToTarget", label: "% Target", title: "% Target = (nilai closing BULAN INI, bukan periode yang dipilih di atas) ÷ (target bulanan dari Pengaturan > Target Sales) × 100%." },
 ];
 
 export default function SalesReportTab({ report, targetReport, grossTotalPerusahaan, onExport, range }) {
@@ -128,7 +128,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
-          tooltip="Pelanggan yang pindah ke stage Transaksi di periode ini, dibagi jumlah percakapan yang ditangani tim (8 sales, tanpa Team Lead)."
+          tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani.`}
         />
         <KpiCard
           index={2} label="Target Tim"
@@ -189,9 +189,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
                       r.conversionRate == null ? "bg-inset text-ink3" : "bg-accentbg text-accent"
                     )}
-                    title="Konversi PERSONAL Novi (bukan tim) — pelanggan yang pindah ke Transaksi dari percakapan yang dia pegang sendiri"
                   >
                     {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi pribadi
+                    <InfoTooltip text={`Konversi PERSONAL ${r.name} (bukan tim) = (pelanggan pindah ke Transaksi dari percakapan yang dia pegang SENDIRI) ÷ (percakapan yang dia tangani sendiri) × 100%. Contoh: ${r.paidCustomers ?? 0} ÷ ${r.handled ?? 0} = ${r.conversionRate != null ? `${r.conversionRate}%` : "—"}.`} />
                   </div>
 
                   <div className="w-full sm:w-64">
@@ -210,13 +210,11 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                         style={{ width: `${Math.min(mtd?.teamPercentToTarget ?? 0, 100)}%` }}
                       />
                     </div>
-                    <span
-                      className="mt-1 inline-block text-[11px] text-ink3"
-                      title="Target TIM (gabungan closing timnya + closing pribadi), bulan berjalan — tidak ikut rentang tanggal di atas"
-                    >
+                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-ink3">
                       {mtd?.teamPercentToTarget != null
                         ? `${mtd.teamPercentToTarget}% dari target tim bulan ini`
                         : "Target tim belum diset (Pengaturan > Target Sales)"}
+                      <InfoTooltip text="Target TIM (gabungan closing timnya + closing pribadi), bulan berjalan — tidak ikut rentang tanggal yang dipilih di atas." />
                     </span>
                   </div>
                 </div>
@@ -250,9 +248,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                     : median != null && r.conversionRate <= median * 0.6 ? "bg-redbg text-red"
                     : "bg-accentbg text-accent"
                   )}
-                  title="Pelanggan yang pindah ke stage Transaksi pada periode ini / percakapan yang ditangani pada periode ini"
                 >
                   {r.conversionRate != null ? `${r.conversionRate}%` : "—"} konversi
+                  <InfoTooltip text={`Konversi = (pelanggan pindah ke Transaksi) ÷ (percakapan yang dia tangani) × 100%. Contoh: ${r.paidCustomers ?? 0} pindah Transaksi dari ${r.handled ?? 0} percakapan ditangani = ${r.conversionRate != null ? `${r.conversionRate}%` : "—"}.`} />
                 </div>
 
                 <div className="w-full sm:w-56">

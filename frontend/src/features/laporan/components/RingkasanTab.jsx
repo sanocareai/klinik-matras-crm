@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils.js";
 import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS, SOURCE_LABELS } from "@/utils/format.js";
 import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
 import { computeTeamTarget } from "../utils/teamTarget.js";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -318,13 +319,19 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         <ChartCard index={5} title="Konversi" description="Dari pelanggan baru ke pembayaran">
           <div className="flex flex-col gap-3.5">
             {[
-              { label: "Pelanggan baru", value: konversi?.totalCustomers || 0, tone: "accent", pct: 100 },
-              { label: "Pernah order",   value: konversi?.customersWithOrders || 0, tone: "accent", pct: konversi?.orderRate },
-              { label: "Sudah bayar",    value: konversi?.paidCustomers || 0, tone: "green", pct: konversi?.paidRate },
+              { label: "Pelanggan baru", value: konversi?.totalCustomers || 0, tone: "accent", pct: 100,
+                tip: "Semua pelanggan baru (Customer dibuat) di periode yang dipilih, dari sumber mana pun — chat SPAM dikecualikan. Ini penyebut (100%) untuk 2 baris di bawahnya." },
+              { label: "Pernah order",   value: konversi?.customersWithOrders || 0, tone: "accent", pct: konversi?.orderRate,
+                tip: `Pernah order = (pelanggan yang sudah pernah bikin order apa pun, LUNAS atau belum) ÷ (Pelanggan Baru) × 100%. Contoh: ${konversi?.customersWithOrders || 0} ÷ ${konversi?.totalCustomers || 0} = ${konversi?.orderRate ?? "—"}%.` },
+              { label: "Sudah bayar",    value: konversi?.paidCustomers || 0, tone: "green", pct: konversi?.paidRate,
+                tip: `Sudah bayar = (pelanggan yang order-nya sudah tercatat LUNAS) ÷ (Pelanggan Baru) × 100%. Contoh: ${konversi?.paidCustomers || 0} ÷ ${konversi?.totalCustomers || 0} = ${konversi?.paidRate ?? "—"}%.` },
             ].map((r) => (
               <div key={r.label}>
                 <div className="flex items-baseline justify-between">
-                  <span className="text-xs font-medium text-ink2">{r.label}</span>
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-ink2">
+                    {r.label}
+                    <InfoTooltip text={r.tip} />
+                  </span>
                   <span className="text-[15px] font-bold tabular-nums text-ink">
                     {r.value.toLocaleString("id-ID")}
                   </span>
@@ -343,13 +350,19 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
 
             <div className="mt-1 border-t border-line pt-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink3">Total percakapan</span>
+                <span className="flex items-center gap-1.5 text-xs text-ink3">
+                  Total percakapan
+                  <InfoTooltip text="Semua percakapan (WhatsApp/Instagram, bukan grup internal) yang dibuat di periode yang dipilih." />
+                </span>
                 <span className="text-[13px] font-semibold tabular-nums text-ink2">
                   {(perf?.totalConversations || 0).toLocaleString("id-ID")}
                 </span>
               </div>
               <div className="mt-1.5 flex items-baseline justify-between">
-                <span className="text-xs text-ink3">Rasio komplain</span>
+                <span className="flex items-center gap-1.5 text-xs text-ink3">
+                  Rasio komplain
+                  <InfoTooltip text="Persentase order (di periode ini) yang ditandai 'Pernah Komplain' oleh sales/admin." />
+                </span>
                 <span className="text-[13px] font-semibold tabular-nums text-ink2">
                   {summary?.komplain?.rate != null ? `${summary.komplain.rate}%` : "—"}
                   <span className="ml-1 font-normal text-ink3">({summary?.komplain?.count || 0})</span>
@@ -360,7 +373,10 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                   Total Revenue sendirian (keduanya bisa naik cuma dari
                   pelanggan baru). */}
               <div className="mt-1.5 flex items-baseline justify-between">
-                <span className="text-xs text-ink3">Repeat order</span>
+                <span className="flex items-center gap-1.5 text-xs text-ink3">
+                  Repeat order
+                  <InfoTooltip text="Dari pelanggan yang PERNAH order, berapa persen yang order LAGI (order ke-2 atau lebih) — indikator loyalitas, terpisah dari AOV/Total Revenue yang bisa naik cuma dari pelanggan baru." />
+                </span>
                 <span className="text-[13px] font-semibold tabular-nums text-ink2">
                   {konversi?.repeatRate != null ? `${konversi.repeatRate}%` : "—"}
                   <span className="ml-1 font-normal text-ink3">({konversi?.repeatCustomers || 0} pelanggan)</span>
