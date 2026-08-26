@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api.js";
+import { makeRange, toApiParams } from "../../../lib/dateRange.js";
 import { BAND2_IS_MOCK, MOCK_HOT_LEADS, MOCK_FOLLOW_UPS } from "../data/contracts.js";
 
 // Assembler data dashboard. Hanya mengambil apa yang BENAR-BENAR dipakai
@@ -23,6 +24,19 @@ export function useDashboardData(range) {
     staleTime: 60_000,
   });
 
+  // Khusus kartu "Conversion" — SENGAJA month-to-date TETAP, TIDAK ikut
+  // `range` yang dipilih (26 Agustus 2026, laporan owner: begitu di-set
+  // "Hari ini", Conversion selalu ~0% — leads yang BARU masuk hari itu
+  // hampir tidak pernah sempat closing di HARI YANG SAMA, jadi angkanya
+  // bukan bug, tapi juga tidak pernah informatif untuk rentang pendek).
+  // Sama pola dengan "Target Bulanan Tim" di Laporan — lihat
+  // pages/Laporan.jsx#salesReportBulanIni untuk penjelasan panjang yang sama.
+  const overviewMTD = useQuery({
+    queryKey: ["dash", "overview-mtd"],
+    queryFn: () => api.getAnalyticsOverview(toApiParams(makeRange("this_month"))),
+    staleTime: 60_000,
+  });
+
   // Band 2. Wave 2B: endpoint NYATA (role-scoped di server). Bila
   // BAND2_IS_MOCK=true → fallback ke kontrak mock (ROLLBACK 1 baris, tanpa
   // ubah query). Endpoint global (bukan per-range); staleTime 45s.
@@ -38,5 +52,5 @@ export function useDashboardData(range) {
   const hotLeads  = band2("hot-leads",  api.getHotLeads,  MOCK_HOT_LEADS);
   const followUps = band2("follow-ups", api.getFollowUps, MOCK_FOLLOW_UPS);
 
-  return { overview, hotLeads, followUps };
+  return { overview, overviewMTD, hotLeads, followUps };
 }

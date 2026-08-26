@@ -38,14 +38,24 @@ export default function Dashboard({ user }) {
   // "Conversion" = PELANGGAN DISTINCT yang order (customersWithOrders) /
   // total lead baru (totalCustomers) — BUKAN total jumlah order (totalOrders)
   // dibagi lead. Sengaja begitu: satu pelanggan yang order 2x dalam periode
-  // yang sama tidak boleh dihitung sebagai "2 konversi". Ditemukan berulang
-  // kali menimbulkan pertanyaan "kenapa gak sama dengan Total Orders/New
-  // Leads?" — makanya angka mentahnya (bukan cuma %) ditampilkan di
-  // deltaSuffix di bawah, supaya bedanya kelihatan langsung tanpa perlu
-  // dijelaskan ulang tiap kali. null (bukan 0%) kalau belum ada lead sama
-  // sekali di periode ini.
-  const konversi = ov && ov.totalCustomers > 0
-    ? Math.round((ov.customersWithOrders / ov.totalCustomers) * 100)
+  // yang sama tidak boleh dihitung sebagai "2 konversi".
+  //
+  // BUG YANG DIPERBAIKI (26 Agustus 2026): `totalCustomers`/`customersWithOrders`
+  // di atas ikut `range` yang dipilih (custWhereKonversi di backend) — artinya
+  // ini COHORT: "dari lead yang masuk DI PERIODE INI, berapa yang SUDAH
+  // closing (sampai sekarang)". Di-set "Hari ini", cohort-nya adalah lead
+  // yang BARU SAJA masuk hari itu juga — hampir tidak pernah sempat closing
+  // di HARI YANG SAMA, jadi Conversion nyaris selalu 0% dan disangka bug
+  // (dilaporkan owner: "kok Conversion 0% padahal ada order hari ini?" —
+  // order itu dari lead LAMA yang baru closing hari ini, bukan dari cohort
+  // hari ini, jadi memang benar tidak ikut kehitung di sini).
+  //
+  // Sekarang kartu ini SELALU pakai cohort BULAN INI (via `overviewMTD`,
+  // lihat useDashboardData.js), TIDAK ikut `range` — sama pola dengan
+  // "Target Bulanan Tim" di Laporan.
+  const ovMTD = d.overviewMTD.data;
+  const konversi = ovMTD && ovMTD.totalCustomers > 0
+    ? Math.round((ovMTD.customersWithOrders / ovMTD.totalCustomers) * 100)
     : null;
   const userName = user?.name?.split(" ")[0] || "Anda";
   // Label pembanding ikut PANJANG rentang yang sedang dipilih ("vs kemarin",
@@ -55,6 +65,9 @@ export default function Dashboard({ user }) {
   // yang tidak pernah ikut menyesuaikan rentang yang dipilih. null kalau
   // preset "Semua" (tidak ada periode pembanding yang valid).
   const cmp = compareLabel(range);
+  // Label pembanding KHUSUS kartu Conversion — ikut cohort bulan-berjalan
+  // (di atas), BUKAN `range` yang dipilih di date picker.
+  const cmpMTD = compareLabel(makeRange("this_month"));
 
   return (
     <PageContainer>
@@ -89,12 +102,12 @@ export default function Dashboard({ user }) {
           <StatCard
             label="Conversion" icon={Target} depth={4}
             value={konversi != null ? `${konversi}%` : "—"}
-            delta={ov?.growthConversion} deltaSuffix={cmp}
+            delta={ovMTD?.growthConversion} deltaSuffix={cmpMTD}
             note={
-              ov ? `${(ov.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ov.totalCustomers ?? 0).toLocaleString("id-ID")} pelanggan order`
-                 : "pelanggan yang order"
+              ovMTD ? `${(ovMTD.customersWithOrders ?? 0).toLocaleString("id-ID")} dari ${(ovMTD.totalCustomers ?? 0).toLocaleString("id-ID")} lead bulan ini`
+                 : "lead bulan ini yang sudah order"
             }
-            tooltip={`Conversion = (pelanggan yang PERNAH order) ÷ (SELURUH pelanggan, bukan cuma periode ini) × 100%. Contoh: ${ov?.customersWithOrders ?? 0} ÷ ${ov?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
+            tooltip={`Conversion = (lead BULAN INI yang sudah order) ÷ (SELURUH lead bulan ini) × 100%. SELALU bulan berjalan, tidak ikut rentang tanggal yang dipilih di atas — kalau di-set "Hari ini", lead yang baru masuk hari itu memang hampir tidak pernah sempat closing hari yang sama juga. Contoh: ${ovMTD?.customersWithOrders ?? 0} ÷ ${ovMTD?.totalCustomers ?? 0} = ${konversi ?? "—"}%.`}
           />
         </section>
 
