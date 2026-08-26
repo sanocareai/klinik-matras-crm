@@ -1,15 +1,56 @@
 // ═══ SALES RISK ENGINE — orchestrator + agregasi ══════════════════════════
 // "Siapa berisiko karena eksekusi sales gagal?" — TERPISAH dari Priority
-// Engine (services/intelligence/, "siapa layak diprioritaskan"). TIDAK ADA
-// baris yang mengubah/mengimpor priorityScore.js atau nextBestAction.js —
-// hanya loadAllPriorityCandidates() (data loader murni, sudah dipakai juga
-// oleh staleLeadAlertJob.js) yang di-reuse utk sumber kandidat.
+// Engine (services/intelligence/). TIDAK mengimpor apa pun dari intelligence/
+// index.js LAGI (revisi — awalnya reuse loadAllPriorityCandidates() di sana,
+// tapi select-nya cuma {direction,content,createdAt} utk messages, TIDAK ADA
+// rawType/mediaType, jadi sinyal "location shared" SELALU false walau
+// datanya ada di DB — ketahuan lewat live test thd Ivan). Loader kandidat di
+// bawah ini MILIK SENDIRI, select sendiri — engine benar-benar independen,
+// bukan cuma "logic-nya" terpisah tapi data-loading-nya juga.
+//
+// THRESHOLDS.stalledProspectDays dari intelligence/weights.js TETAP
+// di-import di signals.js (angka konfigurasi, bukan logic scoring) — itu
+// satu-satunya sisa ketergantungan, disengaja supaya "berapa hari PROSPECT
+// dianggap macet" tidak py 2 definisi berbeda di 2 engine.
 import { prisma } from "../../db.js";
-import { loadAllPriorityCandidates } from "../intelligence/index.js";
 import { detectSalesRiskSignals } from "./signals.js";
 import { buildSalesRisk } from "./riskScore.js";
+import { THRESHOLDS as INTEL_THRESHOLDS } from "../intelligence/weights.js";
 
 const DEFAULT_CANDIDATE_LIMIT = 3000; // sama jaring pengaman dgn staleLeadAlertJob.js
+
+// Select MILIK Sales Risk Engine — pre-filter kandidat SAMA persis dgn
+// Priority Engine (recent activity/komplain terbuka/PROSPECT, SPAM
+// dikecualikan, supaya bounded bukan scan seluruh tabel Customer), TAPI
+// select messages-nya sendiri, MENCAKUP rawType/mediaType yang Priority
+// Engine tidak butuh dan tidak pernah muat.
+async function loadSalesRiskCandidates(prisma, { limit } = {}) {
+  const recentCut = new Date(Date.now() - INTEL_THRESHOLDS.candidateRecentDays * 86_400_000);
+  const notSpam = { pipelineStage: { not: "SPAM" } };
+  const where = { AND: [notSpam, { OR: [
+    { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: recentCut } } } },
+    { orders: { some: { hasComplaint: true } } },
+    { pipelineStage: "PROSPECT" },
+  ] }] };
+  return prisma.customer.findMany({
+    where,
+    select: {
+      id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
+      assignedSales: { select: { name: true } },
+      orders: { select: { value: true, status: true } },
+      conversations: {
+        where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
+        select: {
+          messages: {
+            orderBy: { createdAt: "desc" }, take: 20,
+            select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true },
+          },
+        },
+      },
+    },
+    ...(limit ? { take: limit } : {}),
+  });
+}
 
 // PURE — TIDAK async (tidak ada I/O di dalamnya). Sebelumnya sempat ditulis
 // `async` tanpa alasan, yang MEMBUAT `.map()` di computeAllSalesRisks
@@ -35,7 +76,7 @@ export function buildSalesRiskForCustomer(customer) {
 // (route) boleh menyaring sebelum dikirim ke frontend kalau daftarnya
 // kepanjangan.
 export async function computeAllSalesRisks({ limit = DEFAULT_CANDIDATE_LIMIT } = {}) {
-  const candidates = await loadAllPriorityCandidates(prisma, { limit });
+  const candidates = await loadSalesRiskCandidates(prisma, { limit });
   return candidates.map((c) => buildSalesRiskForCustomer(c));
 }
 
