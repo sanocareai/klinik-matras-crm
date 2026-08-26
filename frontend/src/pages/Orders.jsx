@@ -69,6 +69,7 @@ const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
 // filter itu DIPILIH (bukan "Semua...") — biar "on point" tapi tidak
 // bertabrakan makna dengan warna status/pembayaran per baris di tabel.
 const FILTER_TONE = {
+  status:     { icon: Package,    hex: "#0891b2" },
   kategori:   { icon: Tag,        hex: "#7c3aed" },
   pembayaran: { icon: Wallet,     hex: "#16a34a" },
   sales:      { icon: UserRound,  hex: "#2563eb" },
@@ -393,6 +394,7 @@ export default function Orders() {
   const [view, setView]       = useState(() => localStorage.getItem("orders-view") || "board");
   const [cari, setCari]       = useState("");
   const [debounced, setDebounced] = useState("");
+  const [fStatus, setFStatus] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fBayar, setFBayar]   = useState("");
   const [fSales, setFSales]   = useState("");
@@ -438,6 +440,7 @@ export default function Orders() {
     try {
       const res = await api.getOrders({
         search: debounced || undefined,
+        status: fStatus || undefined,
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
         salesId: fSales || undefined,
@@ -452,7 +455,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fBayar, fSales, fPromo, fPipeline, range]);
+  }, [debounced, fStatus, fKategori, fBayar, fSales, fPromo, fPipeline, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -585,7 +588,7 @@ export default function Orders() {
   // dari badge itu yang menandai riwayat SEPANJANG WAKTU pelanggannya.
   const complaintCount = itemsAktif.filter((o) => o.hasComplaint).length;
   const complaintRate = itemsAktif.length > 0 ? Math.round((complaintCount / itemsAktif.length) * 1000) / 10 : null;
-  const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
+  const adaFilter = !!(debounced || fStatus || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -712,6 +715,14 @@ export default function Orders() {
               )}
             </div>
             <FilterSelect
+              tone="status" active={!!fStatus}
+              value={fStatus} onChange={(e) => setFStatus(e.target.value)}
+              aria-label="Filter status order"
+            >
+              <option value="">Semua Status</option>
+              {SEMUA_STATUS.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</option>)}
+            </FilterSelect>
+            <FilterSelect
               tone="kategori" active={!!fKategori}
               value={fKategori} onChange={(e) => setFKategori(e.target.value)}
               aria-label="Filter kategori"
@@ -826,7 +837,7 @@ export default function Orders() {
           <p className="mb-3 text-xs text-ink3">
             {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
             <button type="button"
-              onClick={() => { setCari(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
+              onClick={() => { setCari(""); setFStatus(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
               className="font-semibold text-accent hover:underline">
               Reset filter
             </button>
