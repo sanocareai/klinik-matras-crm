@@ -13,6 +13,7 @@ import { authRouter }       from "./routes/auth.js";
 import { conversationRouter } from "./routes/conversations.js";
 import { customerRouter }   from "./routes/customers.js";
 import { analyticsRouter }  from "./routes/analytics.js";
+import { qualityScorerRouter } from "./routes/qualityScorer.js";
 import { intelligenceRouter } from "./routes/intelligence.js";
 import { orderRouter }      from "./routes/orders.js";
 import { dashboardRouter }  from "./routes/dashboard.js";
@@ -48,6 +49,7 @@ import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
+import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -109,6 +111,7 @@ app.use("/api/auth",         authRouter);
 app.use("/api/conversations", conversationRouter);
 app.use("/api/customers",    customerRouter);
 app.use("/api/analytics",    analyticsRouter);
+app.use("/api/quality-scorer", qualityScorerRouter);
 app.use("/api/intelligence", intelligenceRouter);
 app.use("/api/orders",       orderRouter);
 app.use("/api/promos",       promoRouter);
@@ -200,6 +203,7 @@ server.listen(PORT, () => {
   logStatusMcp();
   startReconciliationJob();
   startSlaAlertJob();
+  startQualityScorerJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.

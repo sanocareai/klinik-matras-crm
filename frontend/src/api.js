@@ -657,6 +657,10 @@ export const api = {
   // catatan panjang di backend/src/routes/analytics.js.
   getLeadSourceDetail: (params) => request("/analytics/lead-source-detail" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
+  // AI Conversation Quality Scorer (26 Agustus 2026) — pelengkap
+  // audit_balasan_sales, laporan TERPISAH utk validasi manual dulu.
+  getQualityScorerWeekly: (params) => request("/quality-scorer/weekly" + buildQuery(params)),
+  runQualityScorerNow: () => request("/quality-scorer/run", { method: "POST" }),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
   getRecommendations: () => request("/analytics/recommendations"),

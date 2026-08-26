@@ -18,4 +18,11 @@ export const AI_MODELS = {
   // Pemilihan provider via env AI_REPLY_PROVIDER (default claude). BUKAN routing otomatis.
   SANO_REPLY_ASSISTANT_CLAUDE: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
   SANO_REPLY_ASSISTANT_OPENAI: { provider: "openai", model: "gpt-4.1-mini" },
+
+  // AI Conversation Quality Scorer (26 Agustus 2026) — job harian, batch
+  // kecil (sample_size x jumlah sales aktif, lihat config/qualityScorer
+  // Rubric.js). Haiku dipilih (bukan Sonnet) atas keputusan owner: cukup
+  // murah utk sampling harian, dan rubrik grading tidak butuh reasoning
+  // sedalam percakapan customer langsung.
+  SANO_QUALITY_SCORER: "claude-haiku-4-5-20251001",
 };

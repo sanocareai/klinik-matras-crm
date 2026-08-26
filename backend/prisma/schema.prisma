@@ -2123,6 +2123,64 @@ model ReplySuggestionLog {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// AI CONVERSATION QUALITY SCORER (26 Agustus 2026) — pelengkap audit_balasan
+// _sales (tool MCP rule-based di mcp/toolsChat.js, JANGAN disentuh/diganti).
+// Itu mendeteksi PELANGGARAN (garansi flat, klaim medis, dst) lewat regex —
+// ini menilai SUBSTANSI/KUALITAS POSITIF (product knowledge, proses
+// konsultasi, penjelasan dampak kesehatan, objection handling) lewat LLM.
+// Dua sistem BERBEDA & KOMPLEMENTER, bukan pengganti satu sama lain.
+//
+// ADITIF, TANPA FK ke Conversation/Customer/User — pola SAMA PERSIS dengan
+// ReplySuggestionLog di atas (isolasi penuh, rollback = DROP TABLE, tidak
+// menyentuh tabel lain). salesName & pipelineStageAtSample adalah SNAPSHOT
+// (bukan join real-time) — supaya rollup mingguan tetap benar walau nama
+// sales berubah atau stage pipeline customer sudah bergerak sejak disample.
+model ConversationQualityScore {
+  id                     String   @id @default(cuid())
+  conversationId         String // string biasa (tanpa FK) — isolasi
+  customerId             String? // string biasa (tanpa FK) — isolasi
+  salesUserId            String // string biasa (tanpa FK) — sales yang dinilai
+  salesName              String // snapshot nama saat disample
+  pipelineStageAtSample  String // snapshot stage Customer saat disample
+  sampledFor             DateTime // awal hari (WIB) yang di-sample — job jalan "utk kemarin"
+
+  // 4 dimensi rubrik (skor 1-5 + kutipan bukti singkat + catatan coaching).
+  // Kolom tetap (bukan tabel dimensi generik) — cuma 4, sudah pasti & stabil.
+  // Skor NULLABLE SENGAJA — kalau topik dimensi itu genuinely tidak pernah
+  // muncul di percakapan (mis. tidak ada objection sama sekali, atau chat
+  // terlalu pendek belum sempat bahas dampak kesehatan), LLM diinstruksikan
+  // kembalikan null, BUKAN dipaksa angka 1-5 utk sesuatu yang tidak terjadi
+  // (prinsip "tidak tahu lebih baik daripada menebak").
+  productKnowledgeScore     Int?
+  productKnowledgeQuote     String?
+  productKnowledgeNote      String?
+  consultationProcessScore  Int?
+  consultationProcessQuote  String?
+  consultationProcessNote   String?
+  healthImpactScore         Int?
+  healthImpactQuote         String?
+  healthImpactNote          String?
+  objectionHandlingScore    Int?
+  objectionHandlingQuote    String?
+  objectionHandlingNote     String?
+  overallNote               String? // catatan coaching ringkasan, opsional
+
+  model        String // model id dipakai saat grading (mis. claude-haiku-4-5-20251001)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costUsd      Float    @default(0)
+  messageCount Int      @default(0) // jumlah pesan transcript yang dinilai — audit trail
+
+  createdAt DateTime @default(now())
+
+  // Cegah re-grading percakapan yang sama utk hari sample yang sama kalau
+  // job dijalankan manual berkali-kali (mis. saat testing).
+  @@unique([conversationId, sampledFor])
+  @@index([salesUserId, createdAt]) // rollup mingguan per sales
+  @@index([sampledFor])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // INVENTORY v1 (Phase 3, PRD §8 — "the part that must be right"). Scope
 // SENGAJA dipersempit dari PRD lengkap (disepakati dengan Gilang 1 Agustus
 // 2026): katalog material + ledger + goods receipt + issue manual + stock

@@ -85,6 +85,10 @@ const DIVISIONS = {
         adminOnly: true,
         items: [
           { to: "/laporan", label: "Laporan", Icon: BarChart3 },
+          // AI Conversation Quality Scorer (26 Agustus 2026) — laporan
+          // validasi manual TERPISAH (pelengkap audit_balasan_sales,
+          // BUKAN pengganti), sengaja belum masuk Laporan/Dashboard utama.
+          { to: "/quality-scorer", label: "Quality Scorer (AI)", Icon: Sparkles },
         ],
       },
       {
