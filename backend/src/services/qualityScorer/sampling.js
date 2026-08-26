@@ -46,23 +46,31 @@ export async function sampleConversationsForSales(salesUserId, { mulai, selesai,
     .map((stage, i) => `WHEN '${stage}' THEN ${i}`)
     .join(" ");
 
+  // BUG YANG DIPERBAIKI (verifikasi live, 26 Agustus 2026): `cust.
+  // "pipelineStage" != $1` gagal — Postgres tidak punya operator `<>` bawaan
+  // antara kolom enum "PipelineStage" dan parameter yang dikirim sebagai
+  // text (error 42883). STAGE_PRIORITY/EXCLUDED_STAGE keduanya konstanta
+  // internal dari config (bukan input user), jadi aman disisipkan sebagai
+  // literal SQL langsung (sama seperti stageCaseWhen di atas) — bukan
+  // parameter — supaya Postgres bisa infer tipe enum dari literalnya,
+  // bukan dari parameter ber-tipe text yang butuh cast eksplisit.
   return prisma.$queryRawUnsafe(
     `
     SELECT DISTINCT c.id AS "conversationId", c."customerId", cust."pipelineStage", cust.name AS "customerName"
     FROM "Conversation" c
     JOIN "Customer" cust ON cust.id = c."customerId"
     WHERE c.type = 'INDIVIDUAL'
-      AND cust."pipelineStage" != $1
+      AND cust."pipelineStage" != '${EXCLUDED_STAGE}'
       AND EXISTS (
         SELECT 1 FROM "Message" m
-        WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND' AND m."sentById" = $2
-          AND m."createdAt" >= $3 AND m."createdAt" < $4
+        WHERE m."conversationId" = c.id AND m.direction = 'OUTBOUND' AND m."sentById" = $1
+          AND m."createdAt" >= $2 AND m."createdAt" < $3
       )
     ORDER BY
       CASE cust."pipelineStage" ${stageCaseWhen} ELSE ${STAGE_PRIORITY.length} END,
       RANDOM()
-    LIMIT $5
+    LIMIT $4
     `,
-    EXCLUDED_STAGE, salesUserId, mulai, selesai, sampleSize
+    salesUserId, mulai, selesai, sampleSize
   );
 }
