@@ -22,8 +22,9 @@ const KB_DIR = path.join(REPO_ROOT, "docs", "knowledge_base");
 export const QUALITY_SCORER_MODEL = AI_MODELS.SANO_QUALITY_SCORER;
 
 // Configurable lewat env, BUKAN hardcode — sesuai permintaan owner. Default
-// dipilih owner: 5 percakapan/sales/hari.
-export const SAMPLE_SIZE_PER_SALES = Math.max(1, parseInt(process.env.QUALITY_SCORER_SAMPLE_SIZE, 10) || 5);
+// naik dari 5 → 12 percakapan/sales/hari (26 Agustus 2026), setelah validasi
+// manual selesai (fix ekstraksi flag + backfill 12 baris terverifikasi bersih).
+export const SAMPLE_SIZE_PER_SALES = Math.max(1, parseInt(process.env.QUALITY_SCORER_SAMPLE_SIZE, 10) || 12);
 
 // Jaring pengaman biaya TERPISAH dari sample_size x jumlah_sales — kalau
 // suatu saat jumlah sales aktif membengkak jauh dari perkiraan sekarang
