@@ -762,9 +762,23 @@ async function computeSalesRow(u, ctx) {
     // memakai jalur pertama (diverifikasi: hanya 2 HandoverEvent cocok di
     // seluruh Agustus 2026 utk kolom ini). Sekarang conversations.js JUGA
     // mencatat HandoverEvent (reason:"auto-claim", createdAt disamakan
-    // dgn pesan balasannya) di jalur auto-assign itu, jadi query di sini
-    // akhirnya bertemu klaim yang dicari — clamp di atas efektif berlaku
-    // untuk KEDUA jalur klaim, bukan cuma yang jarang dipakai.
+    // dgn pesan balasannya) di jalur auto-assign itu.
+    //
+    // BUG DITEMUKAN & DIPERBAIKI (26 Agustus 2026): auto-claim SENGAJA
+    // createdAt-nya = timestamp balasan itu sendiri (lihat
+    // autoClaimIfUnowned di conversations.js) — beda dari "takeover"/
+    // "transfer" yang createdAt-nya independen (kapan tombol diklik,
+    // BUKAN kapan sales membalas). Karena claim.createdAt SELALU >
+    // i.createdAt untuk baris manapun yang lolos WHERE di bawah, clamp ini
+    // dulu SELALU menimpa inboundAt jadi persis sama dengan outboundAt
+    // untuk SETIAP percakapan yang diklaim lewat jalur auto-claim (jalur
+    // dominan) — bukan "abaikan antrean sebelum diklaim" seperti niatnya,
+    // tapi menolkan avg respons/SLA>1j untuk hampir semua sales sekaligus
+    // (Rincian Performa tampak "kosong" walau data conversation ada).
+    // Exclude reason='auto-claim' di sini: timestamp itu tidak pernah
+    // membawa informasi antrean nyata (selalu identik dgn outboundAt),
+    // sedangkan takeover/transfer TETAP dipakai karena timestamp-nya
+    // memang menandai kapan lead benar-benar dipindah tangan.
     prisma.$queryRaw`
       SELECT
         CASE WHEN claim."createdAt" IS NOT NULL AND claim."createdAt" > i."createdAt"
@@ -788,7 +802,7 @@ async function computeSalesRow(u, ctx) {
         SELECT he."createdAt"
         FROM "HandoverEvent" he
         WHERE he."conversationId" = i."conversationId" AND he."toUserId" = ${u.id}
-          AND he."createdAt" <= o."createdAt"
+          AND he."createdAt" <= o."createdAt" AND he.reason <> 'auto-claim'
         ORDER BY he."createdAt" DESC
         LIMIT 1
       ) claim ON true
@@ -803,7 +817,9 @@ async function computeSalesRow(u, ctx) {
     // LATERAL ke HandoverEvent) — tanpa ini, sales yang MENYELAMATKAN lead
     // terbengkalai (antre lama sebelum diklaim) malah kena tanda "SLA
     // terlanggar" untuk keterlambatan yang bukan salahnya. Lihat catatan
-    // panjang di `respRaw`.
+    // panjang di `respRaw`, termasuk fix 26 Agustus 2026 (exclude
+    // reason='auto-claim', timestamp-nya selalu = outboundAt jadi tidak
+    // pernah membawa info antrean nyata, beda dari takeover/transfer).
     prisma.$queryRaw`
       SELECT COUNT(*)::int AS n FROM (
         SELECT i."conversationId"
@@ -825,7 +841,7 @@ async function computeSalesRow(u, ctx) {
           SELECT he."createdAt"
           FROM "HandoverEvent" he
           WHERE he."conversationId" = i."conversationId" AND he."toUserId" = ${u.id}
-            AND he."createdAt" <= o."createdAt"
+            AND he."createdAt" <= o."createdAt" AND he.reason <> 'auto-claim'
           ORDER BY he."createdAt" DESC
           LIMIT 1
         ) claim ON true
