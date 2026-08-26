@@ -1,11 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame, ArrowRight, UserCheck } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, Info, Clock, Flame, ArrowRight, UserCheck, Loader2 } from "lucide-react";
 import dayjs from "dayjs";
+import { api } from "@/api.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { formatDuration, formatRupiah, SOURCE_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
@@ -123,6 +124,38 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
   }, [heatmap]);
 
   const atribusi = traffic?.atribusi;
+
+  // ── Filter Sumber di "Rincian per Iklan" ──────────────────────────────
+  // Backend memotong ke 30 baris teratas + gabung sisanya jadi "LAINNYA"
+  // (lihat catatan `BATAS` di routes/analytics.js) — kalau filter ini cuma
+  // menyaring `sourceDetail.data` yang SUDAH terpotong di client, baris
+  // sumber yang kebetulan jatuh ke dalam "LAINNYA" jadi tidak pernah bisa
+  // ditemukan lewat filter apa pun. Makanya filter Sumber SELF-FETCH ulang
+  // dari backend dengan ?source= — potongan 30 barisnya jadi berlaku
+  // SETELAH difilter, bukan sebelum, jadi tidak ada yang hilang diam-diam.
+  const [fSumber, setFSumber] = useState("");
+  const [filteredDetail, setFilteredDetail] = useState(null);
+  const [loadingFilter, setLoadingFilter] = useState(false);
+  useEffect(() => {
+    if (!fSumber) { setFilteredDetail(null); return; }
+    let batal = false;
+    setLoadingFilter(true);
+    api.getLeadSourceDetail({ ...rangeParams, source: fSumber })
+      .then((res) => { if (!batal) setFilteredDetail(res); })
+      .catch(() => { if (!batal) setFilteredDetail(null); })
+      .finally(() => { if (!batal) setLoadingFilter(false); });
+    return () => { batal = true; };
+  }, [fSumber, rangeParams?.from, rangeParams?.to]);
+  // "Semua Sumber" pakai prop asli (sudah dimuat bareng seluruh tab Traffic,
+  // tidak perlu fetch lagi) — cuma sumber SPESIFIK yang self-fetch di atas.
+  const detailAktif = fSumber ? filteredDetail : sourceDetail;
+  // Opsi dropdown dari sumber yang BENAR-BENAR punya lead periode ini
+  // (`atribusi.bySource`, sudah dimuat) — bukan daftar tetap yang bisa
+  // menampilkan pilihan kosong (mis. "Referral" padahal 0 lead bulan ini).
+  const opsiSumber = useMemo(
+    () => [...(atribusi?.bySource || [])].sort((a, b) => b.count - a.count),
+    [atribusi],
+  );
 
   if (!traffic) {
     return <p className="t-secondary py-16 text-center">Gagal memuat laporan traffic.</p>;
@@ -495,10 +528,32 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           index={9}
           title="Rincian per Iklan"
           description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
+          actions={
+            <div className="flex items-center gap-1.5">
+              {loadingFilter && <Loader2 size={13} className="animate-spin text-ink3" />}
+              <select
+                value={fSumber}
+                onChange={(e) => setFSumber(e.target.value)}
+                aria-label="Filter sumber di Rincian per Iklan"
+                className="h-7 rounded-btn border-0 bg-inset px-2 text-[12px] font-medium text-ink2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              >
+                <option value="">Semua Sumber</option>
+                {opsiSumber.map((s) => (
+                  <option key={s.source} value={s.source}>
+                    {SOURCE_LABELS[s.source] || s.source} ({s.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          }
         >
           {/* Basis periode WAJIB dijelaskan — angkanya memang beda dari
               Dashboard, dan tanpa penjelasan itu terbaca sebagai data rusak.
-              Lihat catatan panjang di backend/src/routes/analytics.js. */}
+              Lihat catatan panjang di backend/src/routes/analytics.js.
+              Kalimat rekonsiliasi "cocok dengan Dashboard" cuma ditampilkan
+              saat TIDAK ada filter sumber (sourceFilter null dari backend) —
+              begitu difilter ke 1 sumber, jumlahnya tidak lagi bisa
+              direkonsiliasi ke Dashboard yang menggabung semua sumber. */}
           <div className="mb-3 flex items-start gap-2 rounded-btn bg-inset px-3 py-2">
             <Info size={13} className="mt-0.5 shrink-0 text-ink3" />
             <p className="text-[11.5px] leading-relaxed text-ink2">
@@ -508,16 +563,26 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
               Dua-duanya benar — untuk menilai iklan, yang dipakai adalah basis "kapan leadnya masuk".
               {/* Jembatan angka — supaya "kenapa beda dengan Ringkasan?" tidak
                   perlu ditanyakan berulang tiap ganti rentang tanggal. */}
-              {sourceDetail.leadLama?.order > 0 && (
+              {!fSumber && sourceDetail.leadLama?.order > 0 && (
                 <>
                   {" "}<strong>+ {formatRupiah(sourceDetail.leadLama.totalValue)}</strong> dari{" "}
                   <strong>{sourceDetail.leadLama.order} order lead lama</strong> yang baru closing
                   periode ini = <strong>{formatRupiah(sourceDetail.sesuaiRingkasan)}</strong> (cocok dengan Dashboard).
                 </>
               )}
+              {fSumber && <> Difilter ke <strong>{SOURCE_LABELS[fSumber] || fSumber}</strong> saja — total di bawah tidak dibandingkan ke Dashboard (itu menggabung semua sumber).</>}
             </p>
           </div>
 
+          {!detailAktif ? (
+            <p className="py-8 text-center text-[12.5px] text-ink3">
+              {loadingFilter ? "Memuat…" : "Gagal memuat data untuk filter ini."}
+            </p>
+          ) : detailAktif.data.length === 0 ? (
+            <p className="py-8 text-center text-[12.5px] text-ink3">
+              Tidak ada lead dari {SOURCE_LABELS[fSumber] || fSumber} pada periode ini.
+            </p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -560,7 +625,7 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                 </tr>
               </thead>
               <tbody>
-                {sourceDetail.data.map((row) => (
+                {detailAktif.data.map((row) => (
                   <tr
                     key={`${row.source}-${row.detail}`}
                     className={cn("border-b border-line", row.agregat && "text-ink3")}
@@ -603,29 +668,32 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                     bukan sekadar dipercaya. Versi sebelumnya memotong 30 baris
                     teratas tanpa menyebut sisanya, jadi menjumlah kolom di
                     layar tidak pernah ketemu total mana pun. */}
-                {sourceDetail.total && (
+                {detailAktif.total && (
                   <tr className="border-t-2 border-line font-semibold">
-                    <td className="py-2.5 pr-3 text-ink" colSpan={3}>Total seluruh sumber</td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.leads}</td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
-                      {sourceDetail.total.spamRate == null ? "—" : `${sourceDetail.total.spamRate}%`}
+                    <td className="py-2.5 pr-3 text-ink" colSpan={3}>
+                      {fSumber ? `Total ${SOURCE_LABELS[fSumber] || fSumber}` : "Total seluruh sumber"}
                     </td>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{sourceDetail.total.won}</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{detailAktif.total.leads}</td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
-                      {sourceDetail.total.convRate == null ? "—" : `${sourceDetail.total.convRate}%`}
+                      {detailAktif.total.spamRate == null ? "—" : `${detailAktif.total.spamRate}%`}
+                    </td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">{detailAktif.total.won}</td>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
+                      {detailAktif.total.convRate == null ? "—" : `${detailAktif.total.convRate}%`}
                     </td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
-                      {sourceDetail.total.avgOrderValue == null ? "—" : formatRupiah(sourceDetail.total.avgOrderValue)}
+                      {detailAktif.total.avgOrderValue == null ? "—" : formatRupiah(detailAktif.total.avgOrderValue)}
                     </td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-ink">
-                      {sourceDetail.total.nilaiPerLead == null ? "—" : formatRupiah(sourceDetail.total.nilaiPerLead)}
+                      {detailAktif.total.nilaiPerLead == null ? "—" : formatRupiah(detailAktif.total.nilaiPerLead)}
                     </td>
-                    <td className="py-2.5 text-right tabular-nums text-ink">{formatRupiah(sourceDetail.total.totalValue)}</td>
+                    <td className="py-2.5 text-right tabular-nums text-ink">{formatRupiah(detailAktif.total.totalValue)}</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          )}
         </ChartCard>
       )}
     </div>

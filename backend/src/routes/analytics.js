@@ -1770,9 +1770,22 @@ function metrikKualitas(leads, won, totalValue, spam = 0) {
   };
 }
 
+// Whitelist eksplisit (bukan cek "string apapun diteruskan mentah ke SQL") —
+// termasuk 2 nilai lawas (ADS/WEBSITE) supaya data customer lama masih bisa
+// difilter, walau dropdown UI cuma menawarkan yang aktif dipakai sekarang.
+const LEAD_SOURCE_VALUES = new Set([
+  "META_ADS", "GOOGLE_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
+  "WHATSAPP_DIRECT", "REFERRAL", "OTHER", "ADS", "WEBSITE",
+]);
+
 analyticsRouter.get("/lead-source-detail", async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, source } = req.query;
+    // Filter opsional ?source= (26 Agustus 2026) — "Rincian per Iklan" cuma
+    // bisa dilihat gabung-semua-sumber, jadi mencari "Meta Ads doang" berarti
+    // scroll manual + jumlah sendiri di kepala. Divalidasi lewat whitelist
+    // (bukan diteruskan mentah ke SQL) sebelum dipakai di query di bawah.
+    const sourceFilter = LEAD_SOURCE_VALUES.has(source) ? source : null;
     // ⚠️ BUG BESAR YANG DIPERBAIKI (14 Agt 2026): dulu `where` di sini
     // menyertakan `leadSourceDetail: { not: null }`. Akibatnya SELURUH
     // pelanggan WHATSAPP_DIRECT (yang memang tidak punya detail) dibuang
@@ -1812,6 +1825,7 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       FROM "Customer" c
       LEFT JOIN "Order" o ON o."customerId" = c.id
       WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
+        ${sourceFilter ? Prisma.sql`AND c."leadSource" = ${sourceFilter}::"LeadSource"` : Prisma.empty}
       GROUP BY 1, 2`;
 
     const semua = baris.map((b) => {
@@ -1852,6 +1866,13 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
     // DIBUAT di periode ini tapi customernya sudah masuk SEBELUM periode
     // (lead lama yang baru closing sekarang). Dihitung eksplisit di sini,
     // bukan dibiarkan jadi pertanyaan berulang di UI.
+    //
+    // SENGAJA TIDAK ikut ${sourceFilter} — pertanyaan yang dijawab di sini
+    // ("kenapa beda dengan Dashboard") cuma valid untuk SEMUA sumber
+    // digabung, karena Dashboard sendiri tidak difilter per sumber. Kalau
+    // `sourceFilter` aktif, frontend WAJIB sembunyikan kalimat rekonsiliasi
+    // ini (lihat `sourceFilter` di response) — angkanya tetap dihitung di
+    // sini supaya tidak perlu query kedua kalau user lepas filternya lagi.
     const [leadLamaRaw] = await prisma.$queryRaw`
       SELECT COUNT(*)::int AS n, COALESCE(SUM(o.value), 0)::bigint AS nilai
       FROM "Order" o
@@ -1886,6 +1907,9 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       // Dinyatakan eksplisit supaya UI bisa menjelaskan angkanya ke pengguna
       // — lihat catatan panjang di atas soal beda definisi periode.
       basisPeriode: "customer_dibuat",
+      sourceFilter, // null = semua sumber. Frontend pakai ini utk tahu kapan
+                    // boleh menampilkan kalimat rekonsiliasi "cocok dengan
+                    // Dashboard" (cuma valid saat null, lihat catatan di atas).
       leadLama,
       // = angka yang akan cocok dengan "Total Nilai Order" di Ringkasan/
       // Dashboard untuk periode yang SAMA. Kalau dua-duanya dibuka
