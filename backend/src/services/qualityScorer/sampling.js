@@ -46,7 +46,7 @@ export async function sampleConversationsForSales(salesUserId, { mulai, selesai,
     .map((stage, i) => `WHEN '${stage}' THEN ${i}`)
     .join(" ");
 
-  // BUG YANG DIPERBAIKI (verifikasi live, 26 Agustus 2026): `cust.
+  // BUG #1 YANG DIPERBAIKI (verifikasi live, 26 Agustus 2026): `cust.
   // "pipelineStage" != $1` gagal — Postgres tidak punya operator `<>` bawaan
   // antara kolom enum "PipelineStage" dan parameter yang dikirim sebagai
   // text (error 42883). STAGE_PRIORITY/EXCLUDED_STAGE keduanya konstanta
@@ -54,9 +54,16 @@ export async function sampleConversationsForSales(salesUserId, { mulai, selesai,
   // literal SQL langsung (sama seperti stageCaseWhen di atas) — bukan
   // parameter — supaya Postgres bisa infer tipe enum dari literalnya,
   // bukan dari parameter ber-tipe text yang butuh cast eksplisit.
+  //
+  // BUG #2 YANG DIPERBAIKI (verifikasi live, giliran berikutnya): `SELECT
+  // DISTINCT` menuntut semua ekspresi ORDER BY (CASE stage, RANDOM())
+  // muncul di select list — Postgres error 42P10. DISTINCT sendiri tidak
+  // dibutuhkan di sini: `Conversation.customerId` many-to-one ke Customer
+  // (1 baris per conversation), dan EXISTS bukan JOIN jadi tidak melipat-
+  // gandakan baris — jadi DISTINCT dihapus, bukan diganti workaround.
   return prisma.$queryRawUnsafe(
     `
-    SELECT DISTINCT c.id AS "conversationId", c."customerId", cust."pipelineStage", cust.name AS "customerName"
+    SELECT c.id AS "conversationId", c."customerId", cust."pipelineStage", cust.name AS "customerName"
     FROM "Conversation" c
     JOIN "Customer" cust ON cust.id = c."customerId"
     WHERE c.type = 'INDIVIDUAL'
