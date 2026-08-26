@@ -5,7 +5,7 @@
 // supaya percakapan singkat yang wajar tidak sempat bahas 1-2 dimensi tidak
 // dihukum seolah skornya 0 di situ).
 import { prisma } from "../../db.js";
-import { RUBRIC_DIMENSIONS } from "../../config/qualityScorerRubric.js";
+import { CORE_DIMENSIONS, PATTERN_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 
 const DIM_TO_COLUMN = {
   productKnowledge: "productKnowledgeScore",
@@ -22,10 +22,49 @@ function overallScore(row) {
 
 function avgByDim(rows) {
   const out = {};
-  for (const { key } of RUBRIC_DIMENSIONS) {
+  for (const { key } of CORE_DIMENSIONS) {
     const col = DIM_TO_COLUMN[key];
     const vals = rows.map((r) => r[col]).filter((v) => v != null);
     out[key] = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+  }
+  return out;
+}
+
+// ── Pattern aggregation (dimensi E & F) — 26 Agustus 2026 ─────────────────
+// TERPISAH dari avgByDim/overallScore di atas (yang tetap murni 4 dimensi
+// lama) supaya section dashboard existing tidak ikut berubah nilai/tampilan
+// hanya karena dimensi baru ditambahkan. Semua dihitung dari kolom DB biasa
+// (skor + flag boolean) — TIDAK ada panggilan LLM di fungsi ini.
+function patternMetricsForRows(rows, prevRows) {
+  const out = {};
+  for (const dim of PATTERN_DIMENSIONS) {
+    const scoreCol = `${dim.key}Score`;
+    const flagCol = dim.flag.key;
+
+    const scored = rows.map((r) => r[scoreCol]).filter((v) => v != null);
+    const avgScore = scored.length > 0 ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10 : null;
+
+    const prevScored = prevRows.map((r) => r[scoreCol]).filter((v) => v != null);
+    const prevAvgScore = prevScored.length > 0 ? Math.round((prevScored.reduce((a, b) => a + b, 0) / prevScored.length) * 10) / 10 : null;
+
+    const trend = avgScore != null && prevAvgScore != null ? Math.round((avgScore - prevAvgScore) * 10) / 10 : null;
+
+    // Flag null (topik tidak muncul) DIKELUARKAN dari basis persentase —
+    // "frekuensi flag negatif" hanya bermakna dari percakapan yang memang
+    // relevan dinilai utk flag ini (sama prinsip null-safety dgn skor).
+    const flagVals = rows.map((r) => r[flagCol]).filter((v) => v != null);
+    const negativeFlagRatePct = flagVals.length > 0
+      ? Math.round((flagVals.filter((v) => v === false).length / flagVals.length) * 1000) / 10
+      : null;
+
+    out[dim.key] = {
+      label: dim.label,
+      flagKey: flagCol,
+      avgScore, prevAvgScore, trend,
+      sampleCountForScore: scored.length,
+      sampleCountForFlag: flagVals.length,
+      negativeFlagRatePct,
+    };
   }
   return out;
 }
@@ -81,6 +120,10 @@ export async function getWeeklyRollup({ weekStart, weekEnd, prevWeekStart, prevW
       overallAvg, prevOverallAvg, trend,
       bestExamples: best,
       worstExamples: worst,
+      // Pattern aggregation (Closing Assertiveness & Customer Comprehension)
+      // — TIDAK ikut overallAvg/trend/bestExamples/worstExamples di atas,
+      // section dashboard existing tetap identik nilainya.
+      patternDimensions: patternMetricsForRows(salesRows, prevRowsForSales),
     };
   });
 
@@ -96,7 +139,7 @@ function formatExample(r) {
     pipelineStageAtSample: r.pipelineStageAtSample,
     sampledFor: r.sampledFor,
     dimensions: Object.fromEntries(
-      RUBRIC_DIMENSIONS.map(({ key }) => {
+      CORE_DIMENSIONS.map(({ key }) => {
         const col = DIM_TO_COLUMN[key];
         const quoteCol = `${col.replace("Score", "Quote")}`;
         const noteCol = `${col.replace("Score", "Note")}`;

@@ -99,7 +99,54 @@ export const RUBRIC_DIMENSIONS = [
       5: "Sama seperti 4, DAN dilakukan dengan empati — customer terasa didengar, bukan dilawan atau didesak.",
     },
   },
+  // ── Dimensi E & F (26 Agustus 2026) — pattern aggregation ────────────────
+  // Beda dari 4 dimensi di atas: masing-masing punya `flag` (kunci JSON
+  // boolean + pertanyaan tegas). Flag inilah yang membuat rollup mingguan
+  // bisa hitung pola berulang ("% percakapan tanpa closing ask minggu ini")
+  // lewat query database biasa, TANPA panggil LLM lagi. Kehadiran `flag`
+  // pada objek dimensi jugalah yang membedakan dimensi ini sebagai
+  // "PATTERN_DIMENSIONS" di bawah — lihat CORE_DIMENSIONS/PATTERN_DIMENSIONS.
+  {
+    key: "closingAssertiveness",
+    label: "Closing Assertiveness",
+    description: "Apakah sales secara AKTIF mendorong customer ke komitmen/next step konkret (jadwal survei/pengukuran, tawarkan booking, ciptakan urgensi wajar) SETELAH presentasi harga/paket — bukan cuma menyampaikan info lalu menunggu customer follow-up sendiri. Kalau presentasi harga/paket TIDAK PERNAH terjadi di percakapan ini, kembalikan skor null (belum ada momen closing untuk dinilai).",
+    scoringGuide: {
+      1: "Presentasi harga/paket sudah terjadi tapi sales TIDAK meminta next step apa pun — percakapan menggantung, customer dibiarkan mikir sendiri tanpa dorongan.",
+      2: "Ada dorongan tapi sangat pasif/generik ('kalau berminat kabari ya') — tidak ada ajakan konkret (jadwal/booking) atau urgensi.",
+      3: "Ada ajakan next step konkret (mis. tawarkan jadwal), tapi disampaikan ragu-ragu atau cuma sekali tanpa follow-through kalau customer diam.",
+      4: "Meminta komitmen/next step konkret dengan percaya diri (tawarkan jadwal/booking spesifik, atau urgensi yang wajar & jujur — bukan tekanan palsu).",
+      5: "Sama seperti 4, DAN disesuaikan dengan sinyal minat customer (tidak maksa kalau customer masih ragu, tapi tetap proaktif menutup celah dengan next step jelas).",
+    },
+    flag: {
+      key: "closingAskPresent",
+      question: "Apakah SETELAH presentasi harga/paket, sales secara eksplisit meminta komitmen atau menawarkan next step konkret (jadwal, booking, dsb)?",
+    },
+  },
+  {
+    key: "customerComprehension",
+    label: "Customer Comprehension",
+    description: "Apakah sales menyesuaikan bahasa ke level pemahaman customer (menerjemahkan istilah teknis, bukan jargon murni tanpa penyederhanaan) dan AKTIF mengecek pemahaman customer (mis. 'sejauh ini jelas kak?', menanyakan ulang dgn kata lain) — bukan cuma menyampaikan info satu arah. Kalau percakapan terlalu singkat/dangkal untuk menilai gaya komunikasi sales (mis. cuma 1-2 balasan basa-basi), kembalikan skor null.",
+    scoringGuide: {
+      1: "Jargon teknis dipakai tanpa penjelasan sama sekali, ATAU sales tidak pernah mengecek apakah customer paham — murni satu arah.",
+      2: "Sesekali menjelaskan istilah, tapi mayoritas penjelasan masih terasa teknis/sulit diikuti orang awam.",
+      3: "Bahasa cukup mudah dipahami, tapi tidak ada usaha aktif mengecek pemahaman customer di sepanjang percakapan.",
+      4: "Bahasa disederhanakan dengan baik DAN minimal sekali mengecek pemahaman customer secara eksplisit.",
+      5: "Sama seperti 4, dilakukan konsisten sepanjang percakapan — tiap penjelasan penting diikuti pengecekan pemahaman, dan disesuaikan lagi kalau customer terlihat bingung.",
+    },
+    flag: {
+      key: "plainLanguageUsed",
+      question: "Apakah sales menggunakan bahasa yang disederhanakan (bukan jargon murni) DAN aktif mengecek pemahaman customer minimal sekali?",
+    },
+  },
 ];
+
+// 4 dimensi asli (Fase 1) — TIDAK punya `flag`, logika/skornya TIDAK diubah
+// oleh penambahan dimensi E & F. Dipakai rollup.js utk overall/avg lama
+// supaya section dashboard existing tetap identik.
+export const CORE_DIMENSIONS = RUBRIC_DIMENSIONS.filter((d) => !d.flag);
+// Dimensi E & F — dipakai rollup.js utk pattern aggregation (frekuensi flag
+// negatif, tren per dimensi) & weeklyNarrative.js utk ringkasan naratif.
+export const PATTERN_DIMENSIONS = RUBRIC_DIMENSIONS.filter((d) => d.flag);
 
 // ── Referensi pengetahuan produk & kesehatan (docs/knowledge_base/) ───────
 // Konten INI TIDAK DIKARANG oleh Claude Code — file-file sumbernya disiapkan
@@ -136,23 +183,42 @@ function formatScoringGuide(guide) {
   return Object.entries(guide).map(([n, desc]) => `  ${n} = ${desc}`).join("\n");
 }
 
+// Blok rubrik satu dimensi. Utk dimensi ber-flag (lihat PATTERN_DIMENSIONS),
+// tambahkan baris instruksi flag di bawah scoring guide — dimensi TANPA
+// flag (4 dimensi asli) hasilnya PERSIS sama seperti sebelum dimensi E/F
+// ditambahkan (tidak ada baris tambahan apa pun).
+function formatDimensionBlock(d) {
+  const flagLine = d.flag
+    ? `\n\nFlag boolean WAJIB (kunci JSON: "${d.flag.key}"): ${d.flag.question} Jawab true/false tegas kalau score dimensi ini terisi; kembalikan null HANYA kalau score-nya juga null.`
+    : "";
+  return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}`;
+}
+
+// Baris spesifikasi JSON satu dimensi utk bagian FORMAT OUTPUT di bawah.
+// Dimensi tanpa flag menghasilkan bentuk {"score":...,"quote":...,"note":...}
+// — IDENTIK dgn format sebelum dimensi E/F ditambahkan.
+function formatOutputFieldSpec(d) {
+  const flagPart = d.flag ? `, "${d.flag.key}": true/false atau null` : "";
+  return `  "${d.key}": { "score": 1-5 atau null, "quote": "..." atau null, "note": "..."${flagPart} }`;
+}
+
 // Prompt sistem lengkap: instruksi + rubrik + referensi pengetahuan.
 // Ditaruh di `system` (bukan user message) supaya kena prompt caching
 // Anthropic — bagian ini SAMA untuk semua percakapan dalam satu batch job,
 // cuma transcript per-panggilan yang beda (lihat grading.js).
 export function buildSystemPrompt() {
   const { context: kbContext, missing } = loadKnowledgeContext();
-  const rubricText = RUBRIC_DIMENSIONS.map((d) =>
-    `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}`
-  ).join("\n\n");
+  const rubricText = RUBRIC_DIMENSIONS.map(formatDimensionBlock).join("\n\n");
+  const outputSpec = RUBRIC_DIMENSIONS.map(formatOutputFieldSpec).join(",\n");
 
-  return `Kamu adalah supervisor kualitas percakapan sales di Klinik Matras (Sano Care), sebuah klinik restorasi kasur ("Ahlinya Kasur Sehat"). Tugasmu MENILAI (bukan membalas) transkrip percakapan WhatsApp antara seorang SALES dan seorang CUSTOMER, berdasarkan 4 dimensi rubrik di bawah.
+  return `Kamu adalah supervisor kualitas percakapan sales di Klinik Matras (Sano Care), sebuah klinik restorasi kasur ("Ahlinya Kasur Sehat"). Tugasmu MENILAI (bukan membalas) transkrip percakapan WhatsApp antara seorang SALES dan seorang CUSTOMER, berdasarkan ${RUBRIC_DIMENSIONS.length} dimensi rubrik di bawah.
 
 ATURAN PENTING:
 - Nilai HANYA berdasarkan apa yang benar-benar ada di transkrip. JANGAN menebak/mengarang hal yang tidak disebutkan.
 - Kalau topik satu dimensi TIDAK PERNAH muncul di percakapan ini (mis. tidak ada keberatan sama sekali untuk "objectionHandling", atau percakapan terlalu singkat untuk membahas dampak kesehatan), kembalikan score: null untuk dimensi itu dan jelaskan singkat di note kenapa null — JANGAN memaksa angka 1-5 untuk sesuatu yang tidak terjadi.
 - "quote" adalah kutipan LANGSUNG (1-2 kalimat) dari pesan SALES yang jadi bukti utama skor itu — kutip persis, jangan parafrase. null kalau skornya juga null.
 - "note" adalah SATU baris catatan coaching (bahasa Indonesia, actionable, maksimal ~25 kata) — apa yang sudah bagus ATAU apa yang perlu diperbaiki sales ini ke depan.
+- Beberapa dimensi (lihat definisi di bawah) juga punya flag boolean WAJIB selain score — flag itu HARUS true/false tegas (bukan teks bebas) kalau score dimensi itu terisi, dan ikut null hanya kalau score-nya juga null.
 - Fokus HANYA pada pesan dari SALES (OUTBOUND). Pesan customer (INBOUND) dipakai sebagai KONTEKS untuk menilai respons sales, bukan dinilai sendiri.
 - Ini PELENGKAP sistem deteksi pelanggaran yang sudah ada secara terpisah (klaim garansi salah, janji medis, dst) — JANGAN ulang menilai pelanggaran compliance di sini, fokus ke SUBSTANSI/KUALITAS percakapan.
 
@@ -166,10 +232,7 @@ ${kbContext || "(Tidak ada referensi termuat — nilai product knowledge/dampak 
 
 FORMAT OUTPUT — WAJIB JSON valid, TANPA teks lain di luar JSON, dengan struktur PERSIS ini:
 {
-  "productKnowledge": { "score": 1-5 atau null, "quote": "..." atau null, "note": "..." },
-  "consultationProcess": { "score": 1-5 atau null, "quote": "..." atau null, "note": "..." },
-  "healthImpact": { "score": 1-5 atau null, "quote": "..." atau null, "note": "..." },
-  "objectionHandling": { "score": 1-5 atau null, "quote": "..." atau null, "note": "..." },
+${outputSpec},
   "overallNote": "satu kalimat ringkasan coaching keseluruhan percakapan ini"
 }${missing.length ? `\n\n(Catatan internal — file referensi berikut tidak ditemukan saat prompt ini dibuat: ${missing.join(", ")})` : ""}`;
 }

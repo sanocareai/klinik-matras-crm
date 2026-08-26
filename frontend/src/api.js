@@ -661,6 +661,11 @@ export const api = {
   // audit_balasan_sales, laporan TERPISAH utk validasi manual dulu.
   getQualityScorerWeekly: (params) => request("/quality-scorer/weekly" + buildQuery(params)),
   runQualityScorerNow: () => request("/quality-scorer/run", { method: "POST" }),
+  // Dimensi E/F + ringkasan pola mingguan (26 Agustus 2026) — narasi dibaca
+  // dari yang sudah tersimpan (job Senin 04:00 WIB), route ini tidak
+  // memanggil LLM; /run dipakai utk trigger manual saat verifikasi.
+  getQualityScorerWeeklyNarrative: () => request("/quality-scorer/weekly-narrative"),
+  runQualityScorerWeeklyNarrativeNow: () => request("/quality-scorer/weekly-narrative/run", { method: "POST" }),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
   getRecommendations: () => request("/analytics/recommendations"),

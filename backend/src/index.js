@@ -50,6 +50,7 @@ import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
+import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -204,6 +205,7 @@ server.listen(PORT, () => {
   startReconciliationJob();
   startSlaAlertJob();
   startQualityScorerJob();
+  startWeeklyNarrativeJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.

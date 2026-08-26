@@ -2163,6 +2163,24 @@ model ConversationQualityScore {
   objectionHandlingScore    Int?
   objectionHandlingQuote    String?
   objectionHandlingNote     String?
+
+  // Dimensi E & F (26 Agustus 2026) — SAMA prinsip nullable dgn 4 dimensi di
+  // atas, TAPI masing-masing juga punya flag boolean terstruktur (bukan cuma
+  // skor 1-5). Alasan flag terpisah: rollup mingguan/pattern aggregation
+  // butuh hitung frekuensi ("berapa % percakapan minggu ini TANPA closing
+  // ask") langsung lewat query SQL biasa, tanpa panggil LLM lagi tiap mau
+  // lihat pola — skor 1-5 saja tidak cukup presisi utk itu (skor 3 bisa
+  // berarti macam-macam, sedangkan flag true/false tidak ambigu). Flag ikut
+  // null kalau skornya null (topik tidak muncul di percakapan itu).
+  closingAssertivenessScore  Int?
+  closingAssertivenessQuote  String?
+  closingAssertivenessNote   String?
+  closingAskPresent          Boolean? // true = sales aktif minta next step konkret setelah presentasi harga/paket
+  customerComprehensionScore Int?
+  customerComprehensionQuote String?
+  customerComprehensionNote  String?
+  plainLanguageUsed          Boolean? // true = bahasa disederhanakan DAN sales aktif cek pemahaman customer
+
   overallNote               String? // catatan coaching ringkasan, opsional
 
   model        String // model id dipakai saat grading (mis. claude-haiku-4-5-20251001)
@@ -2178,6 +2196,35 @@ model ConversationQualityScore {
   @@unique([conversationId, sampledFor])
   @@index([salesUserId, createdAt]) // rollup mingguan per sales
   @@index([sampledFor])
+}
+
+// Ringkasan naratif pola perilaku MINGGUAN per sales (26 Agustus 2026) —
+// TERPISAH dari ConversationQualityScore (yang per-percakapan/harian).
+// SENGAJA dipersist (bukan digenerate ulang tiap buka dashboard) supaya cap
+// biaya "maks 1 panggilan LLM/sales/minggu" benar-benar tegak — job mingguan
+// (services/qualityScorer/weeklyNarrative.js) yang mengisi tabel ini,
+// dashboard cuma BACA baris yang sudah ada.
+model SalesQualityWeeklyNarrative {
+  id          String   @id @default(cuid())
+  salesUserId String // string biasa (tanpa FK) — isolasi, sama pola dgn ConversationQualityScore
+  salesName   String // snapshot nama saat narasi dibuat
+  weekStart   DateTime // batas instant UTC inklusif jendela yang dinarasikan
+  weekEnd     DateTime // batas instant UTC eksklusif
+  sampleCount Int      @default(0) // jumlah percakapan yang mendasari narasi ini
+
+  narrative String // 2-4 kalimat, hasil 1 panggilan LLM/sales/minggu
+
+  model        String
+  inputTokens  Int   @default(0)
+  outputTokens Int   @default(0)
+  costUsd      Float @default(0)
+
+  createdAt DateTime @default(now())
+
+  // Idempotent kalau job mingguan dijalankan ulang manual (testing) utk
+  // jendela minggu yang sama.
+  @@unique([salesUserId, weekStart, weekEnd])
+  @@index([weekStart])
 }
 
 // ─────────────────────────────────────────────────────────────────────────

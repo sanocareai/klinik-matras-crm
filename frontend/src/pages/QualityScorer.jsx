@@ -37,6 +37,106 @@ function ScoreCell({ value }) {
   return <span className={cn("font-bold tabular-nums", tone)}>{value.toFixed(1)}</span>;
 }
 
+// ═══ Pola Perilaku Berulang (Closing & Komunikasi) — 26 Agustus 2026 ═════
+// Section BARU, terpisah dari leaderboard di atas — TIDAK mengubah apa pun
+// di section lama. `pm` = row.patternDimensions[dimKey] dari /weekly.
+function NegativeFlagRate({ pm }) {
+  if (pm.negativeFlagRatePct == null) return <span className="text-[12px] text-ink3">Belum ada data relevan</span>;
+  const tone = pm.negativeFlagRatePct >= 40 ? "text-red" : pm.negativeFlagRatePct >= 20 ? "text-orange" : "text-green";
+  return (
+    <span className={cn("text-[12px] font-semibold tabular-nums", tone)}>
+      {pm.negativeFlagRatePct}% tanpa {pm.flagKey === "closingAskPresent" ? "closing ask" : "bahasa sederhana/cek paham"}
+      <span className="ml-1 font-normal text-ink3">({pm.sampleCountForFlag} percakapan relevan)</span>
+    </span>
+  );
+}
+
+function PatternDimensionCard({ meta, pm }) {
+  return (
+    <div className="flex flex-1 min-w-[220px] flex-col gap-1 rounded-btn bg-inset p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-bold text-ink">{meta.label}</span>
+        <div className="flex items-center gap-1.5">
+          <ScoreCell value={pm.avgScore} />
+          <TrendBadge trend={pm.trend} />
+        </div>
+      </div>
+      <NegativeFlagRate pm={pm} />
+    </div>
+  );
+}
+
+function PatternSalesCard({ row, patternDimensionsMeta, narrative }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-btn bg-surface p-4 shadow-card">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-3 text-left">
+        <span className="min-w-[140px] flex-1 font-semibold text-ink">{row.salesName}</span>
+        <span className="text-[11px] text-ink3">{row.sampleCount} percakapan minggu ini</span>
+        {open ? <ChevronUp size={16} className="text-ink3" /> : <ChevronDown size={16} className="text-ink3" />}
+      </button>
+      <div className="mt-3 flex flex-wrap gap-3">
+        {patternDimensionsMeta.map((meta) => (
+          <PatternDimensionCard key={meta.key} meta={meta} pm={row.patternDimensions[meta.key]} />
+        ))}
+      </div>
+      {open && (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Ringkasan Pola Mingguan (AI)</p>
+          {narrative ? (
+            <p className="text-[12.5px] italic text-ink2">"{narrative.narrative}"</p>
+          ) : (
+            <p className="text-[12px] text-ink3">Belum ada ringkasan minggu ini — job jalan tiap Senin 04:00 WIB, atau klik "Jalankan Ringkasan Mingguan" di atas.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatternSection({ data, narrativesBySales, onRunNarrative, runningNarrative, narrativeMsg }) {
+  if (!data || !data.patternDimensionsMeta) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle>Pola Perilaku Berulang — Closing & Komunikasi</CardTitle>
+            <CardDescription>
+              Dimensi tambahan (Closing Assertiveness & Customer Comprehension) + ringkasan naratif mingguan (1 panggilan AI/sales/minggu) untuk bahan SANO Class.
+            </CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onRunNarrative} disabled={runningNarrative}>
+            <Play size={14} /> {runningNarrative ? "Menjalankan..." : "Jalankan Ringkasan Mingguan"}
+          </Button>
+        </div>
+      </CardHeader>
+      <div className="flex flex-col gap-3 px-4 pb-4">
+        {narrativeMsg && (
+          <p className={cn(
+            "rounded-lg px-3 py-2 text-[13px] font-medium",
+            narrativeMsg.type === "success" ? "bg-green/10 text-green" : "bg-red/10 text-red"
+          )}>
+            {narrativeMsg.text}
+          </p>
+        )}
+        {data.perSales.length === 0 ? (
+          <p className="py-4 text-center text-sm text-ink3">Belum ada data untuk periode ini.</p>
+        ) : (
+          data.perSales.map((row) => (
+            <PatternSalesCard
+              key={row.salesUserId}
+              row={row}
+              patternDimensionsMeta={data.patternDimensionsMeta}
+              narrative={narrativesBySales.get(row.salesUserId)}
+            />
+          ))
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function ExampleCard({ example, dimensions }) {
   return (
     <div className="rounded-btn bg-inset p-3 text-[12.5px]">
@@ -114,6 +214,9 @@ export default function QualityScorer() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState(null);
+  const [narratives, setNarratives] = useState([]);
+  const [runningNarrative, setRunningNarrative] = useState(false);
+  const [narrativeMsg, setNarrativeMsg] = useState(null);
 
   function load() {
     setLoading(true);
@@ -122,7 +225,31 @@ export default function QualityScorer() {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }
+  function loadNarratives() {
+    api.getQualityScorerWeeklyNarrative()
+      .then((res) => setNarratives(res.narratives || []))
+      .catch(() => setNarratives([]));
+  }
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadNarratives(); }, []);
+  const narrativesBySales = new Map(narratives.map((n) => [n.salesUserId, n]));
+
+  async function handleRunNarrativeNow() {
+    setRunningNarrative(true);
+    setNarrativeMsg(null);
+    try {
+      const summary = await api.runQualityScorerWeeklyNarrativeNow();
+      setNarrativeMsg({
+        type: "success",
+        text: `Selesai — ${summary.narrativesGenerated} narasi dibuat, estimasi biaya $${summary.totalCostUsd.toFixed(4)}.`,
+      });
+      loadNarratives();
+    } catch (err) {
+      setNarrativeMsg({ type: "error", text: err.message || "Gagal menjalankan ringkasan mingguan." });
+    } finally {
+      setRunningNarrative(false);
+    }
+  }
 
   async function handleRunNow() {
     setRunning(true);
@@ -204,6 +331,14 @@ export default function QualityScorer() {
                 ))
               )}
             </div>
+
+            <PatternSection
+              data={data}
+              narrativesBySales={narrativesBySales}
+              onRunNarrative={handleRunNarrativeNow}
+              runningNarrative={runningNarrative}
+              narrativeMsg={narrativeMsg}
+            />
           </>
         )}
       </PageBody>

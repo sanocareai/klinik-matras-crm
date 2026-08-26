@@ -62,7 +62,11 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     model: QUALITY_SCORER_MODEL,
     systemPrompt,
     messages: [{ role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` }],
-    maxTokens: 1024,
+    // 1536 (naik dari 1024, 26 Agustus 2026) — 6 dimensi (tambah Closing
+    // Assertiveness & Customer Comprehension, masing2 +field flag boolean)
+    // butuh lebih banyak ruang output JSON dibanding 4 dimensi lama, supaya
+    // tidak terpotong sebelum JSON selesai.
+    maxTokens: 1536,
   });
 
   let parsed;

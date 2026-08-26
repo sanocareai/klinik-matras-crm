@@ -8,28 +8,36 @@
 import cron from "node-cron";
 import { prisma } from "../../db.js";
 import {
-  QUALITY_SCORER_MODEL, SAMPLE_SIZE_PER_SALES, MAX_DAILY_LLM_CALLS,
+  QUALITY_SCORER_MODEL, SAMPLE_SIZE_PER_SALES, MAX_DAILY_LLM_CALLS, RUBRIC_DIMENSIONS,
 } from "../../config/qualityScorerRubric.js";
 import { getActiveSalesUsers, sampleConversationsForSales, yesterdayRangeWIB } from "./sampling.js";
 import { fetchTranscriptMessages, formatTranscript, gradeTranscript, resolveApiKey, buildSystemPrompt } from "./grading.js";
+import { estimateCostUsd } from "./pricing.js";
 
-// Estimasi harga Claude Haiku 4.5 per 26 Agustus 2026 (USD per 1 JUTA
-// token) — dipakai HANYA untuk kolom costUsd di baris log, BUKAN tagihan
-// resmi. Cek harga aktual di halaman pricing Anthropic kalau butuh angka
-// pasti; harga model bisa berubah tanpa mengubah kode ini.
-const PRICE_PER_MTOK_USD = { input: 1.0, output: 5.0, cacheRead: 0.1 };
-
-function estimateCostUsd(usage) {
-  const input = (usage.inputTokens || 0) / 1_000_000 * PRICE_PER_MTOK_USD.input;
-  const output = (usage.outputTokens || 0) / 1_000_000 * PRICE_PER_MTOK_USD.output;
-  const cacheRead = (usage.cacheReadTokens || 0) / 1_000_000 * PRICE_PER_MTOK_USD.cacheRead;
-  return Math.round((input + output + cacheRead) * 1_000_000) / 1_000_000;
+// true/false/"true"/"false" → boolean; apa pun lainnya (termasuk undefined)
+// → null. LLM diinstruksikan kirim boolean JSON asli, tapi jaga-jaga kalau
+// keluar sebagai string.
+function normalizeFlag(v) {
+  if (v === true || v === false) return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return null;
 }
 
-function dimResult(scores, key) {
-  const d = scores?.[key];
-  if (!d || d.score == null) return { score: null, quote: null, note: d?.note ?? null };
-  return { score: Number(d.score), quote: d.quote ?? null, note: d.note ?? null };
+// Generik utk SEMUA dimensi (4 lama tanpa flag, 2 baru dengan flag) — dim
+// tanpa `flag` menghasilkan `flag: undefined` (tidak ditulis ke DB sama
+// sekali oleh caller), PERSIS perilaku sebelum dimensi E/F ditambahkan.
+function dimResult(scores, dim) {
+  const d = scores?.[dim.key];
+  if (!d || d.score == null) {
+    return { score: null, quote: null, note: d?.note ?? null, flag: dim.flag ? null : undefined };
+  }
+  return {
+    score: Number(d.score),
+    quote: d.quote ?? null,
+    note: d.note ?? null,
+    flag: dim.flag ? normalizeFlag(d[dim.flag.key]) : undefined,
+  };
 }
 
 /**
@@ -93,10 +101,19 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
         const costUsd = estimateCostUsd(usage);
         summary.totalCostUsd += costUsd;
 
-        const pk = dimResult(scores, "productKnowledge");
-        const cp = dimResult(scores, "consultationProcess");
-        const hi = dimResult(scores, "healthImpact");
-        const oh = dimResult(scores, "objectionHandling");
+        // Dibangun generik dari RUBRIC_DIMENSIONS (6 dimensi) — utk 4
+        // dimensi lama menghasilkan field {key}Score/{key}Quote/{key}Note
+        // PERSIS sama seperti sebelumnya (cuma cara menulisnya yang
+        // digeneralisasi, bukan nilainya). 2 dimensi baru menambah field
+        // flag booleannya sendiri (closingAskPresent/plainLanguageUsed).
+        const dimFields = {};
+        for (const dim of RUBRIC_DIMENSIONS) {
+          const r = dimResult(scores, dim);
+          dimFields[`${dim.key}Score`] = r.score;
+          dimFields[`${dim.key}Quote`] = r.quote;
+          dimFields[`${dim.key}Note`] = r.note;
+          if (dim.flag) dimFields[dim.flag.key] = r.flag;
+        }
 
         await prisma.conversationQualityScore.upsert({
           where: { conversationId_sampledFor: { conversationId: row.conversationId, sampledFor: mulai } },
@@ -107,10 +124,7 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
             salesName: sales.name,
             pipelineStageAtSample: row.pipelineStage,
             sampledFor: mulai,
-            productKnowledgeScore: pk.score, productKnowledgeQuote: pk.quote, productKnowledgeNote: pk.note,
-            consultationProcessScore: cp.score, consultationProcessQuote: cp.quote, consultationProcessNote: cp.note,
-            healthImpactScore: hi.score, healthImpactQuote: hi.quote, healthImpactNote: hi.note,
-            objectionHandlingScore: oh.score, objectionHandlingQuote: oh.quote, objectionHandlingNote: oh.note,
+            ...dimFields,
             overallNote: scores?.overallNote ?? null,
             model: QUALITY_SCORER_MODEL,
             inputTokens: usage.inputTokens || 0,
