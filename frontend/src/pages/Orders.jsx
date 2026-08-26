@@ -74,6 +74,18 @@ const FILTER_TONE = {
   promo:      { icon: Percent,    hex: "#db2777" },
   pipeline:   { icon: GitBranch,  hex: "#ea580c" },
 };
+// min-w-[164px] DEFAULT (26 Agustus 2026) — root fix, bukan tambal-sulam
+// per pemanggil. `select` di sini SENGAJA appearance:none (tokens.css)
+// supaya ikut gaya DS, tapi itu artinya browser TIDAK LAGI menjamin
+// auto-lebar mengikuti opsi terpanjang seperti select native biasa. Kalau
+// dibiarkan default, teks placeholder-nya sendiri ("Semua Pembayaran",
+// 17 karakter) sudah cukup panjang untuk kepotong tanpa jejak (native
+// select tidak kasih ellipsis/tooltip) — bug yang sama sempat diperbaiki
+// SATU-SATU per pemanggil (cuma tone="pipeline"), lalu muncul lagi di
+// tone="pembayaran" yang terlewat. Sekarang default di komponen supaya
+// tidak berulang tiap kali ada label baru yang lebih panjang. Pemanggil
+// tetap bisa override lewat `className` (mis. Pipeline pakai 188px,
+// sedikit lebih lebar untuk "Scheduled / Transaksi").
 function FilterSelect({ tone, active, className, children, ...props }) {
   const t = FILTER_TONE[tone];
   const Icon = t.icon;
@@ -87,7 +99,7 @@ function FilterSelect({ tone, active, className, children, ...props }) {
       <select
         {...props}
         className={cn(
-          "h-8 rounded-lg pl-7 pr-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          "h-8 min-w-[164px] rounded-lg pl-7 pr-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           active ? "font-semibold" : "text-ink2",
           className
         )}
@@ -509,6 +521,24 @@ export default function Orders() {
   const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
   const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
                            .reduce((s, o) => s + (o.value || 0), 0);
+  // Total Pelanggan & Repeat Order (26 Agustus 2026, permintaan owner) —
+  // dihitung dari `items` yang SUDAH difilter (rentang tanggal/kategori/
+  // pembayaran/dst di atas), BUKAN dari seluruh histori customer. Sengaja
+  // beda dari "Repeat Order" di Ringkasan (yang pakai Customer.orderCount
+  // ALL-TIME) — di halaman Order, pertanyaannya "dari order-order yang
+  // sedang saya lihat SEKARANG (mis. bulan ini), berapa pelanggan unik &
+  // berapa yang order LEBIH dari sekali DI RENTANG INI", bukan status
+  // repeat sepanjang hidup pelanggan itu.
+  const orderPerPelanggan = useMemo(() => {
+    const counts = new Map();
+    for (const o of items) {
+      if (!o.customerId) continue;
+      counts.set(o.customerId, (counts.get(o.customerId) || 0) + 1);
+    }
+    return counts;
+  }, [items]);
+  const totalPelanggan = orderPerPelanggan.size;
+  const repeatPelanggan = [...orderPerPelanggan.values()].filter((n) => n >= 2).length;
   const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
 
   function bukaChat(order) {
@@ -714,9 +744,11 @@ export default function Orders() {
         {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
             sering dicari dan paling mudah hilang dari pandangan. */}
         {!loading && items.length > 0 && (
-          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {[
               { l: "Total order", v: items.length.toLocaleString("id-ID") },
+              { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID") },
+              { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined },
               { l: "Nilai order", v: formatRupiah(totalNilai) },
               { l: "Belum lunas", v: formatRupiah(belumLunas) },
               { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined },
