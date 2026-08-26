@@ -6,7 +6,7 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine, Tag,
+  Boxes, ScanLine,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -96,17 +96,22 @@ const DIVISIONS = {
       },
       // Dipindah DARI /pengaturan (Main Hub) — 26 Agustus 2026, permintaan
       // owner: Template Pesan/Target Sales/Promo pengaturan khusus CRM,
-      // bukan lintas-divisi, jadi tempatnya di sini, bukan Hub. Section
-      // sendiri TIDAK adminOnly (Template Pesan boleh dibuka SALES untuk
-      // kelola template pribadinya) — Target Sales & Promo digerbang per-
-      // ITEM (adminOnly) karena keduanya memang admin-only, sama seperti
-      // gerbang di dalam PengaturanSales.jsx sendiri.
+      // bukan lintas-divisi, jadi tempatnya di sini, bukan Hub.
+      //
+      // BUG YANG DIPERBAIKI (putaran kedua, sama hari): sempat dipecah jadi
+      // 3 <SidebarLink> terpisah (satu per section, beda cuma ?section=) —
+      // NavLink React Router hanya mencocokkan PATHNAME utk `isActive`,
+      // bukan search string, jadi ketiganya ke pathname yang SAMA persis
+      // (/pengaturan-sales) dan SEMUANYA menyala aktif bersamaan, bukan cuma
+      // yang sedang dibuka. Halaman itu SENDIRI sudah punya nav internal
+      // (kartu Template Pesan/Target Sales/Promo di dalam PengaturanSales.jsx)
+      // — 3 link sidebar di atasnya cuma duplikasi navigasi yang membingungkan
+      // DAN buggy. Sekarang satu link saja, gerbang per-section (SALES cuma
+      // Template Pesan) tetap ditegakkan DI DALAM halamannya sendiri.
       {
         section: "PENGATURAN CRM",
         items: [
-          { to: "/pengaturan-sales?section=template",     label: "Template Pesan", Icon: MessageSquare },
-          { to: "/pengaturan-sales?section=target-sales", label: "Target Sales",   Icon: TrendingUp, adminOnly: true },
-          { to: "/pengaturan-sales?section=promo",        label: "Promo",          Icon: Tag, adminOnly: true },
+          { to: "/pengaturan-sales", label: "Pengaturan", Icon: Settings },
         ],
       },
     ],
