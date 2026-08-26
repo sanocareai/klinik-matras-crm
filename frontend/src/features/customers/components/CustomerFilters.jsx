@@ -116,7 +116,12 @@ export default function CustomerFilters({
       {/* Dropdown filter — baris terpisah, flex-wrap turun ke baris baru
           kalau tidak muat, bukan menyusutkan lebar tiap dropdown. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <select className={selectCls(!!filterStage)} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
+        {/* min-w eksplisit (26 Agustus 2026) — label pipeline sekarang ada
+            yang sepanjang "Scheduled / Transaksi" (21 karakter), dan select
+            ini appearance:none (tokens.css) jadi browser tidak lagi menjamin
+            auto-lebar mengikuti opsi terpanjang. Tanpa ini teksnya bisa
+            kepotong tanpa jejak (native select tidak kasih ellipsis/tooltip). */}
+        <select className={cn(selectCls(!!filterStage), "min-w-[188px]")} value={filterStage} onChange={(e) => onFilterStage(e.target.value)} aria-label="Filter stage">
           <option value="">Semua Stage</option>
           {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
         </select>

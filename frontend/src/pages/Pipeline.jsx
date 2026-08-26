@@ -1,12 +1,17 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { Download, RefreshCw, Search, X, AlertTriangle } from "lucide-react";
+import { Download, RefreshCw, Search, X, AlertTriangle, LayoutGrid, List } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { formatRupiah, formatRupiahShort, STAGE_LABELS, PIPELINE_STAGES } from "../utils/format.js";
+import {
+  formatRupiah, formatRupiahShort, STAGE_LABELS, PIPELINE_STAGES,
+  stageVariant, ORDER_STATUS_LABELS, orderStatusVariant,
+} from "../utils/format.js";
 import { useCountUp } from "../hooks/useCountUp.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TableEmptyRow } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
 import { rolesOf } from "@/lib/roles.js";
@@ -43,6 +48,108 @@ function ColumnTotal({ value }) {
   );
 }
 
+// Mode "Tabel" (26 Agustus 2026, permintaan owner) — flatten SEMUA stage jadi
+// satu daftar yang bisa di-sort & dibandingkan lintas kolom (Kanban memisah
+// per kolom, jadi tidak bisa langsung urutkan "siapa yang paling lama mandek
+// di SELURUH pipeline" atau "deal terbesar di stage apa pun"). Filter
+// pencarian/sales/mandek yang sama dari toolbar di atas tetap berlaku (rows
+// sudah difilter sebelum sampai ke sini — lihat `semuaBaris` di Pipeline()).
+// TABLE_BATCH lebih besar dari BATCH Kanban (20) — baris tabel jauh lebih
+// ringan per-item (tanpa drag handler, tanpa animasi masuk) daripada
+// KanbanCard, tapi TETAP dibatasi: kolom "New" pernah berisi 1.158
+// pelanggan sendirian (lihat catatan BATCH di atas), dan merender semua
+// baris itu sekaligus dalam SATU <table> akan reproduksi persis bug lama
+// (DOM berat, halaman lag) yang batching Kanban sudah perbaiki.
+const TABLE_BATCH = 100;
+
+function PipelineTableView({ rows, sortKey, sortDir, onSort, onOpenRow, onMoveToStage, adaFilter }) {
+  const [limit, setLimit] = useState(TABLE_BATCH);
+  // Reset paging setiap kali hasil filter/sort berubah — tanpa ini, ganti
+  // filter ke hasil yang lebih kecil bisa meninggalkan `limit` dari sesi
+  // sebelumnya yang sudah tidak relevan (bukan bug besar, tapi state basi).
+  useEffect(() => { setLimit(TABLE_BATCH); }, [rows]);
+
+  const tampil = rows.slice(0, limit);
+  const sisa = rows.length - tampil.length;
+
+  return (
+    <>
+      <TableWrap>
+        <Table>
+          <THead>
+            <TR>
+              <TH sortable sortDir={sortKey === "name" ? sortDir : null} onSort={() => onSort("name")}>Pelanggan</TH>
+              <TH sortable sortDir={sortKey === "stage" ? sortDir : null} onSort={() => onSort("stage")}>Stage</TH>
+              <TH sortable sortDir={sortKey === "city" ? sortDir : null} onSort={() => onSort("city")}>Kota</TH>
+              <TH>Sales</TH>
+              <TH>Status Order</TH>
+              <TH numeric sortable sortDir={sortKey === "daysSince" ? sortDir : null} onSort={() => onSort("daysSince")}>
+                Hari di Stage
+              </TH>
+              <TH numeric sortable sortDir={sortKey === "totalValue" ? sortDir : null} onSort={() => onSort("totalValue")}>
+                Total Nilai
+              </TH>
+            </TR>
+          </THead>
+          <TBody>
+            {rows.length === 0 && (
+              <TableEmptyRow colSpan={7}>
+                {adaFilter ? "Tidak ada yang cocok dengan filter" : "Belum ada pelanggan di pipeline"}
+              </TableEmptyRow>
+            )}
+            {tampil.map((r) => {
+              const stale = isStale(r, r.stage);
+              return (
+                <TR key={r.id} clickable onClick={() => onOpenRow(r)}>
+                  <TD>
+                    <p className="font-semibold text-ink">{r.name || "—"}</p>
+                    {r.phone && <p className="text-[11px] text-ink3">{r.phone}</p>}
+                  </TD>
+                  <TD onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={r.stage}
+                      onChange={(e) => onMoveToStage(r, e.target.value)}
+                      className="rounded-chip border-none bg-transparent p-0 text-[11px] font-medium uppercase tracking-[0.05em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    >
+                      {PIPELINE_STAGES.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                    <Badge variant={stageVariant(r.stage)} className="mt-1 block w-fit">
+                      {STAGE_LABELS[r.stage] || r.stage}
+                    </Badge>
+                  </TD>
+                  <TD>{r.city || "—"}</TD>
+                  <TD>{r.assignedSales?.name || "—"}</TD>
+                  <TD>
+                    {r.latestOrderStatus
+                      ? <Badge variant={orderStatusVariant(r.latestOrderStatus)}>{ORDER_STATUS_LABELS[r.latestOrderStatus] || r.latestOrderStatus}</Badge>
+                      : "—"}
+                  </TD>
+                  <TD numeric>
+                    <span className={stale ? "font-semibold text-orange" : undefined}>{r.daysSince ?? 0}</span>
+                    {stale && <AlertTriangle size={11} className="ml-1 inline text-orange" />}
+                  </TD>
+                  <TD numeric>{formatRupiah(r.totalValue || 0)}</TD>
+                </TR>
+              );
+            })}
+          </TBody>
+        </Table>
+      </TableWrap>
+      {sisa > 0 && (
+        <button
+          type="button"
+          onClick={() => setLimit((l) => l + TABLE_BATCH * 2)}
+          className="mt-3 w-full rounded-xl bg-surface px-3 py-2.5 text-center text-[12.5px] font-semibold text-accent transition-colors hover:bg-accentbg"
+        >
+          Muat {Math.min(sisa, TABLE_BATCH * 2)} lagi · sisa {sisa.toLocaleString("id-ID")}
+        </button>
+      )}
+    </>
+  );
+}
+
 export default function Pipeline() {
   const navigate = useNavigate();
   const [board, setBoard]     = useState({});
@@ -66,6 +173,14 @@ export default function Pipeline() {
   // di KanbanCard). Sengaja state terpisah dari dragState (yang tetap ref
   // supaya tidak memicu re-render tiap dragover).
   const [draggingId, setDraggingId] = useState(null);
+  // Tampilan alternatif "Tabel" (26 Agustus 2026, permintaan owner) — Kanban
+  // bagus untuk drag antar stage, tapi payah untuk MEMBANDINGKAN banyak
+  // pelanggan sekaligus (nilai/hari-di-stage/kota) karena mereka terpisah per
+  // kolom. Tabel flatten SEMUA stage jadi satu daftar yang bisa di-sort,
+  // filter yang sama (pencarian/sales/mandek) tetap berlaku di kedua mode.
+  const [viewMode, setViewMode] = useState("papan"); // "papan" | "tabel"
+  const [sortKey, setSortKey] = useState("updatedAt");
+  const [sortDir, setSortDir] = useState("desc");
 
   async function loadBoard() {
     setLoading(true);
@@ -108,6 +223,33 @@ export default function Pipeline() {
 
   const getCards = (stage) => kolom[stage] || [];
   const stageTotal = (stage) => getCards(stage).reduce((s, c) => s + (c.totalValue || 0), 0);
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "name" ? "asc" : "desc"); }
+  }
+
+  // Flatten semua stage (yang SUDAH difilter lewat `kolom`) jadi satu daftar
+  // untuk mode Tabel — inilah yang tidak bisa dilihat di Kanban: bandingkan
+  // nilai/hari-di-stage/kota LINTAS stage sekaligus, bukan per kolom terpisah.
+  const semuaBaris = useMemo(() => {
+    const rows = [];
+    for (const stage of STAGES) {
+      for (const card of getCards(stage)) rows.push({ ...card, stage });
+    }
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      switch (sortKey) {
+        case "name":       return dir * (a.name || a.phone || "").localeCompare(b.name || b.phone || "");
+        case "stage":      return dir * (STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage));
+        case "totalValue": return dir * ((a.totalValue || 0) - (b.totalValue || 0));
+        case "daysSince":  return dir * ((a.daysSince || 0) - (b.daysSince || 0));
+        case "city":       return dir * (a.city || "").localeCompare(b.city || "");
+        default:           return dir * (new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0));
+      }
+    });
+    return rows;
+  }, [kolom, sortKey, sortDir]);
 
   // Buka chat customer. Kartu Kanban sebelumnya TIDAK bisa diklik sama sekali —
   // sales harus pindah ke Inbox lalu mencari nama customer manual. conversationId
@@ -207,6 +349,35 @@ export default function Pipeline() {
         }
         actions={
           <>
+            {/* Toggle Papan/Tabel (26 Agustus 2026, permintaan owner) — Kanban
+                bagus untuk drag antar stage, Tabel bagus untuk membandingkan
+                banyak pelanggan sekaligus (sort by nilai/hari-di-stage/kota). */}
+            <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("papan")}
+                aria-label="Tampilan Papan"
+                aria-pressed={viewMode === "papan"}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-semibold transition-colors",
+                  viewMode === "papan" ? "bg-surface text-ink shadow-card" : "text-ink3 hover:text-ink2"
+                )}
+              >
+                <LayoutGrid size={13} /> Papan
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("tabel")}
+                aria-label="Tampilan Tabel"
+                aria-pressed={viewMode === "tabel"}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-semibold transition-colors",
+                  viewMode === "tabel" ? "bg-surface text-ink shadow-card" : "text-ink3 hover:text-ink2"
+                )}
+              >
+                <List size={13} /> Tabel
+              </button>
+            </div>
             <DateRangePicker value={range} onChange={setRange} />
             {/* Pencarian di dalam board — tanpa ini satu-satunya cara menemukan
                 customer di kolom berisi ribuan kartu adalah scroll manual. */}
@@ -283,14 +454,23 @@ export default function Pipeline() {
               </p>
             )}
 
-            {/* LAYOUT DIPERBAIKI: dulu `lg:grid-cols-5` dengan 8 stage — 3 kolom
+            {viewMode === "tabel" ? (
+              <PipelineTableView
+                rows={semuaBaris}
+                sortKey={sortKey} sortDir={sortDir} onSort={toggleSort}
+                onOpenRow={bukaChat}
+                onMoveToStage={(card, toStage) => moveCardToStage(card, card.stage, toStage)}
+                adaFilter={adaFilter}
+              />
+            ) : (
+            /* LAYOUT DIPERBAIKI: dulu `lg:grid-cols-5` dengan 8 stage — 3 kolom
                 terakhir (Completed/Paid/Already Reviewed) TERLIPAT ke BARIS
                 KEDUA grid, dan karena kolom "New" berisi 1.158 kartu, baris
                 kedua itu terdorong ribuan piksel ke bawah sehingga terlihat
                 seperti "stage berhasil hilang". Sekarang satu baris flex dengan
                 scroll HORIZONTAL — semua stage selalu terjangkau, dan tiap
                 kolom punya scroll VERTIKAL sendiri (max-h) supaya panjang satu
-                kolom tidak lagi menentukan panjang halaman. */}
+                kolom tidak lagi menentukan panjang halaman. */
             <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
               {STAGES.map((stage) => {
                 const cards = getCards(stage);
@@ -365,6 +545,7 @@ export default function Pipeline() {
                 );
               })}
             </div>
+            )}
           </>
         )}
        </PageErrorBoundary>

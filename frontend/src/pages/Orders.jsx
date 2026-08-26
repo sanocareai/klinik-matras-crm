@@ -294,9 +294,19 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
         <PaymentStatusSelect order={order} onChange={onPaymentChange} className="shrink-0" locked={paymentLocked} />
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        <StatusSelect order={order} onChange={onStatusChange} className="flex-1" />
-        <PipelineStageSelect order={order} onChange={onStageChange} className="flex-1" />
+      {/* BUG YANG DIPERBAIKI (26 Agustus 2026): dua select ini dulu SEJAJAR
+          (flex-1 + flex-1), memaksa lebar SAMA RATA berapa pun panjang
+          labelnya — di kartu selebar 272px itu cuma ~123px per select. Label
+          pipeline sudah lebih panjang dari label status ("Scheduled /
+          Transaksi", "Already Reviewed") dan native <select> TIDAK
+          menampilkan ellipsis atau tooltip saat teksnya kepotong, jadi
+          teksnya benar-benar hilang tanpa jejak. Ditumpuk VERTIKAL supaya
+          tiap select dapat lebar PENUH kartu (~246px) — aman untuk label
+          sepanjang apa pun yang realistis, tidak perlu hitung ulang kalau
+          ada label baru lagi nanti. */}
+      <div className="mt-2 flex flex-col gap-1.5">
+        <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
+        <PipelineStageSelect order={order} onChange={onStageChange} className="w-full" />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -639,10 +649,20 @@ export default function Orders() {
               <option value="">Semua Sales</option>
               {salesUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </FilterSelect>
+            {/* min-w eksplisit (26 Agustus 2026) — label pipeline sekarang ada
+                yang sepanjang "Scheduled / Transaksi" (21 karakter). `select`
+                di sini SENGAJA appearance:none (lihat tokens.css) supaya ikut
+                gaya DS, tapi itu artinya browser TIDAK LAGI menjamin
+                auto-lebar mengikuti opsi terpanjang — tanpa min-w ini,
+                sebagian browser melebarkan kotak cuma seukuran teks yang
+                SEDANG terpilih, jadi begitu user pilih opsi yang lebih
+                panjang dari lebar awal, teksnya bisa kepotong tanpa jejak
+                (native select tidak kasih ellipsis/tooltip). */}
             <FilterSelect
               tone="pipeline" active={!!fPipeline}
               value={fPipeline} onChange={(e) => setFPipeline(e.target.value)}
               aria-label="Filter tahap pipeline"
+              className="min-w-[188px]"
             >
               <option value="">Semua Pipeline</option>
               {PIPELINE_STAGES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
