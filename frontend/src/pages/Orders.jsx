@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { badgeVariants } from "@/components/ui/badge.jsx";
 import { TH } from "@/components/ui/table.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
@@ -518,27 +519,72 @@ export default function Orders() {
   }, [items]);
 
   const totalMandek = items.filter(isMandek).length;
-  const totalNilai  = items.reduce((s, o) => s + (o.value || 0), 0);
-  const belumLunas  = items.filter((o) => o.paymentStatus !== "LUNAS" && o.status !== "CANCELLED")
+  // BUG YANG DIPERBAIKI (26 Agustus 2026, dilaporkan owner: "165 di Order
+  // vs 160 di Dashboard, padahal dua-duanya 'bulan ini'"): kartu ringkasan
+  // di sini menghitung dari SEMUA `items`, termasuk yang sudah CANCELLED —
+  // sementara Dashboard ("Total Orders") dan hampir semua tabel lain di
+  // app ini (Sales Report, Ringkasan) SUDAH LAMA konsisten mengecualikan
+  // CANCELLED. Bahkan "Belum lunas" DI BARIS INI SENDIRI sudah benar
+  // (filter `status !== "CANCELLED"` inline), jadi sebelumnya TIDAK
+  // konsisten sesama kartu di baris yang sama. `itemsAktif` sekarang jadi
+  // SATU basis bersama untuk semua kartu ringkasan — daftar/papan order
+  // itu sendiri (`items`) TIDAK berubah, order CANCELLED tetap kelihatan
+  // & bisa dibuka di tab statusnya, cuma tidak ikut membesarkan angka
+  // ringkasan yang mengaku "total".
+  const itemsAktif = useMemo(() => items.filter((o) => o.status !== "CANCELLED"), [items]);
+  const totalNilai  = itemsAktif.reduce((s, o) => s + (o.value || 0), 0);
+  const belumLunas  = itemsAktif.filter((o) => o.paymentStatus !== "LUNAS")
                            .reduce((s, o) => s + (o.value || 0), 0);
   // Total Pelanggan & Repeat Order (26 Agustus 2026, permintaan owner) —
-  // dihitung dari `items` yang SUDAH difilter (rentang tanggal/kategori/
-  // pembayaran/dst di atas), BUKAN dari seluruh histori customer. Sengaja
-  // beda dari "Repeat Order" di Ringkasan (yang pakai Customer.orderCount
-  // ALL-TIME) — di halaman Order, pertanyaannya "dari order-order yang
-  // sedang saya lihat SEKARANG (mis. bulan ini), berapa pelanggan unik &
-  // berapa yang order LEBIH dari sekali DI RENTANG INI", bukan status
-  // repeat sepanjang hidup pelanggan itu.
+  // dihitung dari `itemsAktif` (order aktif yang SUDAH difilter — rentang
+  // tanggal/kategori/pembayaran/dst di atas), BUKAN dari seluruh histori
+  // customer. Sengaja beda dari "Repeat Order" di Ringkasan (yang pakai
+  // Customer.orderCount ALL-TIME) — di halaman Order, pertanyaannya "dari
+  // order-order yang sedang saya lihat SEKARANG (mis. bulan ini), berapa
+  // pelanggan unik & berapa yang order LEBIH dari sekali DI RENTANG INI",
+  // bukan status repeat sepanjang hidup pelanggan itu.
+  //
+  // ⚠️ JUGA beda dari kartu "Conversion" di Dashboard — itu cuma menghitung
+  // COHORT lead yang BARU MASUK di periode yang sama (dan sudah closing),
+  // sementara "Total Pelanggan" di sini menghitung SEMUA pelanggan (baru
+  // ATAU lama) yang bikin order di periode ini. Pelanggan LAMA yang order
+  // lagi bulan ini ikut kehitung di sini tapi TIDAK ikut cohort Dashboard
+  // — itu sebabnya angkanya bisa beda cukup jauh (dikonfirmasi ke DB
+  // production 26 Agustus: dari 120 pelanggan di sini, 97 di antaranya
+  // memang cohort baru bulan ini — cocok dengan angka Dashboard — sisanya
+  // 23 adalah pelanggan LAMA yang order lagi, bukan salah hitung).
   const orderPerPelanggan = useMemo(() => {
     const counts = new Map();
-    for (const o of items) {
+    for (const o of itemsAktif) {
       if (!o.customerId) continue;
       counts.set(o.customerId, (counts.get(o.customerId) || 0) + 1);
     }
     return counts;
-  }, [items]);
+  }, [itemsAktif]);
   const totalPelanggan = orderPerPelanggan.size;
   const repeatPelanggan = [...orderPerPelanggan.values()].filter((n) => n >= 2).length;
+  const aov = itemsAktif.length > 0 ? Math.round(totalNilai / itemsAktif.length) : 0;
+  // Rata-rata Proses (rekomendasi, permintaan owner) — dari order DIBUAT
+  // sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered
+  // di rentang/filter yang sedang aktif. `statusSince` (dari GET /orders)
+  // adalah kapan order MASUK ke status SEKARANG — untuk order berstatus
+  // DELIVERED, itu berarti "kapan dia jadi delivered", jadi selisihnya ke
+  // `createdAt` adalah lama proses ujung-ke-ujung. TIDAK dihitung dari
+  // order yang masih berjalan (belum delivered) — waktu prosesnya belum
+  // final, bukan pelengkap "Mandek" (yang justru soal order yang BELUM
+  // selesai tapi sudah lama tidak bergerak).
+  const orderDelivered = itemsAktif.filter((o) => o.status === "DELIVERED");
+  const avgProsesHari = orderDelivered.length > 0
+    ? orderDelivered.reduce((s, o) => s + Math.max(0, (new Date(o.statusSince) - new Date(o.createdAt)) / 86_400_000), 0) / orderDelivered.length
+    : null;
+  // Komplain Rate (rekomendasi, permintaan owner) — persentase order aktif
+  // (di rentang/filter ini) yang ditandai "Pernah Komplain" (hasComplaint,
+  // toggle manual sales/admin — lihat OrderSection.jsx). Bukan pengganti
+  // badge "Pernah Komplain" di profil pelanggan, ini agregatnya per
+  // periode: "dari order BULAN INI, berapa persen yang komplain" — beda
+  // dari badge itu yang menandai riwayat SEPANJANG WAKTU pelanggannya.
+  const complaintCount = itemsAktif.filter((o) => o.hasComplaint).length;
+  const complaintRate = itemsAktif.length > 0 ? Math.round((complaintCount / itemsAktif.length) * 1000) / 10 : null;
   const adaFilter = !!(debounced || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
 
   function bukaChat(order) {
@@ -644,8 +690,8 @@ export default function Orders() {
         subtitle={
           loading ? "Memuat…"
             : totalMandek > 0
-              ? `${items.length} order · ${totalMandek} mandek ≥${MANDEK_HARI} hari di status yang sama`
-              : `${items.length} order · ${formatRupiah(totalNilai)}`
+              ? `${itemsAktif.length} order · ${totalMandek} mandek ≥${MANDEK_HARI} hari di status yang sama`
+              : `${itemsAktif.length} order · ${formatRupiah(totalNilai)}`
         }
         actions={
           <>
@@ -744,17 +790,32 @@ export default function Orders() {
         {/* Ringkasan uang — piutang ditonjolkan karena itu angka yang paling
             sering dicari dan paling mudah hilang dari pandangan. */}
         {!loading && items.length > 0 && (
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {[
-              { l: "Total order", v: items.length.toLocaleString("id-ID") },
-              { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID") },
-              { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined },
-              { l: "Nilai order", v: formatRupiah(totalNilai) },
-              { l: "Belum lunas", v: formatRupiah(belumLunas) },
-              { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined },
+              { l: "Total order", v: itemsAktif.length.toLocaleString("id-ID"),
+                tip: "Order aktif yang cocok dengan filter — CANCELLED tidak dihitung, konsisten dengan Dashboard & Laporan." },
+              { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID"),
+                tip: "Pelanggan UNIK (baru ATAU lama) yang bikin order di periode/filter ini. Beda dari kartu \"Conversion\" di Dashboard — itu cuma menghitung lead BARU yang masuk di periode yang sama, tidak termasuk pelanggan lama yang order lagi." },
+              { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined,
+                tip: "Dari Total Pelanggan di atas, berapa yang bikin order LEBIH dari sekali DI PERIODE/FILTER INI (bukan status repeat sepanjang riwayat pelanggan itu)." },
+              { l: "Nilai order", v: formatRupiah(totalNilai),
+                tip: "Total nilai order aktif (CANCELLED tidak dihitung) — belum tentu sudah dibayar lunas." },
+              { l: "AOV", v: itemsAktif.length > 0 ? formatRupiah(aov) : "—",
+                tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
+              { l: "Belum lunas", v: formatRupiah(belumLunas),
+                tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar)." },
+              { l: "Rata-rata proses", v: avgProsesHari != null ? `${avgProsesHari.toFixed(1)} hari` : "—",
+                tip: "Rata-rata lama dari order DIBUAT sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered di periode/filter ini. Order yang masih berjalan tidak dihitung — waktu prosesnya belum final." },
+              { l: "Komplain", v: complaintRate != null ? `${complaintRate}%` : "—", tone: complaintRate > 5 ? "text-red" : undefined,
+                tip: "Persentase order aktif di periode ini yang ditandai \"Pernah Komplain\" — bukan penalti, diagnostik kualitas layanan periode ini." },
+              { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined,
+                tip: `Order yang tertahan di status yang sama ≥${MANDEK_HARI} hari (DELIVERED/CANCELLED dikecualikan — itu status akhir, wajar lama).` },
             ].map((k) => (
               <div key={k.l} className="rounded-2xl bg-surface p-3.5 shadow-card">
-                <p className="text-[11px] font-medium text-ink3">{k.l}</p>
+                <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink3">
+                  {k.l}
+                  <InfoTooltip text={k.tip} />
+                </p>
                 <p className={cn("mt-1 text-[17px] font-bold tabular-nums", k.tone || "text-ink")}>{k.v}</p>
               </div>
             ))}
