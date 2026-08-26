@@ -77,10 +77,16 @@ export const avatarColors = [
 // frontend/src/utils/format.js STAGE_VARIANT web. Order.status sekarang
 // men-track progres operasional secara independen. SPAM baru — abu-abu
 // netral, dikecualikan dari Closing Rate (lihat backend routes/analytics.js).
+// Revisi 26 Agustus 2026: REVIEWED dikembalikan (permintaan owner) — definisi
+// BARU (testimoni/review PUBLIK, bukan lagi "ditinjau internal"). Warna hijau
+// GELAP `#059669` yang sama seperti sebelum 24 Agustus dipakai lagi — beda
+// tone dari TRANSACTION (#16a34a) supaya tetap kelihatan sudah maju lebih
+// jauh, bukan cuma duplikat.
 export const stageColors = {
   NEW: "#f59e0b",
   PROSPECT: "#2563eb",
   TRANSACTION: "#16a34a",
+  REVIEWED: "#059669",
   SPAM: "#6b7280",
 };
 
@@ -88,5 +94,6 @@ export const stageLabels = {
   NEW: "New",
   PROSPECT: "Prospek / Potensi",
   TRANSACTION: "Scheduled / Transaksi",
+  REVIEWED: "Already Reviewed",
   SPAM: "Spam",
 };

@@ -42,13 +42,14 @@ function formatDurasiHari(hari) {
   return `${hari.toString().replace(".", ",")} hari`;
 }
 
-// Stage yang paling lama tertahan = kemungkinan bottleneck. TRANSACTION/SPAM
-// dikecualikan (TRANSACTION itu stage AKHIR "berhasil" — "lama di TRANSACTION"
-// tidak berarti macet, cuma belum pindah lagi / memang sudah selesai. SPAM
-// juga bukan kandidat bottleneck — memang sengaja dibiarkan di sana).
+// Stage yang paling lama tertahan = kemungkinan bottleneck.
+// TRANSACTION/REVIEWED/SPAM dikecualikan (TRANSACTION & REVIEWED itu stage
+// AKHIR "berhasil" — "lama di sana" tidak berarti macet, cuma belum pindah
+// lagi / memang sudah selesai. SPAM juga bukan kandidat bottleneck — memang
+// sengaja dibiarkan di sana).
 function cariBottleneck(avgDaysInStage) {
   const kandidat = (avgDaysInStage || []).filter(
-    (r) => r.stage !== "TRANSACTION" && r.stage !== "SPAM" && r.avgDays != null && r.sample > 0
+    (r) => r.stage !== "TRANSACTION" && r.stage !== "REVIEWED" && r.stage !== "SPAM" && r.avgDays != null && r.sample > 0
   );
   if (kandidat.length === 0) return null;
   return kandidat.reduce((a, b) => (b.avgDays > a.avgDays ? b : a));

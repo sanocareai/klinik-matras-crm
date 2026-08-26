@@ -144,7 +144,13 @@ enum ConversationType {
 enum PipelineStage {
   NEW // Lead baru masuk WhatsApp, belum kirim data diri
   PROSPECT // Sedang bernegosiasi/follow up — dulu QUALIFIED+QUOTED
-  TRANSACTION // Pesan sudah dipastikan jadi order — dulu BOOKED/SCHEDULED/COMPLETED/REVIEWED; detail fulfillment sepenuhnya urusan Order.status
+  TRANSACTION // Pesan sudah dipastikan jadi order — detail fulfillment sepenuhnya urusan Order.status
+  // Dikembalikan 26 Agustus 2026 (permintaan owner) — SENGAJA BUKAN definisi
+  // lama (yang berarti "pekerjaan selesai + ditinjau internal", digabung ke
+  // TRANSACTION 24 Agustus 2026). Definisi BARU: pelanggan yang sudah kasih
+  // testimoni/review PUBLIK (Google Maps, atau tag di media sosial) — milestone
+  // SETELAH TRANSACTION, ditandai manual oleh sales/admin, bukan otomatis.
+  REVIEWED
   SPAM // Chat tidak merespons (1-2x balas), pesan tidak jelas, atau salah sasaran — DIKECUALIKAN dari Closing Rate & semua kandidat intelligence/hot-leads
 }
 

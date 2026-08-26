@@ -10,6 +10,7 @@ const STAGE_ACTIVE_CLASS = {
   NEW:         "active-new",
   PROSPECT:    "active-prospect",
   TRANSACTION: "active-transaction",
+  REVIEWED:    "active-reviewed",
   SPAM:        "active-spam",
 };
 

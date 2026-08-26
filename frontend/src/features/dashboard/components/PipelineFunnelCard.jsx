@@ -18,7 +18,11 @@ import { toApiParams } from "@/lib/dateRange.js";
 // lead MENYEMPIT ke arah closing, dan chat junk bukan bagian dari narasi
 // itu (dikecualikan juga dari Closing Rate, lihat routes/analytics.js
 // /sales-report). SPAM tetap terlihat di tempat lain (Kanban Pipeline).
-const TAHAP = ["NEW", "PROSPECT", "TRANSACTION"];
+// Revisi 26 Agustus 2026: REVIEWED dikembalikan (definisi baru — review
+// publik) sebagai tahap KEEMPAT — subset dari TRANSACTION (customer yang
+// closing DAN lanjut kasih review), jadi tetap konsisten dengan corong yang
+// menyempit terus ke kanan.
+const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"];
 
 // ─── DEAL PIPELINE ───────────────────────────────────────────────────────────
 // DS v2.4: periode SENDIRI (PeriodMenu) DIHAPUS — sekarang mengikuti SATU

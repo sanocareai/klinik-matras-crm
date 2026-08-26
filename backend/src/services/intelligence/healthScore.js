@@ -18,11 +18,13 @@ export function computeHealth(s) {
     signals.push({ type: "positive", label: `${s.orderCount} order · ${rpShort(s.orderValue)}` });
   }
   // Restrukturisasi 24 Agustus 2026 (7→4 stage): sinyal "Sudah kasih review"
-  // (REVIEWED lama) DIHAPUS, bukan dipindah — pipelineStage tidak lagi
-  // membedakan itu (keputusan bisnis eksplisit). SPAM sengaja TIDAK punya
-  // cabang di sini — customer ber-stage SPAM sudah difilter sebelum sampai
-  // ke fungsi ini (lihat index.js loadCandidates).
-  if (s.stage === "TRANSACTION") { score += W.stage.TRANSACTION; signals.push({ type: "positive", label: "Sudah jadi order" }); }
+  // (REVIEWED lama) sempat DIHAPUS. Dikembalikan 26 Agustus 2026 (permintaan
+  // owner) dengan definisi BARU — testimoni/review PUBLIK (Google Maps/
+  // medsos), bukan lagi "ditinjau internal". SPAM sengaja TIDAK punya cabang
+  // di sini — customer ber-stage SPAM sudah difilter sebelum sampai ke
+  // fungsi ini (lihat index.js loadCandidates).
+  if (s.stage === "REVIEWED") { score += W.stage.REVIEWED; signals.push({ type: "positive", label: "Sudah kasih review" }); }
+  else if (s.stage === "TRANSACTION") { score += W.stage.TRANSACTION; signals.push({ type: "positive", label: "Sudah jadi order" }); }
   else if (s.stage === "PROSPECT") { score += W.stage.PROSPECT; signals.push({ type: "positive", label: "Prospek aktif" }); }
 
   if (s.daysSince != null && s.daysSince <= 2) { score += W.recency.d2; signals.push({ type: "positive", label: s.daysSince <= 0 ? "Aktif hari ini" : `Aktif ${s.daysSince} hari lalu` }); }
@@ -41,7 +43,7 @@ export function computeHealth(s) {
   if (s.daysSince != null) {
     if (s.complaintsOpen > 0) { trend = "down"; trendLabel = "Menurun — ada komplain"; }
     else if (s.daysSince > 30) { trend = "down"; trendLabel = "Menurun — makin pasif"; }
-    else if (s.daysSince <= 3 && (s.orderCount > 0 || s.stage === "TRANSACTION")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
+    else if (s.daysSince <= 3 && (s.orderCount > 0 || s.stage === "TRANSACTION" || s.stage === "REVIEWED")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
     else { trend = "flat"; trendLabel = "Stabil"; }
   }
 

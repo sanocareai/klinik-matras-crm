@@ -21,9 +21,12 @@ export function computeHealthScore(ctx) {
   }
   // Restrukturisasi 24 Agustus 2026 (7→4 stage, cermin backend
   // services/intelligence/healthScore.js — bobot disamakan): sinyal "Sudah
-  // kasih review" (REVIEWED lama) DIHAPUS, bukan dipindah — pipelineStage
-  // tidak lagi membedakan itu. SPAM sengaja tidak dapat cabang di sini.
-  if (ctx.stage === "TRANSACTION") { score += 18; signals.push({ type: "positive", label: "Sudah jadi order" }); }
+  // kasih review" (REVIEWED lama) sempat DIHAPUS. Dikembalikan 26 Agustus
+  // 2026 (permintaan owner) — definisi BARU: testimoni/review PUBLIK (Google
+  // Maps/medsos), bukan lagi "ditinjau internal". SPAM sengaja tidak dapat
+  // cabang di sini.
+  if (ctx.stage === "REVIEWED") { score += 20; signals.push({ type: "positive", label: "Sudah kasih review" }); }
+  else if (ctx.stage === "TRANSACTION") { score += 18; signals.push({ type: "positive", label: "Sudah jadi order" }); }
   else if (ctx.stage === "PROSPECT") { score += 10; signals.push({ type: "positive", label: "Prospek aktif" }); }
 
   if (ctx.daysSince != null && ctx.daysSince <= 2) { score += 15; signals.push({ type: "positive", label: ctx.daysSince <= 0 ? "Aktif hari ini" : `Aktif ${ctx.daysSince} hari lalu` }); }
@@ -45,7 +48,7 @@ export function computeHealthScore(ctx) {
   if (ctx.daysSince != null) {
     if (ctx.complaintsCount > 0) { trend = "down"; trendLabel = "Menurun — ada komplain"; }
     else if (ctx.daysSince > 30) { trend = "down"; trendLabel = "Menurun — makin pasif"; }
-    else if (ctx.daysSince <= 3 && (ctx.orderCount > 0 || ctx.stage === "TRANSACTION")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
+    else if (ctx.daysSince <= 3 && (ctx.orderCount > 0 || ctx.stage === "TRANSACTION" || ctx.stage === "REVIEWED")) { trend = "up"; trendLabel = "Menguat — aktif & bertransaksi"; }
     else { trend = "flat"; trendLabel = "Stabil"; }
   }
 

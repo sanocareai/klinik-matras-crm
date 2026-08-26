@@ -48,12 +48,16 @@ export const HEALTH_WEIGHTS = {
   // TRANSACTION/SPAM) — resolusi 6-tingkat sengaja hilang sesuai keputusan
   // bisnis (Order.status sekarang men-track progres operasional secara
   // terpisah, pipelineStage cukup posisi lead di funnel). Sinyal "sudah
-  // kasih review" (REVIEWED lama, +16) DIHAPUS, bukan dipindah — pipelineStage
-  // tidak lagi membedakan itu. SPAM TIDAK PUNYA bobot di sini sama sekali:
+  // kasih review" (REVIEWED lama, +16) sempat DIHAPUS.
+  // Revisi 26 Agustus 2026: REVIEWED dikembalikan (permintaan owner) dengan
+  // definisi BARU — testimoni/review PUBLIK (Google Maps/medsos), bukan lagi
+  // "ditinjau internal". Bobotnya SEDIKIT LEBIH TINGGI dari TRANSACTION (20 vs
+  // 18, beda dari +16 dulu) karena ini sinyal advokasi nyata dari pelanggan,
+  // bukan cuma progres internal. SPAM TIDAK PUNYA bobot di sini sama sekali:
   // customer ber-stage SPAM difilter keluar SEBELUM sampai ke health score
   // (lihat index.js loadCandidates) — bukan diberi skor 0/negatif, memang
   // tidak pernah dinilai.
-  stage: { NEW: 0, PROSPECT: 10, TRANSACTION: 18 },
+  stage: { NEW: 0, PROSPECT: 10, TRANSACTION: 18, REVIEWED: 20 },
   recency: { d2: 15, d7: 10, d14: 5 },
   complaintPenalty: 25,
   inactivity: { d60: 25, d30: 15 },

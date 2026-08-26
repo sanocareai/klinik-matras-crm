@@ -117,11 +117,17 @@ export function tagClass(tag) {
 // menjawab posisi lead di funnel — QUALIFIED+QUOTED digabung PROSPECT,
 // BOOKED/SCHEDULED/COMPLETED/REVIEWED digabung TRANSACTION. SPAM baru:
 // chat junk/salah sasaran, DIKECUALIKAN dari perhitungan Closing Rate.
+// Revisi 26 Agustus 2026: REVIEWED dikembalikan (permintaan owner) — 4 → 5
+// stage. SENGAJA BUKAN definisi lama ("pekerjaan selesai + ditinjau
+// internal", yang digabung ke TRANSACTION di atas). Definisi BARU: pelanggan
+// yang sudah kasih testimoni/review PUBLIK (Google Maps, atau tag di media
+// sosial) — milestone SETELAH TRANSACTION, ditandai manual oleh sales/admin.
 // Lihat backend/prisma/schema.prisma untuk mapping data lengkap.
 export const STAGE_LABELS = {
   NEW: "New",
   PROSPECT: "Prospek / Potensi",
   TRANSACTION: "Scheduled / Transaksi",
+  REVIEWED: "Already Reviewed",
   SPAM: "Spam",
 };
 
@@ -198,6 +204,7 @@ export const STAGE_VARIANT = {
   NEW:         "warning", // oranye — baru masuk, belum diproses
   PROSPECT:    "info",    // biru — sedang berjalan (negosiasi/follow up)
   TRANSACTION: "success", // hijau — berhasil (pesan sudah dipastikan jadi order)
+  REVIEWED:    "success", // hijau — sama seperti TRANSACTION, cuma sudah lebih maju (kasih review publik). Tetap 4-hue, tidak nambah warna baru.
   SPAM:        "neutral", // abu-abu — dikecualikan dari performa, bukan status "sedang berjalan"
 };
 

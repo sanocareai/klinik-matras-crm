@@ -406,7 +406,11 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       prisma.customer.groupBy({ by: ["city"], where: custWhere, _count: { _all: true } }),
       prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
 
-      prisma.customer.count({ where: { ...custWhere, pipelineStage: "TRANSACTION" } }),
+      // IN [TRANSACTION, REVIEWED] — REVIEWED (dikembalikan 26 Agustus 2026)
+      // adalah customer yang SUDAH lewat TRANSACTION dan lanjut kasih review
+      // publik, jadi tetap "paid customer" — hanya posisinya sudah bergerak
+      // maju, bukan lagi customer yang belum bayar.
+      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["TRANSACTION", "REVIEWED"] } } }),
       prisma.customer.count({ where: custWhereKonversi }),
       prisma.customer.count({ where: { ...custWhereKonversi, orders: { some: { status: { not: "CANCELLED" } } } } }),
       // Repeat order — customer dengan >=2 order (CANCELLED sudah
@@ -417,17 +421,18 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // pelanggan LAMA yang balik order lagi.
       prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
 
-      // PEMERIKSAAN INTEGRITAS: customer ditandai TRANSACTION (pesan sudah
-      // dipastikan order) TAPI tidak punya satu pun order. Ini mustahil secara
-      // bisnis — kalau order sudah dipastikan, harus ada order yang tercatat.
-      // Penyebabnya stage digeser manual di Kanban tanpa membuat order, jadi
-      // PENDAPATANNYA TIDAK PERNAH TERCATAT. Ini yang membuat angka seperti
-      // "1 pelanggan bayar tapi Rp0" muncul di Laporan Sales — bukan salah
-      // hitung, tapi data yang memang tidak lengkap. TIDAK difilter tanggal:
-      // ini utang data yang harus dibereskan, kapan pun terjadinya.
+      // PEMERIKSAAN INTEGRITAS: customer ditandai TRANSACTION/REVIEWED (pesan
+      // sudah dipastikan order, atau malah sudah lanjut kasih review) TAPI
+      // tidak punya satu pun order. Ini mustahil secara bisnis — kalau order
+      // sudah dipastikan, harus ada order yang tercatat. Penyebabnya stage
+      // digeser manual di Kanban tanpa membuat order, jadi PENDAPATANNYA
+      // TIDAK PERNAH TERCATAT. Ini yang membuat angka seperti "1 pelanggan
+      // bayar tapi Rp0" muncul di Laporan Sales — bukan salah hitung, tapi
+      // data yang memang tidak lengkap. TIDAK difilter tanggal: ini utang
+      // data yang harus dibereskan, kapan pun terjadinya.
       prisma.customer.count({
         where: {
-          pipelineStage: "TRANSACTION",
+          pipelineStage: { in: ["TRANSACTION", "REVIEWED"] },
           NOT: { orders: { some: { status: { not: "CANCELLED" } } } },
         },
       }),
@@ -925,7 +930,10 @@ async function computeSalesRow(u, ctx) {
 
   const byStage = Object.fromEntries(stageGroups.map((g) => [g.pipelineStage, g._count._all]));
   const stageCount = (s) => byStage[s] || 0;
-  const paidSekarang = stageCount("TRANSACTION");
+  // TRANSACTION + REVIEWED — REVIEWED (dikembalikan 26 Agustus 2026) sudah
+  // lewat TRANSACTION, jadi tetap "paid" secara posisi, cuma sudah maju lebih
+  // jauh (kasih review publik).
+  const paidSekarang = stageCount("TRANSACTION") + stageCount("REVIEWED");
   const paidPeriode = paidRaw[0]?.n || 0;
   const orders = orderAgg._count._all;
   const gross = orderAgg._sum.value || 0;
@@ -963,7 +971,8 @@ async function computeSalesRow(u, ctx) {
     // tanggal, dan UI WAJIB melabelinya begitu.
     funnel: {
       NEW: stageCount("NEW"), PROSPECT: stageCount("PROSPECT"),
-      TRANSACTION: stageCount("TRANSACTION"), SPAM: stageCount("SPAM"),
+      TRANSACTION: stageCount("TRANSACTION"), REVIEWED: stageCount("REVIEWED"),
+      SPAM: stageCount("SPAM"),
     },
     paidCustomersNow: paidSekarang,
 
@@ -1339,8 +1348,10 @@ analyticsRouter.get("/source-performance", async (req, res) => {
 
     const result = await Promise.all(sources.map(async (s) => {
       const [won, spamCount, orderAgg] = await Promise.all([
+        // IN [TRANSACTION, REVIEWED] — "won" = sudah pernah closing, REVIEWED
+        // (dikembalikan 26 Agustus 2026) sudah lewat TRANSACTION jadi tetap won.
         prisma.customer.count({
-          where: { leadSource: s.leadSource, pipelineStage: "TRANSACTION", ...custDateWhere },
+          where: { leadSource: s.leadSource, pipelineStage: { in: ["TRANSACTION", "REVIEWED"] }, ...custDateWhere },
         }),
         prisma.customer.count({
           where: { leadSource: s.leadSource, pipelineStage: "SPAM", ...custDateWhere },
@@ -1461,7 +1472,7 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
       })
     );
 
-    const ORDER = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
+    const ORDER = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
     const sorted = ORDER.map((s) => stageValues.find((r) => r.stage === s) || { stage: s, count: 0, value: 0 });
 
     res.json(sorted);
@@ -1761,7 +1772,9 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         c."leadSource"                                                             AS source,
         c."leadSourceDetail"                                                       AS detail,
         COUNT(DISTINCT c.id)::int                                                  AS leads,
-        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'TRANSACTION')::int AS won,
+        -- won = IN (TRANSACTION, REVIEWED) — REVIEWED (dikembalikan 26 Agustus
+        -- 2026) sudah lewat TRANSACTION, tetap dihitung "won".
+        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" IN ('TRANSACTION', 'REVIEWED'))::int AS won,
         COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'SPAM')::int        AS spam_count,
         COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint   AS total_value
       FROM "Customer" c
@@ -2169,7 +2182,7 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
       `,
     ]);
 
-    const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "SPAM"];
+    const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
     const durasiMap = Object.fromEntries(durasiRaw.map((r) => [r.stage, r]));
     const masukMap  = Object.fromEntries(masukStageRaw.map((r) => [r.stage, r.count]));
 

@@ -1,0 +1,15 @@
+-- Kembalikan "Already Reviewed" sebagai PipelineStage terpisah lagi
+-- (26 Agustus 2026, permintaan owner) -- SENGAJA BUKAN definisi lama yang
+-- dilepas 24 Agustus 2026 (migrasi 20260824100000_pipeline_stage_4_wave:
+-- COMPLETED/REVIEWED lama = "pekerjaan selesai + ditinjau internal", digabung
+-- ke TRANSACTION). Definisi BARU: pelanggan yang sudah kasih testimoni/review
+-- PUBLIK (Google Maps, atau tag di media sosial) -- milestone SETELAH
+-- TRANSACTION, ditandai manual oleh sales/admin.
+--
+-- Ini hanya MENAMBAH nilai enum, bukan menghapus/mengganti seperti 3 migrasi
+-- PipelineStage sebelumnya -- jadi TIDAK butuh pola rebuild-tipe (buat tipe
+-- baru + migrasi data + drop tipe lama). ALTER TYPE ... ADD VALUE aman untuk
+-- Postgres native enum selama tidak dipakai di query pada TRANSAKSI yang sama
+-- dengan ALTER-nya (migration ini murni menambah nilai, tidak ada baris lain
+-- di file ini yang mereferensikan 'REVIEWED').
+ALTER TYPE "PipelineStage" ADD VALUE 'REVIEWED';
