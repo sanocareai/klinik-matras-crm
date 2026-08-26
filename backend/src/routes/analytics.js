@@ -1960,13 +1960,26 @@ analyticsRouter.get("/traffic", async (req, res) => {
     const countByDay = Object.fromEntries(dailyRaw.map((r) => [r.bucket, Number(r.value)]));
     const semuaHari = [];
     for (let t = warmup.getTime(); t < selesai.getTime(); t += 86_400_000) {
-      const b = namaBucketWIB(new Date(t), true);
+      const b = namaBucketWIB(new Date(t), "day");
       semuaHari.push({ bucket: b, value: countByDay[b] || 0 });
     }
     // Nama bucket hari pertama yang BOLEH dilaporkan (sebelum ini = warm-up
     // yang cuma dipakai menghitung baseline). String ISO "YYYY-MM-DD" aman
     // dibandingkan secara leksikografis.
-    const bucketMulai = namaBucketWIB(mulai, true);
+    //
+    // BUG YANG DIPERBAIKI (26 Agustus 2026): dua panggilan namaBucketWIB() di
+    // sini SEBELUMNYA memberi `true` sebagai argumen kedua, bukan string
+    // "day". namaBucketWIB() cuma cek `=== "hour"` / `=== "day"` — `true`
+    // tidak cocok keduanya, jadi jatuh ke cabang terakhir (format BULANAN
+    // "YYYY-MM"). Akibatnya SETIAP hari di `semuaHari` dapat bucket string
+    // yang SAMA persis (mis. "2026-08" utk seluruh Agustus) — (1) tidak
+    // pernah cocok dengan key harian "YYYY-MM-DD" dari SQL `countByDay`,
+    // jadi value SELALU 0 (Rata-rata per Hari & Hari Tidak Normal ikut nol
+    // walau Total Lead Masuk di atasnya benar, karena itu dihitung terpisah
+    // dari heatmap jam), dan (2) grafik "Traffic Lead Harian" menampilkan
+    // SEMUA titik dengan bucket identik → dayjs("2026-08") diparse sebagai
+    // tanggal 1, jadi SETIAP tick sumbu-X terbaca "1 Agt".
+    const bucketMulai = namaBucketWIB(mulai, "day");
     // Hari BERJALAN (WIB) belum lengkap — jam-jam sisanya belum terjadi, jadi
     // angkanya pasti lebih rendah dari hari penuh. Tanpa penanda ini "hari ini"
     // hampir SELALU ditandai "drop" tiap kali laporan dibuka siang hari, yang
