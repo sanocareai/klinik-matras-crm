@@ -180,28 +180,37 @@ export default function PipelineTab({ funnel, velocity }) {
           </div>
         )}
 
+        {/* BUG YANG DIPERBAIKI (26 Agustus 2026) — pola SAMA dengan BarRow.jsx:
+            3 kolom lebar tetap (w-32 + w-20 + w-14 = 264px) + gap sudah
+            melebihi lebar layar HP SEBELUM bar-nya sendiri dapat ruang, jadi
+            flex-1 bar terjepit sampai nyaris tidak terlihat. Default (mobile)
+            tumpuk 2 baris (label+nilai+sample dulu, bar selebar penuh di
+            bawahnya); sm: ke atas kembali satu baris seperti semula lewat
+            `sm:contents` + `sm:order-*` (lihat catatan panjang di BarRow.jsx). */}
         <div className="flex flex-col gap-2.5">
           {avgDays.map((row) => (
-            <div key={row.stage} className="flex items-center gap-3">
-              <span className="flex w-32 shrink-0 items-center gap-2 text-xs font-semibold text-ink2">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STAGE_DOT[row.stage] || "bg-ink3"}`} />
-                <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
-              </span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-inset">
+            <div key={row.stage} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex items-center gap-2 sm:contents">
+                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold text-ink2 sm:w-32 sm:flex-none">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STAGE_DOT[row.stage] || "bg-ink3"}`} />
+                  <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
+                </span>
+                <span className="shrink-0 text-right text-xs font-bold tabular-nums text-ink sm:order-3 sm:w-20">
+                  {formatDurasiHari(row.avgDays)}
+                </span>
+                {/* sample = jumlah perpindahan yang jadi dasar rata-rata. Angka
+                    kecil = rata-rata belum bisa dipercaya, jadi ditampilkan
+                    terbuka daripada menyembunyikan ketidakpastiannya. */}
+                <span className="shrink-0 text-right text-[11px] text-ink3 sm:order-4 sm:w-14" title="Jumlah perpindahan yang jadi dasar perhitungan">
+                  {row.sample > 0 ? `n=${row.sample}` : "—"}
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-inset sm:order-2 sm:w-auto sm:flex-1">
                 <div
                   className={`h-full rounded-full transition-[width] duration-700 ease-out ${STAGE_BAR[row.stage] || "bg-accent"}`}
                   style={{ width: `${row.avgDays != null ? Math.max((row.avgDays / maxHari) * 100, 2) : 0}%` }}
                 />
               </div>
-              <span className="w-20 shrink-0 text-right text-xs font-bold tabular-nums text-ink">
-                {formatDurasiHari(row.avgDays)}
-              </span>
-              {/* sample = jumlah perpindahan yang jadi dasar rata-rata. Angka
-                  kecil = rata-rata belum bisa dipercaya, jadi ditampilkan
-                  terbuka daripada menyembunyikan ketidakpastiannya. */}
-              <span className="w-14 shrink-0 text-right text-[11px] text-ink3" title="Jumlah perpindahan yang jadi dasar perhitungan">
-                {row.sample > 0 ? `n=${row.sample}` : "—"}
-              </span>
             </div>
           ))}
         </div>

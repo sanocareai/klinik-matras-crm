@@ -61,17 +61,29 @@ export default function TopRepsCard({ range }) {
         <p className="t-secondary py-8 text-center">Belum ada data performa sales pada periode ini.</p>
       ) : (
         <div className="flex flex-col">
+          {/* BUG YANG DIPERBAIKI (26 Agustus 2026) — kelas bug sama dengan
+              BarRow.jsx: RankBadge(24px)+Avatar(32px)+nilai Rupiah(~100px)+
+              w-24(96px) + 4 gap sudah ~280px+ SEBELUM nama dapat ruang, jadi
+              `flex-1 truncate` pada nama terjepit sampai cuma sisa beberapa
+              huruf di layar HP. Default (mobile) tumpuk 2 baris (rank+avatar+
+              nama dulu, nilai+konversi di bawahnya); sm: ke atas kembali satu
+              baris — urutan DOM di sini KEBETULAN sudah = urutan visual yang
+              diinginkan, jadi cukup `sm:contents` tanpa perlu `sm:order-*`. */}
           {rows.map((r, i) => (
-            <div key={r.userId} className="flex items-center gap-2.5 py-2.5">
-              <RankBadge rank={i + 1} />
-              <Avatar name={r.name} src={r.avatarUrl} size="sm" />
-              <span className="t-body min-w-0 flex-1 truncate font-medium">{r.name}</span>
-              <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
-                {formatRupiah(r.grossValue || 0)}
-              </span>
-              <span className="t-secondary w-24 shrink-0 text-right text-[11px] tabular-nums">
-                {r.conversionRate == null ? "—" : `${r.conversionRate}%`} closing
-              </span>
+            <div key={r.userId} className="flex flex-col gap-1 py-2.5 sm:flex-row sm:items-center sm:gap-2.5">
+              <div className="flex items-center gap-2.5 sm:contents">
+                <RankBadge rank={i + 1} />
+                <Avatar name={r.name} src={r.avatarUrl} size="sm" />
+                <span className="t-body min-w-0 flex-1 truncate font-medium">{r.name}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 sm:contents">
+                <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
+                  {formatRupiah(r.grossValue || 0)}
+                </span>
+                <span className="t-secondary shrink-0 text-right text-[11px] tabular-nums sm:w-24">
+                  {r.conversionRate == null ? "—" : `${r.conversionRate}%`} closing
+                </span>
+              </div>
             </div>
           ))}
         </div>
