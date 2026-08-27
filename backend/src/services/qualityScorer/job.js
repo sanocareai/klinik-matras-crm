@@ -168,7 +168,13 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
     }
 
     for (const row of sampled) {
-      callsUsed++;
+      // +RUBRIC_DIMENSIONS.length (bukan +1) — 28 Agustus 2026: gradeTranscript()
+      // sekarang membuat 1 panggilan Anthropic TERPISAH per dimensi (fix bug
+      // JSON-escaping), jadi 1 "percakapan" = beberapa panggilan LLM sungguhan.
+      // MAX_DAILY_LLM_CALLS dimaksudkan sbg batas KERAS panggilan API asli
+      // (lihat komentar di qualityScorerRubric.js) — kalau tetap +1 di sini,
+      // batas itu diam-diam menjadi 3x lebih longgar dari nilai yang di-set.
+      callsUsed += RUBRIC_DIMENSIONS.length;
       try {
         const messages = await fetchTranscriptMessages(row.conversationId, selesai);
         if (messages.length === 0) continue; // percakapan kosong, tidak layak dinilai
