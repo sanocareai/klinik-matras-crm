@@ -124,6 +124,86 @@ export const RUBRIC_DIMENSIONS = [
   },
 ];
 
+// ── Tool schema PER-DIMENSI utk native structured output (Anthropic tool
+// use) ─────────────────────────────────────────────────────────────────────
+// (28 Agustus 2026, fix bug JSON-escaping ~5-7% gagal parse — percobaan ke-2)
+// Percobaan PERTAMA (1 tool gabungan utk 3 dimensi sekaligus) DIBATALKAN:
+// diverifikasi live thd batch sungguhan, tool_choice paksa + skema besar
+// (3 objek bersarang, tiap objek beberapa field teks panjang) bikin model
+// (Haiku) SERING berhenti generate setelah dimensi PERTAMA saja (communication
+// Skill terisi lengkap, authoritySelling+objectionHandling hilang TOTAL dari
+// hasil) — stop_reason "tool_use" (bukan terpotong maxTokens), jadi `required`
+// di JSON schema TIDAK cukup dijamin Anthropic utk skema sebesar itu. Rasio
+// gagal jauh LEBIH BURUK (~88% pada sampel awal) dari bug asli yang mau
+// diperbaiki — sudah di-revert (lihat commit revert 27-28 Agustus 2026).
+//
+// Percobaan KEDUA (di sini): PECAH jadi 1 tool call TERPISAH per dimensi —
+// skema tiap panggilan jadi jauh lebih kecil (cuma field 1 dimensi), yang
+// diharapkan menghindari perilaku "berhenti setelah objek pertama" di atas
+// sepenuhnya (tidak ada "objek kedua/ketiga" yang bisa terlewat kalau
+// panggilannya memang cuma menghasilkan SATU objek). Trade-off yang SADAR
+// diambil & DILAPORKAN ke owner: transcript (di grading.js) TIDAK di-cache
+// Anthropic (beda dari systemPrompt yang cache ephemeral) — dikirim ulang
+// PENUH di setiap dari 3 panggilan per percakapan, jadi biaya token
+// transcript naik ~3x dibanding versi 1-panggilan. System prompt tetap 1x
+// biaya penuh + 2x cache-read (jauh lebih murah), jadi kenaikan total biaya
+// tidak sampai 3x, tapi TIDAK NOL — diukur & dilaporkan terpisah stlh live
+// test, bukan diasumsikan kecil.
+export function buildDimensionTool(d, { includeOverallNote = false } = {}) {
+  const schema = dimensionSchema(d);
+  const properties = { ...schema.properties };
+  const required = [...schema.required];
+  if (includeOverallNote) {
+    properties.overallNote = { type: "string" };
+    required.push("overallNote");
+  }
+  return {
+    name: `submit_penilaian_${d.key}`,
+    description: `Kirim hasil penilaian dimensi "${d.label}" (${d.description.split(":")[0]}) utk percakapan ini, sesuai rubrik SANO Care Sales Framework.`,
+    input_schema: { type: "object", properties, required, additionalProperties: false },
+  };
+}
+
+function extraFieldSchema(ef) {
+  const props = {};
+  props[ef.key] =
+    ef.kind === "enum"
+      ? { type: ["string", "null"], enum: [...ef.values, null] }
+      : { type: ["boolean", "null"] };
+  const required = [ef.key];
+  if (ef.hasQuote) {
+    props[`${ef.key}Quote`] = { type: ["string", "null"] };
+    required.push(`${ef.key}Quote`);
+  }
+  return { props, required };
+}
+
+function dimensionSchema(d) {
+  const properties = {
+    score: { type: ["integer", "null"], minimum: 1, maximum: 5 },
+    quote: { type: ["string", "null"] },
+    strength: { type: ["string", "null"] },
+    weakness: { type: ["string", "null"] },
+  };
+  const required = ["score", "quote", "strength", "weakness"];
+  if (d.flag) {
+    properties[d.flag.key] = { type: ["boolean", "null"] };
+    required.push(d.flag.key);
+  }
+  for (const ef of d.extraFields || []) {
+    const { props, required: efRequired } = extraFieldSchema(ef);
+    Object.assign(properties, props);
+    required.push(...efRequired);
+  }
+  return { type: "object", properties, required, additionalProperties: false };
+}
+
+export function buildDimensionTools() {
+  return RUBRIC_DIMENSIONS.map((d, i) =>
+    buildDimensionTool(d, { includeOverallNote: i === RUBRIC_DIMENSIONS.length - 1 })
+  );
+}
+
 // Tidak ada dimensi ber-`flag` di rubrik baru ini (beda dari rubrik lama
 // yang punya 2 dimensi pattern-aggregation) — CORE_DIMENSIONS jadi berisi
 // SEMUA 3 dimensi, PATTERN_DIMENSIONS kosong. rollup.js & weeklyNarrative.js

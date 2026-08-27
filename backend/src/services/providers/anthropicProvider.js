@@ -51,11 +51,15 @@ export async function chat({ apiKey, model, systemPrompt, messages, maxTokens = 
  * Panggil Anthropic dengan tool use — untuk co-pilot KB admin tools
  * @returns { reply, toolCalls: [{id, name, input}], assistantTurn, usage }
  */
-export async function chatWithTools({ apiKey, model, systemPrompt, messages, tools, maxTokens = 1024 }) {
+export async function chatWithTools({ apiKey, model, systemPrompt, messages, tools, toolChoice, maxTokens = 1024 }) {
   const reqBody = { model, max_tokens: maxTokens, messages };
   const sys = buildSystemPayload(systemPrompt);
   if (sys) reqBody.system = sys;
   if (tools?.length) reqBody.tools = tools;
+  // toolChoice ({type:"tool", name}) — MEMAKSA satu tool tertentu dipanggil,
+  // dipakai qualityScorer/grading.js supaya output selalu structured (native
+  // JSON mode Anthropic), bukan cuma "boleh pakai tool kalau perlu" (default).
+  if (toolChoice) reqBody.tool_choice = toolChoice;
 
   const response = await fetch(BASE_URL, {
     method: "POST",

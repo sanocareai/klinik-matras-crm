@@ -3,9 +3,9 @@
 // (system prompt = rubrik+KB, di-cache Anthropic; user message = transcript
 // PER PERCAKAPAN, tidak di-cache) → parse hasil 4 dimensi.
 import { prisma } from "../../db.js";
-import { chat } from "../providers/anthropicProvider.js";
+import { chatWithTools } from "../providers/anthropicProvider.js";
 import { getAnthropicKey } from "../replyAssistant/providers/keyStore.js";
-import { QUALITY_SCORER_MODEL, buildSystemPrompt } from "../../config/qualityScorerRubric.js";
+import { QUALITY_SCORER_MODEL, buildSystemPrompt, buildDimensionTool, RUBRIC_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 import { maskMessageContent } from "./masking.js";
 
 // Cap panjang transcript per percakapan — percakapan lama/aktif bisa
@@ -47,6 +47,13 @@ export function formatTranscript(messagesAsc, customerName) {
     .join("\n");
 }
 
+function addUsage(total, u) {
+  total.inputTokens += u.inputTokens || 0;
+  total.outputTokens += u.outputTokens || 0;
+  total.cacheReadTokens += u.cacheReadTokens || 0;
+  total.cacheCreateTokens += u.cacheCreateTokens || 0;
+}
+
 /**
  * Panggil LLM untuk menilai satu transcript. `systemPrompt` DIBERIKAN dari
  * pemanggil (bukan dibangun ulang di sini) supaya job.js bisa membangunnya
@@ -54,31 +61,56 @@ export function formatTranscript(messagesAsc, customerName) {
  * prompt caching Anthropic benar-benar menghemat biaya (system prompt sama
  * persis di seluruh panggilan hari itu).
  *
- * @returns {{ scores: object, usage: object, raw: string }}
+ * FIX 28 Agustus 2026 (bug JSON-escaping ~5-7% gagal parse) — PERCOBAAN KE-2:
+ * percobaan pertama (1 tool call gabungan utk 3 dimensi via tool_choice
+ * paksa) di-revert setelah verifikasi live menunjukkan Haiku SERING berhenti
+ * generate setelah dimensi pertama saja (~88% gagal pada sampel awal — lebih
+ * buruk dari bug asli). Sekarang: 1 tool call TERPISAH PER DIMENSI (skema
+ * jauh lebih kecil per panggilan) — lihat catatan lengkap di
+ * qualityScorerRubric.js#buildDimensionTool soal kenapa & trade-off biayanya
+ * (transcript dikirim ulang tiap panggilan, TIDAK di-cache Anthropic).
+ *
+ * @returns {{ scores: object, usage: object }}
  */
 export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) {
-  const { reply, usage } = await chat({
-    apiKey,
-    model: QUALITY_SCORER_MODEL,
-    systemPrompt,
-    messages: [{ role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` }],
-    // 1536 (naik dari 1024, 26 Agustus 2026) — 6 dimensi (tambah Closing
-    // Assertiveness & Customer Comprehension, masing2 +field flag boolean)
-    // butuh lebih banyak ruang output JSON dibanding 4 dimensi lama, supaya
-    // tidak terpotong sebelum JSON selesai.
-    maxTokens: 1536,
-  });
+  const scores = {};
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
+  const userMessage = { role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` };
 
-  let parsed;
-  try {
-    // LLM diinstruksikan JSON murni, tapi jaga-jaga kalau ada ```json fence.
-    const cleaned = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    throw new Error(`Gagal parse output LLM sebagai JSON: ${err.message}. Raw: ${reply.slice(0, 300)}`);
+  for (let i = 0; i < RUBRIC_DIMENSIONS.length; i++) {
+    const dim = RUBRIC_DIMENSIONS[i];
+    const isLast = i === RUBRIC_DIMENSIONS.length - 1;
+    const tool = buildDimensionTool(dim, { includeOverallNote: isLast });
+
+    const { toolCalls, usage: u } = await chatWithTools({
+      apiKey,
+      model: QUALITY_SCORER_MODEL,
+      systemPrompt,
+      messages: [userMessage],
+      tools: [tool],
+      toolChoice: { type: "tool", name: tool.name },
+      // 800 cukup generous utk 1 dimensi (score/quote/strength/weakness +
+      // maks 2 field tambahan) — jauh di bawah kebutuhan skema gabungan lama
+      // (1536 utk 3 dimensi sekaligus).
+      maxTokens: 800,
+    });
+    addUsage(usage, u);
+
+    const call = toolCalls.find((c) => c.name === tool.name);
+    if (!call) {
+      throw new Error(`Dimensi "${dim.key}": LLM tidak memanggil tool ${tool.name} (kemungkinan output terpotong maxTokens).`);
+    }
+    const missingKeys = tool.input_schema.required.filter((k) => !(k in call.input));
+    if (missingKeys.length) {
+      throw new Error(`Dimensi "${dim.key}": tool call tidak lengkap — field hilang: ${missingKeys.join(", ")}.`);
+    }
+
+    const { overallNote, ...dimFields } = call.input;
+    scores[dim.key] = dimFields;
+    if (isLast) scores.overallNote = overallNote ?? null;
   }
 
-  return { scores: parsed, usage, raw: reply };
+  return { scores, usage };
 }
 
 export function resolveApiKey() {
