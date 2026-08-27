@@ -138,6 +138,25 @@ export async function getWeeklyRollup({ weekStart, weekEnd, prevWeekStart, prevW
   return { weekStart, weekEnd, totalScored: rows.length, perSales };
 }
 
+// Tren MULTI-MINGGU per satu sales (27 Agustus 2026) — dipakai
+// services/salesPerformance/ utk "Skill trend" di profil individual.
+// getWeeklyRollup() di atas cuma bandingkan 1 periode vs periode
+// sebelumnya; ini query N minggu sekuensial (default 6) dari tabel yang
+// SAMA — TIDAK ada tabel/agregasi baru, murni potongan waktu berbeda dari
+// ConversationQualityScore yang sudah ada.
+export async function getMultiWeekTrend(salesUserId, { weeks = 6, referenceNow = new Date() } = {}) {
+  const points = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const weekEnd = new Date(referenceNow.getTime() - i * 7 * 86_400_000);
+    const weekStart = new Date(weekEnd.getTime() - 7 * 86_400_000);
+    const rows = await prisma.conversationQualityScore.findMany({ where: { salesUserId, sampledFor: { gte: weekStart, lt: weekEnd } } });
+    const scored = rows.map((r) => overallScore(r)).filter((v) => v != null);
+    const overallAvg = scored.length > 0 ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10 : null;
+    points.push({ weekStart, weekEnd, overallAvg, dimensions: avgByDim(rows), sampleCount: rows.length });
+  }
+  return points;
+}
+
 function formatExample(r) {
   return {
     conversationId: r.conversationId,

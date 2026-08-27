@@ -635,7 +635,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
 // sales biasa maupun team lead — bedanya cuma siapa `u` yang dikirim &
 // bagaimana hasilnya dipakai di caller (team lead TIDAK ikut masuk ke Total
 // Tim, lihat /sales-report di bawah).
-async function computeSalesRow(u, ctx) {
+export async function computeSalesRow(u, ctx) {
   const { convWhere, mulai, selesai, from, to, adaDataTransisi, targetMap } = ctx;
   // DUA lingkup yang HARUS dibedakan — inilah sumber bug yang diperbaiki:
   //
@@ -1048,6 +1048,28 @@ async function computeSalesRow(u, ctx) {
     complaints: complaintCount,
     complaintRate: orders > 0 ? Math.round((complaintCount / orders) * 1000) / 10 : null,
   };
+}
+
+// Diekspor (27 Agustus 2026) supaya services/salesPerformance/ bisa memakai
+// computeSalesRow() PERSIS SAMA tanpa duplikasi logic SLA/response-time —
+// dibangun TERPISAH dari inline ctx di route /sales-report di bawah
+// (BUKAN memfaktor ulang route itu) supaya endpoint yang sudah live ini
+// nol risiko ikut berubah. Isinya sengaja identik langkah demi langkah.
+export async function buildSalesReportContext({ from, to } = {}) {
+  const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
+  const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
+  const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
+  const { year, month } = nowPartsWIB();
+
+  const targets = await prisma.salesTarget.findMany({ where: { year, month } });
+  const targetMap = Object.fromEntries(targets.map((t) => [t.userId, t.targetValue]));
+
+  const transisiPeriode = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS n FROM pipeline_transitions
+    WHERE created_at >= ${mulai} AND created_at < ${selesai}`;
+  const adaDataTransisi = (transisiPeriode[0]?.n || 0) > 0;
+
+  return { convWhere, mulai, selesai, from, to, adaDataTransisi, targetMap };
 }
 
 analyticsRouter.get("/sales-report", async (req, res) => {

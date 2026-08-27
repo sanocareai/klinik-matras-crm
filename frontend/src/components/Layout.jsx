@@ -6,7 +6,7 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine,
+  Boxes, ScanLine, Award,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
@@ -93,6 +93,9 @@ const DIVISIONS = {
           // Priority Engine, laporan risiko kebocoran revenue akibat
           // eksekusi sales gagal (bukan widget prioritas biasa).
           { to: "/sales-risk", label: "Pelanggan Berisiko", Icon: AlertTriangle },
+          // Sales Performance Intelligence (27 Agustus 2026) — agregasi
+          // Quality Scorer + Sales Risk Engine + SLA, bukan sistem skor baru.
+          { to: "/sales-intelligence", label: "Performa & Coaching Sales", Icon: Award },
         ],
       },
       {

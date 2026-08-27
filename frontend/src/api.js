@@ -669,6 +669,9 @@ export const api = {
   // Sales Risk Engine (26 Agustus 2026) — TERPISAH dari skorUrgensi/Priority
   // Engine, deteksi risiko kebocoran revenue akibat eksekusi sales gagal.
   getSalesRisk: (params) => request("/sales-risk" + buildQuery(params)),
+  // Sales Performance Intelligence (27 Agustus 2026) — agregasi Quality
+  // Scorer + Sales Risk Engine + SLA/response-time, TANPA skoring AI baru.
+  getSalesIntelligence: (params) => request("/sales-intelligence" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
   getRecommendations: () => request("/analytics/recommendations"),
