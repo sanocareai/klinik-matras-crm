@@ -21,14 +21,22 @@ function toDateStringWIB(date) {
 // Strength = dimensi dgn rata-rata TERTINGGI minggu ini, Weakness = TERENDAH
 // — dari rollup yang SUDAH dihitung (dims: {key: avgScore}), bukan hitung
 // ulang. null-safe kalau belum ada sample sama sekali minggu ini.
+//
+// BUG DIPERBAIKI (live test 27 Agustus 2026): kalau CUMA 1 dimensi yang ada
+// datanya periode ini, best & worst jatuh ke dimensi YANG SAMA (satu-
+// satunya angka sekaligus jadi maks & min) — tampil membingungkan ("strength:
+// Communication Skill 3.5" DAN "weakness: Communication Skill 3.5"). Kalau
+// cuma 1 dimensi terisi, weakness di-null-kan (tidak ada yg dikontraskan).
 function strengthWeaknessFromDims(dims) {
-  let best = null, worst = null;
+  let best = null, worst = null, filledCount = 0;
   for (const dim of CORE_DIMENSIONS) {
     const avg = dims[dim.key];
     if (avg == null) continue;
+    filledCount++;
     if (!best || avg > best.avg) best = { key: dim.key, label: dim.label, avg };
     if (!worst || avg < worst.avg) worst = { key: dim.key, label: dim.label, avg };
   }
+  if (filledCount <= 1) worst = null;
   return { strength: best, weakness: worst };
 }
 
@@ -68,14 +76,24 @@ export async function getIndividualProfiles({ days = 30 } = {}) {
     const { strength, weakness } = strengthWeaknessFromDims(rollupRow?.dimensions || {});
 
     // Rekomendasi training: prioritaskan pola dari Sales Risk Engine kalau
-    // ADA kasus aktif (lebih mendesak — kasus nyata yang perlu ditangani),
-    // fallback ke dimensi Quality Scorer terlemah (pengembangan proaktif,
-    // rule-based sederhana: hint TERBANYAK di antara risiko customer sales
-    // ini, bukan hitung ulang via LLM).
+    // ADA kasus AKTIF (CRITICAL/HIGH — mendesak, kasus nyata yang perlu
+    // ditangani), fallback ke dimensi Quality Scorer terlemah (pengembangan
+    // proaktif). rule-based sederhana: hint TERBANYAK di antara risiko
+    // customer sales ini, bukan hitung ulang via LLM.
+    //
+    // BUG DIPERBAIKI (live test 27 Agustus 2026): `riskGroup.risks`
+    // berisi SEMUA tier termasuk LOW (ratusan baris per sales, tidak
+    // disaring di aggregateBySalesOwner) — menghitung hint dari SEMUANYA
+    // membuat "Objection Handling" (trigger paling longgar, cocok ke
+    // banyak kasus LOW sekalipun) selalu menang murni karena VOLUME,
+    // bukan karena benar-benar mendesak. Sekarang HANYA CRITICAL/HIGH
+    // yang dihitung — itulah makna "kasus aktif" yang dimaksud komentar
+    // di atas.
     let recommendedTraining = null;
-    if (riskGroup?.risks?.length) {
+    const activeRisks = (riskGroup?.risks || []).filter((r) => r.tier === "CRITICAL" || r.tier === "HIGH");
+    if (activeRisks.length) {
       const hintCounts = {};
-      for (const r of riskGroup.risks) {
+      for (const r of activeRisks) {
         if (!r.trainingModuleHint) continue;
         hintCounts[r.trainingModuleHint] = (hintCounts[r.trainingModuleHint] || 0) + 1;
       }
