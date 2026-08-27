@@ -3,9 +3,9 @@
 // (system prompt = rubrik+KB, di-cache Anthropic; user message = transcript
 // PER PERCAKAPAN, tidak di-cache) → parse hasil 4 dimensi.
 import { prisma } from "../../db.js";
-import { chatWithTools } from "../providers/anthropicProvider.js";
+import { chat } from "../providers/anthropicProvider.js";
 import { getAnthropicKey } from "../replyAssistant/providers/keyStore.js";
-import { QUALITY_SCORER_MODEL, buildSystemPrompt, buildRubricTool } from "../../config/qualityScorerRubric.js";
+import { QUALITY_SCORER_MODEL, buildSystemPrompt } from "../../config/qualityScorerRubric.js";
 import { maskMessageContent } from "./masking.js";
 
 // Cap panjang transcript per percakapan — percakapan lama/aktif bisa
@@ -54,24 +54,14 @@ export function formatTranscript(messagesAsc, customerName) {
  * prompt caching Anthropic benar-benar menghemat biaya (system prompt sama
  * persis di seluruh panggilan hari itu).
  *
- * FIX 28 Agustus 2026 (bug JSON-escaping ~5-7% gagal parse): dulu minta LLM
- * menulis JSON di teks bebas lalu JSON.parse manual — gagal kalau ada tanda
- * kutip tidak ter-escape di dalam value "quote". Sekarang pakai tool_choice
- * PAKSA (Anthropic native structured output, lihat qualityScorerRubric.js
- * buildRubricTool()) — `input` sudah berupa objek ter-parse dari API, TIDAK
- * ADA lagi JSON.parse manual di sini sama sekali.
- *
- * @returns {{ scores: object, usage: object }}
+ * @returns {{ scores: object, usage: object, raw: string }}
  */
 export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) {
-  const tool = buildRubricTool();
-  const { toolCalls, usage } = await chatWithTools({
+  const { reply, usage } = await chat({
     apiKey,
     model: QUALITY_SCORER_MODEL,
     systemPrompt,
     messages: [{ role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` }],
-    tools: [tool],
-    toolChoice: { type: "tool", name: tool.name },
     // 1536 (naik dari 1024, 26 Agustus 2026) — 6 dimensi (tambah Closing
     // Assertiveness & Customer Comprehension, masing2 +field flag boolean)
     // butuh lebih banyak ruang output JSON dibanding 4 dimensi lama, supaya
@@ -79,12 +69,16 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     maxTokens: 1536,
   });
 
-  const call = toolCalls.find((c) => c.name === tool.name);
-  if (!call) {
-    throw new Error(`LLM tidak memanggil tool ${tool.name} — tidak ada hasil penilaian (kemungkinan output terpotong maxTokens).`);
+  let parsed;
+  try {
+    // LLM diinstruksikan JSON murni, tapi jaga-jaga kalau ada ```json fence.
+    const cleaned = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    throw new Error(`Gagal parse output LLM sebagai JSON: ${err.message}. Raw: ${reply.slice(0, 300)}`);
   }
 
-  return { scores: call.input, usage };
+  return { scores: parsed, usage, raw: reply };
 }
 
 export function resolveApiKey() {
