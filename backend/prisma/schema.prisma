@@ -2211,6 +2211,19 @@ model ConversationQualityScore {
   objectionHandlingStrength  String?
   objectionHandlingWeakness  String?
 
+  // Perkuatan dimensi Objection Handling (28 Agustus 2026) — berdasarkan SOP
+  // resmi Modul 7. HANYA terisi kalau objectionHandlingScore juga terisi
+  // (ada keberatan terdeteksi) — prinsip null-safety yang sama dengan skor
+  // dimensi itu sendiri. String biasa (bukan Prisma enum) mengikuti konvensi
+  // kolom snapshot lain di tabel ini (mis. pipelineStageAtSample) — validasi
+  // nilai enum dilakukan di kode (job.js), bukan di level DB, supaya LLM
+  // yang keliru menyebut nilai tidak dikenal cukup di-null-kan, bukan gagal
+  // insert.
+  objectionType          String? // salah satu: HARGA/MENUNDA/KEPERCAYAAN/OTORITAS_KEPUTUSAN/KEBUTUHAN/PEMBANDING
+  objectionTypeQuote     String?
+  frameworkFollowed      Boolean? // true = Dengar-Akui-Gali dijalankan SEBELUM Jawab; false = melompat langsung ke Jawab/membantah
+  frameworkFollowedQuote String?
+
   // Rekomendasi modul SANO Class — dihitung RULE-BASED (bukan LLM): dimensi
   // dgn skor TERENDAH di antara 3 dimensi rubrik baru utk percakapan ini.
   // Deterministik & murah, konsisten dgn prinsip "jangan reimplementasi

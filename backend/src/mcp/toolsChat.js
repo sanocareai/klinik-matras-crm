@@ -10,6 +10,12 @@
 //     terlarang. Dibangun untuk menyaring draf AI; di sini dipakai untuk
 //     MENGAUDIT pesan sales SUNGGUHAN. Satu definisi aturan, dua pemakaian —
 //     kalau aturannya berubah, dua-duanya ikut berubah otomatis.
+//   - `authorityStyleViolations()` (services/replyAssistant/authorityStyleValidator.js,
+//     28 Agustus 2026) — kategori BARU, TERPISAH dari violations() di atas.
+//     Soal GAYA BAHASA Authority Selling (Modul 6: hindari "pasti"/"dijamin"/
+//     "harus beli"), BUKAN risiko hukum seperti 7 kategori violations() —
+//     sengaja TIDAK digabung ke violations() supaya tidak ikut memblokir
+//     draf AI (scrubSuggestions), yang bukan tujuannya.
 //   - `detectIntents()` / `INTENT_TAXONOMY` (services/intelligence/replyReadiness.js)
 //     — intent COMPLAINT & HANDOVER_REQUEST = WAJIB ditangani manusia.
 //   - `buildCustomerIntelligence()` (services/intelligence/) — skor relasi/urgensi/
@@ -25,6 +31,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { maskPhone } from "./security.js";
 import { violations } from "../services/replyAssistant/validator.js";
+import { authorityStyleViolations } from "../services/replyAssistant/authorityStyleValidator.js";
 import { detectIntents, INTENT_TAXONOMY, anyHandoverRequired } from "../services/intelligence/replyReadiness.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import {
@@ -41,7 +48,7 @@ const MAKS_PESAN_AUDIT = 5000;
 // giliran/ghosting; percakapan terpanjang pun jarang melewati ini).
 const MAKS_PESAN_PER_PERCAKAPAN = 200;
 
-const LABEL_PELANGGARAN = {
+export const LABEL_PELANGGARAN = {
   price: "Menyebut harga/nominal",
   discount: "Menjanjikan diskon/potongan",
   freebie: "Menjanjikan gratis/bonus",
@@ -49,6 +56,10 @@ const LABEL_PELANGGARAN = {
   warranty: "Klaim garansi flat berangka",
   medical: "Klaim menyembuhkan (medis)",
   certainty: "Jaminan mutlak (pasti cocok/dijamin)",
+  // BARU (28 Agustus 2026) — kategori GAYA BAHASA (Modul 6 Authority
+  // Selling), BUKAN kategori compliance existing di atas. Lihat
+  // authorityStyleValidator.js utk penjelasan lengkap kenapa terpisah.
+  authorityAbsolute: "Gaya bahasa \"penjual\" bukan konsultan (klaim mutlak/memaksa — pasti/dijamin/harus beli)",
 };
 
 // ⚠️ PEMBEDAAN PENTING — `violations()` dirancang untuk membatasi DRAF AI, dan
@@ -76,6 +87,13 @@ export const RUANG_LINGKUP_ATURAN = {
   // Aturan KHUSUS DRAF AI. Untuk sales manusia, menyebut harga = pekerjaan
   // normal. Tidak ditampilkan sebagai pelanggaran kecuali diminta eksplisit.
   price: "ai_saja",
+  // "semua" di sini BUKAN karena risiko hukum (beda alasan dari
+  // warranty/medical/certainty di atas) — tapi karena TIDAK ADA konteks sah
+  // yang membenarkan kalimat "pasti"/"dijamin"/"harus beli"/"kasur ini
+  // paling bagus"/"semua orang cocok" dari SIAPA PUN (beda dari delivery/
+  // discount/freebie yang BISA sah kalau sesuai paket/promo resmi). Modul 6
+  // eksplisit mengajarkan ini ke SALES manusia, bukan aturan khusus AI.
+  authorityAbsolute: "semua",
 };
 
 const KETERANGAN_LINGKUP = {
@@ -482,7 +500,11 @@ export function registerChatTools(server) {
       };
 
       for (const m of pesanKeluar) {
-        const kategoriTerdeteksi = violations(m.content || "").filter(kategoriDipakai);
+        // authorityStyleViolations digabung DI SINI (aggregasi audit),
+        // BUKAN di dalam violations() itu sendiri — lihat catatan header
+        // file soal kenapa 2 mesin aturan ini sengaja tidak dicampur.
+        const isi = m.content || "";
+        const kategoriTerdeteksi = [...violations(isi), ...authorityStyleViolations(isi)].filter(kategoriDipakai);
         if (!kategoriTerdeteksi.length) continue;
         pesanMelanggar++;
 

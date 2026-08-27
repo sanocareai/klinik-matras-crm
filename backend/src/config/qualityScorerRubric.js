@@ -90,6 +90,37 @@ export const RUBRIC_DIMENSIONS = [
       4: "Ikuti alur Dengar→Akui→Gali→Jawab, jawaban memakai data/edukasi (bukan cuma diskon), tidak defensif, tidak menjelekkan kompetitor.",
       5: "Sama seperti 4, DITAMBAH Konfirmasi eksplisit di akhir (\"apakah ini menjawab kekhawatiran Bapak?\") DAN ada langkah lanjutan yang jelas (follow up/ringkasan) — percakapan tidak menggantung.",
     },
+    // Perkuatan (28 Agustus 2026) berdasarkan SOP resmi Modul 7 — TIDAK
+    // mengubah scoringGuide/description di atas, murni field TAMBAHAN di
+    // dalam objek dimensi yang sama. `extraFields` generik (didukung
+    // formatDimensionBlock/formatOutputFieldSpec di bawah + dimResult di
+    // job.js) — dipakai objectionHandling di sini, tapi bisa dipakai
+    // dimensi lain nanti tanpa ubah kode ekstraksi.
+    extraFields: [
+      {
+        key: "objectionType",
+        kind: "enum",
+        values: ["HARGA", "MENUNDA", "KEPERCAYAAN", "OTORITAS_KEPUTUSAN", "KEBUTUHAN", "PEMBANDING"],
+        question:
+          "Jenis keberatan yang diutarakan pelanggan — pilih SATU dari 6 nilai berikut (sesuai Modul 7): " +
+          "HARGA (\"mahal\", \"belum ada budget\", \"di tempat lain lebih murah\"), " +
+          "MENUNDA (\"pikir-pikir dulu\", \"nanti saja\"), " +
+          "KEPERCAYAAN (\"yakin awet?\", \"takut kecewa\"), " +
+          "OTORITAS_KEPUTUSAN (\"harus tanya pasangan/keluarga dulu\"), " +
+          "KEBUTUHAN (\"kasur masih bisa dipakai\", \"belum terlalu mengganggu\"), " +
+          "PEMBANDING (\"di toko sebelah modelnya mirip\", \"merek X katanya bagus\"). " +
+          "Kalau ada lebih dari satu jenis di percakapan yang sama, pilih yang PALING DOMINAN/pertama muncul.",
+        hasQuote: true,
+      },
+      {
+        key: "frameworkFollowed",
+        kind: "boolean",
+        question:
+          "Apakah sales menjalankan DENGAR (biarkan pelanggan selesai bicara, tidak dipotong) → AKUI (validasi empati, mis. \"saya paham kekhawatiran Bapak\") → GALI (klarifikasi keberatan sebenarnya) SEBELUM masuk ke JAWAB? " +
+          "true kalau ketiga tahap itu dijalankan lebih dulu sebelum menjawab; false kalau sales melompat LANGSUNG ke JAWAB (menjelaskan/membantah) tanpa Dengar-Akui-Gali — ini KESALAHAN PALING UMUM yang harus ditangkap.",
+        hasQuote: true,
+      },
+    ],
   },
 ];
 
@@ -158,11 +189,27 @@ function formatScoringGuide(guide) {
 // Blok rubrik satu dimensi. `flag` (peninggalan rubrik lama) tetap didukung
 // generik kalau suatu saat dipakai lagi, tapi TIDAK ADA dimensi yang
 // memakainya di rubrik ini — jadi flagLine selalu kosong utk ketiganya.
+//
+// `extraFields` (28 Agustus 2026) — mekanisme GENERIK utk field terstruktur
+// tambahan per dimensi (dipakai objectionHandling: objectionType/
+// frameworkFollowed). Instruksi nesting DIULANG SENGAJA sama tegasnya
+// dengan flagLine — pelajaran dari bug live (17-58% flag lama hilang
+// karena LLM naruh di root JSON, bukan di dalam objek dimensinya).
+function formatExtraFieldLine(d, ef) {
+  const valueHint = ef.kind === "enum" ? `salah satu dari [${ef.values.join(", ")}], atau null` : "true/false, atau null";
+  const quoteNote = ef.hasQuote
+    ? ` Sertakan juga "${ef.key}Quote" (kutipan bukti singkat dari pesan SALES, atau null kalau "${ef.key}" juga null).`
+    : "";
+  const keysList = ef.hasQuote ? `"${ef.key}" dan "${ef.key}Quote"` : `"${ef.key}"`;
+  return `\n\nField tambahan WAJIB (kunci JSON: "${ef.key}"): ${ef.question} Jawab ${valueHint}.${quoteNote} PENTING — LOKASI: ${keysList} harus jadi key DI DALAM objek "${d.key}" ini (sejajar dengan "score"/"quote"), BUKAN key terpisah di level atas/root JSON — sama seperti aturan flag boolean di atas.`;
+}
+
 function formatDimensionBlock(d) {
   const flagLine = d.flag
     ? `\n\nFlag boolean WAJIB (kunci JSON: "${d.flag.key}"): ${d.flag.question} Jawab true/false tegas kalau score dimensi ini terisi; kembalikan null HANYA kalau score-nya juga null. PENTING — LOKASI: "${d.flag.key}" harus jadi key DI DALAM objek "${d.key}" ini (sejajar dengan "score"/"quote"), BUKAN key terpisah di level atas/root JSON.`
     : "";
-  return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}`;
+  const extraLines = (d.extraFields || []).map((ef) => formatExtraFieldLine(d, ef)).join("");
+  return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}${extraLines}`;
 }
 
 // "note" tunggal (rubrik lama) DIGANTI "strength"+"weakness" terpisah —
@@ -170,7 +217,12 @@ function formatDimensionBlock(d) {
 // tanpa parsing teks gabungan.
 function formatOutputFieldSpec(d) {
   const flagPart = d.flag ? `, "${d.flag.key}": true/false atau null` : "";
-  return `  "${d.key}": { "score": 1-5 atau null, "quote": "..." atau null, "strength": "..." atau null, "weakness": "..." atau null${flagPart} }`;
+  const extraParts = (d.extraFields || []).map((ef) => {
+    const valueHint = ef.kind === "enum" ? `"${ef.values[0]}" (atau nilai enum lain)|null` : "true/false atau null";
+    const quotePart = ef.hasQuote ? `, "${ef.key}Quote": "..." atau null` : "";
+    return `, "${ef.key}": ${valueHint}${quotePart}`;
+  }).join("");
+  return `  "${d.key}": { "score": 1-5 atau null, "quote": "..." atau null, "strength": "..." atau null, "weakness": "..." atau null${flagPart}${extraParts} }`;
 }
 
 // Prompt sistem lengkap: instruksi + rubrik + 2 referensi (standar sales +
@@ -193,6 +245,7 @@ ATURAN PENTING:
 - "quote" adalah kutipan LANGSUNG (1-2 kalimat) dari pesan SALES yang jadi bukti/contoh percakapan utama — kutip persis, jangan parafrase. null kalau skornya juga null.
 - "strength" = SATU kalimat hal yang sudah BAGUS dari sales di dimensi ini (bahasa Indonesia, actionable, maksimal ~20 kata). null kalau tidak ada yang menonjol/skornya null.
 - "weakness" = SATU kalimat hal yang PERLU DIPERBAIKI di dimensi ini (bahasa Indonesia, actionable, maksimal ~20 kata, mengacu ke framework modul — mis. "melompat ke tahap Jawab tanpa Dengar-Akui-Gali dulu"). null kalau tidak ada kelemahan berarti/skornya null.
+- Beberapa dimensi (lihat definisi di bawah) punya field terstruktur TAMBAHAN (enum atau boolean) selain score/quote/strength/weakness — field itu WAJIB dijawab dengan nilai TEGAS (bukan teks bebas) kalau score dimensi itu terisi, dan ikut null hanya kalau score-nya juga null. Field tambahan itu WAJIB jadi key DI DALAM objek dimensinya sendiri — JANGAN PERNAH ditaruh sebagai key terpisah di level atas/root JSON, sekalipun nama key-nya sudah unik.
 - Fokus HANYA pada pesan dari SALES (OUTBOUND). Pesan customer (INBOUND) dipakai sebagai KONTEKS untuk menilai respons sales, bukan dinilai sendiri.
 - Ini PELENGKAP sistem deteksi pelanggaran yang sudah ada secara terpisah (klaim garansi salah, janji medis, dst) — JANGAN ulang menilai pelanggaran compliance di sini, fokus ke SUBSTANSI/PERILAKU konsultatif.
 
@@ -208,7 +261,7 @@ REFERENSI PENGETAHUAN PRODUK & KESEHATAN (dipakai untuk menilai akurasi kalau sa
 
 ${kbContext || "(Tidak ada referensi produk termuat.)"}
 
-FORMAT OUTPUT — WAJIB JSON valid, TANPA teks lain di luar JSON, dengan struktur PERSIS ini:
+FORMAT OUTPUT — WAJIB JSON valid, TANPA teks lain di luar JSON, dengan struktur PERSIS ini (PERHATIKAN: setiap field tambahan seperti "objectionType"/"frameworkFollowed" ada DI DALAM kurung kurawal objek dimensinya masing-masing, BUKAN key terpisah sejajar "overallNote" di root):
 {
 ${outputSpec},
   "overallNote": "satu kalimat ringkasan coaching keseluruhan percakapan ini"

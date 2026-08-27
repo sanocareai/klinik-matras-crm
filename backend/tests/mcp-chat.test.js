@@ -13,11 +13,15 @@ import {
   skorEngagement,
   hitungPelanggaran,
   RUANG_LINGKUP_ATURAN,
+  LABEL_PELANGGARAN,
   SLA_BALAS_PERTAMA_MENIT,
 } from "../src/mcp/toolsChat.js";
 // Pendeteksi aturan produk yang dipakai ulang oleh audit — dites di sini juga
 // untuk memastikan kontraknya tidak berubah diam-diam di sisi replyAssistant.
 import { violations } from "../src/services/replyAssistant/validator.js";
+// Kategori gaya bahasa Authority Selling (28 Agustus 2026) — TERPISAH dari
+// violations() di atas, lihat authorityStyleValidator.js.
+import { authorityStyleViolations } from "../src/services/replyAssistant/authorityStyleValidator.js";
 
 const T0 = new Date("2026-08-01T00:00:00.000Z");
 const pesan = (direction, menit) => ({ direction, createdAt: new Date(T0.getTime() + menit * 60_000) });
@@ -210,4 +214,35 @@ test("setiap kategori yang bisa dideteksi violations() punya ruang lingkup", () 
     assert.ok(violations(teks).includes(kategori), `contoh untuk ${kategori} tidak terdeteksi`);
     assert.ok(RUANG_LINGKUP_ATURAN[kategori], `kategori ${kategori} belum punya ruang lingkup`);
   }
+});
+
+// ── Gaya bahasa Authority Selling (Modul 6) — kategori TERPISAH, 28 Agustus 2026 ─
+test("authorityStyleViolations() menangkap 6 frasa terlarang Modul 6", () => {
+  assert.deepEqual(authorityStyleViolations("Baik kak, boleh info berat badannya?"), [], "kalimat netral tidak boleh kena");
+  assert.ok(authorityStyleViolations("Pasti cocok kok kak").includes("authorityAbsolute"));
+  assert.ok(authorityStyleViolations("Dijamin awet bertahun-tahun").includes("authorityAbsolute"));
+  assert.ok(authorityStyleViolations("Sudah pasti sembuh kak kalau pakai ini").includes("authorityAbsolute"));
+  assert.ok(authorityStyleViolations("Kasur ini paling bagus di kelasnya").includes("authorityAbsolute"));
+  assert.ok(authorityStyleViolations("Semua orang cocok pakai kasur ini").includes("authorityAbsolute"));
+  assert.ok(authorityStyleViolations("Bapak harus beli sekarang sebelum kehabisan").includes("authorityAbsolute"));
+});
+
+test("authorityAbsolute punya label & ruang lingkup 'semua', TERPISAH dari kategori compliance", () => {
+  assert.ok(LABEL_PELANGGARAN.authorityAbsolute, "authorityAbsolute belum punya label");
+  assert.equal(RUANG_LINGKUP_ATURAN.authorityAbsolute, "semua");
+  // Kategori compliance existing TIDAK BOLEH berubah gara-gara penambahan ini.
+  assert.equal(RUANG_LINGKUP_ATURAN.certainty, "semua");
+  assert.equal(RUANG_LINGKUP_ATURAN.warranty, "semua");
+});
+
+test("authorityStyleViolations() TIDAK tercampur ke violations() — 2 mesin aturan terpisah", () => {
+  // "Pasti cocok" murni authority-style di sini; violations() (compliance)
+  // masih menangkapnya lewat CERTAINTY_RE (pasti+cocok) — itu KEBETULAN
+  // overlap kata, BUKAN berarti keduanya digabung jadi satu mesin. Yang
+  // dites: authorityStyleViolations() TIDAK PERNAH mengembalikan kode
+  // kategori compliance (price/discount/dst), dan sebaliknya.
+  const hasil = authorityStyleViolations("Pasti cocok kok kak, harganya juga murah");
+  assert.deepEqual(hasil, ["authorityAbsolute"]);
+  assert.ok(!hasil.includes("certainty"));
+  assert.ok(!hasil.includes("price"));
 });

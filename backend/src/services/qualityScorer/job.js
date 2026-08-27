@@ -24,6 +24,15 @@ function normalizeFlag(v) {
   return null;
 }
 
+// v tidak string/tidak ada di `allowed` (case-insensitive) → null. Sama
+// prinsip null-safety dgn normalizeFlag: LLM yang menyebut nilai enum tak
+// dikenal cukup di-null-kan, bukan disimpan mentah/bikin insert gagal.
+function normalizeEnum(v, allowed) {
+  if (typeof v !== "string") return null;
+  const upper = v.trim().toUpperCase();
+  return allowed.includes(upper) ? upper : null;
+}
+
 // Generik utk SEMUA dimensi (4 lama tanpa flag, 2 baru dengan flag) — dim
 // tanpa `flag` menghasilkan `flag: undefined` (tidak ditulis ke DB sama
 // sekali oleh caller), PERSIS perilaku sebelum dimensi E/F ditambahkan.
@@ -38,23 +47,42 @@ function normalizeFlag(v) {
 // karena topiknya memang tidak muncul di percakapan.
 // "note" tunggal (rubrik lama) DIGANTI "strength"+"weakness" terpisah (27
 // Agustus 2026, rubrik SANO Sales Framework) — permintaan eksplisit owner.
+//
+// `extraFields` (28 Agustus 2026, Objection Handling: objectionType/
+// frameworkFollowed) memakai FALLBACK YANG SAMA PERSIS dgn flag di atas —
+// pelajaran yang sama berlaku, bukan cuma utk boolean tapi juga enum.
 function dimResult(scores, dim) {
   const d = scores?.[dim.key];
   if (!d || d.score == null) {
-    return { score: null, quote: null, strength: null, weakness: null, flag: dim.flag ? null : undefined };
+    const empty = { score: null, quote: null, strength: null, weakness: null, flag: dim.flag ? null : undefined };
+    for (const ef of dim.extraFields || []) {
+      empty[ef.key] = null;
+      if (ef.hasQuote) empty[`${ef.key}Quote`] = null;
+    }
+    return empty;
   }
   let flag;
   if (dim.flag) {
     const nested = normalizeFlag(d[dim.flag.key]);
     flag = nested !== null ? nested : normalizeFlag(scores?.[dim.flag.key]);
   }
-  return {
+  const result = {
     score: Number(d.score),
     quote: d.quote ?? null,
     strength: d.strength ?? null,
     weakness: d.weakness ?? null,
     flag,
   };
+  for (const ef of dim.extraFields || []) {
+    const normalize = ef.kind === "boolean" ? normalizeFlag : (v) => normalizeEnum(v, ef.values);
+    let value = normalize(d[ef.key]);
+    if (value === null) value = normalize(scores?.[ef.key]); // fallback top-level, sama pola dgn flag
+    result[ef.key] = value;
+    if (ef.hasQuote) {
+      result[`${ef.key}Quote`] = d[`${ef.key}Quote`] ?? scores?.[`${ef.key}Quote`] ?? null;
+    }
+  }
+  return result;
 }
 
 // Diekspor (bukan cuma dipakai lokal di runQualityScorerJob) supaya script
@@ -69,6 +97,10 @@ export function buildDimFields(scores) {
     dimFields[`${dim.key}Strength`] = r.strength;
     dimFields[`${dim.key}Weakness`] = r.weakness;
     if (dim.flag) dimFields[dim.flag.key] = r.flag;
+    for (const ef of dim.extraFields || []) {
+      dimFields[ef.key] = r[ef.key];
+      if (ef.hasQuote) dimFields[`${ef.key}Quote`] = r[`${ef.key}Quote`];
+    }
   }
   return dimFields;
 }
