@@ -24,6 +24,37 @@ function normalizeUsage(usage) {
   };
 }
 
+// Timeout eksplisit (28 Agustus 2026, ditemukan lewat verifikasi live) — fetch()
+// polos TIDAK PERNAH timeout sendiri kalau koneksi macet/menggantung tanpa
+// respons maupun error. Ditemukan Quality Scorer job (loop SEKUENSIAL per
+// percakapan) macet TOTAL 40+ menit tanpa 1 baris log/error pun — satu request
+// menggantung selamanya mengunci seluruh sisa batch, TIDAK ADA visibilitas
+// sama sekali. 60 detik dipilih generous utk Haiku (respons normal <10 detik
+// bahkan utk skema besar), tapi cukup ketat supaya 1 percakapan macet tidak
+// menyandera puluhan lainnya di belakangnya.
+const REQUEST_TIMEOUT_MS = 60_000;
+
+async function postWithTimeout(reqBody, apiKey) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(BASE_URL, {
+      method: "POST",
+      headers: { ...HEADERS_BASE, "x-api-key": apiKey },
+      body: JSON.stringify(reqBody),
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Anthropic API timeout setelah ${REQUEST_TIMEOUT_MS / 1000} detik — tidak ada respons.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Panggil Anthropic — tanpa tool use (AI Playground chatbot)
  * @returns { reply: string, usage }
@@ -33,11 +64,7 @@ export async function chat({ apiKey, model, systemPrompt, messages, maxTokens = 
   const sys = buildSystemPayload(systemPrompt);
   if (sys) reqBody.system = sys;
 
-  const response = await fetch(BASE_URL, {
-    method: "POST",
-    headers: { ...HEADERS_BASE, "x-api-key": apiKey },
-    body: JSON.stringify(reqBody),
-  });
+  const response = await postWithTimeout(reqBody, apiKey);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || "Anthropic API error");
 
@@ -61,11 +88,7 @@ export async function chatWithTools({ apiKey, model, systemPrompt, messages, too
   // JSON mode Anthropic), bukan cuma "boleh pakai tool kalau perlu" (default).
   if (toolChoice) reqBody.tool_choice = toolChoice;
 
-  const response = await fetch(BASE_URL, {
-    method: "POST",
-    headers: { ...HEADERS_BASE, "x-api-key": apiKey },
-    body: JSON.stringify(reqBody),
-  });
+  const response = await postWithTimeout(reqBody, apiKey);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || "Anthropic API error");
 
