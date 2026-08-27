@@ -122,6 +122,53 @@ export const RUBRIC_DIMENSIONS = [
       },
     ],
   },
+  {
+    key: "evidenceBasedSelling",
+    label: "Evidence-Based Selling",
+    description:
+      "Modul 6 SANO Care (bagian Bukti & Struktur Authority Communication): menilai APAKAH sales memakai bukti konkret (foto/video/pengukuran) DAN mengikuti struktur komunikasi authority (Referensi hasil konsultasi → Kesimpulan pakai kata hedge → Sebab-akibat → Solusi) saat menyampaikan rekomendasi solusi/upgrade. BEDA dari dimensi Authority Selling di atas (struktur rekomendasi secara umum) — dimensi ini fokus SPESIFIK ke PENGGUNAAN BUKTI KONKRET dan KEPATUHAN 4 LANGKAH STRUKTUR saat presentasi solusi. Kalau percakapan belum sampai tahap presentasi solusi/rekomendasi sama sekali, kembalikan score: null.",
+    scoringGuide: {
+      1: "Rekomendasi diberikan tanpa struktur authority sama sekali (langsung solusi tanpa referensi data/hedge/sebab-akibat) DAN tanpa bukti konkret apa pun (evidenceUsed=TIDAK_ADA).",
+      2: "Ada sedikit struktur (mis. sekadar menyebut data pelanggan) tapi TIDAK ADA bukti konkret dipakai, ATAU bukti dikirim tanpa penjelasan makna sama sekali.",
+      3: "Struktur authority sebagian diikuti (sebagian dari 4 langkah) DAN/ATAU bukti dipakai tapi penjelasannya minim/tidak lengkap.",
+      4: "4 langkah struktur authority diikuti dengan baik DAN minimal 1 bukti konkret dipakai serta dijelaskan maknanya (bukan cuma dikirim mentah).",
+      5: "Sama seperti 4, DITAMBAH lebih dari 1 jenis bukti dipakai, DAN/ATAU story selling dipakai dengan benar (tanpa menjanjikan hasil pasti sama utk semua orang).",
+    },
+    secondQuote: true,
+    extraFields: [
+      {
+        key: "authorityStructureFollowed",
+        kind: "boolean",
+        question:
+          "Apakah sales mengikuti 4 langkah Struktur Authority Communication SECARA BERURUTAN saat menyampaikan rekomendasi solusi: (1) Referensi hasil konsultasi (\"Berdasarkan hasil konsultasi tadi...\", \"Dari informasi yang Bapak sampaikan...\"), (2) Kesimpulan pakai kata HEDGE (\"kemungkinan\", \"dapat memengaruhi\") BUKAN kata pasti (\"pasti\", \"sudah pasti\", \"jelas\"), (3) Jelaskan mekanisme sebab-akibat dengan bahasa sederhana, (4) Hubungkan ke solusi (bukan langsung \"harus beli ini\"). true kalau KESELURUHAN 4 langkah dijalankan berurutan; false kalau ada langkah yang dilompati/dibalik urutannya.",
+      },
+      {
+        key: "evidenceUsed",
+        kind: "enum_array",
+        values: ["FOTO_PEMBONGKARAN", "VIDEO", "UJI_GAYA_DORONG", "UJI_STABILITAS", "PENGUKURAN", "TIDAK_ADA"],
+        question:
+          "Jenis bukti konkret apa saja yang dipakai sales saat presentasi solusi — pilih SEMUA yang relevan dari 6 nilai berikut (sesuai Modul 6): " +
+          "FOTO_PEMBONGKARAN (foto fondasi patah/busa hancur/pegas rusak/lapisan kempes), " +
+          "VIDEO (proses pemeriksaan/upgrade/hasil akhir), " +
+          "UJI_GAYA_DORONG (perbandingan sebelum vs sesudah), " +
+          "UJI_STABILITAS (kasur bergelombang vs stabil), " +
+          "PENGUKURAN (angka konkret, mis. \"penurunan kasur 3cm dibanding standar maksimal 1cm\"), " +
+          "TIDAK_ADA (tidak ada bukti konkret dipakai sama sekali — HANYA pakai nilai ini SENDIRIAN, jangan digabung dengan nilai lain).",
+      },
+      {
+        key: "evidenceExplained",
+        kind: "boolean",
+        question:
+          "Kalau ada bukti konkret dipakai (evidenceUsed bukan TIDAK_ADA): apakah sales MENJELASKAN MAKNA bukti itu, bukan cuma mengirim foto/video/angka mentah? Contoh BENAR: \"Foto ini menunjukkan kondisi fondasi setelah dibongkar. Terlihat beberapa bagian sudah mengalami penurunan sehingga topangan tubuh tidak lagi merata.\" Contoh SALAH: kirim foto tanpa keterangan apa pun. Kembalikan null kalau evidenceUsed = TIDAK_ADA (tidak relevan menilai penjelasan bukti yang memang tidak ada).",
+      },
+      {
+        key: "storySellingUsed",
+        kind: "boolean",
+        question:
+          "Apakah sales memakai STORY SELLING (struktur: Profil pelanggan lain → Keluhan → Hasil Konsultasi → Solusi → Hasil) sebagai bagian dari presentasi solusi? CATATAN: kalau story selling dipakai TAPI menjanjikan hasil PASTI SAMA utk semua orang (klaim mutlak), JANGAN buat field/flag terpisah utk itu — sebutkan saja di \"weakness\" atau salah satu kutipan (\"quote\"/\"quote2\") dimensi ini.",
+      },
+    ],
+  },
 ];
 
 // ── Tool schema PER-DIMENSI utk native structured output (Anthropic tool
@@ -166,10 +213,16 @@ export function buildDimensionTool(d, { includeOverallNote = false } = {}) {
 
 function extraFieldSchema(ef) {
   const props = {};
-  props[ef.key] =
-    ef.kind === "enum"
-      ? { type: ["string", "null"], enum: [...ef.values, null] }
-      : { type: ["boolean", "null"] };
+  if (ef.kind === "enum_array") {
+    // 28 Agustus 2026 (Evidence-Based Selling) — multi-select. TIDAK nullable
+    // (selalu array, boleh kosong) — konsisten dgn evidenceUsed String[] di
+    // Prisma yang juga tidak bisa null, lihat catatan di schema.prisma.
+    props[ef.key] = { type: "array", items: { type: "string", enum: ef.values } };
+  } else if (ef.kind === "enum") {
+    props[ef.key] = { type: ["string", "null"], enum: [...ef.values, null] };
+  } else {
+    props[ef.key] = { type: ["boolean", "null"] };
+  }
   const required = [ef.key];
   if (ef.hasQuote) {
     props[`${ef.key}Quote`] = { type: ["string", "null"] };
@@ -189,6 +242,15 @@ function dimensionSchema(d) {
   if (d.flag) {
     properties[d.flag.key] = { type: ["boolean", "null"] };
     required.push(d.flag.key);
+  }
+  // `secondQuote` (28 Agustus 2026, Evidence-Based Selling) — generik spt
+  // `flag`/`extraFields`: dimensi yang TIDAK set ini tidak berubah sama
+  // sekali (A-F & Fase 1 tetap byte-identical). Dipakai utk dimensi dgn
+  // banyak field tambahan yang kutipannya SENGAJA digabung jadi maks 2
+  // kutipan TOTAL (bukan 1 kutipan/field spt pola Fase 1).
+  if (d.secondQuote) {
+    properties.quote2 = { type: ["string", "null"] };
+    required.push("quote2");
   }
   for (const ef of d.extraFields || []) {
     const { props, required: efRequired } = extraFieldSchema(ef);
@@ -276,7 +338,14 @@ function formatScoringGuide(guide) {
 // dengan flagLine — pelajaran dari bug live (17-58% flag lama hilang
 // karena LLM naruh di root JSON, bukan di dalam objek dimensinya).
 function formatExtraFieldLine(d, ef) {
-  const valueHint = ef.kind === "enum" ? `salah satu dari [${ef.values.join(", ")}], atau null` : "true/false, atau null";
+  let valueHint;
+  if (ef.kind === "enum_array") {
+    valueHint = `ARRAY berisi SATU ATAU LEBIH nilai dari [${ef.values.join(", ")}] (multi-select — boleh lebih dari satu kalau relevan). Kembalikan array KOSONG [] HANYA kalau score dimensi ini null (topik belum muncul); kalau score terisi tapi memang tidak ada yang relevan, pakai array berisi elemen terakhir di daftar sendirian (JANGAN digabung dengan nilai lain)`;
+  } else if (ef.kind === "enum") {
+    valueHint = `salah satu dari [${ef.values.join(", ")}], atau null`;
+  } else {
+    valueHint = "true/false, atau null";
+  }
   const quoteNote = ef.hasQuote
     ? ` Sertakan juga "${ef.key}Quote" (kutipan bukti singkat dari pesan SALES, atau null kalau "${ef.key}" juga null).`
     : "";
@@ -288,8 +357,14 @@ function formatDimensionBlock(d) {
   const flagLine = d.flag
     ? `\n\nFlag boolean WAJIB (kunci JSON: "${d.flag.key}"): ${d.flag.question} Jawab true/false tegas kalau score dimensi ini terisi; kembalikan null HANYA kalau score-nya juga null. PENTING — LOKASI: "${d.flag.key}" harus jadi key DI DALAM objek "${d.key}" ini (sejajar dengan "score"/"quote"), BUKAN key terpisah di level atas/root JSON.`
     : "";
+  // `secondQuote` (28 Agustus 2026) — dimensi dgn banyak field tambahan yang
+  // kutipannya SENGAJA digabung jadi maks 2 kutipan TOTAL utk dimensi ini,
+  // BUKAN 1 kutipan per field tambahan (beda dari pola Fase 1).
+  const secondQuoteLine = d.secondQuote
+    ? `\n\nKutipan bukti dimensi ini DIBATASI maksimal 2 TOTAL (bukan per field tambahan) — isi "quote" dengan kutipan PALING MENONJOL, dan "quote2" (kunci JSON tambahan, DI DALAM objek "${d.key}" ini, sejajar "quote") dengan kutipan KEDUA paling menonjol kalau ada (soal struktur authority, ATAU bukti yang dipakai, ATAU story selling). null kalau tidak ada kutipan kedua yang relevan atau skornya null.`
+    : "";
   const extraLines = (d.extraFields || []).map((ef) => formatExtraFieldLine(d, ef)).join("");
-  return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}${extraLines}`;
+  return `### ${d.label} (kunci JSON: "${d.key}")\n${d.description}\n\nPanduan skor 1-5:\n${formatScoringGuide(d.scoringGuide)}${flagLine}${secondQuoteLine}${extraLines}`;
 }
 
 // "note" tunggal (rubrik lama) DIGANTI "strength"+"weakness" terpisah —
@@ -297,12 +372,16 @@ function formatDimensionBlock(d) {
 // tanpa parsing teks gabungan.
 function formatOutputFieldSpec(d) {
   const flagPart = d.flag ? `, "${d.flag.key}": true/false atau null` : "";
+  const quote2Part = d.secondQuote ? `, "quote2": "..." atau null` : "";
   const extraParts = (d.extraFields || []).map((ef) => {
-    const valueHint = ef.kind === "enum" ? `"${ef.values[0]}" (atau nilai enum lain)|null` : "true/false atau null";
+    let valueHint;
+    if (ef.kind === "enum_array") valueHint = `["${ef.values[0]}", ...] (array)`;
+    else if (ef.kind === "enum") valueHint = `"${ef.values[0]}" (atau nilai enum lain)|null`;
+    else valueHint = "true/false atau null";
     const quotePart = ef.hasQuote ? `, "${ef.key}Quote": "..." atau null` : "";
     return `, "${ef.key}": ${valueHint}${quotePart}`;
   }).join("");
-  return `  "${d.key}": { "score": 1-5 atau null, "quote": "..." atau null, "strength": "..." atau null, "weakness": "..." atau null${flagPart}${extraParts} }`;
+  return `  "${d.key}": { "score": 1-5 atau null, "quote": "..." atau null, "strength": "..." atau null, "weakness": "..." atau null${flagPart}${quote2Part}${extraParts} }`;
 }
 
 // Prompt sistem lengkap: instruksi + rubrik + 2 referensi (standar sales +

@@ -33,6 +33,25 @@ function normalizeEnum(v, allowed) {
   return allowed.includes(upper) ? upper : null;
 }
 
+// 28 Agustus 2026 (Evidence-Based Selling, evidenceUsed) — versi array dari
+// normalizeEnum. BEDA PENTING dari normalizeEnum/normalizeFlag: kembalikan
+// `null` HANYA kalau `v` bukan array sama sekali (sinyal "coba lokasi
+// fallback lain", sama pola dgn field lain) — kalau `v` MEMANG array (even
+// kosong []), itu dianggap hasil SAH (bukan "tidak ditemukan"), difilter ke
+// elemen valid saja (case-insensitive, dedup). Prisma String[] tidak bisa
+// null, jadi caller (dimResult) tidak boleh menyimpan null utk field ini —
+// [] dipakai sbg representasi "dimensi tidak berlaku" (lihat schema.prisma).
+function normalizeEnumArray(v, allowed) {
+  if (!Array.isArray(v)) return null;
+  const seen = new Set();
+  for (const item of v) {
+    if (typeof item !== "string") continue;
+    const upper = item.trim().toUpperCase();
+    if (allowed.includes(upper)) seen.add(upper);
+  }
+  return [...seen];
+}
+
 // Generik utk SEMUA dimensi (4 lama tanpa flag, 2 baru dengan flag) — dim
 // tanpa `flag` menghasilkan `flag: undefined` (tidak ditulis ke DB sama
 // sekali oleh caller), PERSIS perilaku sebelum dimensi E/F ditambahkan.
@@ -54,9 +73,15 @@ function normalizeEnum(v, allowed) {
 function dimResult(scores, dim) {
   const d = scores?.[dim.key];
   if (!d || d.score == null) {
-    const empty = { score: null, quote: null, strength: null, weakness: null, flag: dim.flag ? null : undefined };
+    const empty = {
+      score: null, quote: null, strength: null, weakness: null,
+      quote2: dim.secondQuote ? null : undefined,
+      flag: dim.flag ? null : undefined,
+    };
     for (const ef of dim.extraFields || []) {
-      empty[ef.key] = null;
+      // enum_array TIDAK BOLEH null (Prisma String[] non-nullable) — []
+      // dipakai sbg representasi "dimensi tidak berlaku", lihat schema.prisma.
+      empty[ef.key] = ef.kind === "enum_array" ? [] : null;
       if (ef.hasQuote) empty[`${ef.key}Quote`] = null;
     }
     return empty;
@@ -73,14 +98,30 @@ function dimResult(scores, dim) {
     weakness: d.weakness ?? null,
     flag,
   };
+  if (dim.secondQuote) {
+    result.quote2 = d.quote2 ?? scores?.quote2 ?? null;
+  }
   for (const ef of dim.extraFields || []) {
-    const normalize = ef.kind === "boolean" ? normalizeFlag : (v) => normalizeEnum(v, ef.values);
+    const normalize =
+      ef.kind === "boolean" ? normalizeFlag :
+      ef.kind === "enum_array" ? (v) => normalizeEnumArray(v, ef.values) :
+      (v) => normalizeEnum(v, ef.values);
     let value = normalize(d[ef.key]);
     if (value === null) value = normalize(scores?.[ef.key]); // fallback top-level, sama pola dgn flag
     result[ef.key] = value;
     if (ef.hasQuote) {
       result[`${ef.key}Quote`] = d[`${ef.key}Quote`] ?? scores?.[`${ef.key}Quote`] ?? null;
     }
+  }
+  // Aturan KHUSUS dimensi Evidence-Based Selling (bukan mekanisme generik
+  // extraFields di atas — tergantung NILAI field lain, bukan cuma score
+  // induk): evidenceExplained tidak bermakna apa pun kalau memang tidak ada
+  // bukti nyata dipakai (evidenceUsed kosong/["TIDAK_ADA"]) — null-kan,
+  // jangan biarkan false (false akan terbaca "sales GAGAL jelaskan bukti",
+  // padahal memang tidak ada bukti utk dijelaskan sama sekali).
+  if (dim.key === "evidenceBasedSelling" && Array.isArray(result.evidenceUsed)) {
+    const hasRealEvidence = result.evidenceUsed.some((v) => v !== "TIDAK_ADA");
+    if (!hasRealEvidence) result.evidenceExplained = null;
   }
   return result;
 }
@@ -94,6 +135,7 @@ export function buildDimFields(scores) {
     const r = dimResult(scores, dim);
     dimFields[`${dim.key}Score`] = r.score;
     dimFields[`${dim.key}Quote`] = r.quote;
+    if (dim.secondQuote) dimFields[`${dim.key}Quote2`] = r.quote2;
     dimFields[`${dim.key}Strength`] = r.strength;
     dimFields[`${dim.key}Weakness`] = r.weakness;
     if (dim.flag) dimFields[dim.flag.key] = r.flag;

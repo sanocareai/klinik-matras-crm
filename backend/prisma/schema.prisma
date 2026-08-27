@@ -2224,6 +2224,33 @@ model ConversationQualityScore {
   frameworkFollowed      Boolean? // true = Dengar-Akui-Gali dijalankan SEBELUM Jawab; false = melompat langsung ke Jawab/membantah
   frameworkFollowedQuote String?
 
+  // Dimensi G — Evidence-Based Selling (28 Agustus 2026), berdasarkan SOP
+  // resmi Modul 6 (Authority Selling) — menilai APAKAH sales memakai bukti
+  // konkret + mengikuti struktur komunikasi authority saat presentasi
+  // solusi/rekomendasi. Null-safety sama seperti dimensi lain: score null
+  // kalau percakapan belum sampai tahap presentasi solusi.
+  //
+  // evidenceUsed BUKAN nullable (Prisma tidak mendukung scalar-list opsional
+  // spt String[]?) — jadi "dimensi tidak berlaku" (score null) direpresentasi
+  // ARRAY KOSONG [], BUKAN null. Ini beda makna dari array berisi
+  // ["TIDAK_ADA"]: dimensi BERLAKU & dievaluasi, TAPI memang tidak ada bukti
+  // konkret dipakai. [] HANYA berarti "belum sampai tahap ini" — tidak pernah
+  // dipakai utk "dievaluasi tapi TIDAK ADA bukti" (itu selalu ["TIDAK_ADA"]).
+  //
+  // Kutipan bukti DIBATASI 2 total utk dimensi ini (quote + quote2) — BUKAN
+  // 1 kutipan per field tambahan spt pola Fase 1 (objectionType/
+  // frameworkFollowed) — sengaja beda krn dimensi ini py 4 field tambahan,
+  // 4 kutipan terpisah kepanjangan/berlebihan.
+  evidenceBasedSellingScore    Int?
+  evidenceBasedSellingQuote    String?
+  evidenceBasedSellingQuote2   String?
+  evidenceBasedSellingStrength String?
+  evidenceBasedSellingWeakness String?
+  authorityStructureFollowed   Boolean? // true = 4 langkah Struktur Authority Communication (Referensi konsultasi -> Kesimpulan hedge -> Sebab-akibat -> Solusi) diikuti berurutan
+  evidenceUsed                 String[] @default([]) // subset dari FOTO_PEMBONGKARAN/VIDEO/UJI_GAYA_DORONG/UJI_STABILITAS/PENGUKURAN/TIDAK_ADA — lihat catatan di atas soal makna [] vs ["TIDAK_ADA"]
+  evidenceExplained            Boolean? // null kalau evidenceUsed cuma ["TIDAK_ADA"]/[] (tidak ada bukti utk dijelaskan maknanya)
+  storySellingUsed             Boolean? // opsional — null kalau evidenceBasedSellingScore null
+
   // Rekomendasi modul SANO Class — dihitung RULE-BASED (bukan LLM): dimensi
   // dgn skor TERENDAH di antara 3 dimensi rubrik baru utk percakapan ini.
   // Deterministik & murah, konsisten dgn prinsip "jangan reimplementasi
