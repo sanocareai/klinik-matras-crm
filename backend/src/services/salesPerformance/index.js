@@ -22,21 +22,23 @@ function toDateStringWIB(date) {
 // — dari rollup yang SUDAH dihitung (dims: {key: avgScore}), bukan hitung
 // ulang. null-safe kalau belum ada sample sama sekali minggu ini.
 //
-// BUG DIPERBAIKI (live test 27 Agustus 2026): kalau CUMA 1 dimensi yang ada
-// datanya periode ini, best & worst jatuh ke dimensi YANG SAMA (satu-
-// satunya angka sekaligus jadi maks & min) — tampil membingungkan ("strength:
-// Communication Skill 3.5" DAN "weakness: Communication Skill 3.5"). Kalau
-// cuma 1 dimensi terisi, weakness di-null-kan (tidak ada yg dikontraskan).
+// BUG DIPERBAIKI (live test 27 Agustus 2026, 2 putaran): awalnya cuma
+// menjaga kasus "cuma 1 dimensi terisi" — TERNYATA tidak cukup: kasus
+// NYATA yang ketemu adalah 3 dimensi SEMUA bernilai identik (mis. Fadlan:
+// 3.5/3.5/3.5), jadi best & worst sama-sama jatuh ke dimensi PERTAMA di
+// urutan iterasi (walau filledCount=3). Fix generik: bandingkan KEY-nya
+// setelah loop — kalau best & worst dimensi yang SAMA (baik karena cuma 1
+// terisi ATAU karena semua yang terisi nilainya identik), tidak ada yang
+// benar-benar bisa dikontraskan → weakness di-null-kan.
 function strengthWeaknessFromDims(dims) {
-  let best = null, worst = null, filledCount = 0;
+  let best = null, worst = null;
   for (const dim of CORE_DIMENSIONS) {
     const avg = dims[dim.key];
     if (avg == null) continue;
-    filledCount++;
     if (!best || avg > best.avg) best = { key: dim.key, label: dim.label, avg };
     if (!worst || avg < worst.avg) worst = { key: dim.key, label: dim.label, avg };
   }
-  if (filledCount <= 1) worst = null;
+  if (best && worst && best.key === worst.key) worst = null;
   return { strength: best, weakness: worst };
 }
 
