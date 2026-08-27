@@ -19,8 +19,15 @@
 // yang mengikutinya. Toleransi false-positive lebih tinggi diterima di sini
 // karena scope-nya "perlu ditinjau gaya bicaranya", bukan "pelanggaran
 // hukum otomatis".
+// BUG DIPERBAIKI (verifikasi live thd 3000 pesan produksi, 28 Agustus 2026):
+// "Pasti"/"Dijamin" TIDAK BOLEH match kalau langsung diikuti titik dua —
+// template internal "ORDER BARU" (dikirim ke GRUP, bukan ke pelanggan)
+// memakai "Pasti:" sbg LABEL FIELD tanggal terkonfirmasi (mis. "Pick Up: -
+// (Pasti: 28 Agustus 2026)"), muncul di HAMPIR SETIAP notifikasi order —
+// tanpa exclusion ini kategori baru ini akan tenggelam dlm noise template,
+// bukan sinyal gaya bicara ke pelanggan yang sungguhan.
 const AUTHORITY_ABSOLUTE_RE =
-  /\b(pasti|dijamin)\b|\bharus\s*beli\b|\bkasur\s*ini\s*paling\s*bagus\b|\bsemua\s*orang\s*cocok\b/i;
+  /\b(pasti|dijamin)\b(?!\s*:)|\bharus\s*beli\b|\bkasur\s*ini\s*paling\s*bagus\b|\bsemua\s*orang\s*cocok\b/i;
 
 const CHECKS = [["authorityAbsolute", AUTHORITY_ABSOLUTE_RE]];
 

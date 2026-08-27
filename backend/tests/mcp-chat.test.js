@@ -235,6 +235,19 @@ test("authorityAbsolute punya label & ruang lingkup 'semua', TERPISAH dari kateg
   assert.equal(RUANG_LINGKUP_ATURAN.warranty, "semua");
 });
 
+test("authorityStyleViolations() TIDAK kena label template internal 'Pasti:'/'Dijamin:'", () => {
+  // Ditemukan lewat verifikasi live thd 3000 pesan produksi (28 Agustus
+  // 2026): template "ORDER BARU" (dikirim ke grup internal, BUKAN ke
+  // pelanggan) memakai "Pasti:" sbg label field tanggal terkonfirmasi,
+  // mis. "Pick Up: - (Pasti: 28 Agustus 2026)" — muncul di HAMPIR SETIAP
+  // notifikasi order. Tanpa exclusion ini, kategori baru tenggelam dalam
+  // noise template, bukan sinyal gaya bicara ke pelanggan yang sungguhan.
+  assert.deepEqual(authorityStyleViolations("Pick Up: - (Pasti: 28 Agustus 2026)"), []);
+  assert.deepEqual(authorityStyleViolations("Kirim: - (Dijamin: 30 Agustus)"), []);
+  // Tapi "pasti"/"dijamin" sbg KATA dalam kalimat (bukan label field) tetap kena.
+  assert.ok(authorityStyleViolations("Pasti sampai tepat waktu kok kak").includes("authorityAbsolute"));
+});
+
 test("authorityStyleViolations() TIDAK tercampur ke violations() — 2 mesin aturan terpisah", () => {
   // "Pasti cocok" murni authority-style di sini; violations() (compliance)
   // masih menangkapnya lewat CERTAINTY_RE (pasti+cocok) — itu KEBETULAN
