@@ -5,7 +5,7 @@
 import { prisma } from "../../db.js";
 import { chatWithTools } from "../providers/anthropicProvider.js";
 import { getAnthropicKey } from "../replyAssistant/providers/keyStore.js";
-import { QUALITY_SCORER_MODEL, buildSystemPrompt, buildRubricTool } from "../../config/qualityScorerRubric.js";
+import { QUALITY_SCORER_MODEL, buildSystemPrompt, buildRubricTool, RUBRIC_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 import { maskMessageContent } from "./masking.js";
 
 // Cap panjang transcript per percakapan — percakapan lama/aktif bisa
@@ -82,6 +82,22 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
   const call = toolCalls.find((c) => c.name === tool.name);
   if (!call) {
     throw new Error(`LLM tidak memanggil tool ${tool.name} — tidak ada hasil penilaian (kemungkinan output terpotong maxTokens).`);
+  }
+
+  // Verifikasi eksplisit (28 Agustus 2026, ditemukan lewat verifikasi live):
+  // `required` di JSON schema tool TIDAK 100% dijamin Anthropic — sesekali
+  // tool call kembali dengan sebagian dimensi hilang total dari objeknya
+  // (bukan cuma score:null, tapi KEY-nya sendiri tidak ada), padahal
+  // stop_reason="tool_use" (bukan terpotong maxTokens). Kalau dibiarkan,
+  // dimResult() di job.js akan menganggap dimensi itu "topik tidak muncul"
+  // (semua null) — silently mengarang data, bukan gagal kelihatan. Cek
+  // eksplisit ini mengubahnya jadi error yang tercatat di summary.errors,
+  // konsisten dgn perilaku lama (gagal parse JSON) yang juga surfaced.
+  const missingDims = RUBRIC_DIMENSIONS.filter((d) => !(d.key in call.input));
+  if (missingDims.length) {
+    throw new Error(
+      `Tool call tidak lengkap — dimensi hilang dari hasil: ${missingDims.map((d) => d.key).join(", ")}.`
+    );
   }
 
   return { scores: call.input, usage };
