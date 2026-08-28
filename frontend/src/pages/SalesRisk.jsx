@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, ChevronDown, ChevronUp, X, MessageSquare, Flag } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronUp, X, MessageSquare, Flag, Clock, Quote, Lightbulb, GraduationCap } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
@@ -65,6 +65,22 @@ function daysStagnant(risk) {
   const at = risk?.evidence?.lastInboundAt;
   if (!at) return null;
   return Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000);
+}
+
+// Warna tag SEMANTIK (29 Agustus 2026, permintaan visual — "jangan monoton
+// abu-abu semua") — dicocokkan dari ISI TEKS tag (bukan field terpisah baru
+// dari backend, murni presentasi frontend). Tag "masalah" (belum dibalas/
+// macet — alasan KENAPA berisiko) dapat warna hangat/waspada; tag "peluang"
+// (minat/lokasi/transaksi — alasan KENAPA MENDESAK ditindaklanjuti) dapat
+// warna hijau/accent. Cuma 4 hue yang ada di sistem (red/orange/green/accent,
+// lihat badge.jsx) — tidak ada warna baru dibuat.
+function tagVariant(tag) {
+  const t = tag.toLowerCase();
+  if (t.includes("macet")) return "red";
+  if (t.includes("belum dibalas")) return "orange";
+  if (t.includes("transaksi")) return "accent";
+  if (t.includes("lokasi") || t.includes("minat")) return "green";
+  return "neutral";
 }
 
 // Bubble presentasi RINGAN (29 Agustus 2026) — REUSE class CSS yang SAMA
@@ -232,29 +248,47 @@ function RiskCard({ risk, isFlagged, onOpenTranscript }) {
       {risk.problemTags?.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {risk.problemTags.map((tag) => (
-            <Badge key={tag} variant="neutral">{tag}</Badge>
+            <Badge key={tag} variant={tagVariant(tag)}>{tag}</Badge>
           ))}
         </div>
       )}
 
       {open && (
-        <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3 text-[12.5px]">
+        <div className="mt-3 flex flex-col gap-2.5 border-t border-line pt-3 text-[12.5px]">
           <p className="text-ink2">{risk.problem}</p>
-          <div><span className="font-semibold text-ink2">Bukti: </span>
-            <span className="text-ink3">
-              {risk.evidence.waitingDuration ? `Menunggu ${risk.evidence.waitingDuration}` : "Sudah dibalas"}
-              {risk.evidence.unansweredCount > 0 ? ` · ${risk.evidence.unansweredCount} pesan belum dijawab` : ""}
+
+          <div className="flex items-center gap-2 rounded-btn bg-orangebg px-3 py-2">
+            <Clock size={15} className="shrink-0 text-orange" />
+            <span className="text-ink2">
+              {risk.evidence.waitingDuration ? (
+                <>Menunggu <span className="font-bold text-orange">{risk.evidence.waitingDuration}</span></>
+              ) : "Sudah dibalas"}
+              {risk.evidence.unansweredCount > 0 && (
+                <> · <span className="font-bold text-orange">{risk.evidence.unansweredCount}</span> pesan belum dijawab</>
+              )}
             </span>
           </div>
+
           {risk.evidence.quote && (
-            <p className="rounded-btn bg-inset p-2 italic text-ink3">"{risk.evidence.quote}"</p>
+            <div className="flex items-start gap-2 rounded-btn bg-inset p-2.5">
+              <Quote size={14} className="mt-0.5 shrink-0 text-accent" />
+              <p className="italic text-ink3">{risk.evidence.quote}</p>
+            </div>
           )}
-          <div><span className="font-semibold text-ink2">Tindakan disarankan: </span><span className="text-ink3">{risk.recommendedAction}</span></div>
+
+          <div className="flex items-start gap-2 rounded-btn bg-greenbg px-3 py-2">
+            <Lightbulb size={15} className="mt-0.5 shrink-0 text-green" />
+            <span className="text-ink2"><span className="font-semibold">Tindakan disarankan:</span> {risk.recommendedAction}</span>
+          </div>
+
           {risk.trainingModuleHint && (
-            <div><Badge variant="neutral">Rekomendasi Training: {risk.trainingModuleHint}</Badge></div>
+            <div>
+              <Badge variant="accent"><GraduationCap size={12} /> Rekomendasi Training: {risk.trainingModuleHint}</Badge>
+            </div>
           )}
+
           <div className="pt-1">
-            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onOpenTranscript(risk); }}>
+            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onOpenTranscript(risk); }}>
               <MessageSquare size={14} /> Lihat percakapan penuh
             </Button>
           </div>
