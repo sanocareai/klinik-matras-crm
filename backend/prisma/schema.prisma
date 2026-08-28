@@ -3502,3 +3502,26 @@ model McpRefreshToken {
   @@index([userId])
   @@map("mcp_refresh_tokens")
 }
+
+// ═══ GOLD-STANDARD EXAMPLES — referensi chatbot Oktober (28 Agustus 2026) ═
+// Katalog kutipan yang sudah TERBUKTI bagus dari percakapan bergrading
+// tinggi di ConversationQualityScore, dikategorikan per 8 teknik SOP tetap
+// (Modul 4/6/7) — MURNI pengumpulan referensi utk ditinjau manual, TIDAK
+// terhubung ke sistem/fitur apa pun. Diisi oleh scripts/extractGoldStandard.js
+// (LLM extraction RINGAN, terpisah total dari job grading utama — TIDAK
+// re-grading, cuma menarik kutipan dari transkrip yang skornya sudah
+// terbukti tinggi). `quote` sudah ter-mask (masking sama persis dgn
+// grading, lihat services/qualityScorer/masking.js via formatTranscript()).
+model GoldStandardExample {
+  id             String   @id @default(cuid())
+  category       String // salah satu dari 8 label tetap — lihat CATEGORIES di extractGoldStandard.js, JANGAN tambah kategori baru tanpa konfirmasi
+  quote          String // kutipan LANGSUNG dari pesan SALES, sudah ter-mask
+  conversationId String // sumber — string biasa (tanpa FK), sama pola isolasi dgn ConversationQualityScore
+  salesName      String // snapshot nama sales, utk kredit coaching
+  relatedScore   Int // skor dimensi yang jadi dasar filter kandidat (mis. objectionHandlingScore)
+  sampledFor     DateTime // dari ConversationQualityScore.sampledFor baris sumber
+
+  createdAt DateTime @default(now())
+
+  @@index([category])
+}
