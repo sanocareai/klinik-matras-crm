@@ -437,6 +437,7 @@ model Customer {
 
   pipelineTransitions PipelineTransition[]
   broadcastTargets    BroadcastTarget[]
+  staleLeadAlertLog   StaleLeadAlertLog?
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
   @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
@@ -716,6 +717,21 @@ model ClickEvent {
   createdAt         DateTime    @default(now())
 
   @@index([createdAt])
+}
+
+// Tracking eskalasi stale-lead-alert (28 Agustus 2026) — GANTI Map in-memory
+// di staleLeadAlertJob.js. Ditemukan lewat cek status: restart backend
+// (rutin terjadi tiap deploy) mereset hitungan "hari sejak alert pertama"
+// ke 0, jadi eskalasi ke supervisor TIDAK PERNAH sempat terpicu meski
+// customer sungguhan sudah 3+ hari tanpa tindak lanjut. 1 baris per customer
+// yang SEDANG dalam episode stale — dihapus lagi begitu customer itu sudah
+// ditindaklanjuti/tidak lagi urgent (staleLeadAlertJob.js yang mengelola
+// siklus hidupnya, BUKAN dianggap riwayat permanen spt PipelineTransition).
+model StaleLeadAlertLog {
+  customerId      String   @id
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  firstAlertedAt  DateTime // kapan customer ini PERTAMA kena alert utk episode stale yang SEDANG berjalan
+  lastNotifiedDay String? // "YYYY-MM-DD" WIB — cegah dobel kirim WA di hari yang sama kalau job dipicu manual >1x
 }
 
 model Order {

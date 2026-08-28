@@ -189,13 +189,6 @@ function isExplicitDecline(text) {
   return MAHAL_PATTERN.test(text) && NEGATION_WORD_PATTERN.test(text);
 }
 
-// ── State dedup/eskalasi in-memory — sama batasan dgn slaAlertJob.js
-// (restart bisa memicu 1 notifikasi ulang utk kasus yang sudah pernah
-// dialert). Job ini harian (bukan tiap 5 menit) jadi dampaknya jauh lebih
-// kecil — paling banter 1 alert pagi terulang di hari restart terjadi.
-const firstAlertedAt = new Map(); // customerId -> timestamp alert PERTAMA
-const lastNotifiedDay = new Map(); // customerId -> "YYYY-MM-DD" WIB, cegah dobel kirim di hari yang sama kalau job dipicu manual >1x
-
 function wibDateKey(now) {
   return new Date(now + 7 * 3_600_000).toISOString().slice(0, 10);
 }
@@ -218,6 +211,16 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
   const inactiveSalesIds = new Set(
     (await prisma.user.findMany({ where: { active: false }, select: { id: true } })).map((u) => u.id)
   );
+
+  // Tracking eskalasi DARI DB (28 Agustus 2026) — GANTI Map in-memory yang
+  // terbukti reset tiap restart backend (deploy rutin), jadi eskalasi tidak
+  // pernah sempat terpicu meski customer sungguhan sudah 3+ hari. Dimuat
+  // SEKALI di awal (bukan query per-customer di dalam loop, hindari N+1),
+  // dimodifikasi di variabel lokal spt Map biasa selama loop berjalan,
+  // ditulis balik ke DB SEKALI di akhir (lihat blok persist di bawah).
+  const existingLogs = await prisma.staleLeadAlertLog.findMany();
+  const firstAlertedAt = new Map(existingLogs.map((l) => [l.customerId, l.firstAlertedAt.getTime()]));
+  const lastNotifiedDay = new Map(existingLogs.map((l) => [l.customerId, l.lastNotifiedDay]).filter(([, v]) => v != null));
 
   let candidates;
   try {
@@ -298,15 +301,6 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
     }
   }
 
-  // Bersihkan state utk pelanggan yang sudah tidak lagi stale/urgent (sudah
-  // ditindaklanjuti atau urgensinya turun) — sama pola dgn slaAlertJob.js.
-  for (const id of firstAlertedAt.keys()) {
-    if (!activeCustomerIds.has(id)) firstAlertedAt.delete(id);
-  }
-  for (const id of lastNotifiedDay.keys()) {
-    if (!activeCustomerIds.has(id)) lastNotifiedDay.delete(id);
-  }
-
   // ── Alert biasa, dikelompokkan PER SALES (assignedSalesId) ───────────────
   const bySales = new Map(); // key: userId | "UNASSIGNED" -> { name, phone, items: [] }
   for (const item of stale) {
@@ -377,6 +371,29 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
     for (const item of toEscalate) lastNotifiedDay.set(item.customer.id, todayKey);
     summary.escalated = toEscalate.length;
   }
+
+  // Persist state ke DB (28 Agustus 2026) — GANTI cleanup Map in-memory lama.
+  // Customer yang sudah TIDAK LAGI di activeCustomerIds (sudah ditindaklanjuti
+  // atau urgensinya turun) → baris log dihapus, episode stale-nya dianggap
+  // selesai. Yang MASIH aktif di-upsert dgn nilai firstAlertedAt/lastNotifiedDay
+  // TERBARU dari Map lokal (sudah dimutasi sepanjang loop di atas + saat WA
+  // terkirim di bawah) — inilah yang membuat hitungan hari SELAMAT dari
+  // restart backend, beda dari Map in-memory murni sebelumnya.
+  const toDeleteIds = existingLogs.map((l) => l.customerId).filter((id) => !activeCustomerIds.has(id));
+  if (toDeleteIds.length) {
+    await prisma.staleLeadAlertLog.deleteMany({ where: { customerId: { in: toDeleteIds } } }).catch((err) => {
+      console.error("[stale-lead-alert] Gagal bersihkan log lama:", err.message);
+    });
+  }
+  await Promise.all(
+    [...activeCustomerIds].map((id) =>
+      prisma.staleLeadAlertLog.upsert({
+        where: { customerId: id },
+        create: { customerId: id, firstAlertedAt: new Date(firstAlertedAt.get(id)), lastNotifiedDay: lastNotifiedDay.get(id) ?? null },
+        update: { firstAlertedAt: new Date(firstAlertedAt.get(id)), lastNotifiedDay: lastNotifiedDay.get(id) ?? null },
+      }).catch((err) => console.error(`[stale-lead-alert] Gagal simpan state utk ${id}:`, err.message))
+    )
+  );
 
   if (orphanedInactiveSales.length) {
     console.log(`[stale-lead-alert] ${orphanedInactiveSales.length} lead ter-assign ke sales NONAKTIF — TIDAK dikirim WA, perlu reassign manual:`);
