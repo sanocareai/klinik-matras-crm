@@ -409,6 +409,17 @@ export function buildObjectionTypeTool() {
   };
 }
 
+// KNOWN LIMITATION (ditemukan 28 Agustus 2026, docs/gold-standard/gold-standard-
+// examples.md ada catatan sama) — objectionType KADANG salah mengategorikan
+// KOMPLAIN OPERASIONAL/LOGISTIK (mis. keterlambatan pengiriman driver) sebagai
+// keberatan PENJUALAN (paling sering ketimpa label MENUNDA). BUG TERPISAH dari
+// akuiPresent/galiPresent yang sudah diperbaiki (anchor-nya sendiri konsisten —
+// respons yang diekstrak memang persis merespons objectionTypeQuote, masalahnya
+// di tahap INI yang salah menilai isinya sejak awal). SENGAJA belum diperbaiki
+// (sudah 6 iterasi utk akuiPresent/galiPresent, cukup utk saat ini) — kalau mau
+// diperbaiki nanti, tambahkan instruksi eksplisit "KECUALIKAN komplain soal
+// pengiriman/jadwal/operasional pasca-order, itu BUKAN keberatan penjualan"
+// di prompt di bawah.
 export function buildObjectionTypePrompt() {
   return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
 

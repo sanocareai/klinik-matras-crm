@@ -109,31 +109,32 @@
     "category": "OBJECTION_AKUI",
     "description": "Validasi EMPATI eksplisit atas keberatan pelanggan SEBELUM menjawab, mis. \"saya paham kekhawatiran Bapak/Ibu\", \"wajar kalau ragu soal itu\".",
     "legacyDimension": false,
-    "collected": 0,
-    "examples": []
+    "collected": 1,
+    "note": "Direvisi manual 28 Agustus 2026 setelah investigasi akuiPresent/galiPresent selesai (structural fix + anchoring objectionType, 6 iterasi). Dari seluruh 105 baris objectionHandling yang sudah teranchor, HANYA 1 kandidat yang genuinely solid lolos spot-check manual. 4 kandidat lain yang awalnya lolos filter otomatis (akuiPresent=true, skor>=4) dikeluarkan setelah dibaca manual thd transkrip mentah: ternyata jawaban telanjang tanpa validasi (\"Oh iya kak bisa.\"), koreksi miskomunikasi (\"maksud saya busa/latex...\"), atau respons ke KOMPLAIN KETERLAMBATAN PENGIRIMAN yang salah dikategorikan objectionType sbg keberatan penjualan (lihat known limitation di README kategori ini). Angka 1/5 ini indikasi GAP PELATIHAN NYATA di lapangan (sales jarang benar-benar menjalankan langkah Akui sesuai Modul 7 SANO Care) — bukan keterbatasan sampling atau pencarian yang kurang jauh.",
+    "examples": [
+      {
+        "conversationId": "cmt3r05qd2fkyt2xon5ka06n4",
+        "salesName": "Ervina",
+        "score": 5,
+        "quotes": [
+          "bisa kakak, jika kakak tidak suka feel firm dari kasur sehat akan kami buat lebih empuk dibagian lapisan, hanya fondasi saja yang kita buat kokoh agar tidak amblas dalam jangka panjang 🙏"
+        ]
+      }
+    ]
   },
   {
     "category": "OBJECTION_GALI",
     "description": "Pertanyaan KLARIFIKASI yang menggali keberatan SEBENARNYA sebelum menjawab, mis. \"boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?\".",
     "legacyDimension": false,
-    "collected": 5,
+    "collected": 3,
+    "note": "Direvisi manual 28 Agustus 2026 (lihat catatan OBJECTION_AKUI di atas) — query ulang thd data teranchor pasca-fix, bukan lagi kriteria frameworkFollowed lama.",
     "examples": [
       {
-        "conversationId": "cmsvu20sqid9y8cyxhtbq3bwa",
+        "conversationId": "cmt3r05qd2fkyt2xon5ka06n4",
         "salesName": "Ervina",
-        "score": 4,
+        "score": 5,
         "quotes": [
-          "baik kak, jika boleh tau yang merasakan ini, yang diberat badan 100kg? atau yang 58kg? atau ke dua nya?",
-          "Mohon info keluhan saat bangun tidur? Pegal/badan sakit/pinggang sakit/punggung sakit/bahu sakit/leher/proses tidur tidak nyaman"
-        ]
-      },
-      {
-        "conversationId": "cmssrgymd8zdwozijmqqjqkhy",
-        "salesName": "Ervina",
-        "score": 4,
-        "quotes": [
-          "boleh dibantu info berat badan penggunanya?",
-          "boleh dibantu berat permasing masing individunya kak?"
+          "boleh dibantu jelaskan selama penggunaan kasur sewa kak? 😊🙏"
         ]
       },
       {
@@ -141,26 +142,15 @@
         "salesName": "Ervina",
         "score": 4,
         "quotes": [
-          "Klo boleh tau saat ini yang ibu sediakan untuk perbaikan nya di range berapa? Agar bisa saya bantu berika solusi ke 2 untuk kasur nya 🙏☺",
-          "Baik ibu, sebelumnya apa boleh tau budget kebutuhan ibu saat ini ada diberapa? mungkin nanti bisa saya bantu cari layanan yang sesuai dengan kebutuhan ibu 😊🙏"
+          "Klo boleh tau saat ini yang ibu sediakan untuk perbaikan nya di range berapa? Agar bisa saya bantu berika solusi ke 2 untuk kasur nya 🙏☺"
         ]
       },
       {
-        "conversationId": "cms5w5xre19ub8hwztm78xes6",
+        "conversationId": "cms36qbu72p7711asaj2noiuq",
         "salesName": "Ervina",
         "score": 4,
         "quotes": [
-          "baik ibu, apa disertai rasa sakit diarea yang tertera diatas saat bangun tidur?😊🙏",
-          "Yg amblas cm 1 sisi yg ditdrin suami 😁"
-        ]
-      },
-      {
-        "conversationId": "cmt8edt33057z20myygxz5fyc",
-        "salesName": "Ervina",
-        "score": 4,
-        "quotes": [
-          "Mohon info keluhan fisik kasurnya apa saja? Amblas/tenggelam/per keluar/terasa per/kain kotor",
-          "Baik kak, Mohon info keluhan saat bangun tidur? Pegal/badan sakit/pinggang sakit/punggung sakit/bahu sakit/leher/proses tidur tidak nyaman"
+          "boleh tau perkiraan estimasinya berapa hari? agar bisa saya bantu follow up kembali😊🙏"
         ]
       }
     ]

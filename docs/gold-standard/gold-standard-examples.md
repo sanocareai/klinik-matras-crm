@@ -50,31 +50,31 @@ Terkumpul: 5
 
 Validasi EMPATI eksplisit atas keberatan pelanggan SEBELUM menjawab, mis. "saya paham kekhawatiran Bapak/Ibu", "wajar kalau ragu soal itu".
 
-Terkumpul: 0
+Terkumpul: 1 *(direvisi manual 28 Agustus 2026 — lihat Catatan Teknis di bawah)*
 
-**Tidak ada contoh yang lolos ekstraksi.**
+- **Ervina** (conversationId: `cmt3r05qd2fkyt2xon5ka06n4`, skor: 5)
+  > "bisa kakak, jika kakak tidak suka feel firm dari kasur sehat akan kami buat lebih empuk dibagian lapisan, hanya fondasi saja yang kita buat kokoh agar tidak amblas dalam jangka panjang 🙏"
+
+**Catatan:** dari seluruh 105 baris objectionHandling yang sudah teranchor (lihat investigasi akuiPresent/galiPresent, 6 iterasi), HANYA 1 kandidat di atas yang genuinely solid lolos spot-check manual thd transkrip mentah. 4 kandidat lain yang awalnya lolos filter otomatis (akuiPresent=true, skor≥4) dikeluarkan setelah dibaca manual — ternyata jawaban telanjang tanpa validasi apa pun ("Oh iya kak bisa."), koreksi miskomunikasi ("maksud saya busa/latex..."), atau respons ke KOMPLAIN KETERLAMBATAN PENGIRIMAN yang salah dikategorikan sebagai keberatan penjualan (lihat known limitation objectionType di bawah). **Angka 1/5 ini adalah indikasi gap pelatihan nyata di lapangan — sales jarang benar-benar menjalankan langkah Akui sesuai Modul 7 SANO Care — bukan keterbatasan sampling atau pencarian yang kurang jauh.**
 
 ## OBJECTION_GALI
 
 Pertanyaan KLARIFIKASI yang menggali keberatan SEBENARNYA sebelum menjawab, mis. "boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?".
 
-Terkumpul: 5
+Terkumpul: 3 *(direvisi manual 28 Agustus 2026, query ulang dari data teranchor pasca-fix — bukan lagi kriteria frameworkFollowed lama)*
 
-- **Ervina** (conversationId: `cmsvu20sqid9y8cyxhtbq3bwa`, skor: 4)
-  > "baik kak, jika boleh tau yang merasakan ini, yang diberat badan 100kg? atau yang 58kg? atau ke dua nya?"
-  > "Mohon info keluhan saat bangun tidur? Pegal/badan sakit/pinggang sakit/punggung sakit/bahu sakit/leher/proses tidur tidak nyaman"
-- **Ervina** (conversationId: `cmssrgymd8zdwozijmqqjqkhy`, skor: 4)
-  > "boleh dibantu info berat badan penggunanya?"
-  > "boleh dibantu berat permasing masing individunya kak?"
+- **Ervina** (conversationId: `cmt3r05qd2fkyt2xon5ka06n4`, skor: 5)
+  > "boleh dibantu jelaskan selama penggunaan kasur sewa kak? 😊🙏"
 - **Ervina** (conversationId: `cmscclj483ripysqee86du0zy`, skor: 4)
   > "Klo boleh tau saat ini yang ibu sediakan untuk perbaikan nya di range berapa? Agar bisa saya bantu berika solusi ke 2 untuk kasur nya 🙏☺"
-  > "Baik ibu, sebelumnya apa boleh tau budget kebutuhan ibu saat ini ada diberapa? mungkin nanti bisa saya bantu cari layanan yang sesuai dengan kebutuhan ibu 😊🙏"
-- **Ervina** (conversationId: `cms5w5xre19ub8hwztm78xes6`, skor: 4)
-  > "baik ibu, apa disertai rasa sakit diarea yang tertera diatas saat bangun tidur?😊🙏"
-  > "Yg amblas cm 1 sisi yg ditdrin suami 😁"
-- **Ervina** (conversationId: `cmt8edt33057z20myygxz5fyc`, skor: 4)
-  > "Mohon info keluhan fisik kasurnya apa saja? Amblas/tenggelam/per keluar/terasa per/kain kotor"
-  > "Baik kak, Mohon info keluhan saat bangun tidur? Pegal/badan sakit/pinggang sakit/punggung sakit/bahu sakit/leher/proses tidur tidak nyaman"
+- **Ervina** (conversationId: `cms36qbu72p7711asaj2noiuq`, skor: 4)
+  > "boleh tau perkiraan estimasinya berapa hari? agar bisa saya bantu follow up kembali😊🙏"
+
+### Catatan Teknis — known limitation objectionType (28 Agustus 2026)
+
+`objectionType`/`objectionTypeQuote` (dipakai sbg anchor akuiPresent/galiPresent) KADANG salah mengategorikan KOMPLAIN OPERASIONAL/LOGISTIK (mis. keterlambatan pengiriman driver, "kalau nggak bisa kirim tepat waktu di-cancel aja") sebagai keberatan PENJUALAN (paling sering ketimpa label MENUNDA). Ini BUG TERPISAH dari akuiPresent/galiPresent yang sudah diperbaiki lewat structural fix + anchoring (6 iterasi, selesai 28 Agustus 2026) — anchor-nya sendiri tetap konsisten (respons sales yang diekstrak memang persis merespons kutipan objectionTypeQuote), masalahnya ada di tahap SEBELUMNYA: `objectionType` salah menilai komplain logistik sebagai keberatan penjualan sejak awal.
+
+Ditemukan lewat spot-check manual (bukan hasil pengukuran sistematis skala penuh) saat menyusun ulang gold-standard AKUI di atas. **Sengaja TIDAK dikejar/diperbaiki sekarang** — sudah 6 putaran iterasi untuk sub-field akuiPresent/galiPresent, cukup untuk saat ini. Dicatat di sini sebagai known limitation supaya siapa pun yang nanti memakai `objectionType` utk tujuan lain (mis. analisis distribusi jenis keberatan) tahu ada noise dari kategori komplain operasional yang salah masuk.
 
 ## OBJECTION_REFRAME_HARGA
 
