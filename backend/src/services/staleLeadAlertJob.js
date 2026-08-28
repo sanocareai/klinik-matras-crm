@@ -129,6 +129,66 @@ function lastOutboundAt(customer) {
   return latest;
 }
 
+// Pesan INBOUND (dari customer) TERAKHIR — dipakai filter noise di bawah.
+// Sumber data SAMA dgn lastOutboundAt (sudah dimuat CUSTOMER_SELECT).
+function lastInboundMessage(customer) {
+  let latest = null;
+  for (const conv of customer.conversations || []) {
+    for (const m of conv.messages || []) {
+      if (m.direction === "INBOUND") {
+        const t = new Date(m.createdAt);
+        if (!latest || t > latest.time) latest = { time: t, content: m.content || "" };
+      }
+    }
+  }
+  return latest?.content ?? null;
+}
+
+// ── Filter NOISE (28 Agustus 2026) — ditemukan lewat spot-check manual thd
+// sample OR-logic: sebagian customer yang lolos threshold urgency TERNYATA
+// pesan terakhirnya cuma basa-basi penutup ("siap", "baik kak") atau
+// penolakan eksplisit ("engga dulu, mahal") — bukan pertanyaan/data yang
+// benar-benar menggantung. Follow-up otomatis ke 2 pola ini berisiko
+// terasa aneh (menagih respons ke basa-basi) atau memaksa (follow-up ke
+// yang sudah bilang tidak). Pattern-matching SEDERHANA (bukan LLM — volume
+// ratusan baris per hari, LLM per-baris di tahap filter tidak worth biayanya)
+// dan SENGAJA konservatif: kalau tidak yakin, JANGAN exclude (default kirim,
+// bukan default skip) — resiko lead terlewat > resiko follow-up ke yang santai.
+//
+// Pola 1: closing pleasantry TANPA tanda tanya/angka — heuristik "pendek +
+// cuma berisi kata penutup umum" (bukan daftar exhaustive, sengaja sempit).
+const CLOSING_PLEASANTRY_TOKENS = [
+  "siap", "baik", "baik kak", "baik ibu", "baik pak", "ok", "oke", "okay",
+  "sip", "noted", "terima kasih", "makasih", "trims", "tks", "thanks",
+  "ok terima kasih", "oke terima kasih", "baik terima kasih", "siap kak",
+  "siap ibu", "sip kak", "ok sip",
+];
+function isClosingPleasantry(text) {
+  if (!text) return false;
+  const normalized = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s?]/gu, "") // buang emoji/tanda baca, PERTAHANKAN "?"
+    .trim();
+  if (normalized.includes("?")) return false; // ada tanda tanya = jelas bukan penutup
+  if (/\d/.test(normalized)) return false; // ada angka (mis. berat badan/harga) = data menggantung, bukan basa-basi
+  const stripped = normalized.replace(/\?/g, "").trim();
+  if (!stripped || stripped.split(/\s+/).length > 4) return false; // terlalu panjang utk "cuma penutup"
+  return CLOSING_PLEASANTRY_TOKENS.includes(stripped);
+}
+
+// Pola 2: penolakan eksplisit — "ga jadi"/"batal" berdiri sendiri sudah
+// cukup jadi sinyal; "mahal" HANYA dihitung kalau dikombinasikan dengan kata
+// negasi di pesan yang sama (sebutan harga polos, mis. "berapa harganya kak"
+// bukan penolakan).
+const DECLINE_STANDALONE_PATTERN = /\b(g[a]?\s*jadi|tidak\s*jadi|nggak\s*jadi|enggak\s*jadi|batal(in|kan)?|e?ngga\s*dulu|nggak\s*dulu|ga\s*dulu|tidak\s*dulu)\b/i;
+const NEGATION_WORD_PATTERN = /\b(ga|gak|nggak|enggak|engga|tidak|blm|belum)\b/i;
+const MAHAL_PATTERN = /\bmahal\b/i;
+function isExplicitDecline(text) {
+  if (!text) return false;
+  if (DECLINE_STANDALONE_PATTERN.test(text)) return true;
+  return MAHAL_PATTERN.test(text) && NEGATION_WORD_PATTERN.test(text);
+}
+
 // ── State dedup/eskalasi in-memory — sama batasan dgn slaAlertJob.js
 // (restart bisa memicu 1 notifikasi ulang utk kasus yang sudah pernah
 // dialert). Job ini harian (bukan tiap 5 menit) jadi dampaknya jauh lebih
@@ -142,7 +202,7 @@ function wibDateKey(now) {
 
 export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {}) {
   const config = readConfig();
-  const summary = { enabled: config.enabled, candidatesScanned: 0, staleFound: 0, salesNotified: 0, escalated: 0, errors: [] };
+  const summary = { enabled: config.enabled, candidatesScanned: 0, staleFound: 0, excludedNoise: 0, salesNotified: 0, escalated: 0, errors: [] };
   if (!config.enabled) return summary;
 
   const now = referenceNow.getTime();
@@ -182,6 +242,16 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
     const daysSinceOutbound = lastOut ? Math.floor((now - lastOut.getTime()) / 86_400_000) : null;
     const isStale = daysSinceOutbound == null || daysSinceOutbound >= config.followUpDays;
     if (!isStale) continue;
+
+    // Filter noise (lihat catatan lengkap di isClosingPleasantry/isExplicitDecline
+    // di atas) — SEBELUM dihitung sbg stale. Konservatif: kalau pesan terakhir
+    // customer null (belum pernah kirim apa-apa, cuma OUTBOUND awal sales tanpa
+    // balasan), TIDAK dianggap noise (tidak match kedua pattern) — tetap masuk.
+    const lastInboundContent = lastInboundMessage(customer);
+    if (isClosingPleasantry(lastInboundContent) || isExplicitDecline(lastInboundContent)) {
+      summary.excludedNoise++;
+      continue;
+    }
 
     activeCustomerIds.add(customer.id);
     summary.staleFound++;
@@ -292,7 +362,7 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
   }
 
   console.log(
-    `[stale-lead-alert] Selesai. Kandidat: ${summary.candidatesScanned}, stale ditemukan: ${summary.staleFound}, sales dinotif: ${summary.salesNotified}, eskalasi: ${summary.escalated}`
+    `[stale-lead-alert] Selesai. Kandidat: ${summary.candidatesScanned}, stale ditemukan: ${summary.staleFound}, dikecualikan (noise): ${summary.excludedNoise}, sales dinotif: ${summary.salesNotified}, eskalasi: ${summary.escalated}`
   );
   return summary;
 }
