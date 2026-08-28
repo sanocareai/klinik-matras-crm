@@ -165,7 +165,17 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
 
   for (const customer of candidates) {
     const intel = buildCustomerIntelligence({ customer, conversations: customer.conversations });
-    const urgencyRank = URGENCY_RANK[intel.priority.urgency] ?? URGENCY_RANK.low;
+    // OR-logic (28 Agustus 2026) — ditemukan lewat investigasi Ivan Syahridwan:
+    // priority.urgency & nextAction.urgency dihitung dari SINYAL BEDA (priority
+    // = skor gabungan multi-faktor, nextAction = aturan single-case "belum
+    // dibalas X jam") — kasus nyata: priority.urgency="low" (skor gabungan
+    // ketutup faktor lain) TAPI nextAction.urgency="high" (pesan belum dibalas
+    // 459 jam), jadi kalau cuma priority.urgency dicek, customer itu TIDAK
+    // PERNAH lolos threshold walau ada aksi mendesak. Sekarang lolos kalau
+    // SALAH SATU rank-nya penuhi threshold (ambil yang TERTINGGI).
+    const priorityRank = URGENCY_RANK[intel.priority.urgency] ?? URGENCY_RANK.low;
+    const nextActionRank = URGENCY_RANK[intel.nextAction?.urgency] ?? URGENCY_RANK.low;
+    const urgencyRank = Math.max(priorityRank, nextActionRank);
     if (urgencyRank < thresholdRank) continue;
 
     const lastOut = lastOutboundAt(customer);
