@@ -25,4 +25,16 @@ export const AI_MODELS = {
   // murah utk sampling harian, dan rubrik grading tidak butuh reasoning
   // sedalam percakapan customer langsung.
   SANO_QUALITY_SCORER: "claude-haiku-4-5-20251001",
+
+  // akuiPresent/galiPresent SAJA (28 Agustus 2026) — SCOPE KETAT, BUKAN
+  // default Quality Scorer di atas. 4 iterasi prompt di Haiku (1 gabungan +
+  // 2-panggilan terstruktur, dgn/tanpa jangkar) TERBUKTI TIDAK STABIL utk
+  // membedakan validasi empati spesifik dari basa-basi generik — root cause
+  // kapabilitas model, bukan lagi wording prompt (diverifikasi live thd 3
+  // transkrip yang sama, semua percobaan Haiku gagal identik). Sonnet
+  // dipakai HANYA di grading.js#extractAkuiGali — SEMUA dimensi/panggilan
+  // lain (communicationSkill/authoritySelling/evidenceBasedSelling, DAN
+  // score/quote/strength/weakness/objectionType-nya objectionHandling
+  // sendiri) TETAP Haiku (SANO_QUALITY_SCORER di atas), TIDAK berubah.
+  SANO_QUALITY_SCORER_AKUI_GALI: "claude-sonnet-4-6",
 };

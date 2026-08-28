@@ -22,6 +22,7 @@
 // drift antara 2 jalur).
 import { prisma } from "../src/db.js";
 import { fetchTranscriptMessages, formatTranscript, resolveApiKey, extractAkuiGali } from "../src/services/qualityScorer/grading.js";
+import { estimateCostUsd, SONNET_PRICE_PER_MTOK_USD } from "../src/services/qualityScorer/pricing.js";
 
 async function reExtract(conversationId, apiKey, objectionQuote) {
   const conv = await prisma.conversation.findUnique({
@@ -36,9 +37,9 @@ async function reExtract(conversationId, apiKey, objectionQuote) {
   // objectionQuote (dari objectionTypeQuote yang SUDAH tersimpan di baris
   // asal) diteruskan sbg jangkar — SAMA dgn live grading, cegah Gali/Akui
   // salah menemukan bukti dari bagian lain percakapan yang tidak berkaitan.
-  const { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote } = await extractAkuiGali({ transcriptText, apiKey, objectionQuote });
+  const { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, usage } = await extractAkuiGali({ transcriptText, apiKey, objectionQuote });
   const frameworkFollowed = akuiPresent == null || galiPresent == null ? null : akuiPresent && galiPresent;
-  return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, frameworkFollowed };
+  return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, frameworkFollowed, usage };
 }
 
 async function main() {
@@ -54,6 +55,8 @@ async function main() {
 
   const changes = []; // { salesName, from, to }
   let ok = 0, failed = 0;
+  let totalCostUsd = 0;
+  let totalInputTokens = 0, totalOutputTokens = 0;
 
   for (const row of rows) {
     let extracted;
@@ -82,6 +85,10 @@ async function main() {
       },
     });
     ok++;
+    const rowCost = estimateCostUsd(extracted.usage, SONNET_PRICE_PER_MTOK_USD);
+    totalCostUsd += rowCost;
+    totalInputTokens += extracted.usage.inputTokens || 0;
+    totalOutputTokens += extracted.usage.outputTokens || 0;
 
     const before = row.frameworkFollowed;
     const after = extracted.frameworkFollowed;
@@ -102,6 +109,7 @@ async function main() {
 
   console.log("\n=== RINGKASAN BACKFILL ===");
   console.log(`Berhasil: ${ok}, Gagal/skip: ${failed}, Total baris berubah: ${changes.length}`);
+  console.log(`Biaya AKTUAL (Sonnet, akuiPresent/galiPresent SAJA): $${totalCostUsd.toFixed(4)} (in=${totalInputTokens} out=${totalOutputTokens} token, ${ok} baris — rata2 $${(totalCostUsd / (ok || 1)).toFixed(5)}/baris)`);
   console.log("\nfalse->true per sales (SEBELUMNYA dinilai gagal, TERNYATA memenuhi kriteria baru yang lebih spesifik):");
   console.log(JSON.stringify(falseToTrueBySales, null, 2));
   console.log("\ntrue->false per sales (SEBELUMNYA dianggap patuh framework krn basa-basi, TERNYATA tidak memenuhi kriteria baru):");

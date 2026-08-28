@@ -12,7 +12,7 @@ import {
 } from "../../config/qualityScorerRubric.js";
 import { getActiveSalesUsers, sampleConversationsForSales, yesterdayRangeWIB } from "./sampling.js";
 import { fetchTranscriptMessages, formatTranscript, gradeTranscript, resolveApiKey, buildSystemPrompt } from "./grading.js";
-import { estimateCostUsd } from "./pricing.js";
+import { estimateCostUsd, SONNET_PRICE_PER_MTOK_USD } from "./pricing.js";
 
 // true/false/"true"/"false" → boolean; apa pun lainnya (termasuk undefined)
 // → null. LLM diinstruksikan kirim boolean JSON asli, tapi jaga-jaga kalau
@@ -259,9 +259,16 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
         if (messages.length === 0) continue; // percakapan kosong, tidak layak dinilai
         const transcriptText = formatTranscript(messages, row.customerName);
 
-        const { scores, usage } = await gradeTranscript({ systemPrompt, transcriptText, apiKey });
-        const costUsd = estimateCostUsd(usage);
+        const { scores, usage, akuiGaliUsage } = await gradeTranscript({ systemPrompt, transcriptText, apiKey });
+        // akuiPresent/galiPresent (28 Agustus 2026) pakai Sonnet — harga
+        // beda dari Haiku. costUsd digabung dari 2 tabel harga, BUKAN
+        // menyamaratakan semua token sbg Haiku (akan understate biaya asli).
+        const costUsd = estimateCostUsd(usage) + estimateCostUsd(akuiGaliUsage, SONNET_PRICE_PER_MTOK_USD);
         summary.totalCostUsd += costUsd;
+        // +2 kalau akuiGali sungguhan jalan (ada keberatan terdeteksi) —
+        // sama prinsip dgn callsUsed += RUBRIC_DIMENSIONS.length di atas,
+        // MAX_DAILY_LLM_CALLS harus mencerminkan panggilan API ASLI.
+        if (scores.objectionHandling?.score != null) callsUsed += 2;
 
         const dimFields = buildDimFields(scores);
 
@@ -277,9 +284,9 @@ export async function runQualityScorerJob({ referenceNow = new Date(), sampleSiz
             ...dimFields,
             recommendedModule: computeRecommendedModule(dimFields),
             overallNote: scores?.overallNote ?? null,
-            model: QUALITY_SCORER_MODEL,
-            inputTokens: usage.inputTokens || 0,
-            outputTokens: usage.outputTokens || 0,
+            model: QUALITY_SCORER_MODEL, // model UTAMA (Haiku) — akuiPresent/galiPresent pakai Sonnet, tercermin di costUsd gabungan, bukan di field ini
+            inputTokens: (usage.inputTokens || 0) + (akuiGaliUsage.inputTokens || 0),
+            outputTokens: (usage.outputTokens || 0) + (akuiGaliUsage.outputTokens || 0),
             costUsd,
             messageCount: messages.length,
           },

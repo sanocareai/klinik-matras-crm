@@ -9,7 +9,17 @@ import {
   QUALITY_SCORER_MODEL, buildSystemPrompt, buildDimensionTool, RUBRIC_DIMENSIONS,
   buildGaliTool, buildGaliPrompt, buildAkuiTool, buildAkuiPrompt,
 } from "../../config/qualityScorerRubric.js";
+import { AI_MODELS } from "../../config/aiModels.js";
 import { maskMessageContent } from "./masking.js";
+
+// SCOPE KETAT (28 Agustus 2026) — model Sonnet HANYA dipakai di dalam
+// extractAkuiGali() di bawah. Semua panggilan lain di file ini (dimensi
+// score/quote/strength/weakness/objectionType, dimensi lain) TETAP pakai
+// QUALITY_SCORER_MODEL (Haiku) — TIDAK disentuh. Lihat aiModels.js utk
+// alasan lengkap kenapa akuiPresent/galiPresent butuh model lebih kuat
+// (4 iterasi prompt di Haiku, termasuk 2-panggilan+jangkar, tetap gagal
+// identik pada 3 transkrip verifikasi — kapabilitas model, bukan wording).
+const AKUI_GALI_MODEL = AI_MODELS.SANO_QUALITY_SCORER_AKUI_GALI;
 
 // Cap panjang transcript per percakapan — percakapan lama/aktif bisa
 // berbulan-bulan; kita cuma butuh cukup konteks utk menilai wajar, bukan
@@ -92,7 +102,7 @@ export async function extractAkuiGali({ transcriptText, apiKey, objectionQuote =
 
   const galiTool = buildGaliTool();
   const { toolCalls: galiCalls, usage: galiUsage } = await chatWithTools({
-    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildGaliPrompt(objectionQuote),
+    apiKey, model: AKUI_GALI_MODEL, systemPrompt: buildGaliPrompt(objectionQuote),
     messages: [userMessage], tools: [galiTool], toolChoice: { type: "tool", name: galiTool.name },
     maxTokens: 300,
   });
@@ -103,7 +113,7 @@ export async function extractAkuiGali({ transcriptText, apiKey, objectionQuote =
 
   const akuiTool = buildAkuiTool();
   const { toolCalls: akuiCalls, usage: akuiUsage } = await chatWithTools({
-    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildAkuiPrompt(objectionQuote, galiPresent ? galiPresentQuote : null),
+    apiKey, model: AKUI_GALI_MODEL, systemPrompt: buildAkuiPrompt(objectionQuote, galiPresent ? galiPresentQuote : null),
     messages: [userMessage], tools: [akuiTool], toolChoice: { type: "tool", name: akuiTool.name },
     maxTokens: 300,
   });
@@ -131,11 +141,15 @@ export async function extractAkuiGali({ transcriptText, apiKey, objectionQuote =
  * qualityScorerRubric.js#buildDimensionTool soal kenapa & trade-off biayanya
  * (transcript dikirim ulang tiap panggilan, TIDAK di-cache Anthropic).
  *
- * @returns {{ scores: object, usage: object }}
+ * @returns {{ scores: object, usage: object, akuiGaliUsage: object }}
+ *   `usage` = token Haiku (semua dimensi biasa). `akuiGaliUsage` TERPISAH
+ *   krn modelnya Sonnet (harga beda) — job.js menghitung costUsd gabungan
+ *   dari 2 tabel harga berbeda, BUKAN menyamaratakan semua sbg Haiku.
  */
 export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) {
   const scores = {};
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
+  const akuiGaliUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
   const userMessage = { role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` };
 
   for (let i = 0; i < RUBRIC_DIMENSIONS.length; i++) {
@@ -178,7 +192,7 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     // panggilan LLM utk topik yang tidak muncul di percakapan ini.
     if (dim.key === "objectionHandling" && dimFields.score != null) {
       const akuiGali = await extractAkuiGali({ transcriptText, apiKey, objectionQuote: dimFields.objectionTypeQuote ?? null });
-      addUsage(usage, akuiGali.usage);
+      addUsage(akuiGaliUsage, akuiGali.usage); // TERPISAH dari usage utama — model Sonnet, harga beda
       scores.objectionHandling.akuiPresent = akuiGali.akuiPresent;
       scores.objectionHandling.akuiPresentQuote = akuiGali.akuiPresentQuote;
       scores.objectionHandling.galiPresent = akuiGali.galiPresent;
@@ -186,7 +200,7 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     }
   }
 
-  return { scores, usage };
+  return { scores, usage, akuiGaliUsage };
 }
 
 export function resolveApiKey() {
