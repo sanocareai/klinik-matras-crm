@@ -134,7 +134,8 @@ export const RUBRIC_DIMENSIONS = [
           "(a) frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk merespons hal yang TIDAK ADA hubungannya dengan keberatan — mis. \"baik kak\", \"baik ibu\", \"siap\", \"terima kasih\"; " +
           "(b) kalimat yang HANYA menyatakan \"oke/baik/kami tunggu\" tanpa menyebut ULANG substansi keberatannya sama sekali; " +
           "(c) PERTANYAAN klarifikasi — itu masuk kategori galiPresent, BUKAN akuiPresent. akuiPresentQuote WAJIB kutipan yang BERBEDA dari galiPresentQuote — JANGAN PERNAH memakai kalimat pertanyaan yang sama utk kedua field. " +
-          "Kalau TIDAK ADA kalimat yang secara eksplisit memvalidasi ALASAN keberatan (terpisah dari sekadar menerima hasil ATAU dari pertanyaan klarifikasi), jawab false — JANGAN dipaksakan hanya karena sales terdengar sopan/tidak defensif.",
+          "Kalau TIDAK ADA kalimat yang secara eksplisit memvalidasi ALASAN keberatan (terpisah dari sekadar menerima hasil ATAU dari pertanyaan klarifikasi), jawab false — JANGAN dipaksakan hanya karena sales terdengar sopan/tidak defensif. " +
+          "LANGKAH WAJIB SEBELUM MENJAWAB: bandingkan isi akuiPresentQuote yang akan kamu tulis dengan galiPresentQuote yang akan kamu tulis utk field galiPresent. Kalau keduanya menunjuk ke KALIMAT YANG SAMA atau tumpang tindih signifikan (mis. satu pertanyaan yang sama dipakai utk dua alasan berbeda), maka kalimat itu HANYA boleh dihitung utk SATU field — pilih galiPresent (karena pertanyaan klarifikasi lebih konkret dideteksi), dan akuiPresent HARUS kamu jawab false dgn akuiPresentQuote null, KECUALI ada kalimat LAIN yang terpisah dan benar-benar memvalidasi alasan keberatan.",
         hasQuote: true,
       },
       {
