@@ -17,14 +17,17 @@ import { detectSalesRiskSignals } from "./signals.js";
 import { buildSalesRisk } from "./riskScore.js";
 import { THRESHOLDS as INTEL_THRESHOLDS } from "../intelligence/weights.js";
 
-const DEFAULT_CANDIDATE_LIMIT = 3000; // sama jaring pengaman dgn staleLeadAlertJob.js
+export const DEFAULT_CANDIDATE_LIMIT = 3000; // sama jaring pengaman dgn staleLeadAlertJob.js
 
 // Select MILIK Sales Risk Engine — pre-filter kandidat SAMA persis dgn
 // Priority Engine (recent activity/komplain terbuka/PROSPECT, SPAM
 // dikecualikan, supaya bounded bukan scan seluruh tabel Customer), TAPI
 // select messages-nya sendiri, MENCAKUP rawType/mediaType yang Priority
 // Engine tidak butuh dan tidak pernah muat.
-async function loadSalesRiskCandidates(prisma, { limit } = {}) {
+// Diekspor (29 Agustus 2026) — dipakai juga intentClassificationJob.js supaya
+// populasi customer yang di-klasifikasi SAMA PERSIS dgn yang dinilai
+// risknya, tidak ada drift antara 2 job.
+export async function loadSalesRiskCandidates(prisma, { limit } = {}) {
   const recentCut = new Date(Date.now() - INTEL_THRESHOLDS.candidateRecentDays * 86_400_000);
   const notSpam = { pipelineStage: { not: "SPAM" } };
   const where = { AND: [notSpam, { OR: [
@@ -58,8 +61,12 @@ async function loadSalesRiskCandidates(prisma, { limit } = {}) {
 // dari live test: severityCounts punya bucket "undefined" dan totalAtRisk=0
 // padahal 2879 kandidat discan. Diperbaiki dengan menghapus `async` di sini,
 // bukan menambah await di caller — fungsi ini memang tidak butuh Promise.
-export function buildSalesRiskForCustomer(customer) {
-  const signals = detectSalesRiskSignals(customer);
+// `cachedRow` (29 Agustus 2026) — baris SalesRiskIntentClassification utk
+// customer ini, atau null (belum pernah diklasifikasi). Diteruskan ke
+// detectSalesRiskSignals, TIDAK di-query di sini (lihat computeAllSalesRisks
+// — 1x findMany utk SEMUA customer, bukan N+1 di fungsi PURE ini).
+export function buildSalesRiskForCustomer(customer, cachedRow = null) {
+  const signals = detectSalesRiskSignals(customer, cachedRow);
   const risk = buildSalesRisk(signals, customer);
   return {
     customerId: customer.id,
@@ -75,9 +82,17 @@ export function buildSalesRiskForCustomer(customer) {
 // TIDAK dibuang dari hasil mentah (masih dihitung agregasinya), tapi caller
 // (route) boleh menyaring sebelum dikirim ke frontend kalau daftarnya
 // kepanjangan.
+//
+// Cache intent (29 Agustus 2026) dimuat SEKALI di sini (1 findMany, bukan
+// per-customer) — buildSalesRiskForCustomer/detectSalesRiskSignals TETAP
+// sync/pure, cuma baca Map yang sudah di-lookup.
 export async function computeAllSalesRisks({ limit = DEFAULT_CANDIDATE_LIMIT } = {}) {
-  const candidates = await loadSalesRiskCandidates(prisma, { limit });
-  return candidates.map((c) => buildSalesRiskForCustomer(c));
+  const [candidates, intentRows] = await Promise.all([
+    loadSalesRiskCandidates(prisma, { limit }),
+    prisma.salesRiskIntentClassification.findMany(),
+  ]);
+  const intentByCustomer = new Map(intentRows.map((r) => [r.customerId, r]));
+  return candidates.map((c) => buildSalesRiskForCustomer(c, intentByCustomer.get(c.id) || null));
 }
 
 // ── Agregasi (poin 8): per customer (daftar mentah di atas), per sales

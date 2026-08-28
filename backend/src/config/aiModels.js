@@ -32,4 +32,11 @@ export const AI_MODELS = {
   // tetap Haiku di bawah — lihat qualityScorerRubric.js#buildAkuiPrompt
   // utk heuristik terbaru "hapus frasa akui, cek apakah pitch tetap utuh".)
   SANO_QUALITY_SCORER: "claude-haiku-4-5-20251001",
+
+  // Sales Risk Engine — klasifikasi intent PESAN TERAKHIR customer (29 Agustus
+  // 2026, GANTI regex keyword-presence yang terbukti salah tangkap negasi/
+  // penolakan — lihat signals.js#detectBuyingIntent). Haiku: klasifikasi
+  // tunggal 5-kategori dari teks pendek (maks 5 pesan), tidak butuh reasoning
+  // dalam spt percakapan panjang — pola sama dgn SANO_QUALITY_SCORER.
+  SANO_SALES_RISK_INTENT: "claude-haiku-4-5-20251001",
 };

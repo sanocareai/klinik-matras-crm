@@ -53,6 +53,7 @@ import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
+import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
 import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -212,6 +213,7 @@ server.listen(PORT, () => {
   startStaleLeadAlertJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
+  startSalesRiskIntentClassificationJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.

@@ -5,14 +5,17 @@
 // utk riskScore.js. TIDAK menyentuh/menduplikasi logic intelligence/signals.js
 // (detectSignals) — engine ini punya definisi sendiri utk "neglect"/"waiting"
 // yang SENGAJA beda filosofi (lihat weights.js).
-import { detectIntents } from "../intelligence/replyReadiness.js";
 import { KEYWORDS, THRESHOLDS as INTEL_THRESHOLDS } from "../intelligence/weights.js";
-import { BOOKING_READINESS_PATTERN } from "./weights.js";
+// detectIntents/BOOKING_READINESS_PATTERN TIDAK DIPAKAI LAGI di sini (29
+// Agustus 2026) — diganti klasifikasi LLM, lihat detectBuyingIntent di bawah.
 
 // Gabungkan semua pesan dari conversations yang dimuat (maks 3 percakapan x
 // 20 pesan, sama seperti Priority Engine), urut KRONOLOGIS (ascending) —
 // perlu urutan asli utk hitung "unanswered run" di akhir.
-function flattenMessagesAsc(conversations) {
+// Diekspor (29 Agustus 2026) — dipakai juga intentClassificationJob.js supaya
+// window pesan yang dievaluasi LLM SAMA PERSIS dgn yang dipakai signals.js,
+// tidak ada drift.
+export function flattenMessagesAsc(conversations) {
   const all = [];
   for (const conv of conversations || []) {
     for (const m of conv.messages || []) all.push(m);
@@ -48,22 +51,45 @@ function detectNeglect(messagesAsc) {
   return { isNeglected, unansweredCount, lastInboundAt, lastOutboundAt };
 }
 
-// Sinyal B — Buying Intent: 3 sumber independen (lihat weights.js).
-function detectBuyingIntent(messagesAsc) {
+// Sinyal B — Buying Intent (29 Agustus 2026, GANTI TOTAL sumber "keyword
+// text" — lihat catatan panjang di intentClassification.js soal 2 bug yang
+// diperbaiki). `hasKeywordOrPhrase` SEKARANG murni dari klasifikasi LLM
+// ter-cache (latestMessageIntent === "MINAT_AKTIF") thd PESAN TERAKHIR SAJA
+// — BUKAN lagi detectIntents()/BOOKING_READINESS_PATTERN thd 5 pesan
+// digabung. `hasLocation` TIDAK diubah (sinyal struktural/rawType, bukan
+// text-parsing, tidak terlibat di bug yang dilaporkan).
+//
+// `cachedRow` (null kalau belum pernah diklasifikasi ATAU cache stale)
+// datang dari SalesRiskIntentClassification, dimuat SEKALI oleh caller
+// (index.js#computeAllSalesRisks, bukan query per-customer di sini — fungsi
+// ini TETAP PURE/sync, cuma baca parameter yang sudah di-lookup). Validitas
+// cache (apakah `latestMessageAt` masih match pesan terakhir SEKARANG)
+// dicek DI SINI karena pesan sudah di-flatten di sini juga — hindari
+// flatten dobel.
+function detectBuyingIntent(messagesAsc, cachedRow) {
   const recentInbound = messagesAsc.filter((m) => m.direction === "INBOUND").slice(-5);
+  const lastInbound = recentInbound[recentInbound.length - 1] || null;
   const recentText = recentInbound.map((m) => m.content || "").join(" ");
 
-  const hasKeyword = detectIntents(recentText).length > 0;
-  const hasBookingPhrase = BOOKING_READINESS_PATTERN.test(recentText);
   const hasLocation = recentInbound.some((m) => m.rawType === "location" || m.mediaType === "location");
-  const hasComplaintLikeKeyword = KEYWORDS.complaint.test(recentText); // dipakai trainingMap.js, bukan skor
+  const hasComplaintLikeKeyword = KEYWORDS.complaint.test(recentText); // dipakai trainingMap.js, bukan skor — TIDAK diubah
+
+  const cacheValid =
+    cachedRow && lastInbound && cachedRow.latestMessageAt.getTime() === new Date(lastInbound.createdAt).getTime();
+  // null (bukan false/"NETRAL" ditebak) kalau belum pernah diklasifikasi
+  // atau customer sudah kirim pesan baru sejak klasifikasi terakhir — job
+  // harian yang akan mengisi ini, TIDAK ditebak di sini (prinsip null-safety
+  // yang sama dipakai di seluruh investigasi akuiPresent/galiPresent).
+  const latestMessageIntent = cacheValid ? cachedRow.latestMessageIntent : null;
+  const hasKeywordOrPhrase = latestMessageIntent === "MINAT_AKTIF";
 
   return {
-    hasKeywordOrPhrase: hasKeyword || hasBookingPhrase,
+    hasKeywordOrPhrase,
     hasLocation,
-    hasBuyingIntent: hasKeyword || hasBookingPhrase || hasLocation,
+    hasBuyingIntent: hasKeywordOrPhrase || hasLocation,
     hasComplaintLikeKeyword,
-    recentInboundQuote: recentInbound[recentInbound.length - 1]?.content || null,
+    recentInboundQuote: lastInbound?.content || null,
+    latestMessageIntent,
   };
 }
 
@@ -86,10 +112,14 @@ function detectCustomerValue(customer) {
   return { orderValue, orderCount };
 }
 
-export function detectSalesRiskSignals(customer) {
+// `cachedRow` (29 Agustus 2026) — baris SalesRiskIntentClassification utk
+// customer ini (atau null), diteruskan LANGSUNG ke detectBuyingIntent. Lihat
+// index.js#computeAllSalesRisks utk bagaimana ini dimuat (1x findMany utk
+// semua customer, bukan N+1).
+export function detectSalesRiskSignals(customer, cachedRow = null) {
   const messagesAsc = flattenMessagesAsc(customer.conversations);
   const neglect = detectNeglect(messagesAsc);
-  const intent = detectBuyingIntent(messagesAsc);
+  const intent = detectBuyingIntent(messagesAsc, cachedRow);
 
   const lastMessageAt = messagesAsc.length ? new Date(messagesAsc[messagesAsc.length - 1].createdAt) : null;
   const pipeline = detectPipeline(customer, lastMessageAt);

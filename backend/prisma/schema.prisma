@@ -438,6 +438,7 @@ model Customer {
   pipelineTransitions PipelineTransition[]
   broadcastTargets    BroadcastTarget[]
   staleLeadAlertLog   StaleLeadAlertLog?
+  salesRiskIntentClassification SalesRiskIntentClassification?
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
   @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
@@ -732,6 +733,27 @@ model StaleLeadAlertLog {
   customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   firstAlertedAt  DateTime // kapan customer ini PERTAMA kena alert utk episode stale yang SEDANG berjalan
   lastNotifiedDay String? // "YYYY-MM-DD" WIB — cegah dobel kirim WA di hari yang sama kalau job dipicu manual >1x
+}
+
+// Cache klasifikasi intent PESAN TERAKHIR customer utk Sales Risk Engine (29
+// Agustus 2026) — GANTI regex keyword-presence (\bbeli\b dkk, gabungan 5
+// pesan) yang terbukti salah tangkap negasi/penolakan DAN minat basi yang
+// menempel dari pesan lama (lihat signals.js#detectBuyingIntent). Diisi oleh
+// job harian (salesRisk/intentClassificationJob.js), DIBACA on-demand oleh
+// GET /api/sales-risk — BUKAN dipanggil LLM tiap page load.
+//
+// latestMessageAt = timestamp pesan INBOUND yang DIEVALUASI saat klasifikasi
+// ini dibuat — dipakai deteksi cache STALE (kalau customer kirim pesan baru
+// setelah timestamp ini, klasifikasi lama tidak lagi relevan utk pesan
+// TERBARU, job berikutnya akan re-klasifikasi). 1 baris per customer, upsert
+// (bukan riwayat — nilai lama tidak berarti apa-apa lagi setelah pesan baru
+// masuk, beda filosofi dari PipelineTransition yang append-only).
+model SalesRiskIntentClassification {
+  customerId          String   @id
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  latestMessageIntent String // MINAT_AKTIF | PENOLAKAN | PLEASANTRY_PENUTUP | PERTANYAAN_MENGGANTUNG | NETRAL
+  latestMessageAt     DateTime // timestamp pesan INBOUND yang dievaluasi — kunci validitas cache
+  classifiedAt        DateTime @default(now())
 }
 
 model Order {
