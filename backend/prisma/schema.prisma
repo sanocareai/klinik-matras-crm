@@ -288,8 +288,9 @@ model User {
   // lain di atas yang pakai RESTRICT/SetNull (itu soal riwayat BISNIS yang
   // tidak boleh hilang). Ini cuma kredensial ephemeral: kalau user dihapus,
   // tidak ada alasan menyimpan authorization code / refresh token miliknya.
-  mcpAuthorizationCodes McpAuthorizationCode[]
-  mcpRefreshTokens      McpRefreshToken[]
+  mcpAuthorizationCodes           McpAuthorizationCode[]
+  mcpRefreshTokens                McpRefreshToken[]
+  riskClassificationFeedbackGiven RiskClassificationFeedback[]
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -394,12 +395,12 @@ model Customer {
   // di-query untuk kirim balik data konversi ke Meta Conversions API nanti
   // — itu yang membuat Meta bisa mengoptimalkan iklan ke orang yang
   // BENAR-BENAR closing, bukan sekadar yang chat.
-  ctwaClid                String?       @map("ctwa_clid")
+  ctwaClid                String?                   @map("ctwa_clid")
   // URL postingan/kreatif yang dipakai iklannya (mis. link post Instagram).
   // Berguna untuk tahu kreatif MANA yang menghasilkan lead, karena payload
   // WA tidak membawa nama campaign.
-  ctwaSourceUrl           String?       @map("ctwa_source_url")
-  customerType            CustomerType  @default(END_USER)
+  ctwaSourceUrl           String?                   @map("ctwa_source_url")
+  customerType            CustomerType              @default(END_USER)
   healthStatus            HealthStatus?
   // D-028 (20 Agustus 2026) — sama seperti Order.complaintCategory, tapi di
   // level PROFIL pelanggan (diisi dari panel Inbox "Kondisi Pelanggan",
@@ -410,9 +411,9 @@ model Customer {
   complaintCategory       HealthComplaintCategory[] @default([]) @map("complaint_category")
   profilePictureUrl       String? // foto profil WA, nullable — di-refresh berkala (lihat profilePictureFetchedAt)
   profilePictureFetchedAt DateTime? // kapan terakhir dicoba fetch dari WAHA — dipakai cek "expired >7 hari" di webhooks.js, JUGA distempel saat fetch GAGAL (privasi dibatasi dsb) supaya tidak coba lagi tiap pesan masuk sampai TTL lewat
-  nameManuallyEdited      Boolean       @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
+  nameManuallyEdited      Boolean                   @default(false) // true = sales sudah edit nama manual di CRM (PATCH /customers/:id) — webhook TIDAK BOLEH timpa lagi dengan pushName/contact WAHA
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
 
   // Revisi 27 Jul 2026: DENORMALIZED dari tabel Order (bukan sumber
   // kebenaran — sumber kebenaran tetap Order.value/status), disinkronkan
@@ -435,10 +436,11 @@ model Customer {
   notes         Note[]
   orders        Order[]
 
-  pipelineTransitions PipelineTransition[]
-  broadcastTargets    BroadcastTarget[]
-  staleLeadAlertLog   StaleLeadAlertLog?
+  pipelineTransitions           PipelineTransition[]
+  broadcastTargets              BroadcastTarget[]
+  staleLeadAlertLog             StaleLeadAlertLog?
   salesRiskIntentClassification SalesRiskIntentClassification?
+  riskClassificationFeedback    RiskClassificationFeedback[]
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
   @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
@@ -756,6 +758,30 @@ model SalesRiskIntentClassification {
   classifiedAt        DateTime @default(now())
 }
 
+// Feedback manual admin thd kartu Pelanggan Berisiko yang dianggap SALAH
+// kategori (29 Agustus 2026) — alat bantu audit selama investigasi false-
+// positive Sales Risk Engine (kasus Khoirul Umam dkk). APPEND-ONLY (id PK,
+// BUKAN customerId PK spt tabel cache di atas) — 1 customer BISA ditandai
+// lebih dari 1x sepanjang waktu (klasifikasi berubah, ditandai lagi kalau
+// masih salah), riwayatnya dipertahankan supaya bisa dibandingkan (Scope
+// eksplisit: "jangan hapus kartu yang ditandai dari list"). Snapshot
+// severityAsli/alasanAsli DIAMBIL SAAT DITANDAI (bukan live-join ke tier
+// sekarang) — supaya catatan tetap akurat secara historis walau
+// klasifikasi customer itu berubah lagi setelahnya.
+model RiskClassificationFeedback {
+  id             String   @id @default(cuid())
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  severityAsli   String // tier (CRITICAL/HIGH/MEDIUM/LOW) SAAT ditandai
+  alasanAsli     String // problemTags digabung ", " SAAT ditandai — snapshot, bukan live
+  catatan        String? // opsional, alasan bebas dari admin yang menandai
+  ditandaiOlehId String
+  ditandaiOleh   User     @relation(fields: [ditandaiOlehId], references: [id])
+  waktuDitandai  DateTime @default(now())
+
+  @@index([customerId])
+}
+
 model Order {
   id                 String        @id @default(cuid())
   customerId         String
@@ -791,16 +817,16 @@ model Order {
   // kunjungan driver, lihat komentar di model Job) tetap sumber kebenaran
   // untuk GPS/lokasi aktual di lapangan. Kalau nanti Armada mau prefill
   // addressText dari sini saat bikin Job, itu keputusan terpisah.
-  deliveryCity       String?       @map("delivery_city")
-  deliveryAddress    String?       @map("delivery_address")
+  deliveryCity    String? @map("delivery_city")
+  deliveryAddress String? @map("delivery_address")
 
   // D-028 (20 Agustus 2026) — Sakit/Tidak Sakit + kategori keluhan PER ORDER,
   // diisi sales di form order (bukan cuma Customer.healthStatus di profil).
   // complaintCategory HANYA relevan/ditampilkan kalau healthStatus = SAKIT.
   // Array sejak revisi 20 Agustus 2026 — lihat komentar di enum
   // HealthComplaintCategory (keluhan biasanya lebih dari satu area sekaligus).
-  healthStatus       HealthStatus?              @map("health_status")
-  complaintCategory  HealthComplaintCategory[]  @default([]) @map("complaint_category")
+  healthStatus      HealthStatus?             @map("health_status")
+  complaintCategory HealthComplaintCategory[] @default([]) @map("complaint_category")
 
   // D-029 (20 Agustus 2026) — field tambahan supaya form order menangkap
   // SEMUA info yang sales SELAMA INI ketik ulang manual ke grup WA sales
@@ -812,8 +838,8 @@ model Order {
   // (servis ulang gara-gara masalah produk) punya aturan ongkir sendiri,
   // beda dari ongkir order biasa — keduanya tidak pernah dijumlah manual di
   // sini, biar jelas mana yang mana saat rekap.
-  ongkir              Int?      @map("ongkir")
-  ongkirKlaimGaransi  Int?      @map("ongkir_klaim_garansi")
+  ongkir             Int? @map("ongkir")
+  ongkirKlaimGaransi Int? @map("ongkir_klaim_garansi")
 
   // pickupEstimate SENGAJA teks bebas, bukan tanggal presisi — di lapangan
   // sales cuma tahu rentang tanggal customer available (mis. "est 24/25
@@ -839,7 +865,7 @@ model Order {
   // Link share lokasi Google Maps dari customer — dulu cuma nempel di teks
   // pesan WA (gampang hilang begitu chat discroll), sekarang jadi field
   // sendiri supaya selalu ketemu dari Order-nya langsung.
-  locationUrl         String?   @map("location_url")
+  locationUrl String? @map("location_url")
 
   // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
   // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin
@@ -852,8 +878,8 @@ model Order {
   promoId String? @map("promo_id")
   promo   Promo?  @relation(fields: [promoId], references: [id], onDelete: SetNull)
 
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   items             OrderItem[]
   weightEntries     OrderWeightEntry[]
@@ -879,7 +905,7 @@ model Order {
 // ditambahkan di sini tanpa mengubah UI OrderSection yang sudah menegaskan
 // harga selalu input manual.
 model Promo {
-  id   String @id @default(cuid())
+  id              String    @id @default(cuid())
   // Kode pendek unik (mis. "MERDEKA17") — dipilih dari dropdown saat input
   // order, BUKAN diketik bebas, supaya satu kampanye tidak pernah pecah
   // jadi beberapa varian ejaan di laporan.
@@ -1300,9 +1326,9 @@ model Job {
 // tangan). Tanpa pemisahan ini, satu batch ping yang telat terkirim akan
 // terlihat seolah driver "teleport" tiba-tiba, padahal cuma jeda kirim.
 model JobPositionPing {
-  id       String @id @default(uuid()) @db.Uuid
-  jobId    String @map("job_id") @db.Uuid
-  job      Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id       String  @id @default(uuid()) @db.Uuid
+  jobId    String  @map("job_id") @db.Uuid
+  job      Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
   // Nullable: onDelete SetNull di bawah mengharuskannya. String? bukan
   // berarti ping-nya boleh tanpa driver saat dibuat — endpoint selalu
   // mengisinya dari req.user.id, cuma jadi null KALAU akun driver-nya
@@ -1447,7 +1473,7 @@ model Vehicle {
   year          Int?
   color         String?
   chassisNumber String? @map("chassis_number") // nomor rangka
-  engineNumber  String? @map("engine_number")  // nomor mesin
+  engineNumber  String? @map("engine_number") // nomor mesin
 
   // ── Dokumen & masa berlaku (D-035) ──────────────────────────────────────
   // Tanggal kadaluarsa dipisah per dokumen (bukan satu kolom "dokumen
@@ -1455,12 +1481,12 @@ model Vehicle {
   // STNK/pajak tahunan, KIR 6 bulanan untuk kendaraan niaga, asuransi
   // mengikuti polis. Semua @db.Date — yang bermakna TANGGAL kalender, bukan
   // instant (lihat aturan waktu di CLAUDE.md §11).
-  stnkNumber       String?   @map("stnk_number")
-  stnkExpiry       DateTime? @map("stnk_expiry") @db.Date
-  taxExpiry        DateTime? @map("tax_expiry") @db.Date        // pajak tahunan
-  kirExpiry        DateTime? @map("kir_expiry") @db.Date        // uji KIR (kendaraan niaga)
-  insurancePolicy  String?   @map("insurance_policy")
-  insuranceExpiry  DateTime? @map("insurance_expiry") @db.Date
+  stnkNumber      String?   @map("stnk_number")
+  stnkExpiry      DateTime? @map("stnk_expiry") @db.Date
+  taxExpiry       DateTime? @map("tax_expiry") @db.Date // pajak tahunan
+  kirExpiry       DateTime? @map("kir_expiry") @db.Date // uji KIR (kendaraan niaga)
+  insurancePolicy String?   @map("insurance_policy")
+  insuranceExpiry DateTime? @map("insurance_expiry") @db.Date
 
   // PIC supir tetap — SetNull, bukan Cascade: supir keluar TIDAK boleh
   // menghapus kendaraannya. Ini "penanggung jawab harian", BUKAN pembatasan
@@ -1547,13 +1573,13 @@ model VehicleService {
   vehicleId String  @map("vehicle_id") @db.Uuid
   vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
 
-  date       DateTime    @db.Date
-  type       ServiceType
-  odometerKm Int         @map("odometer_km")
-  cost       Int // Rupiah
-  workshop   String? // nama bengkel
+  date        DateTime    @db.Date
+  type        ServiceType
+  odometerKm  Int         @map("odometer_km")
+  cost        Int // Rupiah
+  workshop    String? // nama bengkel
   description String?
-  receiptUrl String?     @map("receipt_url")
+  receiptUrl  String?     @map("receipt_url")
 
   // Jadwal berikutnya menurut nota bengkel — dua-duanya nullable, dipakai
   // mana yang lebih dulu tercapai.
@@ -2174,13 +2200,13 @@ model ReplySuggestionLog {
 // (bukan join real-time) — supaya rollup mingguan tetap benar walau nama
 // sales berubah atau stage pipeline customer sudah bergerak sejak disample.
 model ConversationQualityScore {
-  id                     String   @id @default(cuid())
-  conversationId         String // string biasa (tanpa FK) — isolasi
-  customerId             String? // string biasa (tanpa FK) — isolasi
-  salesUserId            String // string biasa (tanpa FK) — sales yang dinilai
-  salesName              String // snapshot nama saat disample
-  pipelineStageAtSample  String // snapshot stage Customer saat disample
-  sampledFor             DateTime // awal hari (WIB) yang di-sample — job jalan "utk kemarin"
+  id                    String   @id @default(cuid())
+  conversationId        String // string biasa (tanpa FK) — isolasi
+  customerId            String? // string biasa (tanpa FK) — isolasi
+  salesUserId           String // string biasa (tanpa FK) — sales yang dinilai
+  salesName             String // snapshot nama saat disample
+  pipelineStageAtSample String // snapshot stage Customer saat disample
+  sampledFor            DateTime // awal hari (WIB) yang di-sample — job jalan "utk kemarin"
 
   // 4 dimensi rubrik (skor 1-5 + kutipan bukti singkat + catatan coaching).
   // Kolom tetap (bukan tabel dimensi generik) — cuma 4, sudah pasti & stabil.
@@ -2189,18 +2215,18 @@ model ConversationQualityScore {
   // terlalu pendek belum sempat bahas dampak kesehatan), LLM diinstruksikan
   // kembalikan null, BUKAN dipaksa angka 1-5 utk sesuatu yang tidak terjadi
   // (prinsip "tidak tahu lebih baik daripada menebak").
-  productKnowledgeScore     Int?
-  productKnowledgeQuote     String?
-  productKnowledgeNote      String?
-  consultationProcessScore  Int?
-  consultationProcessQuote  String?
-  consultationProcessNote   String?
-  healthImpactScore         Int?
-  healthImpactQuote         String?
-  healthImpactNote          String?
-  objectionHandlingScore    Int?
-  objectionHandlingQuote    String?
-  objectionHandlingNote     String?
+  productKnowledgeScore    Int?
+  productKnowledgeQuote    String?
+  productKnowledgeNote     String?
+  consultationProcessScore Int?
+  consultationProcessQuote String?
+  consultationProcessNote  String?
+  healthImpactScore        Int?
+  healthImpactQuote        String?
+  healthImpactNote         String?
+  objectionHandlingScore   Int?
+  objectionHandlingQuote   String?
+  objectionHandlingNote    String?
 
   // Dimensi E & F (26 Agustus 2026) — SAMA prinsip nullable dgn 4 dimensi di
   // atas, TAPI masing-masing juga punya flag boolean terstruktur (bukan cuma
@@ -2257,8 +2283,8 @@ model ConversationQualityScore {
   // nilai enum dilakukan di kode (job.js), bukan di level DB, supaya LLM
   // yang keliru menyebut nilai tidak dikenal cukup di-null-kan, bukan gagal
   // insert.
-  objectionType          String? // salah satu: HARGA/MENUNDA/KEPERCAYAAN/OTORITAS_KEPUTUSAN/KEBUTUHAN/PEMBANDING
-  objectionTypeQuote     String?
+  objectionType      String? // salah satu: HARGA/MENUNDA/KEPERCAYAAN/OTORITAS_KEPUTUSAN/KEBUTUHAN/PEMBANDING
+  objectionTypeQuote String?
 
   // frameworkFollowed DIPECAH (28 Agustus 2026, ditemukan lewat investigasi
   // gold-standard) — versi lama minta LLM menilai Dengar-Akui-Gali sbg SATU
@@ -2326,13 +2352,13 @@ model ConversationQualityScore {
   // via LLM kalau bisa dihitung langsung dari data yang sudah ada".
   recommendedModule String?
 
-  overallNote               String? // catatan coaching ringkasan, opsional
+  overallNote String? // catatan coaching ringkasan, opsional
 
   model        String // model id dipakai saat grading (mis. claude-haiku-4-5-20251001)
-  inputTokens  Int      @default(0)
-  outputTokens Int      @default(0)
-  costUsd      Float    @default(0)
-  messageCount Int      @default(0) // jumlah pesan transcript yang dinilai — audit trail
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  costUsd      Float  @default(0)
+  messageCount Int    @default(0) // jumlah pesan transcript yang dinilai — audit trail
 
   createdAt DateTime @default(now())
 
@@ -2360,9 +2386,9 @@ model SalesQualityWeeklyNarrative {
   narrative String // 2-4 kalimat, hasil 1 panggilan LLM/sales/minggu
 
   model        String
-  inputTokens  Int   @default(0)
-  outputTokens Int   @default(0)
-  costUsd      Float @default(0)
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  costUsd      Float  @default(0)
 
   createdAt DateTime @default(now())
 
@@ -3545,6 +3571,10 @@ model McpAuthorizationCode {
   redirectUri   String    @map("redirect_uri")
   codeChallenge String    @map("code_challenge") // PKCE S256, base64url
   scope         String
+  // Resource server yang diminta (RFC 8707), mis. "https://app.sanomatrassehat.com/mcp"
+  // atau ".../mcp-hub" — SANO Hub Analytics (29 Agt 2026). NULLABLE supaya kompatibel
+  // ke belakang: baris lama (sebelum kolom ini ada) dianggap "/mcp" oleh oauthCrypto.js.
+  resource      String?
   expiresAt     DateTime  @map("expires_at")
   usedAt        DateTime? @map("used_at")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -3564,6 +3594,9 @@ model McpRefreshToken {
   userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   scope     String
+  // Sama seperti McpAuthorizationCode.resource di atas — dibawa dari code
+  // saat ditukar, lalu diwariskan ke token baru tiap rotasi.
+  resource  String?
   revokedAt DateTime? @map("revoked_at")
   expiresAt DateTime  @map("expires_at")
   createdAt DateTime  @default(now()) @map("created_at")

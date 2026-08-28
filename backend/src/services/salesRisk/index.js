@@ -44,6 +44,7 @@ export async function loadSalesRiskCandidates(prisma, { limit } = {}) {
       conversations: {
         where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
         select: {
+          id: true, // 29 Agustus 2026 — diekspos ke frontend (lihat buildSalesRiskForCustomer) utk tombol "Lihat percakapan penuh", TIDAK dipakai logic skor apa pun di sini
           messages: {
             orderBy: { createdAt: "desc" }, take: 20,
             select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true },
@@ -73,6 +74,11 @@ export function buildSalesRiskForCustomer(customer, cachedRow = null) {
     customerName: customer.name || customer.phone || "(tanpa nama)",
     salesOwnerId: customer.assignedSalesId,
     salesOwnerName: customer.assignedSales?.name || null,
+    // conversations[0] = percakapan INDIVIDUAL terbaru (query sudah order by
+    // lastMessageAt desc) — dipakai frontend utk "Lihat percakapan penuh"
+    // (GET /conversations/:id/peek, side-effect-free). Murni presentasi,
+    // TIDAK dipakai di mana pun dalam perhitungan risk di atas.
+    conversationId: customer.conversations?.[0]?.id || null,
     ...risk,
   };
 }

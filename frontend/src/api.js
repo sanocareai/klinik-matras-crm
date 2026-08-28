@@ -669,6 +669,11 @@ export const api = {
   // Sales Risk Engine (26 Agustus 2026) — TERPISAH dari skorUrgensi/Priority
   // Engine, deteksi risiko kebocoran revenue akibat eksekusi sales gagal.
   getSalesRisk: (params) => request("/sales-risk" + buildQuery(params)),
+  // Feedback "salah kategori" (29 Agustus 2026) — alat audit manual, TIDAK
+  // mengubah severity/tier apa pun, lihat routes/salesRisk.js.
+  getRiskClassificationFeedback: () => request("/sales-risk/feedback"),
+  flagRiskClassification: (customerId, body) =>
+    request(`/sales-risk/${customerId}/feedback`, { method: "POST", body: JSON.stringify(body) }),
   // Sales Performance Intelligence (27 Agustus 2026) — agregasi Quality
   // Scorer + Sales Risk Engine + SLA/response-time, TANPA skoring AI baru.
   getSalesIntelligence: (params) => request("/sales-intelligence" + buildQuery(params)),

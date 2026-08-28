@@ -1,11 +1,18 @@
 // ═══ SALES RISK ENGINE — route laporan (read-only) ═════════════════════════
 // Admin-only: agregat lintas SEMUA sales, setara sensitivitasnya dgn Laporan
-// Sales/Quality Scorer. TIDAK ADA endpoint tulis — engine ini murni baca &
-// hitung on-the-fly (belum wired ke alert/notifikasi apa pun, itu scope
-// masa depan per proposal desain).
+// Sales/Quality Scorer. Perhitungan risk-nya sendiri MURNI baca & hitung
+// on-the-fly (belum wired ke alert/notifikasi apa pun, itu scope masa depan
+// per proposal desain).
+//
+// PENGECUALIAN (29 Agustus 2026): 2 endpoint di bawah INI menulis, tapi ke
+// tabel AUDIT terpisah (RiskClassificationFeedback) — TIDAK MENYENTUH skor/
+// tier/logic apa pun. Alat bantu manual selama investigasi false-positive
+// classifier (Khoirul Umam dkk), murni catatan "admin X menganggap kartu Y
+// salah kategori pada waktu Z", tidak mengubah hasil computeAllSalesRisks().
 import express from "express";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { computeAllSalesRisks, aggregateBySalesOwner, aggregateBySeverity } from "../services/salesRisk/index.js";
+import { prisma } from "../db.js";
 
 export const salesRiskRouter = express.Router();
 salesRiskRouter.use(requireAuth);
@@ -54,5 +61,60 @@ salesRiskRouter.get("/", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("sales-risk error:", err);
     res.status(500).json({ error: "Gagal menghitung Sales Risk" });
+  }
+});
+
+// GET /api/sales-risk/feedback — SEMUA feedback "salah kategori" (tabel
+// kecil, alat audit — tidak perlu pagination di skala ini). Dipakai frontend
+// utk badge "Ditandai salah" per kartu + count "N ditandai" di Ringkasan.
+// Ditaruh SEBELUM "/:customerId/feedback" scr eksplisit tidak relevan di
+// Express (literal path beda, bukan pola tumpang tindih ":param").
+salesRiskRouter.get("/feedback", requireAdmin, async (req, res) => {
+  try {
+    const rows = await prisma.riskClassificationFeedback.findMany({
+      include: { ditandaiOleh: { select: { name: true } } },
+      orderBy: { waktuDitandai: "desc" },
+    });
+    res.json({
+      feedback: rows.map((r) => ({
+        id: r.id,
+        customerId: r.customerId,
+        severityAsli: r.severityAsli,
+        alasanAsli: r.alasanAsli,
+        catatan: r.catatan,
+        ditandaiOlehNama: r.ditandaiOleh?.name || null,
+        waktuDitandai: r.waktuDitandai,
+      })),
+    });
+  } catch (err) {
+    console.error("sales-risk feedback list error:", err);
+    res.status(500).json({ error: "Gagal memuat feedback" });
+  }
+});
+
+// POST /api/sales-risk/:customerId/feedback — tandai 1 kartu sbg salah
+// kategori. severityAsli/alasanAsli WAJIB dikirim frontend (snapshot state
+// KARTU SAAT DIKLIK, bukan di-query ulang di sini) — supaya catatan tetap
+// akurat historis walau tier customer ini berubah lagi setelahnya.
+salesRiskRouter.post("/:customerId/feedback", requireAdmin, async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { severityAsli, alasanAsli, catatan } = req.body;
+    if (!severityAsli || !alasanAsli) {
+      return res.status(400).json({ error: "severityAsli dan alasanAsli wajib diisi" });
+    }
+    const row = await prisma.riskClassificationFeedback.create({
+      data: {
+        customerId,
+        severityAsli: String(severityAsli),
+        alasanAsli: String(alasanAsli),
+        catatan: catatan ? String(catatan).slice(0, 1000) : null,
+        ditandaiOlehId: req.user.id,
+      },
+    });
+    res.json(row);
+  } catch (err) {
+    console.error("sales-risk feedback create error:", err);
+    res.status(500).json({ error: "Gagal menyimpan feedback" });
   }
 });
