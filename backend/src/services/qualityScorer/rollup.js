@@ -18,6 +18,13 @@ const DIM_TO_COLUMN = {
   communicationSkill: "communicationSkillScore",
   authoritySelling: "authoritySellingScore",
   objectionHandling: "objectionHandlingScore",
+  // evidenceBasedSelling (dimensi G, 28 Agustus 2026) — BUG DIPERBAIKI: dimensi
+  // ini sudah masuk RUBRIC_DIMENSIONS/CORE_DIMENSIONS (qualityScorerRubric.js)
+  // sejak ditambahkan, tapi map di sini TIDAK ikut diperbarui — bikin
+  // formatExample() crash (`undefined.replace(...)`) tiap kali overallScore()
+  // ikut menghitung dimensi ini (score TIDAK null). Ketahuan lewat endpoint
+  // /api/sales-intelligence yang memanggil getWeeklyRollup() dgn 4 dimensi.
+  evidenceBasedSelling: "evidenceBasedSellingScore",
 };
 
 function overallScore(row) {
