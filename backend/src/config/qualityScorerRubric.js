@@ -128,18 +128,22 @@ export const RUBRIC_DIMENSIONS = [
         key: "akuiPresent",
         kind: "boolean",
         question:
-          "Apakah sales memvalidasi/mengakui SECARA SPESIFIK isi keberatan pelanggan (bukan basa-basi umum)? " +
-          "Kalimat yang MEMENUHI: merujuk LANGSUNG ke keberatan yang baru diucapkan pelanggan, mis. \"saya paham kekhawatiran soal harga ini\", \"wajar kalau ibu ingin diskusikan dulu dengan suami\". " +
-          "Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti, meski terdengar sopan): frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk merespons hal yang TIDAK ADA hubungannya dengan keberatan itu — mis. \"baik kak\", \"baik ibu\", \"siap\", \"terima kasih\" yang dipakai sebagai basa-basi rutin di berbagai konteks. Kalau ragu apakah suatu frasa filler atau validasi sungguhan, CEK apakah frasa yang SAMA PERSIS/MIRIP muncul di tempat lain transkrip untuk hal yang tidak berkaitan dengan keberatan — kalau ya, itu FILLER, bukan Akui. " +
-          "false kalau sales LANGSUNG menjawab/menjelaskan tanpa validasi spesifik ini.",
+          "Apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan — BUKAN sekadar menerima keputusan/hasil akhirnya? " +
+          "Kalimat yang MEMENUHI: secara eksplisit menyebut ULANG atau merespons ALASAN/PERASAAN spesifik yang baru diucapkan pelanggan. Contoh: kalau pelanggan bilang \"mau saya obrolin dulu sama istri\", Akui yang VALID menyebut soal DISKUSI/KEPUTUSAN BERSAMA (\"wajar sekali, ini memang baiknya didiskusikan dulu bersama pasangan\") — BUKAN cuma \"baik, kami tunggu kabar baiknya\" (itu CUMA menerima PENUNDAANNYA, TIDAK memvalidasi ALASANNYA — tetap dihitung GAGAL/false meski terdengar sopan). " +
+          "Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti Akui): " +
+          "(a) frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk merespons hal yang TIDAK ADA hubungannya dengan keberatan — mis. \"baik kak\", \"baik ibu\", \"siap\", \"terima kasih\"; " +
+          "(b) kalimat yang HANYA menyatakan \"oke/baik/kami tunggu\" tanpa menyebut ULANG substansi keberatannya sama sekali; " +
+          "(c) PERTANYAAN klarifikasi — itu masuk kategori galiPresent, BUKAN akuiPresent. akuiPresentQuote WAJIB kutipan yang BERBEDA dari galiPresentQuote — JANGAN PERNAH memakai kalimat pertanyaan yang sama utk kedua field. " +
+          "Kalau TIDAK ADA kalimat yang secara eksplisit memvalidasi ALASAN keberatan (terpisah dari sekadar menerima hasil ATAU dari pertanyaan klarifikasi), jawab false — JANGAN dipaksakan hanya karena sales terdengar sopan/tidak defensif.",
         hasQuote: true,
       },
       {
         key: "galiPresent",
         kind: "boolean",
         question:
-          "Apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan SEBENARNYA sebelum menjawab (bukan langsung menjelaskan/membantah)? " +
+          "Apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan SEBENARNYA SEBELUM menjawab/menjelaskan (bukan langsung menjelaskan/membantah)? " +
           "mis. \"boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?\", \"budget yang tersedia saat ini di kisaran berapa?\". " +
+          "PENTING: galiPresentQuote WAJIB kutipan yang BERBEDA dari akuiPresentQuote. Kalau HANYA ADA satu kalimat gabungan yang isinya pertanyaan probing TANPA ada validasi empati terpisah sebelumnya, kategorikan itu SEBAGAI galiPresent=true SAJA (akuiPresent tetap false, karena validasi terpisahnya memang tidak ada) — JANGAN pernah menandai kalimat yang sama sbg bukti KEDUA field sekaligus. " +
           "false kalau sales langsung masuk ke penjelasan/justifikasi/harga tanpa bertanya lebih dulu.",
         hasQuote: true,
       },
