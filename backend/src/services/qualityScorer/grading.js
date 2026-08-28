@@ -8,6 +8,7 @@ import { getAnthropicKey } from "../replyAssistant/providers/keyStore.js";
 import {
   QUALITY_SCORER_MODEL, buildSystemPrompt, buildDimensionTool, RUBRIC_DIMENSIONS,
   buildGaliTool, buildGaliPrompt, buildAkuiTool, buildAkuiPrompt,
+  buildObjectionTypeTool, buildObjectionTypePrompt,
 } from "../../config/qualityScorerRubric.js";
 import { maskMessageContent } from "./masking.js";
 
@@ -122,6 +123,34 @@ export async function extractAkuiGali({ transcriptText, apiKey, objectionQuote =
   const akuiPresentQuote = akuiCall?.input.akuiPresentQuote ?? null;
 
   return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, usage };
+}
+
+/**
+ * Ekstraksi objectionType/objectionTypeQuote TERPISAH — khusus baris LAMA
+ * (pra-Fase-1) yang tidak pernah punya field ini sama sekali (lihat catatan
+ * lengkap di qualityScorerRubric.js#buildObjectionTypePrompt soal kenapa ini
+ * perlu ada, TERPISAH dari tool call dimensi utama objectionHandling).
+ * TIDAK menyentuh objectionHandlingScore/Quote/Strength/Weakness — panggilan
+ * ini SATU-SATUNYA tujuannya menghasilkan jangkar utk extractAkuiGali().
+ *
+ * @returns {{ objectionType, objectionTypeQuote, usage }}
+ */
+export async function extractObjectionType({ transcriptText, apiKey }) {
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
+  const userMessage = { role: "user", content: `Transkrip:\n\n${transcriptText}` };
+
+  const tool = buildObjectionTypeTool();
+  const { toolCalls, usage: callUsage } = await chatWithTools({
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildObjectionTypePrompt(),
+    messages: [userMessage], tools: [tool], toolChoice: { type: "tool", name: tool.name },
+    maxTokens: 300,
+  });
+  addUsage(usage, callUsage);
+  const call = toolCalls.find((c) => c.name === tool.name);
+  const objectionType = call?.input.objectionType ?? null;
+  const objectionTypeQuote = call?.input.objectionTypeQuote ?? null;
+
+  return { objectionType, objectionTypeQuote, usage };
 }
 
 /**

@@ -366,6 +366,62 @@ Contoh NEGATIF (akuiPresent=false) MESKIPUN terdengar seperti setuju — WAJIB d
 - Fokus HANYA pesan [SALES]. Pesan [CUSTOMER] cuma konteks.`;
 }
 
+// ── objectionType — EKSTRAKSI TERPISAH utk baris LAMA pra-Fase-1 (28 Agustus
+// 2026) ─────────────────────────────────────────────────────────────────
+// Ditemukan lewat investigasi gold-standard: 72 dari 105 baris hasil backfill
+// akuiPresent/galiPresent TIDAK PERNAH punya objectionType/objectionTypeQuote
+// sama sekali (dibuat SEBELUM field itu ada di rubrik) — bukan bug ekstraksi,
+// murni field itu belum eksis saat baris itu dibuat. Konsekuensinya:
+// extractAkuiGali() jalan TANPA jangkar utk 72 baris ini (anchor kosong "" —
+// lihat buildGaliPrompt/buildAkuiPrompt di atas), balik ke perilaku "scan
+// SELURUH transkrip" yang JUSTRU jadi akar masalah yang investigasi ini mau
+// selesaikan. Spot-check manual thd raw transcript: hasilnya CAMPURAN (bukan
+// selalu salah) — kadang tetap benar (keberatan kebetulan jadi satu-satunya
+// pertukaran menonjol di transkrip), kadang false positive jelas (nemu
+// reassurance garansi generik / respons komplain PASCA-PENGIRIMAN yang
+// disalahartikan sbg objection-handling).
+//
+// FIX: ekstraksi objectionType/objectionTypeQuote SENDIRI (panggilan baru,
+// TERPISAH dari tool call dimensi utama objectionHandling) khusus utk baris
+// lama ini — supaya 72 baris itu BISA dapat jangkar yang sama kualitasnya
+// dgn 33 baris baru, TANPA menyentuh objectionHandlingScore/Quote/Strength/
+// Weakness yang sudah ada (isolasi field, sama prinsip dgn seluruh
+// investigasi ini). Definisi enum & teks pertanyaan DIAMBIL LANGSUNG dari
+// extraFields dimensi objectionHandling di atas (bukan ditulis ulang manual)
+// supaya tidak ada drift kriteria antara ekstraksi baru ini vs yang jalan
+// tiap hari di gradeTranscript().
+const OBJECTION_TYPE_FIELD = RUBRIC_DIMENSIONS.find((d) => d.key === "objectionHandling")
+  .extraFields.find((ef) => ef.key === "objectionType");
+
+export function buildObjectionTypeTool() {
+  return {
+    name: "submit_objection_type",
+    description: "Tentukan jenis keberatan yang diutarakan pelanggan dalam percakapan ini (kalau ada), sesuai Modul 7 SANO Care.",
+    input_schema: {
+      type: "object",
+      properties: {
+        objectionType: { type: ["string", "null"], enum: [...OBJECTION_TYPE_FIELD.values, null] },
+        objectionTypeQuote: { type: ["string", "null"] },
+      },
+      required: ["objectionType", "objectionTypeQuote"],
+      additionalProperties: false,
+    },
+  };
+}
+
+export function buildObjectionTypePrompt() {
+  return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
+
+TUGAS: tentukan apakah PELANGGAN mengutarakan keberatan/keraguan terhadap tawaran atau rekomendasi sales di percakapan ini, dan kalau ada, jenis apa.
+
+${OBJECTION_TYPE_FIELD.question}
+
+- "objectionType": salah satu dari 6 nilai di atas, atau null kalau TIDAK ADA keberatan sama sekali di transkrip ini.
+- "objectionTypeQuote": kutipan LANGSUNG (persis, jangan parafrase) dari pesan [CUSTOMER] yang jadi bukti keberatan tsb, atau null kalau objectionType null.
+- Kalau ADA BEBERAPA keberatan berbeda di percakapan ini, pilih yang PALING SUBSTANTIF/paling banyak dibahas sales (bukan sekadar yang pertama muncul kalau ada yang lebih dominan setelahnya).
+- Fokus HANYA pesan [CUSTOMER] utk kutipan ini (beda dari Gali/Akui yang fokus pesan SALES) — ini kalimat KEBERATAN pelanggan, bukan respons sales.`;
+}
+
 // Tidak ada dimensi ber-`flag` di rubrik baru ini (beda dari rubrik lama
 // yang punya 2 dimensi pattern-aggregation) — CORE_DIMENSIONS jadi berisi
 // SEMUA 3 dimensi, PATTERN_DIMENSIONS kosong. rollup.js & weeklyNarrative.js
