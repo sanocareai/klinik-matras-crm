@@ -33,7 +33,7 @@ import { overallScore, avgByDim, formatExample, patternMetricsForRows, DIM_TO_CO
 // ── Sales Risk Engine — loadSalesRiskCandidates SUDAH menerima prisma
 // sebagai parameter (lihat services/salesRisk/index.js), jadi bisa langsung
 // dikasih prismaReadOnly TANPA modifikasi apa pun di source aslinya.
-import { loadSalesRiskCandidates, buildSalesRiskForCustomer, aggregateBySalesOwner, aggregateBySeverity } from "../services/salesRisk/index.js";
+import { loadSalesRiskCandidates, buildSalesRiskForCustomer, aggregateBySalesOwner, aggregateBySeverity, DEFAULT_CANDIDATE_LIMIT } from "../services/salesRisk/index.js";
 
 // ── Stale Lead — config (escalationDays) dipakai ulang dari job aslinya
 // supaya ambang di sini TIDAK PERNAH beda dari yang benar-benar dipakai job
@@ -172,7 +172,7 @@ export function registerMcpHubTools(server) {
       const minRank = args.severityTier ? TIER_RANK[args.severityTier] : TIER_RANK[args.minSeverityTier ?? "MEDIUM"];
 
       const [candidates, intentRows] = await Promise.all([
-        loadSalesRiskCandidates(prismaReadOnly, {}),
+        loadSalesRiskCandidates(prismaReadOnly, { limit: DEFAULT_CANDIDATE_LIMIT }), // SAMA batas dgn computeAllSalesRisks() -- tanpa ini scan lebih dari yang dashboard lakukan (bug ditemukan 29 Agt 2026 lewat perbandingan langsung ke production: totalScanned 3046 vs 3000)
         prismaReadOnly.salesRiskIntentClassification.findMany(),
       ]);
       const intentByCustomer = new Map(intentRows.map((r) => [r.customerId, r]));
