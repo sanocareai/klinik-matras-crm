@@ -21,12 +21,20 @@ salesRiskRouter.get("/", requireAdmin, async (req, res) => {
   try {
     const minTier = String(req.query.minTier || "MEDIUM").toUpperCase();
     const minRank = TIER_RANK[minTier] ?? TIER_RANK.MEDIUM;
+    // ?salesId= (29 Agustus 2026) — deep-link dari drill-down Sales
+    // Performance Intelligence hub. Filter DI SINI (setelah severityCounts
+    // dihitung dari SEMUA sales) supaya "N pelanggan diperiksa"/severity
+    // count tetap jujur mencerminkan SELURUH tim, bukan ikut menyempit
+    // cuma krn user datang dari 1 sales — yang menyempit HANYA daftar
+    // risks & bySalesOwner yang ditampilkan.
+    const salesId = req.query.salesId || null;
 
     const allRisks = await computeAllSalesRisks();
     const severityCounts = aggregateBySeverity(allRisks); // dihitung dari SEMUA (termasuk LOW), sebelum disaring
 
     const filtered = allRisks
       .filter((r) => (TIER_RANK[r.tier] ?? 0) >= minRank)
+      .filter((r) => !salesId || r.salesOwnerId === salesId)
       .sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier] || b.score - a.score); // tier dulu, skor cuma pengurut DALAM tier
 
     const bySalesOwner = aggregateBySalesOwner(filtered);
@@ -37,6 +45,7 @@ salesRiskRouter.get("/", requireAdmin, async (req, res) => {
       severityCounts,
       risks: filtered,
       bySalesOwner,
+      filteredSalesId: salesId,
     });
   } catch (err) {
     console.error("sales-risk error:", err);

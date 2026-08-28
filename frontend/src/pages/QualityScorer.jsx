@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Minus, RefreshCw, Play, ChevronDown, ChevronUp } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { TrendingUp, TrendingDown, Minus, RefreshCw, Play, ChevronDown, ChevronUp, X } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
@@ -136,8 +137,8 @@ function ExampleCard({ example, dimensions }) {
   );
 }
 
-function SalesRow({ row, dimensions }) {
-  const [open, setOpen] = useState(false);
+function SalesRow({ row, dimensions, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="rounded-btn bg-surface p-4 shadow-card">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-3 text-left">
@@ -182,6 +183,13 @@ function SalesRow({ row, dimensions }) {
 }
 
 export default function QualityScorer() {
+  // ?salesId= (29 Agustus 2026) — deep-link dari "Lihat detail Quality Scorer →"
+  // di Sales Performance Intelligence hub. Halaman ini tidak punya route
+  // detail terpisah per sales (semua sales tampil di 1 list expand/collapse),
+  // jadi "detail" di sini berarti PERSEMPIT list ke 1 baris itu saja begitu
+  // dibuka — bukan filter manual yang harus dipilih user lagi.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const salesId = searchParams.get("salesId");
   const [days, setDays] = useState(7);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -206,6 +214,13 @@ export default function QualityScorer() {
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadNarratives(); }, []);
   const narrativesBySales = new Map(narratives.map((n) => [n.salesUserId, n]));
+
+  // Filter DI FRONTEND (bukan minta backend baru) — data.perSales sudah
+  // lengkap 1x fetch, salesId cuma persempit apa yang DITAMPILKAN. Dipakai
+  // ulang utk 2 section (list utama + PatternSection) supaya konsisten,
+  // BUKAN cuma section pertama saja yang terfilter.
+  const visiblePerSales = data && salesId ? data.perSales.filter((r) => r.salesUserId === salesId) : data?.perSales;
+  const filteredSalesName = salesId ? visiblePerSales?.[0]?.salesName : null;
 
   async function handleRunNarrativeNow() {
     setRunningNarrative(true);
@@ -245,9 +260,18 @@ export default function QualityScorer() {
     <PageContainer>
       <PageHeader
         title="AI Conversation Quality Scorer"
-        subtitle="Penilaian berdasarkan kurikulum SANO Care Sales Framework (Communication Skill, Authority Selling, Objection Handling) — pelengkap audit_balasan_sales, BUKAN pengganti."
+        subtitle={
+          salesId
+            ? `Difilter khusus ${filteredSalesName || "sales ini"} — sales lain disembunyikan.`
+            : "Penilaian berdasarkan kurikulum SANO Care Sales Framework (Communication Skill, Authority Selling, Objection Handling) — pelengkap audit_balasan_sales, BUKAN pengganti."
+        }
         actions={
           <>
+            {salesId && (
+              <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
+                <X size={14} /> Tampilkan Semua Sales
+              </Button>
+            )}
             <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
               {DAYS_OPTIONS.map((d) => (
                 <button
@@ -296,17 +320,19 @@ export default function QualityScorer() {
             </Card>
 
             <div className="flex flex-col gap-3">
-              {data.perSales.length === 0 ? (
-                <Card><p className="py-8 text-center text-sm text-ink3">Belum ada data untuk periode ini — job berjalan tiap hari jam 03:00 WIB, atau klik "Jalankan Sekarang" untuk uji coba.</p></Card>
+              {visiblePerSales.length === 0 ? (
+                <Card><p className="py-8 text-center text-sm text-ink3">
+                  {salesId ? "Belum ada data sales ini untuk periode ini." : "Belum ada data untuk periode ini — job berjalan tiap hari jam 03:00 WIB, atau klik \"Jalankan Sekarang\" untuk uji coba."}
+                </p></Card>
               ) : (
-                data.perSales.map((row) => (
-                  <SalesRow key={row.salesUserId} row={row} dimensions={data.dimensions} />
+                visiblePerSales.map((row) => (
+                  <SalesRow key={row.salesUserId} row={row} dimensions={data.dimensions} defaultOpen={!!salesId} />
                 ))
               )}
             </div>
 
             <PatternSection
-              data={data}
+              data={{ ...data, perSales: visiblePerSales }}
               narrativesBySales={narrativesBySales}
               onRunNarrative={handleRunNarrativeNow}
               runningNarrative={runningNarrative}

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { RefreshCw, ChevronDown, ChevronUp, X } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
@@ -71,27 +72,48 @@ function SalesOwnerSummary({ group }) {
 }
 
 export default function SalesRisk() {
+  // ?salesId= (29 Agustus 2026) — deep-link dari drill-down Sales Performance
+  // Intelligence hub ("Lihat semua Pelanggan Berisiko →" di baris sales yang
+  // di-expand). PRE-FILTER begitu halaman dibuka, BUKAN filter manual yang
+  // harus dipilih user lagi setelah pindah halaman — itu bug yang diperbaiki.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const salesId = searchParams.get("salesId");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   function load() {
     setLoading(true);
-    api.getSalesRisk({ minTier: "MEDIUM" })
+    api.getSalesRisk({ minTier: "MEDIUM", salesId: salesId || undefined })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [salesId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nama sales yang sedang difilter — diambil dari hasil respons (bySalesOwner
+  // baris pertama), BUKAN state terpisah yang perlu di-fetch ulang.
+  const filteredSalesName = salesId ? (data?.bySalesOwner?.[0]?.salesOwnerName || data?.risks?.[0]?.salesOwnerName) : null;
 
   return (
     <PageContainer>
       <PageHeader
         title="Pelanggan Berisiko"
-        subtitle="Pelanggan yang berpotensi hilang karena belum ditindaklanjuti sales — bukan daftar prioritas biasa."
+        subtitle={
+          salesId
+            ? `Difilter khusus ${filteredSalesName || "sales ini"} — pelanggan berisiko milik sales lain disembunyikan.`
+            : "Pelanggan yang berpotensi hilang karena belum ditindaklanjuti sales — bukan daftar prioritas biasa."
+        }
         actions={
-          <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw size={14} /> Refresh
-          </Button>
+          <>
+            {salesId && (
+              <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
+                <X size={14} /> Tampilkan Semua Sales
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw size={14} /> Refresh
+            </Button>
+          </>
         }
       />
       <PageBody>

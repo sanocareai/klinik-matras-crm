@@ -142,10 +142,16 @@ function SalesRow({ profile, bestExample, narrative, riskCustomers }) {
           </div>
 
           <div className="col-span-full flex flex-wrap gap-4 border-t border-line pt-3">
-            <Link to="/quality-scorer" className="text-[12px] font-semibold text-accent hover:underline">
+            {/* BUG (29 Agustus 2026): sebelumnya link ini TIDAK bawa konteks
+                sales sama sekali — user expand baris Ervina, klik, mendarat
+                di halaman general (semua sales), harus filter manual lagi
+                (padahal belum ada filter manual di kedua halaman itu). Sekarang
+                keduanya bawa ?salesId= dan halaman tujuan PRE-FILTER begitu
+                dibuka (lihat QualityScorer.jsx & SalesRisk.jsx). */}
+            <Link to={`/quality-scorer?salesId=${profile.userId}`} className="text-[12px] font-semibold text-accent hover:underline">
               Lihat detail Quality Scorer →
             </Link>
-            <Link to="/sales-risk" className="text-[12px] font-semibold text-accent hover:underline">
+            <Link to={`/sales-risk?salesId=${profile.userId}`} className="text-[12px] font-semibold text-accent hover:underline">
               Lihat semua Pelanggan Berisiko →
             </Link>
           </div>
