@@ -112,12 +112,35 @@ export const RUBRIC_DIMENSIONS = [
           "Kalau ada lebih dari satu jenis di percakapan yang sama, pilih yang PALING DOMINAN/pertama muncul.",
         hasQuote: true,
       },
+      // akuiPresent/galiPresent (28 Agustus 2026, GANTI frameworkFollowed
+      // tunggal) — ditemukan lewat investigasi gold-standard: boolean
+      // gabungan lama ("Dengar-Akui-Gali sbg satu true/false") ke-satisfy
+      // oleh basa-basi rutin ("baik kak", "memang ibu") yang muncul identik
+      // di banyak tempat lain pada percakapan yang sama, BUKAN validasi
+      // empati sungguhan yang menyasar isi keberatan. Dipecah jadi 2 field
+      // independen (pola sama dgn objectionType/frameworkFollowed
+      // sebelumnya) supaya masing-masing bisa dinilai & diverifikasi
+      // terpisah. frameworkFollowed TETAP ADA di schema (kompatibilitas
+      // data lama) tapi mulai sekarang DIHITUNG DI KODE sbg
+      // AND(akuiPresent, galiPresent) — lihat job.js#dimResult — BUKAN
+      // diminta langsung ke LLM lagi.
       {
-        key: "frameworkFollowed",
+        key: "akuiPresent",
         kind: "boolean",
         question:
-          "Apakah sales menjalankan DENGAR (biarkan pelanggan selesai bicara, tidak dipotong) → AKUI (validasi empati, mis. \"saya paham kekhawatiran Bapak\") → GALI (klarifikasi keberatan sebenarnya) SEBELUM masuk ke JAWAB? " +
-          "true kalau ketiga tahap itu dijalankan lebih dulu sebelum menjawab; false kalau sales melompat LANGSUNG ke JAWAB (menjelaskan/membantah) tanpa Dengar-Akui-Gali — ini KESALAHAN PALING UMUM yang harus ditangkap.",
+          "Apakah sales memvalidasi/mengakui SECARA SPESIFIK isi keberatan pelanggan (bukan basa-basi umum)? " +
+          "Kalimat yang MEMENUHI: merujuk LANGSUNG ke keberatan yang baru diucapkan pelanggan, mis. \"saya paham kekhawatiran soal harga ini\", \"wajar kalau ibu ingin diskusikan dulu dengan suami\". " +
+          "Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti, meski terdengar sopan): frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk merespons hal yang TIDAK ADA hubungannya dengan keberatan itu — mis. \"baik kak\", \"baik ibu\", \"siap\", \"terima kasih\" yang dipakai sebagai basa-basi rutin di berbagai konteks. Kalau ragu apakah suatu frasa filler atau validasi sungguhan, CEK apakah frasa yang SAMA PERSIS/MIRIP muncul di tempat lain transkrip untuk hal yang tidak berkaitan dengan keberatan — kalau ya, itu FILLER, bukan Akui. " +
+          "false kalau sales LANGSUNG menjawab/menjelaskan tanpa validasi spesifik ini.",
+        hasQuote: true,
+      },
+      {
+        key: "galiPresent",
+        kind: "boolean",
+        question:
+          "Apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan SEBENARNYA sebelum menjawab (bukan langsung menjelaskan/membantah)? " +
+          "mis. \"boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?\", \"budget yang tersedia saat ini di kisaran berapa?\". " +
+          "false kalau sales langsung masuk ke penjelasan/justifikasi/harga tanpa bertanya lebih dulu.",
         hasQuote: true,
       },
     ],
@@ -264,6 +287,34 @@ export function buildDimensionTools() {
   return RUBRIC_DIMENSIONS.map((d, i) =>
     buildDimensionTool(d, { includeOverallNote: i === RUBRIC_DIMENSIONS.length - 1 })
   );
+}
+
+// ── Ekstraksi HANYA field tambahan (28 Agustus 2026, backfill akuiPresent/
+// galiPresent) ──────────────────────────────────────────────────────────────
+// Dipakai scripts/backfillAkuiGali.js utk RE-EXTRACT extraFields SATU
+// dimensi TANPA menyentuh score/quote/strength/weakness-nya (beda dari
+// buildDimensionTool() yang selalu minta full re-grading dimensi). Reuse
+// extraFieldSchema()/formatExtraFieldLine() yang SAMA dgn full grading —
+// menjamin kriteria backfill data lama IDENTIK dgn kriteria grading baru
+// utk data baru, tidak ada drift antara 2 jalur.
+export function buildExtraFieldsTool(d) {
+  const properties = {};
+  const required = [];
+  for (const ef of d.extraFields || []) {
+    const { props, required: efRequired } = extraFieldSchema(ef);
+    Object.assign(properties, props);
+    required.push(...efRequired);
+  }
+  return {
+    name: `submit_extra_fields_${d.key}`,
+    description: `Ekstrak HANYA field terstruktur tambahan dimensi "${d.label}" dari transkrip ini — BUKAN skor/kutipan utama dimensi (itu tidak diminta di sini).`,
+    input_schema: { type: "object", properties, required, additionalProperties: false },
+  };
+}
+
+export function buildExtraFieldsPrompt(d) {
+  const extraLines = (d.extraFields || []).map((ef) => formatExtraFieldLine(d, ef)).join("");
+  return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada aspek "${d.label}" berikut ini dari transkrip percakapan yang diberikan:\n${d.description}\n${extraLines}\n\nJawab HANYA field terstruktur di atas sesuai instruksi masing-masing. JANGAN beri skor 1-5 atau kutipan umum lain — itu di luar cakupan tugas ini. Fokus HANYA pada pesan berlabel [SALES]; pesan [CUSTOMER] cuma konteks.`;
 }
 
 // Tidak ada dimensi ber-`flag` di rubrik baru ini (beda dari rubrik lama

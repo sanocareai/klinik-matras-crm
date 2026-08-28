@@ -2221,8 +2221,28 @@ model ConversationQualityScore {
   // insert.
   objectionType          String? // salah satu: HARGA/MENUNDA/KEPERCAYAAN/OTORITAS_KEPUTUSAN/KEBUTUHAN/PEMBANDING
   objectionTypeQuote     String?
-  frameworkFollowed      Boolean? // true = Dengar-Akui-Gali dijalankan SEBELUM Jawab; false = melompat langsung ke Jawab/membantah
+
+  // frameworkFollowed DIPECAH (28 Agustus 2026, ditemukan lewat investigasi
+  // gold-standard) — versi lama minta LLM menilai Dengar-Akui-Gali sbg SATU
+  // boolean gabungan, dan verifikasi thd transkrip mentah menunjukkan itu
+  // sering ke-satisfy oleh basa-basi rutin ("baik kak", "memang ibu") yang
+  // muncul identik di banyak tempat lain di percakapan yang sama — BUKAN
+  // validasi empati yang benar-benar menyasar isi keberatan. akuiPresent &
+  // galiPresent sekarang dinilai LLM SECARA TERPISAH (pola sama dgn
+  // objectionType/frameworkFollowed di atas), dgn instruksi eksplisit
+  // menolak frasa filler berulang sbg bukti Akui. frameworkFollowed TIDAK
+  // DIHAPUS (kompatibilitas data lama) — mulai grading setelah perubahan
+  // ini, nilainya DIHITUNG DI KODE (job.js) sbg AND(akuiPresent,
+  // galiPresent), bukan diminta langsung ke LLM. frameworkFollowedQuote
+  // TIDAK diisi lagi utk baris baru (digantikan 2 kutipan yang lebih
+  // spesifik di bawah) — kolom lama TETAP ADA cuma utk baris historis
+  // sebelum perubahan ini.
+  frameworkFollowed      Boolean?
   frameworkFollowedQuote String?
+  akuiPresent            Boolean? // true = validasi SPESIFIK menyasar isi keberatan (bukan basa-basi generik)
+  akuiPresentQuote       String?
+  galiPresent            Boolean? // true = ada pertanyaan klarifikasi menggali keberatan sebenarnya sebelum menjawab
+  galiPresentQuote       String?
 
   // Dimensi G — Evidence-Based Selling (28 Agustus 2026), berdasarkan SOP
   // resmi Modul 6 (Authority Selling) — menilai APAKAH sales memakai bukti

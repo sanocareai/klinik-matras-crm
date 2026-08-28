@@ -84,6 +84,7 @@ function dimResult(scores, dim) {
       empty[ef.key] = ef.kind === "enum_array" ? [] : null;
       if (ef.hasQuote) empty[`${ef.key}Quote`] = null;
     }
+    if (dim.key === "objectionHandling") { empty.frameworkFollowed = null; empty.frameworkFollowedQuote = null; }
     return empty;
   }
   let flag;
@@ -123,6 +124,20 @@ function dimResult(scores, dim) {
     const hasRealEvidence = result.evidenceUsed.some((v) => v !== "TIDAK_ADA");
     if (!hasRealEvidence) result.evidenceExplained = null;
   }
+  // frameworkFollowed (28 Agustus 2026, GANTI dari field yang diminta
+  // langsung ke LLM) — sekarang DIHITUNG di sini sbg AND(akuiPresent,
+  // galiPresent), bukan digradingkan sendiri. null-safety: kalau SALAH SATU
+  // dari keduanya null (gagal diekstrak/topik tidak berlaku), frameworkFollowed
+  // ikut null — "tidak tahu" lebih jujur drpd menebak true/false dari
+  // separuh informasi. frameworkFollowedQuote TIDAK diisi lagi (digantikan
+  // akuiPresentQuote/galiPresentQuote yang lebih spesifik).
+  if (dim.key === "objectionHandling") {
+    result.frameworkFollowed =
+      result.akuiPresent == null || result.galiPresent == null
+        ? null
+        : result.akuiPresent && result.galiPresent;
+    result.frameworkFollowedQuote = null;
+  }
   return result;
 }
 
@@ -142,6 +157,12 @@ export function buildDimFields(scores) {
     for (const ef of dim.extraFields || []) {
       dimFields[ef.key] = r[ef.key];
       if (ef.hasQuote) dimFields[`${ef.key}Quote`] = r[`${ef.key}Quote`];
+    }
+    // frameworkFollowed BUKAN extraField lagi (dihitung, bukan digradingkan
+    // — lihat dimResult()) jadi ditulis manual di sini, khusus objectionHandling.
+    if (dim.key === "objectionHandling") {
+      dimFields.frameworkFollowed = r.frameworkFollowed;
+      dimFields.frameworkFollowedQuote = r.frameworkFollowedQuote;
     }
   }
   return dimFields;
