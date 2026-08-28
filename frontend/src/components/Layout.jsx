@@ -84,18 +84,14 @@ const DIVISIONS = {
         section: "ANALITIK",
         adminOnly: true,
         items: [
+          // Sales Performance Intelligence (28 Agustus 2026) — dijadikan HUB
+          // utama & item PERTAMA menu Analitik: agregasi Quality Scorer +
+          // Sales Risk Engine + SLA per sales dalam 1 baris ringkas, dengan
+          // drill-down ke 2 halaman detail di bawah (yang TIDAK dihapus,
+          // cuma bukan lagi entry point utama — route-nya tetap ada di
+          // App.jsx, diakses via link dari dalam hub).
+          { to: "/sales-intelligence", label: "Sales Performance Intelligence", Icon: Award },
           { to: "/laporan", label: "Laporan", Icon: BarChart3 },
-          // AI Conversation Quality Scorer (26 Agustus 2026) — laporan
-          // validasi manual TERPISAH (pelengkap audit_balasan_sales,
-          // BUKAN pengganti), sengaja belum masuk Laporan/Dashboard utama.
-          { to: "/quality-scorer", label: "Quality Scorer (AI)", Icon: Sparkles },
-          // Sales Risk Engine (26 Agustus 2026) — TERPISAH dari skorUrgensi/
-          // Priority Engine, laporan risiko kebocoran revenue akibat
-          // eksekusi sales gagal (bukan widget prioritas biasa).
-          { to: "/sales-risk", label: "Pelanggan Berisiko", Icon: AlertTriangle },
-          // Sales Performance Intelligence (27 Agustus 2026) — agregasi
-          // Quality Scorer + Sales Risk Engine + SLA, bukan sistem skor baru.
-          { to: "/sales-intelligence", label: "Performa & Coaching Sales", Icon: Award },
         ],
       },
       {

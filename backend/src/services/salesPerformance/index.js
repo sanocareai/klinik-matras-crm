@@ -113,6 +113,12 @@ export async function getIndividualProfiles({ days = 30 } = {}) {
       healthComponents,
       qualityScore: rollupRow?.overallAvg ?? null,
       qualityTrend: rollupRow?.trend ?? null,
+      // Breakdown per dimensi (28 Agustus 2026) — SUDAH dihitung rollup.js
+      // (dipakai internal utk strengthWeaknessFromDims di atas), sebelumnya
+      // dibuang setelah dipakai. Sekedar EXPOSE nilai yang sudah ada ke API
+      // supaya hub "Sales Performance Intelligence" bisa tampilkan 3 mini
+      // bar per dimensi — BUKAN komputasi/skoring baru.
+      dimensions: rollupRow?.dimensions ?? null,
       riskContribution: riskGroup?.counts || { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
       slaDiscipline: {
         handled: salesRow.handled,
