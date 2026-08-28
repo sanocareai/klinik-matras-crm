@@ -202,12 +202,22 @@ function wibDateKey(now) {
 
 export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {}) {
   const config = readConfig();
-  const summary = { enabled: config.enabled, candidatesScanned: 0, staleFound: 0, excludedNoise: 0, salesNotified: 0, escalated: 0, errors: [] };
+  const summary = { enabled: config.enabled, candidatesScanned: 0, staleFound: 0, excludedNoise: 0, orphanedInactiveSales: 0, salesNotified: 0, escalated: 0, errors: [] };
   if (!config.enabled) return summary;
 
   const now = referenceNow.getTime();
   const todayKey = wibDateKey(now);
   const thresholdRank = URGENCY_RANK[config.urgencyThreshold] ?? URGENCY_RANK.high;
+
+  // Sales NONAKTIF (28 Agustus 2026, ditemukan lewat kasus Mila) — lead yang
+  // masih ter-assign ke sales yang sudah `active:false` TIDAK BOLEH dikirim
+  // alert WA atas nama sales itu (tidak akan ada yang menindaklanjuti, dan
+  // nomor WA-nya mungkin sudah tidak dipakai). Dikumpulkan TERPISAH (orphaned)
+  // utk di-reassign MANUAL — bukan auto-reassign (keputusan siapa yang pegang
+  // tetap milik admin/Novi, bukan sistem).
+  const inactiveSalesIds = new Set(
+    (await prisma.user.findMany({ where: { active: false }, select: { id: true } })).map((u) => u.id)
+  );
 
   let candidates;
   try {
@@ -221,6 +231,7 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
 
   const stale = []; // { customer, intel, daysSinceOutbound }
   const toEscalate = []; // { customer, intel, daysSinceOutbound, daysSinceFirstAlert }
+  const orphanedInactiveSales = []; // { customer, intel, daysSinceOutbound } — sales-nya nonaktif
   const activeCustomerIds = new Set();
 
   for (const customer of candidates) {
@@ -242,6 +253,12 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
     const daysSinceOutbound = lastOut ? Math.floor((now - lastOut.getTime()) / 86_400_000) : null;
     const isStale = daysSinceOutbound == null || daysSinceOutbound >= config.followUpDays;
     if (!isStale) continue;
+
+    if (customer.assignedSalesId && inactiveSalesIds.has(customer.assignedSalesId)) {
+      orphanedInactiveSales.push({ customer, intel, daysSinceOutbound });
+      summary.orphanedInactiveSales++;
+      continue;
+    }
 
     // Filter noise (lihat catatan lengkap di isClosingPleasantry/isExplicitDecline
     // di atas) — SEBELUM dihitung sbg stale. Konservatif: kalau pesan terakhir
@@ -361,8 +378,15 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
     summary.escalated = toEscalate.length;
   }
 
+  if (orphanedInactiveSales.length) {
+    console.log(`[stale-lead-alert] ${orphanedInactiveSales.length} lead ter-assign ke sales NONAKTIF — TIDAK dikirim WA, perlu reassign manual:`);
+    for (const { customer, daysSinceOutbound } of orphanedInactiveSales) {
+      console.log(`  - [${customer.id}] ${customer.name || customer.phone || "(tanpa nama)"} (sales nonaktif: ${customer.assignedSales?.name}, ${daysSinceOutbound ?? "belum pernah dibalas"} hari)`);
+    }
+  }
+
   console.log(
-    `[stale-lead-alert] Selesai. Kandidat: ${summary.candidatesScanned}, stale ditemukan: ${summary.staleFound}, dikecualikan (noise): ${summary.excludedNoise}, sales dinotif: ${summary.salesNotified}, eskalasi: ${summary.escalated}`
+    `[stale-lead-alert] Selesai. Kandidat: ${summary.candidatesScanned}, stale ditemukan: ${summary.staleFound}, dikecualikan (noise): ${summary.excludedNoise}, orphaned (sales nonaktif): ${summary.orphanedInactiveSales}, sales dinotif: ${summary.salesNotified}, eskalasi: ${summary.escalated}`
   );
   return summary;
 }
