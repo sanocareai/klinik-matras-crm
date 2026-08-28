@@ -213,7 +213,12 @@ server.listen(PORT, () => {
   startStaleLeadAlertJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
-  startSalesRiskIntentClassificationJob();
+  // DIPAUSE (29 Agustus 2026, permintaan owner) — owner sedang review manual
+  // hasil test (30 sample) dan menemukan beberapa klasifikasi yang meleset
+  // (ada yang seharusnya BUKAN kritis dan sebaliknya). Prompt/taksonomi di
+  // intentClassification.js perlu direvisi sesuai temuan owner SEBELUM cron
+  // ini diaktifkan lagi — jangan nyalakan ulang tanpa itu.
+  // startSalesRiskIntentClassificationJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.
