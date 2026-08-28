@@ -193,7 +193,13 @@ function wibDateKey(now) {
   return new Date(now + 7 * 3_600_000).toISOString().slice(0, 10);
 }
 
-export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {}) {
+// `dryRun` (28 Agustus 2026) — jalankan SELURUH logic (termasuk persist
+// firstAlertedAt/lastNotifiedDay ke DB) TANPA benar-benar kirim WA. Ditambah
+// khusus utk migrasi satu-off scripts/migrateStaleLeadAlertLog.js (isi tabel
+// StaleLeadAlertLog dari kondisi SEKARANG tanpa dobel-kirim WA yang sudah
+// terkirim manual sebelumnya) — juga berguna umum utk test tanpa efek
+// samping WA sungguhan.
+export async function runStaleLeadAlertCycle({ referenceNow = new Date(), dryRun = false } = {}) {
   const config = readConfig();
   const summary = { enabled: config.enabled, candidatesScanned: 0, staleFound: 0, excludedNoise: 0, orphanedInactiveSales: 0, salesNotified: 0, escalated: 0, errors: [] };
   if (!config.enabled) return summary;
@@ -338,7 +344,9 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
       "Segera follow up sebelum makin dingin.",
     ].filter(Boolean).join("\n");
 
-    if (isPersonal) {
+    if (dryRun) {
+      console.log(`[stale-lead-alert] (dryRun) WA TIDAK dikirim ke ${group.phone || key} — ${group.items.length} lead`);
+    } else if (isPersonal) {
       await notifyPhone(group.phone, pesan, "Lead Urgent Belum Ditindaklanjuti");
     } else {
       await notifyAdmin(config, pesan, "Lead Urgent Belum Ditindaklanjuti");
@@ -367,7 +375,11 @@ export async function runStaleLeadAlertCycle({ referenceNow = new Date() } = {})
       "Perlu penanganan supervisor segera.",
     ].filter(Boolean).join("\n");
 
-    await notifyAdmin(config, pesan, "Eskalasi Lead Urgent");
+    if (dryRun) {
+      console.log(`[stale-lead-alert] (dryRun) Eskalasi TIDAK dikirim — ${toEscalate.length} lead`);
+    } else {
+      await notifyAdmin(config, pesan, "Eskalasi Lead Urgent");
+    }
     for (const item of toEscalate) lastNotifiedDay.set(item.customer.id, todayKey);
     summary.escalated = toEscalate.length;
   }
