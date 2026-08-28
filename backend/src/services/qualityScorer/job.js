@@ -84,7 +84,11 @@ function dimResult(scores, dim) {
       empty[ef.key] = ef.kind === "enum_array" ? [] : null;
       if (ef.hasQuote) empty[`${ef.key}Quote`] = null;
     }
-    if (dim.key === "objectionHandling") { empty.frameworkFollowed = null; empty.frameworkFollowedQuote = null; }
+    if (dim.key === "objectionHandling") {
+      empty.frameworkFollowed = null; empty.frameworkFollowedQuote = null;
+      empty.akuiPresent = null; empty.akuiPresentQuote = null;
+      empty.galiPresent = null; empty.galiPresentQuote = null;
+    }
     return empty;
   }
   let flag;
@@ -124,14 +128,21 @@ function dimResult(scores, dim) {
     const hasRealEvidence = result.evidenceUsed.some((v) => v !== "TIDAK_ADA");
     if (!hasRealEvidence) result.evidenceExplained = null;
   }
-  // frameworkFollowed (28 Agustus 2026, GANTI dari field yang diminta
-  // langsung ke LLM) — sekarang DIHITUNG di sini sbg AND(akuiPresent,
-  // galiPresent), bukan digradingkan sendiri. null-safety: kalau SALAH SATU
-  // dari keduanya null (gagal diekstrak/topik tidak berlaku), frameworkFollowed
-  // ikut null — "tidak tahu" lebih jujur drpd menebak true/false dari
-  // separuh informasi. frameworkFollowedQuote TIDAK diisi lagi (digantikan
+  // akuiPresent/galiPresent (28 Agustus 2026) — BUKAN extraFields generik
+  // lagi (dipisah jadi 2 panggilan sekuensial terpisah, lihat grading.js#
+  // extractAkuiGali) — dibaca LANGSUNG dari `d` (sudah berupa boolean/null
+  // bersih hasil normalizeFlag() di grading.js, bukan raw LLM JSON yang
+  // butuh fallback top-level). frameworkFollowed DIHITUNG di sini sbg
+  // AND(akuiPresent, galiPresent), null-safety: kalau SALAH SATU null
+  // (gagal diekstrak/topik tidak berlaku), frameworkFollowed ikut null —
+  // "tidak tahu" lebih jujur drpd menebak true/false dari separuh
+  // informasi. frameworkFollowedQuote TIDAK diisi lagi (digantikan
   // akuiPresentQuote/galiPresentQuote yang lebih spesifik).
   if (dim.key === "objectionHandling") {
+    result.akuiPresent = d.akuiPresent ?? null;
+    result.akuiPresentQuote = d.akuiPresentQuote ?? null;
+    result.galiPresent = d.galiPresent ?? null;
+    result.galiPresentQuote = d.galiPresentQuote ?? null;
     result.frameworkFollowed =
       result.akuiPresent == null || result.galiPresent == null
         ? null
@@ -158,9 +169,14 @@ export function buildDimFields(scores) {
       dimFields[ef.key] = r[ef.key];
       if (ef.hasQuote) dimFields[`${ef.key}Quote`] = r[`${ef.key}Quote`];
     }
-    // frameworkFollowed BUKAN extraField lagi (dihitung, bukan digradingkan
-    // — lihat dimResult()) jadi ditulis manual di sini, khusus objectionHandling.
+    // akuiPresent/galiPresent/frameworkFollowed BUKAN extraFields lagi
+    // (dihitung/diekstrak terpisah — lihat dimResult()) jadi ditulis manual
+    // di sini, khusus objectionHandling.
     if (dim.key === "objectionHandling") {
+      dimFields.akuiPresent = r.akuiPresent;
+      dimFields.akuiPresentQuote = r.akuiPresentQuote;
+      dimFields.galiPresent = r.galiPresent;
+      dimFields.galiPresentQuote = r.galiPresentQuote;
       dimFields.frameworkFollowed = r.frameworkFollowed;
       dimFields.frameworkFollowedQuote = r.frameworkFollowedQuote;
     }

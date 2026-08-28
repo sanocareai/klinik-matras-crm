@@ -113,41 +113,16 @@ export const RUBRIC_DIMENSIONS = [
         hasQuote: true,
       },
       // akuiPresent/galiPresent (28 Agustus 2026, GANTI frameworkFollowed
-      // tunggal) — ditemukan lewat investigasi gold-standard: boolean
-      // gabungan lama ("Dengar-Akui-Gali sbg satu true/false") ke-satisfy
-      // oleh basa-basi rutin ("baik kak", "memang ibu") yang muncul identik
-      // di banyak tempat lain pada percakapan yang sama, BUKAN validasi
-      // empati sungguhan yang menyasar isi keberatan. Dipecah jadi 2 field
-      // independen (pola sama dgn objectionType/frameworkFollowed
-      // sebelumnya) supaya masing-masing bisa dinilai & diverifikasi
-      // terpisah. frameworkFollowed TETAP ADA di schema (kompatibilitas
-      // data lama) tapi mulai sekarang DIHITUNG DI KODE sbg
-      // AND(akuiPresent, galiPresent) — lihat job.js#dimResult — BUKAN
-      // diminta langsung ke LLM lagi.
-      {
-        key: "akuiPresent",
-        kind: "boolean",
-        question:
-          "Apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan — BUKAN sekadar menerima keputusan/hasil akhirnya? " +
-          "Kalimat yang MEMENUHI: secara eksplisit menyebut ULANG atau merespons ALASAN/PERASAAN spesifik yang baru diucapkan pelanggan. Contoh: kalau pelanggan bilang \"mau saya obrolin dulu sama istri\", Akui yang VALID menyebut soal DISKUSI/KEPUTUSAN BERSAMA (\"wajar sekali, ini memang baiknya didiskusikan dulu bersama pasangan\") — BUKAN cuma \"baik, kami tunggu kabar baiknya\" (itu CUMA menerima PENUNDAANNYA, TIDAK memvalidasi ALASANNYA — tetap dihitung GAGAL/false meski terdengar sopan). " +
-          "Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti Akui): " +
-          "(a) frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk merespons hal yang TIDAK ADA hubungannya dengan keberatan — mis. \"baik kak\", \"baik ibu\", \"siap\", \"terima kasih\"; " +
-          "(b) kalimat yang HANYA menyatakan \"oke/baik/kami tunggu\" tanpa menyebut ULANG substansi keberatannya sama sekali; " +
-          "(c) PERTANYAAN klarifikasi — itu masuk kategori galiPresent, BUKAN akuiPresent. akuiPresentQuote WAJIB kutipan yang BERBEDA dari galiPresentQuote — JANGAN PERNAH memakai kalimat pertanyaan yang sama utk kedua field. " +
-          "Kalau TIDAK ADA kalimat yang secara eksplisit memvalidasi ALASAN keberatan (terpisah dari sekadar menerima hasil ATAU dari pertanyaan klarifikasi), jawab false — JANGAN dipaksakan hanya karena sales terdengar sopan/tidak defensif. " +
-          "LANGKAH WAJIB SEBELUM MENJAWAB: bandingkan isi akuiPresentQuote yang akan kamu tulis dengan galiPresentQuote yang akan kamu tulis utk field galiPresent. Kalau keduanya menunjuk ke KALIMAT YANG SAMA atau tumpang tindih signifikan (mis. satu pertanyaan yang sama dipakai utk dua alasan berbeda), maka kalimat itu HANYA boleh dihitung utk SATU field — pilih galiPresent (karena pertanyaan klarifikasi lebih konkret dideteksi), dan akuiPresent HARUS kamu jawab false dgn akuiPresentQuote null, KECUALI ada kalimat LAIN yang terpisah dan benar-benar memvalidasi alasan keberatan.",
-        hasQuote: true,
-      },
-      {
-        key: "galiPresent",
-        kind: "boolean",
-        question:
-          "Apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan SEBENARNYA SEBELUM menjawab/menjelaskan (bukan langsung menjelaskan/membantah)? " +
-          "mis. \"boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?\", \"budget yang tersedia saat ini di kisaran berapa?\". " +
-          "PENTING: galiPresentQuote WAJIB kutipan yang BERBEDA dari akuiPresentQuote. Kalau HANYA ADA satu kalimat gabungan yang isinya pertanyaan probing TANPA ada validasi empati terpisah sebelumnya, kategorikan itu SEBAGAI galiPresent=true SAJA (akuiPresent tetap false, karena validasi terpisahnya memang tidak ada) — JANGAN pernah menandai kalimat yang sama sbg bukti KEDUA field sekaligus. " +
-          "false kalau sales langsung masuk ke penjelasan/justifikasi/harga tanpa bertanya lebih dulu.",
-        hasQuote: true,
-      },
+      // tunggal) TIDAK LAGI extraFields di sini — 3 iterasi prompt single-
+      // call TERBUKTI TIDAK STABIL (verifikasi live thd 3 transkrip: tiap
+      // perbaikan 1 kegagalan meregresi kegagalan lain). Diganti ekstraksi
+      // 2-PANGGILAN SEKUENSIAL (lihat buildGaliTool/buildAkuiTool di bawah,
+      // dipanggil dari grading.js#gradeTranscript) — non-overlap kutipan
+      // dijamin lewat STRUKTUR (Gali diekstrak dulu, Akui diberi tau
+      // kutipan Gali sbg konteks & diinstruksikan cari kalimat LAIN), bukan
+      // lewat harapan model mematuhi instruksi teks dlm 1 panggilan gabungan.
+      // frameworkFollowed TETAP ADA di schema (kompatibilitas data lama),
+      // dihitung DI KODE sbg AND(akuiPresent, galiPresent) — job.js#dimResult.
     ],
   },
   {
@@ -294,32 +269,87 @@ export function buildDimensionTools() {
   );
 }
 
-// ── Ekstraksi HANYA field tambahan (28 Agustus 2026, backfill akuiPresent/
-// galiPresent) ──────────────────────────────────────────────────────────────
-// Dipakai scripts/backfillAkuiGali.js utk RE-EXTRACT extraFields SATU
-// dimensi TANPA menyentuh score/quote/strength/weakness-nya (beda dari
-// buildDimensionTool() yang selalu minta full re-grading dimensi). Reuse
-// extraFieldSchema()/formatExtraFieldLine() yang SAMA dgn full grading —
-// menjamin kriteria backfill data lama IDENTIK dgn kriteria grading baru
-// utk data baru, tidak ada drift antara 2 jalur.
-export function buildExtraFieldsTool(d) {
-  const properties = {};
-  const required = [];
-  for (const ef of d.extraFields || []) {
-    const { props, required: efRequired } = extraFieldSchema(ef);
-    Object.assign(properties, props);
-    required.push(...efRequired);
-  }
+// ── akuiPresent/galiPresent — EKSTRAKSI 2-PANGGILAN SEKUENSIAL (28 Agustus
+// 2026, percobaan ke-2 setelah 3 iterasi prompt SATU panggilan gabungan
+// TERBUKTI TIDAK STABIL) ─────────────────────────────────────────────────
+// Root cause yang ditemukan lewat verifikasi live thd 3 transkrip nyata:
+// dalam SATU tool call yang minta akuiPresent DAN galiPresent sekaligus,
+// Haiku kadang memakai KALIMAT YANG SAMA sbg bukti utk KEDUA field meski
+// diinstruksikan eksplisit "harus beda" — soft instruction (teks prompt)
+// TIDAK CUKUP memaksa non-overlap dalam 1 panggilan, dan tiap perbaikan
+// teks utk 1 kegagalan terbukti meregresi kegagalan lain (whack-a-mole,
+// 3 iterasi tidak konvergen).
+//
+// FIX STRUKTURAL: galiPresent diekstrak DULU di panggilan terpisah, lalu
+// akuiPresent diekstrak di panggilan KEDUA dengan kutipan Gali (kalau ada)
+// diberikan sbg KONTEKS YANG SUDAH DIKETAHUI + instruksi eksplisit "cari
+// bukti LAIN, BUKAN kalimat ini". Non-overlap dijamin lewat STRUKTUR
+// (informasi mengalir 1 arah antar 2 panggilan terpisah), bukan lewat
+// harapan model mematuhi instruksi teks dalam 1 panggilan gabungan.
+// Dipanggil dari grading.js#extractAkuiGali (dipakai job grading harian
+// MAUPUN scripts/backfillAkuiGali.js — 1 sumber kebenaran, tidak ada drift
+// antara kriteria data lama vs baru).
+export function buildGaliTool() {
   return {
-    name: `submit_extra_fields_${d.key}`,
-    description: `Ekstrak HANYA field terstruktur tambahan dimensi "${d.label}" dari transkrip ini — BUKAN skor/kutipan utama dimensi (itu tidak diminta di sini).`,
-    input_schema: { type: "object", properties, required, additionalProperties: false },
+    name: "submit_gali",
+    description: "Tentukan apakah sales mengajukan pertanyaan klarifikasi yang menggali keberatan pelanggan sebenarnya sebelum menjawab.",
+    input_schema: {
+      type: "object",
+      properties: {
+        galiPresent: { type: ["boolean", "null"] },
+        galiPresentQuote: { type: ["string", "null"] },
+      },
+      required: ["galiPresent", "galiPresentQuote"],
+      additionalProperties: false,
+    },
   };
 }
 
-export function buildExtraFieldsPrompt(d) {
-  const extraLines = (d.extraFields || []).map((ef) => formatExtraFieldLine(d, ef)).join("");
-  return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada aspek "${d.label}" berikut ini dari transkrip percakapan yang diberikan:\n${d.description}\n${extraLines}\n\nJawab HANYA field terstruktur di atas sesuai instruksi masing-masing. JANGAN beri skor 1-5 atau kutipan umum lain — itu di luar cakupan tugas ini. Fokus HANYA pada pesan berlabel [SALES]; pesan [CUSTOMER] cuma konteks.`;
+export function buildGaliPrompt() {
+  return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
+
+TUGAS: tentukan apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan pelanggan SEBENARNYA SEBELUM menjawab/menjelaskan (bukan langsung menjelaskan/membantah). Contoh: "boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?", "budget yang tersedia saat ini di kisaran berapa?".
+
+- "galiPresent": true kalau ADA pertanyaan klarifikasi semacam itu SEBELUM sales menjawab/menjelaskan; false kalau sales langsung menjawab/menjelaskan tanpa bertanya dulu; null kalau tidak ada keberatan sama sekali di transkrip ini.
+- "galiPresentQuote": kutipan LANGSUNG (persis, jangan parafrase) dari pesan [SALES] yang jadi bukti, atau null kalau galiPresent bukan true.
+- Fokus HANYA pesan [SALES]. Pesan [CUSTOMER] cuma konteks.`;
+}
+
+export function buildAkuiTool() {
+  return {
+    name: "submit_akui",
+    description: "Tentukan apakah sales memvalidasi/mengakui secara spesifik alasan di balik keberatan pelanggan.",
+    input_schema: {
+      type: "object",
+      properties: {
+        akuiPresent: { type: ["boolean", "null"] },
+        akuiPresentQuote: { type: ["string", "null"] },
+      },
+      required: ["akuiPresent", "akuiPresentQuote"],
+      additionalProperties: false,
+    },
+  };
+}
+
+export function buildAkuiPrompt(galiQuote) {
+  const galiContext = galiQuote
+    ? `KONTEKS YANG SUDAH DIKETAHUI: kalimat berikut SUDAH diidentifikasi TERPISAH sbg bukti "Gali" (pertanyaan klarifikasi) — JANGAN gunakan kalimat ini lagi sbg bukti Akui, WAJIB cari kalimat LAIN:\n"${galiQuote}"\n\n`
+    : `KONTEKS YANG SUDAH DIKETAHUI: sudah dipastikan TIDAK ADA pertanyaan klarifikasi (Gali) yang ditemukan di transkrip ini.\n\n`;
+
+  return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
+
+${galiContext}TUGAS: tentukan apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan — BUKAN sekadar menerima keputusan/hasil akhirnya, dan BUKAN kalimat yang sama dengan kutipan Gali di atas (kalau ada).
+
+Kalimat yang MEMENUHI: secara eksplisit menyebut ULANG atau merespons ALASAN/PERASAAN spesifik yang baru diucapkan pelanggan. Contoh: kalau pelanggan bilang "mau saya obrolin dulu sama istri", Akui yang VALID menyebut soal DISKUSI/KEPUTUSAN BERSAMA ("wajar sekali, ini memang baiknya didiskusikan dulu bersama pasangan") — BUKAN cuma "baik, kami tunggu kabar baiknya" (itu CUMA menerima PENUNDAANNYA, TIDAK memvalidasi ALASANNYA — tetap false meski terdengar sopan).
+
+Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti Akui):
+(a) frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk hal yang TIDAK ADA hubungannya dengan keberatan — mis. "baik kak", "baik ibu", "siap", "terima kasih", "memang [ibu/kak]" yang dipakai sbg basa-basi/konsesi singkat sebelum langsung menjelaskan;
+(b) kalimat yang HANYA menyatakan "oke/baik/kami tunggu/memang begitu" tanpa menyebut ULANG substansi keberatannya;
+(c) kalimat Gali yang sudah disebutkan di atas (kalau ada).
+
+- "akuiPresent": true HANYA kalau ada kalimat yang jelas memenuhi kriteria di atas; false kalau tidak ada; null kalau tidak ada keberatan sama sekali di transkrip ini.
+- "akuiPresentQuote": kutipan LANGSUNG dari pesan [SALES], atau null kalau akuiPresent bukan true.
+- Fokus HANYA pesan [SALES]. Pesan [CUSTOMER] cuma konteks.`;
 }
 
 // Tidak ada dimensi ber-`flag` di rubrik baru ini (beda dari rubrik lama

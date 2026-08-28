@@ -5,33 +5,25 @@
 // LATAR BELAKANG: frameworkFollowed lama (1 boolean gabungan utk Dengar-
 // Akui-Gali) ke-satisfy oleh basa-basi rutin ("baik kak") yang muncul
 // identik di banyak tempat lain pada transkrip yang sama — ditemukan lewat
-// investigasi gold-standard (baca 3 transkrip mentah). Rubrik sekarang
-// menilai akuiPresent & galiPresent TERPISAH dgn instruksi lebih ketat
-// (qualityScorerRubric.js). Script ini RE-EXTRACT KEDUA field itu SAJA utk
-// SEMUA baris ConversationQualityScore yang objectionHandlingScore-nya
-// terisi — TIDAK menyentuh score/quote/strength/weakness/objectionType
-// dimensi itu, TIDAK menyentuh dimensi lain sama sekali (communicationSkill/
-// authoritySelling/evidenceBasedSelling apa adanya).
+// investigasi gold-standard (baca 3 transkrip mentah). 3 iterasi prompt
+// SATU panggilan gabungan (akuiPresent+galiPresent sekaligus) TERBUKTI
+// TIDAK STABIL (verifikasi live: tiap perbaikan 1 kegagalan meregresi
+// kegagalan lain). Fix STRUKTURAL: 2 panggilan sekuensial terpisah (Gali
+// dulu, lalu Akui dgn kutipan Gali sbg konteks) — lihat grading.js#
+// extractAkuiGali & qualityScorerRubric.js#buildAkuiPrompt utk detail
+// lengkap & alasannya.
 //
-// Pakai buildExtraFieldsTool()/buildExtraFieldsPrompt() (qualityScorerRubric.js)
-// — SAMA PERSIS definisi/instruksi dgn yang dipakai job grading harian,
-// supaya kriteria backfill data lama identik dgn kriteria grading baru
-// (tidak ada drift).
+// Script ini RE-EXTRACT akuiPresent/galiPresent SAJA utk SEMUA baris
+// ConversationQualityScore yang objectionHandlingScore-nya terisi — TIDAK
+// menyentuh score/quote/strength/weakness/objectionType dimensi itu, TIDAK
+// menyentuh dimensi lain sama sekali. Reuse extractAkuiGali() dari
+// grading.js — SAMA PERSIS fungsi yang dipakai job grading harian, supaya
+// kriteria backfill data lama identik dgn kriteria grading baru (tidak ada
+// drift antara 2 jalur).
 import { prisma } from "../src/db.js";
-import { fetchTranscriptMessages, formatTranscript, resolveApiKey } from "../src/services/qualityScorer/grading.js";
-import { chatWithTools } from "../src/services/providers/anthropicProvider.js";
-import { QUALITY_SCORER_MODEL, RUBRIC_DIMENSIONS, buildExtraFieldsTool, buildExtraFieldsPrompt } from "../src/config/qualityScorerRubric.js";
+import { fetchTranscriptMessages, formatTranscript, resolveApiKey, extractAkuiGali } from "../src/services/qualityScorer/grading.js";
 
-const OBJECTION_HANDLING = RUBRIC_DIMENSIONS.find((d) => d.key === "objectionHandling");
-
-function normalizeFlag(v) {
-  if (v === true || v === false) return v;
-  if (v === "true") return true;
-  if (v === "false") return false;
-  return null;
-}
-
-async function reExtract(conversationId, apiKey, systemPrompt, tool) {
+async function reExtract(conversationId, apiKey) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { customer: { select: { name: true } } },
@@ -41,34 +33,13 @@ async function reExtract(conversationId, apiKey, systemPrompt, tool) {
   if (messages.length === 0) return null;
   const transcriptText = formatTranscript(messages, conv.customer?.name);
 
-  const { toolCalls } = await chatWithTools({
-    apiKey,
-    model: QUALITY_SCORER_MODEL,
-    systemPrompt,
-    messages: [{ role: "user", content: `Transkrip:\n\n${transcriptText}` }],
-    tools: [tool],
-    toolChoice: { type: "tool", name: tool.name },
-    maxTokens: 400,
-  });
-  const call = toolCalls.find((c) => c.name === tool.name);
-  if (!call) return null;
-
-  const akuiPresent = normalizeFlag(call.input.akuiPresent);
-  const galiPresent = normalizeFlag(call.input.galiPresent);
+  const { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote } = await extractAkuiGali({ transcriptText, apiKey });
   const frameworkFollowed = akuiPresent == null || galiPresent == null ? null : akuiPresent && galiPresent;
-  return {
-    akuiPresent,
-    akuiPresentQuote: call.input.akuiPresentQuote ?? null,
-    galiPresent,
-    galiPresentQuote: call.input.galiPresentQuote ?? null,
-    frameworkFollowed,
-  };
+  return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, frameworkFollowed };
 }
 
 async function main() {
   const apiKey = resolveApiKey();
-  const systemPrompt = buildExtraFieldsPrompt(OBJECTION_HANDLING);
-  const tool = buildExtraFieldsTool(OBJECTION_HANDLING);
 
   const rows = await prisma.conversationQualityScore.findMany({
     where: { objectionHandlingScore: { not: null } },
@@ -84,7 +55,7 @@ async function main() {
   for (const row of rows) {
     let extracted;
     try {
-      extracted = await reExtract(row.conversationId, apiKey, systemPrompt, tool);
+      extracted = await reExtract(row.conversationId, apiKey);
     } catch (err) {
       console.error(`[${row.conversationId}] GAGAL — ${err.message}`);
       failed++;
@@ -119,9 +90,6 @@ async function main() {
     }
   }
 
-  // Ringkasan perubahan true->false per sales (yang paling relevan utk
-  // laporan — sales yang SEBELUMNYA dianggap patuh framework tapi
-  // sebenarnya tidak, setelah kriteria diperketat).
   const trueToFalseBySales = {};
   const falseToTrueBySales = {};
   for (const c of changes) {

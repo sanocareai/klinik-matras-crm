@@ -5,7 +5,10 @@
 import { prisma } from "../../db.js";
 import { chatWithTools } from "../providers/anthropicProvider.js";
 import { getAnthropicKey } from "../replyAssistant/providers/keyStore.js";
-import { QUALITY_SCORER_MODEL, buildSystemPrompt, buildDimensionTool, RUBRIC_DIMENSIONS } from "../../config/qualityScorerRubric.js";
+import {
+  QUALITY_SCORER_MODEL, buildSystemPrompt, buildDimensionTool, RUBRIC_DIMENSIONS,
+  buildGaliTool, buildGaliPrompt, buildAkuiTool, buildAkuiPrompt,
+} from "../../config/qualityScorerRubric.js";
 import { maskMessageContent } from "./masking.js";
 
 // Cap panjang transcript per percakapan — percakapan lama/aktif bisa
@@ -52,6 +55,57 @@ function addUsage(total, u) {
   total.outputTokens += u.outputTokens || 0;
   total.cacheReadTokens += u.cacheReadTokens || 0;
   total.cacheCreateTokens += u.cacheCreateTokens || 0;
+}
+
+function normalizeFlag(v) {
+  if (v === true || v === false) return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return null;
+}
+
+/**
+ * akuiPresent/galiPresent — 2 PANGGILAN SEKUENSIAL TERPISAH (28 Agustus
+ * 2026, percobaan ke-2 setelah 3 iterasi prompt 1-panggilan gabungan
+ * TERBUKTI TIDAK STABIL — lihat catatan lengkap di
+ * qualityScorerRubric.js#buildAkuiPrompt). Gali diekstrak DULU, lalu
+ * kutipannya (kalau ada) diberikan sbg KONTEKS ke panggilan Akui dengan
+ * instruksi eksplisit "cari kalimat LAIN" — non-overlap dijamin lewat
+ * STRUKTUR, bukan lewat harapan model mematuhi instruksi teks.
+ *
+ * Dipakai job grading harian (gradeTranscript, di bawah) MAUPUN
+ * scripts/backfillAkuiGali.js — 1 sumber kebenaran, kriteria backfill data
+ * lama IDENTIK dgn kriteria grading baru.
+ *
+ * @returns {{ akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, usage }}
+ */
+export async function extractAkuiGali({ transcriptText, apiKey }) {
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
+  const userMessage = { role: "user", content: `Transkrip:\n\n${transcriptText}` };
+
+  const galiTool = buildGaliTool();
+  const { toolCalls: galiCalls, usage: galiUsage } = await chatWithTools({
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildGaliPrompt(),
+    messages: [userMessage], tools: [galiTool], toolChoice: { type: "tool", name: galiTool.name },
+    maxTokens: 300,
+  });
+  addUsage(usage, galiUsage);
+  const galiCall = galiCalls.find((c) => c.name === galiTool.name);
+  const galiPresent = galiCall ? normalizeFlag(galiCall.input.galiPresent) : null;
+  const galiPresentQuote = galiCall?.input.galiPresentQuote ?? null;
+
+  const akuiTool = buildAkuiTool();
+  const { toolCalls: akuiCalls, usage: akuiUsage } = await chatWithTools({
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildAkuiPrompt(galiPresent ? galiPresentQuote : null),
+    messages: [userMessage], tools: [akuiTool], toolChoice: { type: "tool", name: akuiTool.name },
+    maxTokens: 300,
+  });
+  addUsage(usage, akuiUsage);
+  const akuiCall = akuiCalls.find((c) => c.name === akuiTool.name);
+  const akuiPresent = akuiCall ? normalizeFlag(akuiCall.input.akuiPresent) : null;
+  const akuiPresentQuote = akuiCall?.input.akuiPresentQuote ?? null;
+
+  return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, usage };
 }
 
 /**
@@ -108,6 +162,21 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     const { overallNote, ...dimFields } = call.input;
     scores[dim.key] = dimFields;
     if (isLast) scores.overallNote = overallNote ?? null;
+
+    // akuiPresent/galiPresent (28 Agustus 2026) — TIDAK LAGI bagian dari
+    // tool call dimensi objectionHandling di atas (lihat qualityScorerRubric.js
+    // soal kenapa dipisah jadi 2 panggilan sekuensial terpisah). Jalankan
+    // HANYA kalau objectionHandlingScore terisi (ada keberatan terdeteksi) —
+    // sama prinsip null-safety dgn extraFields lain, jangan buang 2
+    // panggilan LLM utk topik yang tidak muncul di percakapan ini.
+    if (dim.key === "objectionHandling" && dimFields.score != null) {
+      const akuiGali = await extractAkuiGali({ transcriptText, apiKey });
+      addUsage(usage, akuiGali.usage);
+      scores.objectionHandling.akuiPresent = akuiGali.akuiPresent;
+      scores.objectionHandling.akuiPresentQuote = akuiGali.akuiPresentQuote;
+      scores.objectionHandling.galiPresent = akuiGali.galiPresent;
+      scores.objectionHandling.galiPresentQuote = akuiGali.galiPresentQuote;
+    }
   }
 
   return { scores, usage };
