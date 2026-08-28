@@ -49,6 +49,7 @@ import { warehouseReportsRouter } from "./routes/warehouseReports.js";
 import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
+import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
@@ -168,6 +169,10 @@ app.use("/mcp", mcpRouter);
 // mana pun mengharapkannya.
 app.use(wellKnownRouter);
 app.use(mcpOAuthRouter);
+// SANO Hub Analytics MCP (connector KEDUA, PARALEL -- lihat src/mcpHub/index.js).
+// Authorization server /oauth/* di atas DIPAKAI BERSAMA (resource beda,
+// lihat mcp/oauth.js#KNOWN_RESOURCES), jadi TIDAK perlu mount OAuth kedua.
+app.use("/mcp-hub", mcpHubRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
@@ -208,6 +213,7 @@ initSocket(server);
 server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
   logStatusMcp();
+  logStatusMcpHub();
   startReconciliationJob();
   startSlaAlertJob();
   startStaleLeadAlertJob();

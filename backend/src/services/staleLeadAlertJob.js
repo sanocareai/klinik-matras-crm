@@ -69,7 +69,7 @@ const DEFAULT_CONFIG = {
 
 const URGENCY_RANK = { low: 0, medium: 1, high: 2 };
 
-function readConfig() {
+export function readConfig() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")); } catch { raw = {}; }
   return {

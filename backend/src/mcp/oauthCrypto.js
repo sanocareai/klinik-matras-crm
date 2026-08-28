@@ -78,14 +78,18 @@ export function hashToken(token) {
 // ─── Access token (JWT, bukan disimpan di DB — cukup diverifikasi tanda
 // tangannya, sama seperti JWT login CRM di middleware/auth.js) ─────────────
 
-export function signAccessToken({ userId, clientId }) {
+// `resource` = resource server yang token ini berlaku (RFC 8707) — jadi
+// klaim `aud` JWT. Default "${publicUrl()}/mcp" SENGAJA dipertahankan supaya
+// pemanggil lama (SANSS CRM, sebelum multi-resource ada) tidak perlu berubah
+// dan token yang sudah beredar untuk mereka tetap tervalidasi identik.
+export function signAccessToken({ userId, clientId, resource }) {
   return jwt.sign(
     { clientId, scope: OAUTH_SCOPE },
     process.env.MCP_OAUTH_JWT_SECRET,
     {
       subject: userId,
       issuer: publicUrl(),
-      audience: `${publicUrl()}/mcp`,
+      audience: resource || `${publicUrl()}/mcp`,
       expiresIn: ACCESS_TOKEN_TTL_SEC,
     },
   );
@@ -94,12 +98,17 @@ export function signAccessToken({ userId, clientId }) {
 // Balas payload kalau valid, null kalau tidak (tanda tangan salah,
 // kedaluwarsa, issuer/audience tidak cocok, atau secret OAuth belum
 // dikonfigurasi sama sekali).
-export function verifyAccessToken(token) {
+// `resource` = audience yang DIHARAPKAN — router `/mcp` dan `/mcp-hub`
+// masing-masing verifikasi dgn audience-nya SENDIRI, supaya token yang
+// diterbitkan untuk satu resource TIDAK BISA dipakai ke resource lain
+// (cross-resource token confusion). Default "${publicUrl()}/mcp" menjaga
+// perilaku lama identik utk pemanggil yang belum menyebut resource.
+export function verifyAccessToken(token, resource) {
   if (!oauthConfigured()) return null;
   try {
     const payload = jwt.verify(token, process.env.MCP_OAUTH_JWT_SECRET, {
       issuer: publicUrl(),
-      audience: `${publicUrl()}/mcp`,
+      audience: resource || `${publicUrl()}/mcp`,
     });
     return { userId: payload.sub, clientId: payload.clientId, scope: payload.scope };
   } catch {

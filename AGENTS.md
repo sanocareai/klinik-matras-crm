@@ -1320,3 +1320,46 @@ percakapan dangkal langsung mentok 100 → distribusi production 165 TINGGI /
 (138/27/35) dan dikunci tes di `tests/mcp-chat.test.js`. Kalau menyetel ulang
 bobotnya, jalankan tes itu DAN cek ulang distribusinya di production — jangan
 menilai dari satu contoh percakapan saja.
+
+### 18d. SANO Hub Analytics MCP — connector KEDUA di Claude (29 Agt 2026)
+
+Endpoint `/mcp-hub`, kode `backend/src/mcpHub/`. Detail lengkap:
+`docs/MCP-HUB-SERVER.md`. Ringkasan: expose 5 tool baca data yang dihasilkan
+Claude Code selama development (Quality Scorer, Sales Risk Engine, Stale
+Lead Alert, Gold Standard) — PARALEL dengan connector SANSS CRM (/mcp),
+bukan pengganti, tidak menduplikasi data mentah pelanggan/order/percakapan.
+
+**⚠️ ATURAN PENTING:**
+
+1. **DB-level read-only, bukan cuma "tidak ada tool tulis".** `mcpHub/db.js`
+   pakai role Postgres `mcp_hub_readonly` yang HANYA `GRANT SELECT` — dibuktikan
+   langsung: percobaan `updateMany()` ditolak Postgres kode `42501`
+   ("permission denied for table Customer"), BUKAN cuma dicegah kode. Setup
+   role: lihat docs/MCP-HUB-SERVER.md §2 — WAJIB dijalankan manual sekali per
+   server (lokal & production terpisah), TIDAK lewat Prisma migration.
+2. **`src/mcpHub/tools.js` HANYA boleh pakai `prismaReadOnly` dari `./db.js`,
+   JANGAN PERNAH import `prisma` dari `../db.js`** (role writable app utama).
+   Dijaga tes `tests/mcpHub.test.js`.
+3. **OAuth multi-resource (RFC 8707)**: satu authorization server (`/oauth/*`)
+   melayani DUA resource (`/mcp` dan `/mcp-hub`) lewat parameter `resource=`,
+   divalidasi ketat di `KNOWN_RESOURCES` (mcp/oauth.js). Access token untuk
+   satu resource TIDAK BISA dipakai ke resource lain — audience (`aud` JWT)
+   dicek spesifik per resource (`oauthCrypto.js#verifyAccessToken`). Perubahan
+   ini backward-compatible: token SANSS yang sudah beredar (sebelum fitur ini
+   ada) tetap valid karena default audience-nya tidak berubah.
+4. **Reuse fungsi bisnis yang sudah ada** (services/salesRisk,
+   services/qualityScorer/rollup.js) — TIDAK menulis ulang logic scoring.
+   `loadSalesRiskCandidates` sudah menerima `prisma` sebagai parameter (dipakai
+   langsung dengan prismaReadOnly). `rollup.js` di-export helper transform
+   murninya (overallScore/avgByDim/formatExample/patternMetricsForRows) supaya
+   bisa disusun ulang query-nya pakai prismaReadOnly tanpa duplikasi logic.
+5. **Kalau menambah file `src/mcpHub/*.js` baru, daftarkan di `FILE_HUB`**
+   pada `tests/mcpHub.test.js` (tes yang mencocokkan daftar dgn isi folder).
+
+**`get_stale_lead_status` SENGAJA tidak lengkap** — hanya mencakup lead yang
+SUDAH PERNAH kena alert (baca StaleLeadAlertLog + hitung ulang status eskalasi
+saja, memakai `readConfig()` yang di-export dari staleLeadAlertJob.js).
+TIDAK mereproduksi logic candidate-selection job (siapa yang SEHARUSNYA
+dialert tapi belum) — itu logic besar & sering berubah, reimplementasi
+berisiko drift dari job aslinya. Keputusan ini dikonfirmasi user, bukan
+kelalaian.

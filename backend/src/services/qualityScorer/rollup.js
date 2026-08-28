@@ -14,7 +14,7 @@
 import { prisma } from "../../db.js";
 import { CORE_DIMENSIONS, PATTERN_DIMENSIONS } from "../../config/qualityScorerRubric.js";
 
-const DIM_TO_COLUMN = {
+export const DIM_TO_COLUMN = {
   communicationSkill: "communicationSkillScore",
   authoritySelling: "authoritySellingScore",
   objectionHandling: "objectionHandlingScore",
@@ -27,13 +27,13 @@ const DIM_TO_COLUMN = {
   evidenceBasedSelling: "evidenceBasedSellingScore",
 };
 
-function overallScore(row) {
+export function overallScore(row) {
   const vals = Object.values(DIM_TO_COLUMN).map((col) => row[col]).filter((v) => v != null);
   if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-function avgByDim(rows) {
+export function avgByDim(rows) {
   const out = {};
   for (const { key } of CORE_DIMENSIONS) {
     const col = DIM_TO_COLUMN[key];
@@ -48,7 +48,7 @@ function avgByDim(rows) {
 // lama) supaya section dashboard existing tidak ikut berubah nilai/tampilan
 // hanya karena dimensi baru ditambahkan. Semua dihitung dari kolom DB biasa
 // (skor + flag boolean) — TIDAK ada panggilan LLM di fungsi ini.
-function patternMetricsForRows(rows, prevRows) {
+export function patternMetricsForRows(rows, prevRows) {
   const out = {};
   for (const dim of PATTERN_DIMENSIONS) {
     const scoreCol = `${dim.key}Score`;
@@ -164,7 +164,7 @@ export async function getMultiWeekTrend(salesUserId, { weeks = 6, referenceNow =
   return points;
 }
 
-function formatExample(r) {
+export function formatExample(r) {
   return {
     conversationId: r.conversationId,
     overallScore: Math.round(r._overall * 10) / 10,

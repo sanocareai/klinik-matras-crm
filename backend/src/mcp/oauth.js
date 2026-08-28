@@ -32,6 +32,32 @@ import {
   validateRedirectUris,
 } from "./oauthCrypto.js";
 
+// --- Multi-resource (RFC 8707) -- SATU authorization server, DUA connector
+// MCP yang berbeda (SANSS CRM di /mcp, SANO Hub Analytics di /mcp-hub sejak
+// 29 Agt 2026). Admin login SAMA untuk keduanya, tapi access token yang
+// diterbitkan untuk satu resource TIDAK BOLEH bisa dipakai ke resource lain
+// (lihat oauthCrypto.js, fungsi verifyAccessToken) -- makanya setiap
+// authorization code & refresh token MENYIMPAN resource-nya sendiri (kolom
+// resource, lihat schema.prisma), bukan cuma dipercaya dari parameter token
+// request.
+const KNOWN_RESOURCES = {
+  "/mcp": "SANSS CRM (data pelanggan, order, pipeline, percakapan - baca-saja)",
+  "/mcp-hub": "SANO Hub Analytics (quality score, risk profile, stale lead, gold standard, narasi mingguan - baca-saja)",
+};
+
+// resourceParam = nilai mentah query/body resource= dari Claude (URL penuh).
+// Absen = default "/mcp" (kompatibilitas mundur -- link lama SANSS yang
+// belum pernah menyertakan resource tetap jalan).
+function resolveResource(resourceParam) {
+  const target = resourceParam ? resourceParam : `${publicUrl()}/mcp`;
+  for (const path of Object.keys(KNOWN_RESOURCES)) {
+    if (target === `${publicUrl()}${path}`) {
+      return { path, url: `${publicUrl()}${path}`, label: KNOWN_RESOURCES[path] };
+    }
+  }
+  return null;
+}
+
 // Sama seperti loadRoles() di routes/auth.js (tidak diekspor dari sana, jadi
 // diduplikasi di sini) — WAJIB baca dari tabel user_roles (D-010), BUKAN
 // cuma User.role tunggal. CLAUDE.md §9 mendokumentasikan bug nyata (D-010)
@@ -49,7 +75,7 @@ async function loadRoles(user) {
 // wajar untuk tool internal 2 admin, bukan aplikasi konsumen. Palet warna
 // dari CLAUDE.md §10 supaya terasa satu produk dengan CRM, walau ini
 // halaman server-rendered terpisah dari SPA React.
-function renderLoginPage({ hidden, error }) {
+function renderLoginPage({ hidden, error, resourceLabel }) {
   const hiddenInputs = Object.entries(hidden)
     .map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(v)}">`)
     .join("\n      ");
@@ -92,8 +118,9 @@ function renderLoginPage({ hidden, error }) {
   <div class="card">
     <span class="badge">Klinik Matras CRM</span>
     <h1>Izinkan akses Claude (baca-saja)</h1>
-    <p class="sub">Masuk sebagai Admin untuk mengizinkan Claude membaca data CRM
-      (pelanggan, order, pipeline, percakapan). Claude TIDAK bisa mengubah data apa pun.</p>
+    <p class="sub">Masuk sebagai Admin untuk mengizinkan Claude membaca:<br>
+      <strong>${escapeHtml(resourceLabel || "data CRM")}</strong>.<br>
+      Claude TIDAK bisa mengubah data apa pun lewat koneksi ini.</p>
     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
     <form method="POST">
       ${hiddenInputs}
@@ -128,6 +155,17 @@ export const wellKnownRouter = express.Router();
 wellKnownRouter.get("/.well-known/oauth-protected-resource", (req, res) => {
   res.json({
     resource: `${publicUrl()}/mcp`,
+    authorization_servers: [publicUrl()],
+  });
+});
+
+// SANO Hub Analytics (29 Agt 2026) -- resource TERPISAH, authorization
+// server SAMA (lihat KNOWN_RESOURCES di atas). Path well-known ini SENGAJA
+// beda dari yang di atas (bukan query param) supaya masing-masing 401 bisa
+// menunjuk resource_metadata yang benar-benar spesifik ke resource-nya.
+wellKnownRouter.get("/.well-known/oauth-protected-resource/mcp-hub", (req, res) => {
+  res.json({
+    resource: `${publicUrl()}/mcp-hub`,
     authorization_servers: [publicUrl()],
   });
 });
@@ -189,17 +227,22 @@ mcpOAuthRouter.post("/oauth/register", express.json(), async (req, res) => {
 // Validasi bersama dipakai GET (tampilkan form) & POST (proses login) —
 // supaya request yang parameternya dirusak tidak pernah sampai ke redirect.
 async function validateAuthorizeParams(q) {
-  const { response_type, client_id, redirect_uri, code_challenge, code_challenge_method } = q;
+  const { response_type, client_id, redirect_uri, code_challenge, code_challenge_method, resource } = q;
 
   if (response_type !== "code") return { ok: false, msg: "response_type harus 'code'" };
   if (code_challenge_method !== "S256") return { ok: false, msg: "code_challenge_method harus 'S256'" };
   if (!code_challenge) return { ok: false, msg: "code_challenge wajib diisi" };
   if (redirect_uri !== ALLOWED_REDIRECT_URI) return { ok: false, msg: "redirect_uri tidak dikenali" };
 
+  // resource (RFC 8707) -- WAJIB dikenali (lihat KNOWN_RESOURCES). Absen =
+  // default /mcp untuk kompatibilitas mundur (lihat resolveResource()).
+  const resolvedResource = resolveResource(resource);
+  if (!resolvedResource) return { ok: false, msg: "resource tidak dikenali server ini" };
+
   const client = await prisma.mcpOAuthClient.findUnique({ where: { clientId: client_id } });
   if (!client) return { ok: false, msg: "client_id tidak dikenali — coba tambah ulang konektornya di Claude" };
 
-  return { ok: true };
+  return { ok: true, resource: resolvedResource };
 }
 
 mcpOAuthRouter.get("/oauth/authorize", async (req, res) => {
@@ -212,7 +255,12 @@ mcpOAuthRouter.get("/oauth/authorize", async (req, res) => {
 
   const { response_type, client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = req.query;
   res.send(renderLoginPage({
-    hidden: { response_type, client_id, redirect_uri, state: state || "", code_challenge, code_challenge_method, scope: scope || OAUTH_SCOPE },
+    hidden: {
+      response_type, client_id, redirect_uri, state: state || "", code_challenge, code_challenge_method,
+      scope: scope || OAUTH_SCOPE,
+      resource: check.resource.url,
+    },
+    resourceLabel: check.resource.label,
   }));
 });
 
@@ -228,15 +276,20 @@ mcpOAuthRouter.post("/oauth/authorize", async (req, res) => {
   }
 
   const { email, password, response_type, client_id, redirect_uri, state, code_challenge, scope } = req.body;
-  const hidden = { response_type, client_id, redirect_uri, state: state || "", code_challenge, code_challenge_method: "S256", scope: scope || OAUTH_SCOPE };
+  const hidden = {
+    response_type, client_id, redirect_uri, state: state || "", code_challenge, code_challenge_method: "S256",
+    scope: scope || OAUTH_SCOPE,
+    resource: check.resource.url,
+  };
+  const resourceLabel = check.resource.label;
 
   const user = await prisma.user.findUnique({ where: { email } });
   const valid = user && (await bcrypt.compare(password, user.passwordHash));
   if (!valid) {
-    return res.status(401).send(renderLoginPage({ hidden, error: "Email atau password salah." }));
+    return res.status(401).send(renderLoginPage({ hidden, error: "Email atau password salah.", resourceLabel }));
   }
   if (user.active === false) {
-    return res.status(403).send(renderLoginPage({ hidden, error: "Akun ini sudah dinonaktifkan." }));
+    return res.status(403).send(renderLoginPage({ hidden, error: "Akun ini sudah dinonaktifkan.", resourceLabel }));
   }
 
   const roles = await loadRoles(user);
@@ -244,6 +297,7 @@ mcpOAuthRouter.post("/oauth/authorize", async (req, res) => {
     return res.status(403).send(renderLoginPage({
       hidden,
       error: "Hanya Admin yang bisa mengizinkan koneksi Claude ke CRM ini.",
+      resourceLabel,
     }));
   }
 
@@ -256,6 +310,7 @@ mcpOAuthRouter.post("/oauth/authorize", async (req, res) => {
       redirectUri: redirect_uri,
       codeChallenge: code_challenge,
       scope: scope || OAUTH_SCOPE,
+      resource: check.resource.url,
       expiresAt: new Date(Date.now() + AUTH_CODE_TTL_SEC * 1000),
     },
   });
@@ -305,7 +360,7 @@ async function handleAuthorizationCodeGrant(req, res) {
   // dua request paralel dengan code yang sama tidak dua-duanya lolos.
   await prisma.mcpAuthorizationCode.update({ where: { code }, data: { usedAt: new Date() } });
 
-  const { accessToken, refreshToken } = await issueTokenPair({ userId: row.userId, clientId: row.clientId, scope: row.scope });
+  const { accessToken, refreshToken } = await issueTokenPair({ userId: row.userId, clientId: row.clientId, scope: row.scope, resource: row.resource });
   res.json({
     access_token: accessToken,
     token_type: "Bearer",
@@ -333,7 +388,7 @@ async function handleRefreshTokenGrant(req, res) {
   // skala 2 admin, tapi rotasi sendiri sudah menutup celah replay biasa.
   await prisma.mcpRefreshToken.update({ where: { tokenHash }, data: { revokedAt: new Date() } });
 
-  const { accessToken, refreshToken } = await issueTokenPair({ userId: row.userId, clientId: row.clientId, scope: row.scope });
+  const { accessToken, refreshToken } = await issueTokenPair({ userId: row.userId, clientId: row.clientId, scope: row.scope, resource: row.resource });
   res.json({
     access_token: accessToken,
     token_type: "Bearer",
@@ -343,8 +398,8 @@ async function handleRefreshTokenGrant(req, res) {
   });
 }
 
-async function issueTokenPair({ userId, clientId, scope }) {
-  const accessToken = signAccessToken({ userId, clientId });
+async function issueTokenPair({ userId, clientId, scope, resource }) {
+  const accessToken = signAccessToken({ userId, clientId, resource });
   const refreshToken = randomToken(32);
   await prisma.mcpRefreshToken.create({
     data: {
@@ -352,6 +407,7 @@ async function issueTokenPair({ userId, clientId, scope }) {
       clientId,
       userId,
       scope,
+      resource,
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 86_400_000),
     },
   });
