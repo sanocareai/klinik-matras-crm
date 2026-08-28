@@ -23,7 +23,7 @@
 import { prisma } from "../src/db.js";
 import { fetchTranscriptMessages, formatTranscript, resolveApiKey, extractAkuiGali } from "../src/services/qualityScorer/grading.js";
 
-async function reExtract(conversationId, apiKey) {
+async function reExtract(conversationId, apiKey, objectionQuote) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { customer: { select: { name: true } } },
@@ -33,7 +33,10 @@ async function reExtract(conversationId, apiKey) {
   if (messages.length === 0) return null;
   const transcriptText = formatTranscript(messages, conv.customer?.name);
 
-  const { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote } = await extractAkuiGali({ transcriptText, apiKey });
+  // objectionQuote (dari objectionTypeQuote yang SUDAH tersimpan di baris
+  // asal) diteruskan sbg jangkar — SAMA dgn live grading, cegah Gali/Akui
+  // salah menemukan bukti dari bagian lain percakapan yang tidak berkaitan.
+  const { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote } = await extractAkuiGali({ transcriptText, apiKey, objectionQuote });
   const frameworkFollowed = akuiPresent == null || galiPresent == null ? null : akuiPresent && galiPresent;
   return { akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, frameworkFollowed };
 }
@@ -43,7 +46,7 @@ async function main() {
 
   const rows = await prisma.conversationQualityScore.findMany({
     where: { objectionHandlingScore: { not: null } },
-    select: { id: true, conversationId: true, salesName: true, frameworkFollowed: true },
+    select: { id: true, conversationId: true, salesName: true, frameworkFollowed: true, objectionTypeQuote: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -55,7 +58,7 @@ async function main() {
   for (const row of rows) {
     let extracted;
     try {
-      extracted = await reExtract(row.conversationId, apiKey);
+      extracted = await reExtract(row.conversationId, apiKey, row.objectionTypeQuote ?? null);
     } catch (err) {
       console.error(`[${row.conversationId}] GAGAL — ${err.message}`);
       failed++;

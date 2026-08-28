@@ -77,15 +77,22 @@ function normalizeFlag(v) {
  * scripts/backfillAkuiGali.js — 1 sumber kebenaran, kriteria backfill data
  * lama IDENTIK dgn kriteria grading baru.
  *
+ * `objectionQuote` (kutipan keberatan dari objectionType/objectionTypeQuote,
+ * SUDAH diekstrak duluan oleh tool call dimensi utama) DITERUSKAN ke KEDUA
+ * panggilan sbg jangkar — BUG DITEMUKAN lewat verifikasi live: tanpa
+ * jangkar ini, panggilan Gali/Akui bisa menemukan pertanyaan/pengakuan dari
+ * BAGIAN LAIN percakapan (mis. pertanyaan diagnosa di AWAL, sebelum ada
+ * keberatan sama sekali) dan salah mengiranya sbg respons thd keberatan.
+ *
  * @returns {{ akuiPresent, akuiPresentQuote, galiPresent, galiPresentQuote, usage }}
  */
-export async function extractAkuiGali({ transcriptText, apiKey }) {
+export async function extractAkuiGali({ transcriptText, apiKey, objectionQuote = null }) {
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
   const userMessage = { role: "user", content: `Transkrip:\n\n${transcriptText}` };
 
   const galiTool = buildGaliTool();
   const { toolCalls: galiCalls, usage: galiUsage } = await chatWithTools({
-    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildGaliPrompt(),
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildGaliPrompt(objectionQuote),
     messages: [userMessage], tools: [galiTool], toolChoice: { type: "tool", name: galiTool.name },
     maxTokens: 300,
   });
@@ -96,7 +103,7 @@ export async function extractAkuiGali({ transcriptText, apiKey }) {
 
   const akuiTool = buildAkuiTool();
   const { toolCalls: akuiCalls, usage: akuiUsage } = await chatWithTools({
-    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildAkuiPrompt(galiPresent ? galiPresentQuote : null),
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildAkuiPrompt(objectionQuote, galiPresent ? galiPresentQuote : null),
     messages: [userMessage], tools: [akuiTool], toolChoice: { type: "tool", name: akuiTool.name },
     maxTokens: 300,
   });
@@ -170,7 +177,7 @@ export async function gradeTranscript({ systemPrompt, transcriptText, apiKey }) 
     // sama prinsip null-safety dgn extraFields lain, jangan buang 2
     // panggilan LLM utk topik yang tidak muncul di percakapan ini.
     if (dim.key === "objectionHandling" && dimFields.score != null) {
-      const akuiGali = await extractAkuiGali({ transcriptText, apiKey });
+      const akuiGali = await extractAkuiGali({ transcriptText, apiKey, objectionQuote: dimFields.objectionTypeQuote ?? null });
       addUsage(usage, akuiGali.usage);
       scores.objectionHandling.akuiPresent = akuiGali.akuiPresent;
       scores.objectionHandling.akuiPresentQuote = akuiGali.akuiPresentQuote;

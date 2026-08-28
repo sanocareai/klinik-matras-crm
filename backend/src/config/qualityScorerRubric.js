@@ -305,12 +305,15 @@ export function buildGaliTool() {
   };
 }
 
-export function buildGaliPrompt() {
+export function buildGaliPrompt(objectionQuote) {
+  const anchor = objectionQuote
+    ? `KEBERATAN YANG DIMAKSUD sudah diidentifikasi terpisah, yaitu kalimat pelanggan berikut:\n"${objectionQuote}"\n\nFOKUS HANYA pada respons sales SEGERA SETELAH keberatan spesifik ini. JANGAN cari pertanyaan klarifikasi di bagian LAIN percakapan (mis. pertanyaan diagnosa awal soal keluhan/berat badan di AWAL percakapan) yang TIDAK berkaitan dengan keberatan spesifik ini — itu bukan Gali, itu proses konsultasi normal sebelum ada keberatan sama sekali.\n\n`
+    : "";
   return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
 
-TUGAS: tentukan apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan pelanggan SEBENARNYA SEBELUM menjawab/menjelaskan (bukan langsung menjelaskan/membantah). Contoh: "boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?", "budget yang tersedia saat ini di kisaran berapa?".
+${anchor}TUGAS: tentukan apakah sales mengajukan PERTANYAAN KLARIFIKASI yang menggali keberatan pelanggan SEBENARNYA SEBELUM menjawab/menjelaskan (bukan langsung menjelaskan/membantah). Contoh: "boleh tau lebih detail apa yang jadi pertimbangan Bapak/Ibu?", "budget yang tersedia saat ini di kisaran berapa?".
 
-- "galiPresent": true kalau ADA pertanyaan klarifikasi semacam itu SEBELUM sales menjawab/menjelaskan; false kalau sales langsung menjawab/menjelaskan tanpa bertanya dulu; null kalau tidak ada keberatan sama sekali di transkrip ini.
+- "galiPresent": true kalau ADA pertanyaan klarifikasi semacam itu SEBELUM sales menjawab/menjelaskan, DAN pertanyaan itu SPESIFIK merespons keberatan yang dimaksud di atas (bukan pertanyaan diagnosa umum yang tidak terkait); false kalau sales langsung menjawab/menjelaskan tanpa bertanya dulu, ATAU pertanyaan yang ada tidak terkait keberatan ini; null kalau tidak ada keberatan sama sekali di transkrip ini.
 - "galiPresentQuote": kutipan LANGSUNG (persis, jangan parafrase) dari pesan [SALES] yang jadi bukti, atau null kalau galiPresent bukan true.
 - Fokus HANYA pesan [SALES]. Pesan [CUSTOMER] cuma konteks.`;
 }
@@ -331,14 +334,17 @@ export function buildAkuiTool() {
   };
 }
 
-export function buildAkuiPrompt(galiQuote) {
+export function buildAkuiPrompt(objectionQuote, galiQuote) {
+  const objectionAnchor = objectionQuote
+    ? `KEBERATAN YANG DIMAKSUD sudah diidentifikasi terpisah, yaitu kalimat pelanggan berikut:\n"${objectionQuote}"\n\nFOKUS HANYA pada respons sales SEGERA SETELAH keberatan spesifik ini. JANGAN cari validasi/pengakuan di bagian LAIN percakapan (mis. respons terhadap keluhan/pertanyaan diagnosa awal yang TIDAK ADA hubungannya dengan keberatan ini).\n\n`
+    : "";
   const galiContext = galiQuote
     ? `KONTEKS YANG SUDAH DIKETAHUI: kalimat berikut SUDAH diidentifikasi TERPISAH sbg bukti "Gali" (pertanyaan klarifikasi) — JANGAN gunakan kalimat ini lagi sbg bukti Akui, WAJIB cari kalimat LAIN:\n"${galiQuote}"\n\n`
     : `KONTEKS YANG SUDAH DIKETAHUI: sudah dipastikan TIDAK ADA pertanyaan klarifikasi (Gali) yang ditemukan di transkrip ini.\n\n`;
 
   return `Kamu supervisor training SANO Care (Klinik Matras). Fokus HANYA pada transkrip percakapan berikut.
 
-${galiContext}TUGAS: tentukan apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan — BUKAN sekadar menerima keputusan/hasil akhirnya, dan BUKAN kalimat yang sama dengan kutipan Gali di atas (kalau ada).
+${objectionAnchor}${galiContext}TUGAS: tentukan apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan DI ATAS — BUKAN sekadar menerima keputusan/hasil akhirnya, dan BUKAN kalimat yang sama dengan kutipan Gali di atas (kalau ada).
 
 Kalimat yang MEMENUHI: secara eksplisit menyebut ULANG atau merespons ALASAN/PERASAAN spesifik yang baru diucapkan pelanggan. Contoh: kalau pelanggan bilang "mau saya obrolin dulu sama istri", Akui yang VALID menyebut soal DISKUSI/KEPUTUSAN BERSAMA ("wajar sekali, ini memang baiknya didiskusikan dulu bersama pasangan") — BUKAN cuma "baik, kami tunggu kabar baiknya" (itu CUMA menerima PENUNDAANNYA, TIDAK memvalidasi ALASANNYA — tetap false meski terdengar sopan).
 
