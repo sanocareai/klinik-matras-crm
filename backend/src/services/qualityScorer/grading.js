@@ -153,6 +153,35 @@ export async function extractObjectionType({ transcriptText, apiKey }) {
   return { objectionType, objectionTypeQuote, usage };
 }
 
+const EVIDENCE_BASED_SELLING_DIM = RUBRIC_DIMENSIONS.find((d) => d.key === "evidenceBasedSelling");
+
+/**
+ * Re-ekstrak SATU dimensi (evidenceBasedSelling) saja — dipakai
+ * scripts/backfillAuthorityStructure.js utk mengisi 4 field authority*
+ * granular yang baru ditambahkan (28 Agustus 2026, pemecahan
+ * authorityStructureFollowed) ke baris LAMA yang evidenceBasedSellingScore-nya
+ * sudah terisi. SAMA PERSIS tool/prompt yang dipakai gradeTranscript() harian
+ * (buildDimensionTool) — 1 sumber kebenaran, tidak ada drift kriteria.
+ *
+ * @returns {{ dimFields: object, usage: object }}
+ */
+export async function extractEvidenceBasedSelling({ transcriptText, apiKey }) {
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 };
+  const userMessage = { role: "user", content: `Nilai transkrip percakapan berikut:\n\n${transcriptText}` };
+  const tool = buildDimensionTool(EVIDENCE_BASED_SELLING_DIM, { includeOverallNote: false });
+
+  const { toolCalls, usage: u } = await chatWithTools({
+    apiKey, model: QUALITY_SCORER_MODEL, systemPrompt: buildSystemPrompt(),
+    messages: [userMessage], tools: [tool], toolChoice: { type: "tool", name: tool.name },
+    maxTokens: 800,
+  });
+  addUsage(usage, u);
+
+  const call = toolCalls.find((c) => c.name === tool.name);
+  if (!call) throw new Error(`evidenceBasedSelling: LLM tidak memanggil tool ${tool.name}.`);
+  return { dimFields: call.input, usage };
+}
+
 /**
  * Panggil LLM untuk menilai satu transcript. `systemPrompt` DIBERIKAN dari
  * pemanggil (bukan dibangun ulang di sini) supaya job.js bisa membangunnya

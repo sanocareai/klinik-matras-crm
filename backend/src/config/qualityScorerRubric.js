@@ -138,12 +138,44 @@ export const RUBRIC_DIMENSIONS = [
       5: "Sama seperti 4, DITAMBAH lebih dari 1 jenis bukti dipakai, DAN/ATAU story selling dipakai dengan benar (tanpa menjanjikan hasil pasti sama utk semua orang).",
     },
     secondQuote: true,
+    // authorityStructureFollowed DIPECAH jadi 4 field terpisah (28 Agustus
+    // 2026, SEBELUM pernah dipakai grading — ditemukan lewat cross-check
+    // status Fase 3, field lama masih 1 boolean gabungan persis pola
+    // frameworkFollowed yang terbukti bermasalah di objectionHandling: satu
+    // boolean bisa "true" cuma krn 1-2 langkah kebetulan terpenuhi, tanpa
+    // ketahuan langkah mana yang sebenarnya lolos/gagal). BEDA dari akui/
+    // gali: 4 langkah ini bagian SEKUENSIAL dari SATU pitch yang sama
+    // (bukan 2 kriteria independen yang berebut kutipan yang sama), jadi
+    // TIDAK perlu structural fix 2-panggilan terpisah spt akui/gali — cukup
+    // 4 extraFields boolean dalam SATU panggilan (pola sama dgn objectionType
+    // di Fase 1), lebih murah (tidak menambah panggilan LLM) dan cukup utk
+    // masalah granularitas yang mau diperbaiki. authorityStructureFollowed
+    // TETAP ADA di schema sbg kolom LEGACY, dihitung DI KODE sbg AND() dari
+    // 4 field ini (job.js#dimResult, pola sama dgn frameworkFollowed).
     extraFields: [
       {
-        key: "authorityStructureFollowed",
+        key: "authorityReferensiPresent",
         kind: "boolean",
         question:
-          "Apakah sales mengikuti 4 langkah Struktur Authority Communication SECARA BERURUTAN saat menyampaikan rekomendasi solusi: (1) Referensi hasil konsultasi (\"Berdasarkan hasil konsultasi tadi...\", \"Dari informasi yang Bapak sampaikan...\"), (2) Kesimpulan pakai kata HEDGE (\"kemungkinan\", \"dapat memengaruhi\") BUKAN kata pasti (\"pasti\", \"sudah pasti\", \"jelas\"), (3) Jelaskan mekanisme sebab-akibat dengan bahasa sederhana, (4) Hubungkan ke solusi (bukan langsung \"harus beli ini\"). true kalau KESELURUHAN 4 langkah dijalankan berurutan; false kalau ada langkah yang dilompati/dibalik urutannya.",
+          "Langkah 1/4 Struktur Authority Communication: apakah sales membuka rekomendasi dengan MERUJUK EKSPLISIT ke hasil konsultasi/data yang sudah dikumpulkan sebelumnya? Contoh: \"Berdasarkan hasil konsultasi tadi...\", \"Dari informasi yang Bapak/Ibu sampaikan...\". false kalau langsung kasih rekomendasi tanpa merujuk apa pun yang sudah dibahas.",
+      },
+      {
+        key: "authorityHedgeLanguageUsed",
+        kind: "boolean",
+        question:
+          "Langkah 2/4: apakah kesimpulan/rekomendasi memakai kata HEDGE (\"kemungkinan\", \"dapat memengaruhi\", \"berpotensi\") BUKAN kata pasti/mutlak (\"pasti\", \"sudah pasti\", \"jelas\", \"dijamin\")? false kalau memakai klaim pasti/mutlak di bagian ini, ATAU kalau langkah ini dilewati sama sekali (tidak ada kesimpulan sebab-akibat yang diucapkan).",
+      },
+      {
+        key: "authorityMekanismeExplained",
+        kind: "boolean",
+        question:
+          "Langkah 3/4: apakah sales menjelaskan MEKANISME SEBAB-AKIBAT dengan bahasa sederhana (kenapa kondisi kasur/tubuh customer menyebabkan keluhan yang dialami, bukan cuma menyebut gejalanya)? false kalau langsung lompat ke solusi tanpa menjelaskan sebab-akibatnya sama sekali.",
+      },
+      {
+        key: "authoritySolusiConnected",
+        kind: "boolean",
+        question:
+          "Langkah 4/4: apakah penjelasan di atas dihubungkan secara eksplisit ke SOLUSI/rekomendasi yang ditawarkan (bukan menggantung tanpa arah, dan bukan langsung \"harus beli ini\" tanpa benang merah)? false kalau solusi disebutkan tanpa keterkaitan jelas ke penjelasan sebelumnya.",
       },
       {
         key: "evidenceUsed",

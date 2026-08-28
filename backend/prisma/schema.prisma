@@ -2266,7 +2266,18 @@ model ConversationQualityScore {
   evidenceBasedSellingQuote2   String?
   evidenceBasedSellingStrength String?
   evidenceBasedSellingWeakness String?
-  authorityStructureFollowed   Boolean? // true = 4 langkah Struktur Authority Communication (Referensi konsultasi -> Kesimpulan hedge -> Sebab-akibat -> Solusi) diikuti berurutan
+  // authorityStructureFollowed DIPECAH jadi 4 kolom granular (28 Agustus
+  // 2026, SEBELUM pernah dipakai grading — lihat catatan panjang di
+  // qualityScorerRubric.js soal kenapa: 1 boolean gabungan persis pola
+  // frameworkFollowed yang terbukti bermasalah di objectionHandling).
+  // Kolom di bawah TETAP ADA sbg LEGACY, dihitung DI KODE sbg AND() dari
+  // 4 kolom baru (job.js#dimResult) — TIDAK diekstrak LLM lagi secara
+  // langsung.
+  authorityStructureFollowed   Boolean? // LEGACY — derivasi AND() dari 4 kolom di bawah, lihat job.js#dimResult
+  authorityReferensiPresent    Boolean? // langkah 1/4: merujuk eksplisit hasil konsultasi sebelumnya
+  authorityHedgeLanguageUsed   Boolean? // langkah 2/4: pakai kata hedge ("kemungkinan"), bukan kata pasti/mutlak
+  authorityMekanismeExplained  Boolean? // langkah 3/4: jelaskan sebab-akibat dengan bahasa sederhana
+  authoritySolusiConnected     Boolean? // langkah 4/4: dihubungkan eksplisit ke solusi yang ditawarkan
   evidenceUsed                 String[] @default([]) // subset dari FOTO_PEMBONGKARAN/VIDEO/UJI_GAYA_DORONG/UJI_STABILITAS/PENGUKURAN/TIDAK_ADA — lihat catatan di atas soal makna [] vs ["TIDAK_ADA"]
   evidenceExplained            Boolean? // null kalau evidenceUsed cuma ["TIDAK_ADA"]/[] (tidak ada bukti utk dijelaskan maknanya)
   storySellingUsed             Boolean? // opsional — null kalau evidenceBasedSellingScore null

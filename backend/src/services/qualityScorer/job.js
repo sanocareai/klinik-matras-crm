@@ -70,7 +70,11 @@ function normalizeEnumArray(v, allowed) {
 // `extraFields` (28 Agustus 2026, Objection Handling: objectionType/
 // frameworkFollowed) memakai FALLBACK YANG SAMA PERSIS dgn flag di atas —
 // pelajaran yang sama berlaku, bukan cuma utk boolean tapi juga enum.
-function dimResult(scores, dim) {
+// Diekspor (28 Agustus 2026, sama alasan dgn buildDimFields di bawah) —
+// dipakai scripts/backfillAuthorityStructure.js utk re-ekstrak SATU dimensi
+// (evidenceBasedSelling) saja tanpa ikut menyentuh dimensi lain (buildDimFields
+// menghitung SEMUA dimensi sekaligus, tidak cocok utk backfill partial).
+export function dimResult(scores, dim) {
   const d = scores?.[dim.key];
   if (!d || d.score == null) {
     const empty = {
@@ -88,6 +92,9 @@ function dimResult(scores, dim) {
       empty.frameworkFollowed = null; empty.frameworkFollowedQuote = null;
       empty.akuiPresent = null; empty.akuiPresentQuote = null;
       empty.galiPresent = null; empty.galiPresentQuote = null;
+    }
+    if (dim.key === "evidenceBasedSelling") {
+      empty.authorityStructureFollowed = null; // legacy, derivasi 4 field authority* di bawah
     }
     return empty;
   }
@@ -127,6 +134,20 @@ function dimResult(scores, dim) {
   if (dim.key === "evidenceBasedSelling" && Array.isArray(result.evidenceUsed)) {
     const hasRealEvidence = result.evidenceUsed.some((v) => v !== "TIDAK_ADA");
     if (!hasRealEvidence) result.evidenceExplained = null;
+  }
+  // authorityStructureFollowed (28 Agustus 2026) — LEGACY, dihitung DI KODE
+  // sbg AND() dari 4 field authority* granular di atas (pola sama dgn
+  // frameworkFollowed=AND(akuiPresent,galiPresent) di objectionHandling).
+  // null-safety: kalau SALAH SATU dari 4 field null (gagal diekstrak/topik
+  // tidak berlaku), ikut null — bukan ditebak false.
+  if (dim.key === "evidenceBasedSelling") {
+    const steps = [
+      result.authorityReferensiPresent,
+      result.authorityHedgeLanguageUsed,
+      result.authorityMekanismeExplained,
+      result.authoritySolusiConnected,
+    ];
+    result.authorityStructureFollowed = steps.some((s) => s == null) ? null : steps.every(Boolean);
   }
   // akuiPresent/galiPresent (28 Agustus 2026) — BUKAN extraFields generik
   // lagi (dipisah jadi 2 panggilan sekuensial terpisah, lihat grading.js#
@@ -179,6 +200,12 @@ export function buildDimFields(scores) {
       dimFields.galiPresentQuote = r.galiPresentQuote;
       dimFields.frameworkFollowed = r.frameworkFollowed;
       dimFields.frameworkFollowedQuote = r.frameworkFollowedQuote;
+    }
+    // authorityStructureFollowed BUKAN extraFields lagi (dihitung di
+    // dimResult() dari 4 field authority* granular) — ditulis manual di
+    // sini, khusus evidenceBasedSelling. Sama pola dgn frameworkFollowed.
+    if (dim.key === "evidenceBasedSelling") {
+      dimFields.authorityStructureFollowed = r.authorityStructureFollowed;
     }
   }
   return dimFields;
