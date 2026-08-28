@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { RefreshCw, ChevronDown, ChevronUp, X } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -20,25 +20,80 @@ const TIER_LABEL = {
   LOW: { text: "Rendah", tone: "bg-inset text-ink3" },
 };
 
+// Header section per severity (29 Agustus 2026) — 3 tingkat warna dari HANYA
+// 2 hue yang sudah ada (red/orange, lihat badge.jsx: cuma 4 hue diizinkan di
+// seluruh sistem, tidak ada hue kuning/amber terpisah). Kritis=merah solid,
+// Tinggi=oranye solid (2 tone SAMA PERSIS dgn TIER_LABEL di atas), Sedang=
+// oranye TINT lembut (bg-orangebg/text-orange, pola sama dgn Badge
+// variant="orange" biasa) — bukan "kuning muda" literal spt diminta ticket,
+// karena token itu tidak ada; ini kompromi tergradasi (solid->solid->tint)
+// yang tetap keliatan beda 3 tingkat TANPA bikin warna baru. Dijelaskan di
+// laporan, bukan diam-diam menyimpang dari spec.
+const SEVERITY_SECTION = {
+  CRITICAL: { label: "Kritis", headerClass: "bg-red text-white" },
+  HIGH: { label: "Tinggi", headerClass: "bg-orange text-white" },
+  MEDIUM: { label: "Sedang", headerClass: "bg-orangebg text-orange" },
+};
+const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM"];
+
+// Pill filter (29 Agustus 2026) — state LOKAL (bukan query param spt salesId)
+// krn ticket cuma minta "klik untuk filter", tidak minta persist/shareable
+// URL utk severity. Dikombinasikan dgn salesId yang SUDAH di query param
+// (filter di sini murni di atas `data.risks` yang sudah datang ter-scope
+// salesId dari backend — 2 filter berbeda lapisan, tidak saling ganti).
+const SEVERITY_TABS = [
+  { key: "ALL", label: "Semua" },
+  { key: "CRITICAL", label: "Kritis" },
+  { key: "HIGH", label: "Tinggi" },
+  { key: "MEDIUM", label: "Sedang" },
+];
+
 function TierBadge({ tier }) {
   const t = TIER_LABEL[tier] || TIER_LABEL.LOW;
   return <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold", t.tone)}>{t.text}</span>;
 }
 
+// Hari sejak pesan customer TERAKHIR (evidence.lastInboundAt, sudah ada di
+// payload) — dipakai tampilkan "hari stagnan" di kartu. Pola sama dgn
+// daysStagnant() di SalesPerformance.jsx — diduplikasi LOKAL (bukan
+// diekstrak ke util bersama) supaya perubahan ini tetap terkurung di 1
+// file sesuai stop condition ticket ("jangan ubah halaman di luar
+// SalesRisk.jsx").
+function daysStagnant(risk) {
+  const at = risk?.evidence?.lastInboundAt;
+  if (!at) return null;
+  return Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000);
+}
+
+// Kartu diringkas (29 Agustus 2026) — tampilan utama SEKARANG tag pendek
+// (risk.problemTags, sudah terstruktur dari backend, BUKAN parsing teks
+// bebas thd risk.problem — lihat riskScore.js#explainRisk), bukan kalimat
+// penuh berulang. Kalimat lengkap (risk.problem) TETAP ADA, dipindah ke
+// dalam expand/detail supaya tidak hilang, cuma tidak lagi mendominasi
+// tampilan utama.
 function RiskCard({ risk }) {
   const [open, setOpen] = useState(false);
+  const days = daysStagnant(risk);
   return (
     <div className="rounded-btn bg-surface p-4 shadow-card">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-3 text-left">
         <TierBadge tier={risk.tier} />
         <span className="min-w-[140px] flex-1 font-semibold text-ink">{risk.customerName}</span>
+        {days != null && <span className="text-[11px] text-ink3">{days} hari stagnan</span>}
         <span className="text-[11px] text-ink3">{risk.salesOwnerName || "Belum di-assign"}</span>
         {open ? <ChevronUp size={16} className="text-ink3" /> : <ChevronDown size={16} className="text-ink3" />}
       </button>
-      <p className="mt-2 text-[13px] text-ink2">{risk.problem}</p>
+      {risk.problemTags?.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {risk.problemTags.map((tag) => (
+            <Badge key={tag} variant="neutral">{tag}</Badge>
+          ))}
+        </div>
+      )}
 
       {open && (
         <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3 text-[12.5px]">
+          <p className="text-ink2">{risk.problem}</p>
           <div><span className="font-semibold text-ink2">Bukti: </span>
             <span className="text-ink3">
               {risk.evidence.waitingDuration ? `Menunggu ${risk.evidence.waitingDuration}` : "Sudah dibalas"}
@@ -71,6 +126,25 @@ function SalesOwnerSummary({ group }) {
   );
 }
 
+// Section per severity — header berwarna (lihat SEVERITY_SECTION), cuma
+// dirender kalau ada isinya (severityFilter aktif otomatis mengosongkan
+// section lain via `risks` yang sudah difilter di pemanggil).
+function SeveritySection({ tier, risks }) {
+  if (risks.length === 0) return null;
+  const meta = SEVERITY_SECTION[tier];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className={cn("flex items-center gap-2 rounded-btn px-3 py-1.5", meta.headerClass)}>
+        <span className="text-[12px] font-bold uppercase tracking-wide">{meta.label}</span>
+        <span className="text-[12px] opacity-90">({risks.length})</span>
+      </div>
+      <div className="flex flex-col gap-3">
+        {risks.map((r) => <RiskCard key={r.customerId} risk={r} />)}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesRisk() {
   // ?salesId= (29 Agustus 2026) — deep-link dari drill-down Sales Performance
   // Intelligence hub ("Lihat semua Pelanggan Berisiko →" di baris sales yang
@@ -80,6 +154,7 @@ export default function SalesRisk() {
   const salesId = searchParams.get("salesId");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [severityFilter, setSeverityFilter] = useState("ALL");
 
   function load() {
     setLoading(true);
@@ -93,6 +168,12 @@ export default function SalesRisk() {
   // Nama sales yang sedang difilter — diambil dari hasil respons (bySalesOwner
   // baris pertama), BUKAN state terpisah yang perlu di-fetch ulang.
   const filteredSalesName = salesId ? (data?.bySalesOwner?.[0]?.salesOwnerName || data?.risks?.[0]?.salesOwnerName) : null;
+
+  // Filter severity DI FRONTEND (data.risks sudah lengkap dari 1x fetch,
+  // salesId sudah discope backend) — dikombinasikan, bukan menggantikan.
+  const visibleRisks = severityFilter === "ALL" ? (data?.risks || []) : (data?.risks || []).filter((r) => r.tier === severityFilter);
+  const bySeverity = { CRITICAL: [], HIGH: [], MEDIUM: [] };
+  for (const r of visibleRisks) bySeverity[r.tier]?.push(r);
 
   return (
     <PageContainer>
@@ -144,13 +225,34 @@ export default function SalesRisk() {
               </Card>
             )}
 
-            <div className="flex flex-col gap-3">
-              {data.risks.length === 0 ? (
-                <Card><p className="py-8 text-center text-sm text-ink3">Tidak ada pelanggan berisiko saat ini.</p></Card>
-              ) : (
-                data.risks.map((r) => <RiskCard key={r.customerId} risk={r} />)
-              )}
+            <div className="flex flex-wrap items-center gap-0.5 self-start rounded-lg bg-inset p-0.5">
+              {SEVERITY_TABS.map((tab) => {
+                const count = tab.key === "ALL" ? data.totalAtRisk : (data.severityCounts[tab.key] ?? 0);
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setSeverityFilter(tab.key)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                      severityFilter === tab.key ? "bg-surface text-ink shadow-card" : "text-ink3 hover:text-ink2"
+                    )}
+                  >
+                    {tab.label} ({count})
+                  </button>
+                );
+              })}
             </div>
+
+            {visibleRisks.length === 0 ? (
+              <Card><p className="py-8 text-center text-sm text-ink3">Tidak ada pelanggan berisiko saat ini.</p></Card>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {SEVERITY_ORDER.map((tier) => (
+                  <SeveritySection key={tier} tier={tier} risks={bySeverity[tier]} />
+                ))}
+              </div>
+            )}
           </>
         )}
       </PageBody>

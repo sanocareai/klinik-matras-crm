@@ -75,19 +75,40 @@ function formatHoursIndonesia(hours) {
 // Explainability WAJIB: problem, evidence, recommendedAction — bahasa
 // Indonesia awam, TANPA istilah "skor"/"sinyal"/AI. Ditulis di sini (bukan
 // di UI) supaya konsisten dipakai lintas channel (dashboard, alert WA nanti).
+// `problemTags` (29 Agustus 2026) — dibangun DI BLOK YANG SAMA dgn `problems`
+// (bukan parser teks terpisah thd kalimat yang sudah digabung) supaya tidak
+// ada drift antara tag & kalimat penuh — sumbernya SAMA PERSIS sinyal
+// terstruktur (isNeglected/hasLocation/dst), cuma direpresentasikan 2 cara:
+// kalimat lengkap (utk detail/expand) & label pendek (utk tampilan utama
+// kartu, lihat SalesRisk.jsx). Ditemukan lewat cek sumber data (ticket
+// eksplisit minta verifikasi ini dulu) — problem SEBELUMNYA cuma kalimat
+// gabungan tanpa versi terstruktur diekspos ke frontend sama sekali.
 export function explainRisk(s, customer) {
   const problems = [];
+  const problemTags = [];
   if (s.isNeglected) {
     problems.push(
       s.unansweredCount > 1
         ? `Pelanggan mengirim ${s.unansweredCount} pesan berturut-turut tanpa dibalas sales`
         : "Pesan terakhir pelanggan belum dibalas sales sama sekali"
     );
+    problemTags.push(s.unansweredCount > 1 ? `${s.unansweredCount}x belum dibalas` : "Belum dibalas");
   }
-  if (s.hasLocation) problems.push("Pelanggan sudah kirim lokasi penjemputan");
-  if (s.hasKeywordOrPhrase && !s.hasLocation) problems.push("Pelanggan menunjukkan minat beli yang jelas");
-  if (s.isTransaction) problems.push("Sudah masuk tahap transaksi — closing di depan mata");
-  else if (s.prospectStalled) problems.push("Prospek macet, belum ada progres lanjutan");
+  if (s.hasLocation) {
+    problems.push("Pelanggan sudah kirim lokasi penjemputan");
+    problemTags.push("Kirim lokasi");
+  }
+  if (s.hasKeywordOrPhrase && !s.hasLocation) {
+    problems.push("Pelanggan menunjukkan minat beli yang jelas");
+    problemTags.push("Minat tinggi");
+  }
+  if (s.isTransaction) {
+    problems.push("Sudah masuk tahap transaksi — closing di depan mata");
+    problemTags.push("Transaksi");
+  } else if (s.prospectStalled) {
+    problems.push("Prospek macet, belum ada progres lanjutan");
+    problemTags.push("Macet");
+  }
 
   const problem = problems.length ? problems.join("; ") : "Tidak ada masalah signifikan terdeteksi";
 
@@ -111,13 +132,13 @@ export function explainRisk(s, customer) {
     recommendedAction = "Tidak ada tindakan mendesak — pantau berkala.";
   }
 
-  return { problem, evidence, recommendedAction };
+  return { problem, problemTags, evidence, recommendedAction };
 }
 
 export function buildSalesRisk(signals, customer) {
   const { total, breakdown } = computeSalesRiskScore(signals);
   const tier = classifyRiskTier(signals);
-  const { problem, evidence, recommendedAction } = explainRisk(signals, customer);
+  const { problem, problemTags, evidence, recommendedAction } = explainRisk(signals, customer);
   const trainingModuleHint = mapTrainingModuleHint(signals);
-  return { score: Math.round(total), scoreBreakdown: breakdown, tier, problem, evidence, recommendedAction, trainingModuleHint };
+  return { score: Math.round(total), scoreBreakdown: breakdown, tier, problem, problemTags, evidence, recommendedAction, trainingModuleHint };
 }

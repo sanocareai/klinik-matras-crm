@@ -22,19 +22,23 @@ salesRiskRouter.get("/", requireAdmin, async (req, res) => {
     const minTier = String(req.query.minTier || "MEDIUM").toUpperCase();
     const minRank = TIER_RANK[minTier] ?? TIER_RANK.MEDIUM;
     // ?salesId= (29 Agustus 2026) — deep-link dari drill-down Sales
-    // Performance Intelligence hub. Filter DI SINI (setelah severityCounts
-    // dihitung dari SEMUA sales) supaya "N pelanggan diperiksa"/severity
-    // count tetap jujur mencerminkan SELURUH tim, bukan ikut menyempit
-    // cuma krn user datang dari 1 sales — yang menyempit HANYA daftar
-    // risks & bySalesOwner yang ditampilkan.
+    // Performance Intelligence hub.
     const salesId = req.query.salesId || null;
 
     const allRisks = await computeAllSalesRisks();
-    const severityCounts = aggregateBySeverity(allRisks); // dihitung dari SEMUA (termasuk LOW), sebelum disaring
+    // salesScoped = lingkup yang RELEVAN utk halaman ini saat ini (kalau
+    // salesId ada, cuma customer sales itu). severityCounts (dipakai jadi
+    // count pill Semua/Kritis/Tinggi/Sedang, 29 Agustus 2026 — revisi dari
+    // versi sebelumnya yang sengaja dihitung dari allRisks/SELURUH tim)
+    // SEKARANG scoped ke sini juga, supaya pill count match dgn filter
+    // salesId yang aktif — sebelumnya pill akan tetap nampilin angka
+    // seluruh tim walau user sedang lihat 1 sales, membingungkan.
+    // totalScanned TETAP global (statistik cakupan mesin, bukan punya 1 sales).
+    const salesScoped = salesId ? allRisks.filter((r) => r.salesOwnerId === salesId) : allRisks;
+    const severityCounts = aggregateBySeverity(salesScoped); // termasuk LOW, sebelum disaring minTier
 
-    const filtered = allRisks
+    const filtered = salesScoped
       .filter((r) => (TIER_RANK[r.tier] ?? 0) >= minRank)
-      .filter((r) => !salesId || r.salesOwnerId === salesId)
       .sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier] || b.score - a.score); // tier dulu, skor cuma pengurut DALAM tier
 
     const bySalesOwner = aggregateBySalesOwner(filtered);
