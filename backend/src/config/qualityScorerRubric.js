@@ -346,14 +346,22 @@ export function buildAkuiPrompt(objectionQuote, galiQuote) {
 
 ${objectionAnchor}${galiContext}TUGAS: tentukan apakah sales memvalidasi/mengakui SECARA SPESIFIK ALASAN DI BALIK keberatan pelanggan DI ATAS — BUKAN sekadar menerima keputusan/hasil akhirnya, dan BUKAN kalimat yang sama dengan kutipan Gali di atas (kalau ada).
 
-Kalimat yang MEMENUHI: secara eksplisit menyebut ULANG atau merespons ALASAN/PERASAAN spesifik yang baru diucapkan pelanggan. Contoh: kalau pelanggan bilang "mau saya obrolin dulu sama istri", Akui yang VALID menyebut soal DISKUSI/KEPUTUSAN BERSAMA ("wajar sekali, ini memang baiknya didiskusikan dulu bersama pasangan") — BUKAN cuma "baik, kami tunggu kabar baiknya" (itu CUMA menerima PENUNDAANNYA, TIDAK memvalidasi ALASANNYA — tetap false meski terdengar sopan).
+DEFINISI: Akui = validasi yang secara eksplisit mengakui KELAYAKAN perasaan/kekhawatiran pelanggan — BUKAN sekadar membenarkan FAKTA yang mereka sebutkan.
 
-Kalimat yang TIDAK MEMENUHI (JANGAN dihitung sebagai bukti Akui):
-(a) frasa generik yang MUNCUL BERULANG identik di bagian LAIN percakapan yang sama untuk hal yang TIDAK ADA hubungannya dengan keberatan — mis. "baik kak", "baik ibu", "siap", "terima kasih", "memang [ibu/kak]" yang dipakai sbg basa-basi/konsesi singkat sebelum langsung menjelaskan;
-(b) kalimat yang HANYA menyatakan "oke/baik/kami tunggu/memang begitu" tanpa menyebut ULANG substansi keberatannya;
-(c) kalimat Gali yang sudah disebutkan di atas (kalau ada).
+UJI WAJIB sebelum menjawab true — lakukan langkah ini SEBELUM memutuskan: "Kalau frasa akui ini DIHAPUS, apakah kalimat setelahnya (jawaban/justifikasi/pitch) tetap masuk akal berdiri sendiri secara gramatikal dan logis?"
+- Kalau YA (pitch/jawabannya tetap UTUH tanpa frasa itu) → itu FILLER, akuiPresent HARUS false, MESKIPUN ada kata yang terdengar seperti persetujuan.
+- Kalau TIDAK (frasa itu berfungsi sbg JEMBATAN yang secara spesifik merujuk isi keberatan sebelum lanjut ke jawaban, dan kalimat sesudahnya jadi terasa "menggantung"/tidak utuh tanpanya) → akuiPresent=true.
 
-- "akuiPresent": true HANYA kalau ada kalimat yang jelas memenuhi kriteria di atas; false kalau tidak ada; null kalau tidak ada keberatan sama sekali di transkrip ini.
+Contoh POSITIF (akuiPresent=true):
+- "Saya paham kekhawatiran Bapak, itu wajar sekali dipertimbangkan"
+- "Wajar Ibu mempertimbangkan itu, harga memang jadi faktor penting"
+
+Contoh NEGATIF (akuiPresent=false) MESKIPUN terdengar seperti setuju — WAJIB dites dgn UJI WAJIB di atas:
+- "Memang ibu, busa kita itu busa padat dengan density tinggi..." — hapus "memang ibu": kalimat pitch-nya ("busa kita itu busa padat...") TETAP UTUH dan masuk akal sendiri → FILLER.
+- "Baik kakak kalau begitu, kami tunggu kabar baiknya yaa" — penerimaan PASIF, tidak merujuk isi keberatan spesifik → bukan Akui.
+- "Baik kak"/"Baik ibu" sbg pembuka generik yang JUGA muncul di pesan-pesan LAIN dalam percakapan yang sama di luar konteks keberatan → filler, bukan Akui.
+
+- "akuiPresent": true HANYA kalau ada kalimat yang LOLOS UJI WAJIB di atas; false kalau tidak ada (termasuk semua kasus filler); null kalau tidak ada keberatan sama sekali di transkrip ini.
 - "akuiPresentQuote": kutipan LANGSUNG dari pesan [SALES], atau null kalau akuiPresent bukan true.
 - Fokus HANYA pesan [SALES]. Pesan [CUSTOMER] cuma konteks.`;
 }

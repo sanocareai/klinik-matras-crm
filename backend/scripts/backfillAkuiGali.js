@@ -22,7 +22,7 @@
 // drift antara 2 jalur).
 import { prisma } from "../src/db.js";
 import { fetchTranscriptMessages, formatTranscript, resolveApiKey, extractAkuiGali } from "../src/services/qualityScorer/grading.js";
-import { estimateCostUsd, SONNET_PRICE_PER_MTOK_USD } from "../src/services/qualityScorer/pricing.js";
+import { estimateCostUsd } from "../src/services/qualityScorer/pricing.js";
 
 async function reExtract(conversationId, apiKey, objectionQuote) {
   const conv = await prisma.conversation.findUnique({
@@ -85,7 +85,7 @@ async function main() {
       },
     });
     ok++;
-    const rowCost = estimateCostUsd(extracted.usage, SONNET_PRICE_PER_MTOK_USD);
+    const rowCost = estimateCostUsd(extracted.usage);
     totalCostUsd += rowCost;
     totalInputTokens += extracted.usage.inputTokens || 0;
     totalOutputTokens += extracted.usage.outputTokens || 0;
@@ -109,7 +109,7 @@ async function main() {
 
   console.log("\n=== RINGKASAN BACKFILL ===");
   console.log(`Berhasil: ${ok}, Gagal/skip: ${failed}, Total baris berubah: ${changes.length}`);
-  console.log(`Biaya AKTUAL (Sonnet, akuiPresent/galiPresent SAJA): $${totalCostUsd.toFixed(4)} (in=${totalInputTokens} out=${totalOutputTokens} token, ${ok} baris — rata2 $${(totalCostUsd / (ok || 1)).toFixed(5)}/baris)`);
+  console.log(`Biaya AKTUAL (Haiku, akuiPresent/galiPresent SAJA): $${totalCostUsd.toFixed(4)} (in=${totalInputTokens} out=${totalOutputTokens} token, ${ok} baris — rata2 $${(totalCostUsd / (ok || 1)).toFixed(5)}/baris)`);
   console.log("\nfalse->true per sales (SEBELUMNYA dinilai gagal, TERNYATA memenuhi kriteria baru yang lebih spesifik):");
   console.log(JSON.stringify(falseToTrueBySales, null, 2));
   console.log("\ntrue->false per sales (SEBELUMNYA dianggap patuh framework krn basa-basi, TERNYATA tidak memenuhi kriteria baru):");
