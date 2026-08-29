@@ -35,9 +35,8 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, ScrollView,
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Image } from "expo-image";
 import { Package, X, Trash2, Layers, Tag, Plus } from "lucide-react-native";
-import { api, mediaUrl } from "../api";
+import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
 import {
@@ -208,25 +207,19 @@ export default function OrderFormModal({
   // tetap menempel di DASAR layar (overlay justifyContent:"flex-end"), jadi
   // tetap di belakang keyboard walau tingginya sudah dikecilkan.
   const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.88);
-  const [search, setSearch] = useState("");
-  const [selectedProductId, setSelectedProductId] = useState(null);
-
-  // Katalog produk, opsi form, & promo aktif (29 Agustus 2026, migrasi ke
-  // react-query — review performa sebelum EAS build) — SEBELUMNYA fetch
-  // manual di useEffect setiap kali modal ini dibuka (dependency [visible,
-  // order]), jadi setiap "+ Order" ditekan, 3 request ini jalan ULANG dari
-  // nol walau datanya nyaris tidak pernah berubah dalam 1 sesi kerja sales.
+  // Opsi form & promo aktif (29 Agustus 2026, migrasi ke react-query —
+  // review performa sebelum EAS build) — SEBELUMNYA fetch manual di
+  // useEffect setiap kali modal ini dibuka (dependency [visible, order]),
+  // jadi setiap "+ Order" ditekan, request ini jalan ULANG dari nol walau
+  // datanya nyaris tidak pernah berubah dalam 1 sesi kerja sales.
   // `enabled: visible` menjaga query tidak jalan sama sekali saat modal
   // tertutup; react-query sendiri yang memutuskan cache masih segar (skip
   // network) atau sudah basi (refetch diam-diam di background) — bukan
   // "selalu fetch" (lama) atau "cache selamanya" (salah arah lain), staleTime
   // yang menentukan proporsinya.
-  const { data: products = [], isLoading: loadingProducts } = useQuery({
-    queryKey: ["products"],
-    queryFn: api.getProducts,
-    enabled: visible,
-    staleTime: 5 * 60 * 1000, // katalog produk jarang berubah dalam sesi kerja
-  });
+  // (Katalog produk/`api.getProducts` dulu di-fetch di sini juga, untuk
+  // galeri "Produk cepat" — galeri itu dihapus 30 Agustus 2026, fiturnya
+  // sebenarnya untuk berbagi foto produk di chat Inbox, bukan input order.)
 
   // orderOptions: opsional — kalau parent (CustomerProfileContent.js) sudah
   // fetch sekali & pakai ulang buat OrderCard.js juga, cukup dioper lewat
@@ -354,11 +347,9 @@ export default function OrderFormModal({
   // order yang beda-beda (lihat CustomerProfileContent.js#editingOrder).
   useEffect(() => {
     if (!visible) return;
-    // Products/orderOptions/promos TIDAK di-fetch di sini lagi — sudah
-    // ditangani react-query di atas (`enabled: visible`), yang otomatis
-    // pakai cache kalau masih segar, refetch diam-diam kalau sudah basi.
-    setSearch("");
-    setSelectedProductId(null);
+    // orderOptions/promos TIDAK di-fetch di sini lagi — sudah ditangani
+    // react-query di atas (`enabled: visible`), yang otomatis pakai cache
+    // kalau masih segar, refetch diam-diam kalau sudah basi.
 
     if (order) {
       const info = parseNotes(order.notes);
@@ -425,9 +416,6 @@ export default function OrderFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, order]);
 
-  const q = search.trim().toLowerCase();
-  const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
-
   const variantKey = resolveVariantKey({ productLine, productType, ukuran });
   // Dipakai di label/placeholder yang menyebut nama lini produk. Field yang
   // memakainya HANYA dirender setelah productLine dipilih (lihat gerbang
@@ -466,14 +454,6 @@ export default function OrderFormModal({
     setItems((prev) => [...prev.filter((it) => it.layananName?.trim() || it.harga), baru]);
   }
   const dipakaiDariKatalog = new Set(items.map((it) => it.priceItemId).filter(Boolean));
-
-  function pickProduct(p) {
-    setSelectedProductId(p.id);
-    setItems((prev) => {
-      const [first, ...rest] = prev.length > 0 ? prev : [newItem()];
-      return [{ ...first, layananName: p.name, harga: p.price ? String(p.price) : "" }, ...rest];
-    });
-  }
 
   function addItem() { setItems((p) => [...p, newItem()]); }
   function removeItem(key) { setItems((p) => (p.length > 1 ? p.filter((it) => it.key !== key) : p)); }
@@ -1036,48 +1016,6 @@ export default function OrderFormModal({
                   </>
                 )}
 
-                {/* Produk cepat (Galeri Produk) — pelengkap katalog harga,
-                    utk layanan yang tidak ada di daftar harga. */}
-                {isLayanan && (
-              <FlatList
-                data={filtered}
-                keyExtractor={(p) => p.id}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ maxHeight: 96, marginTop: 10 }}
-                contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
-                ListHeaderComponent={
-                  <TextInput
-                    style={styles.productSearch}
-                    placeholder="Cari produk…"
-                    placeholderTextColor={tokens.color.textMuted}
-                    value={search}
-                    onChangeText={setSearch}
-                  />
-                }
-                ListEmptyComponent={loadingProducts ? <ActivityIndicator color={tokens.color.accent} /> : null}
-                renderItem={({ item: p }) => {
-                  const active = selectedProductId === p.id;
-                  const thumb = p.images?.[0]?.url;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.productCard, active && styles.productCardActive]}
-                      onPress={() => pickProduct(p)}
-                    >
-                      {thumb ? (
-                        <Image source={{ uri: mediaUrl(thumb) }} style={styles.productThumb} contentFit="cover" cachePolicy="memory-disk" />
-                      ) : (
-                        <View style={[styles.productThumb, styles.productThumbPlaceholder]}>
-                          <Package size={16} color={tokens.color.textMuted} strokeWidth={1.8} />
-                        </View>
-                      )}
-                      <Text style={styles.productName} numberOfLines={1}>{p.name}</Text>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-                )}
-
                 {/* ── Layanan yang diambil ────────────────────────────────
                     Tiap layanan jadi KARTU sendiri (bukan baris datar
                     seperti sebelumnya): nama + kategori di atas, lalu DUA
@@ -1512,18 +1450,6 @@ function createStyles(tokens) {
     padding: 14, borderRadius: 12, backgroundColor: tokens.color.accentSoft,
   },
   hintCardText: { flex: 1, fontSize: 12.5, lineHeight: 18, color: tokens.color.textSecondary },
-  productSearch: {
-    backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
-    fontSize: 13, color: tokens.color.textPrimary, width: 140, marginRight: 4,
-  },
-  productCard: {
-    width: 76, alignItems: "center", padding: 6, borderRadius: 12,
-    borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
-  },
-  productCardActive: { borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft },
-  productThumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: tokens.color.subtle },
-  productThumbPlaceholder: { alignItems: "center", justifyContent: "center" },
-  productName: { fontSize: 10, color: tokens.color.textSecondary, marginTop: 4, textAlign: "center" },
   label: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary, marginTop: 14, marginBottom: 6 },
   input: {
     backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
