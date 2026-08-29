@@ -490,7 +490,13 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
 
 function createStyles(tokens) {
   return StyleSheet.create({
-  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
+  // minHeight, BUKAN flex:1 (29 Agustus 2026) — komponen ini dirender di
+  // dalam ScrollView (BottomSheetScrollView di CustomerSheet, ScrollView di
+  // CustomerDetailScreen). Di dalam ScrollView, `flex: 1` menghasilkan
+  // tinggi 0 (tidak ada ruang bebas untuk di-grow), jadi isinya meluber dan
+  // di Android IKUT TERPOTONG — pesan error + tombol "Coba Lagi" jadi tidak
+  // kelihatan sama sekali, padahal itu satu-satunya jalan keluar user.
+  loadingWrap: { minHeight: 240, alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
   retryBtn: {
     flexDirection: "row", alignItems: "center", backgroundColor: tokens.color.accent,
     borderRadius: tokens.radius.pill, paddingHorizontal: 18, paddingVertical: 10, marginTop: 16,

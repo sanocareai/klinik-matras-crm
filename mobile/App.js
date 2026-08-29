@@ -26,6 +26,7 @@ import PelangganScreen from "./src/screens/PelangganScreen";
 import OrdersScreen from "./src/screens/OrdersScreen";
 import CustomerDetailScreen from "./src/screens/CustomerDetailScreen";
 import OrderTimelineScreen from "./src/screens/OrderTimelineScreen";
+import ErrorBoundary from "./src/components/ErrorBoundary";
 import InAppBanner from "./src/components/InAppBanner";
 import SocketStatusBanner from "./src/components/SocketStatusBanner";
 import { useColors } from "./src/theme";
@@ -354,26 +355,64 @@ export default function App() {
     if (s) AsyncStorage.setItem(NAV_PERSISTENCE_KEY, JSON.stringify(s)).catch(() => {});
   }
 
+  // ⚠️ URUTAN PROVIDER DI BAWAH PENTING, JANGAN DIBOLAK-BALIK.
+  //
+  // BUG BESAR YANG DIPERBAIKI (29 Agustus 2026, laporan owner "profil blank
+  // di semua chat"): BottomSheetModalProvider SEBELUMNYA jadi pembungkus
+  // PALING LUAR, di ATAS QueryClientProvider/SafeAreaProvider/AuthProvider.
+  //
+  // Kenapa itu fatal: @gorhom/bottom-sheet merender isi setiap
+  // BottomSheetModal lewat @gorhom/portal, dan portal itu BUKAN
+  // React.createPortal (yang mempertahankan context). Lihat sendiri di
+  // node_modules/@gorhom/portal/…/PortalProvider.js — PortalHost dirender
+  // sebagai SAUDARA dari {children}:
+  //     <PortalStateContext.Provider>
+  //       {children}                        ← seluruh app
+  //       <PortalHost name={rootHostName}/>  ← isi sheet dirender DI SINI
+  //     </PortalStateContext.Provider>
+  // dan PortalHost.js merender `state.map(item => item.node)` — node-nya
+  // dipasang ULANG di posisi HOST, bukan di posisi JSX-nya ditulis. Artinya
+  // SEMUA context yang hidup di dalam {children} TIDAK terjangkau dari isi
+  // sheet.
+  //
+  // Akibat nyatanya: CustomerSheet (bottom sheet) → CustomerProfileContent →
+  // OrderFormModal, yang memanggil useAuth() (dapat null → destructuring
+  // `const { user } = useAuth()` melempar TypeError) DAN useQuery() (tidak
+  // menemukan QueryClient → melempar). Di build produksi tanpa error
+  // boundary, render error = LAYAR KOSONG total, bukan pesan error.
+  //
+  // Perbaikan: QueryClientProvider/SafeAreaProvider/AuthProvider dipindah ke
+  // LUAR BottomSheetModalProvider, sehingga PortalHost (yang hidup DI DALAM
+  // BottomSheetModalProvider) ikut berada di dalam ketiga context itu.
+  // BottomSheetModalProvider TETAP membungkus NavigationContainer, jadi sheet
+  // tetap tampil di atas semua layar seperti sebelumnya.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <BottomSheetModalProvider>
-        <QueryClientProvider client={queryClient}>
-          <SafeAreaProvider>
-            <AuthProvider>
-              <NavigationContainer
-                ref={navigationRef}
-                initialState={initialNavState}
-                onReady={() => syncRouteName()}
-                onStateChange={syncRouteName}
-              >
-                <SafeAreaTopBg routeName={routeName}>
-                  <Root />
-                </SafeAreaTopBg>
-              </NavigationContainer>
-            </AuthProvider>
-          </SafeAreaProvider>
-        </QueryClientProvider>
-      </BottomSheetModalProvider>
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            {/* ErrorBoundary sengaja MEMBUNGKUS BottomSheetModalProvider,
+                bukan cuma <Root/>: isi bottom sheet dirender lewat PortalHost
+                yang hidup DI DALAM provider ini (di luar Root), jadi boundary
+                di dalam Root TIDAK akan pernah menangkap error dari isi
+                sheet — persis kelas error yang bikin layar kosong kemarin. */}
+            <ErrorBoundary>
+              <BottomSheetModalProvider>
+                <NavigationContainer
+                  ref={navigationRef}
+                  initialState={initialNavState}
+                  onReady={() => syncRouteName()}
+                  onStateChange={syncRouteName}
+                >
+                  <SafeAreaTopBg routeName={routeName}>
+                    <Root />
+                  </SafeAreaTopBg>
+                </NavigationContainer>
+              </BottomSheetModalProvider>
+            </ErrorBoundary>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   );
 }
