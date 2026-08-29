@@ -3,7 +3,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { LEAD_SOURCES, KOTA_LIST } from "@/utils/format.js";
+import { LEAD_SOURCES } from "@/utils/format.js";
 
 const SELECT_CLS =
   "h-9 w-full rounded-lg bg-surface px-2.5 text-sm text-ink " +
@@ -53,12 +53,11 @@ export default function NewCustomerModal({
             <Input type="email" placeholder="email@perusahaan.com" value={form.email || ""} onChange={set("email")} />
           </Field>
 
-          <Field label="Kota">
-            <select className={SELECT_CLS} value={form.city} onChange={set("city")}>
-              <option value="">— Pilih Kota —</option>
-              {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
-            </select>
-          </Field>
+          {/* Kota DIHAPUS dari sini (29 Agustus 2026, permintaan owner) —
+              Order.deliveryCity (kota pengiriman per order, D-027) dianggap
+              sudah cukup, tidak perlu ditanya lagi saat intake lead manual.
+              Customer.city TIDAK dihapus dari database, cuma tidak lagi
+              bisa diisi dari form ini. */}
 
           <Field label="Sumber Lead">
             <select className={SELECT_CLS} value={form.leadSource} onChange={set("leadSource")}>

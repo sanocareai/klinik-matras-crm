@@ -99,7 +99,10 @@ export default function Customers() {
     }, { replace: true });
   }, [searchParams, setSearchParams]);
   const [showModal, setShowModal]   = useState(false);
-  const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
+  // city DIHAPUS dari form ini (29 Agustus 2026) — lihat catatan di
+  // NewCustomerModal.jsx. filterCity di bawah (dropdown "Semua Kota") TIDAK
+  // disentuh, itu fitur berbeda (filter tabel Pelanggan, bukan intake).
+  const [newForm, setNewForm]       = useState({ name: "", phone: "", instagramHandle: "", leadSource: "OTHER", customerType: "END_USER" });
   const [creating, setCreating]     = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -208,7 +211,7 @@ export default function Customers() {
     try {
       await api.createCustomer(newForm);
       setShowModal(false);
-      setNewForm({ name: "", phone: "", instagramHandle: "", city: "", leadSource: "OTHER", customerType: "END_USER" });
+      setNewForm({ name: "", phone: "", instagramHandle: "", leadSource: "OTHER", customerType: "END_USER" });
       load(); // refetch — supaya total/urutan/halaman tetap benar dari server
     } catch (err) {
       setCreateError(err.message);

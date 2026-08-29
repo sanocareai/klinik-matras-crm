@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../../../../api.js";
-import { KOTA_LIST, HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS } from "../../../../utils/format.js";
+import { HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS } from "../../../../utils/format.js";
 
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
@@ -35,8 +35,16 @@ function pillTone(hex) {
   return { background: `${hex}26`, color: hex };
 }
 
-// Sumber lead, Kondisi Pelanggan, Tipe Customer, Kota — semua inline edit lewat
+// Sumber lead, Kondisi Pelanggan, Tipe Customer — semua inline edit lewat
 // endpoint existing (PATCH /customers/:id, sama seperti CustomerPanel lama).
+//
+// Kota DIHAPUS dari sini (29 Agustus 2026, permintaan owner) — Customer.city
+// dianggap redundan dgn Order.deliveryCity (kota pengiriman per order, D-027)
+// dan panel ini yang dicabut duluan. TIDAK menyentuh Customer.city di tempat
+// lain (tabel/filter Pelanggan, Pipeline, widget Distribusi Kota di Laporan,
+// Customer360) — SENGAJA scope sempit sesuai keputusan owner, field-field
+// itu tetap baca/tulis Customer.city seperti biasa. Kolom di database juga
+// TIDAK dihapus, cuma tidak lagi bisa diedit lewat panel ini.
 export default function InfoSection({ customer, onUpdate }) {
   const [leadSourceDraft, setLeadSourceDraft] = useState(customer.leadSource || "OTHER");
   const [savingHealth, setSavingHealth] = useState(false);
@@ -98,16 +106,6 @@ export default function InfoSection({ customer, onUpdate }) {
       showFeedback("error", err.message);
     } finally {
       setSavingType(false);
-    }
-  }
-
-  async function saveCity(city) {
-    try {
-      const updated = await api.updateCustomer(customer.id, { city: city || null });
-      onUpdate((c) => ({ ...c, ...updated }));
-      showFeedback("success", "Kota tersimpan");
-    } catch (err) {
-      showFeedback("error", err.message);
     }
   }
 
@@ -235,20 +233,6 @@ export default function InfoSection({ customer, onUpdate }) {
               </button>
             );
           })}
-        </div>
-      </div>
-
-      {/* Kota */}
-      <div className="panel-section">
-        <span className="panel-section-label">Kota</span>
-        <div className="inline-field">
-          <select
-            value={customer.city || ""} onChange={(e) => saveCity(e.target.value)}
-            className="flex-1 rounded-lg border border-line px-2 py-1.5 text-[13px] text-ink"
-          >
-            <option value="">— Pilih Kota —</option>
-            {KOTA_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
         </div>
       </div>
     </>
