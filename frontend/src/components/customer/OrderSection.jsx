@@ -13,6 +13,7 @@ import {
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
+  PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS,
 } from "../../utils/format.js";
 import { isAdminUser, rolesOf } from "../../lib/roles.js";
 
@@ -45,19 +46,32 @@ function currentUserName() {
 // (mis. nama layanan) cukup di satu tempat.
 const EMPTY_ORDER_OPTIONS = { jenisLayanan: [], merkKasur: [], ukuranKasur: [] };
 
-// Label & ikon untuk pilihan kategori order
+// Label & ikon untuk pilihan kategori order (29 Agustus 2026 — label
+// dilepas dari "Kasur" krn kategori ini sekarang berlaku lintas Lini Produk
+// (Kasur/Sofa/Divan, dipilih di step TERPISAH sesudah ini — lihat
+// PRODUCT_LINE_OPTIONS). Sebelumnya tertulis literal "Kasur Baru"/"Kasur
+// Sewa" krn kasur satu-satunya produk yang ada.
 const CATEGORY_OPTIONS = [
-  { value: "LAYANAN", icon: "🔧", label: "Service / Upgrade", sub: "Upgrade fondasi, lapisan, ganti kain, dsb." },
-  { value: "BARU",    icon: "🛏️", label: "Kasur Baru",        sub: "Pembelian kasur baru" },
-  { value: "SEWA",    icon: "📅", label: "Kasur Sewa",        sub: "Sewa kasur" },
+  { value: "LAYANAN", icon: "🔧", label: "Service / Upgrade", sub: "Upgrade fondasi, ganti kain, reupholstery, dsb." },
+  { value: "BARU",    icon: "✨", label: "Baru",              sub: "Pembelian produk baru" },
+  { value: "SEWA",    icon: "📅", label: "Sewa",              sub: "Sewa produk" },
 ];
 
-const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
+const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
 const CATEGORY_BADGE  = {
   LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
   BARU:    { bg: "#dcfce7", color: "#166534" },
   SEWA:    { bg: "#dbeafe", color: "#1e40af" },
 };
+
+// Lini Produk (29 Agustus 2026) — step BARU antara "pilih kategori layanan"
+// dan "isi info produk". Semua kombinasi Kategori x Lini Produk valid
+// (dikonfirmasi owner) — tidak ada matriks pembatas di sini.
+const PRODUCT_LINE_OPTIONS = [
+  { value: "KASUR", icon: PRODUCT_LINE_ICONS.KASUR, label: PRODUCT_LINE_LABELS.KASUR, sub: "Spring, busa, multibed, 2in1" },
+  { value: "SOFA",  icon: PRODUCT_LINE_ICONS.SOFA,  label: PRODUCT_LINE_LABELS.SOFA,  sub: "Sofabed, Sofa L, 1/2/3 seater" },
+  { value: "DIVAN", icon: PRODUCT_LINE_ICONS.DIVAN, label: PRODUCT_LINE_LABELS.DIVAN, sub: "Divan - Sandaran" },
+];
 
 function newItem() {
   return { key: Date.now() + Math.random(), layananName: "", harga: "" };
@@ -664,9 +678,14 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         }}>
           {order.orderNumber || "—"}
         </span>
-        {order.category && order.category !== "LAYANAN" && (
+        {/* productLine (29 Agustus 2026) — SELALU ditampilkan (dulu cuma
+            kategori BARU/SEWA yang dapat teks tambahan, krn semua order
+            dulu pasti kasur jadi tidak perlu diulang; sekarang produknya
+            bisa Sofa/Divan juga, jadi selalu relevan disebut). */}
+        {(order.productLine || (order.category && order.category !== "LAYANAN")) && (
           <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-muted)" }}>
-            · {CATEGORY_LABELS[order.category]}
+            · {PRODUCT_LINE_LABELS[order.productLine] || "Kasur"}
+            {order.category && order.category !== "LAYANAN" ? ` ${CATEGORY_LABELS[order.category]}` : ""}
           </span>
         )}
       </div>
@@ -1076,10 +1095,21 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   );
 }
 
-// ─── Form tambah order baru (step 0: kategori → step 1: info → step 2: layanan) ─
+// ─── Form tambah order baru (29 Agustus 2026 — perluasan Lini Produk):
+// step 0: kategori layanan → step 1: lini produk (Kasur/Sofa/Divan) →
+// step 2: jenis produk (dilewati utk Divan, cuma 1 varian) → step 3: info
+// produk → step 4: daftar layanan (hanya utk kategori Service/Upgrade) ──
 function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [step, setStep]               = useState(0);
   const [category, setCategory]       = useState("");
+  // Lini Produk & Jenis Produk (29 Agustus 2026) — step BARU antara kategori
+  // (step 0) dan info produk (step 3, dulu step 1 — lihat renumbering di
+  // bawah). isKasur menentukan apakah field fitting berat-badan/Merk Kasur
+  // dropdown (khusus kasur) ditampilkan, atau diganti input generik utk
+  // Sofa/Divan.
+  const [productLine, setProductLine] = useState("");
+  const [productType, setProductType] = useState("");
+  const isKasur = productLine === "KASUR";
   const [merkKasur, setMerk]          = useState("");
   const [ukuran, setUkuran]           = useState("");
   const [keluhan, setKeluhan]         = useState("");
@@ -1140,6 +1170,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     try {
       const order = await api.addOrder(customerId, {
         category,
+        productLine: productLine || undefined,
+        productType: productType || undefined,
         notes: buildOrderNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
@@ -1155,7 +1187,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         locationUrl: locationUrl || undefined,
       });
       if (harga > 0) {
-        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        // Nama item dinamis (29 Agustus 2026) — dulu hardcode "Kasur Baru"/
+        // "Kasur Sewa" krn kasur satu-satunya produk. Sekarang pakai Jenis
+        // Produk yang sudah dipilih (mis. "Sofa L") kalau ada, fallback ke
+        // Lini Produk (mis. "Sofa") kalau jenisnya tidak spesifik.
+        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
+        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
         await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
       }
       await saveWeightEntries(order.id);
@@ -1176,6 +1213,8 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     try {
       const order = await api.addOrder(customerId, {
         category: "LAYANAN",
+        productLine: productLine || undefined,
+        productType: productType || undefined,
         notes: buildOrderNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
@@ -1243,20 +1282,117 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     );
   }
 
-  // ── Step 1: Info kasur (sama untuk semua kategori) ──
+  // ── Step 1: Pilih Lini Produk (29 Agustus 2026 — BARU) ──
+  // Berlaku utk SEMUA kategori (termasuk Service/Upgrade — dikonfirmasi
+  // owner: servis Sofa/Divan sekarang layanan baru juga, jadi tidak boleh
+  // diasumsikan kasur terus). Divan cuma 1 jenis produk (Sandaran) — auto-
+  // set & lompat langsung ke step 3, tidak perlu step 2.
   if (step === 1) {
-    const opt = CATEGORY_OPTIONS.find((o) => o.value === category);
+    const catOpt = CATEGORY_OPTIONS.find((o) => o.value === category);
     return (
       <div style={formBox}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-          {opt?.icon} {opt?.label} — Info Kasur
+          {catOpt?.icon} {catOpt?.label} — Pilih Lini Produk
         </p>
         <button type="button" onClick={() => setStep(0)}
+          style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
+          ← Ganti kategori
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {PRODUCT_LINE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                setProductLine(opt.value);
+                if (opt.value === "DIVAN") {
+                  setProductType("DIVAN_SANDARAN");
+                  setStep(3);
+                } else {
+                  setProductType("");
+                  setStep(2);
+                }
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+                border: productLine === opt.value ? "2px solid var(--primary)" : "1px solid var(--border)",
+                background: productLine === opt.value ? "#eff6ff" : "var(--bg-card)",
+                transition: "all 0.15s",
+              }}
+            >
+              <span style={{ fontSize: 22 }}>{opt.icon}</span>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{opt.sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
+      </div>
+    );
+  }
+
+  // ── Step 2: Pilih Jenis Produk (29 Agustus 2026 — BARU, hanya Kasur/Sofa) ──
+  if (step === 2) {
+    const lineOpt = PRODUCT_LINE_OPTIONS.find((o) => o.value === productLine);
+    const jenisList = PRODUCT_TYPES_BY_LINE[productLine] || [];
+    return (
+      <div style={formBox}>
+        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+          {lineOpt?.icon} {lineOpt?.label} — Pilih Jenis
+        </p>
+        <button type="button" onClick={() => setStep(1)}
+          style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
+          ← Ganti lini produk
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {jenisList.map((val) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => { setProductType(val); setStep(3); }}
+              style={{
+                textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+                border: productType === val ? "2px solid var(--primary)" : "1px solid var(--border)",
+                background: productType === val ? "#eff6ff" : "var(--bg-card)",
+                fontSize: 13, fontWeight: 600, transition: "all 0.15s",
+              }}
+            >
+              {PRODUCT_TYPE_LABELS[val]}
+            </button>
+          ))}
+        </div>
+        <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
+      </div>
+    );
+  }
+
+  // ── Step 3: Info produk (dulu step 1 — geser krn step Lini/Jenis Produk
+  // baru disisipkan di atas). Field fitting berat-badan & dropdown Merk
+  // KHUSUS Kasur (fitting kekerasan by berat badan tidak berlaku sofa/divan;
+  // dropdown merk kasur dari Settings juga tidak ada padanannya utk lini
+  // baru ini, jadi Sofa/Divan pakai input bebas). ──
+  if (step === 3) {
+    const opt = CATEGORY_OPTIONS.find((o) => o.value === category);
+    const lineLabel = PRODUCT_LINE_LABELS[productLine] || "Produk";
+    return (
+      <div style={formBox}>
+        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+          {opt?.icon} {opt?.label} — Info {lineLabel}
+        </p>
+        <p style={{ margin: "0 0 4px", fontSize: 11, color: "var(--text-muted)" }}>
+          {lineLabel}{productType ? ` · ${PRODUCT_TYPE_LABELS[productType]}` : ""}
+        </p>
+        <button type="button" onClick={() => setStep(isKasur || productLine === "SOFA" ? 2 : 1)}
           style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
           ← Ganti jenis
         </button>
 
-        {/* Berat Badan — multi-orang */}
+        {/* Berat Badan — multi-orang. KHUSUS Kasur (fitting kekerasan by
+            berat badan) — tidak relevan utk Sofa/Divan. */}
+        {isKasur && (
         <div style={{ marginBottom: 10 }}>
           <FieldLabel tone="weight">Berat Badan</FieldLabel>
           {weightEntries.map((e) => (
@@ -1284,11 +1420,18 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             + Tambah Orang
           </button>
         </div>
+        )}
 
-        {/* Merk Kasur */}
+        {/* Merk — utk BARU/SEWA SELALU "Sano ✓" (produk kami sendiri, apa
+            pun lini produknya). Utk Service/Upgrade: dropdown kurasi
+            Settings KHUSUS Kasur (daftar merk kasur yang sudah ada);
+            Sofa/Divan belum punya daftar merk terkurasi, jadi input bebas
+            menanyakan merk EXISTING milik customer. */}
         <div style={{ marginBottom: 10 }}>
-          <FieldLabel tone="bed">Merk Kasur</FieldLabel>
-          {isLayanan ? (
+          <FieldLabel tone="bed">{isKasur ? "Merk Kasur" : `Merk/Model ${lineLabel}`}</FieldLabel>
+          {!isLayanan ? (
+            <div style={{ fontSize: 13, fontWeight: 700, padding: "7px 0", color: "#166534" }}>Sano ✓</div>
+          ) : isKasur ? (
             <FilterDropdown
               value={merkKasur} onChange={setMerk}
               options={orderOptions.merkKasur.map((m) => ({ value: m, label: m }))}
@@ -1296,18 +1439,32 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               triggerClassName="w-full max-w-none"
             />
           ) : (
-            <div style={{ fontSize: 13, fontWeight: 700, padding: "7px 0", color: "#166534" }}>Sano ✓</div>
+            <input
+              value={merkKasur} onChange={(e) => setMerk(e.target.value)}
+              placeholder={`cth: merk ${lineLabel.toLowerCase()} yang sudah dimiliki customer`}
+              style={formSelect}
+            />
           )}
         </div>
 
+        {/* Ukuran — dropdown kurasi Settings KHUSUS Kasur; Sofa/Divan input
+            bebas (belum ada daftar ukuran/konfigurasi terkurasi). */}
         <div style={{ marginBottom: 10 }}>
-          <FieldLabel tone="size">Ukuran Kasur</FieldLabel>
-          <FilterDropdown
-            value={ukuran} onChange={setUkuran}
-            options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
-            placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran kasur"
-            triggerClassName="w-full max-w-none"
-          />
+          <FieldLabel tone="size">{isKasur ? "Ukuran Kasur" : `Ukuran/Konfigurasi ${lineLabel}`}</FieldLabel>
+          {isKasur ? (
+            <FilterDropdown
+              value={ukuran} onChange={setUkuran}
+              options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
+              placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran kasur"
+              triggerClassName="w-full max-w-none"
+            />
+          ) : (
+            <input
+              value={ukuran} onChange={(e) => setUkuran(e.target.value)}
+              placeholder="cth: 3 seater, abu-abu"
+              style={formSelect}
+            />
+          )}
         </div>
         {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
             1 customer bisa order untuk alamat berbeda-beda. */}
@@ -1454,7 +1611,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 
         <div style={{ display: "flex", gap: 8 }}>
           {isLayanan ? (
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(2)}>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(4)}>
               Lanjut ke Layanan →
             </button>
           ) : (
@@ -1469,14 +1626,18 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     );
   }
 
-  // ── Step 2: Layanan (hanya untuk LAYANAN/Service/Upgrade) ──
+  // ── Step 4: Layanan (hanya untuk LAYANAN/Service/Upgrade, dulu step 2 —
+  // geser krn step Lini/Jenis Produk baru disisipkan, lihat step 1 & 2). ──
+  const lineLabelStep4 = PRODUCT_LINE_LABELS[productLine] || "";
   return (
     <form onSubmit={handleSubmitLayanan} style={formBox}>
-      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>🔧 Service/Upgrade — Daftar Layanan</p>
-      {(merkKasur || ukuran) && (
+      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+        🔧 Service/Upgrade{lineLabelStep4 ? ` — ${lineLabelStep4}` : ""} — Daftar Layanan
+      </p>
+      {(merkKasur || ukuran || productType) && (
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-muted)" }}>
-          {[merkKasur, ukuran].filter(Boolean).join(" · ")}
-          <button type="button" onClick={() => setStep(1)}
+          {[PRODUCT_TYPE_LABELS[productType], merkKasur, ukuran].filter(Boolean).join(" · ")}
+          <button type="button" onClick={() => setStep(3)}
             style={{ marginLeft: 8, fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             Ubah
           </button>
@@ -1518,7 +1679,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={saving}>
           {saving ? "Menyimpan..." : "Simpan Order"}
         </button>
-        <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>← Kembali</button>
+        <button type="button" className="btn btn-ghost" onClick={() => setStep(3)}>← Kembali</button>
       </div>
     </form>
   );

@@ -11,6 +11,7 @@ import {
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
 } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -599,9 +600,14 @@ export default function Orders() {
           Komplain: o.hasComplaint ? "Ya" : "",
           Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
           "Sales Person": o.assignedSales?.name || "",
-          "Merk Kasur":   info.merkKasur || "",
-          "Ukuran Kasur": info.ukuranKasur || "",
-          "Keluhan Kasur": info.keluhanCustomer || "",
+          // Lini/Jenis Produk (29 Agustus 2026) — kolom baru, kasur/sofa/divan.
+          "Lini Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
+          "Jenis Produk": PRODUCT_TYPE_LABELS[o.productType] || "",
+          // Header dilepas dari "Kasur" (dulu satu-satunya produk) — isinya
+          // sekarang bisa merk/ukuran Sofa/Divan juga, lihat OrderSection.jsx.
+          "Merk/Model":            info.merkKasur || "",
+          "Ukuran/Konfigurasi":    info.ukuranKasur || "",
+          "Keluhan/Catatan":       info.keluhanCustomer || "",
           "Berat Badan": berat,
           // D-028 — kondisi kesehatan & kategori keluhan PER ORDER (beda dari
           // Customer.healthStatus/complaintCategory di profil pelanggan).

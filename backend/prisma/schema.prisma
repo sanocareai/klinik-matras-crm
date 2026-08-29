@@ -101,8 +101,43 @@ enum PaymentStatus {
 
 enum OrderCategory {
   LAYANAN // Upgrade/Service/Ganti Kain
-  SEWA // Kasur Sewa
-  BARU // Kasur Baru
+  SEWA // Sewa
+  BARU // Baru
+}
+
+// Lini Produk (29 Agustus 2026) — sumbu TERPISAH dari OrderCategory. Sebelum
+// ini sistem cuma tahu "kategori layanan" (Service/Baru/Sewa) dan diam-diam
+// mengasumsikan produknya SELALU kasur (label lama literal "Kasur Baru"/
+// "Kasur Sewa"). Owner memperluas lini bisnis ke Sofa & Divan — daripada
+// membebaskan enum OrderCategory jadi 9 kombinasi (LAYANAN_KASUR,
+// LAYANAN_SOFA, dst — meledak tiap ada lini baru), dipisah jadi 2 sumbu
+// independen: OrderCategory (APA yang dilakukan) x ProductLine (produk
+// APA). Semua kombinasi Layanan x Lini Produk valid (dikonfirmasi owner),
+// jadi tidak perlu matriks pembatas di skema.
+enum ProductLine {
+  KASUR
+  SOFA
+  DIVAN
+}
+
+// Jenis Produk — sub-tipe di dalam satu ProductLine. Divan sengaja cuma
+// punya SATU varian (DIVAN_SANDARAN) — form TIDAK menampilkan step pemilihan
+// jenis utk Divan, langsung di-set nilai ini (lihat OrderSection.jsx).
+enum ProductType {
+  // Kasur
+  KASUR_SPRING
+  KASUR_BUSA
+  MULTIBED
+  KASUR_2IN1_ATAS
+  KASUR_2IN1_BAWAH
+  // Sofa
+  SOFABED
+  SOFA_L
+  SOFA_1_SEATER
+  SOFA_2_SEATER
+  SOFA_3_SEATER
+  // Divan
+  DIVAN_SANDARAN
 }
 
 enum ConversationStatus {
@@ -799,6 +834,16 @@ model Order {
   statusOverrideNote String?       @map("status_override_note")
   paymentStatus      PaymentStatus @default(BELUM_BAYAR)
   category           OrderCategory @default(LAYANAN)
+  // productLine (29 Agustus 2026) — default KASUR supaya migrasi backfill
+  // otomatis SEMUA order lama sbg Kasur (fakta historis, 100% order sebelum
+  // ini memang kasur — bukan tebakan). productType SENGAJA nullable TANPA
+  // default: order lama tidak pernah mencatat "jenis produk" terstruktur
+  // (cuma teks bebas di notes/merkKasur), jadi null = jujur tidak tahu,
+  // bukan ditebak salah satu dari 11 nilai. Order BARU wajib isi lewat form
+  // (lihat OrderSection.jsx), backend tidak memaksa di level skema supaya
+  // order lama yang di-PATCH utk alasan lain tidak tiba-tiba gagal validasi.
+  productLine        ProductLine   @default(KASUR) @map("product_line")
+  productType        ProductType?  @map("product_type")
   value              Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
   quantity           Int           @default(1)
   beratBadan         Int? // berat badan customer dalam kg, nullable

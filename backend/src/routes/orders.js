@@ -136,11 +136,11 @@ orderRouter.patch("/:id", async (req, res) => {
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,
           ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-          deliveryEstimate, deliveryConfirmedDate, locationUrl } = req.body;
+          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -178,6 +178,11 @@ orderRouter.patch("/:id", async (req, res) => {
           ...(orderNumber       !== undefined && { orderNumber: orderNumber?.trim() || null }),
           // D-026: kirim "" atau null untuk lepas promo dari order ini.
           ...(promoId           !== undefined && { promoId: promoId || null }),
+          // productLine (29 Agustus 2026) — TIDAK boleh dikosongkan (bukan
+          // nullable di skema, selalu ada nilainya), productType BOLEH
+          // dilepas balik ke null (mis. salah pilih, "kosongkan" via "").
+          ...(productLine       !== undefined && productLine && { productLine }),
+          ...(productType       !== undefined && { productType: productType || null }),
           ...(merkKasur         !== undefined && { merkKasur }),
           ...(ukuranKasur       !== undefined && { ukuranKasur }),
           ...(keluhanCustomer   !== undefined && { keluhanCustomer }),

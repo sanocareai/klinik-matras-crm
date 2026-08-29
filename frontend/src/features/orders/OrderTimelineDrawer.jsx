@@ -8,6 +8,7 @@ import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
 } from "../../utils/format.js";
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -64,7 +65,11 @@ function DetailPesananSection({ order }) {
   const info = parseOrderNotes(order.notes);
   const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
   const layanan = (order.items || []).map((it) => it.layananName).filter(Boolean).join(", ");
-  const kasur = [info.merkKasur, info.ukuranKasur].filter(Boolean).join(" · ");
+  // Label baris dinamis (29 Agustus 2026) — dulu selalu "Kasur" krn cuma
+  // ada satu lini produk. lineLabel fallback "Kasur" utk order lama
+  // (sebelum kolom productLine ada, migrasi backfill semuanya ke KASUR).
+  const lineLabel = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
+  const produk = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, info.ukuranKasur].filter(Boolean).join(" · ");
 
   return (
     <div className="rounded-xl bg-surface px-3 shadow-card">
@@ -85,15 +90,15 @@ function DetailPesananSection({ order }) {
         </DetailRow>
       )}
 
-      {(kasur || layanan) && (
-        <DetailRow tone="bed" label="Kasur & Layanan">
-          {kasur && <p>{kasur}</p>}
-          {layanan && <p className={cn(kasur && "mt-0.5 text-ink2")}>{layanan}</p>}
+      {(produk || layanan) && (
+        <DetailRow tone="bed" label={`${lineLabel} & Layanan`}>
+          {produk && <p>{produk}</p>}
+          {layanan && <p className={cn(produk && "mt-0.5 text-ink2")}>{layanan}</p>}
         </DetailRow>
       )}
 
       {info.keluhanCustomer && (
-        <DetailRow tone="note" label="Keluhan Kasur">
+        <DetailRow tone="note" label="Keluhan / Catatan">
           {info.keluhanCustomer}
         </DetailRow>
       )}

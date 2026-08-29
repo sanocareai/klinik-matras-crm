@@ -332,6 +332,45 @@ export const HEALTH_COMPLAINT_LABELS = {
 };
 export const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
 
+// Lini Produk & Jenis Produk (29 Agustus 2026) — perluasan bisnis dari
+// kasur-saja ke Sofa & Divan (Order.productLine/productType, backend
+// prisma/schema.prisma). SATU daftar di sini (bukan diduplikasi di
+// OrderSection.jsx/Orders.jsx/OrderTimelineDrawer.jsx) supaya label yang
+// tampil di form input, export Excel, dan drawer riwayat order TIDAK PERNAH
+// beda kata untuk nilai enum yang sama.
+export const PRODUCT_LINE_LABELS = {
+  KASUR: "Kasur",
+  SOFA:  "Sofa",
+  DIVAN: "Divan",
+};
+export const PRODUCT_LINE_ICONS = {
+  KASUR: "🛏️",
+  SOFA:  "🛋️",
+  DIVAN: "🛌",
+};
+// Dikelompokkan per ProductLine — dipakai OrderSection.jsx utk menampilkan
+// HANYA jenis yang relevan dgn lini produk yang sudah dipilih. DIVAN sengaja
+// cuma 1 varian (DIVAN_SANDARAN) — form tidak menampilkan step pemilihan
+// jenis utk Divan, langsung di-set nilai ini.
+export const PRODUCT_TYPES_BY_LINE = {
+  KASUR: ["KASUR_SPRING", "KASUR_BUSA", "MULTIBED", "KASUR_2IN1_ATAS", "KASUR_2IN1_BAWAH"],
+  SOFA:  ["SOFABED", "SOFA_L", "SOFA_1_SEATER", "SOFA_2_SEATER", "SOFA_3_SEATER"],
+  DIVAN: ["DIVAN_SANDARAN"],
+};
+export const PRODUCT_TYPE_LABELS = {
+  KASUR_SPRING:     "Kasur Spring",
+  KASUR_BUSA:       "Kasur Busa",
+  MULTIBED:         "Multibed",
+  KASUR_2IN1_ATAS:  "Kasur 2in1 Atas",
+  KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
+  SOFABED:          "Sofabed",
+  SOFA_L:           "Sofa L",
+  SOFA_1_SEATER:    "Sofa 1 Seater",
+  SOFA_2_SEATER:    "Sofa 2 Seater",
+  SOFA_3_SEATER:    "Sofa 3 Seater",
+  DIVAN_SANDARAN:   "Divan - Sandaran",
+};
+
 // D-029 (20 Agustus 2026) — merk/ukuran/keluhan kasur dulu disimpan JSON di
 // Order.notes (bukan kolom sendiri, migrasi database dianggap tidak sepadan
 // saat itu). Dipindah ke sini dari OrderSection.jsx (sebelumnya lokal, tidak

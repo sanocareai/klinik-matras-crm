@@ -598,7 +598,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
   const {
     quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
     healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-    deliveryEstimate, deliveryConfirmedDate, locationUrl,
+    deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType,
   } = req.body;
 
   const cat = category || "LAYANAN";
@@ -627,6 +627,13 @@ customerRouter.post("/:id/orders", async (req, res) => {
           quantity: quantity ? Number(quantity) : 1,
           status: status || "PENDING",
           category: cat,
+          // productLine (29 Agustus 2026) — default skema KASUR sudah cukup
+          // utk order lama, tapi form BARU (OrderSection.jsx) SELALU
+          // mengirim productLine eksplisit sejak lini Sofa/Divan ada. Kalau
+          // tidak dikirim (klien lama/integrasi luar), fallback KASUR wajar
+          // — itulah satu-satunya lini sebelum ini.
+          productLine: productLine || "KASUR",
+          ...(productType && { productType }),
           orderNumber,
           notes,
           ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
