@@ -210,6 +210,15 @@ export default function OrderFormModal({
   const [productType, setProductType] = useState("");
   const [showJenisPicker, setShowJenisPicker] = useState(false);
   const isKasur = productLine === "KASUR";
+  // usesUkuranDropdown (29 Agustus 2026, bug ditemukan & diperbaiki saat
+  // review sebelum EAS build) — TERPISAH dari isKasur. Katalog harga Divan
+  // (Service Divan/Sandaran, Divan, Sandaran) kunci variannya SAMA PERSIS
+  // dgn Kasur (lebar 90-200), BUKAN free-text. Kalau Ukuran ikut digerbang
+  // isKasur (seperti sebelumnya), resolveVariantKey() tidak akan pernah
+  // cocok utk Divan, dan katalog harga Divan tidak akan pernah muncul —
+  // fitur baru jadi mati utk satu lini produk penuh. Sofa TETAP free-text
+  // (variant-nya dari Jenis Produk, bukan lebar).
+  const usesUkuranDropdown = productLine === "KASUR" || productLine === "DIVAN";
   // Katalog harga (29 Agustus 2026) — dimuat begitu Lini Produk + varian
   // (ukuran utk Kasur/Divan, jenis produk utk Sofa) sudah diketahui.
   const [catalog, setCatalog] = useState([]);
@@ -962,11 +971,16 @@ export default function OrderFormModal({
               />
             )}
 
-            {/* Ukuran — dropdown kurasi Settings KHUSUS Kasur; Sofa/Divan
-                input bebas (belum ada daftar ukuran/konfigurasi
-                terkurasi) — paritas dgn web. */}
-            <Text style={styles.label}>{isKasur ? "Ukuran Kasur" : `Ukuran/Konfigurasi ${PRODUCT_LINE_LABELS[productLine] || ""}`}</Text>
-            {isKasur ? (
+            {/* Ukuran — dropdown lebar (90-200) utk Kasur DAN Divan
+                (variantKey katalog harga dua-duanya sama-sama lebar); Sofa
+                input bebas (variant-nya dari Jenis Produk) — paritas dgn
+                web, termasuk fix bug variantKey Divan. */}
+            <Text style={styles.label}>
+              {usesUkuranDropdown
+                ? (isKasur ? "Ukuran Kasur" : `Ukuran ${PRODUCT_LINE_LABELS[productLine] || ""}`)
+                : `Ukuran/Konfigurasi ${PRODUCT_LINE_LABELS[productLine] || ""}`}
+            </Text>
+            {usesUkuranDropdown ? (
               <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
                 <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
               </TouchableOpacity>
@@ -1181,7 +1195,17 @@ export default function OrderFormModal({
                     ({PRODUCT_LINE_LABELS[productLine]} · {productLine === "SOFA" ? PRODUCT_TYPE_LABELS[productType] : `ukuran ${variantKey}`})
                   </Text>
                 </Text>
-                <View style={styles.catalogBox}>
+                {/* BUG DITEMUKAN & DIPERBAIKI (29 Agustus 2026, review
+                    sebelum EAS build): sebelumnya <View> biasa dgn
+                    maxHeight — di RN, View TIDAK bisa di-scroll sama sekali
+                    (beda dari web, overflow:auto pada <div> jalan). Kalau
+                    katalog lebih panjang dari maxHeight (Kasur ukuran 160
+                    saja sudah 21 layanan), item di bawah SECARA FISIK
+                    tidak terjangkau — bukan cuma terpotong visual, benar-
+                    benar tidak bisa di-tap. nestedScrollEnabled wajib di
+                    Android krn ScrollView ini bersarang di dalam
+                    ScrollView utama form. */}
+                <ScrollView style={styles.catalogBox} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                   {catalog.map((p) => {
                     const sudah = dipakaiDariKatalog.has(p.id);
                     return (
@@ -1210,7 +1234,7 @@ export default function OrderFormModal({
                       </TouchableOpacity>
                     );
                   })}
-                </View>
+                </ScrollView>
               </>
             )}
 

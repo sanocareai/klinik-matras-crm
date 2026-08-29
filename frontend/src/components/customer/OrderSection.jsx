@@ -1131,12 +1131,24 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [category, setCategory]       = useState("");
   // Lini Produk & Jenis Produk (29 Agustus 2026) — step BARU antara kategori
   // (step 0) dan info produk (step 3, dulu step 1 — lihat renumbering di
-  // bawah). isKasur menentukan apakah field fitting berat-badan/Merk Kasur
-  // dropdown (khusus kasur) ditampilkan, atau diganti input generik utk
-  // Sofa/Divan.
+  // bawah). isKasur menentukan apakah field fitting berat-badan & dropdown
+  // Merk Kasur (kurasi merk kasur, tidak relevan Sofa/Divan) ditampilkan.
+  //
+  // BUG DITEMUKAN & DIPERBAIKI (29 Agustus 2026, review sebelum EAS build):
+  // field Ukuran SEMPAT ikut digerbang `isKasur` juga — akibatnya utk Divan,
+  // Ukuran jadi input bebas, padahal katalog harga Divan (Service Divan/
+  // Sandaran, Divan, Sandaran) KUNCI VARIANNYA SAMA PERSIS dgn Kasur (lebar
+  // 90-200, lihat PRICE_ITEM_KIND/PriceRate.variantKey), BUKAN free-text.
+  // Hasilnya: resolveVariantKey() tidak akan PERNAH cocok utk Divan, dan
+  // katalog harga Divan tidak akan pernah muncul sama sekali di form —
+  // fitur yang baru dibangun jadi mati utk satu lini produk penuh.
+  // usesUkuranDropdown DIPISAH dari isKasur khusus utk ini: Kasur & Divan
+  // sama-sama pakai dropdown ukuran (varian widthnya identik), Sofa TETAP
+  // free-text (variant-nya dari Jenis Produk, bukan lebar).
   const [productLine, setProductLine] = useState("");
   const [productType, setProductType] = useState("");
   const isKasur = productLine === "KASUR";
+  const usesUkuranDropdown = productLine === "KASUR" || productLine === "DIVAN";
   const [merkKasur, setMerk]          = useState("");
   const [ukuran, setUkuran]           = useState("");
   const [keluhan, setKeluhan]         = useState("");
@@ -1523,15 +1535,17 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           )}
         </div>
 
-        {/* Ukuran — dropdown kurasi Settings KHUSUS Kasur; Sofa/Divan input
-            bebas (belum ada daftar ukuran/konfigurasi terkurasi). */}
+        {/* Ukuran — dropdown lebar (90-200) utk Kasur DAN Divan (variantKey
+            katalog harga dua-duanya sama-sama lebar, lihat catatan bug di
+            atas); Sofa input bebas (variant-nya dari Jenis Produk, bukan
+            lebar). */}
         <div style={{ marginBottom: 10 }}>
-          <FieldLabel tone="size">{isKasur ? "Ukuran Kasur" : `Ukuran/Konfigurasi ${lineLabel}`}</FieldLabel>
-          {isKasur ? (
+          <FieldLabel tone="size">{usesUkuranDropdown ? (isKasur ? "Ukuran Kasur" : `Ukuran ${lineLabel}`) : `Ukuran/Konfigurasi ${lineLabel}`}</FieldLabel>
+          {usesUkuranDropdown ? (
             <FilterDropdown
               value={ukuran} onChange={setUkuran}
               options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
-              placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran kasur"
+              placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran"
               triggerClassName="w-full max-w-none"
             />
           ) : (
