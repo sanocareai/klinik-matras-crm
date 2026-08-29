@@ -52,7 +52,15 @@ masterDataRouter.get("/price-list", async (req, res) => {
 
     const items = await prisma.priceItem.findMany({
       where: { productLine, active: true },
-      orderBy: [{ kind: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+      // `sortOrder` DULUAN (bukan `kind` duluan, seperti sebelumnya) —
+      // `sortOrder` sengaja diisi persis mengikuti posisi baris di
+      // spreadsheet harga sumber (lihat seedPriceList.mjs), yang baris
+      // SERVICE/ADDON/PRODUCT/FEE-nya SELANG-SELING, bukan berkelompok.
+      // Mengurutkan `kind` duluan mengelompokkan ulang jadi 4 blok
+      // (semua SERVICE dulu, baru ADDON, dst) — persis bug yang bikin
+      // katalog di UI kelihatan "tidak sesuai urutan seperti di Excel"
+      // walau angka & sortOrder per item sudah benar (ditemukan 30 Agt 2026).
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
         id: true, code: true, name: true, kind: true, note: true,
         // Kalau variantKey dikirim, muat HANYA sel untuk varian itu (1 baris
