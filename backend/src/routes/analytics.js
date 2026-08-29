@@ -1733,11 +1733,15 @@ analyticsRouter.get("/response-time-series", async (req, res) => {
 // kasih total lead periode, /response-time-series cuma tren waktu.
 //
 // DEFINISI "LEAD" DI SINI (penting, jangan diubah diam-diam): 1 lead = 1 baris
-// Customer BARU. Customer dibuat otomatis saat pesan WA masuk dari nomor yang
-// belum terdaftar (routes/webhooks.js upsert by phone). Jadi ini "nomor WA unik
-// yang pertama kali chat", TERMASUK salah sambung/spam/supplier — belum ada
-// mekanisme menandai lead sampah. Angka di sini akan sedikit lebih tinggi dari
-// "calon pembeli sungguhan".
+// Customer BARU (pipelineStage <> SPAM). Customer dibuat otomatis saat pesan
+// WA masuk dari nomor yang belum terdaftar (routes/webhooks.js upsert by
+// phone), jadi ini "nomor WA unik yang pertama kali chat, dan sudah ditinjau
+// bukan sampah/salah sambung". SPAM dikecualikan (29 Agustus 2026 — BUG
+// DITEMUKAN owner: angka di sini pernah beda dgn "New Leads" Dashboard krn
+// endpoint ini TERLEWAT saat semua endpoint lain dibersihkan dari SPAM 25-26
+// Agustus; catatan lama di sini yg bilang "belum ada mekanisme menandai lead
+// sampah" SUDAH SALAH sejak saat itu — mekanismenya (pipelineStage=SPAM)
+// sudah ada & dipakai luas, cuma lupa dipasang di sini).
 //
 // DETEKSI SPIKE — baseline statistik, bukan ambang persen yang dikarang:
 // tiap hari dibandingkan dengan rata-rata bergerak 7 hari SEBELUMNYA (trailing,
@@ -2000,11 +2004,20 @@ analyticsRouter.get("/traffic", async (req, res) => {
     const prevMulai = new Date(mulai.getTime() - panjangMs);
 
     const [dailyRaw, volHeatRaw, respHeatRaw, prevCount, sourceGroups] = await Promise.all([
+      // pipelineStage <> 'SPAM' (29 Agustus 2026, BUG DITEMUKAN owner — angka
+      // "Total Lead Masuk" di sini beda dgn "New Leads" Dashboard, 2585 vs
+      // 2561 di satu periode). SEMUA endpoint lain yg menghitung "berapa
+      // lead baru" (custWhereKonversi di /overview, notSpam di Sales Risk,
+      // dst) SUDAH mengecualikan SPAM sejak restrukturisasi 25-26 Agustus —
+      // query di sini TERLEWAT saat itu (komentar definisi "LEAD" di atas
+      // file ini bahkan masih salah bilang "belum ada mekanisme menandai
+      // lead sampah", padahal sudah ada & dipakai luas). Bukan beda definisi
+      // yg disengaja — murni oversight, diperbaiki supaya konsisten.
       prisma.$queryRaw`
         SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                COUNT(*)::int AS value
         FROM "Customer"
-        WHERE "createdAt" >= ${warmup} AND "createdAt" < ${selesai}
+        WHERE "createdAt" >= ${warmup} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM'
         GROUP BY 1 ORDER BY 1`,
 
       // Heatmap VOLUME: kapan lead masuk (hari-dalam-minggu × jam WIB).
@@ -2013,7 +2026,7 @@ analyticsRouter.get("/traffic", async (req, res) => {
                EXTRACT(hour FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS jam,
                COUNT(*)::int AS n
         FROM "Customer"
-        WHERE "createdAt" >= ${mulai} AND "createdAt" < ${selesai}
+        WHERE "createdAt" >= ${mulai} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM'
         GROUP BY 1, 2`,
 
       // Heatmap RESPONS: seberapa cepat dibalas, di-bucket menurut jam pesan
@@ -2032,11 +2045,16 @@ analyticsRouter.get("/traffic", async (req, res) => {
           AND i.ts >= ${mulai} AND i.ts < ${selesai}
         GROUP BY 1, 2`,
 
-      prisma.customer.count({ where: { createdAt: { gte: prevMulai, lt: mulai } } }),
+      // SPAM dikecualikan (sama alasan di atas) — kalau tidak, growthPct
+      // membandingkan pembilang bersih dgn penyebut kotor.
+      prisma.customer.count({ where: { createdAt: { gte: prevMulai, lt: mulai }, pipelineStage: { not: "SPAM" } } }),
 
+      // SPAM dikecualikan juga di sini — kalau tidak, jumlah bySource tidak
+      // akan pernah pas dgn totalLeads (yang sekarang sudah bersih SPAM di
+      // atas), dan atribusi.rate ikut salah hitung.
       prisma.customer.groupBy({
         by: ["leadSource", "leadSourceConfirmed"],
-        where: { createdAt: { gte: mulai, lt: selesai } },
+        where: { createdAt: { gte: mulai, lt: selesai }, pipelineStage: { not: "SPAM" } },
         _count: { _all: true },
       }),
     ]);
