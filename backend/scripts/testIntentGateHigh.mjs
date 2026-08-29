@@ -34,7 +34,23 @@ async function main() {
   console.log("═══ 1. Re-cek tier customer yang SUDAH diklasifikasi sebelumnya ═══\n");
 
   const cachedRows = await prisma.salesRiskIntentClassification.findMany({
-    include: { customer: { select: { id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true, orders: { select: { value: true, status: true } }, conversations: { where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3, select: { messages: { orderBy: { createdAt: "desc" }, take: 20, select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true } } } } } },
+    include: {
+      customer: {
+        select: {
+          id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
+          orders: { select: { value: true, status: true } },
+          conversations: {
+            where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
+            select: {
+              messages: {
+                orderBy: { createdAt: "desc" }, take: 20,
+                select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true },
+              },
+            },
+          },
+        },
+      },
+    },
   });
   console.log(`(${cachedRows.length} baris cache ditemukan dari sesi testing sebelumnya)\n`);
 
@@ -57,7 +73,19 @@ async function main() {
   const apiKey = resolveSalesRiskIntentApiKey();
   const targets = await prisma.customer.findMany({
     where: { OR: [{ name: { contains: "Mahda", mode: "insensitive" } }, { name: { contains: "HRD", mode: "insensitive" } }] },
-    select: { id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true, orders: { select: { value: true, status: true } }, conversations: { where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3, select: { messages: { orderBy: { createdAt: "desc" }, take: 20, select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true } } } } },
+    select: {
+      id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
+      orders: { select: { value: true, status: true } },
+      conversations: {
+        where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
+        select: {
+          messages: {
+            orderBy: { createdAt: "desc" }, take: 20,
+            select: { direction: true, content: true, createdAt: true, rawType: true, mediaType: true },
+          },
+        },
+      },
+    },
   });
   if (targets.length === 0) console.log("  (tidak ketemu customer bernama Mahda/HRD — cek nama persis di DB)");
   for (const c of targets) {
