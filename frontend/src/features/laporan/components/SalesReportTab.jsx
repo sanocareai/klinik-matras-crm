@@ -128,7 +128,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
-          tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani.`}
+          tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani. ⚠️ BEDA dengan "Conversion" di Dashboard (keduanya BENAR, bukan salah satu salah hitung): angka ini basisnya PERCAKAPAN yang ditangani tim di periode ini, TERMASUK lead LAMA (lahir bulan sebelumnya) yang baru closing sekarang; "Conversion" Dashboard basisnya LEAD BARU yang lahir di periode ini saja. Makanya penyebut & pembilangnya beda dan wajar angkanya tidak sama.`}
         />
         <KpiCard
           index={2} label="Target Tim"
