@@ -123,6 +123,19 @@ enum ProductLine {
 // Jenis Produk — sub-tipe di dalam satu ProductLine. Divan sengaja cuma
 // punya SATU varian (DIVAN_SANDARAN) — form TIDAK menampilkan step pemilihan
 // jenis utk Divan, langsung di-set nilai ini (lihat OrderSection.jsx).
+// Jenis baris di katalog harga (29 Agustus 2026) — menentukan baris ini
+// muncul di kategori order yang mana. Pemetaan ke OrderCategory:
+//   LAYANAN → SERVICE, ADDON, FEE
+//   BARU    → PRODUCT, FEE
+//   SEWA    → RENTAL, FEE
+enum PriceItemKind {
+  SERVICE // pekerjaan service/upgrade (Service Fondasi, Full Upgrade, Restorasi Rangka Sofa)
+  ADDON // tambahan kecil (Tambah Busa 2cm, Ganti Kain Pinggir)
+  PRODUCT // barang baru (Matras Custom TP, Kasur 2in1, Divan, Sandaran, Topper)
+  RENTAL // Kasur Sewa
+  FEE // Biaya Transport, Biaya Buang Kasur
+}
+
 enum ProductType {
   // Kasur
   KASUR_SPRING
@@ -1138,6 +1151,12 @@ model ServiceCatalog {
   revisionsFrom ScopeRevision[] @relation("ScopeRevisionFrom")
   revisionsTo   ScopeRevision[] @relation("ScopeRevisionTo")
 
+  // Relasi balik dari katalog harga SALES (29 Agustus 2026). Cuma 6 layanan
+  // di sini yang punya padanan berharga; katalog harga jauh lebih besar
+  // (±40 baris) karena memuat juga addon/produk/biaya yang tidak pernah
+  // masuk routing produksi. Lihat catatan panjang di model PriceItem.
+  priceItems PriceItem[]
+
   @@map("service_catalog")
 }
 
@@ -2103,12 +2122,121 @@ model OrderSequence {
 // Item layanan dalam satu order (kasur, upgrade, servis, dsb.)
 // Satu Order bisa punya banyak OrderItem
 model OrderItem {
-  id          String @id @default(cuid())
-  orderId     String
-  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // layananName TETAP ADA & TETAP WAJIB (29 Agustus 2026) — 8 tempat sudah
+  // membacanya sebagai teks tampilan (analytics.js, ringkasan WA di
+  // orders.js, export Excel Orders.jsx, mcp/toolsShared.js, OrderCard mobile,
+  // dst). Sejak katalog harga ada, kolom ini jadi SNAPSHOT nama dari katalog
+  // saat dipilih — BUKAN diganti FK. Item ketik-bebas tetap sah (mis.
+  // "[Revisi] …" yang dibuat services/scopeRevision.js): priceItemId NULL.
   layananName String
-  harga       Int
-  sortOrder   Int    @default(0)
+  harga       Int // HARGA FINAL — arti TIDAK berubah, ini yang ditagih ke customer
+  sortOrder   Int @default(0)
+
+  // ── Tautan katalog + snapshot harga (29 Agustus 2026) ───────────────────
+  // Semua nullable: order lama (352 baris) tidak punya tautan katalog, dan
+  // isian bebas di luar katalog tetap diizinkan.
+  priceItemId String?    @map("price_item_id")
+  priceItem   PriceItem? @relation(fields: [priceItemId], references: [id], onDelete: SetNull)
+  variantKey  String?    @map("variant_key") // varian yang dipakai saat lookup (lihat PriceRate.variantKey)
+
+  // SNAPSHOT harga saat order dibuat — BUKAN lookup ulang ke PriceRate waktu
+  // dibaca. Daftar harga berubah berkala (judul sumbernya sendiri berbunyi
+  // "HARGA PER 5 JUL 2026", menyiratkan ada revisi sebelumnya). Order lama
+  // WAJIB tetap memegang angka yang benar-benar ditawarkan saat itu — kalau
+  // di-lookup ulang, laporan disiplin nego jadi bohong tiap kali harga naik.
+  //
+  // "Di bawah standard" (harga < standardPrice) SENGAJA TIDAK disimpan
+  // sebagai kolom — murni turunan dari 3 angka di baris yang sama, dihitung
+  // saat dibaca. Menyimpannya cuma menambah peluang data saling bertentangan
+  // (kelas masalah yang sudah pernah terjadi di Customer.orderCount).
+  normalPrice   Int? @map("normal_price")
+  standardPrice Int? @map("standard_price")
+
+  @@index([priceItemId])
+}
+
+// ═══ KATALOG HARGA JUAL (SALES) ═══════════════════════════════════════════
+// Dibuat 29 Agustus 2026 dari "Daftar Harga Klinik Matras Sano per 5 Jul
+// 2026". Menggantikan JENIS_LAYANAN (7 sugesti ketik-bebas di
+// constants/orderOptions.js) sebagai sumber pilihan layanan — sugesti lama
+// TIDAK dihapus, masih dipakai sebagai fallback untuk isian bebas.
+//
+// ⚠️ JANGAN DIKACAUKAN dengan model ServiceCatalog (tabel service_catalog):
+// itu katalog PRODUKSI — urutan modul kerja per unit, ditetapkan tim
+// PRODUKSI di tahap Uji Fondasi SETELAH kasur dibongkar (keputusan D-008),
+// dan TIDAK punya harga sama sekali. Yang di bawah ini katalog SALES:
+// dipilih sales saat input order, punya harga, hidup di waktu yang berbeda.
+// Keduanya beririsan di 6 layanan dan ditautkan lewat productionServiceId
+// (nullable) — SENGAJA tidak digabung jadi satu tabel.
+model PriceItem {
+  id          String        @id @default(cuid())
+  code        String        @unique // SVC_FONDASI_MS, UPG_LAPISAN_LATEX, dst
+  name        String // teks yang tampil ke sales DAN disalin ke OrderItem.layananName
+  productLine ProductLine // KASUR | SOFA | DIVAN
+  kind        PriceItemKind
+
+  // Kolom DIS di spreadsheet sumber. MURNI INFORMASIONAL — TIDAK PERNAH
+  // dipakai menghitung normalPrice/standardPrice di kode mana pun. Pola
+  // sama persis dengan Promo.discountPercent yang sudah ada, dan di sini
+  // alasannya konkret: di daftar 5 Jul 2026 kolom ini SERING tidak cocok
+  // dengan selisih normal↔standard sebenarnya (mis. Upgrade Fondasi 150kg
+  // ukuran 160 cuma turun 6,5% padahal DIS tertulis 33%). Harga per sel
+  // adalah kebenarannya; persen ini cuma catatan.
+  discountPercent Decimal? @map("discount_percent") @db.Decimal(5, 2)
+
+  // Tautan OPSIONAL ke katalog produksi. Terisi HANYA untuk 6 layanan yang
+  // memang punya routing produksi (SVC_FONDASI, SVC_FULL, UPG_LAPISAN,
+  // UPG_FONDASI, UPG_FONDASI_LAPISAN, UPG_FULL). NULL untuk Ganti Kain
+  // Pinggir, Sterilisasi, Topper, SELURUH layanan Sofa, dan semua FEE.
+  productionServiceId String?         @map("production_service_id") @db.Uuid
+  productionService   ServiceCatalog? @relation(fields: [productionServiceId], references: [id], onDelete: SetNull)
+
+  active    Boolean @default(true)
+  sortOrder Int     @default(0) @map("sort_order")
+  note      String? // catatan internal (mis. sel "X" yang belum berharga)
+
+  rates      PriceRate[]
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([productLine, kind, active])
+  @@map("price_items")
+}
+
+// Satu sel di matriks daftar harga: (layanan × varian) → normal + standard.
+model PriceRate {
+  id          String    @id @default(cuid())
+  priceItemId String    @map("price_item_id")
+  priceItem   PriceItem @relation(fields: [priceItemId], references: [id], onDelete: Cascade)
+
+  // Kunci varian — SUMBUNYA BEDA PER LINI PRODUK:
+  //   KASUR & DIVAN → lebar kasur    : "90" "100" "120" "160" "180" "200"
+  //   SOFA          → nilai ProductType: "SOFABED" "SOFA_L" "SOFA_1_SEATER"
+  //                                      "SOFA_2_SEATER" "SOFA_3_SEATER"
+  // (Kolom harga sofa di spreadsheet memang PERSIS sama dengan enum
+  // ProductType — tidak perlu daftar varian baru untuk sofa.)
+  //
+  // SENGAJA String, bukan enum: dua sumbu yang berbeda arti tidak boleh
+  // dipaksa jadi SATU enum campur-aduk yang tidak bisa divalidasi. Kecocokan
+  // variantKey↔productLine dijaga di aplikasi & script seed.
+  variantKey String @map("variant_key")
+
+  // DUA-DUANYA nullable. Banyak baris di daftar harga HANYA punya kolom
+  // STANDARD terisi (Tambah Busa 2cm, Ganti Kain Pinggir, Divan, Sandaran,
+  // Topper), dan ada sel yang memang kosong atau berisi "X" (Full Service
+  // ukuran 120). NULL = harga belum ditetapkan — BUKAN nol, dan jangan
+  // pernah dibaca sebagai nol di UI/laporan.
+  normalPrice   Int? @map("normal_price")
+  standardPrice Int? @map("standard_price")
+
+  @@unique([priceItemId, variantKey])
+  @@map("price_rates")
 }
 
 // Berat badan per orang dalam satu order (multi-orang, misal suami + istri)

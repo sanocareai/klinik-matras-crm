@@ -834,6 +834,13 @@ export const api = {
   // satu sumber dipakai OrderSection.jsx web & mobile OrderFormModal.js.
   getOrderOptions: () => request("/master-data/order-options"),
 
+  // Katalog harga jual per lini produk + varian (29 Agustus 2026) — dipakai
+  // form order menampilkan daftar layanan beserta harga normal & standard.
+  // BUKAN getServiceCatalog() di atas: itu katalog PRODUKSI (routing modul
+  // kerja, tanpa harga). Lihat catatan di schema.prisma#PriceItem.
+  getPriceList: (productLine, variantKey) =>
+    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}`),
+
   // Produk (Galeri)
   getProducts: () => request("/products"),
   getAllProducts: () => request("/products/all"),

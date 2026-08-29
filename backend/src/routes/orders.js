@@ -859,7 +859,11 @@ orderRouter.patch("/:id/complaint", async (req, res) => {
 
 // POST /api/orders/:orderId/items — tambah item layanan
 orderRouter.post("/:orderId/items", async (req, res) => {
-  const { layananName, harga, sortOrder } = req.body;
+  // priceItemId/variantKey/normalPrice/standardPrice (29 Agustus 2026) —
+  // SEMUANYA OPSIONAL. Item ketik-bebas di luar katalog tetap sah persis
+  // seperti sebelumnya, dan pemanggil lama (mobile OrderFormModal,
+  // scopeRevision.js) yang tidak mengirimnya tidak perlu diubah.
+  const { layananName, harga, sortOrder, priceItemId, variantKey, normalPrice, standardPrice } = req.body;
   if (!layananName?.trim()) return res.status(400).json({ error: "Nama layanan wajib diisi" });
   if (harga === undefined || harga === null) return res.status(400).json({ error: "Harga wajib diisi" });
 
@@ -873,6 +877,14 @@ orderRouter.post("/:orderId/items", async (req, res) => {
         layananName: layananName.trim(),
         harga: Number(harga),
         sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
+        // Snapshot harga katalog — disimpan APA ADANYA dari yang dikirim
+        // frontend saat layanan dipilih, TIDAK di-lookup ulang di sini.
+        // Itu memang tujuannya: order harus memegang angka yang benar-benar
+        // ditawarkan saat itu, bukan angka daftar harga versi terbaru.
+        ...(priceItemId && { priceItemId }),
+        ...(variantKey && { variantKey: String(variantKey) }),
+        ...(normalPrice != null && normalPrice !== "" && { normalPrice: Number(normalPrice) }),
+        ...(standardPrice != null && standardPrice !== "" && { standardPrice: Number(standardPrice) }),
       },
     });
     const newTotal = await syncOrderValue(req.params.orderId);

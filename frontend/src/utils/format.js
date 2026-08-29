@@ -357,6 +357,35 @@ export const PRODUCT_TYPES_BY_LINE = {
   SOFA:  ["SOFABED", "SOFA_L", "SOFA_1_SEATER", "SOFA_2_SEATER", "SOFA_3_SEATER"],
   DIVAN: ["DIVAN_SANDARAN"],
 };
+// Pemetaan label ukuran kasur → variantKey katalog harga (29 Agustus 2026).
+// ⚠️ TERIKAT ke UKURAN_KASUR di backend/src/constants/orderOptions.js —
+// kunci di bawah HARUS sama persis dengan label di sana. Kalau ada ukuran
+// baru/di-rename, UBAH KEDUANYA.
+//
+// Pakai peta eksplisit, BUKAN parsing angka depan dari label: "Ukuran
+// Custom" tidak punya angka sama sekali, dan parsing diam-diam akan
+// menghasilkan variantKey ngawur begitu ada label baru yang formatnya beda.
+// null = ukuran ini memang tidak punya kolom harga (harga diisi manual).
+export const UKURAN_VARIANT_KEY = {
+  "90x200 cm (Single)": "90",
+  "100x200 cm (Super Single)": "100",
+  "120x200 cm (Single Besar)": "120",
+  "160x200 cm (Queen)": "160",
+  "180x200 cm (King)": "180",
+  "200x200 cm (King Besar)": "200",
+  "Ukuran Custom": null,
+};
+
+// variantKey untuk lookup harga. Sumbunya beda per lini produk:
+//   KASUR & DIVAN → dari ukuran kasur yang dipilih
+//   SOFA          → dari jenis produk (kolom harga sofa memang PERSIS enum
+//                   ProductType, tidak ada daftar ukuran terpisah)
+export function resolveVariantKey({ productLine, productType, ukuran }) {
+  if (productLine === "SOFA") return productType || null;
+  if (productLine === "KASUR" || productLine === "DIVAN") return UKURAN_VARIANT_KEY[ukuran] ?? null;
+  return null;
+}
+
 export const PRODUCT_TYPE_LABELS = {
   KASUR_SPRING:     "Kasur Spring",
   KASUR_BUSA:       "Kasur Busa",

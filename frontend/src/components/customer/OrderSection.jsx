@@ -14,6 +14,7 @@ import {
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS,
+  resolveVariantKey,
 } from "../../utils/format.js";
 import { isAdminUser, rolesOf } from "../../lib/roles.js";
 
@@ -73,9 +74,36 @@ const PRODUCT_LINE_OPTIONS = [
   { value: "DIVAN", icon: PRODUCT_LINE_ICONS.DIVAN, label: PRODUCT_LINE_LABELS.DIVAN, sub: "Divan - Sandaran" },
 ];
 
-function newItem() {
-  return { key: Date.now() + Math.random(), layananName: "", harga: "" };
+// priceItemId/variantKey/normalPrice/standardPrice (29 Agustus 2026) —
+// terisi kalau item dipilih dari katalog harga, tetap null kalau diketik
+// bebas. Keduanya sama-sama sah; backend menerima yang null apa adanya.
+function newItem(extra = {}) {
+  return {
+    key: Date.now() + Math.random(),
+    layananName: "", harga: "",
+    priceItemId: null, variantKey: null, normalPrice: null, standardPrice: null,
+    ...extra,
+  };
 }
+
+// Status harga final terhadap batas standard — dihitung saat render, TIDAK
+// disimpan (lihat catatan di schema.prisma#OrderItem). Dipakai memberi
+// penanda visual, BUKAN mengunci input: keputusan owner 29 Agustus 2026 —
+// sales tetap bebas menembus batas, asal kelihatan di laporan.
+function hargaStatus(it) {
+  const final = Number(it.harga);
+  if (!it.harga || Number.isNaN(final) || final <= 0) return null;
+  if (it.standardPrice == null) return null;
+  if (final < it.standardPrice) {
+    return { tone: "under", text: `Rp${(it.standardPrice - final).toLocaleString("id-ID")} di bawah standard`, hex: "#dc2626" };
+  }
+  if (it.normalPrice != null && final >= it.normalPrice) {
+    return { tone: "full", text: "Harga normal penuh", hex: "#16a34a" };
+  }
+  return { tone: "ok", text: "Dalam batas nego", hex: "#2563eb" };
+}
+
+const KIND_LABEL = { SERVICE: "Layanan", ADDON: "Tambahan", PRODUCT: "Produk", RENTAL: "Sewa", FEE: "Biaya" };
 
 function newWeightEntry() {
   return { key: Date.now() + Math.random(), label: "", beratKg: "" };
@@ -1132,9 +1160,48 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving]           = useState(false);
+  // Katalog harga (29 Agustus 2026) — dimuat saat masuk step 4, sesuai lini
+  // produk + varian yang sudah dipilih di step 1-3.
+  const [catalog, setCatalog]               = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError]     = useState(null);
 
   const isLayanan = category === "LAYANAN";
   const total     = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
+  const variantKey = resolveVariantKey({ productLine, productType, ukuran });
+
+  // Muat katalog begitu sampai di step daftar layanan. Kalau varian belum
+  // bisa ditentukan (mis. "Ukuran Custom"), katalog SENGAJA tidak dimuat —
+  // harga per ukuran tidak ada padanannya, jadi isian manual yang benar.
+  useEffect(() => {
+    if (step !== 4 || !productLine || !variantKey) return;
+    let batal = false;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    api.getPriceList(productLine, variantKey)
+      .then((res) => { if (!batal) setCatalog(res.items || []); })
+      .catch((err) => { if (!batal) setCatalogError(err.message); })
+      .finally(() => { if (!batal) setCatalogLoading(false); });
+    return () => { batal = true; };
+  }, [step, productLine, variantKey]);
+
+  // Tambah layanan dari katalog. Harga final di-prefill HARGA NORMAL (harga
+  // papan) — bukan standard: standard itu BATAS BAWAH nego, kalau dijadikan
+  // nilai awal sales tidak pernah mulai menawar dari harga penuh. Untuk baris
+  // yang di daftar harga cuma punya kolom standard, itulah yang dipakai.
+  function addFromCatalog(p) {
+    const prefill = p.normalPrice ?? p.standardPrice ?? "";
+    const baru = newItem({
+      layananName: p.name,
+      harga: prefill === "" ? "" : String(prefill),
+      priceItemId: p.id, variantKey: p.variantKey,
+      normalPrice: p.normalPrice, standardPrice: p.standardPrice,
+    });
+    // Buang baris kosong bawaan supaya tidak menyisakan baris hampa di atas.
+    setItems((prev) => [...prev.filter((it) => it.layananName?.trim() || it.harga), baru]);
+  }
+
+  const dipakai = new Set(items.map((it) => it.priceItemId).filter(Boolean));
 
   // ── helpers items ──
   function addItem() { setItems((p) => [...p, newItem()]); }
@@ -1230,7 +1297,15 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         locationUrl: locationUrl || undefined,
       });
       for (const it of validItems) {
-        await api.addOrderItem(order.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
+        await api.addOrderItem(order.id, {
+          layananName: it.layananName,
+          harga: Number(it.harga) || 0,
+          // Snapshot katalog — null semua kalau item diketik bebas.
+          priceItemId: it.priceItemId || undefined,
+          variantKey: it.variantKey || undefined,
+          normalPrice: it.normalPrice ?? undefined,
+          standardPrice: it.standardPrice ?? undefined,
+        });
       }
       await saveWeightEntries(order.id);
       onDone();
@@ -1643,33 +1718,125 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           </button>
         </p>
       )}
-      <label style={formLabel}>Layanan (add-ons)</label>
-      {items.map((it) => (
-        <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-          <input
-            list="new-layanan-suggestions" value={it.layananName}
-            onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
-            placeholder="Nama layanan..."
-            style={{ flex: 2, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)" }}
-          />
-          <input
-            type="number" value={it.harga}
-            onChange={(e) => setItemField(it.key, "harga", e.target.value)}
-            placeholder="Harga (Rp)" min="0"
-            style={{ flex: 1, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)", minWidth: 90 }}
-          />
-          {items.length > 1 && (
-            <button type="button" onClick={() => removeItem(it.key)}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}>×</button>
-          )}
+      {/* ── Katalog harga (29 Agustus 2026) ────────────────────────────────
+          Muncul begitu lini produk + varian diketahui. Kalau katalog kosong
+          / gagal dimuat / varian tidak bisa ditentukan ("Ukuran Custom"),
+          bagian ini disembunyikan dan form kembali ke isian bebas seperti
+          sebelumnya — bukan error, dan form tetap bisa dipakai. */}
+      {catalogLoading && (
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--text-muted)" }}>Memuat daftar harga…</p>
+      )}
+      {catalogError && (
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: "#dc2626" }}>
+          Daftar harga gagal dimuat ({catalogError}). Isi layanan &amp; harga manual di bawah.
+        </p>
+      )}
+      {!catalogLoading && !catalogError && catalog.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={formLabel}>
+            Pilih dari daftar harga
+            <span style={{ fontWeight: 400, color: "var(--text-muted)", marginLeft: 6 }}>
+              ({PRODUCT_LINE_LABELS[productLine]} · {productLine === "SOFA" ? PRODUCT_TYPE_LABELS[productType] : `ukuran ${variantKey}`})
+            </span>
+          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: 6 }}>
+            {catalog.map((p) => {
+              const sudah = dipakai.has(p.id);
+              return (
+                <button
+                  key={p.id} type="button" disabled={sudah}
+                  onClick={() => addFromCatalog(p)}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    padding: "7px 9px", borderRadius: 6, textAlign: "left",
+                    border: "1px solid " + (sudah ? "transparent" : "var(--border)"),
+                    background: sudah ? "var(--bg-secondary)" : "var(--bg-card)",
+                    cursor: sudah ? "default" : "pointer", opacity: sudah ? 0.55 : 1,
+                  }}
+                >
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, display: "block" }}>{p.name}</span>
+                    <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                      {KIND_LABEL[p.kind] || p.kind}{sudah ? " · sudah ditambahkan" : ""}
+                    </span>
+                  </span>
+                  <span style={{ textAlign: "right", whiteSpace: "nowrap", fontSize: 11 }}>
+                    {p.belumBerharga ? (
+                      <span style={{ color: "var(--text-muted)" }}>harga belum ditetapkan</span>
+                    ) : (
+                      <>
+                        {p.normalPrice != null && (
+                          <span style={{ display: "block", color: "var(--text-secondary)" }}>
+                            Normal {formatRupiah(p.normalPrice)}
+                          </span>
+                        )}
+                        {p.standardPrice != null && (
+                          <span style={{ display: "block", color: "#c2570b", fontWeight: 600 }}>
+                            Standard {formatRupiah(p.standardPrice)}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      ))}
+      )}
+
+      <label style={formLabel}>Layanan yang diambil</label>
+      {items.map((it) => {
+        const st = hargaStatus(it);
+        return (
+          <div key={it.key} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                list="new-layanan-suggestions" value={it.layananName}
+                onChange={(e) => setItemField(it.key, "layananName", e.target.value)}
+                placeholder="Nama layanan..."
+                style={{ flex: 2, fontSize: 12, padding: "7px 8px", borderRadius: 6, border: "1px solid var(--border)" }}
+              />
+              <input
+                type="number" value={it.harga}
+                onChange={(e) => setItemField(it.key, "harga", e.target.value)}
+                placeholder="Harga final (Rp)" min="0"
+                style={{
+                  flex: 1, fontSize: 12, padding: "7px 8px", borderRadius: 6, minWidth: 90,
+                  border: "1px solid " + (st?.tone === "under" ? "#dc2626" : "var(--border)"),
+                }}
+              />
+              {items.length > 1 && (
+                <button type="button" onClick={() => removeItem(it.key)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 20, lineHeight: 1, padding: "0 2px" }}>×</button>
+              )}
+            </div>
+            {/* Referensi harga + penanda posisi nego. Cuma muncul untuk item
+                dari katalog — item ketik-bebas tidak punya pembanding. */}
+            {(it.normalPrice != null || it.standardPrice != null) && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 10.5, marginTop: 3, paddingLeft: 2 }}>
+                {it.normalPrice != null && (
+                  <span style={{ color: "var(--text-muted)" }}>Normal {formatRupiah(it.normalPrice)}</span>
+                )}
+                {it.standardPrice != null && (
+                  <span style={{ color: "#c2570b" }}>Standard {formatRupiah(it.standardPrice)}</span>
+                )}
+                {st && (
+                  <span style={{ color: st.hex, fontWeight: 700, background: `${st.hex}14`, padding: "1px 7px", borderRadius: 99 }}>
+                    {st.text}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
       <datalist id="new-layanan-suggestions">
         {orderOptions.jenisLayanan.map((j) => <option key={j} value={j} />)}
       </datalist>
       <button type="button" onClick={addItem}
         style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>
-        + Tambah layanan lain
+        + Tambah layanan di luar daftar harga
       </button>
       <div style={{ padding: "8px 0", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Total</span>
