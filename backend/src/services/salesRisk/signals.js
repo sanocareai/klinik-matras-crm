@@ -75,14 +75,27 @@ function detectNeglect(messagesAsc) {
 // hasil sama sekali (bukan cuma turun tier) KALAU tidak ada hasKeywordOrPhrase
 // yang menyertainya (lihat computeAllSalesRisks).
 const URL_PATTERN = /(https?:\/\/[^\s]+)|(\bwww\.[a-z0-9-]+\.[a-z]{2,}[^\s]*)|(\b[a-z0-9-]+\.(?:com|id|net|org|xyz|info|biz|link|click)\b[^\s]*)/gi;
+// Diperluas (29 Agustus 2026, sesudah test kecil thd populasi 3020 kandidat)
+// — versi awal (cuma domain Sano + Google Maps) salah kecualikan customer yg
+// share link Waze/TikTok/Instagram utk MENUNJUKKAN produk/lokasi yang
+// dimaksud (mis. "Sofa nya seperti ini kak" + link TikTok) — itu JUSTRU
+// konteks pembelian, bukan spam. Platform besar yang LAZIM dipakai customer
+// share referensi produk/lokasi ditambah ke allowlist; domain typosquat
+// (indomaret-parcel.com dkk) TETAP kena krn bukan platform dikenal.
 const KNOWN_SAFE_DOMAINS = [
   "sanomatrassehat.com",
   "klinikmatras.com",
   "wa.me",
   "whatsapp.com",
   "maps.google.com",
-  "goo.gl",
   "google.com/maps",
+  "goo.gl",
+  "share.google", // Waze/Google Maps share link format baru
+  "waze.com",
+  "tiktok.com", // termasuk vt.tiktok.com (substring match)
+  "instagram.com",
+  "youtube.com",
+  "youtu.be",
 ];
 function detectSuspiciousLink(recentInbound) {
   for (const m of recentInbound) {
