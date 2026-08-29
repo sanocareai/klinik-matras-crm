@@ -56,7 +56,14 @@ export function computeSalesRiskScore(s) {
 // hasBuyingIntent, isTransaction, dst), BUKAN turunan dari skor komposit.
 // First-match-wins, pola sama dgn nextBestAction.js (Priority Engine, TIDAK
 // disentuh). Skor tidak pernah dicek di sini sama sekali.
-export function classifyRiskTier(s) {
+const TIER_RANK = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+// Turunkan tier ke maxTier kalau tier mentah lebih tinggi — TIDAK PERNAH
+// menaikkan (sebuah cap, bukan override dua arah).
+function capTier(tier, maxTier) {
+  return TIER_RANK[tier] > TIER_RANK[maxTier] ? maxTier : tier;
+}
+
+function classifyRiskTierRaw(s) {
   if (s.waitingHours > CRITICAL_WAIT_HOURS && (s.hasBuyingIntent || s.isTransaction)) return "CRITICAL";
   if (s.waitingHours > CRITICAL_WAIT_HOURS) return "HIGH";
   if (s.waitingHours > HIGH_WAIT_HOURS && (s.hasBuyingIntent || s.isTransaction)) return "HIGH";
@@ -65,6 +72,33 @@ export function classifyRiskTier(s) {
   if (s.isNeglected) return "MEDIUM";
   if (s.prospectStalled) return "MEDIUM";
   return "LOW";
+}
+
+// Gerbang intent pesan terakhir (29 Agustus 2026) — PERLUASAN dari gerbang
+// CRITICAL yang sudah ada (via hasBuyingIntent, tidak diubah). Masalah yang
+// diperbaiki di sini: tier mentah di atas bisa jadi HIGH murni dari DURASI
+// (waitingHours > CRITICAL_WAIT_HOURS saja, baris ke-2) atau kombinasi
+// isNeglected+prospectStalled (baris ke-4) — DUA-DUANYA TIDAK PERNAH mengecek
+// isi pesan sama sekali. Itu sebabnya customer yang pesan terakhirnya
+// PENOLAKAN/basa-basi penutup (Dipatikarna, Intan Antasari, dll — lihat
+// investigasi 29 Agustus 2026) tetap nongol HIGH walau sudah jelas selesai.
+// Cap diterapkan SETELAH tier mentah dihitung, apa pun jalur yang
+// menghasilkannya — bukan menambah cabang baru ke waterfall di atas.
+//   PENOLAKAN / PLEASANTRY_PENUTUP → maksimal LOW (customer tetap tampil di
+//     daftar, cuma severity-nya jujur, bukan hilang dari list).
+//   NETRAL_AMBIGU → maksimal MEDIUM ("perlu dicek manual", bukan diklaim
+//     minat ATAUPUN ditolak).
+//   PERTANYAAN_MENGGANTUNG / MINAT_AKTIF / NETRAL / null (belum
+//     diklasifikasi/cache stale) → TIDAK di-cap, perilaku lama utuh.
+export function classifyRiskTier(s) {
+  const tier = classifyRiskTierRaw(s);
+  if (s.latestMessageIntent === "PENOLAKAN" || s.latestMessageIntent === "PLEASANTRY_PENUTUP") {
+    return capTier(tier, "LOW");
+  }
+  if (s.latestMessageIntent === "NETRAL_AMBIGU") {
+    return capTier(tier, "MEDIUM");
+  }
+  return tier;
 }
 
 function formatHoursIndonesia(hours) {
@@ -110,6 +144,17 @@ export function explainRisk(s, customer) {
     problemTags.push("Macet");
   }
 
+  // NETRAL_AMBIGU (29 Agustus 2026) — pesan terakhir terlalu pendek utk
+  // disimpulkan pasti (mis. "Mahal" sendirian). TIDAK diklaim sbg sinyal
+  // minat (hasKeywordOrPhrase sudah otomatis false utk kasus ini, lihat
+  // signals.js) — cukup dicatat jujur perlu dicek manual, ditaruh PALING
+  // DEPAN supaya jadi alasan utama yang terlihat, tapi problem struktural
+  // lain (mis. belum dibalas) tetap ikut tampil kalau memang ada.
+  if (s.latestMessageIntent === "NETRAL_AMBIGU") {
+    problems.unshift("Respons ambigu — perlu dicek manual (pesan terakhir terlalu pendek utk disimpulkan pasti)");
+    problemTags.unshift("Ambigu — cek manual");
+  }
+
   const problem = problems.length ? problems.join("; ") : "Tidak ada masalah signifikan terdeteksi";
 
   const evidence = {
@@ -122,7 +167,12 @@ export function explainRisk(s, customer) {
   };
 
   let recommendedAction;
-  if (s.isNeglected && (s.hasLocation || s.hasKeywordOrPhrase)) {
+  if (s.latestMessageIntent === "NETRAL_AMBIGU") {
+    // Diprioritaskan di atas cabang isNeglected lain — jangan sampai
+    // rekomendasi menyiratkan "pelanggan siap"/minat kuat padahal pesan
+    // terakhirnya genuinely ambigu.
+    recommendedAction = `Cek manual balasan ${customer.name || "pelanggan ini"} — pesan terakhirnya terlalu pendek/ambigu utk disimpulkan otomatis, jangan diperlakukan sebagai sinyal minat.`;
+  } else if (s.isNeglected && (s.hasLocation || s.hasKeywordOrPhrase)) {
     recommendedAction = `Segera hubungi ${customer.name || "pelanggan ini"} — pelanggan sudah siap, jangan sampai dingin.`;
   } else if (s.isNeglected) {
     recommendedAction = `Balas pesan ${customer.name || "pelanggan ini"} sekarang, walau belum ada tanda-tanda minat kuat.`;

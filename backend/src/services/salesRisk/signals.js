@@ -66,6 +66,38 @@ function detectNeglect(messagesAsc) {
 // cache (apakah `latestMessageAt` masih match pesan terakhir SEKARANG)
 // dicek DI SINI karena pesan sudah di-flatten di sini juga — hindari
 // flatten dobel.
+// SPAM/link mencurigakan (29 Agustus 2026) — contoh nyata: customer "HRD"
+// kirim link "indomaerts.com/..." (bukan domain Sano/dikenal), tanpa konteks
+// pembelian apa pun → kemungkinan besar link phishing/spam, bukan sinyal
+// risiko sales sungguhan. Deteksi struktural (regex URL + allowlist domain),
+// BUKAN klasifikasi LLM — ini murni "apakah ada URL asing", tidak butuh
+// pemahaman bahasa. Dipakai index.js utk MENGECUALIKAN customer ybs dari
+// hasil sama sekali (bukan cuma turun tier) KALAU tidak ada hasKeywordOrPhrase
+// yang menyertainya (lihat computeAllSalesRisks).
+const URL_PATTERN = /(https?:\/\/[^\s]+)|(\bwww\.[a-z0-9-]+\.[a-z]{2,}[^\s]*)|(\b[a-z0-9-]+\.(?:com|id|net|org|xyz|info|biz|link|click)\b[^\s]*)/gi;
+const KNOWN_SAFE_DOMAINS = [
+  "sanomatrassehat.com",
+  "klinikmatras.com",
+  "wa.me",
+  "whatsapp.com",
+  "maps.google.com",
+  "goo.gl",
+  "google.com/maps",
+];
+function detectSuspiciousLink(recentInbound) {
+  for (const m of recentInbound) {
+    const text = m.content || "";
+    const matches = text.match(URL_PATTERN);
+    if (!matches) continue;
+    for (const raw of matches) {
+      const url = raw.toLowerCase();
+      const isKnown = KNOWN_SAFE_DOMAINS.some((d) => url.includes(d));
+      if (!isKnown) return true;
+    }
+  }
+  return false;
+}
+
 function detectBuyingIntent(messagesAsc, cachedRow) {
   const recentInbound = messagesAsc.filter((m) => m.direction === "INBOUND").slice(-5);
   const lastInbound = recentInbound[recentInbound.length - 1] || null;
@@ -73,6 +105,7 @@ function detectBuyingIntent(messagesAsc, cachedRow) {
 
   const hasLocation = recentInbound.some((m) => m.rawType === "location" || m.mediaType === "location");
   const hasComplaintLikeKeyword = KEYWORDS.complaint.test(recentText); // dipakai trainingMap.js, bukan skor — TIDAK diubah
+  const hasSuspiciousLink = detectSuspiciousLink(recentInbound);
 
   const cacheValid =
     cachedRow && lastInbound && cachedRow.latestMessageAt.getTime() === new Date(lastInbound.createdAt).getTime();
@@ -82,12 +115,18 @@ function detectBuyingIntent(messagesAsc, cachedRow) {
   // yang sama dipakai di seluruh investigasi akuiPresent/galiPresent).
   const latestMessageIntent = cacheValid ? cachedRow.latestMessageIntent : null;
   const hasKeywordOrPhrase = latestMessageIntent === "MINAT_AKTIF";
+  // Kemungkinan spam: ada link asing DAN tidak ada konteks pembelian apa pun
+  // (belum tentu terklasifikasi MINAT_AKTIF — hasKeywordOrPhrase cukup jadi
+  // penanda "ada niat beli nyata di sekitar link ini").
+  const isProbablySpam = hasSuspiciousLink && !hasKeywordOrPhrase;
 
   return {
     hasKeywordOrPhrase,
     hasLocation,
     hasBuyingIntent: hasKeywordOrPhrase || hasLocation,
     hasComplaintLikeKeyword,
+    hasSuspiciousLink,
+    isProbablySpam,
     recentInboundQuote: lastInbound?.content || null,
     latestMessageIntent,
   };

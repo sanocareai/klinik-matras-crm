@@ -79,6 +79,13 @@ export function buildSalesRiskForCustomer(customer, cachedRow = null) {
     // (GET /conversations/:id/peek, side-effect-free). Murni presentasi,
     // TIDAK dipakai di mana pun dalam perhitungan risk di atas.
     conversationId: customer.conversations?.[0]?.id || null,
+    // isProbablySpam (29 Agustus 2026) — dari signals.js (link asing + tidak
+    // ada konteks pembelian). BUKAN bagian dari `risk`/skor — dibaca
+    // computeAllSalesRisks utk MENGECUALIKAN customer ybs dari hasil sama
+    // sekali, lihat catatan di sana. Diekspos sbg field biasa (bukan
+    // dihapus lagi setelah difilter) supaya kasus ini masih bisa dihitung/
+    // dilaporkan diagnostik tanpa query ulang.
+    isProbablySpam: signals.isProbablySpam,
     ...risk,
   };
 }
@@ -98,7 +105,17 @@ export async function computeAllSalesRisks({ limit = DEFAULT_CANDIDATE_LIMIT } =
     prisma.salesRiskIntentClassification.findMany(),
   ]);
   const intentByCustomer = new Map(intentRows.map((r) => [r.customerId, r]));
-  return candidates.map((c) => buildSalesRiskForCustomer(c, intentByCustomer.get(c.id) || null));
+  const built = candidates.map((c) => buildSalesRiskForCustomer(c, intentByCustomer.get(c.id) || null));
+  // isProbablySpam (29 Agustus 2026) → KECUALIKAN dari hasil sama sekali,
+  // bukan cuma turun tier (beda dgn gerbang PENOLAKAN/NETRAL_AMBIGU di
+  // riskScore.js — link asing tanpa konteks pembelian bukan "risiko sales
+  // yang butuh follow-up", kemungkinan besar bukan customer sungguhan sama
+  // sekali). Return TETAP array polos (bentuk lama, dipakai banyak caller —
+  // hub Sales Performance, route ini, MCP Hub) — TIDAK diubah jadi
+  // {risks, excludedCount} supaya tidak breaking semua consumer yang sudah
+  // ada; jumlah yang terkecualikan dihitung terpisah lewat script
+  // diagnostik saat verifikasi, bukan field permanen di sini.
+  return built.filter((r) => !r.isProbablySpam);
 }
 
 // ── Agregasi (poin 8): per customer (daftar mentah di atas), per sales

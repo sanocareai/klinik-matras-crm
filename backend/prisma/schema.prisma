@@ -753,7 +753,7 @@ model StaleLeadAlertLog {
 model SalesRiskIntentClassification {
   customerId          String   @id
   customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  latestMessageIntent String // MINAT_AKTIF | PENOLAKAN | PLEASANTRY_PENUTUP | PERTANYAAN_MENGGANTUNG | NETRAL
+  latestMessageIntent String // MINAT_AKTIF | PENOLAKAN | PLEASANTRY_PENUTUP | PERTANYAAN_MENGGANTUNG | NETRAL | NETRAL_AMBIGU
   latestMessageAt     DateTime // timestamp pesan INBOUND yang dievaluasi — kunci validitas cache
   classifiedAt        DateTime @default(now())
 }
