@@ -34,6 +34,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, Alert, ScrollView,
 } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
@@ -190,18 +191,46 @@ export default function OrderFormModal({
   // tetap menempel di DASAR layar (overlay justifyContent:"flex-end"), jadi
   // tetap di belakang keyboard walau tingginya sudah dikecilkan.
   const { maxHeight: sheetMaxHeight, overlayStyle } = useSheetMaxHeight(0.88);
-  const [products, setProducts] = useState([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState(null);
+
+  // Katalog produk, opsi form, & promo aktif (29 Agustus 2026, migrasi ke
+  // react-query — review performa sebelum EAS build) — SEBELUMNYA fetch
+  // manual di useEffect setiap kali modal ini dibuka (dependency [visible,
+  // order]), jadi setiap "+ Order" ditekan, 3 request ini jalan ULANG dari
+  // nol walau datanya nyaris tidak pernah berubah dalam 1 sesi kerja sales.
+  // `enabled: visible` menjaga query tidak jalan sama sekali saat modal
+  // tertutup; react-query sendiri yang memutuskan cache masih segar (skip
+  // network) atau sudah basi (refetch diam-diam di background) — bukan
+  // "selalu fetch" (lama) atau "cache selamanya" (salah arah lain), staleTime
+  // yang menentukan proporsinya.
+  const { data: products = [], isLoading: loadingProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: api.getProducts,
+    enabled: visible,
+    staleTime: 5 * 60 * 1000, // katalog produk jarang berubah dalam sesi kerja
+  });
 
   // orderOptions: opsional — kalau parent (CustomerProfileContent.js) sudah
   // fetch sekali & pakai ulang buat OrderCard.js juga, cukup dioper lewat
   // prop di sini supaya tidak dobel GET /master-data/order-options tiap
   // modal ini dibuka. Caller lama (belum dikasih prop ini) tetap jalan —
-  // fallback fetch sendiri seperti sebelumnya.
-  const [orderOptionsState, setOrderOptionsState] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
-  const orderOptions = orderOptionsProp || orderOptionsState;
+  // fallback fetch sendiri lewat react-query, `enabled` dimatikan kalau
+  // prop sudah ada supaya tidak dobel-fetch data yang sama.
+  const { data: orderOptionsFetched } = useQuery({
+    queryKey: ["order-options"],
+    queryFn: api.getOrderOptions,
+    enabled: visible && !orderOptionsProp,
+    staleTime: 5 * 60 * 1000,
+  });
+  const orderOptions = orderOptionsProp || orderOptionsFetched || { jenisLayanan: [], merkKasur: [], ukuranKasur: [] };
+
+  const { data: promos = [] } = useQuery({
+    queryKey: ["promos", "active"],
+    queryFn: () => api.getPromos({ active: true }),
+    enabled: visible,
+    staleTime: 60 * 1000, // promo bisa mulai/berakhir lebih sering drpd katalog produk
+  });
   const [category, setCategory] = useState("LAYANAN");
   // Lini Produk & Jenis Produk (29 Agustus 2026, paritas dgn web) — TIDAK
   // BISA diubah setelah order dibuat, sama seperti Kategori di atas (lihat
@@ -268,11 +297,11 @@ export default function OrderFormModal({
   const [deleting, setDeleting] = useState(false);
 
   // D-026 — promo cuma PENANDA (lihat catatan panjang di schema.prisma
-  // model Promo), sama seperti web (OrderSection.jsx). `promos` HANYA yang
-  // aktif (?active=true) — order lama yang pakai kampanye yang sudah
-  // berakhir tetap menampilkan namanya dari `order.promo` (di-include
-  // backend), tidak butuh daftar ini untuk itu, lihat promoLabel di bawah.
-  const [promos, setPromos] = useState([]);
+  // model Promo), sama seperti web (OrderSection.jsx). `promos` (di-fetch
+  // via react-query di atas) HANYA yang aktif (?active=true) — order lama
+  // yang pakai kampanye yang sudah berakhir tetap menampilkan namanya dari
+  // `order.promo` (di-include backend), tidak butuh daftar ini untuk itu,
+  // lihat promoLabel di bawah.
   const [promoId, setPromoId] = useState("");
   const [showPromoPicker, setShowPromoPicker] = useState(false);
 
@@ -307,12 +336,11 @@ export default function OrderFormModal({
   // order yang beda-beda (lihat CustomerProfileContent.js#editingOrder).
   useEffect(() => {
     if (!visible) return;
-    setLoadingProducts(true);
+    // Products/orderOptions/promos TIDAK di-fetch di sini lagi — sudah
+    // ditangani react-query di atas (`enabled: visible`), yang otomatis
+    // pakai cache kalau masih segar, refetch diam-diam kalau sudah basi.
     setSearch("");
     setSelectedProductId(null);
-    api.getProducts().then(setProducts).catch(() => {}).finally(() => setLoadingProducts(false));
-    if (!orderOptionsProp) api.getOrderOptions().then(setOrderOptionsState).catch(() => {});
-    api.getPromos({ active: true }).then(setPromos).catch(() => {});
 
     if (order) {
       const info = parseNotes(order.notes);
