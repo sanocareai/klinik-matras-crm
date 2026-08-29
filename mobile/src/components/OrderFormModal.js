@@ -36,7 +36,7 @@ import {
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { Package, X, Trash2 } from "lucide-react-native";
+import { Package, X, Trash2, Layers, Tag, Plus } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
@@ -124,6 +124,23 @@ function hargaStatus(it, tokens) {
 }
 function newWeightEntry() {
   return { key: String(Date.now()) + Math.random(), label: "", beratKg: "" };
+}
+
+// Kepala seksi — pemisah visual antar kelompok field (29 Agustus 2026,
+// permintaan owner "UI-nya boring & flat sekali"). Form ini sebelumnya cuma
+// tumpukan label+input tanpa hierarki sama sekali, jadi 20+ field terbaca
+// seperti satu daftar panjang tanpa awal/akhir. Garis + ikon + judul kecil
+// memberi jeda yang bikin mata tahu "bagian ini sudah beda urusan".
+function SectionHead({ icon: Icon, title, tokens, styles }) {
+  return (
+    <View style={styles.sectionHead}>
+      <View style={styles.sectionHeadIcon}>
+        <Icon size={13} color={tokens.color.accent} strokeWidth={2.4} />
+      </View>
+      <Text style={styles.sectionHeadText}>{title}</Text>
+      <View style={styles.sectionHeadLine} />
+    </View>
+  );
 }
 function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer }) {
   return JSON.stringify({ merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "" });
@@ -262,12 +279,13 @@ export default function OrderFormModal({
   // walau nilainya sendiri bisa null (customer belum punya stage).
   const [pipelineStage, setPipelineStage] = useState(null);
   const [savingStage, setSavingStage] = useState(false);
-  // FITUR (tambahan): Order.quantity SUDAH ada di backend (default 1, dipakai
-  // POST /customers/:id/orders & PATCH /orders/:id) tapi belum pernah
-  // di-expose di form manapun (web maupun mobile) — selalu diam-diam ke-set
-  // default 1. Ditambahkan di sini per permintaan, form web belum menyusul
-  // (di luar scope task ini).
-  const [quantity, setQuantity] = useState("1");
+  // Field "Jumlah" (Order.quantity) DIHAPUS dari form ini (29 Agustus 2026,
+  // permintaan owner) — sudah tidak relevan sejak ada daftar "Layanan yang
+  // diambil": banyaknya pekerjaan sekarang dinyatakan lewat baris layanan,
+  // bukan satu angka global yang artinya kabur. Kolom quantity di database
+  // TIDAK dihapus dan TIDAK ikut dikirim lagi dari sini: order baru memakai
+  // default backend (1), order lama tetap memegang angkanya sendiri karena
+  // PATCH hanya menyentuh field yang dikirim.
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
   // D-027: kota + alamat pengiriman order ini — TERPISAH dari Customer.city
@@ -353,7 +371,6 @@ export default function OrderFormModal({
       setStatus(order.status || "PENDING");
       setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
       setPipelineStage(order.pipelineStage ?? null);
-      setQuantity(order.quantity ? String(order.quantity) : "1");
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
       setDeliveryCity(order.deliveryCity || "");
@@ -388,7 +405,6 @@ export default function OrderFormModal({
       setStatus("PENDING");
       setPaymentStatus("BELUM_BAYAR");
       setPipelineStage(null);
-      setQuantity("1");
       setMerkKasur("");
       setUkuran("");
       setDeliveryCity("");
@@ -413,6 +429,10 @@ export default function OrderFormModal({
   const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
 
   const variantKey = resolveVariantKey({ productLine, productType, ukuran });
+  // Dipakai di label/placeholder yang menyebut nama lini produk. Field yang
+  // memakainya HANYA dirender setelah productLine dipilih (lihat gerbang
+  // !productLine di render), jadi di sana nilainya tidak akan pernah kosong.
+  const lineLabel = PRODUCT_LINE_LABELS[productLine] || "";
 
   // Muat katalog begitu Lini Produk + varian diketahui (29 Agustus 2026,
   // paritas dgn web). Kalau varian belum bisa ditentukan (mis. "Ukuran
@@ -483,7 +503,6 @@ export default function OrderFormModal({
       category,
       productLine,
       productType: productType || undefined,
-      quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       promoId: promoId || undefined,
       deliveryCity: deliveryCity || undefined,
@@ -552,7 +571,6 @@ export default function OrderFormModal({
     await api.updateOrder(order.id, {
       status,
       paymentStatus,
-      quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       promoId: promoId || null,
       deliveryCity: deliveryCity || null,
@@ -875,35 +893,152 @@ export default function OrderFormModal({
               </>
             )}
 
-            {/* Jumlah (quantity) — field baru, sebelumnya cuma tersimpan
-                diam-diam sebagai default 1 di backend, tidak pernah bisa
-                diubah dari form manapun. */}
-            <Text style={styles.label}>Jumlah</Text>
-            <View style={styles.quantityRow}>
-              <TouchableOpacity
-                style={styles.quantityBtn}
-                onPress={() => setQuantity((q) => String(Math.max(1, (Number(q) || 1) - 1)))}
-              >
-                <Text style={styles.quantityBtnText}>−</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.quantityInput}
-                value={quantity}
-                onChangeText={(v) => setQuantity(v.replace(/[^0-9]/g, ""))}
-                onBlur={() => setQuantity((q) => (Number(q) > 0 ? String(Number(q)) : "1"))}
-                keyboardType="numeric"
-                textAlign="center"
-              />
-              <TouchableOpacity
-                style={styles.quantityBtn}
-                onPress={() => setQuantity((q) => String((Number(q) || 1) + 1))}
-              >
-                <Text style={styles.quantityBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
+            {/* ── DETAIL PRODUK & LAYANAN ─────────────────────────────────
+                Blok ini DINAIKKAN ke sini (29 Agustus 2026, permintaan
+                owner) — tepat di bawah Lini/Jenis Produk, karena inilah inti
+                ordernya. Ukuran IKUT naik & WAJIB di atas daftar harga: dia
+                yang menentukan variantKey katalog, jadi mustahil menaruh
+                daftar harga sebelum ukuran diketahui.
 
-            {/* Produk cepat — hanya relevan utk Service/Upgrade */}
-            {isLayanan && (
+                Digerbang `productLine` (BUG DIPERBAIKI 29 Agustus 2026):
+                sebelumnya, selama Lini Produk belum dipilih, form sudah
+                terlanjur menampilkan varian Sofa/Divan (input bebas) dan
+                labelnya jadi "Merk/Model " + placeholder berspasi ganda
+                ("cth: merk  yang sudah...") karena PRODUCT_LINE_LABELS[""]
+                undefined. Sekarang field yang bergantung lini produk baru
+                muncul setelah lininya dipilih. */}
+            {!productLine ? (
+              <View style={styles.hintCard}>
+                <Layers size={15} color={tokens.color.accent} strokeWidth={2.2} />
+                <Text style={styles.hintCardText}>
+                  Pilih Lini Produk dulu — detail produk, daftar harga, dan layanan
+                  menyesuaikan pilihan itu.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <SectionHead icon={Package} title="Detail Produk" tokens={tokens} styles={styles} />
+
+                {/* Merk — utk BARU/SEWA SELALU "Sano ✓" (produk kami sendiri,
+                    apa pun lini produknya). Utk Service/Upgrade: dropdown
+                    kurasi Settings KHUSUS Kasur; Sofa/Divan belum punya
+                    daftar merk terkurasi, jadi input bebas menanyakan merk
+                    EXISTING milik customer — paritas dgn web. */}
+                <Text style={styles.label}>{isKasur ? "Merk Kasur" : `Merk/Model ${lineLabel}`}</Text>
+                {!isLayanan ? (
+                  <Text style={styles.forcedSano}>Sano ✓</Text>
+                ) : isKasur ? (
+                  <TouchableOpacity style={styles.selectBox} onPress={() => setShowMerkPicker(true)}>
+                    <Text style={styles.selectBoxText}>{merkKasur || "— Pilih Merk —"}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    placeholder={`cth: merk ${lineLabel.toLowerCase()} yang sudah dimiliki customer`}
+                    placeholderTextColor={tokens.color.textMuted}
+                    value={merkKasur}
+                    onChangeText={setMerkKasur}
+                  />
+                )}
+
+                {/* Ukuran — dropdown lebar (90-200) utk Kasur DAN Divan
+                    (variantKey katalog harga dua-duanya sama-sama lebar);
+                    Sofa input bebas (variant-nya dari Jenis Produk). */}
+                <Text style={styles.label}>
+                  {usesUkuranDropdown
+                    ? (isKasur ? "Ukuran Kasur" : `Ukuran ${lineLabel}`)
+                    : `Ukuran/Konfigurasi ${lineLabel}`}
+                </Text>
+                {usesUkuranDropdown ? (
+                  <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
+                    <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="cth: 3 seater, abu-abu"
+                    placeholderTextColor={tokens.color.textMuted}
+                    value={ukuran}
+                    onChangeText={setUkuran}
+                  />
+                )}
+
+                {/* ── Katalog harga ───────────────────────────────────────
+                    Muncul begitu Lini Produk + varian diketahui. Kalau
+                    katalog kosong/gagal/varian belum bisa ditentukan
+                    ("Ukuran Custom"), bagian ini disembunyikan dan form
+                    kembali ke isian bebas — bukan error. */}
+                {isLayanan && (
+                  <>
+                    <SectionHead icon={Tag} title="Layanan & Harga" tokens={tokens} styles={styles} />
+
+                    {catalogLoading && (
+                      <View style={styles.catalogLoadingRow}>
+                        <ActivityIndicator size="small" color={tokens.color.accent} />
+                        <Text style={styles.catalogMuted}>Memuat daftar harga…</Text>
+                      </View>
+                    )}
+
+                    {!catalogLoading && catalog.length > 0 && (
+                      <>
+                        <Text style={styles.subLabel}>
+                          Dari daftar harga ({lineLabel}
+                          {productLine === "SOFA"
+                            ? ` · ${PRODUCT_TYPE_LABELS[productType] || "—"}`
+                            : ` · ukuran ${variantKey}`})
+                        </Text>
+                        <ScrollView
+                          style={styles.catalogBox}
+                          nestedScrollEnabled
+                          keyboardShouldPersistTaps="handled"
+                        >
+                          {catalog.map((p) => {
+                            const sudah = dipakaiDariKatalog.has(p.id);
+                            return (
+                              <TouchableOpacity
+                                key={p.id}
+                                style={[styles.catalogRow, sudah && styles.catalogRowDisabled]}
+                                onPress={() => !sudah && addFromCatalog(p)}
+                                disabled={sudah}
+                              >
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                  <Text style={styles.catalogName} numberOfLines={2}>{p.name}</Text>
+                                  <Text style={styles.catalogKind}>
+                                    {PRICE_ITEM_KIND_LABELS[p.kind] || p.kind}
+                                    {sudah ? " · sudah ditambahkan" : ""}
+                                  </Text>
+                                </View>
+                                <View style={{ alignItems: "flex-end" }}>
+                                  {p.belumBerharga ? (
+                                    <Text style={styles.catalogMuted}>harga belum diset</Text>
+                                  ) : (
+                                    <>
+                                      {p.normalPrice != null && (
+                                        <Text style={styles.catalogNormal}>{formatRupiah(p.normalPrice)}</Text>
+                                      )}
+                                      {p.standardPrice != null && (
+                                        <Text style={styles.catalogStandard}>{formatRupiah(p.standardPrice)}</Text>
+                                      )}
+                                    </>
+                                  )}
+                                </View>
+                                {!sudah && (
+                                  <View style={styles.catalogAddBtn}>
+                                    <Plus size={14} color={tokens.color.accent} strokeWidth={2.6} />
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {/* Produk cepat (Galeri Produk) — pelengkap katalog harga,
+                    utk layanan yang tidak ada di daftar harga. */}
+                {isLayanan && (
               <FlatList
                 data={filtered}
                 keyExtractor={(p) => p.id}
@@ -941,6 +1076,106 @@ export default function OrderFormModal({
                   );
                 }}
               />
+                )}
+
+                {/* ── Layanan yang diambil ────────────────────────────────
+                    Tiap layanan jadi KARTU sendiri (bukan baris datar
+                    seperti sebelumnya): nama + kategori di atas, lalu DUA
+                    kotak referensi harga bersebelahan (Normal & Standard —
+                    dua-duanya ditampilkan, muat di layar HP karena
+                    angkanya dipendekkan & label-nya kecil), lalu input
+                    Harga Final yang paling menonjol, lalu penanda posisi
+                    nego. Ini jawaban "skema terbaik" utk pertanyaan owner:
+                    normal & standard SAMA-SAMA tampil sebagai referensi
+                    diam, harga final yang jadi bintangnya karena itu satu-
+                    satunya yang diisi manusia. */}
+                {isLayanan && (
+                  <>
+                    <Text style={styles.subLabel}>Layanan yang diambil</Text>
+                    {items.map((it) => {
+                      const st = hargaStatus(it, tokens);
+                      const dariKatalog = !!it.priceItemId;
+                      const adaReferensi = it.normalPrice != null || it.standardPrice != null;
+                      return (
+                        <View key={it.key} style={styles.svcCard}>
+                          <View style={styles.svcHead}>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              {dariKatalog ? (
+                                <>
+                                  <Text style={styles.svcName} numberOfLines={2}>{it.layananName}</Text>
+                                  <Text style={styles.svcMeta}>
+                                    {PRICE_ITEM_KIND_LABELS[it.kind] || "Layanan"} · dari daftar harga
+                                  </Text>
+                                </>
+                              ) : (
+                                <TextInput
+                                  style={styles.svcNameInput}
+                                  placeholder="Nama layanan…"
+                                  placeholderTextColor={tokens.color.textMuted}
+                                  value={it.layananName}
+                                  onChangeText={(v) => setItemField(it.key, "layananName", v)}
+                                />
+                              )}
+                            </View>
+                            {!dariKatalog && (
+                              <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
+                                <Text style={styles.pickBtnText}>Pilih</Text>
+                              </TouchableOpacity>
+                            )}
+                            {items.length > 1 && (
+                              <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
+                                <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+
+                          {adaReferensi && (
+                            <View style={styles.priceRefRow}>
+                              <View style={styles.priceChip}>
+                                <Text style={styles.priceChipLabel}>NORMAL</Text>
+                                <Text style={styles.priceChipValue}>
+                                  {it.normalPrice != null ? formatRupiah(it.normalPrice) : "—"}
+                                </Text>
+                              </View>
+                              <View style={[styles.priceChip, styles.priceChipStd]}>
+                                <Text style={[styles.priceChipLabel, styles.priceChipLabelStd]}>STANDARD</Text>
+                                <Text style={[styles.priceChipValue, styles.priceChipValueStd]}>
+                                  {it.standardPrice != null ? formatRupiah(it.standardPrice) : "—"}
+                                </Text>
+                              </View>
+                            </View>
+                          )}
+
+                          <Text style={styles.svcFinalLabel}>Harga final</Text>
+                          <TextInput
+                            style={[
+                              styles.svcFinalInput,
+                              st?.tone === "under" && { borderColor: tokens.color.danger },
+                            ]}
+                            placeholder="0"
+                            placeholderTextColor={tokens.color.textMuted}
+                            value={it.harga}
+                            onChangeText={(v) => setItemField(it.key, "harga", v)}
+                            keyboardType="numeric"
+                          />
+                          {st && (
+                            <View style={[styles.svcStatus, { backgroundColor: `${st.color}1f` }]}>
+                              <Text style={[styles.svcStatusText, { color: st.color }]}>{st.text}</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                    <TouchableOpacity onPress={addItem}>
+                      <Text style={styles.linkText}>+ Tambah layanan di luar daftar harga</Text>
+                    </TouchableOpacity>
+                    <View style={styles.totalBar}>
+                      <Text style={styles.totalBarLabel}>Total</Text>
+                      <Text style={styles.totalBarValue}>{formatRupiah(totalItems)}</Text>
+                    </View>
+                  </>
+                )}
+              </>
             )}
 
             {/* Berat Badan — multi-orang. KHUSUS Kasur (fitting kekerasan
@@ -975,51 +1210,6 @@ export default function OrderFormModal({
                 ))}
                 <TouchableOpacity onPress={addWeight}><Text style={styles.linkText}>+ Tambah Orang</Text></TouchableOpacity>
               </>
-            )}
-
-            {/* Merk — utk BARU/SEWA SELALU "Sano ✓" (produk kami sendiri,
-                apa pun lini produknya). Utk Service/Upgrade: dropdown kurasi
-                Settings KHUSUS Kasur; Sofa/Divan belum punya daftar merk
-                terkurasi, jadi input bebas menanyakan merk EXISTING milik
-                customer — paritas dgn web. */}
-            <Text style={styles.label}>{isKasur ? "Merk Kasur" : `Merk/Model ${PRODUCT_LINE_LABELS[productLine] || ""}`}</Text>
-            {!isLayanan ? (
-              <Text style={styles.forcedSano}>Sano ✓</Text>
-            ) : isKasur ? (
-              <TouchableOpacity style={styles.selectBox} onPress={() => setShowMerkPicker(true)}>
-                <Text style={styles.selectBoxText}>{merkKasur || "— Pilih Merk —"}</Text>
-              </TouchableOpacity>
-            ) : (
-              <TextInput
-                style={styles.input}
-                placeholder={`cth: merk ${(PRODUCT_LINE_LABELS[productLine] || "").toLowerCase()} yang sudah dimiliki customer`}
-                placeholderTextColor={tokens.color.textMuted}
-                value={merkKasur}
-                onChangeText={setMerkKasur}
-              />
-            )}
-
-            {/* Ukuran — dropdown lebar (90-200) utk Kasur DAN Divan
-                (variantKey katalog harga dua-duanya sama-sama lebar); Sofa
-                input bebas (variant-nya dari Jenis Produk) — paritas dgn
-                web, termasuk fix bug variantKey Divan. */}
-            <Text style={styles.label}>
-              {usesUkuranDropdown
-                ? (isKasur ? "Ukuran Kasur" : `Ukuran ${PRODUCT_LINE_LABELS[productLine] || ""}`)
-                : `Ukuran/Konfigurasi ${PRODUCT_LINE_LABELS[productLine] || ""}`}
-            </Text>
-            {usesUkuranDropdown ? (
-              <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
-                <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
-              </TouchableOpacity>
-            ) : (
-              <TextInput
-                style={styles.input}
-                placeholder="cth: 3 seater, abu-abu"
-                placeholderTextColor={tokens.color.textMuted}
-                value={ukuran}
-                onChangeText={setUkuran}
-              />
             )}
 
             {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
@@ -1207,115 +1397,6 @@ export default function OrderFormModal({
               </>
             )}
 
-            {/* Katalog harga (29 Agustus 2026, paritas dgn web) — muncul
-                begitu Lini Produk + varian diketahui. Kalau katalog kosong/
-                gagal/varian belum bisa ditentukan ("Ukuran Custom"), bagian
-                ini disembunyikan dan form kembali ke isian bebas — bukan
-                error, form tetap bisa dipakai. */}
-            {isLayanan && catalogLoading && (
-              <Text style={[styles.selectBoxText, { marginTop: 10 }]}>Memuat daftar harga…</Text>
-            )}
-            {isLayanan && !catalogLoading && catalog.length > 0 && (
-              <>
-                <Text style={styles.label}>
-                  Pilih dari daftar harga{" "}
-                  <Text style={{ fontWeight: "400", color: tokens.color.textMuted }}>
-                    ({PRODUCT_LINE_LABELS[productLine]} · {productLine === "SOFA" ? PRODUCT_TYPE_LABELS[productType] : `ukuran ${variantKey}`})
-                  </Text>
-                </Text>
-                {/* BUG DITEMUKAN & DIPERBAIKI (29 Agustus 2026, review
-                    sebelum EAS build): sebelumnya <View> biasa dgn
-                    maxHeight — di RN, View TIDAK bisa di-scroll sama sekali
-                    (beda dari web, overflow:auto pada <div> jalan). Kalau
-                    katalog lebih panjang dari maxHeight (Kasur ukuran 160
-                    saja sudah 21 layanan), item di bawah SECARA FISIK
-                    tidak terjangkau — bukan cuma terpotong visual, benar-
-                    benar tidak bisa di-tap. nestedScrollEnabled wajib di
-                    Android krn ScrollView ini bersarang di dalam
-                    ScrollView utama form. */}
-                <ScrollView style={styles.catalogBox} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {catalog.map((p) => {
-                    const sudah = dipakaiDariKatalog.has(p.id);
-                    return (
-                      <TouchableOpacity
-                        key={p.id}
-                        style={[styles.catalogRow, sudah && styles.catalogRowDisabled]}
-                        onPress={() => !sudah && addFromCatalog(p)}
-                        disabled={sudah}
-                      >
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={styles.catalogName} numberOfLines={1}>{p.name}</Text>
-                          <Text style={styles.catalogKind}>
-                            {PRICE_ITEM_KIND_LABELS[p.kind] || p.kind}{sudah ? " · sudah ditambahkan" : ""}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: "flex-end" }}>
-                          {p.belumBerharga ? (
-                            <Text style={styles.catalogMuted}>harga belum ditetapkan</Text>
-                          ) : (
-                            <>
-                              {p.normalPrice != null && <Text style={styles.catalogNormal}>Normal {formatRupiah(p.normalPrice)}</Text>}
-                              {p.standardPrice != null && <Text style={styles.catalogStandard}>Standard {formatRupiah(p.standardPrice)}</Text>}
-                            </>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            )}
-
-            {/* Layanan (add-ons) — hanya LAYANAN */}
-            {isLayanan && (
-              <>
-                <Text style={styles.label}>Layanan yang diambil</Text>
-                {items.map((it) => {
-                  const st = hargaStatus(it, tokens);
-                  return (
-                    <View key={it.key} style={styles.itemBlock}>
-                      <View style={styles.itemRow}>
-                        <TextInput
-                          style={[styles.input, { flex: 1 }]}
-                          placeholder="Nama layanan…"
-                          placeholderTextColor={tokens.color.textMuted}
-                          value={it.layananName}
-                          onChangeText={(v) => setItemField(it.key, "layananName", v)}
-                        />
-                        <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
-                          <Text style={styles.pickBtnText}>Pilih</Text>
-                        </TouchableOpacity>
-                        {items.length > 1 && (
-                          <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
-                            <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                      <TextInput
-                        style={[styles.input, st?.tone === "under" && { borderWidth: 1, borderColor: tokens.color.danger }]}
-                        placeholder="Harga final (Rp)"
-                        placeholderTextColor={tokens.color.textMuted}
-                        value={it.harga}
-                        onChangeText={(v) => setItemField(it.key, "harga", v)}
-                        keyboardType="numeric"
-                      />
-                      {/* Referensi harga + penanda posisi nego — cuma muncul
-                          utk item dari katalog. */}
-                      {(it.normalPrice != null || it.standardPrice != null) && (
-                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
-                          {it.normalPrice != null && <Text style={styles.catalogMuted}>Normal {formatRupiah(it.normalPrice)}</Text>}
-                          {it.standardPrice != null && <Text style={styles.catalogStandard}>Standard {formatRupiah(it.standardPrice)}</Text>}
-                          {st && <Text style={{ fontSize: 10.5, fontWeight: "700", color: st.color }}>{st.text}</Text>}
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-                <TouchableOpacity onPress={addItem}><Text style={styles.linkText}>+ Tambah layanan di luar daftar harga</Text></TouchableOpacity>
-                <Text style={styles.previewValue}>Total: {formatRupiah(totalItems)}</Text>
-              </>
-            )}
-
             <TouchableOpacity
               style={[styles.submitBtn, (saving || locked) && { opacity: 0.6 }]}
               onPress={handleSubmit}
@@ -1410,16 +1491,27 @@ function createStyles(tokens) {
     alignItems: "center", paddingVertical: 8, paddingHorizontal: 10, borderRadius: tokens.radius.control,
     borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
   },
-  quantityRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  quantityBtn: {
-    width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+  // ── Kepala seksi (pemisah visual antar kelompok field) ──
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 22, marginBottom: 2 },
+  sectionHeadIcon: {
+    width: 24, height: 24, borderRadius: 8, alignItems: "center", justifyContent: "center",
+    backgroundColor: tokens.color.accentSoft,
   },
-  quantityBtnText: { fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary },
-  quantityInput: {
-    width: 56, backgroundColor: tokens.color.subtle, borderRadius: 10, paddingVertical: 9,
-    fontSize: 15, fontWeight: "600", color: tokens.color.textPrimary,
+  sectionHeadText: {
+    fontSize: 11.5, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase",
+    color: tokens.color.textSecondary,
   },
+  sectionHeadLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: tokens.color.border },
+  subLabel: {
+    fontSize: 11.5, fontWeight: "600", color: tokens.color.textMuted,
+    marginTop: 14, marginBottom: 6,
+  },
+  // Kartu petunjuk saat Lini Produk belum dipilih
+  hintCard: {
+    flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16,
+    padding: 14, borderRadius: 12, backgroundColor: tokens.color.accentSoft,
+  },
+  hintCardText: { flex: 1, fontSize: 12.5, lineHeight: 18, color: tokens.color.textSecondary },
   productSearch: {
     backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
     fontSize: 13, color: tokens.color.textPrimary, width: 140, marginRight: 4,
@@ -1463,12 +1555,55 @@ function createStyles(tokens) {
     paddingVertical: 10, paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
   },
-  catalogRowDisabled: { opacity: 0.5 },
+  catalogRowDisabled: { opacity: 0.45 },
   catalogName: { fontSize: 13, fontWeight: "600", color: tokens.color.textPrimary },
   catalogKind: { fontSize: 10.5, color: tokens.color.textMuted, marginTop: 2 },
   catalogMuted: { fontSize: 10.5, color: tokens.color.textMuted },
-  catalogNormal: { fontSize: 10.5, color: tokens.color.textSecondary },
-  catalogStandard: { fontSize: 10.5, fontWeight: "700", color: "#c2570b" },
+  catalogNormal: { fontSize: 10.5, color: tokens.color.textMuted, textDecorationLine: "line-through" },
+  catalogStandard: { fontSize: 12, fontWeight: "800", color: "#e07b1f", marginTop: 1 },
+  catalogLoadingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
+  catalogAddBtn: {
+    width: 26, height: 26, borderRadius: 8, alignItems: "center", justifyContent: "center",
+    backgroundColor: tokens.color.accentSoft, marginLeft: 8,
+  },
+
+  // ── Kartu layanan yang diambil ──
+  // Tiap layanan punya kartunya sendiri supaya 3 angka harga (normal /
+  // standard / final) punya ruang yang terbaca di layar HP — versi datar
+  // sebelumnya menempelkan semuanya jadi satu baris kecil yang sulit dipindai.
+  svcCard: {
+    backgroundColor: tokens.color.card, borderRadius: 14, padding: 12, marginBottom: 10,
+    borderWidth: 1, borderColor: tokens.color.border,
+  },
+  svcHead: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  svcName: { fontSize: 13.5, fontWeight: "700", color: tokens.color.textPrimary, lineHeight: 18 },
+  svcMeta: { fontSize: 10.5, color: tokens.color.textMuted, marginTop: 2 },
+  svcNameInput: {
+    backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    fontSize: 13.5, color: tokens.color.textPrimary,
+  },
+  priceRefRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  priceChip: { flex: 1, backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  priceChipStd: { backgroundColor: "#e07b1f1f" },
+  priceChipLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.6, color: tokens.color.textMuted },
+  priceChipLabelStd: { color: "#e07b1f" },
+  priceChipValue: { fontSize: 12.5, fontWeight: "700", color: tokens.color.textSecondary, marginTop: 2 },
+  priceChipValueStd: { color: "#e07b1f" },
+  svcFinalLabel: { fontSize: 10.5, fontWeight: "700", letterSpacing: 0.4, color: tokens.color.textMuted, marginTop: 12, marginBottom: 5 },
+  svcFinalInput: {
+    backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11,
+    fontSize: 16, fontWeight: "700", color: tokens.color.textPrimary,
+    borderWidth: 1.5, borderColor: "transparent",
+  },
+  svcStatus: { alignSelf: "flex-start", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
+  svcStatusText: { fontSize: 10.5, fontWeight: "800" },
+  totalBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: tokens.color.accentSoft, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, marginTop: 12,
+  },
+  totalBarLabel: { fontSize: 12.5, fontWeight: "700", color: tokens.color.textSecondary },
+  totalBarValue: { fontSize: 16, fontWeight: "800", color: tokens.color.accent },
   submitBtn: {
     backgroundColor: tokens.color.accent, borderRadius: 14, paddingVertical: 12,
     alignItems: "center", marginTop: 20, marginBottom: 4,
