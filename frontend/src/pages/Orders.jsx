@@ -576,58 +576,111 @@ export default function Orders() {
   }
 
   async function handleExport() {
-    const { exportToExcel } = await import("../utils/export.js");
-    exportToExcel(
-      items.map((o) => {
-        // Merk/ukuran/keluhan kasur disimpan JSON di o.notes, bukan kolom
-        // sendiri — sama parser yang dipakai OrderSection.jsx (drawer
-        // profil pelanggan), supaya export TIDAK PERNAH beda baca dari UI.
-        const info = parseOrderNotes(o.notes);
-        const berat = (o.weightEntries || []).map((w) => `${w.label}: ${w.beratKg}kg`).join(", ");
+    const { exportToExcelMultiSheet } = await import("../utils/export.js");
+
+    const sheetOrder = items.map((o) => {
+      // Merk/ukuran/keluhan kasur disimpan JSON di o.notes, bukan kolom
+      // sendiri — sama parser yang dipakai OrderSection.jsx (drawer
+      // profil pelanggan), supaya export TIDAK PERNAH beda baca dari UI.
+      const info = parseOrderNotes(o.notes);
+      const berat = (o.weightEntries || []).map((w) => `${w.label}: ${w.beratKg}kg`).join(", ");
+      const orderItems = o.items || [];
+      // Ringkasan layanan per ORDER (29 Agustus 2026) — sebelumnya TIDAK
+      // ADA sama sekali kolom yang menunjukkan layanan apa yang dibeli di
+      // sheet ini (cuma "Nilai" total, tanpa rinciannya). Rincian penuh
+      // per-item ada di sheet "Rincian Layanan" di bawah — kolom di sini
+      // cuma RINGKASAN supaya sheet Order tetap 1-baris-1-order.
+      const belowStandardCount = orderItems.filter(
+        (it) => it.standardPrice != null && it.harga < it.standardPrice
+      ).length;
+      return {
+        "ID Order": o.orderNumber || "",
+        Pelanggan: o.customerName || "",
+        "No HP": o.customerPhone || "",
+        Kota: o.customerCity || "",
+        Kategori: KATEGORI_LABELS[o.category] || o.category,
+        Status: ORDER_STATUS_LABELS[o.status] || o.status,
+        "Hari di Status": o.daysInStatus ?? "",
+        Mandek: isMandek(o) ? "Ya" : "",
+        Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
+        // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
+        // di utils/exportLaporan.js soal uang sebagai teks).
+        Nilai: o.value || 0,
+        Komplain: o.hasComplaint ? "Ya" : "",
+        Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
+        "Sales Person": o.assignedSales?.name || "",
+        // Lini/Jenis Produk (29 Agustus 2026) — kolom baru, kasur/sofa/divan.
+        "Lini Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
+        "Jenis Produk": PRODUCT_TYPE_LABELS[o.productType] || "",
+        // Header dilepas dari "Kasur" (dulu satu-satunya produk) — isinya
+        // sekarang bisa merk/ukuran Sofa/Divan juga, lihat OrderSection.jsx.
+        "Merk/Model":            info.merkKasur || "",
+        "Ukuran/Konfigurasi":    info.ukuranKasur || "",
+        "Keluhan/Catatan":       info.keluhanCustomer || "",
+        "Berat Badan": berat,
+        // Ringkasan katalog harga (29 Agustus 2026) — lihat sheet "Rincian
+        // Layanan" utk detail per layanan. Kosong ("") kalau TIDAK ADA item
+        // dari katalog sama sekali (order lama / isian bebas semua) — beda
+        // dari 0, yang berarti "ada item katalog tapi kebetulan Rp0".
+        Layanan: orderItems.map((it) => it.layananName).filter(Boolean).join(", "),
+        "Ada Nego Di Bawah Standard": orderItems.some((it) => it.standardPrice != null)
+          ? (belowStandardCount > 0 ? `Ya (${belowStandardCount})` : "Tidak")
+          : "",
+        // D-028 — kondisi kesehatan & kategori keluhan PER ORDER (beda dari
+        // Customer.healthStatus/complaintCategory di profil pelanggan).
+        "Kondisi Kesehatan": o.healthStatus ? (HEALTH_LABELS[o.healthStatus] || o.healthStatus) : "",
+        "Kategori Keluhan": (o.complaintCategory || []).map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", "),
+        // D-027 — kota/alamat PENGIRIMAN order ini, TERPISAH dari "Kota"
+        // (kota domisili customer) di atas.
+        "Kota Pengiriman":   o.deliveryCity || "",
+        "Alamat Pengiriman": o.deliveryAddress || "",
+        // D-029
+        Ongkir: o.ongkir || 0,
+        "Ongkir Klaim Garansi": o.ongkirKlaimGaransi || 0,
+        "Estimasi Pick Up": o.pickupEstimate || "",
+        "Tanggal Pick Up Pasti": o.pickupConfirmedDate ? o.pickupConfirmedDate.slice(0, 10) : "",
+        "Estimasi Kirim": o.deliveryEstimate || "",
+        "Tanggal Kirim Pasti": o.deliveryConfirmedDate ? o.deliveryConfirmedDate.slice(0, 10) : "",
+        "Link Lokasi": o.locationUrl || "",
+        Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
+      };
+    });
+
+    // Sheet KEDUA (29 Agustus 2026) — 1 BARIS PER ITEM LAYANAN, bukan per
+    // order. Inilah yang sebelumnya TIDAK ADA sama sekali di export manapun:
+    // harga normal/standard/final tersimpan di level OrderItem (satu order
+    // bisa punya beberapa layanan dgn harga berbeda-beda), jadi tidak bisa
+    // direpresentasikan jujur di sheet 1-baris-1-order. Ini sheet yang
+    // dipakai utk pertanyaan "disiplin nego" (per sales, per layanan) —
+    // alasan utama katalog harga ini dibangun.
+    const sheetLayanan = items.flatMap((o) =>
+      (o.items || []).map((it) => {
+        const dariKatalog = it.priceItemId != null;
+        const dibawahStandard = it.standardPrice != null && it.harga < it.standardPrice;
         return {
           "ID Order": o.orderNumber || "",
           Pelanggan: o.customerName || "",
-          "No HP": o.customerPhone || "",
-          Kota: o.customerCity || "",
-          Kategori: KATEGORI_LABELS[o.category] || o.category,
-          Status: ORDER_STATUS_LABELS[o.status] || o.status,
-          "Hari di Status": o.daysInStatus ?? "",
-          Mandek: isMandek(o) ? "Ya" : "",
-          Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
-          // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
-          // di utils/exportLaporan.js soal uang sebagai teks).
-          Nilai: o.value || 0,
-          Komplain: o.hasComplaint ? "Ya" : "",
-          Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
           "Sales Person": o.assignedSales?.name || "",
-          // Lini/Jenis Produk (29 Agustus 2026) — kolom baru, kasur/sofa/divan.
           "Lini Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
-          "Jenis Produk": PRODUCT_TYPE_LABELS[o.productType] || "",
-          // Header dilepas dari "Kasur" (dulu satu-satunya produk) — isinya
-          // sekarang bisa merk/ukuran Sofa/Divan juga, lihat OrderSection.jsx.
-          "Merk/Model":            info.merkKasur || "",
-          "Ukuran/Konfigurasi":    info.ukuranKasur || "",
-          "Keluhan/Catatan":       info.keluhanCustomer || "",
-          "Berat Badan": berat,
-          // D-028 — kondisi kesehatan & kategori keluhan PER ORDER (beda dari
-          // Customer.healthStatus/complaintCategory di profil pelanggan).
-          "Kondisi Kesehatan": o.healthStatus ? (HEALTH_LABELS[o.healthStatus] || o.healthStatus) : "",
-          "Kategori Keluhan": (o.complaintCategory || []).map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", "),
-          // D-027 — kota/alamat PENGIRIMAN order ini, TERPISAH dari "Kota"
-          // (kota domisili customer) di atas.
-          "Kota Pengiriman":   o.deliveryCity || "",
-          "Alamat Pengiriman": o.deliveryAddress || "",
-          // D-029
-          Ongkir: o.ongkir || 0,
-          "Ongkir Klaim Garansi": o.ongkirKlaimGaransi || 0,
-          "Estimasi Pick Up": o.pickupEstimate || "",
-          "Tanggal Pick Up Pasti": o.pickupConfirmedDate ? o.pickupConfirmedDate.slice(0, 10) : "",
-          "Estimasi Kirim": o.deliveryEstimate || "",
-          "Tanggal Kirim Pasti": o.deliveryConfirmedDate ? o.deliveryConfirmedDate.slice(0, 10) : "",
-          "Link Lokasi": o.locationUrl || "",
-          Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
+          Layanan: it.layananName,
+          "Dari Katalog": dariKatalog ? "Ya" : "Tidak (isian bebas)",
+          // NULL (bukan 0) kalau layanan ini diketik bebas / katalog belum
+          // punya harga utk varian itu — beda arti dari "harganya Rp0".
+          "Harga Normal":   it.normalPrice ?? "",
+          "Harga Standard": it.standardPrice ?? "",
+          "Harga Final": it.harga || 0,
+          "Selisih ke Standard": it.standardPrice != null ? it.harga - it.standardPrice : "",
+          "Status Nego": it.standardPrice == null ? "" : (dibawahStandard ? "Di bawah standard" : "Dalam batas"),
+          "Tanggal Order": o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
         };
-      }),
+      })
+    );
+
+    exportToExcelMultiSheet(
+      [
+        { name: "Order", data: sheetOrder },
+        { name: "Rincian Layanan", data: sheetLayanan },
+      ],
       "order-" + new Date().toISOString().slice(0, 10)
     );
   }
