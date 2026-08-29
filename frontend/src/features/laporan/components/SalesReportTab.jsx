@@ -114,7 +114,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       </div>
 
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
           index={0} hero label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
@@ -149,6 +149,13 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="rata-rata nilai per order, seluruh tim"
           tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
+        />
+        <KpiCard
+          index={4} label="Chat Spam"
+          numericValue={total?.spamCount || 0}
+          format={(v) => Math.round(v).toLocaleString("id-ID")}
+          sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}
+          tooltip={`Spam % = (chat yang dipegang tim & ditandai SPAM) ÷ (chat SPAM + chat yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut) — scope sama dengan kartu lain di atas. Bukan penalti performa sales — ini pengawas KUALITAS LEAD masuk, layak ditinjau kalau jumlahnya tiba-tiba melonjak.`}
         />
       </div>
 
