@@ -116,8 +116,24 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
     api.getOrderOptions().then(setOrderOptions).catch(() => {});
   }, []);
 
+  // BUG DITEMUKAN & DIPERBAIKI (29 Agustus 2026, laporan owner — panel info
+  // pelanggan macet permanen di skeleton pas coba input order setelah
+  // install ulang). Sebelumnya: `if (!customerId) return;` keluar SEBELUM
+  // `setLoading(false)` pernah dipanggil — kalau customerId belum tersedia
+  // saat efek ini pertama jalan (mis. objek conversation dari socket belum
+  // lengkap tersinkron tepat setelah install baru, cache kosong), `loading`
+  // (default true) TIDAK PERNAH berubah, dan <ProfileSkeleton/> tampil
+  // selamanya — tidak ada jalan keluar sama sekali, termasuk tombol "Coba
+  // Lagi" (yang juga manggil load() ini) krn skeleton tidak py tombol apa
+  // pun. Sekarang early-return TETAP mematikan loading + kasih pesan lewat
+  // jalur error yang sudah ada (loadError), supaya user paling tidak lihat
+  // tombol "Coba Lagi" — bukan skeleton buntu.
   const load = useCallback(async () => {
-    if (!customerId) return;
+    if (!customerId) {
+      setLoading(false);
+      setLoadError("ID pelanggan belum tersedia — coba tutup lalu buka lagi percakapan ini.");
+      return;
+    }
     setLoading(true);
     try {
       const data = await api.getCustomer(customerId);
