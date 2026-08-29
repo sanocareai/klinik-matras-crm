@@ -400,6 +400,18 @@ export const PRODUCT_TYPE_LABELS = {
   DIVAN_SANDARAN:   "Divan - Sandaran",
 };
 
+// Kategori baris katalog harga (PriceItem.kind / OrderItem.kind snapshot,
+// 29 Agustus 2026). Dipindah ke sini (sebelumnya lokal di OrderSection.jsx)
+// supaya form input & export Excel (Orders.jsx) pakai kata yang SAMA PERSIS
+// — tidak ada drift antara "Layanan" di form vs istilah lain di laporan.
+export const PRICE_ITEM_KIND_LABELS = {
+  SERVICE: "Layanan",
+  ADDON:   "Tambahan",
+  PRODUCT: "Produk",
+  RENTAL:  "Sewa",
+  FEE:     "Biaya",
+};
+
 // D-029 (20 Agustus 2026) — merk/ukuran/keluhan kasur dulu disimpan JSON di
 // Order.notes (bukan kolom sendiri, migrasi database dianggap tidak sepadan
 // saat itu). Dipindah ke sini dari OrderSection.jsx (sebelumnya lokal, tidak

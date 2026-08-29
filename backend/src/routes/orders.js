@@ -863,7 +863,7 @@ orderRouter.post("/:orderId/items", async (req, res) => {
   // SEMUANYA OPSIONAL. Item ketik-bebas di luar katalog tetap sah persis
   // seperti sebelumnya, dan pemanggil lama (mobile OrderFormModal,
   // scopeRevision.js) yang tidak mengirimnya tidak perlu diubah.
-  const { layananName, harga, sortOrder, priceItemId, variantKey, normalPrice, standardPrice } = req.body;
+  const { layananName, harga, sortOrder, priceItemId, variantKey, normalPrice, standardPrice, kind } = req.body;
   if (!layananName?.trim()) return res.status(400).json({ error: "Nama layanan wajib diisi" });
   if (harga === undefined || harga === null) return res.status(400).json({ error: "Harga wajib diisi" });
 
@@ -885,6 +885,7 @@ orderRouter.post("/:orderId/items", async (req, res) => {
         ...(variantKey && { variantKey: String(variantKey) }),
         ...(normalPrice != null && normalPrice !== "" && { normalPrice: Number(normalPrice) }),
         ...(standardPrice != null && standardPrice !== "" && { standardPrice: Number(standardPrice) }),
+        ...(kind && { kind }),
       },
     });
     const newTotal = await syncOrderValue(req.params.orderId);

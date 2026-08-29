@@ -13,7 +13,7 @@ import {
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
-  PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS,
+  PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
   resolveVariantKey,
 } from "../../utils/format.js";
 import { isAdminUser, rolesOf } from "../../lib/roles.js";
@@ -81,7 +81,7 @@ function newItem(extra = {}) {
   return {
     key: Date.now() + Math.random(),
     layananName: "", harga: "",
-    priceItemId: null, variantKey: null, normalPrice: null, standardPrice: null,
+    priceItemId: null, variantKey: null, normalPrice: null, standardPrice: null, kind: null,
     ...extra,
   };
 }
@@ -103,7 +103,6 @@ function hargaStatus(it) {
   return { tone: "ok", text: "Dalam batas nego", hex: "#2563eb" };
 }
 
-const KIND_LABEL = { SERVICE: "Layanan", ADDON: "Tambahan", PRODUCT: "Produk", RENTAL: "Sewa", FEE: "Biaya" };
 
 function newWeightEntry() {
   return { key: Date.now() + Math.random(), label: "", beratKg: "" };
@@ -1196,6 +1195,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
       harga: prefill === "" ? "" : String(prefill),
       priceItemId: p.id, variantKey: p.variantKey,
       normalPrice: p.normalPrice, standardPrice: p.standardPrice,
+      kind: p.kind,
     });
     // Buang baris kosong bawaan supaya tidak menyisakan baris hampa di atas.
     setItems((prev) => [...prev.filter((it) => it.layananName?.trim() || it.harga), baru]);
@@ -1305,6 +1305,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           variantKey: it.variantKey || undefined,
           normalPrice: it.normalPrice ?? undefined,
           standardPrice: it.standardPrice ?? undefined,
+          kind: it.kind || undefined,
         });
       }
       await saveWeightEntries(order.id);
@@ -1757,7 +1758,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
                   <span style={{ minWidth: 0 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, display: "block" }}>{p.name}</span>
                     <span style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
-                      {KIND_LABEL[p.kind] || p.kind}{sudah ? " · sudah ditambahkan" : ""}
+                      {PRICE_ITEM_KIND_LABELS[p.kind] || p.kind}{sudah ? " · sudah ditambahkan" : ""}
                     </span>
                   </span>
                   <span style={{ textAlign: "right", whiteSpace: "nowrap", fontSize: 11 }}>

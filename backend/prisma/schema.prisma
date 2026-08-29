@@ -2156,6 +2156,15 @@ model OrderItem {
   normalPrice   Int? @map("normal_price")
   standardPrice Int? @map("standard_price")
 
+  // kind (29 Agustus 2026) — SNAPSHOT PriceItem.kind, alasan sama persis dgn
+  // normalPrice/standardPrice di atas: PriceItem bisa berubah/dinonaktifkan,
+  // tapi baris order historis harus tetap tahu ini dulunya kategori apa
+  // (Service/Addon/Product/Rental/Fee) tanpa perlu join ke katalog yang
+  // datanya sudah lain. Ditambahkan krn export Excel butuh kolom "Kategori
+  // Layanan" per item — sebelumnya cuma Lini Produk (KASUR/SOFA/DIVAN) yang
+  // ter-snapshot, kategorinya (kind) tidak.
+  kind PriceItemKind? @map("kind")
+
   @@index([priceItemId])
 }
 

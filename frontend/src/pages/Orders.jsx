@@ -11,7 +11,7 @@ import {
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
-  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
 } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -661,7 +661,14 @@ export default function Orders() {
           "ID Order": o.orderNumber || "",
           Pelanggan: o.customerName || "",
           "Sales Person": o.assignedSales?.name || "",
-          "Lini Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
+          // Kategori Produk = Lini Produk order (Kasur/Sofa/Divan) — level
+          // order, sama utk semua item di dalamnya.
+          "Kategori Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
+          // Kategori Layanan = PriceItem.kind SNAPSHOT (Layanan/Tambahan/
+          // Produk/Sewa/Biaya) — level ITEM, bisa beda-beda dalam 1 order
+          // yang sama (mis. 1 item Layanan + 1 item Tambahan). Kosong kalau
+          // item ini diketik bebas (kind cuma ada utk item dari katalog).
+          "Kategori Layanan": PRICE_ITEM_KIND_LABELS[it.kind] || "",
           Layanan: it.layananName,
           "Dari Katalog": dariKatalog ? "Ya" : "Tidak (isian bebas)",
           // NULL (bukan 0) kalau layanan ini diketik bebas / katalog belum
