@@ -20,7 +20,7 @@ import {
   formatRupiah, shortDate,
   ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, ORDER_STATUSES,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE,
-  CATEGORY_LABELS, CATEGORY_BADGE,
+  CATEGORY_LABELS, CATEGORY_BADGE, PRODUCT_LINE_LABELS,
 } from "../utils/format";
 
 function parseNotes(notes) {
@@ -221,8 +221,15 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
           <Text style={styles.metaLabel}>ID Order</Text>
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
             <Text style={[styles.idBadge, catBadge]}>{order.orderNumber || "—"}</Text>
-            {order.category && order.category !== "LAYANAN" && (
-              <Text style={styles.categoryHint}> · {CATEGORY_LABELS[order.category]}</Text>
+            {/* productLine (29 Agustus 2026, paritas dgn web) — SELALU
+                ditampilkan (dulu cuma kategori BARU/SEWA yang dapat teks
+                tambahan, krn semua order dulu pasti kasur; sekarang
+                produknya bisa Sofa/Divan juga). */}
+            {(order.productLine || (order.category && order.category !== "LAYANAN")) && (
+              <Text style={styles.categoryHint}>
+                {" "}· {PRODUCT_LINE_LABELS[order.productLine] || "Kasur"}
+                {order.category && order.category !== "LAYANAN" ? ` ${CATEGORY_LABELS[order.category]}` : ""}
+              </Text>
             )}
           </View>
 

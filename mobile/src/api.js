@@ -354,6 +354,12 @@ export const api = {
   // Master data opsi form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) —
   // satu sumber dipakai OrderSection.jsx web & OrderFormModal.js mobile.
   getOrderOptions: () => request("/master-data/order-options"),
+  // Katalog harga jual per lini produk + varian (29 Agustus 2026, paritas
+  // dgn web) — dipakai OrderFormModal menampilkan daftar layanan beserta
+  // harga normal & standard. BUKAN katalog PRODUKSI (routing modul kerja,
+  // tanpa harga) — lihat backend/prisma/schema.prisma #PriceItem.
+  getPriceList: (productLine, variantKey) =>
+    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}`),
   // Promo (D-026) — dropdown "pilih kampanye" di OrderFormModal, SATU
   // sumber dengan web (routes/promos.js). ?active=true = cuma kampanye
   // yang sedang berjalan, dipakai form CREATE/EDIT.

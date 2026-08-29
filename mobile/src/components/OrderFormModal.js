@@ -39,7 +39,10 @@ import { Package, X, Trash2 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
-import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES } from "../utils/format";
+import {
+  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  PRODUCT_LINE_LABELS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS, resolveVariantKey,
+} from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
@@ -53,10 +56,20 @@ import { stageLabels, stageColors } from "../theme";
 // label, bukan didefinisikan ulang di sini.
 const STAGE_ORDER = Object.keys(stageLabels);
 
+// Label dilepas dari "Kasur" (29 Agustus 2026, paritas dgn web) — kategori
+// ini sekarang lintas Lini Produk, bukan cuma kasur lagi.
 const CATEGORY_OPTIONS = [
   { value: "LAYANAN", label: "Service/Upgrade" },
-  { value: "BARU", label: "Kasur Baru" },
-  { value: "SEWA", label: "Kasur Sewa" },
+  { value: "BARU", label: "Baru" },
+  { value: "SEWA", label: "Sewa" },
+];
+
+// Lini Produk (29 Agustus 2026, paritas dgn web) — semua kombinasi Kategori
+// x Lini Produk valid (dikonfirmasi owner), tidak ada matriks pembatas.
+const PRODUCT_LINE_OPTIONS = [
+  { value: "KASUR", label: "Kasur" },
+  { value: "SOFA", label: "Sofa" },
+  { value: "DIVAN", label: "Divan" },
 ];
 
 // D-027/D-028/D-029 (20 Agustus 2026) — paritas dengan web
@@ -81,8 +94,32 @@ const HEALTH_COMPLAINT_LABELS = {
 };
 const HEALTH_COMPLAINT_OPTIONS = Object.keys(HEALTH_COMPLAINT_LABELS);
 
-function newItem() {
-  return { key: String(Date.now()) + Math.random(), layananName: "", harga: "" };
+// priceItemId/variantKey/normalPrice/standardPrice/kind (29 Agustus 2026,
+// paritas dgn web) — terisi kalau item dipilih dari katalog harga, tetap
+// null kalau diketik bebas. Keduanya sama-sama sah.
+function newItem(extra = {}) {
+  return {
+    key: String(Date.now()) + Math.random(), layananName: "", harga: "",
+    priceItemId: null, variantKey: null, normalPrice: null, standardPrice: null, kind: null,
+    ...extra,
+  };
+}
+
+// Status harga final terhadap batas standard — dihitung saat render, TIDAK
+// disimpan. SAMA PERSIS logikanya dgn hargaStatus() di web OrderSection.jsx.
+// Penanda visual saja, BUKAN mengunci input — sales tetap bebas menembus
+// batas, asal kelihatan di laporan (keputusan owner 29 Agustus 2026).
+function hargaStatus(it, tokens) {
+  const final = Number(it.harga);
+  if (!it.harga || Number.isNaN(final) || final <= 0) return null;
+  if (it.standardPrice == null) return null;
+  if (final < it.standardPrice) {
+    return { tone: "under", text: `Rp${(it.standardPrice - final).toLocaleString("id-ID")} di bawah standard`, color: tokens.color.danger };
+  }
+  if (it.normalPrice != null && final >= it.normalPrice) {
+    return { tone: "full", text: "Harga normal penuh", color: tokens.color.success };
+  }
+  return { tone: "ok", text: "Dalam batas nego", color: tokens.color.accent };
 }
 function newWeightEntry() {
   return { key: String(Date.now()) + Math.random(), label: "", beratKg: "" };
@@ -166,6 +203,17 @@ export default function OrderFormModal({
   const [orderOptionsState, setOrderOptionsState] = useState({ jenisLayanan: [], merkKasur: [], ukuranKasur: [] });
   const orderOptions = orderOptionsProp || orderOptionsState;
   const [category, setCategory] = useState("LAYANAN");
+  // Lini Produk & Jenis Produk (29 Agustus 2026, paritas dgn web) — TIDAK
+  // BISA diubah setelah order dibuat, sama seperti Kategori di atas (lihat
+  // catatan disable di render).
+  const [productLine, setProductLine] = useState("");
+  const [productType, setProductType] = useState("");
+  const [showJenisPicker, setShowJenisPicker] = useState(false);
+  const isKasur = productLine === "KASUR";
+  // Katalog harga (29 Agustus 2026) — dimuat begitu Lini Produk + varian
+  // (ukuran utk Kasur/Divan, jenis produk utk Sofa) sudah diketahui.
+  const [catalog, setCatalog] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [status, setStatus] = useState("PENDING");
   const [paymentStatus, setPaymentStatus] = useState("BELUM_BAYAR");
   // pipelineStage: null = tidak ditampilkan sama sekali (order dari konteks
@@ -260,6 +308,11 @@ export default function OrderFormModal({
     if (order) {
       const info = parseNotes(order.notes);
       setCategory(order.category || "LAYANAN");
+      // Fallback KASUR (29 Agustus 2026) — order lama sebelum kolom ini ada
+      // memang selalu kasur (fakta historis, bukan tebakan), sama dgn
+      // default skema Order.productLine di backend.
+      setProductLine(order.productLine || "KASUR");
+      setProductType(order.productType || "");
       setStatus(order.status || "PENDING");
       setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
       setPipelineStage(order.pipelineStage ?? null);
@@ -292,6 +345,9 @@ export default function OrderFormModal({
       );
     } else {
       setCategory("LAYANAN");
+      setProductLine("");
+      setProductType("");
+      setCatalog([]);
       setStatus("PENDING");
       setPaymentStatus("BELUM_BAYAR");
       setPipelineStage(null);
@@ -318,6 +374,41 @@ export default function OrderFormModal({
 
   const q = search.trim().toLowerCase();
   const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+
+  const variantKey = resolveVariantKey({ productLine, productType, ukuran });
+
+  // Muat katalog begitu Lini Produk + varian diketahui (29 Agustus 2026,
+  // paritas dgn web). Kalau varian belum bisa ditentukan (mis. "Ukuran
+  // Custom"), katalog SENGAJA tidak dimuat — isian manual yang benar.
+  useEffect(() => {
+    if (!visible || !isLayanan || !productLine || !variantKey) { setCatalog([]); return; }
+    let batal = false;
+    setCatalogLoading(true);
+    api.getPriceList(productLine, variantKey)
+      .then((res) => { if (!batal) setCatalog(res.items || []); })
+      .catch(() => { if (!batal) setCatalog([]); })
+      .finally(() => { if (!batal) setCatalogLoading(false); });
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, isLayanan, productLine, variantKey]);
+
+  // Tambah layanan dari katalog. Harga final di-prefill HARGA NORMAL (harga
+  // papan) — bukan standard (batas bawah nego) — sama alasan dgn web: kalau
+  // standard yang jadi nilai awal, sales tidak pernah mulai menawar dari
+  // harga penuh.
+  function addFromCatalog(p) {
+    const prefill = p.normalPrice ?? p.standardPrice ?? "";
+    const baru = newItem({
+      layananName: p.name,
+      harga: prefill === "" ? "" : String(prefill),
+      priceItemId: p.id, variantKey: p.variantKey,
+      normalPrice: p.normalPrice, standardPrice: p.standardPrice,
+      kind: p.kind,
+    });
+    // Buang baris kosong bawaan supaya tidak menyisakan baris hampa di atas.
+    setItems((prev) => [...prev.filter((it) => it.layananName?.trim() || it.harga), baru]);
+  }
+  const dipakaiDariKatalog = new Set(items.map((it) => it.priceItemId).filter(Boolean));
 
   function pickProduct(p) {
     setSelectedProductId(p.id);
@@ -347,8 +438,14 @@ export default function OrderFormModal({
       Alert.alert("Tambahkan minimal satu layanan");
       return;
     }
+    if (!productLine) {
+      Alert.alert("Pilih Lini Produk dulu (Kasur/Sofa/Divan)");
+      return;
+    }
     const created = await api.addOrder(customerId, {
       category,
+      productLine,
+      productType: productType || undefined,
       quantity: Number(quantity) || 1,
       notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
       promoId: promoId || undefined,
@@ -369,14 +466,28 @@ export default function OrderFormModal({
     let finalOrderValue = 0;
     if (isLayanan) {
       for (const it of validItems) {
-        const { item, orderValue } = await api.addOrderItem(created.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+        // Snapshot katalog (29 Agustus 2026) — dikirim APA ADANYA dari yang
+        // sudah tersimpan di state item saat dipilih dari katalog (lihat
+        // addFromCatalog), TIDAK di-lookup ulang di sini.
+        const { item, orderValue } = await api.addOrderItem(created.id, {
+          layananName: it.layananName.trim(),
+          harga: Number(it.harga) || 0,
+          priceItemId: it.priceItemId || undefined,
+          variantKey: it.variantKey || undefined,
+          normalPrice: it.normalPrice ?? undefined,
+          standardPrice: it.standardPrice ?? undefined,
+          kind: it.kind || undefined,
+        });
         createdItems.push(item);
         finalOrderValue = orderValue;
       }
     } else {
       const harga = Number(hargaTotal) || 0;
       if (harga > 0) {
-        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        // Nama item dinamis (29 Agustus 2026, paritas dgn web) — dulu
+        // hardcode "Kasur Baru"/"Kasur Sewa" krn kasur satu-satunya produk.
+        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
+        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
         const { item, orderValue } = await api.addOrderItem(created.id, { layananName: namaLayanan, harga });
         createdItems.push(item);
         finalOrderValue = orderValue;
@@ -443,7 +554,17 @@ export default function OrderFormModal({
         if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
       }
       for (const it of items.filter((it) => !it.id)) {
-        if (it.layananName?.trim()) await api.addOrderItem(order.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+        if (it.layananName?.trim()) {
+          await api.addOrderItem(order.id, {
+            layananName: it.layananName.trim(),
+            harga: Number(it.harga) || 0,
+            priceItemId: it.priceItemId || undefined,
+            variantKey: it.variantKey || undefined,
+            normalPrice: it.normalPrice ?? undefined,
+            standardPrice: it.standardPrice ?? undefined,
+            kind: it.kind || undefined,
+          });
+        }
       }
     } else {
       // BARU/SEWA: "harga" order = 1 OrderItem tunggal tersembunyi (lihat
@@ -455,7 +576,8 @@ export default function OrderFormModal({
       if (existingItem) {
         await api.updateOrderItem(existingItem.id, { layananName: existingItem.layananName, harga });
       } else if (harga > 0) {
-        const namaLayanan = category === "BARU" ? "Kasur Baru" : "Kasur Sewa";
+        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
+        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
         await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
       }
     }
@@ -674,6 +796,48 @@ export default function OrderFormModal({
               })}
             </View>
 
+            {/* Lini Produk (29 Agustus 2026, paritas dgn web) — TIDAK BISA
+                diubah setelah order dibuat, sama alasan dgn Kategori di
+                atas. Berlaku utk SEMUA kategori (termasuk Service/Upgrade —
+                servis Sofa/Divan sekarang layanan baru juga, jangan
+                diasumsikan kasur terus). */}
+            <Text style={styles.label}>Lini Produk</Text>
+            <View style={styles.categoryRow}>
+              {PRODUCT_LINE_OPTIONS.map((opt) => {
+                const active = productLine === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.categoryChip, active && styles.categoryChipActive, isEdit && styles.categoryChipDisabled]}
+                    onPress={() => {
+                      if (isEdit) return;
+                      setProductLine(opt.value);
+                      setProductType(opt.value === "DIVAN" ? "DIVAN_SANDARAN" : "");
+                    }}
+                    disabled={isEdit}
+                  >
+                    <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Jenis Produk — cuma utk Kasur/Sofa (Divan cuma 1 varian,
+                auto-set di atas tanpa picker, lihat komentar PRODUCT_TYPES_BY_LINE
+                di utils/format.js). */}
+            {(productLine === "KASUR" || productLine === "SOFA") && (
+              <>
+                <Text style={styles.label}>Jenis Produk</Text>
+                <TouchableOpacity
+                  style={[styles.selectBox, isEdit && styles.categoryChipDisabled]}
+                  onPress={() => !isEdit && setShowJenisPicker(true)}
+                  disabled={isEdit}
+                >
+                  <Text style={styles.selectBoxText}>{PRODUCT_TYPE_LABELS[productType] || "— Pilih Jenis —"}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
             {/* Jumlah (quantity) — field baru, sebelumnya cuma tersimpan
                 diam-diam sebagai default 1 di backend, tidak pernah bisa
                 diubah dari form manapun. */}
@@ -742,49 +906,79 @@ export default function OrderFormModal({
               />
             )}
 
-            {/* Berat Badan — multi-orang */}
-            <Text style={styles.label}>Berat Badan</Text>
-            {weightEntries.map((e) => (
-              <View key={e.key} style={styles.weightRow}>
-                <TextInput
-                  style={[styles.input, { flex: 2 }]}
-                  placeholder="cth: Suami / Istri / Sendiri"
-                  placeholderTextColor={tokens.color.textMuted}
-                  value={e.label}
-                  onChangeText={(v) => setWeightField(e.key, "label", v)}
-                />
-                <TextInput
-                  style={[styles.input, { flex: 1, marginLeft: 8 }]}
-                  placeholder="kg"
-                  placeholderTextColor={tokens.color.textMuted}
-                  value={e.beratKg}
-                  onChangeText={(v) => setWeightField(e.key, "beratKg", v)}
-                  keyboardType="numeric"
-                />
-                {weightEntries.length > 1 && (
-                  <TouchableOpacity onPress={() => removeWeight(e.key)} style={styles.removeBtn}>
-                    <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-            <TouchableOpacity onPress={addWeight}><Text style={styles.linkText}>+ Tambah Orang</Text></TouchableOpacity>
+            {/* Berat Badan — multi-orang. KHUSUS Kasur (fitting kekerasan
+                by berat badan) — tidak relevan utk Sofa/Divan, paritas dgn
+                web. */}
+            {isKasur && (
+              <>
+                <Text style={styles.label}>Berat Badan</Text>
+                {weightEntries.map((e) => (
+                  <View key={e.key} style={styles.weightRow}>
+                    <TextInput
+                      style={[styles.input, { flex: 2 }]}
+                      placeholder="cth: Suami / Istri / Sendiri"
+                      placeholderTextColor={tokens.color.textMuted}
+                      value={e.label}
+                      onChangeText={(v) => setWeightField(e.key, "label", v)}
+                    />
+                    <TextInput
+                      style={[styles.input, { flex: 1, marginLeft: 8 }]}
+                      placeholder="kg"
+                      placeholderTextColor={tokens.color.textMuted}
+                      value={e.beratKg}
+                      onChangeText={(v) => setWeightField(e.key, "beratKg", v)}
+                      keyboardType="numeric"
+                    />
+                    {weightEntries.length > 1 && (
+                      <TouchableOpacity onPress={() => removeWeight(e.key)} style={styles.removeBtn}>
+                        <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                <TouchableOpacity onPress={addWeight}><Text style={styles.linkText}>+ Tambah Orang</Text></TouchableOpacity>
+              </>
+            )}
 
-            {/* Merk Kasur */}
-            <Text style={styles.label}>Merk Kasur</Text>
-            {isLayanan ? (
+            {/* Merk — utk BARU/SEWA SELALU "Sano ✓" (produk kami sendiri,
+                apa pun lini produknya). Utk Service/Upgrade: dropdown kurasi
+                Settings KHUSUS Kasur; Sofa/Divan belum punya daftar merk
+                terkurasi, jadi input bebas menanyakan merk EXISTING milik
+                customer — paritas dgn web. */}
+            <Text style={styles.label}>{isKasur ? "Merk Kasur" : `Merk/Model ${PRODUCT_LINE_LABELS[productLine] || ""}`}</Text>
+            {!isLayanan ? (
+              <Text style={styles.forcedSano}>Sano ✓</Text>
+            ) : isKasur ? (
               <TouchableOpacity style={styles.selectBox} onPress={() => setShowMerkPicker(true)}>
                 <Text style={styles.selectBoxText}>{merkKasur || "— Pilih Merk —"}</Text>
               </TouchableOpacity>
             ) : (
-              <Text style={styles.forcedSano}>Sano ✓</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={`cth: merk ${(PRODUCT_LINE_LABELS[productLine] || "").toLowerCase()} yang sudah dimiliki customer`}
+                placeholderTextColor={tokens.color.textMuted}
+                value={merkKasur}
+                onChangeText={setMerkKasur}
+              />
             )}
 
-            {/* Ukuran Kasur */}
-            <Text style={styles.label}>Ukuran Kasur</Text>
-            <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
-              <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
-            </TouchableOpacity>
+            {/* Ukuran — dropdown kurasi Settings KHUSUS Kasur; Sofa/Divan
+                input bebas (belum ada daftar ukuran/konfigurasi
+                terkurasi) — paritas dgn web. */}
+            <Text style={styles.label}>{isKasur ? "Ukuran Kasur" : `Ukuran/Konfigurasi ${PRODUCT_LINE_LABELS[productLine] || ""}`}</Text>
+            {isKasur ? (
+              <TouchableOpacity style={styles.selectBox} onPress={() => setShowUkuranPicker(true)}>
+                <Text style={styles.selectBoxText}>{ukuran || "— Pilih Ukuran —"}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TextInput
+                style={styles.input}
+                placeholder="cth: 3 seater, abu-abu"
+                placeholderTextColor={tokens.color.textMuted}
+                value={ukuran}
+                onChangeText={setUkuran}
+              />
+            )}
 
             {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
                 1 customer bisa order untuk alamat berbeda-beda. */}
@@ -971,40 +1165,101 @@ export default function OrderFormModal({
               </>
             )}
 
+            {/* Katalog harga (29 Agustus 2026, paritas dgn web) — muncul
+                begitu Lini Produk + varian diketahui. Kalau katalog kosong/
+                gagal/varian belum bisa ditentukan ("Ukuran Custom"), bagian
+                ini disembunyikan dan form kembali ke isian bebas — bukan
+                error, form tetap bisa dipakai. */}
+            {isLayanan && catalogLoading && (
+              <Text style={[styles.selectBoxText, { marginTop: 10 }]}>Memuat daftar harga…</Text>
+            )}
+            {isLayanan && !catalogLoading && catalog.length > 0 && (
+              <>
+                <Text style={styles.label}>
+                  Pilih dari daftar harga{" "}
+                  <Text style={{ fontWeight: "400", color: tokens.color.textMuted }}>
+                    ({PRODUCT_LINE_LABELS[productLine]} · {productLine === "SOFA" ? PRODUCT_TYPE_LABELS[productType] : `ukuran ${variantKey}`})
+                  </Text>
+                </Text>
+                <View style={styles.catalogBox}>
+                  {catalog.map((p) => {
+                    const sudah = dipakaiDariKatalog.has(p.id);
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[styles.catalogRow, sudah && styles.catalogRowDisabled]}
+                        onPress={() => !sudah && addFromCatalog(p)}
+                        disabled={sudah}
+                      >
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.catalogName} numberOfLines={1}>{p.name}</Text>
+                          <Text style={styles.catalogKind}>
+                            {PRICE_ITEM_KIND_LABELS[p.kind] || p.kind}{sudah ? " · sudah ditambahkan" : ""}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          {p.belumBerharga ? (
+                            <Text style={styles.catalogMuted}>harga belum ditetapkan</Text>
+                          ) : (
+                            <>
+                              {p.normalPrice != null && <Text style={styles.catalogNormal}>Normal {formatRupiah(p.normalPrice)}</Text>}
+                              {p.standardPrice != null && <Text style={styles.catalogStandard}>Standard {formatRupiah(p.standardPrice)}</Text>}
+                            </>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
             {/* Layanan (add-ons) — hanya LAYANAN */}
             {isLayanan && (
               <>
-                <Text style={styles.label}>Layanan (add-ons)</Text>
-                {items.map((it) => (
-                  <View key={it.key} style={styles.itemBlock}>
-                    <View style={styles.itemRow}>
-                      <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        placeholder="Nama layanan…"
-                        placeholderTextColor={tokens.color.textMuted}
-                        value={it.layananName}
-                        onChangeText={(v) => setItemField(it.key, "layananName", v)}
-                      />
-                      <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
-                        <Text style={styles.pickBtnText}>Pilih</Text>
-                      </TouchableOpacity>
-                      {items.length > 1 && (
-                        <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
-                          <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                <Text style={styles.label}>Layanan yang diambil</Text>
+                {items.map((it) => {
+                  const st = hargaStatus(it, tokens);
+                  return (
+                    <View key={it.key} style={styles.itemBlock}>
+                      <View style={styles.itemRow}>
+                        <TextInput
+                          style={[styles.input, { flex: 1 }]}
+                          placeholder="Nama layanan…"
+                          placeholderTextColor={tokens.color.textMuted}
+                          value={it.layananName}
+                          onChangeText={(v) => setItemField(it.key, "layananName", v)}
+                        />
+                        <TouchableOpacity style={styles.pickBtn} onPress={() => setLayananPickerTarget(it.key)}>
+                          <Text style={styles.pickBtnText}>Pilih</Text>
                         </TouchableOpacity>
+                        {items.length > 1 && (
+                          <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
+                            <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <TextInput
+                        style={[styles.input, st?.tone === "under" && { borderWidth: 1, borderColor: tokens.color.danger }]}
+                        placeholder="Harga final (Rp)"
+                        placeholderTextColor={tokens.color.textMuted}
+                        value={it.harga}
+                        onChangeText={(v) => setItemField(it.key, "harga", v)}
+                        keyboardType="numeric"
+                      />
+                      {/* Referensi harga + penanda posisi nego — cuma muncul
+                          utk item dari katalog. */}
+                      {(it.normalPrice != null || it.standardPrice != null) && (
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                          {it.normalPrice != null && <Text style={styles.catalogMuted}>Normal {formatRupiah(it.normalPrice)}</Text>}
+                          {it.standardPrice != null && <Text style={styles.catalogStandard}>Standard {formatRupiah(it.standardPrice)}</Text>}
+                          {st && <Text style={{ fontSize: 10.5, fontWeight: "700", color: st.color }}>{st.text}</Text>}
+                        </View>
                       )}
                     </View>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Harga (Rp)"
-                      placeholderTextColor={tokens.color.textMuted}
-                      value={it.harga}
-                      onChangeText={(v) => setItemField(it.key, "harga", v)}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                ))}
-                <TouchableOpacity onPress={addItem}><Text style={styles.linkText}>+ Tambah layanan lain</Text></TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity onPress={addItem}><Text style={styles.linkText}>+ Tambah layanan di luar daftar harga</Text></TouchableOpacity>
                 <Text style={styles.previewValue}>Total: {formatRupiah(totalItems)}</Text>
               </>
             )}
@@ -1020,6 +1275,15 @@ export default function OrderFormModal({
         </View>
       </View>
 
+      <PickerSheet
+        visible={showJenisPicker}
+        title="Pilih Jenis Produk"
+        options={PRODUCT_TYPES_BY_LINE[productLine] || []}
+        getKey={(v) => v}
+        getLabel={(v) => PRODUCT_TYPE_LABELS[v] || v}
+        onSelect={setProductType}
+        onClose={() => setShowJenisPicker(false)}
+      />
       <PickerSheet
         visible={showMerkPicker}
         title="Pilih Merk Kasur"
@@ -1137,6 +1401,22 @@ function createStyles(tokens) {
   removeBtn: { marginLeft: 8, padding: 4 },
   linkText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600", marginTop: 4 },
   previewValue: { fontSize: 13, fontWeight: "700", color: tokens.color.success, marginTop: 8 },
+  // Katalog harga (29 Agustus 2026, paritas dgn web)
+  catalogBox: {
+    borderWidth: 1, borderColor: tokens.color.border, borderRadius: 12,
+    maxHeight: 260, backgroundColor: tokens.color.card,
+  },
+  catalogRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+  },
+  catalogRowDisabled: { opacity: 0.5 },
+  catalogName: { fontSize: 13, fontWeight: "600", color: tokens.color.textPrimary },
+  catalogKind: { fontSize: 10.5, color: tokens.color.textMuted, marginTop: 2 },
+  catalogMuted: { fontSize: 10.5, color: tokens.color.textMuted },
+  catalogNormal: { fontSize: 10.5, color: tokens.color.textSecondary },
+  catalogStandard: { fontSize: 10.5, fontWeight: "700", color: "#c2570b" },
   submitBtn: {
     backgroundColor: tokens.color.accent, borderRadius: 14, paddingVertical: 12,
     alignItems: "center", marginTop: 20, marginBottom: 4,

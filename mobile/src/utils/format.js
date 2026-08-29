@@ -71,12 +71,74 @@ export const PAYMENT_STATUS_BADGE = {
 };
 export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
 
-export const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Kasur Baru", SEWA: "Kasur Sewa" };
+// Label dilepas dari "Kasur" (29 Agustus 2026, paritas dgn web) — kategori
+// ini sekarang berlaku lintas Lini Produk (Kasur/Sofa/Divan), bukan cuma
+// kasur lagi. Lihat PRODUCT_LINE_LABELS dkk di bawah.
+export const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
 export const CATEGORY_BADGE = {
   LAYANAN: { backgroundColor: "#ede9fe", color: "#5b21b6" },
   BARU:    { backgroundColor: "#dcfce7", color: "#166534" },
   SEWA:    { backgroundColor: "#dbeafe", color: "#1e40af" },
 };
+
+// Lini Produk & Jenis Produk (29 Agustus 2026) — SAMA PERSIS dengan
+// frontend/src/utils/format.js. Perluasan bisnis dari kasur-saja ke
+// Sofa & Divan (Order.productLine/productType, backend prisma/schema.prisma).
+export const PRODUCT_LINE_LABELS = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
+// Dikelompokkan per ProductLine — DIVAN sengaja cuma 1 varian
+// (DIVAN_SANDARAN), form tidak menampilkan picker jenis utk Divan.
+export const PRODUCT_TYPES_BY_LINE = {
+  KASUR: ["KASUR_SPRING", "KASUR_BUSA", "MULTIBED", "KASUR_2IN1_ATAS", "KASUR_2IN1_BAWAH"],
+  SOFA:  ["SOFABED", "SOFA_L", "SOFA_1_SEATER", "SOFA_2_SEATER", "SOFA_3_SEATER"],
+  DIVAN: ["DIVAN_SANDARAN"],
+};
+export const PRODUCT_TYPE_LABELS = {
+  KASUR_SPRING:     "Kasur Spring",
+  KASUR_BUSA:       "Kasur Busa",
+  MULTIBED:         "Multibed",
+  KASUR_2IN1_ATAS:  "Kasur 2in1 Atas",
+  KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
+  SOFABED:          "Sofabed",
+  SOFA_L:           "Sofa L",
+  SOFA_1_SEATER:    "Sofa 1 Seater",
+  SOFA_2_SEATER:    "Sofa 2 Seater",
+  SOFA_3_SEATER:    "Sofa 3 Seater",
+  DIVAN_SANDARAN:   "Divan - Sandaran",
+};
+
+// Kategori baris katalog harga (PriceItem.kind / OrderItem.kind snapshot) —
+// SATU sumber label dgn form input & export web.
+export const PRICE_ITEM_KIND_LABELS = {
+  SERVICE: "Layanan",
+  ADDON:   "Tambahan",
+  PRODUCT: "Produk",
+  RENTAL:  "Sewa",
+  FEE:     "Biaya",
+};
+
+// Pemetaan label ukuran kasur -> variantKey katalog harga. ⚠️ TERIKAT ke
+// UKURAN_KASUR di backend/src/constants/orderOptions.js (dimuat lewat
+// GET /master-data/order-options, BUKAN hardcode di sini) — kunci di bawah
+// harus sama persis dgn label yang datang dari situ.
+export const UKURAN_VARIANT_KEY = {
+  "90x200 cm (Single)": "90",
+  "100x200 cm (Super Single)": "100",
+  "120x200 cm (Single Besar)": "120",
+  "160x200 cm (Queen)": "160",
+  "180x200 cm (King)": "180",
+  "200x200 cm (King Besar)": "200",
+  "Ukuran Custom": null,
+};
+
+// variantKey utk lookup katalog harga. Sumbunya beda per lini produk:
+//   KASUR & DIVAN -> dari ukuran kasur yang dipilih
+//   SOFA          -> dari jenis produk (kolom harga sofa memang PERSIS enum
+//                    ProductType, tidak ada daftar ukuran terpisah)
+export function resolveVariantKey({ productLine, productType, ukuran }) {
+  if (productLine === "SOFA") return productType || null;
+  if (productLine === "KASUR" || productLine === "DIVAN") return UKURAN_VARIANT_KEY[ukuran] ?? null;
+  return null;
+}
 
 // "5 mnt", "2 jam", "3 hari", atau tanggal pendek kalau sudah lama
 export function timeAgo(dateStr) {
