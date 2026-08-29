@@ -91,8 +91,13 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
       >
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: 32 }}>
           <View style={styles.profile}>
+            {/* cachePolicy (29 Agustus 2026, review perf sebelum EAS build)
+                — avatar grup TANPA ini diunduh ulang dari jaringan tiap
+                kali sheet ini dibuka, padahal expo-image sudah punya cache
+                disk bawaan. Pola sama dgn thumbnail produk di
+                OrderFormModal.js. */}
             {groupInfo?.avatarUrl ? (
-              <Image source={{ uri: groupInfo.avatarUrl }} style={styles.groupPhoto} contentFit="cover" />
+              <Image source={{ uri: groupInfo.avatarUrl }} style={styles.groupPhoto} contentFit="cover" cachePolicy="memory-disk" />
             ) : (
               <Avatar name={groupName} isGroup size={88} />
             )}

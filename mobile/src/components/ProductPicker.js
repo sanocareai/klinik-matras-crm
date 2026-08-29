@@ -180,8 +180,12 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
                   return (
                     <TouchableOpacity style={styles.productRow} onPress={() => selectProduct(p)}>
                       <View style={styles.productThumb}>
+                        {/* cachePolicy (29 Agustus 2026, review perf sebelum
+                            EAS build) — TANPA ini, thumbnail produk diunduh
+                            ulang dari jaringan tiap kali picker ini dibuka,
+                            padahal katalog produk sama jarang berubah. */}
                         {thumb ? (
-                          <Image source={{ uri: mediaUrl(thumb.url) }} style={styles.productThumbImg} contentFit="cover" />
+                          <Image source={{ uri: mediaUrl(thumb.url) }} style={styles.productThumbImg} contentFit="cover" cachePolicy="memory-disk" />
                         ) : (
                           <Package size={20} color={tokens.color.textMuted} strokeWidth={1.6} />
                         )}
@@ -219,7 +223,7 @@ export default function ProductPicker({ visible, customerName, onClose, onSend, 
                     const checked = checkedIds.includes(img.id);
                     return (
                       <TouchableOpacity key={img.id} style={styles.imageItem} onPress={() => toggleImage(img.id)}>
-                        <Image source={{ uri: mediaUrl(img.url) }} style={[styles.imageItemImg, checked && styles.imageItemImgChecked]} contentFit="cover" />
+                        <Image source={{ uri: mediaUrl(img.url) }} style={[styles.imageItemImg, checked && styles.imageItemImgChecked]} contentFit="cover" cachePolicy="memory-disk" />
                         <View style={[styles.imageCheck, checked && { backgroundColor: tokens.color.accent, borderColor: tokens.color.accent }]}>
                           {checked && <Check size={11} color="#fff" strokeWidth={3} />}
                         </View>
