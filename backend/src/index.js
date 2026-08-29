@@ -219,12 +219,15 @@ server.listen(PORT, () => {
   startStaleLeadAlertJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
-  // DIPAUSE (29 Agustus 2026, permintaan owner) — owner sedang review manual
-  // hasil test (30 sample) dan menemukan beberapa klasifikasi yang meleset
-  // (ada yang seharusnya BUKAN kritis dan sebaliknya). Prompt/taksonomi di
-  // intentClassification.js perlu direvisi sesuai temuan owner SEBELUM cron
-  // ini diaktifkan lagi — jangan nyalakan ulang tanpa itu.
-  // startSalesRiskIntentClassificationJob();
+  // DINYALAKAN LAGI (29 Agustus 2026) — sempat dipause krn owner menemukan
+  // klasifikasi meleset di sample awal (lihat riwayat commit). Taksonomi
+  // sudah direvisi: gerbang HIGH (bukan cuma CRITICAL) sekarang baca
+  // latestMessageIntent, kategori NETRAL_AMBIGU ditambah (khusus pesan
+  // 1-3 kata genuinely tidak bisa disimpulkan), deteksi link spam
+  // ditambah. Diverifikasi lewat test kecil (scripts/testIntentGateHigh.mjs)
+  // thd 4 kasus bug asli + kasus sintetis SEBELUM dinyalakan ulang, lalu
+  // backfill penuh (scripts/runIntentBackfillOnce.mjs) dikonfirmasi user.
+  startSalesRiskIntentClassificationJob();
   // Antrean broadcast hidup di database, jadi worker ini AMAN dinyalakan
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.
