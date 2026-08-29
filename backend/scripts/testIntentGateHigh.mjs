@@ -69,10 +69,11 @@ async function main() {
     printRow(c.name || c.phone, oldTierNoGate, risk.tier, signals.latestMessageIntent, risk.tier !== oldTierNoGate ? risk.problem : "", signals.isProbablySpam);
   }
 
-  console.log("\n═══ 2. Klasifikasi BARU — Mahda Kotambunan (\"Mahal\") & HRD (link spam) ═══\n");
+  console.log("\n═══ 2. Klasifikasi BARU — kasus asli + kasus target ticket ini ═══\n");
   const apiKey = resolveSalesRiskIntentApiKey();
+  const TARGET_NAMES = ["Mahda", "HRD", "Dipatikarna", "Intan Antasari", "Khoirul Umam", "ingrid"];
   const targets = await prisma.customer.findMany({
-    where: { OR: [{ name: { contains: "Mahda", mode: "insensitive" } }, { name: { contains: "HRD", mode: "insensitive" } }] },
+    where: { OR: TARGET_NAMES.map((n) => ({ name: { contains: n, mode: "insensitive" } })) },
     select: {
       id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
       orders: { select: { value: true, status: true } },
@@ -102,14 +103,28 @@ async function main() {
     const cachedRow = { latestMessageIntent: intent, latestMessageAt: new Date(lastInbound.createdAt) };
     const signals = detectSalesRiskSignals(c, cachedRow);
     const risk = buildSalesRisk(signals, c);
+    const tierWithoutGate = classifyRiskTier({ ...signals, latestMessageIntent: null });
     console.log(`  ${c.name} — pesan terakhir: "${lastInbound.content}"`);
-    console.log(`    → intent=${intent}  tier=${risk.tier}  isProbablySpam=${signals.isProbablySpam}  hasSuspiciousLink=${signals.hasSuspiciousLink}`);
+    console.log(`    → intent=${intent}  tier: ${tierWithoutGate} → ${risk.tier}${tierWithoutGate !== risk.tier ? "  ← BERUBAH (gerbang aktif)" : ""}  isProbablySpam=${signals.isProbablySpam}  hasSuspiciousLink=${signals.hasSuspiciousLink}`);
     console.log(`    → problem: ${risk.problem}`);
     console.log(`    → recommendedAction: ${risk.recommendedAction}`);
-    console.log(`    (biaya: $${((usage.inputTokens || 0) * 1 + (usage.outputTokens || 0) * 5) / 1_000_000 > 0 ? "lihat log AI Playground" : "0"})\n`);
+    console.log(`    (usage: in=${usage.inputTokens} out=${usage.outputTokens})\n`);
   }
 
-  console.log("═══ 3. Diagnostik populasi — berapa banyak kandidat punya link asing? (TANPA LLM, TANPA tulis DB) ═══\n");
+  console.log("═══ 2b. Sintetis — pesan TERISOLASI tanpa konteks lain (verifikasi murni NETRAL_AMBIGU) ═══\n");
+  const synthCases = [
+    { label: "'Mahal' SENDIRIAN tanpa konteks apa pun", content: "Mahal" },
+    { label: "'Oke' sendirian tanpa konteks", content: "Oke" },
+    { label: "'Nanti dulu ya' sendirian tanpa konteks", content: "Nanti dulu ya" },
+  ];
+  for (const sc of synthCases) {
+    const recentInbound = [{ content: sc.content, createdAt: new Date() }];
+    const { intent } = await classifyLatestMessageIntent({ recentInbound, apiKey });
+    console.log(`  ${sc.label} → intent=${intent}`);
+  }
+
+  console.log("\n═══ 3. Diagnostik populasi — berapa banyak kandidat punya link asing? (TANPA LLM, TANPA tulis DB) ═══\n");
+  const URL_PATTERN_DIAG = /(https?:\/\/[^\s]+)|(\bwww\.[a-z0-9-]+\.[a-z]{2,}[^\s]*)|(\b[a-z0-9-]+\.(?:com|id|net|org|xyz|info|biz|link|click)\b[^\s]*)/i;
   const candidates = await loadSalesRiskCandidates(prisma, {});
   let suspiciousCount = 0;
   const examples = [];
@@ -117,7 +132,16 @@ async function main() {
     const signals = detectSalesRiskSignals(c, null);
     if (signals.hasSuspiciousLink) {
       suspiciousCount++;
-      if (examples.length < 10) examples.push(`${c.name || c.phone}: "${signals.recentInboundQuote}"`);
+      if (examples.length < 12) {
+        // Cari PESAN MANA (bukan cuma pesan terakhir) yang benar-benar
+        // mengandung link-nya, supaya contoh yang ditampilkan tidak
+        // menyesatkan (recentInboundQuote = pesan TERAKHIR, belum tentu
+        // pesan yang memicu hasSuspiciousLink).
+        const messagesAsc = flattenMessagesAsc(c.conversations);
+        const recentInbound = messagesAsc.filter((m) => m.direction === "INBOUND").slice(-5);
+        const hit = recentInbound.find((m) => URL_PATTERN_DIAG.test(m.content || ""));
+        examples.push(`${c.name || c.phone}: "${hit?.content || "(link ditemukan di pesan lain dalam window)"}"`);
+      }
     }
   }
   console.log(`Total kandidat discan: ${candidates.length}`);
