@@ -11,9 +11,11 @@
 // REQUEST_DENIED (dites langsung, kartu debit user ditolak di Google
 // Console), jadi Geocoding & Distance Matrix API tidak bisa dipakai sampai
 // itu beres. Supaya fitur peta/rute TIDAK ikut mati total menunggu urusan
-// billing yang di luar kendali sistem ini, DUA fallback GRATIS (tanpa API
+// billing yang di luar kendali sistem ini, TIGA fallback GRATIS (tanpa API
 // key, tanpa kartu) ditambahkan di sini:
-//   - Geocoding  -> OpenStreetMap Nominatim
+//   - Geocoding  -> (1) link Google Maps yang nempel di addressText kalau
+//                   ada (PALING akurat, lihat geocodeFromMapsLink), lalu
+//                   (2) OpenStreetMap Nominatim kalau tidak ada link
 //   - Jarak antar-stop -> garis lurus (haversine) + asumsi kecepatan kota
 // Google TETAP dicoba LEBIH DULU kalau `GOOGLE_MAPS_API_KEY` ada DAN
 // responsnya sukses — begitu billing aktif, sistem otomatis pakai data
@@ -28,6 +30,30 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 // Nominatim WAJIB User-Agent yang mengidentifikasi aplikasi (kebijakan
 // pemakaian resminya) — tanpa ini permintaan bisa ditolak/diblokir diam-diam.
 const NOMINATIM_USER_AGENT = "SANSS-KlinikMatras/1.0 (+https://app.sanomatrassehat.com; admin@klinikmatras.com)";
+
+// Link Google Maps di dalam addressText (30 Agustus 2026, ditemukan saat
+// backfill produksi) — sales SERING menempel link share lokasi customer
+// ("https://maps.app.goo.gl/xxx?g_st=ac") di belakang alamat teks. Link itu
+// GRATIS, TANPA API key, dan JAUH lebih akurat daripada geocoding tebakan
+// (Nominatim/Google sekalipun) — itu titik PERSIS yang customer/sales
+// tandai sendiri di peta, bukan hasil pencarian teks. Karena itu dicoba
+// PALING PERTAMA, sebelum Google maupun Nominatim.
+//
+// Link pendek (maps.app.goo.gl) redirect ke URL panjang yang menyimpan
+// koordinat di pola `!3d<lat>!4d<lng>` — diambil dari `res.url` setelah
+// fetch mengikuti redirect (Node fetch bawaan sudah `redirect: "follow"`
+// secara default, tidak perlu library tambahan).
+const GOOGLE_MAPS_LINK_RE = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.com\/maps)\S*/i;
+const LATLNG_IN_URL_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+
+async function geocodeFromMapsLink(text) {
+  const match = text.match(GOOGLE_MAPS_LINK_RE);
+  if (!match) return null;
+  const res = await fetch(match[0]);
+  const koordinat = res.url.match(LATLNG_IN_URL_RE);
+  if (!koordinat) return null;
+  return { lat: parseFloat(koordinat[1]), lng: parseFloat(koordinat[2]), estimate: false };
+}
 
 function apiKey() {
   return process.env.GOOGLE_MAPS_API_KEY || "";
@@ -92,6 +118,13 @@ async function geocodeNominatim(text) {
 // tidak ada koordinat sama sekali).
 export async function geocodeAddress(text) {
   if (!text || !text.trim()) return null;
+
+  try {
+    const dariLink = await geocodeFromMapsLink(text);
+    if (dariLink) return dariLink;
+  } catch (err) {
+    console.error("[maps] Gagal resolve link Google Maps di alamat, lanjut geocode teks:", err.message);
+  }
 
   if (mapsConfigured()) {
     try {
