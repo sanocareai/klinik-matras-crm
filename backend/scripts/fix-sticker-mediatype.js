@@ -4,12 +4,19 @@
 // LATAR BELAKANG: lihat catatan panjang di src/utils/parseHistoryMessage.js
 // (fungsi shared, dipanggil oleh handleGroupMessage & handleInboundMessage
 // di routes/webhooks.js). Deteksi sticker SEBELUMNYA cuma baca
-// `_data.Info.MediaType` — field itu KHUSUS GOWS, dan sistem ini jalan di
-// NOWEB (lihat CLAUDE.md §13). Akibatnya rawMediaType SELALU null untuk
-// lalu lintas nyata, dan stiker (mimetype image/webp — tidak bisa dibedakan
-// dari foto asli lewat mimetype saja) lolos sebagai mediaType "image" via
-// mimeToMediaType(). Bug PENULISAN sudah diperbaiki (rawMsg.stickerMessage
-// dari raw Baileys/GOWS message SEKARANG ikut dicek, jalan di dua engine);
+// `_data.Info.MediaType`, dan klaim komentar lama bahwa field itu "SELALU
+// ada + eksplisit bilang sticker" untuk payload GOWS (engine aktif sistem
+// ini — DIKONFIRMASI langsung via API produksi, lihat CLAUDE.md §13,
+// dikoreksi 30 Agustus 2026 setelah percobaan pertama salah menyalahkan
+// ini ke "sistem jalan di NOWEB") TERNYATA TIDAK TERBUKTI di produksi:
+// 108 stiker nyata lolos sebagai mediaType "image" via mimeToMediaType()
+// (stiker & foto asli sama-sama mimetype image/... jadi tidak bisa
+// dibedakan lewat mimetype saja). Akar masalah persisnya tidak bisa
+// dipastikan lagi (payload webhook lama tidak tersimpan) — bug PENULISAN
+// sudah diperbaiki dengan sinyal yang tidak bergantung pada field
+// kenyamanan WAHA yang mana pun: `rawMsg.stickerMessage`, nama field WIRE
+// PROTOCOL WhatsApp sendiri (dipakai go-whatsmeow/GOWS maupun Baileys/
+// NOWEB sama-sama — keduanya cuma implementasi client protokol yang sama);
 // script ini membereskan baris yang sudah terlanjur tersimpan salah.
 //
 // SINYAL BACKFILL: ekstensi file ".webp" — SATU-SATUNYA cara WhatsApp

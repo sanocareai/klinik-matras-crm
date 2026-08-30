@@ -80,8 +80,11 @@ dan data pelanggan harus di server sendiri (privasi bisnis).
 
 ### Infrastructure
 - Docker + Docker Compose (semua service dalam container)
-- WAHA self-hosted (WhatsApp HTTP API), engine: **NOWEB** (BUKAN WEBJS)
-  ⚠️ WEBJS rusak akibat update WhatsApp Web — selalu pakai NOWEB
+- WAHA self-hosted (WhatsApp HTTP API), engine: **GOWS** (dikoreksi 30
+  Agustus 2026 — lihat §13 utk riwayat & cara verifikasi. Sebutan "NOWEB"
+  di bagian lain dokumen ini adalah SISA dokumentasi sebelum migrasi ke
+  GOWS, bukan kondisi sekarang) — BUKAN WEBJS.
+  ⚠️ WEBJS rusak akibat update WhatsApp Web — selalu pakai GOWS/NOWEB
 - Nginx (reverse proxy), client_max_body_size 50M (sudah diset)
 - Let's Encrypt SSL via certbot
 - Sumopod VPS Jakarta, Ubuntu 22.04
@@ -929,8 +932,27 @@ ada di host — itu sinyal container masih pakai definisi volume yang lama.
 
 ## 13. WAHA — CATATAN PENTING
 
+⚠️ **DIKOREKSI 30 Agustus 2026** — seluruh bagian ini (dan beberapa
+sebutan "NOWEB" di §3/§5 di atas) SUDAH TIDAK AKURAT. Engine aktif
+SEKARANG adalah **GOWS**, sejak commit `279dda7` ("migrasi engine WAHA ke
+GOWS + dual-engine webhook parser", 7 Juli 2026) — dikonfirmasi LANGSUNG
+lewat `GET /api/sessions/CS-1` produksi: `config.gows` ada,
+`engine.gows.connected: true`, tidak ada key `noweb` sama sekali.
+Riwayat lengkap engine di project ini (lihat `git log -- docker-compose.yml`):
+WEBJS → NOWEB → WEBJS → NOWEB → **GOWS (sekarang)**. Ditemukan saat owner
+mempertanyakan penjelasan bug stiker yang salah asumsi "sistem ini NOWEB".
+
+Kode parsing WhatsApp (`parseHistoryMessage.js`, `webhooks.js`) SUDAH
+dual-engine aware sejak migrasi itu (baca `_data.Message` GOWS ATAU
+`_data.message` NOWEB, `extractPhoneGows()` ATAU `extractPhoneNoweb()`) —
+JANGAN hapus jalur NOWEB dari kode hanya karena engine aktif sekarang
+GOWS; riwayat chat lama & kemungkinan rollback tetap butuh keduanya.
+Yang salah cuma DOKUMENTASI di bawah ini yang menyebut NOWEB seolah
+satu-satunya/saat ini — baca `docker-compose.yml` langsung kalau ragu,
+jangan percaya "Engine: NOWEB" di baris di bawah.
+
 ```
-Engine: NOWEB (BUKAN WEBJS — WEBJS rusak sejak update WhatsApp Web 2026)
+Engine: GOWS (BUKAN WEBJS — WEBJS rusak sejak update WhatsApp Web 2026)
 Dashboard URL: IP_VPS:3000/dashboard
 Dashboard login: admin / klinikmatras123
 API Key: klinikmatras-rahasia-2026

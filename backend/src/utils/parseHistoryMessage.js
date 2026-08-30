@@ -267,22 +267,32 @@ export function parseHistoryMessage(msg) {
   let mediaUrl  = null;
   let caption   = null;
 
-  // BUG PRODUKSI (ditemukan 30 Agustus 2026): `_data.Info.MediaType` cuma
-  // ada di payload GOWS — sistem ini jalan di NOWEB (lihat CLAUDE.md §13),
-  // jadi field itu SELALU undefined di sini untuk lalu lintas nyata.
-  // `rawMediaType` akibatnya SELALU null utk NOWEB, dan cabang "sticker
-  // DULU" di bawah tidak pernah kena — stiker (mimetype image/webp, tidak
-  // bisa dibedakan dari foto asli lewat mimetype saja) lolos sebagai
-  // mediaType "image" via mimeToMediaType, lalu nampang di tab "Foto" galeri
-  // media (MediaGallery.jsx web / MediaGalleryScreen mobile, dua-duanya
-  // filter berdasar mediaType==="image" apa adanya, tidak salah — inputnya
-  // yang salah). Sinyal UNIVERSAL yang jalan di KEDUA engine: raw Baileys/
-  // GOWS message key `stickerMessage` di `rawMsg` (sudah dihitung di atas
-  // dgn casing ganda "_data.Message"/"_data.message" persis utk alasan
-  // yang sama — lihat komentar bug reply/quote 2 paragraf di atas), BUKAN
-  // cuma dipakai di loop fallback RAW_MEDIA_KEY_TO_TYPE di bawah (yang
-  // hanya kena kalau msg.hasMedia/msg.media KOSONG — untuk NOWEB biasanya
-  // WAHA SUDAH menormalkan keduanya, jadi loop itu tidak pernah tercapai).
+  // BUG PRODUKSI (ditemukan & diperbaiki 30 Agustus 2026): 108 pesan
+  // stiker WhatsApp nyata tersimpan mediaType "image" (nampang di tab
+  // "Foto" galeri media — MediaGallery.jsx web / GaleriMediaModal.js
+  // mobile, dua-duanya filter mediaType==="image" apa adanya, tidak
+  // salah, INPUT-nya yang salah), padahal sistem sudah lama migrasi ke
+  // engine GOWS (§13 CLAUDE.md, diverifikasi langsung via
+  // `GET /api/sessions/:id` produksi) dan `_data.Info.MediaType` menurut
+  // komentar aslinya SEHARUSNYA ada + eksplisit bilang "sticker" untuk
+  // payload GOWS. ⚠️ Percobaan pertama menyalahkan ini ke "sistem jalan
+  // di NOWEB" TERNYATA SALAH (dikoreksi owner) — engine aktif memang
+  // GOWS, jadi klaim di komentar lama soal `Info.MediaType` "SELALU ada
+  // + eksplisit sticker" itu sendiri yang tidak terbukti benar di
+  // produksi (mungkin cuma diuji dgn foto/video biasa, bukan stiker
+  // sungguhan) — akar masalah PERSIS-nya tidak bisa dipastikan lagi
+  // (payload webhook lama sudah tidak tersimpan), tapi fix di bawah
+  // TIDAK bergantung pada teori engine yang mana pun: `stickerMessage`
+  // adalah nama field WIRE PROTOCOL WhatsApp sendiri (dipakai go-
+  // whatsmeow/GOWS maupun Baileys/NOWEB sama-sama, keduanya cuma
+  // implementasi client utk protokol yang sama) — jauh lebih fundamental
+  // & tidak bergantung field kenyamanan WAHA yang ternyata tidak selalu
+  // bisa diandalkan. Dicek dari `rawMsg` yang sudah dihitung di atas dgn
+  // casing ganda "_data.Message"/"_data.message" (alasan sama dgn
+  // komentar bug reply/quote 2 paragraf di atas), BUKAN cuma dipakai di
+  // loop fallback RAW_MEDIA_KEY_TO_TYPE di bawah (yang hanya kena kalau
+  // msg.hasMedia/msg.media KOSONG — WAHA biasanya sudah menormalkan
+  // keduanya utk media yang ter-download, jadi loop itu jarang tercapai).
   const rawMediaType = normalizeRawMediaType(msg._data?.Info?.MediaType)
     || (rawMsg.stickerMessage ? "sticker" : null);
 
@@ -291,8 +301,8 @@ export function parseHistoryMessage(msg) {
     // Prioritas: rawMediaType "sticker" DULU — stiker WhatsApp cuma file
     // image/webp biasa secara mimetype, jadi mimeToMediaType tidak bisa
     // bedakan stiker dari foto asli (keduanya "image/..."), tapi
-    // rawMediaType (GOWS Info.MediaType ATAU raw stickerMessage NOWEB di
-    // atas) secara eksplisit bilang "sticker" untuk pesan stiker. Selain
+    // rawMediaType (Info.MediaType ATAU raw stickerMessage di atas, lihat
+    // komentar panjang di atas) secara eksplisit bilang "sticker". Selain
     // sticker, mimetype (paling presisi) tetap didahulukan > rawMediaType
     // (string tipe langsung, sering satu-satunya sumber saat media.url
     // belum ter-download) > "document" (fallback aman terakhir).
