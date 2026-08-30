@@ -204,6 +204,12 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
   // tidak fetch ulang) — sumber datanya sama dengan Rincian per Iklan
   // (`/analytics/source-performance`), yang sebelum ini tidak dipakai
   // frontend mana pun.
+  // Default "" = Semua Platform — tabel ringkas SEMUA sumber (paid ads
+  // Meta/Google MAUPUN organik Website/Instagram/WhatsApp Langsung/Referral)
+  // sekaligus, sama seperti default "Rincian per Iklan" di bawah (tanpa
+  // filter = semua baris). Pilih satu dari dropdown untuk melihat detailnya
+  // dalam kartu statistik besar — dua tampilan ini melayani pertanyaan beda
+  // ("bandingkan semua platform" vs "dalami satu platform").
   const [platformSel, setPlatformSel] = useState("");
   const [perf, setPerf] = useState(null); // { months, spendNote, data }
   const [loadingPerf, setLoadingPerf] = useState(false);
@@ -216,14 +222,13 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
       .finally(() => { if (!batal) setLoadingPerf(false); });
     return () => { batal = true; };
   }, [rangeParams?.from, rangeParams?.to]);
-  // Default pilihan: sumber ber-lead terbanyak (opsiSumber sudah terurut) —
-  // biasanya itu yang paling relevan dilihat pertama kali.
-  useEffect(() => {
-    if (!platformSel && opsiSumber.length > 0) setPlatformSel(opsiSumber[0].source);
-  }, [opsiSumber, platformSel]);
+  const perfRows = useMemo(
+    () => [...(perf?.data || [])].sort((a, b) => b.leads - a.leads),
+    [perf],
+  );
   const perfRow = useMemo(
-    () => (perf?.data || []).find((r) => r.source === platformSel) || null,
-    [perf, platformSel],
+    () => perfRows.find((r) => r.source === platformSel) || null,
+    [perfRows, platformSel],
   );
 
   if (!traffic) {
@@ -587,18 +592,23 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
         </ChartCard>
       )}
 
-      {/* ── Performa per Platform (CPA/ROAS) ── */}
-      {opsiSumber.length > 0 && (
+      {/* ── Performa per Platform (CPA/ROAS) ──────────────────────────────
+          Default (tanpa filter) = tabel SEMUA sumber sekaligus, paid ads
+          (Meta/Google, yang punya biaya) MAUPUN organik (Website/Instagram/
+          WhatsApp Langsung/Referral, yang wajar tidak punya biaya) — sama
+          persis pola default "Rincian per Iklan" di bawah. Pilih satu dari
+          dropdown untuk mendalami platform itu lewat kartu statistik besar. */}
+      {perfRows.length > 0 && (
         <ChartCard
           index={9}
           title="Performa per Platform"
-          description="Biaya iklan (input manual) dibagi hasil — pilih satu platform untuk lihat detailnya"
+          description="Biaya iklan (input manual) dibagi hasil, per platform — pilih satu untuk detail"
           actions={
             <FilterDropdown
               value={platformSel}
               onChange={setPlatformSel}
               options={opsiSumber.map((s) => ({ value: s.source, label: `${SOURCE_LABELS[s.source] || s.source} (${s.count})` }))}
-              placeholder="Pilih Platform"
+              placeholder="Semua Platform"
               ariaLabel="Pilih platform di Performa per Platform"
               triggerClassName="h-7 text-[12px]"
             />
@@ -606,12 +616,80 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
         >
           {loadingPerf ? (
             <p className="py-8 text-center text-[12.5px] text-ink3">Memuat…</p>
+          ) : !platformSel ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink3">
+                    <th className="pb-2 pr-3 font-medium">Platform</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Lead</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Closing</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Konversi</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Spam</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Biaya Iklan</th>
+                    <th className="pb-2 pr-3 text-right font-medium">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        CPA
+                        <InfoTooltip text="Cost per Acquisition = Biaya Iklan ÷ jumlah Closing platform ini. Kosong untuk sumber organik (tidak ada biaya) atau platform yang biayanya belum diisi admin." />
+                      </span>
+                    </th>
+                    <th className="pb-2 text-right font-medium">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        ROAS
+                        <InfoTooltip text="Return on Ad Spend = Nilai Order ÷ Biaya Iklan. Cuma terisi untuk platform yang biaya iklannya sudah diinput admin." />
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perfRows.map((row) => (
+                    <tr key={row.source} className="cursor-pointer border-b border-line hover:bg-inset" onClick={() => setPlatformSel(row.source)}>
+                      <td className="py-2 pr-3">
+                        <span className="flex items-center gap-1.5">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: WARNA_SUMBER[row.source] || "var(--text-tertiary)" }} />
+                          <span className="text-ink2">{SOURCE_LABELS[row.source] || row.source}</span>
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-semibold tabular-nums text-ink">{row.leads}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-ink2">{row.won}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-ink2">
+                        {row.convRate == null ? "—" : `${row.convRate}%`}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-ink3">
+                        {row.spamRate == null ? "—" : `${row.spamRate}%`}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-ink3">
+                        {row.spend == null ? "—" : formatRupiah(row.spend)}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-semibold tabular-nums text-accent">
+                        {row.cpa == null ? "—" : formatRupiah(row.cpa)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-ink2">
+                        {row.roas == null ? "—" : `${row.roas}×`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
+                Klik baris untuk detail satu platform. Kolom Biaya Iklan/CPA/ROAS kosong untuk sumber
+                organik (memang tidak punya biaya) atau platform yang biayanya belum diisi admin.
+                {perf?.spendNote ? <> {perf.spendNote}</> : null}
+              </p>
+            </div>
           ) : !perfRow ? (
             <p className="py-8 text-center text-[12.5px] text-ink3">
               Belum ada data untuk platform ini pada periode ini.
             </p>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={() => setPlatformSel("")}
+                className="mb-3 flex items-center gap-1 text-[11.5px] font-medium text-ink3 hover:text-ink"
+              >
+                <ArrowRight size={11} className="rotate-180" /> Kembali ke semua platform
+              </button>
               {/* Biaya iklan cuma tercatat kalau admin sudah input di Pengaturan
                   > Biaya Iklan — beda dari 0 (dientri sengaja Rp0), null berarti
                   memang belum pernah diisi, tampil "belum diisi" apa adanya. */}
