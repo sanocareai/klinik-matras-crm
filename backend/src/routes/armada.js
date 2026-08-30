@@ -28,6 +28,7 @@ import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
+import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
@@ -143,25 +144,11 @@ async function notifyDriverGroup(job, photoUrls, headline) {
   }
 }
 
-// Job dianggap "aktif" (masih akan dikerjakan) — dipakai untuk menyaring
-// unit yang SUDAH punya job tipe ini supaya tidak double-booking. FAILED dan
-// RESCHEDULED SENGAJA TIDAK termasuk aktif — unit itu harus muncul lagi di
-// daftar "available" supaya dispatcher bisa membuat job baru.
-const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
-
-// Unit.status "AWAITING_PICKUP"/"READY_FOR_DELIVERY" TIDAK cukup untuk
-// menandai unit layak dijadwalkan — order induknya bisa saja sudah
-// CANCELLED atau malah sudah DELIVERED (data lama sebelum sync status
-// unit<->order konsisten). Tanpa filter ini, GET /board menampilkan unit
-// itu sebagai "available" dan dispatcher bisa membuat job (+ trigger WA
-// asli ke customer) untuk order yang sudah mati. Bug nyata ditemukan
-// 23 Agustus 2026: tes end-to-end memilih unit AWAITING_PICKUP yang
-// order-nya CANCELLED sejak 13 hari sebelumnya — 57 dari 190 unit
-// AWAITING_PICKUP saat itu punya order CANCELLED, 65 lagi order-nya
-// sudah DELIVERED. Dipakai DUA tempat: menyaring daftar "available" (GET
-// /board) DAN validasi server-side saat job benar-benar dibuat (POST
-// /jobs) — supaya tidak bisa dilewati dengan mengirim unitId langsung.
-const ELIGIBLE_ORDER_STATUS = { PICKUP: ["PENDING", "PICKUP"], DELIVERY: ["READY"] };
+// ACTIVE_JOB_STATUSES & ELIGIBLE_ORDER_STATUS dipindah ke
+// services/jobStatus.js 24 Agustus 2026 — dipakai juga oleh
+// services/armadaAutoJob.js (auto-buat job pickup saat order masuk),
+// satu sumber kebenaran supaya definisi "job aktif"/"order layak
+// dijadwalkan" tidak drift antara dua file.
 
 const jobInclude = {
   driver: { select: { id: true, name: true } },
@@ -1335,8 +1322,20 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
     }
     const targetDate = toDateOnly(date);
 
+    // Job UNSCHEDULED (scheduledDate null) SELALU ikut tampil di tanggal
+    // manapun yang sedang dilihat dispatcher — 24 Agustus 2026, bagian dari
+    // jembatan otomatis Sales->Delivery (services/armadaAutoJob.js). Tanpa
+    // OR ini, job yang auto-dibuat begitu sales input order (belum
+    // dijadwalkan) TIDAK PERNAH terlihat sama sekali: query lama cuma
+    // mencocokkan scheduledDate PERSIS tanggal yang dipilih (yang defaultnya
+    // selalu hari ini di frontend), jadi job tanpa tanggal jatuh ke celah
+    // yang tidak pernah ke-query — regresi dari "unit tampil di daftar
+    // available" (yang sudah tidak lagi berlaku begitu unit itu dapat job).
     const jobs = await prisma.job.findMany({
-      where: { type, ...(targetDate ? { scheduledDate: targetDate } : { scheduledDate: null }) },
+      where: {
+        type,
+        ...(targetDate ? { OR: [{ scheduledDate: targetDate }, { scheduledDate: null }] } : { scheduledDate: null }),
+      },
       include: jobInclude,
       orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
     });

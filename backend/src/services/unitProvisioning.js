@@ -24,6 +24,7 @@
 // mengirim apa-apa tetap benar untuk 94% kasus.
 
 import { prisma } from "../db.js";
+import { ensurePickupJobForOrder } from "./armadaAutoJob.js";
 
 // Peta status Order → status Unit. SENGAJA sama persis dengan CASE di migrasi
 // backfill supaya unit hasil backfill dan unit hasil runtime tidak pernah
@@ -111,6 +112,15 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
   }));
 
   await tx.unit.createMany({ data });
+
+  // Jembatan otomatis ke Delivery Hub (24 Agustus 2026, lihat
+  // services/armadaAutoJob.js) — HANYA relevan kalau unit yang baru lahir
+  // langsung AWAITING_PICKUP (order status PENDING/PICKUP saat dibuat).
+  // Unit yang lahir di bucket lain (mis. status order sudah PROCESSING saat
+  // unit ditambahkan belakangan) tidak butuh job pickup sama sekali.
+  if (status === "AWAITING_PICKUP") {
+    await ensurePickupJobForOrder(tx, order.id);
+  }
 
   return tx.unit.findMany({
     where: { orderId: order.id, seq: { gte: mulai } },

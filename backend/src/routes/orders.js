@@ -147,6 +147,23 @@ orderRouter.patch("/:id", async (req, res) => {
     if (!guarded) return;
   }
 
+  // Override manual ke CANCELLED lewat dropdown ini WAJIB lolos pengaman
+  // yang SAMA dengan tombol "Batalkan Order" (checkCancelBlockers di atas)
+  // — dua tombol, satu aturan. Dicek DI LUAR transaksi seperti POST
+  // /:id/cancel, supaya order yang ditolak tidak pernah menyentuh DB sama
+  // sekali (bukan ditulis lalu di-rollback).
+  if (status === "CANCELLED") {
+    const current = await prisma.order.findUnique({ where: { id: req.params.id }, select: { status: true } });
+    if (current && current.status !== "CANCELLED") {
+      const { blockers } = await checkCancelBlockers(req.params.id);
+      if (blockers.length > 0) {
+        return res.status(409).json({
+          error: `Order tidak bisa dibatalkan karena sudah ada ${blockers.join(", ")} — pakai "Batalkan Order" untuk detail penanganannya, atau tangani manual lewat admin/Kendali.`,
+        });
+      }
+    }
+  }
+
   try {
     // Update + catat riwayat status dalam SATU transaksi, supaya tidak pernah
     // ada baris riwayat tanpa perubahan order yang berhasil (dan sebaliknya).
@@ -235,6 +252,42 @@ orderRouter.patch("/:id", async (req, res) => {
             changedById: req.user?.id || null,
           },
         });
+
+        // Kaskade Order -> Unit untuk DUA status terminal (24 Agustus 2026).
+        // CANCELLED sudah lolos checkCancelBlockers di atas (tidak ada unit
+        // in-flight/job/pembayaran), jadi aman menandai SEMUA unit ikut
+        // batal. DELIVERED TIDAK punya blocker terpisah — dropdown ini
+        // biasanya dipakai menutup order LAYANAN yang memang tidak lewat
+        // alur unit/produksi fisik (servis di tempat, dst), jadi kaskade
+        // longgar TANPA blocker, kecuali unit-nya sedang aktif dalam
+        // perjalanan (job EN_ROUTE/ARRIVED) — itu satu-satunya kondisi
+        // fisik yang benar-benar akan janggal kalau order tiba-tiba
+        // "selesai" padahal driver masih di jalan.
+        if (status === "CANCELLED") {
+          await tx.unit.updateMany({
+            where: { orderId: updated.id, status: { not: "CANCELLED" } },
+            data: { status: "CANCELLED" },
+          });
+        } else if (status === "DELIVERED") {
+          const unitEnRoute = await tx.unit.findFirst({
+            where: {
+              orderId: updated.id,
+              status: { notIn: ["CANCELLED", "DELIVERED"] },
+              jobUnits: { some: { job: { status: { in: ["EN_ROUTE", "ARRIVED"] } } } },
+            },
+            select: { unitCode: true },
+          });
+          if (unitEnRoute) {
+            throw Object.assign(
+              new Error(`Unit ${unitEnRoute.unitCode} masih dalam perjalanan (job aktif) — selesaikan job-nya dulu sebelum menandai order Terkirim.`),
+              { statusCode: 409 }
+            );
+          }
+          await tx.unit.updateMany({
+            where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED"] } },
+            data: { status: "DELIVERED" },
+          });
+        }
       }
 
       // Lepas override -> langsung hitung ulang di transaksi yang sama,
@@ -755,6 +808,42 @@ orderRouter.delete("/:id", async (req, res) => {
   }
 });
 
+// Dipakai DUA jalur yang bisa membatalkan order — POST /:id/cancel (tombol
+// "Batalkan Order" khusus) DAN PATCH /:id { status: "CANCELLED" } (dropdown
+// generik "Ubah Status", SATU-SATUNYA cara ubah status lain — lihat komentar
+// di OrderSection.jsx). Sebelum 24 Agustus 2026, cuma jalur PERTAMA yang
+// mengecek blocker ini + mengkaskade unit — jalur KEDUA (yang ternyata jauh
+// lebih sering dipakai sales sehari-hari, "Batalkan Order" kalah populer dari
+// dropdown status) diam-diam melewati semuanya: order jadi CANCELLED tapi
+// unit-unitnya TETAP AWAITING_PICKUP/dst selamanya (ghost unit). Ditemukan
+// 23 Agustus 2026 (lihat CLAUDE.md armada job real-test): 57 dari 190 unit
+// AWAITING_PICKUP order-nya sudah CANCELLED — sebagian besar via jalur ini.
+// Sekarang SATU fungsi dipakai KEDUANYA supaya tidak ada lagi jalur kedua
+// yang lupa diberi pengaman yang sama.
+async function checkCancelBlockers(orderId) {
+  const [units, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
+    prisma.unit.findMany({
+      where: { orderId },
+      select: { id: true, status: true, currentStageId: true, unitCode: true },
+    }),
+    prisma.job.count({ where: { orderId } }),
+    prisma.payment.count({ where: { orderId } }),
+    prisma.scopeRevision.count({ where: { orderId } }),
+  ]);
+  const inFlightUnits = units.filter(
+    (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
+  );
+
+  const blockers = [];
+  if (inFlightUnits.length > 0) {
+    blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
+  }
+  if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
+  if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
+  if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
+  return { blockers, units };
+}
+
 // POST /api/orders/:id/cancel — "hapus" yang aman untuk order yang sudah
 // punya unit/job/pembayaran (RESTRICT di atas menolak hard-delete-nya).
 //
@@ -775,26 +864,7 @@ orderRouter.post("/:id/cancel", async (req, res) => {
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
     if (order.status === "CANCELLED") return res.json(order);
 
-    const [units, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
-      prisma.unit.findMany({
-        where: { orderId: req.params.id },
-        select: { id: true, status: true, currentStageId: true, unitCode: true },
-      }),
-      prisma.job.count({ where: { orderId: req.params.id } }),
-      prisma.payment.count({ where: { orderId: req.params.id } }),
-      prisma.scopeRevision.count({ where: { orderId: req.params.id } }),
-    ]);
-    const inFlightUnits = units.filter(
-      (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
-    );
-
-    const blockers = [];
-    if (inFlightUnits.length > 0) {
-      blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
-    }
-    if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
-    if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
-    if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
+    const { blockers, units } = await checkCancelBlockers(req.params.id);
 
     if (blockers.length > 0) {
       return res.status(409).json({

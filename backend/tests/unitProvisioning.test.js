@@ -19,15 +19,41 @@ import {
   createUnitsForOrder,
 } from "../src/services/unitProvisioning.js";
 
-// Fake transaksi Prisma: cukup meniru tiga panggilan yang dipakai service.
+// Fake transaksi Prisma: cukup meniru panggilan yang dipakai service —
+// TERMASUK job/jobUnit sejak 24 Agustus 2026 (createUnitsForOrder sekarang
+// juga memanggil services/armadaAutoJob.js#ensurePickupJobForOrder untuk
+// unit yang lahir AWAITING_PICKUP, lihat tes "auto-job" di bawah).
 function fakeTx({ seqTertinggi = null } = {}) {
   const dibuat = [];
+  const jobsDibuat = [];
   return {
     dibuat,
+    jobsDibuat,
     unit: {
       findFirst: async () => (seqTertinggi === null ? null : { seq: seqTertinggi }),
       createMany: async ({ data }) => { dibuat.push(...data); return { count: data.length }; },
-      findMany: async () => dibuat,
+      // Fake SEDERHANA: filter status persis seperti Prisma, tapi TIDAK
+      // meniru `jobUnits.none` (tidak relevan di tes ini — tidak ada tes
+      // yang memanggil createUnitsForOrder dua kali untuk order yang sama
+      // unit-nya sudah punya job dari panggilan sebelumnya).
+      findMany: async ({ where } = {}) => {
+        if (!where) return dibuat;
+        return dibuat.filter((u) => !where.status || u.status === where.status.in?.[0] || u.status === where.status);
+      },
+    },
+    job: {
+      // Tidak ada job existing di skenario tes murni ini — tiap panggilan
+      // createUnitsForOrder di sini mewakili ORDER BARU, bukan menambah
+      // unit ke order yang jobnya sudah ada.
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        const job = { id: `job${jobsDibuat.length + 1}`, ...data };
+        jobsDibuat.push(job);
+        return job;
+      },
+    },
+    jobUnit: {
+      createMany: async () => ({ count: 0 }),
     },
   };
 }
@@ -165,4 +191,27 @@ test("statusOverride dipakai kalau diberikan", async () => {
     statusOverride: "RECEIVED",
   });
   assert.equal(tx.dibuat[0].status, "RECEIVED");
+});
+
+// --- jembatan otomatis ke Delivery Hub (24 Agustus 2026) -------------------
+// Sebelum ini, order/unit baru HANYA terlihat dispatcher lewat daftar "unit
+// belum terjadwal" — dia masih harus klik "Buat Job" manual. Sekarang unit
+// yang lahir AWAITING_PICKUP langsung dapat Job (UNSCHEDULED, tanpa
+// driver/tanggal) di transaksi yang sama. Lihat services/armadaAutoJob.js.
+test("unit AWAITING_PICKUP otomatis dapat job PICKUP (UNSCHEDULED)", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: orderDasar, count: 1 });
+
+  assert.equal(tx.jobsDibuat.length, 1);
+  assert.equal(tx.jobsDibuat[0].type, "PICKUP");
+  assert.equal(tx.jobsDibuat[0].status, "UNSCHEDULED");
+  assert.equal(tx.jobsDibuat[0].orderId, orderDasar.id);
+});
+
+test("unit yang lahir DI LUAR AWAITING_PICKUP tidak memicu job apa pun", async () => {
+  // statusOverride RECEIVED — unit ini sudah "lewat" tahap pickup (mis.
+  // dipindah manual), jadi tidak butuh job pickup sama sekali.
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: orderDasar, count: 1, statusOverride: "RECEIVED" });
+  assert.equal(tx.jobsDibuat.length, 0);
 });
