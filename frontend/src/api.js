@@ -740,6 +740,11 @@ export const api = {
   getSalesTargets: (params) => request("/settings/sales-targets" + buildQuery(params)),
   updateSalesTarget: (data) =>
     request("/settings/sales-targets", { method: "PUT", body: JSON.stringify(data) }),
+  // Biaya iklan bulanan per sumber (30 Agustus 2026) — input manual, dipakai
+  // menghitung CPA/ROAS di Laporan > Traffic. Pola sama dgn Sales Target.
+  getAdSpend: (params) => request("/settings/ad-spend" + buildQuery(params)),
+  updateAdSpend: (data) =>
+    request("/settings/ad-spend", { method: "PUT", body: JSON.stringify(data) }),
 
   // Pipeline
   getPipelineBoard: (params) => request("/pipeline/board" + buildQuery(params)),

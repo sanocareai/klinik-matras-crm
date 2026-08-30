@@ -1388,11 +1388,46 @@ analyticsRouter.get("/performance", async (req, res) => {
   }
 });
 
-// Performance per sumber lead — untuk menghitung ROI per channel
+// Pecah rentang [from,to] ("YYYY-MM-DD", kalender WIB — sama seperti
+// buildDateWhere) jadi daftar {year,month} yang tersentuh, inklusif kedua
+// ujung. Dipakai menjumlah AdSpend, yang disimpan per BULAN KALENDER
+// (input manual admin), bukan per hari — jadi biaya iklan tidak bisa
+// dipotong presisi ke rentang tanggal sembarang. Rentang yang cuma
+// menyentuh SEBAGIAN bulan tetap menjumlah biaya SATU BULAN PENUH itu —
+// pendekatan, bukan presisi — makanya selalu diberi disclaimer di
+// frontend (lihat `spendNote` di response).
+function monthsInRange(from, to) {
+  if (!from || !to) return [];
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  const months = [];
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    months.push({ year: y, month: m });
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return months;
+}
+
+// Performance per sumber lead — untuk menghitung ROI per channel.
+// Revisi 30 Agustus 2026: tambah `spend`/`cpa`/`costPerLead`/`roas` dari
+// AdSpend (input manual admin, lihat settings.js#/ad-spend) — SEBELUMNYA
+// endpoint ini sudah lengkap (leads/won/convRate/totalValue) tapi TIDAK
+// PERNAH dipanggil frontend sama sekali (dicek: getAnalyticsSourcePerformance
+// di api.js tidak ada satu pemanggil pun). Dipasang di TrafficTab.jsx
+// sekarang sebagai kartu "Performa per Platform".
 analyticsRouter.get("/source-performance", async (req, res) => {
   try {
     const { from, to } = req.query;
     const custDateWhere = buildDateWhere(from, to);
+
+    const months = monthsInRange(from, to);
+    const spendRows = months.length
+      ? await prisma.adSpend.findMany({ where: { OR: months.map(({ year, month }) => ({ year, month })) } })
+      : [];
+    const spendBySource = {};
+    for (const r of spendRows) spendBySource[r.source] = (spendBySource[r.source] || 0) + r.amount;
 
     // SPAM SENGAJA TIDAK dikecualikan di sini (beda dari /sales-report &
     // /business-summary) — restrukturisasi 24 Agustus 2026: ini metrik
@@ -1427,6 +1462,13 @@ analyticsRouter.get("/source-performance", async (req, res) => {
         }),
       ]);
       const leads = s._count.id;
+      const totalValue = orderAgg._sum.value || 0;
+      // spend null = belum pernah diisi admin utk sumber+bulan ini SAMA
+      // SEKALI (beda dari 0 — organik memang wajar 0, tapi Meta/Google Ads
+      // yang belum diisi HARUS kelihatan "belum ada data", bukan "CPA Rp0"
+      // yang menyesatkan seolah iklan gratis). `in spendBySource` (bukan
+      // `?? 0`) supaya beda ini kebawa.
+      const spend = months.length && s.leadSource in spendBySource ? spendBySource[s.leadSource] : null;
       return {
         source:     s.leadSource,
         leads,
@@ -1434,13 +1476,30 @@ analyticsRouter.get("/source-performance", async (req, res) => {
         convRate:   pctOrNull(won, leads),
         spamCount,
         spamRate:   pctOrNull(spamCount, leads),
-        totalValue: orderAgg._sum.value || 0,
+        totalValue,
+        spend,
+        // CPA = biaya ÷ closing (akuisisi = pelanggan yang benar-benar
+        // closing, bukan sekadar lead masuk — itu costPerLead di bawah).
+        cpa:         spend != null && won > 0 ? Math.round(spend / won) : null,
+        costPerLead: spend != null && leads > 0 ? Math.round(spend / leads) : null,
+        // ROAS = nilai order ÷ biaya — brp Rupiah order dihasilkan per
+        // Rupiah iklan. null kalau spend belum diisi ATAU 0 (bukan Infinity).
+        roas: spend != null && spend > 0 ? Math.round((totalValue / spend) * 100) / 100 : null,
       };
     }));
 
     // Urutkan dari leads terbanyak
     result.sort((a, b) => b.leads - a.leads);
-    res.json(result);
+    res.json({
+      months,
+      // Disclaimer WAJIB ditampilkan tiap kali spend ada isinya — biaya
+      // iklan dijumlah per BULAN KALENDER PENUH yang tersentuh rentang,
+      // bukan dipotong presisi ke tanggal (lihat monthsInRange di atas).
+      spendNote: months.length > 0
+        ? "Biaya iklan dijumlah dari bulan kalender penuh yang tersentuh rentang ini (data diisi manual per bulan) — bukan dipotong presisi ke tanggal."
+        : null,
+      data: result,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

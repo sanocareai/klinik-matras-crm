@@ -276,6 +276,7 @@ model User {
   assignedConversations     Conversation[]           @relation("AssignedAgent")
   notes                     Note[]
   salesTargets              SalesTarget[]
+  adSpends                  AdSpend[]
   pushTokens                PushToken[]
   sentMessages              Message[]                @relation("MessageSender")
   firstResponderFor         Conversation[]           @relation("FirstResponder")
@@ -2270,6 +2271,38 @@ model SalesTarget {
   updatedAt   DateTime @updatedAt
 
   @@unique([userId, year, month])
+}
+
+// Biaya iklan bulanan per sumber lead (30 Agustus 2026) — INPUT MANUAL admin,
+// BUKAN ditarik otomatis dari akun Meta/Google Ads (sistem ini tidak
+// tersambung ke API iklan mana pun). Satu-satunya cara Laporan > Traffic bisa
+// menghitung CPA (Cost per Acquisition) & ROAS per platform — sebelumnya
+// mustahil karena CRM ini SAMA SEKALI tidak punya data biaya di mana pun,
+// cuma data lead & closing. Pola identik SalesTarget (userId → source,
+// upsert per year+month) SENGAJA supaya UI-nya (Pengaturan) & cara
+// join-nya di analytics.js terasa konsisten dengan yang sudah ada.
+//
+// `source` pakai enum LeadSource yang SAMA dengan Customer.leadSource —
+// join langsung tanpa tabel mapping tambahan. Realistisnya cuma META_ADS &
+// GOOGLE_ADS yang akan pernah diisi (sumber organik tidak punya biaya iklan),
+// tapi field ini TIDAK dibatasi ke keduanya saja — kalau nanti ada TikTok
+// Ads dsb, enum LeadSource yang perlu ditambah, bukan model ini.
+model AdSpend {
+  id     String     @id @default(cuid())
+  source LeadSource
+  year   Int
+  month  Int // 1-12
+  amount Int // Rupiah, total spend platform itu bulan itu
+
+  // SetNull (bukan Restrict) — beda dari Payment.recordedById: ini angka
+  // agregat bulanan yang admin mana pun boleh koreksi, bukan jejak audit
+  // "siapa menerima uang" yang harus permanen menempel ke satu orang.
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([source, year, month])
 }
 
 // Pesan masuk yang tidak bisa diselesaikan nomornya (LID tidak dikenal, JID tidak valid).

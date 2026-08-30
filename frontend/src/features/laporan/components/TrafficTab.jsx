@@ -194,6 +194,38 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
     [atribusi],
   );
 
+  // ── Performa per Platform (CPA/ROAS, 30 Agustus 2026) ──────────────────
+  // Beda dari "Rincian per Iklan" di bawah: itu per KREATIF/link spesifik,
+  // ini per PLATFORM saja (Meta Ads, Google Ads, dst) TAPI dilengkapi biaya
+  // iklan (input manual admin, lihat Pengaturan > Biaya Iklan) sehingga bisa
+  // menghitung CPA (biaya ÷ closing) dan ROAS (nilai order ÷ biaya) — dua
+  // angka yang tidak bisa dihitung "Sumber Lead" karena itu tidak tahu
+  // biaya. Satu fetch untuk SEMUA sumber (dropdown cuma pindah tampilan,
+  // tidak fetch ulang) — sumber datanya sama dengan Rincian per Iklan
+  // (`/analytics/source-performance`), yang sebelum ini tidak dipakai
+  // frontend mana pun.
+  const [platformSel, setPlatformSel] = useState("");
+  const [perf, setPerf] = useState(null); // { months, spendNote, data }
+  const [loadingPerf, setLoadingPerf] = useState(false);
+  useEffect(() => {
+    let batal = false;
+    setLoadingPerf(true);
+    api.getAnalyticsSourcePerformance({ ...rangeParams })
+      .then((res) => { if (!batal) setPerf(res); })
+      .catch(() => { if (!batal) setPerf(null); })
+      .finally(() => { if (!batal) setLoadingPerf(false); });
+    return () => { batal = true; };
+  }, [rangeParams?.from, rangeParams?.to]);
+  // Default pilihan: sumber ber-lead terbanyak (opsiSumber sudah terurut) —
+  // biasanya itu yang paling relevan dilihat pertama kali.
+  useEffect(() => {
+    if (!platformSel && opsiSumber.length > 0) setPlatformSel(opsiSumber[0].source);
+  }, [opsiSumber, platformSel]);
+  const perfRow = useMemo(
+    () => (perf?.data || []).find((r) => r.source === platformSel) || null,
+    [perf, platformSel],
+  );
+
   if (!traffic) {
     return <p className="t-secondary py-16 text-center">Gagal memuat laporan traffic.</p>;
   }
@@ -555,6 +587,105 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
         </ChartCard>
       )}
 
+      {/* ── Performa per Platform (CPA/ROAS) ── */}
+      {opsiSumber.length > 0 && (
+        <ChartCard
+          index={9}
+          title="Performa per Platform"
+          description="Biaya iklan (input manual) dibagi hasil — pilih satu platform untuk lihat detailnya"
+          actions={
+            <FilterDropdown
+              value={platformSel}
+              onChange={setPlatformSel}
+              options={opsiSumber.map((s) => ({ value: s.source, label: `${SOURCE_LABELS[s.source] || s.source} (${s.count})` }))}
+              placeholder="Pilih Platform"
+              ariaLabel="Pilih platform di Performa per Platform"
+              triggerClassName="h-7 text-[12px]"
+            />
+          }
+        >
+          {loadingPerf ? (
+            <p className="py-8 text-center text-[12.5px] text-ink3">Memuat…</p>
+          ) : !perfRow ? (
+            <p className="py-8 text-center text-[12.5px] text-ink3">
+              Belum ada data untuk platform ini pada periode ini.
+            </p>
+          ) : (
+            <>
+              {/* Biaya iklan cuma tercatat kalau admin sudah input di Pengaturan
+                  > Biaya Iklan — beda dari 0 (dientri sengaja Rp0), null berarti
+                  memang belum pernah diisi, tampil "belum diisi" apa adanya. */}
+              {perfRow.spend == null && (
+                <div className="mb-3 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-orange" />
+                  <p className="text-[11.5px] leading-relaxed text-ink">
+                    Biaya iklan <strong>{SOURCE_LABELS[perfRow.source] || perfRow.source}</strong> belum
+                    diisi untuk bulan yang tersentuh periode ini — CPA/ROAS tidak bisa dihitung.
+                    Isi di <Link to="/pengaturan-sales?section=ad-spend" className="font-semibold text-accent hover:underline">Pengaturan &gt; Biaya Iklan</Link>.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Lead</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">{perfRow.leads}</p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Closing</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">{perfRow.won}</p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Konversi</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.convRate == null ? "—" : `${perfRow.convRate}%`}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Spam</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.spamRate == null ? "—" : `${perfRow.spamRate}%`}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Biaya Iklan</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.spend == null ? "—" : formatRupiah(perfRow.spend)}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Cost per Lead</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.costPerLead == null ? "—" : formatRupiah(perfRow.costPerLead)}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-accentbg px-3 py-2.5">
+                  <p className="t-caption mb-1 flex items-center gap-1">
+                    CPA
+                    <InfoTooltip text="Cost per Acquisition = Biaya Iklan ÷ jumlah Closing dari platform ini. Biaya per 1 pelanggan yang benar-benar closing, bukan cuma per lead masuk." />
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-accent">
+                    {perfRow.cpa == null ? "—" : formatRupiah(perfRow.cpa)}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1 flex items-center gap-1">
+                    ROAS
+                    <InfoTooltip text="Return on Ad Spend = Nilai Order ÷ Biaya Iklan. Contoh: 4.2 artinya tiap Rp1 belanja iklan platform ini menghasilkan Rp4.200.000-nya (per Rp1jt)." />
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.roas == null ? "—" : `${perfRow.roas}×`}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
+                Nilai Order dari platform ini pada periode ini: <strong>{formatRupiah(perfRow.totalValue)}</strong>.
+                {perf?.spendNote ? <> {perf.spendNote}</> : null}
+              </p>
+            </>
+          )}
+        </ChartCard>
+      )}
+
       {/* ── Rincian per iklan spesifik ──────────────────────────────────────
           Beda dari "Sumber Lead" di atas: itu per PLATFORM (Meta Ads: 95),
           ini per IKLAN/KREATIF (fb.me/77pJdJNsy: 40, instagram.com/p/DXWbO:
@@ -562,7 +693,7 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           dinormalisasi/ditebak lebih lanjut. */}
       {(sourceDetail?.data || []).length > 0 && (
         <ChartCard
-          index={9}
+          index={10}
           title="Rincian per Iklan"
           description="Kreatif/link spesifik mana yang benar-benar menghasilkan, bukan cuma platformnya"
           actions={

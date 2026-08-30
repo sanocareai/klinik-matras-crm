@@ -94,6 +94,62 @@ settingsRouter.put("/sales-targets", requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/settings/ad-spend?year=&month= — biaya iklan per sumber bulan itu
+// (30 Agustus 2026). Pola SAMA PERSIS dengan /sales-targets di atas — INPUT
+// MANUAL admin, bukan ditarik dari API Meta/Google Ads mana pun (sistem ini
+// tidak tersambung ke API iklan). Cuma sumber yang REALISTIS punya biaya
+// iklan yang dikembalikan (META_ADS, GOOGLE_ADS) — sumber organik tidak
+// pernah punya baris input, ditampilkan "0 belum diisi" apa adanya di UI,
+// BUKAN disembunyikan (supaya jelas kalau memang belum pernah diisi, bukan
+// sengaja Rp0 karena organik tidak butuh biaya — dua hal beda, keputusan
+// itu tetap ada di tangan admin yang isi angkanya, bukan diasumsikan sistem).
+const AD_SPEND_SOURCES = ["META_ADS", "GOOGLE_ADS"];
+
+settingsRouter.get("/ad-spend", requireAdmin, async (req, res) => {
+  const year  = Number(req.query.year  || new Date().getFullYear());
+  const month = Number(req.query.month || new Date().getMonth() + 1);
+
+  try {
+    const rows = await prisma.adSpend.findMany({ where: { year, month, source: { in: AD_SPEND_SOURCES } } });
+    const bySource = Object.fromEntries(rows.map((r) => [r.source, r]));
+
+    const result = AD_SPEND_SOURCES.map((source) => ({
+      source,
+      year,
+      month,
+      amount: bySource[source]?.amount ?? 0,
+      adSpendId: bySource[source]?.id ?? null,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/settings/ad-spend — upsert biaya iklan satu sumber bulan itu
+// Body: { source, year, month, amount }
+settingsRouter.put("/ad-spend", requireAdmin, async (req, res) => {
+  const { source, year, month, amount } = req.body;
+  if (!source || !year || !month || amount === undefined) {
+    return res.status(400).json({ error: "source, year, month, amount wajib diisi" });
+  }
+  if (!AD_SPEND_SOURCES.includes(source)) {
+    return res.status(400).json({ error: `source wajib salah satu dari: ${AD_SPEND_SOURCES.join(", ")}` });
+  }
+
+  try {
+    const row = await prisma.adSpend.upsert({
+      where: { source_year_month: { source, year: Number(year), month: Number(month) } },
+      create: { source, year: Number(year), month: Number(month), amount: Number(amount), createdById: req.user.id },
+      update: { amount: Number(amount), createdById: req.user.id },
+    });
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/settings/sync-history — pull riwayat chat dari WAHA ke CRM (admin only)
 // Body (opsional): { phone: "628xxx" } → sync 1 customer; kosong → sync semua customer ber-phone
 // Idempotent: pesan yang sudah ada di DB di-skip via externalId @unique

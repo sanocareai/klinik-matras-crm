@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Lock, MessageSquare, Plus, Pencil, Trash2, X, Copy, TrendingUp, Tag, Crown,
-  Bold, Italic, Strikethrough, Save, CheckCircle,
+  Bold, Italic, Strikethrough, Save, CheckCircle, Wallet,
 } from "lucide-react";
 import { api } from "../api.js";
 import { formatRupiah } from "../utils/format.js";
@@ -50,6 +50,7 @@ function InlineFeedback({ msg }) {
 const NAV_ITEMS = [
   { key: "template",     label: "Template Pesan", icon: MessageSquare },
   { key: "target-sales", label: "Target Sales",   icon: TrendingUp },
+  { key: "ad-spend",     label: "Biaya Iklan",    icon: Wallet },
   { key: "promo",        label: "Promo",          icon: Tag },
 ];
 const NAV_KEYS = NAV_ITEMS.map((n) => n.key);
@@ -501,6 +502,129 @@ function SalesTargetSection() {
   );
 }
 
+// AD_SPEND_SOURCES — cuma 2 platform yang realistis punya biaya iklan
+// dikeluarkan (organik tidak butuh input). Pola SAMA PERSIS dengan
+// SalesTargetSection di atas (input manual admin per bulan), lihat komentar
+// panjang di backend/src/routes/settings.js. Dipakai menghitung CPA/ROAS
+// di Laporan > Traffic > kartu "Performa per Platform" (30 Agustus 2026).
+const AD_SPEND_SOURCES = [
+  { key: "META_ADS", label: "Meta Ads" },
+  { key: "GOOGLE_ADS", label: "Google Ads" },
+];
+
+function AdSpendSection() {
+  const nowDate = new Date();
+  const [year, setYear]   = useState(nowDate.getFullYear());
+  const [month, setMonth] = useState(nowDate.getMonth() + 1);
+  const [rows, setRows]   = useState([]); // [{ source, label, amount }]
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function showMsg(type, text) {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await api.getAdSpend({ year, month });
+      const byKey = Object.fromEntries(data.map((r) => [r.source, r]));
+      setRows(AD_SPEND_SOURCES.map(({ key, label }) => ({
+        source: key,
+        label,
+        amount: byKey[key]?.amount ?? 0,
+      })));
+    } catch (err) {
+      showMsg("error", "Gagal memuat data: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [year, month]);
+
+  async function handleSaveAll() {
+    setSaving(true);
+    try {
+      await Promise.all(rows.map((r) =>
+        api.updateAdSpend({ source: r.source, year, month, amount: r.amount })
+      ));
+      showMsg("success", "Semua biaya iklan berhasil disimpan");
+    } catch (err) {
+      showMsg("error", err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const years = [nowDate.getFullYear() - 1, nowDate.getFullYear(), nowDate.getFullYear() + 1];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Biaya Iklan Bulanan</CardTitle>
+        <CardDescription>
+          Input manual total biaya iklan (Rupiah) per platform per bulan. Dipakai menghitung
+          Cost per Acquisition (CPA) dan ROAS di Laporan &gt; Traffic — sistem ini TIDAK
+          tersambung ke API Meta/Google Ads mana pun, jadi angka ini murni dari yang diisi di sini.
+        </CardDescription>
+      </CardHeader>
+
+      {msg && <div className="mb-4"><InlineFeedback msg={msg} /></div>}
+
+      <div className="mb-6 flex flex-wrap gap-3">
+        <Field label="Bulan" className="min-w-[160px]">
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={selectCls}>
+            {BULAN_LABELS.slice(1).map((label, i) => (
+              <option key={i + 1} value={i + 1}>{label}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tahun" className="min-w-[110px]">
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {loading ? (
+        <p className="text-[13px] text-ink3">Memuat...</p>
+      ) : (
+        <>
+          <div className="mb-5 flex flex-col gap-2.5">
+            {rows.map((row, idx) => (
+              <div key={row.source} className="flex items-center gap-3 rounded-btn bg-inset px-4 py-3">
+                <div className="min-w-[120px]">
+                  <span className="text-sm font-semibold text-ink">{row.label}</span>
+                </div>
+                <div className="flex flex-1 items-center gap-1.5">
+                  <span className="text-[13px] text-ink3">Rp</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100000"
+                    value={row.amount}
+                    onChange={(e) => setRows((prev) => prev.map((r, i) => i === idx ? { ...r, amount: Number(e.target.value) } : r))}
+                    className="h-8 max-w-[200px] flex-1 rounded-lg bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  />
+                  {row.amount > 0 && (
+                    <span className="text-xs text-ink3">= {formatRupiah(row.amount)}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button onClick={handleSaveAll} disabled={saving}>
+            <Save size={14} /> {saving ? "Menyimpan..." : "Simpan Semua Biaya Iklan"}
+          </Button>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function PromoSection() {
   const [promos, setPromos] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -691,6 +815,7 @@ export default function PengaturanSales({ user }) {
         <PageBody className="min-w-0 flex-1">
           {section === "template" && <TemplateSection user={user} />}
           {section === "target-sales" && <SalesTargetSection />}
+          {section === "ad-spend" && <AdSpendSection />}
           {section === "promo" && <PromoSection />}
         </PageBody>
       </div>
