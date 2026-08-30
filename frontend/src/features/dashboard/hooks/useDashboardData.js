@@ -38,5 +38,17 @@ export function useDashboardData(range) {
   const hotLeads  = band2("hot-leads",  api.getHotLeads,  MOCK_HOT_LEADS);
   const followUps = band2("follow-ups", api.getFollowUps, MOCK_FOLLOW_UPS);
 
-  return { overview, hotLeads, followUps };
+  // "Recent Activity" (30 Agustus 2026) — sengaja TIDAK lewat helper band2()
+  // di atas: itu utk data yang PUNYA kontrak mock (BAND2_IS_MOCK toggle),
+  // sedangkan ini endpoint baru yang dari awal sudah nyata, tidak pernah
+  // butuh mode mock. refetchInterval 45s SAMA dgn hotLeads/followUps —
+  // alasan sama: "lead baru masuk WA" harus muncul tanpa reload manual.
+  const recentActivity = useQuery({
+    queryKey: ["dash", "recent-activity"],
+    queryFn: () => api.getRecentActivity({ limit: 12 }),
+    staleTime: 45_000,
+    refetchInterval: 45_000,
+  });
+
+  return { overview, hotLeads, followUps, recentActivity };
 }

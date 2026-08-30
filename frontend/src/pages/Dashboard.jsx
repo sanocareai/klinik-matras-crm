@@ -11,6 +11,7 @@ import PipelineFunnelCard from "../features/dashboard/components/PipelineFunnelC
 import TopRepsCard from "../features/dashboard/components/TopRepsCard.jsx";
 import TaskQueueCard from "../features/dashboard/components/TaskQueueCard.jsx";
 import HotLeadsCard from "../features/dashboard/components/HotLeadsCard.jsx";
+import RecentActivityCard from "../features/dashboard/components/RecentActivityCard.jsx";
 import LeadsDetailModal from "../features/dashboard/components/LeadsDetailModal.jsx";
 
 function todayStr() {
@@ -147,6 +148,19 @@ export default function Dashboard({ user }) {
             error={d.hotLeads.isError}
           />
         </section>
+
+        {/* ── Recent Activity (30 Agustus 2026) — dipindah dari command
+            center /portal/growth (DivisionPage.jsx), yang di sana cuma
+            empty state jujur karena dulu belum ada datanya. Sekarang jadi
+            satu-satunya tempatnya, dengan data nyata (order + lead baru +
+            perpindahan pipeline). Lihat catatan navigasi di Portal.jsx —
+            klik kartu workspace sekarang langsung ke sini, bukan mampir
+            command center dulu. ── */}
+        <RecentActivityCard
+          items={d.recentActivity.data?.items}
+          loading={d.recentActivity.isLoading}
+          error={d.recentActivity.isError}
+        />
       </PageBody>
 
       <LeadsDetailModal

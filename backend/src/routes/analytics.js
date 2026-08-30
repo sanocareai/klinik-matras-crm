@@ -2389,6 +2389,81 @@ analyticsRouter.get("/recent-orders", async (req, res) => {
   }
 });
 
+// ── GET /analytics/recent-activity ─────────────────────────────────────────
+// Feed "Recent Activity" Dashboard (30 Agustus 2026) — MENGGANTIKAN empty
+// state jujur di command center lama (DivisionPage.jsx, lihat komentar
+// panjang di sana: "Backend cuma py SATU angka nyata per divisi... Recent
+// Activity TETAP py judul section tapi isinya empty state jujur, bukan
+// baris yang dikarang"). Sekarang beneran ADA datanya — 3 sumber NYATA
+// digabung & diurutkan waktu (bukan tabel/endpoint baru dari nol, cuma
+// menyatukan yang sudah ada + 1 query baru yang murah):
+//   - Order baru dibuat (pola SAMA dgn /recent-orders di atas)
+//   - Pelanggan/lead baru masuk
+//   - Perpindahan tahap pipeline (PipelineTransition — sudah lama tercatat
+//     tiap kali stage berubah di PATCH /customers/:id, sebelumnya TIDAK
+//     PERNAH ditampilkan di UI mana pun sama sekali, cuma disimpan)
+// `type` dikirim MENTAH ("order"/"lead"/"stage"), teks & ikon disusun di
+// frontend — konsisten dgn pola STAGE_LABELS (1 sumber kebenaran label).
+analyticsRouter.get("/recent-activity", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 12, 30);
+  try {
+    // Ambil `limit` dari MASING-MASING sumber (bukan dibagi 3) — kalau salah
+    // satu sumber sepi (mis. jarang ada perpindahan stage), sumber lain tetap
+    // mengisi feed sampai penuh, bukan menyisakan slot kosong percuma.
+    const [orders, customers, transitions] = await Promise.all([
+      prisma.order.findMany({
+        orderBy: { createdAt: "desc" }, take: limit,
+        select: { id: true, orderNumber: true, value: true, category: true, createdAt: true,
+          customer: { select: { id: true, name: true, phone: true } } },
+      }),
+      prisma.customer.findMany({
+        // SPAM dikecualikan — sama alasan dgn seluruh laporan lain di file
+        // ini (lihat catatan panjang soal Closing Rate di atas): chat
+        // junk/salah sasaran tidak boleh ikut tampil sebagai "lead baru".
+        where: { pipelineStage: { not: "SPAM" } },
+        orderBy: { createdAt: "desc" }, take: limit,
+        select: { id: true, name: true, phone: true, leadSource: true, createdAt: true },
+      }),
+      prisma.pipelineTransition.findMany({
+        orderBy: { createdAt: "desc" }, take: limit,
+        select: { id: true, fromStage: true, toStage: true, createdAt: true,
+          customer: { select: { id: true, name: true, phone: true } },
+          changedBy: { select: { name: true } } },
+      }),
+    ]);
+
+    const CATEGORY_FALLBACK = { BARU: "Kasur Baru", SEWA: "Kasur Sewa", LAYANAN: "Layanan" };
+    const feed = [
+      ...orders.map((o) => ({
+        type: "order", id: o.id, createdAt: o.createdAt,
+        customerId: o.customer?.id || null,
+        customerName: o.customer?.name || o.customer?.phone || "Pelanggan",
+        orderNumber: o.orderNumber, value: o.value,
+        category: o.category, categoryLabel: CATEGORY_FALLBACK[o.category] || null,
+      })),
+      ...customers.map((c) => ({
+        type: "lead", id: c.id, createdAt: c.createdAt,
+        customerId: c.id, customerName: c.name || c.phone || "Pelanggan",
+        leadSource: c.leadSource,
+      })),
+      ...transitions.map((t) => ({
+        type: "stage", id: t.id, createdAt: t.createdAt,
+        customerId: t.customer?.id || null,
+        customerName: t.customer?.name || t.customer?.phone || "Pelanggan",
+        fromStage: t.fromStage, toStage: t.toStage,
+        changedByName: t.changedBy?.name || null,
+      })),
+    ]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, limit);
+
+    res.json({ items: feed });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ═══════════════════════════════════════════════════════════════════════════
    WAVE 2B — DASHBOARD BAND 2 ("Sano Intelligence"), 3 endpoint READ-ONLY.
    Semua di bawah requireAuth (router-level, lihat atas). SCOPING per-role:

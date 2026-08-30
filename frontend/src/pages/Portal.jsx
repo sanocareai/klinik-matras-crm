@@ -29,19 +29,23 @@ import { cn } from "@/lib/utils.js";
 //  2. Chip mengambang di hero juga dari data nyata, dan HILANG total kalau
 //     datanya tidak ada — bukan placeholder kosong.
 //
-// ── UPDATE (1 Agustus 2026, revisi kedua) ──────────────────────────────────
-// Klik kartu SEKARANG berhenti dulu di command center (/portal/:key,
-// DivisionPage.jsx) — bukan langsung ke halaman kerja. Ini MEMBALIK keputusan
-// sebelumnya (skip command center) setelah Gilang eksplisit minta struktur
-// `.division-page` mockup juga ditiru. Isi command center-nya sendiri jujur
-// soal data (lihat komentar panjang di DivisionPage.jsx) — cuma URUTAN
-// navigasinya yang sekarang meniru mockup persis.
+// ── UPDATE (1 Agustus 2026, revisi kedua) — DIBALIK LAGI 30 Agustus 2026 ──
+// Sempat begini: klik kartu berhenti dulu di command center (/portal/:key,
+// DivisionPage.jsx) sebelum ke halaman kerja, meniru struktur `.division-page`
+// mockup atas permintaan eksplisit Gilang. SEKARANG DIBALIK LAGI ke perilaku
+// sebelum itu — klik kartu LANGSUNG ke halaman kerja (`p.path`), command
+// center dilewati. Alasan (juga dari Gilang): satu klik tambahan tanpa nilai
+// tambah begitu satu-satunya bagian command center yang tidak punya padanan
+// di Dashboard (Recent Activity) sudah dipindah ke sana beneran berisi data
+// nyata — lihat RecentActivityCard.jsx & Dashboard.jsx. DivisionPage.jsx
+// TIDAK dihapus (kalau suatu saat perlu dikembalikan), cuma sudah tidak ada
+// jalan normal ke sana dari UI manapun.
 //
-// Yang TETAP tidak berubah dari keputusan awal: role tunggal (5 sales) TIDAK
-// PERNAH melihat command center — auto-skip di bawah menuju portals[0].path
-// (halaman kerja asli) terjadi SEBELUM baris mana pun di sini yang bicara
-// soal command center. Command center cuma kelihatan oleh user yang punya
-// >1 portal (pada praktiknya: admin).
+// Yang TETAP tidak berubah sejak awal: role tunggal (5 sales) TIDAK PERNAH
+// melihat command center ATAU Portal ini sama sekali — auto-skip di bawah
+// menuju portals[0].path terjadi sebelum baris render mana pun di file ini.
+// Portal (dan dulu command center) cuma kelihatan oleh user >1 portal
+// (praktiknya: admin/owner).
 
 export const PORTAL_ICONS = {
   growth: Users,
@@ -439,7 +443,18 @@ export default function Portal() {
               portal={portal}
               stat={summary?.[portal.key]}
               span={spanClassFor(i, portals.length)}
-              onOpen={(p) => navigate(`/portal/${p.key}`)}
+              // REVISI 30 Agustus 2026 (owner) — MEMBALIK keputusan 1 Agustus
+              // di komentar atas file ini sekali lagi: klik kartu sekarang
+              // langsung ke halaman kerja workspace (`p.path`, field yang
+              // SAMA dipakai auto-skip role tunggal di atas), BUKAN mampir
+              // command center (/portal/:key) dulu. Alasan: command center
+              // itu extra klik tanpa nilai tambah begitu Recent Activity
+              // (satu-satunya bagian yang dulu tidak ada padanannya di
+              // Dashboard) sudah dipindah ke sana — lihat RecentActivityCard.jsx
+              // & Dashboard.jsx. DivisionPage.jsx (command center) TIDAK
+              // dihapus, cuma sudah tidak ada jalan normal menujunya dari UI;
+              // dibiarkan hidup kalau suatu saat perlu dikembalikan.
+              onOpen={(p) => navigate(p.path)}
             />
           ))}
         </div>

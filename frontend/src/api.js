@@ -678,6 +678,10 @@ export const api = {
   // Scorer + Sales Risk Engine + SLA/response-time, TANPA skoring AI baru.
   getSalesIntelligence: (params) => request("/sales-intelligence" + buildQuery(params)),
   getRecentOrders: (params) => request("/analytics/recent-orders" + buildQuery(params)),
+  // Feed "Recent Activity" Dashboard (30 Agustus 2026) — gabungan order
+  // baru + lead baru + perpindahan pipeline, lihat komentar panjang di
+  // routes/analytics.js#/recent-activity.
+  getRecentActivity: (params) => request("/analytics/recent-activity" + buildQuery(params)),
   // Wave 2B — Dashboard Band 2 (read-only, role-scoped di server)
   getRecommendations: () => request("/analytics/recommendations"),
   getHotLeads:        () => request("/analytics/hot-leads"),
