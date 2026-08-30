@@ -99,7 +99,14 @@ export default function ArmadaDashboard() {
   // avatar driver, job langsung ASSIGNED (kalau kendaraan cuma 1, backend/
   // JobDetailDrawer auto-isi begitu drawer dibuka; di sini cukup driver+
   // tanggal hari ini supaya job punya jadwal, bukan cuma driver kosongan).
+  //
+  // BUG YANG DIPERBAIKI (ditemukan saat verifikasi visual 30 Agustus 2026):
+  // ChipPilih juga punya opsi "kosong" (lepas driver, onPick(null)) — kalau
+  // itu ikut menjadwalkan (scheduledDate diisi), job jadi SCHEDULED TANPA
+  // driver dan hilang dari panel ini tanpa benar-benar tertugaskan. Guard
+  // di bawah memastikan tanggal cuma diisi kalau memang ada driver dipilih.
   async function tugaskanCepat(jobId, driverId) {
+    if (!driverId) return;
     setAssigningId(jobId);
     try {
       await api.updateArmadaJob(jobId, { driverId, scheduledDate: tanggal });
@@ -199,7 +206,7 @@ export default function ArmadaDashboard() {
                   {unscheduled.map((j) => (
                     <TR key={j.id} className="cursor-pointer" onClick={() => navigate(`/armada/jobs?job=${j.id}`)}>
                       <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
-                      <TD className="text-ink2">{customerOf(j)?.name || "—"}</TD>
+                      <TD className="text-ink2">{customerOf(j) || "—"}</TD>
                       <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
                       <TD onClick={(e) => e.stopPropagation()}>
                         <ChipPilih
@@ -292,7 +299,7 @@ export default function ArmadaDashboard() {
                     return (
                       <TR key={j.id} className="cursor-pointer" onClick={() => navigate("/armada/jobs")}>
                         <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
-                        <TD className="text-ink2">{cust?.name || "—"}</TD>
+                        <TD className="text-ink2">{cust || "—"}</TD>
                         <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
                         <TD className="text-ink2">
                           {j.driver?.name ? (
