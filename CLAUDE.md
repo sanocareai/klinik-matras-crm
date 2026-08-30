@@ -73,25 +73,34 @@ dan data pelanggan harus di server sendiri (privasi bisnis).
   2026** — baris ini SUDAH TIDAK AKURAT: Tailwind v4 (`@tailwindcss/vite`)
   + shadcn/ui SUDAH masuk sejak "Sano Design System v2" (mulai dari
   Laporan.jsx), hidup BERDAMPINGAN dengan index.css lama (lihat
-  `src/styles/tailwind.css`). **BUG BESAR ditemukan hari yang sama — baca
-  sebelum menyentuh apa pun yang pakai class Tailwind:** utility BERVARIAN
-  (prefix apa pun — `sm:`/`md:`/`lg:`/`hover:`/`focus:` dst) TIDAK SATU PUN
-  ter-compile di project ini, dicek langsung di CSS hasil `npm run build`
-  (nol match utk kombinasi apa pun). Utility POLOS (`flex`, `z-30`, `h-9`,
-  dst) generate normal — cuma yang ber-prefix varian yang hilang, TANPA
-  peringatan build apa pun. Instance pertama yang ketahuan: tombol hamburger
-  Topbar.jsx (`md:hidden`, dulunya `lg:hidden` — dua-duanya sama-sama tidak
-  pernah ter-compile, makanya ganti breakpoint pertama kali tidak mengubah
-  apa pun) — sudah diperbaiki dengan CSS murni (class + `@media` tulisan
-  tangan), BUKAN Tailwind. Akar sebab BUG SCANNER-nya sendiri BELUM
-  ditelusuri (di luar cakupan perbaikan tombol itu) — kemungkinan BANYAK
-  komponen Tailwind lain (terutama yang sudah migrasi ke DS v2, termasuk
-  shadcn/ui) diam-diam kehilangan hover/responsive state yang sama tanpa
-  ada yang sadar. **Kalau menulis/mengedit komponen berbasis Tailwind:
-  JANGAN percaya class bervarian bekerja sebelum dicek langsung di CSS
-  hasil build** (`grep` nama class-nya, escape titik dua jadi `\:`, di file
-  `dist/assets/index-*.css` setelah `npm run build`) — kalau nol match,
-  pindah ke CSS murni seperti perbaikan tombol hamburger di atas.
+  `src/styles/tailwind.css`).
+  ⚠️ **KOREKSI KEDUA, hari yang sama** — entri sebelumnya di sini
+  ("TIDAK ADA satu pun utility Tailwind bervarian yang ter-compile,
+  project-wide") **SALAH TOTAL**, ditemukan sendiri lewat `grep` yang cacat
+  (pola pencarian tidak menghitung suffix pseudo-class asli seperti
+  `:hover` pada `.hover\:bg-x:hover{}`, atau pembungkus `@media(){}` pada
+  variant responsif — jadi "nol match" itu salah baca tool, bukan fakta).
+  Diverifikasi ULANG pakai Node `fs.readFileSync(...,"latin1")` +
+  `.includes()` byte-exact (BUKAN `grep`/`grep -P` lewat bash — escaping
+  backslash lewat 2+ layer shell di lingkungan ini TERBUKTI BERULANG KALI
+  tidak bisa diandalkan): `md:hidden`, `lg:hidden`, `sm:inline`,
+  `hover:bg-hovertint`, `focus-visible:ring-2`, dkk **SEMUA ter-compile
+  dengan benar**. Variant Tailwind BEKERJA NORMAL di project ini — jangan
+  percaya klaim sebaliknya kalau muncul lagi di riwayat/memori manapun.
+  **Temuan yang TERBUKTI BENAR** (sempit, bukan "semua Tailwind rusak"):
+  sebagian utility warna kustom dari blok `@theme inline` (`bg-surface`,
+  `bg-inset`, `text-ink`, `bg-card`/`bg-background` dari blok kompatibilitas
+  shadcn, dkk) **kadang tidak ter-generate** walau literal class-nya ADA di
+  source yang ter-scan (dibuktikan: `bg-surface` di WorkspaceSwitcher.jsx
+  tidak ter-compile, padahal `border-border`/`rounded-btn` dari STRING
+  className yang SAMA PERSIS ter-compile normal) — pola persisnya TIDAK
+  konsisten per nama (`bg-ink3` jalan, `text-ink3` tidak; `bg-line` jalan,
+  `text-line` tidak) dan akar sebabnya BELUM ditelusuri. **Kalau curiga
+  satu utility warna kustom (bg-*/text-* dari nama di @theme inline, BUKAN
+  variant/breakpoint) tidak muncul di layar:** cek dulu dengan cara byte-
+  exact di atas (bukan grep bash) sebelum mengarang teori — kalau memang
+  tidak ada, pindah ke CSS murni (pola: WorkspaceSwitcher.jsx +
+  `.workspace-switcher-trigger` di tokens.css, 30 Agustus 2026).
 
 ### Backend
 - Node.js + Express (ES Modules — pakai `import`, bukan `require`)

@@ -52,8 +52,25 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
           type="button"
           title={judul}
           aria-label={`Workspace aktif: ${judul}. Klik untuk berpindah.`}
+          // BUG DITEMUKAN 30 Agustus 2026 (laporan owner: "ga mencok dengan
+          // topbar") — `border border-border` di sini melanggar aturan
+          // desain sendiri yang ditulis di styles/tokens.css bagian "SIDEBAR:
+          // bersih & minimalis": "Border pada card/panel/badge/tombol
+          // DILARANG... hierarki dari TONE PERMUKAAN + SPACING, BUKAN
+          // border". Kontrol sidebar LAIN (sidebar-brand-icon,
+          // sidebar-profile, sidebar-collapse-btn) semuanya SUDAH dibikin
+          // transparan tanpa border di sapuan DS v2.2 (lihat tokens.css) —
+          // tombol ini terlewat, jadi satu-satunya kotak berbingkai di
+          // antara sidebar yang sudah rata/flat, kelihatan "mengambang"
+          // sendiri. `bg-surface` (fill terisi) & `hover:bg-hovertint`
+          // (variant Tailwind yang TIDAK ter-compile di project ini — lihat
+          // CLAUDE.md §3 soal bug scanner Tailwind) diganti class
+          // `.workspace-switcher-trigger` (CSS murni, sama pola dgn
+          // .sidebar-profile di tokens.css) supaya benar-benar transparan
+          // + hover jalan, bukan cuma "kelihatan seperti transparan tapi
+          // sebenarnya diam-diam masih terisi".
           className={cn(
-            "mx-3 mb-2 flex items-center gap-2.5 rounded-btn border border-border bg-surface px-2.5 py-2 text-left transition-colors hover:bg-hovertint",
+            "workspace-switcher-trigger mx-3 mb-2 flex items-center gap-2.5 rounded-btn px-2.5 py-2 text-left transition-colors",
             collapsed && "mx-2 justify-center px-0"
           )}
         >

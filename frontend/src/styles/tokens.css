@@ -563,6 +563,21 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   border-radius: var(--r-md) !important;
 }
 .sidebar-profile:hover { background: var(--bg-hover) !important; }
+
+/* WorkspaceSwitcher trigger (30 Agustus 2026) — komponen Tailwind (bukan
+   class lama di file ini) sempat terlewat dari sapuan "bersih & minimalis"
+   di atas: masih pakai `border border-border` + `bg-surface`, jadi satu-
+   satunya kotak berbingkai di antara kontrol sidebar lain yang sudah flat
+   (sidebar-profile/-brand-icon/-collapse-btn di atas). Disamakan di sini —
+   plain CSS, bukan utility Tailwind, supaya hover-nya juga BENAR-BENAR
+   jalan (variant `hover:` Tailwind tidak ter-compile di project ini,
+   lihat CLAUDE.md §3). */
+.workspace-switcher-trigger {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.workspace-switcher-trigger:hover { background: var(--bg-hover) !important; }
 .sidebar { border-right: none !important; box-shadow: none !important; }
 
 /* ── INBOX: daftar chat & jendela chat ─────────────────────────────────────

@@ -93,23 +93,18 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             onClick={onToggleMobileMenu}
             title="Buka menu"
             aria-label="Buka menu"
-            // KOREKSI KEDUA (30 Agustus 2026) — percobaan pertama ganti
-            // `lg:hidden` → `md:hidden` (breakpoint Tailwind, 768px, biar
-            // sama dgn breakpoint CSS sidebar jadi drawer) TERNYATA TIDAK
-            // MENYELESAIKAN APA-APA, dan setelah ditelusuri sampai ke CSS
-            // yang benar-benar ter-build, akar masalahnya jauh lebih dasar:
-            // TIDAK ADA SATU PUN utility Tailwind ber-VARIAN (prefix apa
-            // pun — sm:/md:/lg:/hover:/focus:, bukan cuma di tombol ini)
-            // yang ter-compile di project ini sama sekali — dicek langsung
-            // di CSS hasil build, nol match utk semua kombinasi. Utility
-            // POLOS (flex, z-30, backdrop-blur, h-9 dst) ter-generate
-            // normal; begitu ada prefix varian, hilang total. Ini bug
-            // scanner Tailwind v4 yang sifatnya PROJECT-WIDE, bukan spesifik
-            // tombol ini — lihat CLAUDE.md §Tailwind utk detail & dampaknya
-            // ke komponen lain. Sambil menunggu akar sebabnya digali lebih
-            // dalam, tombol ini dipindah ke CSS murni (class biasa +
-            // `@media` tulisan tangan di index.css) — SATU-SATUNYA cara
-            // yang terbukti benar-benar jalan di project ini sekarang.
+            // KOREKSI KEDUA (30 Agustus 2026) — pindah dari `md:hidden` ke
+            // class CSS murni di sini. ⚠️ Sesi yang sama sempat menulis di
+            // sini bahwa akar masalahnya "TIDAK ADA satu pun variant
+            // Tailwind yang ter-compile di project ini" — itu KELIRU, sudah
+            // dikoreksi di CLAUDE.md §3 (ditemukan lewat grep bash yang
+            // cacat escaping-nya; diverifikasi ulang byte-exact via Node,
+            // `md:hidden` DKK TERBUKTI compile normal). Root cause ASLI
+            // laporan owner ("tombol ini tidak berfungsi") jadi TIDAK
+            // PERNAH benar-benar ketemu — keputusan pindah ke CSS murni di
+            // sini dipertahankan karena TERBUKTI benar secara fungsional
+            // (breakpoint 768px, sama dgn CSS drawer sidebar), bukan karena
+            // teori Tailwind di atas.
             className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint topbar-hamburger-btn"
           >
             <MenuIcon size={20} />
