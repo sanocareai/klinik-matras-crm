@@ -633,10 +633,16 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                         <InfoTooltip text="Cost per Acquisition = Biaya Iklan ÷ jumlah Closing platform ini. Kosong untuk sumber organik (tidak ada biaya) atau platform yang biayanya belum diisi admin." />
                       </span>
                     </th>
-                    <th className="pb-2 text-right font-medium">
+                    <th className="pb-2 pr-3 text-right font-medium">
                       <span className="inline-flex items-center justify-end gap-1">
                         ROAS
                         <InfoTooltip text="Return on Ad Spend = Nilai Order ÷ Biaya Iklan. Cuma terisi untuk platform yang biaya iklannya sudah diinput admin." />
+                      </span>
+                    </th>
+                    <th className="pb-2 text-right font-medium text-ink2">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        Nilai/Lead
+                        <InfoTooltip text="Nilai/Lead = total Nilai Order ÷ total Lead (BUKAN cuma yang closing) dari platform ini — beda dari CPA/ROAS, ini TIDAK butuh data biaya iklan sama sekali, jadi tetap terisi untuk platform organik. Angka paling menentukan buat bandingkan kualitas SEMUA sumber apel-ke-apel." />
                       </span>
                     </th>
                   </tr>
@@ -664,8 +670,14 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                       <td className="py-2 pr-3 text-right font-semibold tabular-nums text-accent">
                         {row.cpa == null ? "—" : formatRupiah(row.cpa)}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-ink2">
+                      <td className="py-2 pr-3 text-right tabular-nums text-ink2">
                         {row.roas == null ? "—" : `${row.roas}×`}
+                      </td>
+                      <td className={cn(
+                        "py-2 text-right font-semibold tabular-nums",
+                        row.nilaiPerLead > 0 ? "text-ink" : "text-ink3",
+                      )}>
+                        {row.nilaiPerLead == null ? "—" : formatRupiah(row.nilaiPerLead)}
                       </td>
                     </tr>
                   ))}
@@ -673,7 +685,8 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
               </table>
               <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
                 Klik baris untuk detail satu platform. Kolom Biaya Iklan/CPA/ROAS kosong untuk sumber
-                organik (memang tidak punya biaya) atau platform yang biayanya belum diisi admin.
+                organik (memang tidak punya biaya) atau platform yang biayanya belum diisi admin —
+                pakai kolom Nilai/Lead untuk bandingkan SEMUA platform (termasuk organik) apel-ke-apel.
                 {perf?.spendNote ? <> {perf.spendNote}</> : null}
               </p>
             </div>
@@ -752,6 +765,21 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
                   </p>
                   <p className="text-lg font-bold tabular-nums text-ink">
                     {perfRow.roas == null ? "—" : `${perfRow.roas}×`}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-inset px-3 py-2.5">
+                  <p className="t-caption mb-1">Rata2 Order</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {perfRow.avgOrderValue == null ? "—" : formatRupiah(perfRow.avgOrderValue)}
+                  </p>
+                </div>
+                <div className="rounded-btn bg-accentbg px-3 py-2.5">
+                  <p className="t-caption mb-1 flex items-center gap-1">
+                    Nilai/Lead
+                    <InfoTooltip text="Nilai/Lead = total Nilai Order ÷ total Lead (BUKAN cuma yang closing) dari platform ini. Beda dari CPA/ROAS: ini TIDAK butuh data biaya iklan, jadi tetap terisi untuk platform organik — angka paling menentukan buat bandingkan SEMUA sumber apel-ke-apel, iklan atau bukan." />
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-accent">
+                    {perfRow.nilaiPerLead == null ? "—" : formatRupiah(perfRow.nilaiPerLead)}
                   </p>
                 </div>
               </div>

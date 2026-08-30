@@ -1469,13 +1469,22 @@ analyticsRouter.get("/source-performance", async (req, res) => {
       // yang menyesatkan seolah iklan gratis). `in spendBySource` (bukan
       // `?? 0`) supaya beda ini kebawa.
       const spend = months.length && s.leadSource in spendBySource ? spendBySource[s.leadSource] : null;
+      // Pakai metrikKualitas() yang SAMA dengan /leadSourceDetail (bukan
+      // duplikat pctOrNull manual) — supaya nilaiPerLead/avgOrderValue di
+      // sini PASTI konsisten definisinya dengan "Rincian per Iklan" (30
+      // Agustus 2026: sebelumnya kartu Performa per Platform TIDAK
+      // menyertakan nilaiPerLead, padahal itu "angka paling penting untuk
+      // keputusan belanja iklan" menurut catatan metrikKualitas sendiri).
+      const kualitas = metrikKualitas(leads, won, totalValue, spamCount);
       return {
         source:     s.leadSource,
         leads,
         won,
-        convRate:   pctOrNull(won, leads),
+        convRate:   kualitas.convRate,
         spamCount,
-        spamRate:   pctOrNull(spamCount, leads),
+        spamRate:   kualitas.spamRate,
+        nilaiPerLead:  kualitas.nilaiPerLead,
+        avgOrderValue: kualitas.avgOrderValue,
         totalValue,
         spend,
         // CPA = biaya ÷ closing (akuisisi = pelanggan yang benar-benar
