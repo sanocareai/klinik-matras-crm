@@ -34,12 +34,7 @@ const LEAD_SOURCE_LABELS = {
   META_ADS: "Iklan Meta", GOOGLE_ADS: "Google Ads", WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM: "Instagram", WHATSAPP_DIRECT: "WA Langsung", REFERRAL: "Referral", OTHER: "Lainnya",
 };
-const KOTA_LIST = [
-  "Jakarta Selatan", "Jakarta Barat", "Jakarta Utara", "Jakarta Pusat", "Jakarta Timur",
-  "Bekasi", "Tangerang", "Bogor", "Depok", "Bandung", "Sukabumi", "Karawang",
-];
-
-// Sheet pilih 1 opsi dari daftar (dipakai Sumber Lead & Kota) — kecil,
+// Sheet pilih 1 opsi dari daftar (dipakai Sumber Lead) — kecil,
 // tidak perlu file terpisah. Komponen TERPISAH dari CustomerProfileContent
 // (bukan nested closure), jadi butuh useTokens()+styles sendiri, tidak bisa
 // pinjam punya parent.
@@ -106,7 +101,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
   // OrderFormModal.js kenapa ini disatukan.
   const [editingOrder, setEditingOrder] = useState(null);
   const [showLeadSourcePicker, setShowLeadSourcePicker] = useState(false);
-  const [showCityPicker, setShowCityPicker] = useState(false);
   // Merk Kasur/Ukuran Kasur/Jenis Layanan — satu sumber dipakai OrderFormModal
   // (bikin order baru) DAN OrderCard (edit order) di bawah, fetch sekali di
   // sini supaya tidak dobel-request tiap kartu order render.
@@ -199,15 +193,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
       update(updated);
     } catch (err) {
       Alert.alert("Gagal simpan sumber lead", err.message);
-    }
-  }
-
-  async function saveCity(value) {
-    try {
-      const updated = await api.updateCustomer(customerId, { city: value || null });
-      update(updated);
-    } catch (err) {
-      Alert.alert("Gagal simpan kota", err.message);
     }
   }
 
@@ -405,12 +390,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         </View>
       </Section>
 
-      <Section title="Kota">
-        <TouchableOpacity style={styles.selectBox} onPress={() => setShowCityPicker(true)}>
-          <Text style={styles.selectBoxText}>{customer.city || "— Pilih Kota —"}</Text>
-        </TouchableOpacity>
-      </Section>
-
       {/* Order — OrderCard urus expand/quick-status/hapus/komplain (view
           mode); tap "Edit" buka OrderFormModal yang SAMA dengan form
           "+ Order" tapi mode edit (lihat editingOrder + OrderFormModal di
@@ -464,13 +443,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         options={Object.entries(LEAD_SOURCE_LABELS).map(([value, label]) => ({ value, label }))}
         onSelect={saveLeadSource}
         onClose={() => setShowLeadSourcePicker(false)}
-      />
-      <PickerSheet
-        visible={showCityPicker}
-        title="Pilih Kota"
-        options={KOTA_LIST.map((k) => ({ value: k, label: k }))}
-        onSelect={saveCity}
-        onClose={() => setShowCityPicker(false)}
       />
       {customer && (
         <OrderFormModal
