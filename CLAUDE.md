@@ -69,7 +69,29 @@ dan data pelanggan harus di server sendiri (privasi bisnis).
 - Lucide React (icons)
 - xlsx + file-saver (export Excel/CSV)
 - vite-plugin-pwa (PWA support — sudah atau akan diinstall)
-- CSS murni di index.css (TIDAK pakai Tailwind/styled-components)
+- CSS murni di index.css untuk halaman lama. ⚠️ **DIKOREKSI 30 Agustus
+  2026** — baris ini SUDAH TIDAK AKURAT: Tailwind v4 (`@tailwindcss/vite`)
+  + shadcn/ui SUDAH masuk sejak "Sano Design System v2" (mulai dari
+  Laporan.jsx), hidup BERDAMPINGAN dengan index.css lama (lihat
+  `src/styles/tailwind.css`). **BUG BESAR ditemukan hari yang sama — baca
+  sebelum menyentuh apa pun yang pakai class Tailwind:** utility BERVARIAN
+  (prefix apa pun — `sm:`/`md:`/`lg:`/`hover:`/`focus:` dst) TIDAK SATU PUN
+  ter-compile di project ini, dicek langsung di CSS hasil `npm run build`
+  (nol match utk kombinasi apa pun). Utility POLOS (`flex`, `z-30`, `h-9`,
+  dst) generate normal — cuma yang ber-prefix varian yang hilang, TANPA
+  peringatan build apa pun. Instance pertama yang ketahuan: tombol hamburger
+  Topbar.jsx (`md:hidden`, dulunya `lg:hidden` — dua-duanya sama-sama tidak
+  pernah ter-compile, makanya ganti breakpoint pertama kali tidak mengubah
+  apa pun) — sudah diperbaiki dengan CSS murni (class + `@media` tulisan
+  tangan), BUKAN Tailwind. Akar sebab BUG SCANNER-nya sendiri BELUM
+  ditelusuri (di luar cakupan perbaikan tombol itu) — kemungkinan BANYAK
+  komponen Tailwind lain (terutama yang sudah migrasi ke DS v2, termasuk
+  shadcn/ui) diam-diam kehilangan hover/responsive state yang sama tanpa
+  ada yang sadar. **Kalau menulis/mengedit komponen berbasis Tailwind:
+  JANGAN percaya class bervarian bekerja sebelum dicek langsung di CSS
+  hasil build** (`grep` nama class-nya, escape titik dua jadi `\:`, di file
+  `dist/assets/index-*.css` setelah `npm run build`) — kalau nol match,
+  pindah ke CSS murni seperti perbaikan tombol hamburger di atas.
 
 ### Backend
 - Node.js + Express (ES Modules — pakai `import`, bukan `require`)

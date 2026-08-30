@@ -93,17 +93,24 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             onClick={onToggleMobileMenu}
             title="Buka menu"
             aria-label="Buka menu"
-            // md:hidden (768px) — DIKOREKSI 30 Agustus 2026, sebelumnya
-            // lg:hidden (1024px) di sini TIDAK COCOK dengan breakpoint asli
-            // sidebar jadi drawer (`@media (max-width: 768px)` di index.css,
-            // yang men-transform sidebar ke off-canvas + terima class
-            // `.mobile-open`). Di rentang 768–1023px akibatnya: tombol
-            // kelihatan tapi TIDAK BERBUAT APA-APA — sidebar di lebar itu
-            // masih persisten di alur normal (bukan `position:fixed`), jadi
-            // toggle `.mobile-open` tidak menghasilkan perubahan visual sama
-            // sekali. Inilah tombol "tanpa fungsi" yang dilaporkan dari
-            // halaman Inbox. Sekarang breakpoint tombol & CSS drawer SAMA.
-            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint md:hidden"
+            // KOREKSI KEDUA (30 Agustus 2026) — percobaan pertama ganti
+            // `lg:hidden` → `md:hidden` (breakpoint Tailwind, 768px, biar
+            // sama dgn breakpoint CSS sidebar jadi drawer) TERNYATA TIDAK
+            // MENYELESAIKAN APA-APA, dan setelah ditelusuri sampai ke CSS
+            // yang benar-benar ter-build, akar masalahnya jauh lebih dasar:
+            // TIDAK ADA SATU PUN utility Tailwind ber-VARIAN (prefix apa
+            // pun — sm:/md:/lg:/hover:/focus:, bukan cuma di tombol ini)
+            // yang ter-compile di project ini sama sekali — dicek langsung
+            // di CSS hasil build, nol match utk semua kombinasi. Utility
+            // POLOS (flex, z-30, backdrop-blur, h-9 dst) ter-generate
+            // normal; begitu ada prefix varian, hilang total. Ini bug
+            // scanner Tailwind v4 yang sifatnya PROJECT-WIDE, bukan spesifik
+            // tombol ini — lihat CLAUDE.md §Tailwind utk detail & dampaknya
+            // ke komponen lain. Sambil menunggu akar sebabnya digali lebih
+            // dalam, tombol ini dipindah ke CSS murni (class biasa +
+            // `@media` tulisan tangan di index.css) — SATU-SATUNYA cara
+            // yang terbukti benar-benar jalan di project ini sekarang.
+            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint topbar-hamburger-btn"
           >
             <MenuIcon size={20} />
           </button>

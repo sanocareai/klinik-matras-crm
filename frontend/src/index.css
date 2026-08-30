@@ -90,6 +90,32 @@ body {
 .app-shell { height: 100vh; height: 100dvh; display: flex; overflow: hidden; }
 .app-content { flex: 1; overflow-y: auto; background: var(--bg-page); }
 
+/* Hamburger Topbar (Wave 1.1) — CSS MURNI, bukan `md:hidden` Tailwind
+   (30 Agustus 2026). Ditemukan: TIDAK ADA satu pun utility Tailwind
+   ber-VARIAN (prefix apa pun — sm:/md:/lg:/hover:/focus:, di SELURUH
+   project, bukan cuma di sini) yang benar-benar ter-compile — dicek
+   langsung di CSS hasil build (`npm run build`), nol match. Utility POLOS
+   (flex, z-30, h-9, dst) generate normal; begitu ada prefix varian, hilang
+   total tanpa peringatan build apa pun. Percobaan pertama ganti
+   `lg:hidden`→`md:hidden` di Topbar.jsx makanya tidak mengubah apa-apa
+   sama sekali — dua-duanya sama-sama tidak pernah ter-compile. Breakpoint
+   768px SENGAJA disamakan dgn `@media (max-width:768px)` di bawah (tempat
+   `.sidebar` benar-benar berubah jadi drawer off-canvas) — di luar lebar
+   itu tombol ini TIDAK BERBUAT APA-APA (sidebar tidak fixed-position),
+   jadi harus disembunyikan supaya tidak jadi tombol mati yang membingungkan.
+   ⚠️ Ini instance PERTAMA yang diperbaiki — kemungkinan BANYAK komponen
+   Tailwind lain (terutama yang "sudah migrasi", mis. Laporan.jsx & shadcn/
+   ui) diam-diam kehilangan hover/responsive state yang sama. Belum
+   ditelusuri akar sebab scanner-nya (di luar cakupan perbaikan tombol ini)
+   — kalau nemu bug serupa di komponen lain, pola perbaikannya SAMA: pindah
+   ke class + @media polos, jangan andalkan variant Tailwind dulu sampai
+   akar masalahnya ketemu & diperbaiki. */
+.topbar-hamburger-btn { display: flex; }
+.topbar-hamburger-btn:hover { background: var(--bg-hover, var(--bg-subtle)); }
+@media (min-width: 768px) {
+  .topbar-hamburger-btn { display: none; }
+}
+
 /* ─── SIDEBAR (Wave 1.1 — Elevated Light) ────────────────────
    Panel bertekstur (cool-tint + depth) supaya shell terasa "produk", bukan
    div putih. Mekanik collapse/mobile-drawer TIDAK diubah (kelas dipertahankan,
