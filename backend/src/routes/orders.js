@@ -455,15 +455,40 @@ orderRouter.get("/", async (req, res) => {
         // D-026 — cukup id/code/name untuk chip di tabel, tidak perlu round
         // trip terpisah tiap baris.
         promo: { select: { id: true, code: true, name: true } },
+        // D-036 (30 Agustus 2026) — supaya Sales CRM bisa lihat status
+        // Delivery TANPA pindah halaman ("masing-masing divisi tau order A
+        // sudah di tahap mana"). Cuma field ringkas, bukan seluruh job
+        // (foto bukti/GPS ping dst tidak relevan di sini). Job FAILED
+        // dikecualikan dari agregasi di bawah — itu percobaan yang sudah
+        // gagal, bukan status yang relevan ditampilkan ke sales.
+        jobs: {
+          where: { status: { not: "FAILED" } },
+          select: {
+            id: true, type: true, status: true, scheduledDate: true,
+            driver: { select: { name: true } },
+            vehicle: { select: { plateNumber: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: limit,
     });
 
     const now = Date.now();
-    const items = orders.map(({ customer, statusTransitions, ...o }) => {
+    const items = orders.map(({ customer, statusTransitions, jobs, ...o }) => {
       const trans = statusTransitions[0] || null;
       const sejak = trans?.createdAt || o.updatedAt;
+      // orderBy createdAt desc di atas -> job PERTAMA per tipe = yang
+      // terbaru. Order normal cuma punya 1 job aktif per tipe di satu
+      // waktu (PRD §5.2), tapi kalau toh ada sisa lebih dari satu (reschedule
+      // lama, dst), yang terbaru itu paling relevan ditampilkan ke sales.
+      const pickupJob   = jobs.find((j) => j.type === "PICKUP") || null;
+      const deliveryJob = jobs.find((j) => j.type === "DELIVERY") || null;
+      const ringkasJob = (j) => j && {
+        status: j.status, scheduledDate: j.scheduledDate,
+        driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
+      };
       return {
         ...o,
         customerId:   customer?.id || null,
@@ -480,6 +505,8 @@ orderRouter.get("/", async (req, res) => {
         // true = dihitung dari updatedAt karena riwayat belum ada, jadi bisa
         // lebih pendek dari kenyataan (updatedAt berubah tiap edit apa pun).
         daysInStatusPerkiraan: !trans,
+        pickupJob: ringkasJob(pickupJob),
+        deliveryJob: ringkasJob(deliveryJob),
       };
     });
 

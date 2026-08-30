@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import DriverJobs from "./DriverJobs.jsx";
+import { EDITABLE_JOB_STATUSES } from "@/features/armada/jobStatus.js";
 
 // ARMADA — dispatcher menjadwalkan pengambilan & pengiriman harian.
 //
@@ -45,7 +46,7 @@ const STATUS_BADGE = {
   UNSCHEDULED: "neutral", SCHEDULED: "accent", ASSIGNED: "accent",
   EN_ROUTE: "accent", ARRIVED: "accent", COMPLETED: "green", FAILED: "red", RESCHEDULED: "orange",
 };
-const EDITABLE_STATUSES = new Set(["UNSCHEDULED", "SCHEDULED", "ASSIGNED"]);
+const EDITABLE_STATUSES = EDITABLE_JOB_STATUSES;
 
 function mapsUrl(job) {
   if (job.lat && job.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;

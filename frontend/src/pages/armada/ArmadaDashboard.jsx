@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, Truck as TruckIcon, Package } from "lucide-react";
+import { Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock } from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -57,20 +57,31 @@ export default function ArmadaDashboard() {
   const [tanggal, setTanggal] = useState(todayISO());
   const [jobs, setJobs] = useState(null);
   const [vehicles, setVehicles] = useState([]);
+  // Job BELUM TERJADWAL (scheduledDate null) — SENGAJA query terpisah dari
+  // `jobs` di atas, TANPA filter tanggal (24-30 Agustus 2026, D-036). Job
+  // yang baru lahir otomatis dari order sales (armadaAutoJob.js) tidak
+  // punya tanggal sampai dispatcher mengisinya — kalau ikut query `date:
+  // tanggal` yang sama, job itu TIDAK PERNAH kelihatan di sini (persis bug
+  // yang bikin dashboard tampil nol job padahal Sales CRM sudah punya 22
+  // order "Pengambilan"). Panel ini yang menutup kesenjangan itu.
+  const [unscheduled, setUnscheduled] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [jobsRes, vehiclesRes] = await Promise.all([
+      const [jobsRes, vehiclesRes, unscheduledRes] = await Promise.all([
         api.getArmadaJobs({ date: tanggal, take: 200 }),
         api.getVehicles(),
+        api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
       ]);
       setJobs(jobsRes.jobs);
       setVehicles(vehiclesRes.vehicles);
+      setUnscheduled(unscheduledRes.jobs);
     } catch {
       setJobs([]);
       setVehicles([]);
+      setUnscheduled([]);
     } finally {
       setLoading(false);
     }
@@ -137,6 +148,44 @@ export default function ArmadaDashboard() {
       />
 
       <PageBody>
+        {/* Panel utama — lihat catatan di state `unscheduled` di atas. Ini
+            SENGAJA ditaruh paling atas, sebelum KPI harian, karena inilah
+            antrean kerja dispatcher yang sesungguhnya: order dari Sales CRM
+            yang sudah butuh diambil/dikirim tapi belum ada driver+tanggal. */}
+        <Card className="overflow-hidden border-2 border-accent/30">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <CalendarClock size={14} className="text-accent" /> Perlu Dijadwalkan
+            </h3>
+            {!loading && unscheduled && (
+              <span className="rounded-full bg-accentbg px-2.5 py-0.5 text-[12px] font-bold text-accent">
+                {unscheduled.length}
+              </span>
+            )}
+          </div>
+          {loading ? <div className="p-4"><TableSkeletonRows rows={3} cols={4} /></div> : !unscheduled || unscheduled.length === 0 ? (
+            <div className="p-4 text-[12.5px] text-ink3">
+              Tidak ada order menunggu penjadwalan — semua sudah punya driver/tanggal.
+            </div>
+          ) : (
+            <TableWrap>
+              <Table>
+                <THead><TR><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH><TH></TH></TR></THead>
+                <TBody>
+                  {unscheduled.map((j) => (
+                    <TR key={j.id} className="cursor-pointer" onClick={() => navigate(`/armada/jobs?job=${j.id}`)}>
+                      <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
+                      <TD className="text-ink2">{customerOf(j)?.name || "—"}</TD>
+                      <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
+                      <TD><Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/armada/jobs?job=${j.id}`); }}>Tugaskan</Button></TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          )}
+        </Card>
+
         {loading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[86px] animate-pulse rounded-card bg-inset" />)}

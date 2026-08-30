@@ -200,7 +200,7 @@ export default function ArmadaJobs() {
       <>
         <div className="mx-auto w-full max-w-[1400px] px-4 pt-4 md:px-8">{toggle}</div>
         <Armada />
-        <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} />
+        <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
       </>
     );
   }
@@ -347,7 +347,7 @@ export default function ArmadaJobs() {
           </Card>
       </PageBody>
 
-      <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} />
+      <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
     </PageContainer>
   );
 }

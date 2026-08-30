@@ -4,8 +4,10 @@ import { X, MapPin, Phone, Package, Truck, User, Clock, Camera, Loader2 } from "
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
-import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf } from "../jobStatus.js";
+import { JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf } from "../jobStatus.js";
+import { performSubmit } from "@/utils/submitJobAction.js";
 
 // Drawer detail job — data NYATA dari GET /armada/jobs/:id.
 //
@@ -19,6 +21,17 @@ import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf } from "../jo
 // baris kosong berlabel "SLA: —" akan membuat orang mengira datanya hilang,
 // padahal fiturnya memang belum ada — jadi barisnya tidak dirender sama
 // sekali, dan yang belum ada disebut jujur di bagian bawah.
+//
+// SEJAK 30 Agustus 2026 (D-036): drawer ini TIDAK LAGI cuma menampilkan —
+// dispatcher bisa assign driver/kendaraan/tanggal DAN menggerakkan status
+// job (mulai/tiba/selesai/gagal) langsung dari sini, tanpa pindah ke mode
+// "Papan" (Armada.jsx). Pola assign sama persis dengan JobCard di
+// Armada.jsx (saveDriver/saveVehicle); aksi status pakai performSubmit dari
+// utils/submitJobAction.js — fungsi yang SAMA yang dipakai driver di HP-nya
+// sendiri (DriverJobs.jsx), supaya tidak ada dua implementasi upload
+// foto+status yang bisa diam-diam berbeda. loadOwnedJob di backend memang
+// SENGAJA mengizinkan admin/dispatcher bertindak atas nama driver ("boleh
+// operasikan atas nama driver kalau perlu") — jalur ini bukan workaround.
 
 function Baris({ icon: Icon, label, children }) {
   if (!children) return null;
@@ -33,24 +46,113 @@ function Baris({ icon: Icon, label, children }) {
   );
 }
 
-export default function JobDetailDrawer({ jobId, onClose }) {
+const selectClass =
+  "h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent";
+
+// Form kecil utk aksi yang WAJIB foto (Selesaikan/Tandai Gagal) — backend
+// menolak keras tanpa foto (FR-D-03/04/07, lihat armada.js), jadi form ini
+// tidak bisa "disederhanakan" jadi tombol polos.
+function AksiFotoForm({ label, needReason, busy, onCancel, onSubmit }) {
+  const [files, setFiles] = useState([]);
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="mt-2 rounded-btn border border-border bg-inset/40 p-2.5">
+      {needReason && (
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Alasan gagal (wajib)"
+          className="mb-2 h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
+        />
+      )}
+      <input
+        type="file" accept="image/*" multiple
+        onChange={(e) => setFiles(Array.from(e.target.files || []))}
+        className="block w-full text-[11.5px] text-ink2 file:mr-2 file:rounded-btn file:border-0 file:bg-accentbg file:px-2.5 file:py-1.5 file:text-[11.5px] file:font-semibold file:text-accent"
+      />
+      <div className="mt-2 flex gap-2">
+        <Button
+          size="sm"
+          disabled={busy || files.length === 0 || (needReason && !reason.trim())}
+          onClick={() => onSubmit({ files, reason: reason.trim() })}
+        >
+          {busy ? <Loader2 size={13} className="animate-spin" /> : label}
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>Batal</Button>
+      </div>
+    </div>
+  );
+}
+
+export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [drivers, setDrivers] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [showForm, setShowForm] = useState(null); // "complete" | "fail" | null
 
-  useEffect(() => {
+  function muat() {
     if (!jobId) return;
-    let batal = false;
     setLoading(true);
     setError("");
     api.getArmadaJob(jobId)
-      .then((d) => !batal && setJob(d))
-      .catch((e) => !batal && setError(e.message))
-      .finally(() => !batal && setLoading(false));
-    return () => { batal = true; };
+      .then(setJob)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    muat();
+    setShowForm(null);
+    setActionError("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
+  // Driver/kendaraan dimuat sekali per drawer dibuka — dropdown-nya cuma
+  // relevan kalau job memang masih di status yang boleh diedit (dicek di
+  // render), tapi murah untuk dimuat lebih dulu daripada nunggu klik.
+  useEffect(() => {
+    if (!jobId) return;
+    Promise.all([api.getDrivers(), api.getVehicles()])
+      .then(([d, v]) => { setDrivers(d || []); setVehicles((v.vehicles || []).filter((x) => x.active)); })
+      .catch(() => {});
   }, [jobId]);
 
   const units = job?.units?.map((ju) => ju.unit) || [];
+  const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
+
+  async function ubahJadwal(patch) {
+    setBusy(true);
+    setActionError("");
+    try {
+      const updated = await api.updateArmadaJob(job.id, patch);
+      setJob(updated);
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function jalankanAksi(action, payload = {}, files = []) {
+    setBusy(true);
+    setActionError("");
+    try {
+      const updated = await performSubmit(job.id, action, payload, files);
+      setJob(updated);
+      setShowForm(null);
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Dialog.Root open={!!jobId} onOpenChange={(o) => (o ? null : onClose())}>
@@ -107,20 +209,118 @@ export default function JobDetailDrawer({ jobId, onClose }) {
                   </Baris>
                   <Baris icon={MapPin} label="Alamat">{job.addressText}</Baris>
                   <Baris label="Catatan akses">{job.accessNotes}</Baris>
-                  <Baris icon={Clock} label="Jadwal">
-                    {job.scheduledDate
-                      ? new Date(job.scheduledDate).toLocaleDateString("id-ID", {
-                          weekday: "long", day: "numeric", month: "long", year: "numeric",
-                        })
-                      : "Belum dijadwalkan"}
-                    {job.timeWindow ? ` · ${job.timeWindow}` : ""}
-                  </Baris>
-                  <Baris icon={User} label="Driver">{job.driver?.name || "Belum ditugaskan"}</Baris>
-                  <Baris icon={Truck} label="Kendaraan">
-                    {job.vehicle ? `${job.vehicle.plateNumber} (${job.vehicle.type})` : null}
-                  </Baris>
-                  <Baris label="Rute">{job.route ? `${job.route.code} · ${job.route.status}` : null}</Baris>
                 </div>
+
+                {/* Assign — HANYA muncul kalau job masih di status yang boleh
+                    diedit (sama syarat dengan PATCH /jobs/:id di backend).
+                    Job yang sudah EN_ROUTE/dst ditampilkan read-only di bawah,
+                    supaya tidak terlihat bisa diubah padahal server menolak. */}
+                {editable ? (
+                  <div className="mt-3 space-y-2 rounded-btn border border-border bg-inset/30 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Penugasan</p>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Driver</label>
+                      <select
+                        className={selectClass}
+                        disabled={busy}
+                        value={job.driverId || ""}
+                        onChange={(e) => ubahJadwal({ driverId: e.target.value || null })}
+                      >
+                        <option value="">Belum ditugaskan</option>
+                        {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Kendaraan</label>
+                      <select
+                        className={selectClass}
+                        disabled={busy}
+                        value={job.vehicleId || ""}
+                        onChange={(e) => ubahJadwal({ vehicleId: e.target.value || null })}
+                      >
+                        <option value="">Belum ada kendaraan</option>
+                        {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
+                      <input
+                        type="date"
+                        className={selectClass}
+                        disabled={busy}
+                        value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
+                        onChange={(e) => ubahJadwal({ scheduledDate: e.target.value || null })}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-line">
+                    <Baris icon={Clock} label="Jadwal">
+                      {job.scheduledDate
+                        ? new Date(job.scheduledDate).toLocaleDateString("id-ID", {
+                            weekday: "long", day: "numeric", month: "long", year: "numeric",
+                          })
+                        : "Belum dijadwalkan"}
+                      {job.timeWindow ? ` · ${job.timeWindow}` : ""}
+                    </Baris>
+                    <Baris icon={User} label="Driver">{job.driver?.name || "Belum ditugaskan"}</Baris>
+                    <Baris icon={Truck} label="Kendaraan">
+                      {job.vehicle ? `${job.vehicle.plateNumber} (${job.vehicle.type})` : null}
+                    </Baris>
+                  </div>
+                )}
+
+                {/* Ubah status manual — dispatcher bertindak atas nama driver.
+                    Tombol yang muncul mengikuti status SEKARANG, sama persis
+                    guard yang dipakai backend (lihat komentar tiap endpoint
+                    di armada.js) — supaya tidak ada tombol yang ujung-ujungnya
+                    pasti ditolak server. */}
+                {!["COMPLETED", "FAILED"].includes(job.status) && (
+                  <div className="mt-3 rounded-btn border border-border bg-inset/30 p-3">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-ink3">Status Pekerjaan</p>
+                    <div className="flex flex-wrap gap-2">
+                      {job.status === "ASSIGNED" && (
+                        <Button size="sm" disabled={busy} onClick={() => jalankanAksi("start")}>
+                          {busy ? <Loader2 size={13} className="animate-spin" /> : "Mulai Perjalanan"}
+                        </Button>
+                      )}
+                      {job.status === "EN_ROUTE" && (
+                        <Button size="sm" disabled={busy} onClick={() => jalankanAksi("arrive")}>
+                          {busy ? <Loader2 size={13} className="animate-spin" /> : "Tiba di Lokasi"}
+                        </Button>
+                      )}
+                      {["EN_ROUTE", "ARRIVED"].includes(job.status) && (
+                        <Button size="sm" variant="secondary" disabled={busy} onClick={() => setShowForm(showForm === "complete" ? null : "complete")}>
+                          Selesaikan
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => setShowForm(showForm === "fail" ? null : "fail")}>
+                        Tandai Gagal
+                      </Button>
+                    </div>
+
+                    {showForm === "complete" && (
+                      <AksiFotoForm
+                        label="Selesaikan Job"
+                        busy={busy}
+                        onCancel={() => setShowForm(null)}
+                        onSubmit={({ files }) => jalankanAksi("complete", {}, files)}
+                      />
+                    )}
+                    {showForm === "fail" && (
+                      <AksiFotoForm
+                        label="Tandai Gagal"
+                        needReason
+                        busy={busy}
+                        onCancel={() => setShowForm(null)}
+                        onSubmit={({ files, reason }) => jalankanAksi("fail", { failureReason: reason }, files)}
+                      />
+                    )}
+                    {actionError && (
+                      <p className="mt-2 text-[11.5px] text-red">{actionError}</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Unit yang dibawa */}
                 <div className="mt-4">

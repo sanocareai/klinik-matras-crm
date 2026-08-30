@@ -33,6 +33,13 @@ export const JOB_STATUS_REAL = {
 // backend/src/routes/armada.js. Dipakai tab "Aktif".
 export const ACTIVE_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
+// Job boleh diedit (driver/kendaraan/tanggal/alamat) lewat PATCH /jobs/:id
+// SELAMA statusnya salah satu ini — sama persis dengan guard backend di
+// armada.js PATCH /jobs/:id. Dipakai Armada.jsx (JobCard) DAN
+// JobDetailDrawer.jsx (30 Agustus 2026, D-036) — satu sumber kebenaran
+// supaya dua tempat itu tidak diam-diam beda syarat.
+export const EDITABLE_JOB_STATUSES = new Set(["UNSCHEDULED", "SCHEDULED", "ASSIGNED"]);
+
 /**
  * SELISIH SPESIFIKASI vs DATABASE — ditulis di sini supaya tidak hilang.
  *

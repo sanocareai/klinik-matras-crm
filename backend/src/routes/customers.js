@@ -383,6 +383,19 @@ customerRouter.get("/:id", async (req, res) => {
           items:         { orderBy: { sortOrder: "asc" } },
           weightEntries: { orderBy: { sortOrder: "asc" } },
           promo:         { select: { id: true, code: true, name: true } }, // D-026
+          // D-036 (30 Agustus 2026) — sama dengan GET /api/orders (routes/
+          // orders.js), supaya OrderSection.jsx di drawer Pelanggan bisa
+          // menampilkan status Delivery yang SAMA PERSIS dengan halaman
+          // /orders untuk order yang sama, apa pun jalur customer membukanya.
+          jobs: {
+            where: { status: { not: "FAILED" } },
+            select: {
+              id: true, type: true, status: true, scheduledDate: true,
+              driver: { select: { name: true } },
+              vehicle: { select: { plateNumber: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          },
         },
       },
       assignedSales: true,
@@ -420,7 +433,22 @@ customerRouter.get("/:id", async (req, res) => {
       complaintDetail: o.complaintDetail,
     }));
 
-  res.json({ ...customer, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain });
+  // pickupJob/deliveryJob — turunan yang SAMA PERSIS dengan GET /api/orders
+  // (routes/orders.js), supaya OrderSection.jsx menampilkan status Delivery
+  // yang identik apa pun jalur order-nya dibuka (drawer Pelanggan ini, atau
+  // halaman /orders). orderBy createdAt desc di include -> job pertama per
+  // tipe = yang terbaru.
+  const ringkasJob = (j) => j && {
+    status: j.status, scheduledDate: j.scheduledDate,
+    driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
+  };
+  const orders = customer.orders.map(({ jobs, ...o }) => ({
+    ...o,
+    pickupJob: ringkasJob(jobs.find((j) => j.type === "PICKUP")),
+    deliveryJob: ringkasJob(jobs.find((j) => j.type === "DELIVERY")),
+  }));
+
+  res.json({ ...customer, orders, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain });
 });
 
 // Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll

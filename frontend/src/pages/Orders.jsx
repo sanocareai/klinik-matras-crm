@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
-  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2,
+  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2, Truck,
 } from "lucide-react";
 import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -26,6 +26,7 @@ import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
+import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain (backend menegakkan ini di routes/orders.js, guardOrderLocked()).
@@ -284,6 +285,25 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
         <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
           <AlertTriangle size={11} className="shrink-0" /> Ada komplain
         </p>
+      )}
+
+      {/* Status Delivery — D-036 (30 Agustus 2026). Sales lihat progres
+          pengambilan/pengiriman TANPA pindah ke Delivery & Fulfillment —
+          job PICKUP dan DELIVERY beda tahap, jadi ditampilkan terpisah
+          kalau dua-duanya ada (order LAYANAN yang sudah selesai diambil
+          DAN sudah masuk antrean kirim, misalnya). */}
+      {(order.pickupJob || order.deliveryJob) && (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {[order.pickupJob && { ...order.pickupJob, label: "Ambil" }, order.deliveryJob && { ...order.deliveryJob, label: "Kirim" }]
+            .filter(Boolean)
+            .map((j, i) => (
+              <p key={i} className="flex items-center gap-1 truncate text-[11px] text-ink3">
+                <Truck size={11} className="shrink-0" />
+                {j.label}: {JOB_STATUS_REAL[j.status]?.label || j.status}
+                {j.driverName ? ` · ${j.driverName}` : ""}
+              </p>
+            ))}
+        </div>
       )}
 
       <div className="mt-2 flex items-center gap-1 border-t border-line pt-2">
