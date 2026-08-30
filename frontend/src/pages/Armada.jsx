@@ -165,6 +165,12 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
           {route.legToNext && (
             <span className="text-[11px] text-ink3">
               → {formatDistance(route.legToNext.distanceMeters)} · {formatDuration(route.legToNext.durationSeconds)} ke stop berikutnya
+              {/* estimate=true -> jarak garis lurus (haversine), BUKAN jarak
+                  jalan asli — Google Distance Matrix belum bisa dipakai
+                  (billing). Lihat catatan Fase 2 di services/maps.js. */}
+              {route.legToNext.estimate && (
+                <span title="Jarak garis lurus, bukan jarak jalan sungguhan — Google Maps belum aktif" className="text-orange"> (≈ estimasi)</span>
+              )}
             </span>
           )}
         </div>

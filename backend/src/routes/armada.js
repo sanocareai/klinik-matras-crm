@@ -1692,6 +1692,12 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
       where: { status: "EN_ROUTE" },
       include: {
         driver: { select: { id: true, name: true } },
+        // lat/lng SUDAH ADA di select default (bukan lewat include) —
+        // dipetakan eksplisit sbg destinationLat/Lng di bawah. Fase 2
+        // (30 Agustus 2026): kolom ini sekarang bisa terisi dari fallback
+        // Nominatim juga (lihat services/maps.js), bukan cuma Google, jadi
+        // pin tujuan di peta Live Tracking punya kans jauh lebih besar
+        // untuk terisi hari ini.
         order: { select: { orderNumber: true, customer: { select: { name: true } } } },
       },
     });
@@ -1714,6 +1720,7 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
       const p = byJob.get(j.id);
       return {
         jobId: j.id, type: j.type, addressText: j.addressText,
+        destinationLat: j.lat, destinationLng: j.lng,
         driverName: j.driver?.name || null,
         orderNumber: j.order?.orderNumber || null,
         customerName: j.order?.customer?.name || null,

@@ -113,14 +113,53 @@ export default function ArmadaRoutes() {
     await load();
   }
 
-  // Optimasi sederhana (SENGAJA bukan VRP, lihat catatan di atas): urutkan
-  // stop berdasarkan jam yang diminta customer, lalu alamat sebagai
-  // pemecah seri untuk stop tanpa jam.
+  // Jarak garis lurus (haversine, km) — cukup untuk MEMBANDINGKAN urutan,
+  // bukan angka jarak jalan sungguhan (Google Maps belum aktif, lihat
+  // services/maps.js Fase 2). Salinan sengaja di frontend, bukan panggil
+  // API — dipakai murni untuk membandingkan beberapa kandidat "stop mana
+  // yang paling dekat" sebelum kirim urutan akhir ke server.
+  function jarakKm(a, b) {
+    const R = 6371;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // Optimasi sederhana (SENGAJA bukan VRP sungguhan, PRD §1.5 melarang
+  // optimasi algoritmik penuh untuk v1) — Fase 2 (30 Agustus 2026): kalau
+  // SEMUA stop di rute ini sudah punya koordinat (geocode Google ATAU
+  // fallback Nominatim, keduanya mengisi job.lat/lng yang sama), urutkan
+  // pakai nearest-neighbor sederhana: mulai dari stop berjam paling awal,
+  // lalu selalu lompat ke stop TERDEKAT berikutnya yang belum dikunjungi.
+  // Kalau ADA SATU SAJA stop tanpa koordinat, turun ke cara lama (jam lalu
+  // alamat) — mencampur "urut jarak" dengan "urut alamat" di rute yang sama
+  // akan menghasilkan urutan yang tidak bisa dijelaskan ke driver.
   async function urutkanOtomatis(route) {
-    const terurut = (route.jobs || [])
-      .slice()
-      .sort((a, b) => (a.timeWindow || "").localeCompare(b.timeWindow || "") || (a.addressText || "").localeCompare(b.addressText || ""))
-      .map((j) => j.id);
+    const jobs = route.jobs || [];
+    const semuaAdaKoordinat = jobs.length > 0 && jobs.every((j) => j.lat != null && j.lng != null);
+
+    let terurut;
+    if (semuaAdaKoordinat) {
+      const sisa = [...jobs].sort((a, b) => (a.timeWindow || "").localeCompare(b.timeWindow || ""));
+      const hasil = [sisa.shift()];
+      while (sisa.length > 0) {
+        const terakhir = hasil[hasil.length - 1];
+        let idxTerdekat = 0, jarakTerdekat = Infinity;
+        sisa.forEach((j, i) => {
+          const d = jarakKm(terakhir, j);
+          if (d < jarakTerdekat) { jarakTerdekat = d; idxTerdekat = i; }
+        });
+        hasil.push(sisa.splice(idxTerdekat, 1)[0]);
+      }
+      terurut = hasil.map((j) => j.id);
+    } else {
+      terurut = jobs
+        .slice()
+        .sort((a, b) => (a.timeWindow || "").localeCompare(b.timeWindow || "") || (a.addressText || "").localeCompare(b.addressText || ""))
+        .map((j) => j.id);
+    }
     await terapkanUrutan(route, terurut);
   }
 

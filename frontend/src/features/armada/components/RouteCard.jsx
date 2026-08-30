@@ -154,7 +154,7 @@ export default function RouteCard({
             type="button"
             onClick={() => jalankan(() => onOptimize(route))}
             disabled={jobs.length < 2 || busy}
-            title="Urutkan stop berdasarkan jam & alamat"
+            title="Urutkan stop berdasarkan jam, lalu jarak terdekat (kalau semua stop sudah punya koordinat) — kalau belum, diurutkan berdasarkan alamat"
             className="flex h-7 items-center gap-1 rounded-chip px-2 text-[10.5px] font-semibold text-ink2 transition-colors hover:bg-hovertint disabled:opacity-40"
           >
             <ArrowUpDown size={11} /> Urutkan

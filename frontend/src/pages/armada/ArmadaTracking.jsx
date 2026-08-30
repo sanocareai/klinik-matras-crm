@@ -21,12 +21,15 @@ import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 //
 // Peta pakai Leaflet + tile OpenStreetMap — GRATIS, TANPA API key/billing.
 // Google Maps TIDAK dipakai di sini SENGAJA: billing project Google Cloud
-// masih REQUEST_DENIED (dites langsung 30 Agustus 2026), jadi geocoding
-// alamat customer belum bisa akurat. Pin driver di peta ini co tetap AKURAT
-// (koordinat GPS asli dari HP, bukan hasil geocode) — yang BELUM bisa
-// ditampilkan sebagai pin adalah TUJUAN (alamat customer), jadi alamat
-// tujuan ditampilkan sebagai teks di panel kanan, bukan pin di peta, supaya
-// tidak berpura-pura akurat padahal datanya tidak ada.
+// masih REQUEST_DENIED (dites langsung 30 Agustus 2026). Pin driver SELALU
+// akurat (koordinat GPS asli dari HP, bukan hasil geocode).
+//
+// FASE 2 (30 Agustus 2026) — pin TUJUAN (alamat customer) sekarang ikut
+// ditampilkan kalau job-nya sudah punya koordinat (destinationLat/Lng dari
+// GET /armada/tracking) — bisa dari Google ATAU dari fallback gratis
+// Nominatim (lihat services/maps.js). Kalau job BELUM punya koordinat sama
+// sekali, tidak ada pin dipaksakan — alamat tetap tampil sebagai teks di
+// panel kanan, supaya tidak berpura-pura akurat padahal datanya tidak ada.
 const JAKARTA_CENTER = [-6.2088, 106.8456];
 const POLL_MS = 15000;
 
@@ -41,6 +44,15 @@ function driverIcon(name) {
     popupAnchor: [0, -19],
   });
 }
+
+// Pin tujuan — SENGAJA bentuk beda total dari avatar driver (kotak vs
+// lingkaran) supaya tidak pernah tertukar sekilas mata di peta yang sama.
+const destinationIcon = L.divIcon({
+  className: "",
+  html: `<div style="width:22px;height:22px;background:#dc2626;border:2px solid white;border-radius:4px 4px 4px 0;transform:rotate(45deg);box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 20],
+});
 
 function waktuLalu(iso) {
   if (!iso) return null;
@@ -120,6 +132,22 @@ export default function ArmadaTracking() {
                   </Popup>
                 </Marker>
               ))}
+              {withPosition
+                .filter((j) => j.destinationLat != null && j.destinationLng != null)
+                .map((j) => (
+                  <Marker
+                    key={`tujuan-${j.jobId}`}
+                    position={[j.destinationLat, j.destinationLng]}
+                    icon={destinationIcon}
+                  >
+                    <Popup>
+                      <div className="text-xs">
+                        <p className="font-semibold">Tujuan — {j.customerName}</p>
+                        <p>{j.addressText}</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
             </MapContainer>
           </div>
         </Card>
