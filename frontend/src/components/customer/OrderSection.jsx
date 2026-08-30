@@ -17,7 +17,7 @@ import {
   resolveVariantKey,
 } from "../../utils/format.js";
 import { isAdminUser, rolesOf } from "../../lib/roles.js";
-import { JOB_STATUS_REAL } from "../../features/armada/jobStatus.js";
+import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain. Backend (guardOrderLocked() di routes/orders.js) yang benar-benar
@@ -664,19 +664,27 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>"{order.statusOverrideNote}"</p>
         )}
 
-        {/* Status Delivery — D-036 (30 Agustus 2026), sama dengan yang
-            tampil di kartu Orders.jsx. Sales lihat progres pengambilan/
-            pengiriman tanpa buka Delivery & Fulfillment. */}
-        {[order.pickupJob && { ...order.pickupJob, label: "Pengambilan" }, order.deliveryJob && { ...order.deliveryJob, label: "Pengiriman" }]
-          .filter(Boolean)
-          .map((j, i) => (
-            <p key={i} style={{ margin: "3px 0 0", display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "var(--text-secondary)" }}>
-              <Truck size={11} style={{ flexShrink: 0 }} />
-              {j.label}: {JOB_STATUS_REAL[j.status]?.label || j.status}
-              {j.driverName ? ` · ${j.driverName}` : ""}
-              {j.scheduledDate ? ` · ${new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}` : ""}
-            </p>
-          ))}
+        {/* Status Delivery — D-036 (30 Agustus 2026), komponen SAMA dengan
+            yang dipakai Delivery Hub (JobDetailDrawer.jsx) — sales lihat
+            timeline gaya tracking paket yang identik, tanpa buka Delivery
+            & Fulfillment. Job yang ditumpangkan sebagai baris "sedang
+            terjadi" adalah yang paling aktif (EN_ROUTE/ARRIVED), pengambilan
+            atau pengiriman mana pun yang sedang berjalan. */}
+        <DeliveryTimeline
+          orderStatus={order.status}
+          job={[order.deliveryJob, order.pickupJob].find((j) => j && ["EN_ROUTE", "ARRIVED"].includes(j.status))}
+          className="mt-2"
+        />
+        {order.pickupJob?.driverName && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Diambil oleh {order.pickupJob.driverName}
+          </p>
+        )}
+        {order.deliveryJob?.driverName && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Dikirim oleh {order.deliveryJob.driverName}
+          </p>
+        )}
 
         {overriding && (
           <div style={{ marginTop: 6, padding: 8, background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>

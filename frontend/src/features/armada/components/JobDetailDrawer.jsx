@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
+import DeliveryTimeline from "./DeliveryTimeline.jsx";
+import ChipPilih from "./ChipPilih.jsx";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
@@ -125,6 +127,19 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const units = job?.units?.map((ju) => ju.unit) || [];
   const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
 
+  // Armada Sano cuma punya 1 kendaraan aktif hari ini (CLAUDE.md §1) — kalau
+  // memang cuma ada 1 pilihan, tidak ada gunanya minta dispatcher memilih
+  // sesuatu yang sudah pasti. Auto-terisi SEKALI per job (guard `busy` +
+  // cek vehicleId null mencegah ini menembak ulang setelah user sengaja
+  // melepas kendaraan lewat "Belum ada kendaraan").
+  useEffect(() => {
+    if (!job || !editable || busy) return;
+    if (vehicles.length === 1 && !job.vehicleId) {
+      ubahJadwal({ vehicleId: vehicles[0].id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.vehicleId, vehicles.length, editable]);
+
   async function ubahJadwal(patch) {
     setBusy(true);
     setActionError("");
@@ -165,12 +180,21 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
             "data-[state=open]:animate-in data-[state=open]:slide-in-from-right"
           )}
         >
-          <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
-            <Dialog.Title className="text-[15px] font-bold text-ink">Detail Job</Dialog.Title>
-            {job && <StatusBadge map={JOB_STATUS_REAL} value={job.status} />}
+          <div className="flex shrink-0 items-start gap-2 border-b border-line px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <Dialog.Title className="truncate text-[15px] font-bold text-ink">
+                {job ? customerOf(job) || "Detail Job" : "Detail Job"}
+              </Dialog.Title>
+              {job && (
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink3">
+                  {orderNumberOf(job)} · {JOB_TYPE_REAL[job.type]?.label || job.type}
+                </p>
+              )}
+            </div>
+            {job && <StatusBadge map={JOB_STATUS_REAL} value={job.status} className="shrink-0" />}
             <Dialog.Close
               aria-label="Tutup detail job"
-              className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+              className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
             >
               <X size={16} />
             </Dialog.Close>
@@ -193,13 +217,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
             {job && !loading && (
               <>
+                {job.order?.status && (
+                  <DeliveryTimeline orderStatus={job.order.status} job={job} className="pb-4" />
+                )}
+
                 <div className="divide-y divide-line">
-                  <Baris label="Job ID">
-                    <span className="font-semibold">{job.id.slice(0, 8)}</span>
-                  </Baris>
-                  <Baris label="Jenis">{JOB_TYPE_REAL[job.type]?.label || job.type}</Baris>
-                  <Baris label="Order">{orderNumberOf(job)}</Baris>
-                  <Baris icon={User} label="Pelanggan">{customerOf(job)}</Baris>
                   <Baris icon={Phone} label="Kontak">
                     {job.order?.customer?.phone && (
                       <a href={`tel:${job.order.customer.phone}`} className="text-accent hover:underline">
@@ -216,32 +238,39 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     Job yang sudah EN_ROUTE/dst ditampilkan read-only di bawah,
                     supaya tidak terlihat bisa diubah padahal server menolak. */}
                 {editable ? (
-                  <div className="mt-3 space-y-2 rounded-btn border border-border bg-inset/30 p-3">
+                  <div className="mt-3 space-y-3 rounded-btn border border-border bg-inset/30 p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Penugasan</p>
                     <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Driver</label>
-                      <select
-                        className={selectClass}
+                      <label className="mb-1.5 block text-[11px] text-ink2">Driver</label>
+                      <ChipPilih
+                        items={drivers}
+                        selectedId={job.driverId}
                         disabled={busy}
-                        value={job.driverId || ""}
-                        onChange={(e) => ubahJadwal({ driverId: e.target.value || null })}
-                      >
-                        <option value="">Belum ditugaskan</option>
-                        {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
+                        kosongLabel="Belum ditugaskan"
+                        onPick={(id) => ubahJadwal({ driverId: id })}
+                      />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Kendaraan</label>
-                      <select
-                        className={selectClass}
-                        disabled={busy}
-                        value={job.vehicleId || ""}
-                        onChange={(e) => ubahJadwal({ vehicleId: e.target.value || null })}
-                      >
-                        <option value="">Belum ada kendaraan</option>
-                        {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber}</option>)}
-                      </select>
-                    </div>
+                    {/* Kendaraan: 1 pilihan saja -> auto-terisi (lihat efek di
+                        atas), tampil sebagai info, bukan pilihan berulang.
+                        >1 kendaraan baru tampil chip yang sama pola dgn Driver. */}
+                    {vehicles.length > 1 ? (
+                      <div>
+                        <label className="mb-1.5 block text-[11px] text-ink2">Kendaraan</label>
+                        <ChipPilih
+                          items={vehicles.map((v) => ({ id: v.id, name: v.plateNumber }))}
+                          selectedId={job.vehicleId}
+                          disabled={busy}
+                          kosongLabel="Belum ada kendaraan"
+                          onPick={(id) => ubahJadwal({ vehicleId: id })}
+                        />
+                      </div>
+                    ) : (
+                      job.vehicle && (
+                        <p className="flex items-center gap-1.5 text-[12px] text-ink2">
+                          <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
+                        </p>
+                      )
+                    )}
                     <div>
                       <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
                       <input

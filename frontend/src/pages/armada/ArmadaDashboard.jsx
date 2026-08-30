@@ -9,8 +9,10 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import Avatar from "@/components/Avatar.jsx";
 import DeliveryKpiRow from "@/features/armada/components/DeliveryKpiRow.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
+import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
 
@@ -65,27 +67,49 @@ export default function ArmadaDashboard() {
   // yang bikin dashboard tampil nol job padahal Sales CRM sudah punya 22
   // order "Pengambilan"). Panel ini yang menutup kesenjangan itu.
   const [unscheduled, setUnscheduled] = useState(null);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [assigningId, setAssigningId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [jobsRes, vehiclesRes, unscheduledRes] = await Promise.all([
+      const [jobsRes, vehiclesRes, unscheduledRes, driversRes] = await Promise.all([
         api.getArmadaJobs({ date: tanggal, take: 200 }),
         api.getVehicles(),
         api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
+        api.getDrivers(),
       ]);
       setJobs(jobsRes.jobs);
       setVehicles(vehiclesRes.vehicles);
       setUnscheduled(unscheduledRes.jobs);
+      setDrivers(driversRes || []);
     } catch {
       setJobs([]);
       setVehicles([]);
       setUnscheduled([]);
+      setDrivers([]);
     } finally {
       setLoading(false);
     }
   }, [tanggal]);
+
+  // Assign 1-tap langsung dari panel "Perlu Dijadwalkan" (D-036) — dispatcher
+  // tidak perlu buka drawer sama sekali untuk kasus paling umum: ketuk
+  // avatar driver, job langsung ASSIGNED (kalau kendaraan cuma 1, backend/
+  // JobDetailDrawer auto-isi begitu drawer dibuka; di sini cukup driver+
+  // tanggal hari ini supaya job punya jadwal, bukan cuma driver kosongan).
+  async function tugaskanCepat(jobId, driverId) {
+    setAssigningId(jobId);
+    try {
+      await api.updateArmadaJob(jobId, { driverId, scheduledDate: tanggal });
+      await load();
+    } catch (e) {
+      alert("Gagal menugaskan: " + e.message);
+    } finally {
+      setAssigningId(null);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -170,14 +194,23 @@ export default function ArmadaDashboard() {
           ) : (
             <TableWrap>
               <Table>
-                <THead><TR><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH><TH></TH></TR></THead>
+                <THead><TR><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH><TH>Tugaskan driver</TH></TR></THead>
                 <TBody>
                   {unscheduled.map((j) => (
                     <TR key={j.id} className="cursor-pointer" onClick={() => navigate(`/armada/jobs?job=${j.id}`)}>
                       <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
                       <TD className="text-ink2">{customerOf(j)?.name || "—"}</TD>
                       <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
-                      <TD><Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/armada/jobs?job=${j.id}`); }}>Tugaskan</Button></TD>
+                      <TD onClick={(e) => e.stopPropagation()}>
+                        <ChipPilih
+                          size="sm"
+                          items={drivers}
+                          selectedId={j.driverId}
+                          disabled={assigningId === j.id}
+                          kosongLabel="Ketuk untuk tugaskan"
+                          onPick={(driverId) => tugaskanCepat(j.id, driverId)}
+                        />
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
@@ -261,7 +294,15 @@ export default function ArmadaDashboard() {
                         <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
                         <TD className="text-ink2">{cust?.name || "—"}</TD>
                         <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
-                        <TD className="text-ink2">{j.driver?.name || <span className="text-orange">Belum ada</span>}</TD>
+                        <TD className="text-ink2">
+                          {j.driver?.name ? (
+                            <span className="flex items-center gap-1.5">
+                              <Avatar name={j.driver.name} size="sm" className="h-6 w-6 text-[10px]" /> {j.driver.name}
+                            </span>
+                          ) : (
+                            <span className="text-orange">Belum ada</span>
+                          )}
+                        </TD>
                         <TD className="text-ink2">{j.vehicle?.plateNumber || "—"}</TD>
                         <TD><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></TD>
                       </TR>

@@ -163,6 +163,10 @@ const jobInclude = {
           order: {
             select: {
               id: true, orderNumber: true,
+              // status — dipakai DeliveryTimeline.jsx di JobDetailDrawer
+              // (30 Agustus 2026) supaya drawer bisa menampilkan tahap Order
+              // (Menunggu/Pengambilan/dst), bukan cuma status Job itu sendiri.
+              status: true,
               // D-032 — alamat/kota SALES/rencana (D-027), dipakai FE
               // sebagai prefill saat dispatcher pertama kali isi addressText
               // job ini (belum ada alamat verifikasi lapangan). Keputusan
