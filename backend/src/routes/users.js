@@ -392,24 +392,63 @@ userRouter.post("/:id/reset-password", adminOnly, async (req, res) => {
 });
 
 // DELETE /:id — hapus user (admin only, tidak bisa hapus diri sendiri)
+//
+// BUG NYATA (30 Agustus 2026): owner kena "Foreign key constraint violated:
+// SalesTarget_userId_fkey" — cuma Note yang dicek eksplisit di sini,
+// padahal jumlah tabel yang PUNYA kolom User wajib (RESTRICT di level DB,
+// bukan SetNull) sudah bertambah banyak sejak route ini pertama ditulis
+// (Production/Delivery/Warehouse/Finance). Diaudit ULANG dari schema.prisma
+// + migration.sql produksi langsung (bukan tebakan) — inilah SEMUA relasi
+// User yang WAJIB (bukan `User?`) dan TIDAK auto-SetNull:
+//   Note.authorId, SalesTarget.userId, HandoverEvent.toUserId,
+//   RiskClassificationFeedback.ditandaiOlehId, Payment.recordedById,
+//   PaymentVerification.verifiedById.
+// Relasi OPSIONAL (assignedSalesId, assignedToId, firstResponderId,
+// sentById, dst) sudah auto-SetNull di level DB (dikonfirmasi via
+// migration.sql) — TIDAK perlu ditangani manual, dua baris updateMany di
+// bawah cuma jaga-jaga/redundant, bukan wajib.
+//
+// ⚠️ KALAU MENAMBAH RELASI USER WAJIB BARU (User, bukan User?) TANPA
+// eksplisit `onDelete: SetNull/Cascade` — WAJIB tambahkan pengecekannya
+// di sini juga, atau route ini akan kembali melempar error Prisma mentah
+// yang membingungkan alih-alih pesan yang bisa ditindaklanjuti admin.
 userRouter.delete("/:id", adminOnly, async (req, res) => {
   try {
-    if (req.params.id === req.user.id) {
+    const userId = req.params.id;
+    if (userId === req.user.id) {
       return res.status(400).json({ error: "Tidak bisa menghapus akun sendiri" });
     }
 
-    // Cek apakah user punya catatan (Note) — tidak bisa dihapus jika ada
-    const noteCount = await prisma.note.count({ where: { authorId: req.params.id } });
-    if (noteCount > 0) {
+    // SalesTarget SENGAJA TIDAK masuk daftar blocker — targetnya cuma
+    // metadata pribadi user itu sendiri (angka target bulanannya), tidak
+    // ada artinya untuk siapa pun begitu user-nya dihapus. Dihapus
+    // otomatis di bawah, bukan diblokir.
+    const [noteCount, handoverCount, riskFeedbackCount, paymentCount, verificationCount] = await Promise.all([
+      prisma.note.count({ where: { authorId: userId } }),
+      prisma.handoverEvent.count({ where: { toUserId: userId } }),
+      prisma.riskClassificationFeedback.count({ where: { ditandaiOlehId: userId } }),
+      prisma.payment.count({ where: { recordedById: userId } }),
+      prisma.paymentVerification.count({ where: { verifiedById: userId } }),
+    ]);
+    const blockers = [];
+    if (noteCount > 0) blockers.push(`${noteCount} catatan pelanggan`);
+    if (handoverCount > 0) blockers.push(`${handoverCount} riwayat handover percakapan`);
+    if (riskFeedbackCount > 0) blockers.push(`${riskFeedbackCount} catatan penilaian risiko pelanggan`);
+    if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran yang dicatat`);
+    if (verificationCount > 0) blockers.push(`${verificationCount} verifikasi pembayaran`);
+    if (blockers.length > 0) {
       return res.status(409).json({
-        error: `User ini memiliki ${noteCount} catatan. Pindahkan atau hapus catatan tersebut terlebih dahulu.`
+        error: `User ini masih terhubung ke: ${blockers.join(", ")}. Data itu riwayat/audit yang sengaja tidak boleh terhapus otomatis (jejak siapa mengerjakan apa) — pindahkan/tangani dulu sebelum menghapus akun ini.`,
       });
     }
 
-    // Set null dulu pada relasi opsional, lalu hapus
-    await prisma.customer.updateMany({ where: { assignedSalesId: req.params.id }, data: { assignedSalesId: null } });
-    await prisma.conversation.updateMany({ where: { assignedToId: req.params.id }, data: { assignedToId: null } });
-    await prisma.user.delete({ where: { id: req.params.id } });
+    // Relasi opsional — auto-SetNull di DB, dua baris ini redundant tapi
+    // aman dibiarkan (lihat catatan panjang di atas).
+    await prisma.customer.updateMany({ where: { assignedSalesId: userId }, data: { assignedSalesId: null } });
+    await prisma.conversation.updateMany({ where: { assignedToId: userId }, data: { assignedToId: null } });
+    // SalesTarget: metadata pribadi, hapus bersama user-nya (lihat komentar di atas).
+    await prisma.salesTarget.deleteMany({ where: { userId } });
+    await prisma.user.delete({ where: { id: userId } });
 
     res.json({ ok: true });
   } catch (err) {
