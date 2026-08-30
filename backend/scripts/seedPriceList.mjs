@@ -11,8 +11,13 @@
 //
 // Catatan tautan produksi: keenam layanan yang punya padanan di
 // service_catalog (SVC_FONDASI, SVC_FULL, UPG_LAPISAN, UPG_FONDASI,
-// UPG_FONDASI_LAPISAN, UPG_FULL) SEMUANYA masih di PENDING, jadi belum ada
-// productionServiceId yang bisa ditautkan di seed ini.
+// UPG_FONDASI_LAPISAN, UPG_FULL) — 5 dari 6 sudah masuk ITEMS sejak revisi
+// 30 Agustus 2026 (SVC_FONDASI_MATRAS_SEHAT, UPG_FONDASI_150KG,
+// UPG_LAPISAN_MS, PAKET_FONDASI_LAPISAN_MS, SVC_FULL_SERVICE_KASUR — cuma
+// UPG_FULL/"Full Upgrade Fondasi+Lapisan+Kain MS" masih PENDING). Belum
+// satu pun dari keenamnya diisi `productionServiceId` DI SEED INI — itu
+// tautan terpisah ke ServiceCatalog production, di luar cakupan seed harga
+// jual ini, belum dikerjakan.
 //
 // Revisi 30 Agustus 2026 — `sortOrder` KASUR diperbaiki supaya PERSIS
 // mengikuti urutan baris di spreadsheet sumber (sebelumnya diurutkan bebas
@@ -42,15 +47,59 @@ function stdOnly(keys, vals) {
 const ITEMS = [
   // ── KASUR ── sortOrder = posisi baris di spreadsheet × 10 (lihat posisi
   // PENDING KASUR di bawah untuk baris yang celah nomornya sengaja kosong).
-  // Posisi 3 dari atas.
+  //
+  // Revisi 30 Agustus 2026 — 8 dari 12 baris PENDING dipindahkan ke sini
+  // atas konfirmasi owner: nominal Normal/Standard di spreadsheet SENDIRI
+  // tidak ambigu (angka jelas terbaca), yang janggal cuma kolom DIS%
+  // (potongan aktual tidak cocok dengan label %) — itu kolom REFERENSI yang
+  // TIDAK PERNAH ditampilkan ke sales (endpoint /price-list tidak
+  // mengembalikan field `discountPercent` sama sekali), jadi tidak
+  // berisiko salah kutip harga ke customer. `discountPercent` tetap
+  // disimpan APA ADANYA dari spreadsheet (bukan dihitung ulang) — sekadar
+  // arsip, bukan sumber kebenaran harga.
+  //
+  // 4 baris SISANYA (posisi 7, 14, 24, 35) TETAP di PENDING — itu ambigu
+  // soal ANGKA/MAKNANYA sendiri (bukan cuma label DIS%), lihat alasan
+  // masing-masing di PENDING di bawah.
+  //
+  // Posisi 1.
+  { code: "SVC_FONDASI_MATRAS_SEHAT", name: "Service Fondasi Matras Sehat", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 10,
+    note: "DIS tertulis 33% di spreadsheet, potongan aktual ±47% — kolom ini arsip, tidak ditampilkan ke sales.",
+    rates: rate(K, [[1485000, 790000], [1485000, 790000], [1785000, 1090000], [2235000, 1390000], [2535000, 1590000], [2985000, 1990000]]) },
+  // Posisi 2.
+  { code: "UPG_FONDASI_150KG", name: "Upgrade Fondasi Matras Sehat (150kg)", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 20,
+    note: "DIS tertulis 33%, potongan aktual bervariasi 6,5%–33% antar ukuran — kolom ini arsip, tidak ditampilkan ke sales.",
+    rates: rate(K, [[2235000, 1590000], [2235000, 1590000], [2685000, 1890000], [2985000, 2790000], [3435000, 2990000], [3735000, 3290000]]) },
+  // Posisi 3.
   { code: "ADD_FONDASI_EXTRA_200", name: "Add Fondasi Extra (200kg)", productLine: "KASUR", kind: "SERVICE", sortOrder: 30,
     rates: rate(K, [[2000000, 1000000], [2000000, 1000000], [2400000, 1100000], [2600000, 1400000], [3100000, 1500000], [3500000, 1700000]]) },
+  // Posisi 4.
+  { code: "UPG_LAPISAN_MS", name: "Upgrade Lapisan Matras Sehat", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 40,
+    note: "Harga ukuran 180 (Rp1.648.500) tidak bulat & lebih murah dari ukuran 160 — apa adanya dari spreadsheet, sudah dicek ulang bukan salah baca.",
+    rates: rate(K, [[1335000, 900000], [1335000, 900000], [1485000, 1000000], [1935000, 1300000], [1648500, 1400000], [2385000, 1600000]]) },
+  // Posisi 5.
+  { code: "PAKET_FONDASI_LAPISAN_MS", name: "Paket Upgrade Fondasi + Lapisan MS", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 50,
+    note: "Layanan paling laku (80 order). Potongan aktual turun dari ±30% (90/100/120) ke 8–12% (160/180/200) — kolom DIS arsip, tidak ditampilkan ke sales.",
+    rates: rate(K, [[2985000, 2090000], [2985000, 2090000], [3285000, 2390000], [3735000, 3290000], [4035000, 3690000], [4485000, 3990000]]) },
+  // Posisi 6.
+  { code: "PAKET_FONDASI_EXTRA_LAPISAN_MS", name: "Paket Upgrade Fondasi Extra + Lapisan MS", productLine: "KASUR", kind: "SERVICE", sortOrder: 60,
+    note: "Harga ukuran 180 (Rp8.183.500) tidak bulat, pola sama dengan Upgrade Lapisan MS ukuran 180 — apa adanya dari spreadsheet.",
+    rates: rate(K, [[5570000, 3090000], [5570000, 3090000], [6570000, 3490000], [7520000, 4690000], [8183500, 5190000], [9620000, 5690000]]) },
+  // Posisi 7 "Full Upgrade Fondasi+Lapisan+Kain MS" masih PENDING (lihat di bawah).
+  // Posisi 8.
+  { code: "ADD_LAPISAN_MEMORY_FOAM", name: "Add Lapisan Memory Foam", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 80,
+    note: "DIS tertulis 33%, potongan aktual ±74% — kolom ini arsip, tidak ditampilkan ke sales.",
+    rates: rate(K, [[2685000, 700000], [2685000, 700000], [2985000, 900000], [4150000, 1300000], [4335000, 1500000], [4485000, 1700000]]) },
   // Posisi 9.
   { code: "SVC_GANTI_KAIN_PREMIUM", name: "Ganti Kain Premium", productLine: "KASUR", kind: "SERVICE", discountPercent: 41.77, sortOrder: 90,
     rates: rate(K, [[1185000, 690000], [1185000, 690000], [1485000, 890000], [1935000, 1090000], [2235000, 1190000], [2535000, 1290000]]) },
   // Posisi 10.
   { code: "SVC_GANTI_KAIN_STANDARD", name: "Ganti Kain Standard", productLine: "KASUR", kind: "SERVICE", sortOrder: 100,
     rates: rate(K, [[1000000, 550000], [1000000, 550000], [1100000, 750000], [1300000, 850000], [1400000, 950000], [1500000, 990000]]) },
+  // Posisi 11.
+  { code: "SVC_FULL_SERVICE_KASUR", name: "Full Service (Service+Tambah Busa+Ganti Kain)", productLine: "KASUR", kind: "SERVICE", discountPercent: 29, sortOrder: 110,
+    note: "Sel harga NORMAL ukuran 120 di spreadsheet berisi huruf \"X\" (bukan angka) — sengaja dikosongkan (null), bukan salah input. Standard ukuran 120 tetap terisi apa adanya.",
+    rates: rate(K, [[2100000, 1500000], [2100000, 1500000], [null, 1800000], [3000000, 2000000], [3300000, 2100000], [3750000, 2200000]]) },
   // Posisi 12 (ADDON — di daftar harga hanya punya kolom STANDARD).
   { code: "ADD_KAIN_PINGGIR", name: "Ganti Kain Pinggir", productLine: "KASUR", kind: "ADDON", sortOrder: 120,
     rates: stdOnly(K, [250000, 250000, 300000, 400000, 500000, 500000]) },
@@ -66,7 +115,11 @@ const ITEMS = [
   // Posisi 17.
   { code: "UPG_LAPISAN_LATEX", name: "Upgrade Lapisan Latex", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 170,
     rates: rate(K, [[2685000, 1790000], [2685000, 1790000], [2985000, 1990000], [3735000, 2490000], [4335000, 2890000], [4485000, 2990000]]) },
-  // Posisi 19 (posisi 18 "Potong Ukuran" masih PENDING).
+  // Posisi 18.
+  { code: "SVC_POTONG_UKURAN", name: "Potong Ukuran", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 180,
+    note: "Harga ukuran 180 (Rp2.025.000) lebih tinggi dari ukuran 200 (Rp1.125.000) — tidak monoton, tapi apa adanya dari spreadsheet.",
+    rates: rate(K, [[750000, 500000], [750000, 500000], [750000, 500000], [900000, 600000], [2025000, 700000], [1125000, 900000]]) },
+  // Posisi 19.
   { code: "SVC_TAMBAH_UKURAN", name: "Tambah Ukuran", productLine: "KASUR", kind: "SERVICE", discountPercent: 33, sortOrder: 190,
     rates: rate(K, [[2385000, 1590000], [2385000, 1590000], [2685000, 1790000], [2985000, 1990000], [3435000, 2290000], [3735000, 2490000]]) },
   // Posisi 20.
@@ -88,8 +141,13 @@ const ITEMS = [
     rates: rate(K, [[7580000, 2590000], [7580000, 2590000], [7980000, 2990000], [8980000, 3790000], [9580000, 4190000], [9980000, 4490000]]) },
   { code: "PRD_MS_CUSTOM_T30", name: "Matras Sehat Custom TP T30", productLine: "KASUR", kind: "PRODUCT", discountPercent: 50, sortOrder: 280,
     rates: rate(K, [[8380000, 2990000], [8380000, 2990000], [8780000, 3490000], [9980000, 4490000], [10580000, 4890000], [10980000, 5190000]]) },
-  // Posisi 32-34 (posisi 29 "Kasur Sehat 2in1", 30-31 Divan/Sandaran ada di
-  // productLine DIVAN sendiri, masih PENDING utk 2in1).
+  // Posisi 29 — 3 pasang angka di spreadsheet sejajar PERSIS di bawah kolom
+  // 90/100/120 (bukan 160/180/200), dikonfirmasi ulang lewat scan lebih
+  // jelas 30 Agustus 2026. Kind PRODUCT — ini kasur jadi utuh, sama seperti
+  // Matras Custom TP, bukan add-on/service.
+  { code: "PRD_KASUR_2IN1", name: "Kasur Sehat 2in1", productLine: "KASUR", kind: "PRODUCT", sortOrder: 290,
+    rates: rate(K, [[7980000, 3990000], [8980000, 4490000], [9980000, 4990000], null, null, null]) },
+  // Posisi 32-34 (posisi 30-31 Divan/Sandaran ada di productLine DIVAN sendiri).
   { code: "PRD_TOPPER_6CM", name: "Topper Kasur Sehat 6cm", productLine: "KASUR", kind: "PRODUCT", sortOrder: 320,
     note: "Sel NORMAL ukuran 90 di daftar harga berisi Rp576.000 — LEBIH RENDAH dari standard-nya (Rp850.000), jadi sengaja tidak diambil. Perlu konfirmasi owner.",
     rates: stdOnly(K, [850000, 850000, 950000, 1200000, 1300000, 1400000]) },
@@ -127,38 +185,24 @@ const ITEMS = [
 // Urutan daftar ini SENGAJA mengikuti posisi baris asli di spreadsheet
 // (dicocokkan dengan komentar "Posisi N" di ITEMS KASUR di atas) — supaya
 // gampang dilacak balik ke baris mana persisnya kalau owner buka Excel-nya.
+//
+// Revisi 30 Agustus 2026 — 8 baris lain SUDAH dipindahkan ke ITEMS (lihat
+// komentar di atas). 4 baris ini TETAP tertahan karena ambigu soal
+// ANGKA/MAKNANYA SENDIRI (bukan cuma label DIS% yang toh tidak ditampilkan
+// ke sales) — beda kelas masalah, tidak aman diisi apa adanya.
 const PENDING = [
-  // Posisi 1.
-  ["Service Fondasi Matras Sehat", "DIS tertulis 33%, tapi potongan sebenarnya 47% (1.485.000 → 790.000) di semua ukuran."],
-  // Posisi 2.
-  ["Upgrade Fondasi Matras Sehat (150kg)", "Ukuran 160: 2.985.000 → 2.790.000 = potongan 6,5%, ukuran lain ±29-33%."],
-  // Posisi 4.
-  ["Upgrade Lapisan Matras Sehat", "Ukuran 180 normal Rp1.648.500 — tidak bulat, dan lebih murah dari ukuran 160 (Rp1.935.000)."],
-  // Posisi 5.
-  ["Paket Upgrade Fondasi + Lapisan MS", "LAYANAN PALING LAKU (80 order). Potongan drop dari ±30% (90/100/120) ke 8-12% (160/180/200)."],
-  // Posisi 6.
-  ["Paket Upgrade Fondasi Extra + Lapisan MS", "Ukuran 180 normal Rp8.183.500 — tidak bulat, pola sama dengan Upgrade Lapisan 180."],
-  // Posisi 7.
+  // Posisi 7 — beda dari 8 baris yang sudah dipindahkan: yang dicoret di
+  // sini BUKAN label DIS%, tapi ANGKA HARGA STANDARD-nya sendiri (160 & 180)
+  // — coretan di Excel biasanya berarti "batal/tidak berlaku lagi", jadi
+  // dipakai apa adanya berisiko salah kutip harga yang sudah tidak valid.
   ["Full Upgrade Fondasi+Lapisan+Kain MS", "Angka standard ukuran 160 & 180 DICORET di spreadsheet. Masih berlaku atau sudah dicabut?"],
-  // Posisi 8.
-  ["Add Lapisan Memory Foam", "2.685.000 → 700.000 = potongan 74%, jauh dari DIS 33% yang tertulis."],
-  // Posisi 11.
-  ["Full Service", "Sel normal ukuran 120 berisi huruf \"X\", bukan angka."],
   // Posisi 14 — BUKAN salah baca, baris ini memang kosong total di
   // spreadsheet (nama ada, tidak ada satu pun angka harga).
   ["Harga Kaki", "Baris ada di spreadsheet tapi seluruh kolom harga kosong (bukan cuma sel tertentu) — belum ada angka sama sekali."],
-  // Posisi 18.
-  ["Potong Ukuran", "Ukuran 180 normal Rp2.025.000, sementara ukuran 200 cuma Rp1.125.000 — tidak monoton."],
   // Posisi 24.
   ["Kasur Sewa", "Kolom DIS berisi #DIV/0!, ukuran 90 & 100 kosong, dan ukuran 200 cuma ada 1 angka (tidak jelas itu Normal atau Standard)."],
-  // Posisi 29 — scan lebih jelas (30 Agt) menunjukkan 3 pasang angka itu
-  // sejajar tepat di bawah kolom 90/100/120 (bukan 160/180/200), tapi masih
-  // ditahan karena baris ini tidak masuk salah satu dari 6 layanan yang
-  // sudah punya padanan service_catalog — perlu konfirmasi kode/kind yang
-  // tepat sebelum masuk katalog (PRODUCT seperti Matras Custom, atau kind
-  // lain?).
-  ["Kasur Sehat 2in1", "3 pasang angka terisi PERSIS di bawah kolom 90/100/120; kolom 160/180/200 kosong total. Kind katalog yang tepat belum dikonfirmasi."],
-  ["Hemat (Sofa)", "Hanya punya kolom standard. Belum jelas ini paket hemat atau batas bawah khusus."],
+  // Posisi 35.
+  ["Hemat (Sofa)", "Hanya punya kolom standard. Belum jelas ini paket hemat atau batas bawah khusus, dan belum jelas ini baris tersendiri atau modifier dari layanan lain."],
 ];
 
 async function main() {
