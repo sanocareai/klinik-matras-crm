@@ -47,16 +47,40 @@ async function geocodeGoogle(text) {
   return { lat, lng, estimate: false };
 }
 
-// Nominatim: gratis, tanpa key, TAPI kebijakan pemakaian membatasi
-// ~1 permintaan/detik dan melarang pemakaian massal — untuk skala Sano
-// (dispatcher mengisi alamat satu-satu, bukan proses batch) ini aman.
-async function geocodeNominatim(text) {
+async function nominatimSearch(text) {
   const url = `${NOMINATIM_URL}?q=${encodeURIComponent(text)}&format=json&countrycodes=id&limit=1`;
   const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
   if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   const data = await res.json();
   if (!Array.isArray(data) || !data[0]) return null;
   return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), estimate: true };
+}
+
+// Nominatim: gratis, tanpa key, TAPI kebijakan pemakaian membatasi
+// ~1 permintaan/detik dan melarang pemakaian massal — untuk skala Sano
+// (dispatcher mengisi alamat satu-satu, bukan proses batch) ini aman.
+//
+// PENYEDERHANAAN BERTAHAP (ditemukan lewat tes langsung 30 Agustus 2026,
+// bukan asumsi): alamat penuh ala sales ("Taman palem lestari blok a25 no
+// 19b, cengkareng") HAMPIR SELALU gagal cocok di Nominatim — beda dengan
+// Google, database OSM tidak punya data nomor rumah/blok sedetail itu
+// untuk kebanyakan perumahan Indonesia. Tes backfill produksi: dari 143
+// alamat asli, cuma 2 yang cocok apa adanya. Begitu bagian
+// blok/nomor/RT-RW paling depan DIBUANG dan sisanya (kelurahan/kecamatan
+// dst) dicoba sendiri, tingkat berhasil naik jauh — pin jadi level
+// kelurahan/kecamatan, BUKAN presisi alamat rumah, tapi jauh lebih
+// berguna daripada tidak ada pin sama sekali. `estimate: true` menandai
+// ini SELALU, supaya UI tidak pernah menyajikannya seolah presisi rumah.
+async function geocodeNominatim(text) {
+  const segmen = text.split(",").map((s) => s.trim()).filter(Boolean);
+  for (let mulai = 0; mulai < segmen.length; mulai++) {
+    const coba = segmen.slice(mulai).join(", ");
+    if (!coba) continue;
+    const hasil = await nominatimSearch(coba);
+    if (hasil) return hasil;
+    if (mulai < segmen.length - 1) await new Promise((r) => setTimeout(r, 1100)); // hormati rate limit 1 req/detik
+  }
+  return null;
 }
 
 // geocodeAddress(text) -> { lat, lng, estimate } | null. Best-effort — SELALU
