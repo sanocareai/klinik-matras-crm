@@ -1167,7 +1167,6 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [deliveryEstimate, setDeliveryEstimate]       = useState("");
   const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState("");
   const [locationUrl, setLocationUrl]             = useState("");
-  const [hargaTotal, setHargaTotal]   = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving]           = useState(false);
@@ -1181,20 +1180,27 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const total     = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
   const variantKey = resolveVariantKey({ productLine, productType, ukuran });
 
-  // Muat katalog begitu sampai di step daftar layanan. Kalau varian belum
-  // bisa ditentukan (mis. "Ukuran Custom"), katalog SENGAJA tidak dimuat —
-  // harga per ukuran tidak ada padanannya, jadi isian manual yang benar.
+  // Muat katalog begitu sampai di step daftar layanan/produk. Kalau varian
+  // belum bisa ditentukan (mis. "Ukuran Custom"), katalog SENGAJA tidak
+  // dimuat — harga per ukuran tidak ada padanannya, jadi isian manual yang
+  // benar. `category` (30 Agustus 2026) memfilter kind yang relevan —
+  // SEBELUMNYA tidak dikirim sama sekali, jadi LAYANAN ikut menampilkan
+  // PRODUCT yang nyasar (kelihatan di Divan: Service+Divan+Sandaran
+  // tercampur di 1 daftar), dan step ini malah tidak pernah dicapai untuk
+  // BARU/SEWA (lihat bug fix step 3 di bawah — dulu langsung submit lewat
+  // handleSubmitSimple, katalog PRODUCT/RENTAL yang sudah ada di database
+  // tidak pernah ditampilkan ke sales).
   useEffect(() => {
     if (step !== 4 || !productLine || !variantKey) return;
     let batal = false;
     setCatalogLoading(true);
     setCatalogError(null);
-    api.getPriceList(productLine, variantKey)
+    api.getPriceList(productLine, variantKey, category)
       .then((res) => { if (!batal) setCatalog(res.items || []); })
       .catch((err) => { if (!batal) setCatalogError(err.message); })
       .finally(() => { if (!batal) setCatalogLoading(false); });
     return () => { batal = true; };
-  }, [step, productLine, variantKey]);
+  }, [step, productLine, variantKey, category]);
 
   // Tambah layanan dari katalog. Harga final di-prefill HARGA NORMAL (harga
   // papan) — bukan standard: standard itu BATAS BAWAH nego, kalau dijadikan
@@ -1241,60 +1247,26 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     }
   }
 
-  // Submit untuk BARU/SEWA
-  async function handleSubmitSimple(e) {
+  // Submit untuk SEMUA kategori (LAYANAN/BARU/SEWA) — 30 Agustus 2026,
+  // disatukan dari 2 fungsi terpisah (handleSubmitSimple utk BARU/SEWA yang
+  // cuma menerima 1 angka "Harga Total" manual + handleSubmitLayanan). Step
+  // 4 sekarang jadi step katalog+items[] BERSAMA utk ketiga kategori (lihat
+  // fetch katalog di atas & tombol "Lanjut" di step 3), jadi BARU/SEWA juga
+  // bisa pilih dari katalog PRODUCT/RENTAL yang sebelumnya tidak pernah
+  // ditampilkan sama sekali — bukan lagi wajib ketik manual.
+  async function handleSubmitLayanan(e) {
     e.preventDefault();
-    const harga = Number(hargaTotal) || 0;
+    const validItems = items.filter((it) => it.layananName?.trim());
+    if (validItems.length === 0) return alert("Tambahkan minimal satu " + (isLayanan ? "layanan" : "item"));
     setSaving(true);
     try {
       const order = await api.addOrder(customerId, {
         category,
         productLine: productLine || undefined,
         productType: productType || undefined,
-        notes: buildOrderNotes({ merkKasur: "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
-        promoId: promoId || undefined,
-        deliveryCity: deliveryCity || undefined,
-        deliveryAddress: deliveryAddress || undefined,
-        healthStatus: healthStatus || undefined,
-        complaintCategory: healthStatus === "SAKIT" ? complaintCategory : undefined,
-        ongkir: ongkir || undefined,
-        ongkirKlaimGaransi: ongkirKlaimGaransi || undefined,
-        pickupEstimate: pickupEstimate || undefined,
-        pickupConfirmedDate: pickupConfirmedDate || undefined,
-        deliveryEstimate: deliveryEstimate || undefined,
-        deliveryConfirmedDate: deliveryConfirmedDate || undefined,
-        locationUrl: locationUrl || undefined,
-      });
-      if (harga > 0) {
-        // Nama item dinamis (29 Agustus 2026) — dulu hardcode "Kasur Baru"/
-        // "Kasur Sewa" krn kasur satu-satunya produk. Sekarang pakai Jenis
-        // Produk yang sudah dipilih (mis. "Sofa L") kalau ada, fallback ke
-        // Lini Produk (mis. "Sofa") kalau jenisnya tidak spesifik.
-        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
-        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
-        await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
-      }
-      await saveWeightEntries(order.id);
-      onDone();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Submit untuk LAYANAN (add-ons)
-  async function handleSubmitLayanan(e) {
-    e.preventDefault();
-    const validItems = items.filter((it) => it.layananName?.trim());
-    if (validItems.length === 0) return alert("Tambahkan minimal satu layanan");
-    setSaving(true);
-    try {
-      const order = await api.addOrder(customerId, {
-        category: "LAYANAN",
-        productLine: productLine || undefined,
-        productType: productType || undefined,
-        notes: buildOrderNotes({ merkKasur, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        // Merk cuma relevan utk LAYANAN (upgrade kasur existing customer,
+        // merknya bisa apa saja) — BARU/SEWA selalu produk Sano sendiri.
+        notes: buildOrderNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
@@ -1690,39 +1662,32 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           </div>
         )}
 
-        {/* BARU/SEWA: harga total langsung di step ini */}
-        {!isLayanan && (
-          <div style={{ marginBottom: 14 }}>
-            <FieldLabel tone="money">Harga Total (Rp)</FieldLabel>
-            <input type="number" value={hargaTotal} onChange={(e) => setHargaTotal(e.target.value)}
-              placeholder="cth: 5000000" min="0" style={formSelect} />
-          </div>
-        )}
-
+        {/* BARU/SEWA (30 Agustus 2026) dulu berhenti di sini dgn 1 input
+            "Harga Total" manual — sekarang SEMUA kategori lanjut ke step 4
+            yang sama, memuat katalog PRODUCT (BARU) / RENTAL (SEWA) yang
+            sebelumnya tidak pernah ditampilkan sama sekali. */}
         <div style={{ display: "flex", gap: 8 }}>
-          {isLayanan ? (
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(4)}>
-              Lanjut ke Layanan →
-            </button>
-          ) : (
-            <button className="btn btn-primary" style={{ flex: 1 }} disabled={saving}
-              onClick={handleSubmitSimple}>
-              {saving ? "Menyimpan..." : "Simpan Order"}
-            </button>
-          )}
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(4)}>
+            Lanjut ke {isLayanan ? "Layanan" : "Daftar Harga"} →
+          </button>
           <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
         </div>
       </div>
     );
   }
 
-  // ── Step 4: Layanan (hanya untuk LAYANAN/Service/Upgrade, dulu step 2 —
-  // geser krn step Lini/Jenis Produk baru disisipkan, lihat step 1 & 2). ──
+  // ── Step 4: Layanan/Produk (dulu step 2 — geser krn step Lini/Jenis
+  // Produk baru disisipkan, lihat step 1 & 2). SEJAK 30 Agustus 2026 step
+  // ini dipakai BERSAMA oleh ketiga kategori (LAYANAN/BARU/SEWA), bukan
+  // cuma LAYANAN — lihat catatan di tombol "Lanjut" step 3 & fetch katalog
+  // di atas. ──
   const lineLabelStep4 = PRODUCT_LINE_LABELS[productLine] || "";
+  const step4Icon  = isLayanan ? "🔧" : category === "SEWA" ? "📦" : "🛒";
+  const step4Title = isLayanan ? "Service/Upgrade" : category === "SEWA" ? "Sewa" : "Baru";
   return (
     <form onSubmit={handleSubmitLayanan} style={formBox}>
       <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-        🔧 Service/Upgrade{lineLabelStep4 ? ` — ${lineLabelStep4}` : ""} — Daftar Layanan
+        {step4Icon} {step4Title}{lineLabelStep4 ? ` — ${lineLabelStep4}` : ""} — Daftar {isLayanan ? "Layanan" : "Harga"}
       </p>
       {(merkKasur || ukuran || productType) && (
         <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-muted)" }}>
@@ -1743,7 +1708,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
       )}
       {catalogError && (
         <p style={{ margin: "0 0 10px", fontSize: 12, color: "#dc2626" }}>
-          Daftar harga gagal dimuat ({catalogError}). Isi layanan &amp; harga manual di bawah.
+          Daftar harga gagal dimuat ({catalogError}). Isi {isLayanan ? "layanan" : "item"} &amp; harga manual di bawah.
         </p>
       )}
       {!catalogLoading && !catalogError && catalog.length > 0 && (
@@ -1800,7 +1765,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         </div>
       )}
 
-      <label style={formLabel}>Layanan yang diambil</label>
+      <label style={formLabel}>{isLayanan ? "Layanan yang diambil" : "Item yang diambil"}</label>
       {items.map((it) => {
         const st = hargaStatus(it);
         return (
@@ -1851,7 +1816,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
       </datalist>
       <button type="button" onClick={addItem}
         style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>
-        + Tambah layanan di luar daftar harga
+        + Tambah {isLayanan ? "layanan" : "item"} di luar daftar harga
       </button>
       <div style={{ padding: "8px 0", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Total</span>

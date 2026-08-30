@@ -301,7 +301,6 @@ export default function OrderFormModal({
   const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
   const [keluhan, setKeluhan] = useState("");
-  const [hargaTotal, setHargaTotal] = useState("");
   const [items, setItems] = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving] = useState(false);
@@ -377,7 +376,6 @@ export default function OrderFormModal({
       setLocationUrl(order.locationUrl || "");
       setKeluhan(info.keluhanCustomer);
       setPromoId(order.promoId || "");
-      setHargaTotal(order.value ? String(order.value) : "");
       setItems(
         (order.items && order.items.length > 0)
           ? order.items.map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
@@ -409,7 +407,6 @@ export default function OrderFormModal({
       setLocationUrl("");
       setKeluhan("");
       setPromoId("");
-      setHargaTotal("");
       setItems([newItem()]);
       setWeightEntries([newWeightEntry()]);
     }
@@ -425,17 +422,22 @@ export default function OrderFormModal({
   // Muat katalog begitu Lini Produk + varian diketahui (29 Agustus 2026,
   // paritas dgn web). Kalau varian belum bisa ditentukan (mis. "Ukuran
   // Custom"), katalog SENGAJA tidak dimuat — isian manual yang benar.
+  // `category` (30 Agustus 2026) memfilter kind yang relevan & dikirim ke
+  // endpoint — SEBELUMNYA gerbang `isLayanan` di sini membuat katalog TIDAK
+  // PERNAH dimuat sama sekali utk BARU/SEWA, padahal database sudah punya
+  // baris PRODUCT (Matras Custom, Topper, Divan, Sandaran) & RENTAL (Kasur
+  // Sewa) yang seharusnya bisa dipilih sama seperti Service/Upgrade.
   useEffect(() => {
-    if (!visible || !isLayanan || !productLine || !variantKey) { setCatalog([]); return; }
+    if (!visible || !productLine || !variantKey) { setCatalog([]); return; }
     let batal = false;
     setCatalogLoading(true);
-    api.getPriceList(productLine, variantKey)
+    api.getPriceList(productLine, variantKey, category)
       .then((res) => { if (!batal) setCatalog(res.items || []); })
       .catch(() => { if (!batal) setCatalog([]); })
       .finally(() => { if (!batal) setCatalogLoading(false); });
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, isLayanan, productLine, variantKey]);
+  }, [visible, category, productLine, variantKey]);
 
   // Tambah layanan dari katalog. Harga final di-prefill HARGA NORMAL (harga
   // papan) — bukan standard (batas bawah nego) — sama alasan dgn web: kalau
@@ -471,8 +473,8 @@ export default function OrderFormModal({
 
   async function handleCreate() {
     const validItems = items.filter((it) => it.layananName?.trim());
-    if (isLayanan && validItems.length === 0) {
-      Alert.alert("Tambahkan minimal satu layanan");
+    if (validItems.length === 0) {
+      Alert.alert(`Tambahkan minimal satu ${isLayanan ? "layanan" : "item"}`);
       return;
     }
     if (!productLine) {
@@ -498,36 +500,25 @@ export default function OrderFormModal({
       locationUrl: locationUrl || undefined,
     });
 
+    // Item order (30 Agustus 2026) — items[] dipakai utk SEMUA kategori
+    // sekarang, bukan cuma LAYANAN. BARU/SEWA dulu cuma kirim 1 OrderItem
+    // tersembunyi dari "Harga Total" manual; sekarang bisa juga dipilih dari
+    // katalog PRODUCT/RENTAL (lihat fetch katalog di atas), snapshot-nya
+    // sama persis (priceItemId/variantKey/normalPrice/standardPrice/kind).
     const createdItems = [];
     let finalOrderValue = 0;
-    if (isLayanan) {
-      for (const it of validItems) {
-        // Snapshot katalog (29 Agustus 2026) — dikirim APA ADANYA dari yang
-        // sudah tersimpan di state item saat dipilih dari katalog (lihat
-        // addFromCatalog), TIDAK di-lookup ulang di sini.
-        const { item, orderValue } = await api.addOrderItem(created.id, {
-          layananName: it.layananName.trim(),
-          harga: Number(it.harga) || 0,
-          priceItemId: it.priceItemId || undefined,
-          variantKey: it.variantKey || undefined,
-          normalPrice: it.normalPrice ?? undefined,
-          standardPrice: it.standardPrice ?? undefined,
-          kind: it.kind || undefined,
-        });
-        createdItems.push(item);
-        finalOrderValue = orderValue;
-      }
-    } else {
-      const harga = Number(hargaTotal) || 0;
-      if (harga > 0) {
-        // Nama item dinamis (29 Agustus 2026, paritas dgn web) — dulu
-        // hardcode "Kasur Baru"/"Kasur Sewa" krn kasur satu-satunya produk.
-        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
-        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
-        const { item, orderValue } = await api.addOrderItem(created.id, { layananName: namaLayanan, harga });
-        createdItems.push(item);
-        finalOrderValue = orderValue;
-      }
+    for (const it of validItems) {
+      const { item, orderValue } = await api.addOrderItem(created.id, {
+        layananName: it.layananName.trim(),
+        harga: Number(it.harga) || 0,
+        priceItemId: it.priceItemId || undefined,
+        variantKey: it.variantKey || undefined,
+        normalPrice: it.normalPrice ?? undefined,
+        standardPrice: it.standardPrice ?? undefined,
+        kind: it.kind || undefined,
+      });
+      createdItems.push(item);
+      finalOrderValue = orderValue;
     }
 
     const createdWeights = [];
@@ -579,41 +570,30 @@ export default function OrderFormModal({
       if (!e.id && e.label?.trim() && e.beratKg) await api.addWeightEntry(order.id, { label: e.label.trim(), beratKg: Number(e.beratKg), sortOrder: i });
     }
 
-    if (isLayanan) {
-      const existingItemIds = (order.items || []).map((it) => it.id);
-      const currentItemIds = items.filter((it) => it.id).map((it) => it.id);
-      for (const id of existingItemIds) {
-        if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
-      }
-      for (const it of items.filter((it) => it.id)) {
-        if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
-      }
-      for (const it of items.filter((it) => !it.id)) {
-        if (it.layananName?.trim()) {
-          await api.addOrderItem(order.id, {
-            layananName: it.layananName.trim(),
-            harga: Number(it.harga) || 0,
-            priceItemId: it.priceItemId || undefined,
-            variantKey: it.variantKey || undefined,
-            normalPrice: it.normalPrice ?? undefined,
-            standardPrice: it.standardPrice ?? undefined,
-            kind: it.kind || undefined,
-          });
-        }
-      }
-    } else {
-      // BARU/SEWA: "harga" order = 1 OrderItem tunggal tersembunyi (lihat
-      // handleCreate) — bukan array items yang di-render, jadi diff-nya beda
-      // sendiri: update item yang sudah ada, atau bikin baru kalau order ini
-      // sebelumnya dibuat tanpa harga sama sekali (hargaTotal 0 saat create).
-      const harga = Number(hargaTotal) || 0;
-      const existingItem = (order.items || [])[0];
-      if (existingItem) {
-        await api.updateOrderItem(existingItem.id, { layananName: existingItem.layananName, harga });
-      } else if (harga > 0) {
-        const namaProduk = PRODUCT_TYPE_LABELS[productType] || PRODUCT_LINE_LABELS[productLine] || "Produk";
-        const namaLayanan = `${namaProduk} ${category === "BARU" ? "Baru" : "Sewa"}`;
-        await api.addOrderItem(order.id, { layananName: namaLayanan, harga });
+    // Diff items[] terhadap koleksi ASLI order — dipakai utk SEMUA kategori
+    // sekarang (30 Agustus 2026), bukan cuma LAYANAN. Order BARU/SEWA lama
+    // yang cuma punya 1 OrderItem tersembunyi dari "Harga Total" manual
+    // tetap kebaca (prefill di atas memuat order.items apa adanya), cuma
+    // sekarang bisa diedit/ditambah lewat katalog seperti LAYANAN.
+    const existingItemIds = (order.items || []).map((it) => it.id);
+    const currentItemIds = items.filter((it) => it.id).map((it) => it.id);
+    for (const id of existingItemIds) {
+      if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
+    }
+    for (const it of items.filter((it) => it.id)) {
+      if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
+    }
+    for (const it of items.filter((it) => !it.id)) {
+      if (it.layananName?.trim()) {
+        await api.addOrderItem(order.id, {
+          layananName: it.layananName.trim(),
+          harga: Number(it.harga) || 0,
+          priceItemId: it.priceItemId || undefined,
+          variantKey: it.variantKey || undefined,
+          normalPrice: it.normalPrice ?? undefined,
+          standardPrice: it.standardPrice ?? undefined,
+          kind: it.kind || undefined,
+        });
       }
     }
 
@@ -947,12 +927,16 @@ export default function OrderFormModal({
                     Muncul begitu Lini Produk + varian diketahui. Kalau
                     katalog kosong/gagal/varian belum bisa ditentukan
                     ("Ukuran Custom"), bagian ini disembunyikan dan form
-                    kembali ke isian bebas — bukan error. */}
-                {isLayanan && (
-                  <>
-                    <SectionHead icon={Tag} title="Layanan & Harga" tokens={tokens} styles={styles} />
+                    kembali ke isian bebas — bukan error. Sejak 30 Agustus
+                    2026 dipakai utk SEMUA kategori (dulu cuma LAYANAN) —
+                    backend memfilter kind yang relevan lewat `category`. */}
+                <SectionHead
+                  icon={Tag}
+                  title={isLayanan ? "Layanan & Harga" : category === "SEWA" ? "Sewa & Harga" : "Produk & Harga"}
+                  tokens={tokens} styles={styles}
+                />
 
-                    {catalogLoading && (
+                {catalogLoading && (
                       <View style={styles.catalogLoadingRow}>
                         <ActivityIndicator size="small" color={tokens.color.accent} />
                         <Text style={styles.catalogMuted}>Memuat daftar harga…</Text>
@@ -1013,8 +997,6 @@ export default function OrderFormModal({
                         </ScrollView>
                       </>
                     )}
-                  </>
-                )}
 
                 {/* ── Layanan yang diambil ────────────────────────────────
                     Tiap layanan jadi KARTU sendiri (bukan baris datar
@@ -1027,10 +1009,8 @@ export default function OrderFormModal({
                     normal & standard SAMA-SAMA tampil sebagai referensi
                     diam, harga final yang jadi bintangnya karena itu satu-
                     satunya yang diisi manusia. */}
-                {isLayanan && (
-                  <>
-                    <Text style={styles.subLabel}>Layanan yang diambil</Text>
-                    {items.map((it) => {
+                <Text style={styles.subLabel}>{isLayanan ? "Layanan yang diambil" : "Item yang diambil"}</Text>
+                {items.map((it) => {
                       const st = hargaStatus(it, tokens);
                       const dariKatalog = !!it.priceItemId;
                       const adaReferensi = it.normalPrice != null || it.standardPrice != null;
@@ -1104,15 +1084,13 @@ export default function OrderFormModal({
                         </View>
                       );
                     })}
-                    <TouchableOpacity onPress={addItem}>
-                      <Text style={styles.linkText}>+ Tambah layanan di luar daftar harga</Text>
-                    </TouchableOpacity>
-                    <View style={styles.totalBar}>
-                      <Text style={styles.totalBarLabel}>Total</Text>
-                      <Text style={styles.totalBarValue}>{formatRupiah(totalItems)}</Text>
-                    </View>
-                  </>
-                )}
+                <TouchableOpacity onPress={addItem}>
+                  <Text style={styles.linkText}>+ Tambah {isLayanan ? "layanan" : "item"} di luar daftar harga</Text>
+                </TouchableOpacity>
+                <View style={styles.totalBar}>
+                  <Text style={styles.totalBarLabel}>Total</Text>
+                  <Text style={styles.totalBarValue}>{formatRupiah(totalItems)}</Text>
+                </View>
               </>
             )}
 
@@ -1319,21 +1297,11 @@ export default function OrderFormModal({
               autoCapitalize="none"
             />
 
-            {/* Harga Total — hanya BARU/SEWA */}
-            {!isLayanan && (
-              <>
-                <Text style={styles.label}>Harga Total (Rp)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={tokens.color.textMuted}
-                  value={hargaTotal}
-                  onChangeText={setHargaTotal}
-                  keyboardType="numeric"
-                />
-                {!!hargaTotal && <Text style={styles.previewValue}>{formatRupiah(Number(hargaTotal) || 0)}</Text>}
-              </>
-            )}
+            {/* "Harga Total" manual (BARU/SEWA) DIHAPUS 30 Agustus 2026 —
+                digantikan katalog + items[] di atas (SectionHead "Produk &
+                Harga"/"Sewa & Harga"), sama seperti LAYANAN. Order lama yang
+                masih pakai 1 OrderItem tersembunyi dari field ini tetap
+                kebaca & bisa diedit lewat "Item yang diambil" di atas. */}
 
             <TouchableOpacity
               style={[styles.submitBtn, (saving || locked) && { opacity: 0.6 }]}
@@ -1470,7 +1438,6 @@ function createStyles(tokens) {
   pickBtnText: { fontSize: 12, fontWeight: "700", color: tokens.color.accent },
   removeBtn: { marginLeft: 8, padding: 4 },
   linkText: { fontSize: 12, color: tokens.color.accent, fontWeight: "600", marginTop: 4 },
-  previewValue: { fontSize: 13, fontWeight: "700", color: tokens.color.success, marginTop: 8 },
   // Katalog harga (29 Agustus 2026, paritas dgn web)
   catalogBox: {
     borderWidth: 1, borderColor: tokens.color.border, borderRadius: 12,

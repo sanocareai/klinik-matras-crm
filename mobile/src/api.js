@@ -358,8 +358,11 @@ export const api = {
   // dgn web) — dipakai OrderFormModal menampilkan daftar layanan beserta
   // harga normal & standard. BUKAN katalog PRODUKSI (routing modul kerja,
   // tanpa harga) — lihat backend/prisma/schema.prisma #PriceItem.
-  getPriceList: (productLine, variantKey) =>
-    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}`),
+  // `category` (30 Agustus 2026, paritas web) OPSIONAL — filter kind sesuai
+  // OrderCategory (LAYANAN→SERVICE/ADDON/FEE, BARU→PRODUCT/FEE,
+  // SEWA→RENTAL/FEE). Lihat backend/src/routes/masterData.js#KIND_BY_CATEGORY.
+  getPriceList: (productLine, variantKey, category) =>
+    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
   // Promo (D-026) — dropdown "pilih kampanye" di OrderFormModal, SATU
   // sumber dengan web (routes/promos.js). ?active=true = cuma kampanye
   // yang sedang berjalan, dipakai form CREATE/EDIT.

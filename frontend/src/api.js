@@ -838,8 +838,14 @@ export const api = {
   // form order menampilkan daftar layanan beserta harga normal & standard.
   // BUKAN getServiceCatalog() di atas: itu katalog PRODUKSI (routing modul
   // kerja, tanpa harga). Lihat catatan di schema.prisma#PriceItem.
-  getPriceList: (productLine, variantKey) =>
-    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}`),
+  // `category` (30 Agustus 2026) OPSIONAL — kalau dikirim, backend memfilter
+  // kind sesuai OrderCategory (LAYANAN→SERVICE/ADDON/FEE, BARU→PRODUCT/FEE,
+  // SEWA→RENTAL/FEE). Tanpa itu, LAYANAN dulu ikut menampilkan PRODUCT yang
+  // nyasar (kelihatan di Divan), dan BARU/SEWA tidak pernah memuat katalog
+  // sama sekali (form cuma minta 1 angka manual) — lihat catatan panjang di
+  // masterData.js#KIND_BY_CATEGORY.
+  getPriceList: (productLine, variantKey, category) =>
+    request(`/master-data/price-list?productLine=${encodeURIComponent(productLine)}${variantKey ? `&variantKey=${encodeURIComponent(variantKey)}` : ""}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
 
   // Produk (Galeri)
   getProducts: () => request("/products"),

@@ -31,7 +31,7 @@ masterDataRouter.get("/service-catalog", async (req, res) => {
   }
 });
 
-// GET /api/master-data/price-list?productLine=KASUR&variantKey=160
+// GET /api/master-data/price-list?productLine=KASUR&variantKey=160&category=LAYANAN
 // Katalog harga SALES untuk satu lini produk + satu varian — dipakai form
 // order (OrderSection.jsx) menampilkan daftar layanan beserta harga normal &
 // standard-nya begitu sales memilih lini produk + ukuran.
@@ -41,17 +41,41 @@ masterDataRouter.get("/service-catalog", async (req, res) => {
 // katalog harga jual. Lihat catatan panjang di schema.prisma#PriceItem.
 const PRODUCT_LINES = new Set(["KASUR", "SOFA", "DIVAN"]);
 
+// Pemetaan OrderCategory → PriceItemKind yang boleh muncul — SATU-SATUNYA
+// sumber kebenaran (30 Agustus 2026), disalin persis dari komentar
+// schema.prisma#PriceItemKind. SEBELUM ini, `category` tidak pernah dikirim
+// ke endpoint sama sekali: form order (web & mobile) selalu memuat SEMUA
+// kind sekaligus saat category=LAYANAN (jadi PRODUCT ikut nyampur di daftar
+// Service — kelihatan di Divan yang catalog-nya SERVICE+PRODUCT tercampur),
+// dan TIDAK PERNAH memuat apa pun sama sekali saat category=BARU/SEWA (form
+// cuma minta 1 angka "Harga Total" manual, katalog PRODUCT/RENTAL yang
+// sebenarnya sudah ada di database tidak pernah ditampilkan ke sales).
+const KIND_BY_CATEGORY = {
+  LAYANAN: ["SERVICE", "ADDON", "FEE"],
+  BARU: ["PRODUCT", "FEE"],
+  SEWA: ["RENTAL", "FEE"],
+};
+
 masterDataRouter.get("/price-list", async (req, res) => {
   try {
-    const { productLine, variantKey } = req.query;
+    const { productLine, variantKey, category } = req.query;
     // Whitelist eksplisit, bukan diteruskan mentah ke query — konvensi sama
     // dengan LEAD_SOURCE_VALUES di analytics.js.
     if (!PRODUCT_LINES.has(productLine)) {
       return res.status(400).json({ error: "productLine wajib salah satu dari: KASUR, SOFA, DIVAN" });
     }
+    // `category` OPSIONAL — kalau dikirim harus salah satu key yang valid
+    // (kalau tidak, kembalikan SEMUA kind, dipakai mis. utk halaman admin
+    // daftar harga penuh nanti yang butuh lihat semua kind sekaligus).
+    if (category !== undefined && !KIND_BY_CATEGORY[category]) {
+      return res.status(400).json({ error: "category wajib salah satu dari: LAYANAN, BARU, SEWA" });
+    }
 
     const items = await prisma.priceItem.findMany({
-      where: { productLine, active: true },
+      where: {
+        productLine, active: true,
+        ...(category && { kind: { in: KIND_BY_CATEGORY[category] } }),
+      },
       // `sortOrder` DULUAN (bukan `kind` duluan, seperti sebelumnya) —
       // `sortOrder` sengaja diisi persis mengikuti posisi baris di
       // spreadsheet harga sumber (lihat seedPriceList.mjs), yang baris
