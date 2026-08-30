@@ -25,7 +25,7 @@ import { sendMedia } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
-import { notifyPickupScheduled, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
+import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS } from "../services/jobStatus.js";
@@ -1541,14 +1541,12 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
       include: jobInclude,
     });
 
-    // FR-N trigger 1/4: "Pickup scheduled" — HANYA saat dibuat LANGSUNG
-    // dengan tanggal (bukan diulang tiap PATCH reschedule, supaya dispatcher
-    // bebas menyesuaikan jadwal tanpa memicu notifikasi berkali-kali — lihat
-    // catatan di customerNotifications.js).
-    if (job.type === "PICKUP" && job.scheduledDate) {
-      const customer = job.units[0]?.unit?.order?.customer;
-      if (customer) notifyPickupScheduled(job, customer.id, customer.name);
-    }
+    // Trigger "Pickup dijadwalkan" DIHAPUS 31 Agustus 2026 (keputusan
+    // owner) — digantikan notifyDriverEnRoute di POST /jobs/:id/start,
+    // supaya tetap PERSIS 4 notifikasi (lihat customerNotifications.js).
+    // Notifikasi lama ini sering terkirim jauh-jauh hari sebelum
+    // pengambilan sungguhan, kurang actionable dibanding "driver sudah
+    // di jalan sekarang".
 
     res.status(201).json(job);
   } catch (err) {
@@ -1752,7 +1750,16 @@ armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
     });
-    res.json(await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude }));
+    const full = await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude });
+
+    // FR-N trigger 1/4: "Driver menuju lokasi" — GANTI "Pickup dijadwalkan"
+    // (31 Agustus 2026, keputusan owner) supaya tetap PERSIS 4 notifikasi.
+    // Berlaku utk PICKUP MAUPUN DELIVERY (lama cuma PICKUP) — customer tahu
+    // PERSIS kapan harus siap-siap, bukan cuma "suatu hari nanti".
+    const customer = full.units[0]?.unit?.order?.customer;
+    if (customer) notifyDriverEnRoute(full, customer.id, customer.name);
+
+    res.json(full);
   } catch (err) {
     handleErr(err, res);
   }

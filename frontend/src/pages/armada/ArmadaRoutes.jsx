@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
-import RouteMapPlaceholder from "@/features/armada/components/RouteMapPlaceholder.jsx";
+import RouteMap from "@/features/armada/components/RouteMap.jsx";
 import { unitCountOf } from "@/features/armada/jobStatus.js";
 
 // Route Planner — Delivery Tahap 3.
@@ -17,13 +17,14 @@ import { unitCountOf } from "@/features/armada/jobStatus.js";
 // tersedia.
 //
 // TIGA PANEL sesuai spesifikasi: kiri = job belum masuk rute, tengah = papan
-// rute (drag-drop, bukan peta — placeholder profesional dipasang, lihat
-// RouteMapPlaceholder.jsx untuk kenapa), kanan = ringkasan tanggal terpilih.
+// rute (drag-drop) + peta nyata di atasnya (RouteMap.jsx, Leaflet/OSM —
+// menggantikan RouteMapPlaceholder.jsx 31 Agustus 2026), kanan = ringkasan
+// tanggal terpilih.
 //
-// "Optimize Route" (per instruksi eksplisit "untuk versi dummy... jangan
-// pakai API Google Maps"): mengurutkan ulang stop berdasarkan timeWindow lalu
-// alamat — pengurutan sederhana, BUKAN algoritma VRP. PRD §1.5 melarang
-// optimasi rute otomatis sungguhan untuk v1.
+// "Urutkan" TETAP bukan VRP sungguhan (PRD §1.5 melarang optimasi rute
+// otomatis penuh untuk v1) — cuma nearest-neighbor sederhana kalau semua
+// stop punya koordinat (Fase 2, lihat urutkanOtomatis di bawah), turun ke
+// sort timeWindow+alamat kalau belum semua ter-geocode.
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export default function ArmadaRoutes() {
@@ -206,7 +207,7 @@ export default function ArmadaRoutes() {
 
         {/* Tengah — papan rute */}
         <div className="min-w-0">
-          <RouteMapPlaceholder stopCount={totalStopSemuaRute} />
+          <RouteMap routes={routes} />
           <div className="mt-3">
             {loading ? (
               <div className="flex gap-3 overflow-x-auto pb-2">

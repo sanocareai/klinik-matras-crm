@@ -3,10 +3,18 @@
 // PERSIS EMPAT momen, TIDAK LEBIH — PRD sendiri memperingatkan:
 // "More than four and customers mute you." Jangan tergoda menambah trigger
 // baru di sini tanpa mengurangi salah satu yang sudah ada.
-//   1. Pickup dijadwalkan   → notifyPickupScheduled (armada.js, job dibuat DENGAN tanggal)
+//   1. Driver menuju lokasi → notifyDriverEnRoute   (armada.js, job PICKUP/DELIVERY mulai jalan)
 //   2. Unit sampai bengkel  → notifyUnitReceived    (armada.js, job PICKUP selesai)
 //   3. Siap dikirim         → notifyReadyForDelivery (production.js, unit tuntas seluruh tahap)
 //   4. Terkirim             → notifyDelivered       (armada.js, job DELIVERY selesai)
+//
+// REVISI 31 Agustus 2026 (keputusan owner): trigger 1 SEBELUMNYA "Pickup
+// dijadwalkan" (dikirim begitu job dibuat dengan tanggal, bisa berhari-hari
+// sebelum pengambilan sungguhan — kurang actionable). Diganti "Driver
+// menuju lokasi" (dikirim saat job BENAR-BENAR mulai jalan, POST
+// /jobs/:id/start) — customer tahu PERSIS kapan harus siap-siap, pola yang
+// sama dipakai Gojek/GoFood ("driver sedang menuju lokasi Anda"). Tetap
+// PERSIS 4, bukan ditambah jadi 5.
 //
 // SEMUA best-effort: kegagalan kirim WA TIDAK PERNAH menggagalkan aksi
 // utamanya (job selesai, tahap tuntas) — sama prinsipnya dengan
@@ -83,19 +91,15 @@ function wrap(fn, label) {
   };
 }
 
-// 1. Pickup dijadwalkan — dikirim saat job PICKUP dibuat DENGAN tanggal
-// sudah pasti (bukan saat masih "belum dijadwalkan"). Tidak diulang lagi
-// kalau tanggal diedit setelahnya (PATCH) — sengaja, supaya dispatcher
-// bebas menyesuaikan jadwal tanpa memicu notifikasi berkali-kali.
-export const notifyPickupScheduled = wrap(async (job, customerId, customerName) => {
-  const tanggal = new Date(job.scheduledDate).toLocaleDateString("id-ID", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-  const jam = job.timeWindow ? ` (${job.timeWindow})` : "";
-  const driverLine = job.driver?.name ? `\nDriver: ${job.driver.name}` : "";
-  const text = `Halo ${customerName || ""}, kasur Anda dijadwalkan diambil pada *${tanggal}${jam}*.${driverLine}\n\nTerima kasih — Sano Care.`;
+// 1. Driver menuju lokasi — dikirim saat job (PICKUP atau DELIVERY) BENAR-
+// BENAR mulai jalan (POST /jobs/:id/start, status -> EN_ROUTE). Lihat
+// catatan revisi 31 Agustus 2026 di kepala file untuk alasan gantinya.
+export const notifyDriverEnRoute = wrap(async (job, customerId, customerName) => {
+  const driverLine = job.driver?.name ? ` (${job.driver.name})` : "";
+  const aksi = job.type === "PICKUP" ? "mengambil" : "mengantar";
+  const text = `Halo ${customerName || ""}, driver kami${driverLine} sedang menuju lokasi Anda untuk ${aksi} kasur Anda.\n\nMohon bersiap ya — Sano Care.`;
   await sendCustomerText(customerId, text);
-}, "pickupScheduled");
+}, "driverEnRoute");
 
 // 2. Unit sampai bengkel — dikirim saat job PICKUP selesai.
 export const notifyUnitReceived = wrap(async (orderNumber, customerId, customerName) => {

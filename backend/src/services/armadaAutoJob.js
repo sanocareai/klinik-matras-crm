@@ -12,10 +12,12 @@
 // kendaraan) — bukan menjadwalkan sungguhan. deriveStatus(false,false) di
 // armada.js akan menghasilkan status yang SAMA persis kalau job ini dibuat
 // manual tanpa driver+tanggal, jadi tidak ada jalur job yang "beda kelas".
-// Karena scheduledDate tetap null, notifyPickupScheduled (armada.js POST
-// /jobs) TIDAK terpicu di sini — customer TIDAK dapat WA apa pun hanya
-// karena sales input order; notifikasi baru terkirim saat dispatcher
-// SUNGGUHAN memberi tanggal (lewat PATCH /jobs/:id atau /issues/reschedule).
+// Customer TIDAK dapat WA apa pun hanya karena sales input order —
+// sejak 31 Agustus 2026 notifikasi "Driver menuju lokasi" (bekas "Pickup
+// dijadwalkan") baru terpicu di POST /jobs/:id/start, jauh setelah job ini
+// dibuat kerangkanya di sini (dan bahkan setelah dispatcher memberi
+// tanggal+driver) — job auto-buat ini murni administratif, tidak pernah
+// jadi alasan langsung customer dihubungi.
 //
 // DIPANGGIL DARI: services/unitProvisioning.js#createUnitsForOrder, DI DALAM
 // transaksi yang sama dengan pembuatan unit — supaya order+unit+job lahir
