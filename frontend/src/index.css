@@ -2628,6 +2628,18 @@ body {
   /* app-shell tidak perlu collapsed class di mobile */
   .sidebar-collapsed .sidebar { width: 240px !important; }
 
+  /* Jaring pengaman (30 Agustus 2026) — tombol sembunyikan/tampilkan
+     daftar percakapan HANYA dibuat utk mode desktop 3-kolom (props-nya
+     memang tidak dioper sama sekali di cabang mobile Inbox.jsx), tapi
+     dikunci EKSPLISIT di sini juga (bukan cuma andalkan JS) supaya kalau
+     suatu saat breakpoint JS (`useIsMobile`, 768px) dan breakpoint CSS ini
+     pernah tidak sinkron lagi (persis insiden hamburger topbar yang baru
+     saja diperbaiki), tombol ini tidak ikut nongol menambah sesak header
+     yang sudah padat di layar sempit. */
+  .conv-list-icon-btn[title*="daftar percakapan"],
+  .chat-toggle-list-btn,
+  .chat-empty-reopen-list { display: none !important; }
+
   /* Main content full width */
   .app-content { width: 100%; }
 

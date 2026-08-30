@@ -267,20 +267,35 @@ export function parseHistoryMessage(msg) {
   let mediaUrl  = null;
   let caption   = null;
 
-  const rawMediaType = normalizeRawMediaType(msg._data?.Info?.MediaType);
+  // BUG PRODUKSI (ditemukan 30 Agustus 2026): `_data.Info.MediaType` cuma
+  // ada di payload GOWS — sistem ini jalan di NOWEB (lihat CLAUDE.md §13),
+  // jadi field itu SELALU undefined di sini untuk lalu lintas nyata.
+  // `rawMediaType` akibatnya SELALU null utk NOWEB, dan cabang "sticker
+  // DULU" di bawah tidak pernah kena — stiker (mimetype image/webp, tidak
+  // bisa dibedakan dari foto asli lewat mimetype saja) lolos sebagai
+  // mediaType "image" via mimeToMediaType, lalu nampang di tab "Foto" galeri
+  // media (MediaGallery.jsx web / MediaGalleryScreen mobile, dua-duanya
+  // filter berdasar mediaType==="image" apa adanya, tidak salah — inputnya
+  // yang salah). Sinyal UNIVERSAL yang jalan di KEDUA engine: raw Baileys/
+  // GOWS message key `stickerMessage` di `rawMsg` (sudah dihitung di atas
+  // dgn casing ganda "_data.Message"/"_data.message" persis utk alasan
+  // yang sama — lihat komentar bug reply/quote 2 paragraf di atas), BUKAN
+  // cuma dipakai di loop fallback RAW_MEDIA_KEY_TO_TYPE di bawah (yang
+  // hanya kena kalau msg.hasMedia/msg.media KOSONG — untuk NOWEB biasanya
+  // WAHA SUDAH menormalkan keduanya, jadi loop itu tidak pernah tercapai).
+  const rawMediaType = normalizeRawMediaType(msg._data?.Info?.MediaType)
+    || (rawMsg.stickerMessage ? "sticker" : null);
 
   if (msg.hasMedia || msg.media || rawMediaType) {
     const mime = msg.media?.mimetype || msg._data?.mimetype || msg._data?.Info?.Mimetype || "";
     // Prioritas: rawMediaType "sticker" DULU — stiker WhatsApp cuma file
     // image/webp biasa secara mimetype, jadi mimeToMediaType tidak bisa
     // bedakan stiker dari foto asli (keduanya "image/..."), tapi
-    // _data.Info.MediaType WAHA secara eksplisit bilang "sticker" (bukan
-    // "image") untuk pesan stiker — bug produksi: stiker selalu lolos
-    // sebagai mediaType "image" karena mime dicek lebih dulu tanpa
-    // pengecualian ini. Selain sticker, mimetype (paling presisi) tetap
-    // didahulukan > _data.Info.MediaType (string tipe langsung, sering
-    // satu-satunya sumber saat media.url belum ter-download) > "document"
-    // (fallback aman terakhir).
+    // rawMediaType (GOWS Info.MediaType ATAU raw stickerMessage NOWEB di
+    // atas) secara eksplisit bilang "sticker" untuk pesan stiker. Selain
+    // sticker, mimetype (paling presisi) tetap didahulukan > rawMediaType
+    // (string tipe langsung, sering satu-satunya sumber saat media.url
+    // belum ter-download) > "document" (fallback aman terakhir).
     mediaType = rawMediaType === "sticker" ? "sticker" : (mime ? mimeToMediaType(mime) : (rawMediaType || "document"));
     mediaUrl  = msg.media?.url || null; // URL dari WAHA sendiri — aman dipakai langsung kalau ada
     caption   = msg.caption || text || null;
