@@ -17,6 +17,7 @@ import {
 } from "../services/leadAttribution.js";
 import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite } from "../services/templateIklan.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
+import { isInternalStaffPhone } from "../utils/staffDirectory.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 
@@ -467,6 +468,22 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName }) {
   // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
   const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
+
+  // ⚠️ NOMOR STAF INTERNAL BUKAN LEAD (30 Agustus 2026) — lihat
+  // utils/staffDirectory.js. Ditemukan lewat pertanyaan owner "apakah lead
+  // WhatsApp Langsung beneran semua organik?": 2 nomor tanpa nama sama
+  // sekali ternyata 100% isinya pesan bot Eskalasi SLA/Lead Urgent (nomor
+  // notifikasi admin/leader), 0 balasan pelanggan — kena "Customer" cuma
+  // karena kebetulan chat MASUK duluan dari nomor itu (jarang tapi bisa,
+  // mis. staf iseng chat nomor CS sendiri). Cuma diblok untuk customer BARU
+  // — kalau nomor ini KEBETULAN sudah lama jadi customer asli (ditemukan
+  // juga kasusnya: staf yang nomor pribadinya sama dipakai transaksi
+  // sungguhan), riwayatnya TIDAK disentuh sama sekali.
+  if (!existingCustomer && isInternalStaffPhone(phone)) {
+    console.log("[webhook] Nomor staf internal (directory notifikasi), bukan lead — dilewati:", phone);
+    return "dropped-internal-staff";
+  }
+
   let detectedSource = "WHATSAPP_DIRECT";
   let detectedDetail = null;
   let pendingClickId = null;
@@ -801,7 +818,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
 // conversation belum ada, mis. sales mulai chat duluan dari HP bukan CRM).
 // phone di sini SUDAH resolve dari Chat JID (lawan bicara), BUKAN Sender —
 // lihat extractPhoneGows: primaryJid = info.Chat saat fromMe true.
-// Return "saved" | "skip-dupe" | "dropped-no-customer".
+// Return "saved" | "skip-dupe" | "dropped-no-customer" | "dropped-internal-staff".
 async function handleOutboundFromPhone(payload, phone, text, externalId, sessionName, initialAck, { allowCreateCustomer }) {
   let customer = await prisma.customer.findUnique({ where: { phone } });
 
@@ -809,6 +826,20 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     if (!allowCreateCustomer) {
       console.log("[webhook] fromMe: customer belum ada di DB, dilewati:", phone);
       return "dropped-no-customer";
+    }
+
+    // ⚠️ SUMBER UTAMA BUG "lead WhatsApp Langsung palsu" (30 Agustus 2026,
+    // lihat utils/staffDirectory.js) — otomasi INTERNAL (services/slaAlertJob.js:
+    // Eskalasi SLA/Lead Urgent) mengirim WA lewat sesi CS yang sama ke nomor
+    // PRIBADI sales/admin. Dari sisi webhook ini TIDAK BISA DIBEDAKAN dari
+    // "sales mulai chat lead baru dari HP-nya sendiri" (kasus asli yang
+    // allowCreateCustomer memang dibuat untuk menangkap) — makanya
+    // dicek eksplisit ke daftar nomor notifikasi, bukan ditebak dari isi
+    // pesan. Diverifikasi manual: 2 nomor kena ini isinya 100% pesan bot,
+    // 0 balasan pelanggan sungguhan — jelas bukan lead.
+    if (isInternalStaffPhone(phone)) {
+      console.log("[webhook] fromMe: nomor staf internal (directory notifikasi), bukan lead — dilewati:", phone);
+      return "dropped-internal-staff";
     }
     // Sales mulai chat duluan dari HP — buat customer+conversation seperti
     // pesan masuk biasa, TAPI pakai Chat (lawan bicara) sebagai identitas.
