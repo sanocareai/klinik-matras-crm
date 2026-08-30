@@ -480,17 +480,109 @@ body {
 .tag-default{ background: #f1f5f9; color: #475569; }
 
 /* ─── INBOX — 3 PANEL ───────────────────────────────────── */
+/* `grid-template-columns` TIDAK ditulis statis di sini lagi (30 Agustus
+   2026, FASE G) — lebar tiap kolom sekarang bisa digeser bebas oleh user
+   (ResizeHandle.jsx) dan disuplai lewat inline `style` dari Inbox.jsx,
+   supaya satu-satunya sumber kebenaran lebar kolom adalah state React
+   (yang juga di-persist ke localStorage), bukan tersebar di CSS + JS.
+   `.panel-collapsed`/`.list-collapsed` juga TIDAK lagi meng-override lebar
+   di sini — collapse pun dihitung di JS (0px) supaya transisinya konsisten
+   dengan resize manual, cuma beda kecepatan (lihat `.is-resizing` di bawah). */
 .inbox-body {
   height: 100%;
   display: grid;
-  grid-template-columns: 320px 1fr 340px;
   grid-template-rows: 1fr; /* baris tunggal stretch penuh, bukan auto ke tinggi konten */
   overflow: hidden;
   position: relative;
-  transition: grid-template-columns 0.2s ease;
+  transition: grid-template-columns 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.inbox-body.panel-collapsed {
-  grid-template-columns: 320px 1fr 0px;
+/* Selama menyeret handle, transisi DIMATIKAN — geser harus terasa
+   menempel persis di kursor, bukan "mengejar" easing 0.2s yang bikin lag
+   terasa kalau tetap aktif saat drag. Toggle collapse (klik tombol, bukan
+   drag) tetap animasi mulus karena TIDAK memakai class ini. */
+.inbox-body.is-resizing { transition: none; }
+/* Kolom KIRI (daftar percakapan) sekarang bisa di-unmount kondisional
+   (30 Agustus 2026, sama seperti panel kanan yang sudah lebih dulu
+   begitu) — TANPA `grid-column` eksplisit, algoritma auto-placement grid
+   akan mengisi kolom dari kiri berdasarkan URUTAN elemen di DOM, jadi
+   begitu daftar hilang, ChatWindow otomatis "melompat" mengisi kolom 1
+   (yang sedang 0px) dan CustomerPanel ikut geser ke kolom 2 (menimpa
+   ChatWindow) — bukan cuma daftar yang hilang, seluruh layout berantakan.
+   Dikunci eksplisit di sini supaya ketiganya SELALU di kolom yang sama
+   berapa pun kombinasi kolom yang sedang mount. `:not(.mobile-single-
+   column)` PENTING — di mobile cuma ada 1 kolom, kalau aturan ini ikut
+   berlaku di sana ChatWindow/List jadi mustahil terlihat (dipaksa ke
+   kolom 2/3 yang tidak pernah ada di grid 1-kolom mobile). */
+.inbox-body:not(.mobile-single-column) > .conversation-list { grid-column: 1; }
+.inbox-body:not(.mobile-single-column) > .chat-window        { grid-column: 2; }
+.inbox-body:not(.mobile-single-column) > .customer-panel      { grid-column: 3; }
+
+/* Handle geser antar kolom — strip tipis absolut di garis batas (posisi
+   `left`/`right` dihitung di Inbox.jsx dari lebar kolom saat ini), BUKAN
+   grid track tersendiri, supaya template kolom tetap 3 nilai yang simpel.
+   Hit-area 9px (gampang disasar kursor), garis yang benar-benar terlihat
+   cuma 2px di tengahnya dan baru nyala warna saat hover/aktif — diam saat
+   tidak disentuh supaya tidak menambah "noise" visual di antara 2 panel. */
+.inbox-resize-handle {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+.inbox-resize-handle-grip {
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background-color 0.12s ease;
+  border-radius: 2px;
+}
+.inbox-resize-handle:hover .inbox-resize-handle-grip,
+.inbox-resize-handle:focus-visible .inbox-resize-handle-grip {
+  background: var(--color-primary, #2563eb);
+}
+.inbox-body.is-resizing .inbox-resize-handle-grip {
+  background: var(--color-primary, #2563eb);
+}
+.inbox-resize-handle:focus-visible { outline: none; }
+.inbox-resize-handle:focus-visible .inbox-resize-handle-grip { width: 3px; }
+
+/* Baris atas daftar percakapan (search + chat baru + sembunyikan daftar) —
+   dipindah dari inline style (30 Agustus 2026) supaya tombol ikonnya bisa
+   berbagi 1 style konsisten (.conv-list-icon-btn) dengan hover state,
+   bukan style sekali-pakai yang berulang di JSX. */
+.conv-list-toprow {
+  display: flex; gap: 6px; align-items: center;
+  padding: 8px 10px 0;
+}
+.conv-list-icon-btn {
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card, #fff);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.conv-list-icon-btn:hover {
+  border-color: var(--color-primary, #2563eb);
+  color: var(--color-primary, #2563eb);
+  background: var(--accent-soft, #eff6ff);
+}
+
+/* Tombol buka-lagi-daftar di empty state ChatWindow ("Pilih percakapan") —
+   satu-satunya jalan balik kalau daftar disembunyikan SEBELUM ada chat
+   aktif (lihat komentar di ChatWindow/index.jsx). Diletakkan pojok kiri
+   atas area kosong, bukan menyatu dengan ikon tengah, supaya jelas ini
+   aksi navigasi, bukan bagian dari pesan "pilih percakapan". */
+.chat-empty-reopen-list {
+  position: absolute;
+  top: 12px; left: 12px;
 }
 
 /* Conversation list (left panel) */
@@ -2848,6 +2940,11 @@ body {
 
   /* ── Fase E: Customer Panel jadi drawer overlay dari kanan (bukan kolom grid) ── */
   .inbox-body { grid-template-columns: 300px 1fr 0px !important; }
+  /* List juga bisa di-collapse sekarang (30 Agustus 2026) — tanpa baris
+     ini, mengecilkan daftar di lebar tablet menyisakan kolom 300px kosong
+     (track grid tetap makan tempat walau tidak ada children di dalamnya,
+     `!important` di atas mengunci lebarnya terlepas dari children-nya). */
+  .inbox-body.list-collapsed { grid-template-columns: 0px 1fr 0px !important; }
   .customer-panel {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 320;
     width: 340px; max-width: 88vw;

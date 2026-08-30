@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
@@ -6,6 +6,7 @@ import ConversationList from "../features/inbox/components/ConversationList/inde
 import ChatWindow from "../features/inbox/components/ChatWindow/index.jsx";
 import CustomerPanel from "../features/inbox/components/CustomerPanel/index.jsx";
 import ColumnErrorBoundary from "../features/inbox/components/ColumnErrorBoundary.jsx";
+import ResizeHandle from "../features/inbox/components/ResizeHandle.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
 import { useIsMobile } from "../features/inbox/hooks/useIsMobile.js";
@@ -20,12 +21,45 @@ import { useActiveId, useActiveSelectionSeq, useConversation, useConversationSto
 // customer lengkap, collapsible dengan state persist localStorage (kunci
 // "inbox-panel-collapsed", mengikuti konvensi "sidebar-collapsed" yang
 // sudah dipakai Layout.jsx).
+//
+// FASE G (30 Agustus 2026) — ketiga kolom sekarang bisa DIGESER lebarnya
+// (drag handle di antara kolom) dan kolom KIRI (daftar percakapan) ikut
+// jadi collapsible seperti kolom kanan sudah lebih dulu bisa. Semua state
+// lebar/collapse persist ke localStorage per-kolom, konsisten dengan pola
+// "sidebar-collapsed" & "inbox-panel-collapsed" yang sudah ada.
 const PANEL_COLLAPSED_KEY = "inbox-panel-collapsed";
+const LIST_COLLAPSED_KEY  = "inbox-list-collapsed";
+const LIST_WIDTH_KEY      = "inbox-list-width";
+const PANEL_WIDTH_KEY     = "inbox-panel-width";
+const LIST_WIDTH_DEFAULT  = 320;
+const PANEL_WIDTH_DEFAULT = 340;
+const LIST_WIDTH_MIN  = 260; const LIST_WIDTH_MAX  = 480;
+const PANEL_WIDTH_MIN = 280; const PANEL_WIDTH_MAX = 460;
+
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+
+function readStoredWidth(key, fallback, min, max) {
+  const raw = Number(localStorage.getItem(key));
+  return Number.isFinite(raw) && raw > 0 ? clamp(raw, min, max) : fallback;
+}
 
 export default function Inbox({ user }) {
   const [panelCollapsed, setPanelCollapsedState] = useState(
     () => localStorage.getItem(PANEL_COLLAPSED_KEY) === "true",
   );
+  const [listCollapsed, setListCollapsedState] = useState(
+    () => localStorage.getItem(LIST_COLLAPSED_KEY) === "true",
+  );
+  const [listWidth, setListWidthState]   = useState(
+    () => readStoredWidth(LIST_WIDTH_KEY, LIST_WIDTH_DEFAULT, LIST_WIDTH_MIN, LIST_WIDTH_MAX),
+  );
+  const [panelWidth, setPanelWidthState] = useState(
+    () => readStoredWidth(PANEL_WIDTH_KEY, PANEL_WIDTH_DEFAULT, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
+  );
+  // Dimatikan HANYA selama drag aktif — supaya geser terasa langsung
+  // mengikuti kursor, bukan "mengejar" transisi CSS 0.2s yang dipakai utk
+  // toggle collapse via tombol (lihat .inbox-body di index.css).
+  const [isResizing, setIsResizing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -44,6 +78,45 @@ export default function Inbox({ user }) {
       return next;
     });
   }
+
+  function setListCollapsed(value) {
+    setListCollapsedState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      localStorage.setItem(LIST_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  }
+
+  // deltaX positif = geser ke kanan. Kolom kiri (daftar) melebar begitu
+  // handle-nya diseret ke kanan; kolom kanan (panel) melebar begitu
+  // handle-nya diseret ke KIRI (deltaX negatif) — makanya tanda deltaX
+  // dibalik di resizePanel, tidak di resizeList.
+  const resizeList = useCallback((deltaX) => {
+    setListWidthState((prev) => {
+      const next = clamp(prev + deltaX, LIST_WIDTH_MIN, LIST_WIDTH_MAX);
+      localStorage.setItem(LIST_WIDTH_KEY, String(next));
+      return next;
+    });
+  }, []);
+  const resizePanel = useCallback((deltaX) => {
+    setPanelWidthState((prev) => {
+      const next = clamp(prev - deltaX, PANEL_WIDTH_MIN, PANEL_WIDTH_MAX);
+      localStorage.setItem(PANEL_WIDTH_KEY, String(next));
+      return next;
+    });
+  }, []);
+  const handleResizeStart = useCallback(() => setIsResizing(true), []);
+  const handleResizeEnd   = useCallback(() => setIsResizing(false), []);
+
+  // grid-template-columns dihitung di sini (bukan CSS statis) supaya lebar
+  // per-kolom bisa diatur bebas oleh user, tetap 1 baris kode yang jelas
+  // artinya. Kolom collapsed = 0px, bukan di-unmount dari grid — biar
+  // transisi lebarnya mulus (unmount = lompat seketika, tanpa animasi).
+  const gridTemplateColumns = useMemo(() => {
+    const left  = listCollapsed  ? 0 : listWidth;
+    const right = panelCollapsed ? 0 : panelWidth;
+    return `${left}px 1fr ${right}px`;
+  }, [listCollapsed, listWidth, panelCollapsed, panelWidth]);
 
   // Fase F: backend sekarang punya server Socket.IO sungguhan (message:new,
   // message:ack, conversation:update) — hook ini join/leave room otomatis
@@ -164,15 +237,20 @@ export default function Inbox({ user }) {
   }
 
   return (
-    <div className={`inbox-body${panelCollapsed ? " panel-collapsed" : ""}`}>
+    <div
+      className={`inbox-body${panelCollapsed ? " panel-collapsed" : ""}${listCollapsed ? " list-collapsed" : ""}${isResizing ? " is-resizing" : ""}`}
+      style={{ gridTemplateColumns }}
+    >
       {!socketConnected && (
         <div className="offline-banner">
           <span className="offline-banner-dot" /> Menyambung ulang...
         </div>
       )}
-      <ColumnErrorBoundary label="Daftar Percakapan">
-        <ConversationList userId={user?.id} />
-      </ColumnErrorBoundary>
+      {!listCollapsed && (
+        <ColumnErrorBoundary label="Daftar Percakapan">
+          <ConversationList userId={user?.id} onCollapse={() => setListCollapsed(true)} />
+        </ColumnErrorBoundary>
+      )}
       <ColumnErrorBoundary label="Chat">
         <ChatWindow
           conversation={active}
@@ -180,12 +258,37 @@ export default function Inbox({ user }) {
           onBack={backToMobileList}
           panelCollapsed={panelCollapsed}
           onTogglePanel={() => setPanelCollapsed((v) => !v)}
+          listCollapsed={listCollapsed}
+          onToggleList={() => setListCollapsed((v) => !v)}
         />
       </ColumnErrorBoundary>
       {!panelCollapsed && (
         <ColumnErrorBoundary label="Panel Pelanggan">
           <CustomerPanel conversation={active} onClose={() => setPanelCollapsed(true)} />
         </ColumnErrorBoundary>
+      )}
+
+      {/* Handle geser — diposisikan absolut tepat di garis batas kolom
+          (bukan grid track tersendiri, supaya template kolom tetap simpel
+          3-nilai). Disembunyikan sekalian dengan kolomnya saat collapsed —
+          tidak ada gunanya menyeret lebar kolom yang sedang disembunyikan. */}
+      {!listCollapsed && (
+        <ResizeHandle
+          ariaLabel="Ubah lebar daftar percakapan"
+          onResize={resizeList}
+          onResizeStart={handleResizeStart}
+          onResizeEnd={handleResizeEnd}
+          style={{ left: listWidth - 4 }}
+        />
+      )}
+      {!panelCollapsed && (
+        <ResizeHandle
+          ariaLabel="Ubah lebar panel pelanggan"
+          onResize={resizePanel}
+          onResizeStart={handleResizeStart}
+          onResizeEnd={handleResizeEnd}
+          style={{ right: panelWidth - 4 }}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
-import { MessageSquarePlus, X, Pin, PinOff, Check, Circle } from "lucide-react";
+import { MessageSquarePlus, PanelLeftClose, X, Pin, PinOff, Check, Circle } from "lucide-react";
 import FilterTabs from "./FilterTabs.jsx";
 import SearchBar from "./SearchBar.jsx";
 import ChatBaruDialog from "./ChatBaruDialog.jsx";
@@ -56,7 +56,7 @@ function matches(c, filter, userId, query, searchMatchedIds) {
 // dibatasi ke aksi yang sudah ada endpoint per-item aman (pin, tandai
 // dibaca), TIDAK menambah kapabilitas baru (mis. hapus percakapan) yang
 // butuh diskusi produk sendiri soal retensi data CRM.
-export default function ConversationList({ userId }) {
+export default function ConversationList({ userId, onCollapse }) {
   const navigate = useNavigate();
   const [chatBaruOpen, setChatBaruOpen] = useState(false);
   const filter = useFilter();
@@ -159,20 +159,25 @@ export default function ConversationList({ userId }) {
           <button className="btn-icon" onClick={bulkMarkUnread} title="Tandai Belum Dibaca"><Circle size={18} /></button>
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 8, padding: "8px 10px 0", alignItems: "center" }}>
+        <div className="conv-list-toprow">
           <div style={{ flex: 1, minWidth: 0 }}><SearchBar /></div>
           <button
             onClick={() => setChatBaruOpen(true)}
             title="Chat baru — ketik nomor langsung, seperti di WhatsApp"
-            style={{
-              flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-              width: 34, height: 34, borderRadius: 8, cursor: "pointer",
-              border: "1px solid var(--border)", background: "var(--bg-card, #fff)",
-              color: "var(--primary, #2563eb)",
-            }}
+            className="conv-list-icon-btn"
           >
             <MessageSquarePlus size={17} />
           </button>
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title="Sembunyikan daftar percakapan"
+              aria-label="Sembunyikan daftar percakapan"
+              className="conv-list-icon-btn"
+            >
+              <PanelLeftClose size={17} />
+            </button>
+          )}
         </div>
       )}
       <FilterTabs />

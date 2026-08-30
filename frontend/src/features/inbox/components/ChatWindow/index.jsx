@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
-  Forward, Search, PanelRightClose, PanelRightOpen, Download, Trash2, Megaphone,
+  Forward, Search, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Download, Trash2, Megaphone,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
@@ -128,7 +128,7 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
 }
 
 // ── Main ChatWindow (Fase C + D) ────────────────────────────────────────
-export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel }) {
+export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel, listCollapsed, onToggleList }) {
   const conversationId = conversation?.id;
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -362,6 +362,20 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   if (!conversation) {
     return (
       <div className="chat-window empty-state">
+        {/* Satu-satunya cara membuka lagi daftar percakapan kalau sedang
+            disembunyikan DAN belum ada chat aktif — tanpa ini, kolom kiri
+            collapsed + belum pilih siapa pun = jalan buntu tanpa jalan balik
+            selain reload halaman. */}
+        {listCollapsed && onToggleList && (
+          <button
+            className="chat-action-btn chat-empty-reopen-list"
+            onClick={onToggleList}
+            title="Tampilkan daftar percakapan"
+            aria-label="Tampilkan daftar percakapan"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
+        )}
         <MessageSquare size={40} className="chat-empty-icon" />
         <span>Pilih percakapan di sebelah kiri</span>
       </div>
@@ -391,6 +405,16 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       {/* ── Header ── */}
       <div className="chat-header">
         <button className="chat-back-btn" onClick={onBack} title="Kembali ke daftar"><ArrowLeft size={18} /></button>
+        {/* Mirror dari tombol panel kanan di bawah (PanelRightClose/Open) —
+            cuma tampil di desktop (onToggleList tidak dioper di mobile,
+            lihat Inbox.jsx: daftar & chat mobile tidak pernah mount
+            bersamaan jadi "sembunyikan daftar" tidak relevan di sana). */}
+        {onToggleList && (
+          <button className="chat-action-btn chat-toggle-list-btn" onClick={onToggleList}
+            title={listCollapsed ? "Tampilkan daftar percakapan" : "Sembunyikan daftar percakapan"}>
+            {listCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+        )}
         {isGroup ? (
           <div className="conv-group-avatar"><Users size={18} /></div>
         ) : (

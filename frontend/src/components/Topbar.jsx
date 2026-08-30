@@ -13,7 +13,14 @@ const ROUTE_LABELS = {
   // dan menampilkan "portal" huruf kecil apa adanya.
   "/portal":      ["Main Hub"],
   "/dashboard":   ["Dashboard"],
-  "/inbox":       ["Operasional", "Inbox"],
+  // "Operasional" DIHAPUS dari sini (30 Agustus 2026) — remah 2-level
+  // seperti workspace lain ("Data > Pelanggan") masuk akal kalau remah
+  // pertamanya dipakai untuk PINDAH ke workspace lain, tapi Inbox sudah
+  // sendirian di section "OPERASIONAL" sidebar (lihat DIVISIONS.growth di
+  // Layout.jsx) — tidak ada workspace "Operasional" LAIN untuk dituju, jadi
+  // remah itu cuma teks statis tanpa tujuan. Kalau nanti section itu
+  // tumbuh isinya, breadcrumb 2-level bisa dikembalikan.
+  "/inbox":       ["Inbox"],
   "/customers":   ["Data", "Pelanggan"],
   "/pipeline":    ["Data", "Pipeline"],
   "/products":    ["Data", "Galeri Produk"],
@@ -86,10 +93,17 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             onClick={onToggleMobileMenu}
             title="Buka menu"
             aria-label="Buka menu"
-            // lg:hidden, BUKAN md:hidden — sidebar sekarang jadi drawer sampai
-            // 1024px (tablet ikut), jadi hamburger harus ada sepanjang rentang
-            // itu. Kalau tetap md:hidden, tablet punya drawer tanpa pemicu.
-            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint lg:hidden"
+            // md:hidden (768px) — DIKOREKSI 30 Agustus 2026, sebelumnya
+            // lg:hidden (1024px) di sini TIDAK COCOK dengan breakpoint asli
+            // sidebar jadi drawer (`@media (max-width: 768px)` di index.css,
+            // yang men-transform sidebar ke off-canvas + terima class
+            // `.mobile-open`). Di rentang 768–1023px akibatnya: tombol
+            // kelihatan tapi TIDAK BERBUAT APA-APA — sidebar di lebar itu
+            // masih persisten di alur normal (bukan `position:fixed`), jadi
+            // toggle `.mobile-open` tidak menghasilkan perubahan visual sama
+            // sekali. Inilah tombol "tanpa fungsi" yang dilaporkan dari
+            // halaman Inbox. Sekarang breakpoint tombol & CSS drawer SAMA.
+            className="-ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-colors hover:bg-hovertint md:hidden"
           >
             <MenuIcon size={20} />
           </button>
