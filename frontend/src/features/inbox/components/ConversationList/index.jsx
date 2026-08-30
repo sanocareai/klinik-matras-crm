@@ -32,7 +32,14 @@ import {
 function matches(c, filter, userId, query, searchMatchedIds) {
   if (!c) return false;
   if (filter === "MINE" && c.assignedToId !== userId) return false;
-  if (filter === "UNASSIGNED" && c.assignedToId) return false;
+  // "Belum Diambil" (30 Agustus 2026, revisi) — SEBELUMNYA cuma cek
+  // assignedToId kosong, tapi percakapan yang PERNAH dibalas seseorang
+  // (firstResponderId terisi — mis. Novi, sang leader, sempat menjawab
+  // lalu lepas lagi) tetap lolos dan tampil dengan badge "1st: Novi" di
+  // tab ini. Owner: kalau SUDAH pernah "diambil" (siapa pun, bukan cuma
+  // Novi), jangan masuk sini lagi — tab ini harus benar-benar cuma yang
+  // BELUM PERNAH disentuh SIAPA PUN, tanpa badge sales/leader apa pun.
+  if (filter === "UNASSIGNED" && (c.assignedToId || c.firstResponder)) return false;
   // "Menggantung" — assigned, pesan terakhir INBOUND, >60 menit. `isUnanswered`/
   // `unansweredMinutes` datang dari backend (GET /conversations), sama field yang
   // dipakai badge "Ambil Alih (belum dibalas 1j+)" di ChatWindow.jsx.
