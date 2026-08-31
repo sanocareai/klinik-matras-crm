@@ -26,6 +26,7 @@ import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
+import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
@@ -248,7 +249,10 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
         </div>
-        <PaymentStatusSelect order={order} onChange={onPaymentChange} className="shrink-0" locked={paymentLocked} />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />
+          <ReadinessBadge order={order} />
+        </div>
       </div>
 
       {/* BUG YANG DIPERBAIKI (26 Agustus 2026): dua select ini dulu SEJAJAR
@@ -974,6 +978,7 @@ export default function Orders() {
                   <TH sortable sortDir={sortKey === "customerName" ? sortDir : null} onSort={() => toggleSort("customerName")}>Pelanggan</TH>
                   <TH sortable sortDir={sortKey === "category" ? sortDir : null} onSort={() => toggleSort("category")}>Kategori</TH>
                   <TH sortable sortDir={sortKey === "status" ? sortDir : null} onSort={() => toggleSort("status")}>Status</TH>
+                  <TH>Kesiapan</TH>
                   <TH sortable sortDir={sortKey === "pipelineStage" ? sortDir : null} onSort={() => toggleSort("pipelineStage")}>Pipeline</TH>
                   <TH numeric sortable sortDir={sortKey === "daysInStatus" ? sortDir : null} onSort={() => toggleSort("daysInStatus")}>Lama</TH>
                   <TH sortable sortDir={sortKey === "paymentStatus" ? sortDir : null} onSort={() => toggleSort("paymentStatus")}>Pembayaran</TH>
@@ -1012,6 +1017,9 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <ReadinessBadge order={o} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <PipelineStageSelect order={o} onChange={handleStageChange} />

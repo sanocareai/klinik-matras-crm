@@ -5,6 +5,7 @@ import {
   Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
+import ReadinessPanel from "./ReadinessPanel.jsx";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -633,6 +634,10 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
                 <p className="mt-0.5 text-[13px] font-bold text-ink">{k.v}</p>
               </div>
             ))}
+          </div>
+
+          <div className="mt-3">
+            <ReadinessPanel order={order} onOpenChat={(o) => { onOpenChat(o); onClose(); }} />
           </div>
 
           <div className="mt-3">
