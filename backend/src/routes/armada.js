@@ -18,7 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { sendMedia } from "../services/wahaClient.js";
@@ -1491,7 +1491,19 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
 });
 
 // GET /api/armada/jobs/:id
-armadaRouter.get("/jobs/:id", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+//
+// BUG DITEMUKAN 31 Agustus 2026 (laporan owner: admin/dispatcher dapat
+// "Anda tidak punya akses untuk aksi ini" saat buka Detail Job dari
+// Jadwal & Penugasan). Sebelumnya gerbang di sini cuma requirePermission
+// (P.JOB_OWN_READ) — ADMIN/DISPATCHER TIDAK PERNAH memegang JOB_OWN_READ
+// (lihat ROLE_PERMISSIONS di constants/permissions.js, itu permission
+// KHUSUS driver/helper), jadi mereka ditolak di gerbang TERLUAR sebelum
+// sempat sampai ke pengecekan kepemilikan job di bawah — pengecekan itu
+// jadi mati, tidak pernah tercapai untuk siapa pun kecuali driver/helper.
+// requireAnyPermission meloloskan siapa saja yang punya JOB_READ (dispatcher/
+// admin, lihat langsung SEMUA job) ATAU JOB_OWN_READ (driver/helper, masih
+// disaring lebih lanjut oleh `milikSaya` di bawah).
+armadaRouter.get("/jobs/:id", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
   try {
     const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id }, include: jobInclude });
     // Driver/helper TANPA JOB_READ penuh hanya boleh lihat job miliknya
@@ -1646,6 +1658,16 @@ armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res
 // keduanya sama-sama di lapangan, siapa pun yang pegang HP saat itu boleh
 // menekan tombolnya), KECUALI user punya JOB_WRITE penuh (dispatcher/admin
 // boleh operasikan atas nama driver/helper kalau perlu).
+//
+// BUG DITEMUKAN 31 Agustus 2026 — sebelum ini, gerbang requirePermission di
+// SEMUA endpoint di bawah cuma minta JOB_OWN_WRITE, padahal ADMIN/DISPATCHER
+// TIDAK PERNAH memegang JOB_OWN_WRITE (permission itu khusus driver/helper).
+// Niat komentar di atas ("dispatcher/admin boleh operasikan atas nama
+// driver") jadi tidak pernah tercapai — mereka ditolak di gerbang terluar
+// sebelum sampai ke pengecekan `milikSaya` di sini. Sekarang requireAny
+// Permission(JOB_WRITE, JOB_OWN_WRITE) di tiap route meloloskan keduanya,
+// dan fungsi ini tetap jadi lapis penyaring baris untuk yang cuma
+// JOB_OWN_WRITE.
 async function loadOwnedJob(req) {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
   const milikSaya = job.driverId === req.user.id || job.helperId === req.user.id;
@@ -1656,7 +1678,7 @@ async function loadOwnedJob(req) {
 }
 
 // POST /api/armada/jobs/:id/photos — upload multipart, kembalikan URL.
-armadaRouter.post("/jobs/:id/photos", requirePermission(P.JOB_OWN_WRITE), upload.array("photos", 6), async (req, res) => {
+armadaRouter.post("/jobs/:id/photos", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), upload.array("photos", 6), async (req, res) => {
   try {
     await loadOwnedJob(req);
     const urls = (req.files || []).map((f) => `/media/job-photos/${f.filename}`);
@@ -1679,7 +1701,7 @@ armadaRouter.post("/jobs/:id/photos", requirePermission(P.JOB_OWN_WRITE), upload
 // pingnya tetap tercatat (riwayat rute yang jujur), cuma dispatcher tidak
 // akan menganggapnya "posisi sekarang" (lihat GET /jobs/:id/positions/latest
 // yang membaca status job juga).
-armadaRouter.post("/jobs/:id/positions", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/positions", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     await loadOwnedJob(req);
     const pings = Array.isArray(req.body.pings) ? req.body.pings : [req.body];
@@ -1763,7 +1785,7 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
 });
 
 // POST /api/armada/jobs/:id/start — driver mulai perjalanan.
-armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.status !== "ASSIGNED") throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa dimulai`);
@@ -1798,7 +1820,7 @@ armadaRouter.post("/jobs/:id/start", requirePermission(P.JOB_OWN_WRITE), async (
 });
 
 // POST /api/armada/jobs/:id/arrive — driver tiba di lokasi.
-armadaRouter.post("/jobs/:id/arrive", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.status !== "EN_ROUTE") throw new ArmadaError(`Job berstatus ${job.status}, belum bisa ditandai tiba`);
@@ -1815,7 +1837,7 @@ armadaRouter.post("/jobs/:id/arrive", requirePermission(P.JOB_OWN_WRITE), async 
 // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
 // signatureUrl OPSIONAL (lihat catatan di schema.prisma) — lapisan tambahan,
 // bukan syarat blocking.
-armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (!["ARRIVED", "EN_ROUTE"].includes(job.status)) {
@@ -1871,7 +1893,7 @@ armadaRouter.post("/jobs/:id/complete", requirePermission(P.JOB_OWN_WRITE), asyn
 
 // POST /api/armada/jobs/:id/fail { failureReason, failurePhotoUrls, note? }
 // FR-D-07: "every failure requires a reason code and a photo. No exceptions."
-armadaRouter.post("/jobs/:id/fail", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (["COMPLETED", "FAILED"].includes(job.status)) {
@@ -1935,7 +1957,7 @@ const paymentInclude = {
 // POST /api/armada/jobs/:id/payment { amount, method, proofPhotoUrl? }
 // Sengaja HANYA untuk job DELIVERY — D-011 lahir dari kasus nyata "customer
 // bayar cash ke driver [saat kirim]", bukan saat ambil.
-armadaRouter.post("/jobs/:id/payment", requirePermission(P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.type !== "DELIVERY") {
