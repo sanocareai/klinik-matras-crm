@@ -611,6 +611,22 @@ export const api = {
   getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
   updateOrderInvoice: (orderId, data) =>
     request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  // PDF = FILE, bukan JSON — sama alasan dengan exportCustomersVCard di atas:
+  // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
+  // otorisasi (endpoint ini dijaga requireAuth di backend).
+  getOrderInvoicePdf: async (orderId) => {
+    const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf`, { headers: authHeaders() });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal membuat PDF invoice";
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || "invoice.pdf";
+    return { blob: await res.blob(), namaFile };
+  },
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
   updateOrderItem: (itemId, data) =>

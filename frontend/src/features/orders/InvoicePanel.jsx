@@ -142,6 +142,53 @@ export default function InvoicePanel({ orderId, onChanged }) {
     }
   }
 
+  async function previewPdf() {
+    setAksi("PREVIEW");
+    try {
+      const { blob } = await api.getOrderInvoicePdf(orderId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // Revoke ditunda — tab baru butuh waktu memuat blob-nya SEBELUM url-nya
+      // dicabut, mencabut langsung bikin tab baru itu blank di sebagian browser.
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAksi(null);
+    }
+  }
+
+  async function downloadPdf() {
+    setAksi("DOWNLOAD");
+    try {
+      const { blob, namaFile } = await api.getOrderInvoicePdf(orderId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = namaFile; a.click();
+      URL.revokeObjectURL(url);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAksi(null);
+    }
+  }
+
+  async function kirimWa() {
+    setAksi("KIRIM");
+    try {
+      const r = await api.sendOrderInvoice(orderId);
+      setView(r);
+      setError(null);
+      onChanged?.(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAksi(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-2">
@@ -285,17 +332,51 @@ export default function InvoicePanel({ orderId, onChanged }) {
         <p className="rounded-lg bg-redbg px-3 py-2 text-[11.5px] text-red">{error}</p>
       )}
 
-      {/* Aksi — hanya yang BENAR-BENAR berfungsi sekarang. PDF & kirim
-          otomatis ke WA menyusul di gelombang berikutnya (server-side),
-          sengaja tidak dipasang sebagai tombol mati. */}
+      {/* Aksi — PDF & kirim WA (31 Agustus 2026) beneran men-generate dokumen
+          server-side & mengirim ke nomor pelanggan lewat sesi WA aktifnya
+          (bukan tombol mati). "Kirim ke WhatsApp" otomatis menandai invoice
+          SENT karena dokumennya sungguh sampai — beda dari "Tandai terkirim"
+          manual di bawah (utk kasus dikirim MANUAL di luar sistem, mis.
+          sales screenshot dari HP-nya sendiri). */}
       <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={aksi === "PREVIEW"}
+          onClick={previewPdf}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-inset px-3 py-2.5 text-[12.5px] font-semibold text-ink2 transition-colors hover:bg-hovertint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60"
+        >
+          {aksi === "PREVIEW" ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+          Preview PDF
+        </button>
+        <button
+          type="button"
+          disabled={aksi === "DOWNLOAD"}
+          onClick={downloadPdf}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-inset px-3 py-2.5 text-[12.5px] font-semibold text-ink2 transition-colors hover:bg-hovertint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60"
+        >
+          {aksi === "DOWNLOAD" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+          Download PDF
+        </button>
+
+        {!dibatalkan && (
+          <button
+            type="button"
+            disabled={aksi === "KIRIM"}
+            onClick={kirimWa}
+            className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl bg-green px-3 py-2.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green/40 disabled:opacity-60"
+          >
+            {aksi === "KIRIM" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            Kirim ke WhatsApp Pelanggan
+          </button>
+        )}
+
         <button
           type="button"
           onClick={salinTeks}
           className="flex items-center justify-center gap-1.5 rounded-xl bg-inset px-3 py-2.5 text-[12.5px] font-semibold text-ink2 transition-colors hover:bg-hovertint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           {tersalin ? <Check size={14} className="text-green" /> : <Copy size={14} />}
-          {tersalin ? "Tersalin" : "Salin teks invoice"}
+          {tersalin ? "Tersalin" : "Salin teks"}
         </button>
 
         {invoice.lifecycleStatus === "DRAFT" && !dibatalkan && (
@@ -304,9 +385,10 @@ export default function InvoicePanel({ orderId, onChanged }) {
             disabled={aksi === "SENT"}
             onClick={() => ubah({ lifecycleStatus: "SENT" }, "SENT")}
             className="flex items-center justify-center gap-1.5 rounded-xl bg-accentbg px-3 py-2.5 text-[12.5px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60"
+            title="Untuk kasus dikirim manual di luar sistem"
           >
             {aksi === "SENT" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            Tandai terkirim
+            Tandai terkirim manual
           </button>
         )}
 

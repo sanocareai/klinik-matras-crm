@@ -72,6 +72,11 @@ const scopeRevisionPhotosDir = path.join(__dirname, "../data/scope-revision-phot
 // Foto struk BBM/tol/dst + nota servis (D-035) — dir sendiri, sama pola
 // dengan scope-revision-photos di atas: dokumen finansial, bukan foto proses.
 const vehicleReceiptsDir = path.join(__dirname, "../data/vehicle-receipts");
+// PDF invoice yang sudah digenerate (31 Agustus 2026) — disimpan ke disk
+// (bukan cuma dikirim inline) supaya WAHA punya URL yang bisa DIA jangkau
+// sendiri lewat jaringan Docker internal saat kirim dokumen ke WhatsApp,
+// pola sama persis dengan media lain di atas.
+const invoicePdfsDir = path.join(__dirname, "../data/invoice-pdfs");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
@@ -79,6 +84,7 @@ mkdirSync(jobPhotosDir,  { recursive: true });
 mkdirSync(paymentProofsDir, { recursive: true });
 mkdirSync(scopeRevisionPhotosDir, { recursive: true });
 mkdirSync(vehicleReceiptsDir, { recursive: true });
+mkdirSync(invoicePdfsDir, { recursive: true });
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -111,6 +117,7 @@ app.use("/media/payment-proofs", express.static(paymentProofsDir));
 app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
 app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 app.use("/media/products", express.static(productsDir));
+app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);

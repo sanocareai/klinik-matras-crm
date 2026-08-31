@@ -13,9 +13,10 @@ import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../ut
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { buildInvoiceView, setInvoiceLifecycle } from "../services/invoice.js";
+import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
-import { sendText, isPlaceholderGroupJid } from "../services/wahaClient.js";
+import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
@@ -28,6 +29,9 @@ orderRouter.use(requireAuth);
 // punya jobId untuk dijadikan prefix nama file.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const paymentProofsDir = path.join(__dirname, "../../data/payment-proofs");
+// Sama dir dengan yang dibuat/di-serve index.js (/media/invoice-pdfs) —
+// TIDAK boleh punya definisi terpisah yang bisa drift dari situ.
+const invoicePdfsDir = path.join(__dirname, "../../data/invoice-pdfs");
 if (!fs.existsSync(paymentProofsDir)) fs.mkdirSync(paymentProofsDir, { recursive: true });
 const proofUpload = multer({
   storage: multer.diskStorage({
@@ -634,6 +638,101 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     console.error("patch invoice error:", err);
     res.status(500).json({ error: "Gagal memperbarui invoice" });
+  }
+});
+
+// GET /api/orders/:id/invoice/pdf — preview/download. TIDAK mengubah status
+// apa pun (beda dari POST .../send di bawah) — sales boleh intip PDF-nya
+// berkali-kali sebelum benar-benar dikirim ke customer.
+orderRouter.get("/:id/invoice/pdf", async (req, res) => {
+  try {
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
+    const buffer = await renderInvoicePdf(view);
+    res.setHeader("Content-Type", "application/pdf");
+    // inline (bukan attachment) — buka langsung di tab baru/viewer bawaan
+    // browser, konsisten dengan tombol "Preview Invoice" bukan "Download".
+    res.setHeader("Content-Disposition", `inline; filename="${view.invoice.invoiceNumber}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error("invoice pdf error:", err);
+    res.status(500).json({ error: "Gagal membuat PDF invoice" });
+  }
+});
+
+// POST /api/orders/:id/invoice/send — generate PDF + kirim ke WhatsApp
+// PELANGGAN (BUKAN grup sales seperti /send-wa-summary di atas — dua tombol
+// beda tujuan, jangan disatukan). Begitu terkirim, invoice otomatis ditandai
+// SENT (satu-satunya tempat status ini boleh berubah selain klik manual di
+// InvoicePanel) — "terkirim" di sini punya arti sungguhan: dokumennya benar-
+// benar sampai ke WhatsApp customer, bukan sekadar tombol diklik.
+orderRouter.post("/:id/invoice/send", async (req, res) => {
+  try {
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (!view.customer.id) {
+      return res.status(400).json({ error: "Order ini tidak punya pelanggan yang valid." });
+    }
+
+    // Percakapan INDIVIDUAL yang PALING AKTIF dengan pelanggan ini — sumber
+    // sessionId (CS-1/CS-2) & JID tujuan, pola identik jalur kirim pesan
+    // biasa di conversations.js.
+    const conversation = await prisma.conversation.findFirst({
+      where: { customerId: view.customer.id, type: "INDIVIDUAL" },
+      orderBy: { lastMessageAt: "desc" },
+      include: { customer: { select: { phone: true } } },
+    });
+    if (!conversation) {
+      return res.status(409).json({ error: "Belum ada percakapan WhatsApp dengan pelanggan ini — tidak tahu mau kirim ke sesi mana." });
+    }
+    const target = resolveSendTarget(conversation);
+    if (!target) return res.status(400).json({ error: "Nomor WhatsApp pelanggan tidak tersedia." });
+
+    const buffer = await renderInvoicePdf(view);
+    const filename = `${view.invoice.invoiceNumber}.pdf`;
+    fs.writeFileSync(path.join(invoicePdfsDir, filename), buffer);
+    const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+    const fileUrl = `${BACKEND_INTERNAL_URL}/media/invoice-pdfs/${filename}`;
+
+    const caption = `🧾 Invoice ${view.invoice.invoiceNumber} — Order ${view.order.orderNumber || "-"}`;
+
+    let wahaMsg;
+    try {
+      ({ result: wahaMsg } = await sendWithSessionFallback(conversation, (session) =>
+        sendMedia(target, { url: fileUrl, mimetype: "application/pdf", filename }, caption, "document", session)
+      ));
+    } catch (waErr) {
+      if (waErr instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
+      console.error("[invoice/send] gagal kirim:", waErr.message);
+      return res.status(502).json({ error: `Gagal kirim invoice ke WhatsApp: ${waErr.message}` });
+    }
+
+    const msg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: "OUTBOUND",
+        content: caption,
+        mediaType: "document",
+        mediaUrl: `/media/invoice-pdfs/${filename}`,
+        externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+        sentById: req.user.id,
+      },
+    });
+    const updatedConv = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, "document") },
+    });
+    emitNewMessage(conversation.id, msg);
+    emitConversationUpdate(updatedConv);
+
+    await setInvoiceLifecycle(req.params.id, "SENT");
+
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+  } catch (err) {
+    console.error("[invoice/send] error:", err);
+    res.status(500).json({ error: "Gagal mengirim invoice" });
   }
 });
 
