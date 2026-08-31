@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock, Search, UserPlus, ChevronDown,
+} from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -12,9 +15,57 @@ import { api } from "@/api.js";
 import Avatar from "@/components/Avatar.jsx";
 import DeliveryKpiRow from "@/features/armada/components/DeliveryKpiRow.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
-import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
+
+const TAMPIL_AWAL = 8;
+
+// Sudah menunggu berapa lama sejak job ini lahir (auto-buat begitu sales
+// input order, lihat armadaAutoJob.js) — dipakai untuk urutan prioritas
+// visual, bukan cuma angka dekoratif: makin lama menunggu, makin
+// mendesak ditugaskan.
+function hariMenunggu(createdAt) {
+  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
+}
+
+// Dropdown "Tugaskan" — 1 tombol ringkas per baris, chip driver baru
+// muncul saat diklik (Radix DropdownMenu, sudah dipakai di tempat lain
+// di app ini — bukan library baru). Mengganti 4 chip yang SELALU
+// tampil di tiap baris (temuan user 31 Agustus 2026: 50 order x 5 chip
+// = ratusan tombol kelihatan sekaligus, "numpuk").
+function TugaskanDropdown({ drivers, busy, onPick }) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          disabled={busy}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-brand-500 hover:text-brand-700 disabled:opacity-50"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <UserPlus size={12} /> Tugaskan <ChevronDown size={11} className="text-ink3" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end" sideOffset={6} onClick={(e) => e.stopPropagation()}
+          className="z-50 min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
+        >
+          {drivers.map((d) => (
+            <DropdownMenu.Item
+              key={d.id}
+              onSelect={() => onPick(d.id)}
+              className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint"
+            >
+              <Avatar name={d.name} size="sm" className="h-6 w-6 text-[10px]" />
+              {d.name}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
 
 // Dashboard Delivery & Fulfillment — DATA NYATA (22 Agustus 2026, D-035).
 //
@@ -70,6 +121,8 @@ export default function ArmadaDashboard() {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assigningId, setAssigningId] = useState(null);
+  const [cariPerlu, setCariPerlu] = useState("");
+  const [tampilSemua, setTampilSemua] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,6 +194,17 @@ export default function ArmadaDashboard() {
   }, [jobs]);
   const maxChart = Math.max(1, ...statusChart.map((s) => s.value));
 
+  // Terlama menunggu duluan (job auto-buat urut createdAt, tapi ditegaskan
+  // lagi di sini supaya urutan visual TIDAK diam-diam berubah kalau
+  // urutan API berubah) + saring pencarian, lalu batasi tampilan awal.
+  const perluDijadwalkanUrut = useMemo(() => {
+    const list = (unscheduled || []).slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const q = cariPerlu.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((j) => `${orderNumberOf(j)} ${customerOf(j)}`.toLowerCase().includes(q));
+  }, [unscheduled, cariPerlu]);
+  const perluDijadwalkanTampil = tampilSemua ? perluDijadwalkanUrut : perluDijadwalkanUrut.slice(0, TAMPIL_AWAL);
+
   const dokIssues = useMemo(() => dokumenBermasalah(vehicles.filter((v) => v.active)), [vehicles]);
   const fleetByStatus = useMemo(() => {
     const out = {};
@@ -184,7 +248,7 @@ export default function ArmadaDashboard() {
             antrean kerja dispatcher yang sesungguhnya: order dari Sales CRM
             yang sudah butuh diambil/dikirim tapi belum ada driver+tanggal. */}
         <Card className="overflow-hidden border-2 border-accent/30">
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
               <CalendarClock size={14} className="text-accent" /> Perlu Dijadwalkan
             </h3>
@@ -193,36 +257,76 @@ export default function ArmadaDashboard() {
                 {unscheduled.length}
               </span>
             )}
+            {!loading && unscheduled?.length > TAMPIL_AWAL && (
+              <div className="relative ml-auto min-w-[180px] max-w-[240px] flex-1">
+                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
+                <input
+                  value={cariPerlu}
+                  onChange={(e) => setCariPerlu(e.target.value)}
+                  placeholder="Cari pelanggan/order…"
+                  className="h-8 w-full rounded-full border border-border bg-inset pl-8 pr-3 text-[12px] text-ink outline-none focus:border-accent"
+                />
+              </div>
+            )}
           </div>
-          {loading ? <div className="p-4"><TableSkeletonRows rows={3} cols={4} /></div> : !unscheduled || unscheduled.length === 0 ? (
+
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded-btn bg-inset" />)}
+            </div>
+          ) : !unscheduled || unscheduled.length === 0 ? (
             <div className="p-4 text-[12.5px] text-ink3">
               Tidak ada order menunggu penjadwalan — semua sudah punya driver/tanggal.
             </div>
+          ) : perluDijadwalkanUrut.length === 0 ? (
+            <div className="p-4 text-center text-[12.5px] text-ink3">Tidak ada yang cocok "{cariPerlu}".</div>
           ) : (
-            <TableWrap>
-              <Table>
-                <THead><TR><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH><TH>Tugaskan driver</TH></TR></THead>
-                <TBody>
-                  {unscheduled.map((j) => (
-                    <TR key={j.id} className="cursor-pointer" onClick={() => navigate(`/armada/jobs?job=${j.id}`)}>
-                      <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
-                      <TD className="text-ink2">{customerOf(j) || "—"}</TD>
-                      <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
-                      <TD onClick={(e) => e.stopPropagation()}>
-                        <ChipPilih
-                          size="sm"
-                          items={drivers}
-                          selectedId={j.driverId}
-                          disabled={assigningId === j.id}
-                          kosongLabel="Ketuk untuk tugaskan"
-                          onPick={(driverId) => tugaskanCepat(j.id, driverId)}
-                        />
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
+            <>
+              <ul className="divide-y divide-line">
+                {perluDijadwalkanTampil.map((j) => {
+                  const hari = hariMenunggu(j.createdAt);
+                  const nama = customerOf(j) || "Tanpa nama";
+                  return (
+                    <li
+                      key={j.id}
+                      onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
+                      className="flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint"
+                    >
+                      <Avatar name={nama} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[12.5px] font-semibold text-ink">{nama}</span>
+                          <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
+                            {JOB_TYPE_REAL[j.type]?.label || j.type}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink3">
+                          <span className="font-mono">{orderNumberOf(j) || "—"}</span>
+                          <span aria-hidden>·</span>
+                          <span className={hari >= 3 ? "font-semibold text-orange" : ""}>
+                            {hari === 0 ? "Baru masuk hari ini" : `Menunggu ${hari} hari`}
+                          </span>
+                        </div>
+                      </div>
+                      <TugaskanDropdown
+                        drivers={drivers}
+                        busy={assigningId === j.id}
+                        onPick={(driverId) => tugaskanCepat(j.id, driverId)}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+              {perluDijadwalkanUrut.length > TAMPIL_AWAL && (
+                <button
+                  type="button"
+                  onClick={() => setTampilSemua((v) => !v)}
+                  className="flex w-full items-center justify-center gap-1 border-t border-line py-2.5 text-[12px] font-semibold text-accent hover:bg-hovertint"
+                >
+                  {tampilSemua ? "Tampilkan lebih sedikit" : `Tampilkan ${perluDijadwalkanUrut.length - TAMPIL_AWAL} lainnya`}
+                </button>
+              )}
+            </>
           )}
         </Card>
 
