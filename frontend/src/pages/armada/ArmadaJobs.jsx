@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
@@ -48,9 +50,6 @@ const TABS = [
   { key: "active",    label: "Aktif" },
   { key: "COMPLETED", label: "Selesai" },
 ];
-
-const selectClass =
-  "h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent";
 
 // Driver TIDAK punya JOB_READ (cuma JOB_OWN_READ — lihat
 // backend/src/constants/permissions.js), jadi seluruh tampilan "Daftar" di
@@ -246,17 +245,26 @@ export default function ArmadaJobs() {
               aria-label="Cari job"
               className="h-9 min-w-[200px] flex-1 rounded-btn border border-border bg-surface px-3 text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink3 focus:border-accent"
             />
-            <label className="sr-only" htmlFor="f-tanggal">Tanggal</label>
-            <input id="f-tanggal" type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} className={selectClass} />
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} aria-label="Filter status" className={selectClass}>
-              <option value="">Semua status</option>
-              {Object.entries(JOB_STATUS_REAL).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-            </select>
-            <select value={fDriver} onChange={(e) => setFDriver(e.target.value)} aria-label="Filter driver" className={selectClass}>
-              <option value="">Semua driver</option>
-              <option value="none">Belum ada driver</option>
-              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Semua tanggal" />
+            <FilterDropdown
+              value={fStatus}
+              onChange={setFStatus}
+              options={Object.entries(JOB_STATUS_REAL).map(([k, s]) => ({ value: k, label: s.label }))}
+              placeholder="Semua status"
+              icon={ListIcon}
+              ariaLabel="Filter status"
+            />
+            <FilterDropdown
+              value={fDriver}
+              onChange={setFDriver}
+              options={[
+                { value: "none", label: "Belum ada driver" },
+                ...drivers.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+              placeholder="Semua driver"
+              icon={User}
+              ariaLabel="Filter driver"
+            />
             {(cari || tanggal || fStatus || fDriver) && (
               <Button variant="ghost" size="sm" onClick={() => { setCari(""); setTanggal(""); setFStatus(""); setFDriver(""); }}>
                 Reset

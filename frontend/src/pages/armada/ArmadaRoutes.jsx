@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
@@ -178,14 +179,7 @@ export default function ArmadaRoutes() {
         subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
         actions={
           <>
-            <label className="sr-only" htmlFor="rp-tanggal">Tanggal</label>
-            <input
-              id="rp-tanggal"
-              type="date"
-              value={tanggal}
-              onChange={(e) => setTanggal(e.target.value)}
-              className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
-            />
+            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Pilih tanggal" />
             <Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>
           </>
         }

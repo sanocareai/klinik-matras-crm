@@ -8,6 +8,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
@@ -256,14 +257,7 @@ export default function ArmadaDashboard() {
         subtitle="Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman."
         actions={
           <>
-            <label className="sr-only" htmlFor="tanggal-delivery">Tanggal</label>
-            <input
-              id="tanggal-delivery"
-              type="date"
-              value={tanggal}
-              onChange={(e) => setTanggal(e.target.value)}
-              className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent"
-            />
+            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Pilih tanggal" />
             {/* Shortcut ke tab Armada (bukan cuma Jadwal & Penugasan) — dispatcher
                 yang baru sadar kendaraannya belum lengkap (lihat panel "Butuh
                 Perhatian" di bawah) sebelumnya harus buka Driver & Armada lalu

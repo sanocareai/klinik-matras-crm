@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
@@ -925,8 +926,8 @@ function RingkasanBiayaTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Field label="Dari"><input type="date" className={inputCls} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field label="Sampai"><input type="date" className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        <Field label="Dari"><DatePicker value={from} onChange={setFrom} placeholder="Semua tanggal" /></Field>
+        <Field label="Sampai"><DatePicker value={to} onChange={setTo} placeholder="Semua tanggal" /></Field>
       </div>
 
       <Card className="overflow-hidden">
