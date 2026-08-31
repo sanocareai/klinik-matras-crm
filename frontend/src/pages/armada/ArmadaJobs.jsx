@@ -303,7 +303,17 @@ export default function ArmadaJobs() {
                     </THead>
                     <TBody>
                       {loading && <TableSkeletonRows rows={6} cols={10} />}
-                      {!loading && jobs?.map((j) => (
+                      {!loading && jobs?.map((j) => {
+                        // Job RIWAYAT (selesai/gagal sebelum sistem Armada
+                        // dipakai, lihat catatan backfill di JobDetailDrawer)
+                        // TIDAK PUNYA driver/tanggal — itu WAJAR untuk data
+                        // lama, bukan sesuatu yang masih perlu ditindak.
+                        // Warna oranye "Belum" cuma untuk job yang SUNGGUH
+                        // menunggu tindakan (laporan owner 31 Agustus 2026:
+                        // ratusan baris riwayat terlihat seperti backlog
+                        // pending padahal sudah lama tuntas).
+                        const historis = ["COMPLETED", "FAILED"].includes(j.status);
+                        return (
                         <TR key={j.id} clickable onClick={() => setOpenJobId(j.id)}>
                           <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
                           <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
@@ -312,24 +322,29 @@ export default function ArmadaJobs() {
                           <TD className="whitespace-nowrap">
                             {j.scheduledDate
                               ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                              : <span className="text-orange">Belum</span>}
+                              : historis
+                                ? <span className="text-ink3">—</span>
+                                : <span className="text-orange">Belum</span>}
                           </TD>
                           <TD truncate className="max-w-[180px] text-ink2">{j.addressText || "—"}</TD>
                           <TD numeric>{unitCountOf(j)}</TD>
-                          <TD truncate className={cn(!j.driver && "text-orange")}>
-                            {j.driver?.name || "Belum ada"}
+                          <TD truncate className={cn(!j.driver && !historis && "text-orange")}>
+                            {j.driver?.name || (historis ? "—" : "Belum ada")}
                           </TD>
                           <TD className="whitespace-nowrap text-ink2">{j.vehicle?.plateNumber || "—"}</TD>
                           <TD><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></TD>
                         </TR>
-                      ))}
+                        );
+                      })}
                     </TBody>
                   </Table>
                 </TableWrap>
 
                 {/* Mobile: kartu */}
                 <ul className="divide-y divide-line md:hidden">
-                  {!loading && jobs?.map((j) => (
+                  {!loading && jobs?.map((j) => {
+                    const historis = ["COMPLETED", "FAILED"].includes(j.status);
+                    return (
                     <li key={j.id}>
                       <button
                         type="button"
@@ -343,13 +358,20 @@ export default function ArmadaJobs() {
                         </div>
                         <div className="mt-1 truncate text-[13px] text-ink">{customerOf(j) || "—"}</div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink2">
-                          <span>{j.scheduledDate ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" }) : "Belum dijadwalkan"}</span>
+                          <span>
+                            {j.scheduledDate
+                              ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+                              : historis ? "—" : "Belum dijadwalkan"}
+                          </span>
                           <span aria-hidden>·</span>
-                          <span className={cn(!j.driver && "font-semibold text-orange")}>{j.driver?.name || "Belum ada driver"}</span>
+                          <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
+                            {j.driver?.name || (historis ? "—" : "Belum ada driver")}
+                          </span>
                         </div>
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               </>
             )}

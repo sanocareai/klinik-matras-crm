@@ -140,6 +140,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
   const units = job?.units?.map((ju) => ju.unit) || [];
   const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
+  // Job RIWAYAT — selesai/gagal sebelum sistem Armada dipakai (backfill),
+  // TIDAK PUNYA driver/tanggal karena memang tidak pernah dicatat, bukan
+  // karena belum ditindaklanjuti (laporan owner 31 Agustus 2026: "kenapa
+  // sudah terkirim statusnya tapi masih harus diambil?" — "Belum
+  // dijadwalkan"/"Belum ditugaskan" terbaca seolah masih pending).
+  const historis = job && ["COMPLETED", "FAILED"].includes(job.status) && !job.scheduledDate && !job.driverId;
 
   // Sinkron draft SEKALI per job dibuka (job?.id, bukan job) — supaya PATCH
   // lain yang mengubah job (mis. pilih driver) tidak diam-diam menimpa ketikan
@@ -399,10 +405,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         ? new Date(job.scheduledDate).toLocaleDateString("id-ID", {
                             weekday: "long", day: "numeric", month: "long", year: "numeric",
                           })
-                        : "Belum dijadwalkan"}
+                        : historis ? "— (data riwayat)" : "Belum dijadwalkan"}
                       {job.timeWindow ? ` · ${job.timeWindow}` : ""}
                     </Baris>
-                    <Baris icon={User} label="Driver">{job.driver?.name || "Belum ditugaskan"}</Baris>
+                    <Baris icon={User} label="Driver">
+                      {job.driver?.name || (historis ? "— (data riwayat)" : "Belum ditugaskan")}
+                    </Baris>
                     <Baris icon={User} label="Helper">{job.helper?.name || null}</Baris>
                     <Baris icon={Truck} label="Kendaraan">
                       {job.vehicle ? `${job.vehicle.plateNumber} (${job.vehicle.type})` : null}
