@@ -71,3 +71,19 @@ export function orderNumberOf(job) {
 export function unitCountOf(job) {
   return job?.units?.length || 0;
 }
+
+// Label ringkas manusiawi untuk 1 job (D-037 lanjutan, 31 Agustus 2026 —
+// laporan owner: kolom "Job" cuma tampil 8 karakter acak dari cuid,
+// "a4d74468" dst, tidak bisa disebut ke driver/customer). Job SELALU
+// menempel ke 1 order (lihat Job.orderId, RESTRICT), jadi cukup pinjam
+// nomor urut order + jenis job — TIDAK bikin counter/migrasi baru.
+// Contoh: order "RES-31082026-218" tipe PICKUP -> "218-Ambil".
+const JOB_TYPE_SINGKAT = { PICKUP: "Ambil", DELIVERY: "Kirim" };
+
+export function jobLabelOf(job) {
+  const orderNumber = orderNumberOf(job);
+  const jenis = JOB_TYPE_SINGKAT[job?.type] || job?.type || "?";
+  if (!orderNumber) return job?.id ? job.id.slice(0, 8) : "—"; // fallback data lawas tanpa orderNumber
+  const urut = orderNumber.split("-").pop(); // segmen terakhir "NNN" dari PREFIX-DDMMYYYY-NNN
+  return `${urut}-${jenis}`;
+}

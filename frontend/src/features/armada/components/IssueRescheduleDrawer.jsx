@@ -4,7 +4,7 @@ import { X, CalendarClock, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import StatusBadge from "./StatusBadge.jsx";
 import { ISSUE_STATUS } from "../issueStatus.js";
-import { customerOf, orderNumberOf } from "../jobStatus.js";
+import { customerOf, orderNumberOf, jobLabelOf } from "../jobStatus.js";
 
 // Drawer reschedule — satu-satunya jalan keluar dari status FAILED (lihat
 // catatan panjang di backend/src/routes/armada.js POST /issues/:jobId/reschedule).
@@ -79,7 +79,7 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged }) {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <p className="text-[13px] font-semibold text-ink">{customerOf(job) || "—"}</p>
-            <p className="text-[11.5px] text-ink2">{orderNumberOf(job)} · {job.id.slice(0, 8)}</p>
+            <p className="text-[11.5px] text-ink2">{jobLabelOf(job)}</p>
 
             <div className="mt-3 rounded-btn border-l-[3px] border-red bg-redbg px-3 py-2.5">
               <div className="text-[10px] font-bold uppercase tracking-wide text-red">Alasan Gagal</div>

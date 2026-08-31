@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils.js";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import IssueRescheduleDrawer from "@/features/armada/components/IssueRescheduleDrawer.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
-import { customerOf, orderNumberOf } from "@/features/armada/jobStatus.js";
+import { customerOf, orderNumberOf, jobLabelOf } from "@/features/armada/jobStatus.js";
 
 // Kendala & Reschedule — Delivery Tahap 5.
 //
@@ -88,7 +88,7 @@ export default function ArmadaIssues() {
                     {loading && <TableSkeletonRows rows={5} cols={6} />}
                     {!loading && jobs?.map((j) => (
                       <TR key={j.id} clickable onClick={() => setSelected(j)}>
-                        <TD className="font-semibold text-ink">{j.id.slice(0, 8)}</TD>
+                        <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
                         <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
                         <TD truncate>{customerOf(j) || "—"}</TD>
                         <TD className="text-ink2">{j.driver?.name || "—"}</TD>
@@ -109,7 +109,7 @@ export default function ArmadaIssues() {
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[12.5px] font-semibold text-ink">{j.id.slice(0, 8)}</span>
+                        <span className="text-[12.5px] font-semibold text-ink">{jobLabelOf(j)}</span>
                         <span className="ml-auto"><StatusBadge map={ISSUE_STATUS} value={j.issueStatus} /></span>
                       </div>
                       <div className="mt-1 truncate text-[13px] text-ink">{customerOf(j) || "—"}</div>

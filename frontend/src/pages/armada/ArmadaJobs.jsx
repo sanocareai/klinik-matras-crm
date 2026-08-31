@@ -16,7 +16,7 @@ import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
-  customerOf, orderNumberOf, unitCountOf,
+  customerOf, orderNumberOf, unitCountOf, jobLabelOf,
 } from "@/features/armada/jobStatus.js";
 
 // Jadwal & Penugasan — Delivery Tahap 2.
@@ -297,7 +297,7 @@ export default function ArmadaJobs() {
                       {loading && <TableSkeletonRows rows={6} cols={10} />}
                       {!loading && jobs?.map((j) => (
                         <TR key={j.id} clickable onClick={() => setOpenJobId(j.id)}>
-                          <TD className="font-semibold text-ink">{j.id.slice(0, 8)}</TD>
+                          <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
                           <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
                           <TD truncate>{customerOf(j) || "—"}</TD>
                           <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
@@ -329,7 +329,7 @@ export default function ArmadaJobs() {
                         className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-[12.5px] font-semibold text-ink">{j.id.slice(0, 8)}</span>
+                          <span className="text-[12.5px] font-semibold text-ink">{jobLabelOf(j)}</span>
                           <span className="text-[11px] text-ink3">{JOB_TYPE_REAL[j.type]?.label}</span>
                           <span className="ml-auto"><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></span>
                         </div>

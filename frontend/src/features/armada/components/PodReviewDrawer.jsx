@@ -5,7 +5,7 @@ import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import StatusBadge from "./StatusBadge.jsx";
 import { POD_STATUS } from "../podStatus.js";
-import { customerOf, orderNumberOf, unitCountOf } from "../jobStatus.js";
+import { customerOf, orderNumberOf, unitCountOf, jobLabelOf } from "../jobStatus.js";
 
 // Drawer review Proof of Delivery — Approve / Reject atas foto & tanda
 // tangan yang SUDAH diunggah driver. Tidak ada "checklist penyelesaian" di
@@ -72,7 +72,7 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
               <User size={12} aria-hidden /> Pelanggan
             </div>
             <p className="mt-0.5 text-[13px] font-semibold text-ink">{customerOf(job) || "—"}</p>
-            <p className="text-[11.5px] text-ink2">{orderNumberOf(job)} · {job.id.slice(0, 8)} · {unitCountOf(job)} unit</p>
+            <p className="text-[11.5px] text-ink2">{jobLabelOf(job)} · {unitCountOf(job)} unit</p>
 
             <div className="mt-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-ink3">
               <Package size={12} aria-hidden /> Waktu selesai
