@@ -33,7 +33,13 @@ function hariMenunggu(createdAt) {
 // di app ini — bukan library baru). Mengganti 4 chip yang SELALU
 // tampil di tiap baris (temuan user 31 Agustus 2026: 50 order x 5 chip
 // = ratusan tombol kelihatan sekaligus, "numpuk").
-function TugaskanDropdown({ drivers, busy, onPick }) {
+//
+// Helper opsional (D-037, 31 Agustus 2026 — laporan owner: dropdown ini
+// cuma bisa pilih 1 orang). Klik nama driver LANGSUNG menugaskan (jalur
+// cepat, tanpa helper — mayoritas job memang tidak butuh helper), TAPI
+// tiap driver juga punya submenu (>) untuk sekalian pilih helper kalau
+// perlu, supaya tetap bisa selesai tanpa buka JobDetailDrawer.
+function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -52,14 +58,36 @@ function TugaskanDropdown({ drivers, busy, onPick }) {
           className="z-50 min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
         >
           {drivers.map((d) => (
-            <DropdownMenu.Item
-              key={d.id}
-              onSelect={() => onPick(d.id)}
-              className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint"
-            >
-              <Avatar name={d.name} size="sm" className="h-6 w-6 text-[10px]" />
-              {d.name}
-            </DropdownMenu.Item>
+            <DropdownMenu.Sub key={d.id}>
+              <DropdownMenu.SubTrigger
+                onClick={() => onPick(d.id)}
+                className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint data-[state=open]:bg-hovertint"
+              >
+                <Avatar name={d.name} size="sm" className="h-6 w-6 text-[10px]" />
+                <span className="flex-1">{d.name}</span>
+                <ChevronDown size={11} className="-rotate-90 text-ink3" />
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  sideOffset={4} onClick={(e) => e.stopPropagation()}
+                  className="z-50 min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
+                >
+                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
+                    + Helper (opsional)
+                  </p>
+                  {helpers.map((h) => (
+                    <DropdownMenu.Item
+                      key={h.id}
+                      onSelect={() => onPick(d.id, h.id)}
+                      className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint"
+                    >
+                      <Avatar name={h.name} size="sm" className="h-6 w-6 text-[10px]" />
+                      {h.name}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
           ))}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -119,6 +147,7 @@ export default function ArmadaDashboard() {
   // order "Pengambilan"). Panel ini yang menutup kesenjangan itu.
   const [unscheduled, setUnscheduled] = useState(null);
   const [drivers, setDrivers] = useState([]);
+  const [helpers, setHelpers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assigningId, setAssigningId] = useState(null);
   const [cariPerlu, setCariPerlu] = useState("");
@@ -127,21 +156,24 @@ export default function ArmadaDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [jobsRes, vehiclesRes, unscheduledRes, driversRes] = await Promise.all([
+      const [jobsRes, vehiclesRes, unscheduledRes, driversRes, helpersRes] = await Promise.all([
         api.getArmadaJobs({ date: tanggal, take: 200 }),
         api.getVehicles(),
         api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
         api.getDrivers(),
+        api.getHelpers(),
       ]);
       setJobs(jobsRes.jobs);
       setVehicles(vehiclesRes.vehicles);
       setUnscheduled(unscheduledRes.jobs);
       setDrivers(driversRes || []);
+      setHelpers(helpersRes || []);
     } catch {
       setJobs([]);
       setVehicles([]);
       setUnscheduled([]);
       setDrivers([]);
+      setHelpers([]);
     } finally {
       setLoading(false);
     }
@@ -158,11 +190,16 @@ export default function ArmadaDashboard() {
   // itu ikut menjadwalkan (scheduledDate diisi), job jadi SCHEDULED TANPA
   // driver dan hilang dari panel ini tanpa benar-benar tertugaskan. Guard
   // di bawah memastikan tanggal cuma diisi kalau memang ada driver dipilih.
-  async function tugaskanCepat(jobId, driverId) {
+  async function tugaskanCepat(jobId, driverId, helperId) {
     if (!driverId) return;
     setAssigningId(jobId);
     try {
-      await api.updateArmadaJob(jobId, { driverId, scheduledDate: tanggal });
+      const patch = { driverId, scheduledDate: tanggal };
+      // helperId OPSIONAL (D-037) — cuma disertakan kalau memang dipilih
+      // lewat submenu "+ Helper" di TugaskanDropdown, supaya klik nama
+      // driver polos tidak diam-diam menghapus helper yang sudah ada.
+      if (helperId) patch.helperId = helperId;
+      await api.updateArmadaJob(jobId, patch);
       await load();
     } catch (e) {
       alert("Gagal menugaskan: " + e.message);
@@ -310,8 +347,9 @@ export default function ArmadaDashboard() {
                       </div>
                       <TugaskanDropdown
                         drivers={drivers}
+                        helpers={helpers}
                         busy={assigningId === j.id}
-                        onPick={(driverId) => tugaskanCepat(j.id, driverId)}
+                        onPick={(driverId, helperId) => tugaskanCepat(j.id, driverId, helperId)}
                       />
                     </li>
                   );
