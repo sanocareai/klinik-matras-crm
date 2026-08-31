@@ -3,10 +3,15 @@
 // PERSIS EMPAT momen, TIDAK LEBIH — PRD sendiri memperingatkan:
 // "More than four and customers mute you." Jangan tergoda menambah trigger
 // baru di sini tanpa mengurangi salah satu yang sudah ada.
-//   1. Driver menuju lokasi → notifyDriverEnRoute   (armada.js, job PICKUP/DELIVERY mulai jalan)
-//   2. Unit sampai bengkel  → notifyUnitReceived    (armada.js, job PICKUP selesai)
-//   3. Siap dikirim         → notifyReadyForDelivery (production.js, unit tuntas seluruh tahap)
-//   4. Terkirim             → notifyDelivered       (armada.js, job DELIVERY selesai)
+//   1. Driver menuju lokasi → notifyDriverEnRoute   (armada.js, job PICKUP/DELIVERY mulai jalan) — ⛔ NONAKTIF SEMENTARA
+//   2. Unit sampai bengkel  → notifyUnitReceived    (armada.js, job PICKUP selesai) — ⛔ NONAKTIF SEMENTARA
+//   3. Siap dikirim         → notifyReadyForDelivery (production.js, unit tuntas seluruh tahap) — ✅ tetap aktif
+//   4. Terkirim             → notifyDelivered       (armada.js, job DELIVERY selesai) — ⛔ NONAKTIF SEMENTARA
+//
+// ⛔ 1/2/4 DIMATIKAN 31 Agustus 2026 (keputusan owner, lihat
+// DELIVERY_NOTIF_AKTIF di bawah) — sales pegang manual dulu komunikasi
+// jadwal ke customer, sampai sistem Delivery benar-benar siap menyeluruh.
+// Nyalakan HANYA kalau owner sendiri yang minta.
 //
 // REVISI 31 Agustus 2026 (keputusan owner): trigger 1 SEBELUMNYA "Pickup
 // dijadwalkan" (dikirim begitu job dibuat dengan tanggal, bisa berhari-hari
@@ -91,10 +96,34 @@ function wrap(fn, label) {
   };
 }
 
+// ⚠️ FLAG SEMENTARA (31 Agustus 2026, keputusan owner) — MATIKAN dulu 3
+// notifikasi yang berasal dari Delivery Hub (driver menuju lokasi, unit
+// sampai bengkel, terkirim), SENGAJA TIDAK dihapus fungsinya, cuma
+// dibungkus supaya gampang dinyalakan lagi. Alasan: sistem Delivery
+// (armadaAutoJob.js, redesign 30-31 Agustus) belum benar-benar dipakai
+// tim lapangan sehari-hari — sales pegang manual dulu komunikasi jadwal
+// ke customer SEMENTARA, sampai owner sendiri yang minta dinyalakan lagi
+// (ganti `false` -> `true` di baris ini, JANGAN tulis ulang fungsinya).
+// TIDAK memengaruhi notifyReadyForDelivery — itu trigger dari production.js
+// (unit tuntas produksi), beda alur, tidak diminta dimatikan.
+const DELIVERY_NOTIF_AKTIF = false;
+
+function wrapDelivery(fn, label) {
+  return async (...args) => {
+    if (!DELIVERY_NOTIF_AKTIF) return; // diam total — lihat catatan flag di atas
+    try {
+      await fn(...args);
+    } catch (err) {
+      console.error(`[customerNotifications:${label}] gagal kirim:`, err.message);
+    }
+  };
+}
+
 // 1. Driver menuju lokasi — dikirim saat job (PICKUP atau DELIVERY) BENAR-
 // BENAR mulai jalan (POST /jobs/:id/start, status -> EN_ROUTE). Lihat
 // catatan revisi 31 Agustus 2026 di kepala file untuk alasan gantinya.
-export const notifyDriverEnRoute = wrap(async (job, customerId, customerName) => {
+// NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
+export const notifyDriverEnRoute = wrapDelivery(async (job, customerId, customerName) => {
   const driverLine = job.driver?.name ? ` (${job.driver.name})` : "";
   const aksi = job.type === "PICKUP" ? "mengambil" : "mengantar";
   const text = `Halo ${customerName || ""}, driver kami${driverLine} sedang menuju lokasi Anda untuk ${aksi} kasur Anda.\n\nMohon bersiap ya — Sano Care.`;
@@ -102,7 +131,8 @@ export const notifyDriverEnRoute = wrap(async (job, customerId, customerName) =>
 }, "driverEnRoute");
 
 // 2. Unit sampai bengkel — dikirim saat job PICKUP selesai.
-export const notifyUnitReceived = wrap(async (orderNumber, customerId, customerName) => {
+// NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
+export const notifyUnitReceived = wrapDelivery(async (orderNumber, customerId, customerName) => {
   const text = `Halo ${customerName || ""}, kasur Anda (*${orderNumber}*) sudah sampai dengan selamat di bengkel Sano Care. Tim kami akan segera mulai pengerjaan.\n\nTerima kasih atas kepercayaannya.`;
   await sendCustomerText(customerId, text);
 }, "unitReceived");
@@ -117,7 +147,8 @@ export const notifyReadyForDelivery = wrap(async (unitCode, orderNumber, custome
 }, "readyForDelivery");
 
 // 4. Terkirim — dikirim saat job DELIVERY selesai.
-export const notifyDelivered = wrap(async (orderNumber, customerId, customerName) => {
+// NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
+export const notifyDelivered = wrapDelivery(async (orderNumber, customerId, customerName) => {
   const text = `Terima kasih ${customerName || ""}! Kasur Anda (*${orderNumber}*) sudah terkirim.\n\nGaransi & instruksi perawatan akan dikirim menyusul oleh tim sales kami. Kalau ada pertanyaan, jangan ragu menghubungi kami — Ahlinya Kasur Sehat.`;
   await sendCustomerText(customerId, text);
 }, "delivered");
