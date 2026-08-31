@@ -55,16 +55,17 @@ const KOLOM = [
   { k: "spamRate",   label: "Spam %",     title: "Spam % = (chat yang dia pegang ditandai SPAM) ÷ (chat SPAM + chat yang dia tangani) × 100%. Bukan penalti performa — cuma pengawas, layak ditinjau kalau jauh di atas rata-rata tim." },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
   { k: "grossValue", label: "Nilai",      title: "Total nilai (Rupiah) semua order masuk di periode ini — belum tentu sudah terbayar lunas." },
-  // Lunas (30 Agustus 2026) — BASIS KOMISI: nilai order dari periode ini
-  // yang sudah lunas SAMPAI jam 12 malam tanggal terakhir periode ini
-  // (Order.paidAt, diisi otomatis begitu status jadi LUNAS — lihat
-  // services/paymentLedger.js). Angka ini TERKUNCI: dibuka tanggal 5 bulan
-  // berikutnya pun hasilnya sama persis dengan dicek pas jam 12 malam
-  // tanggal 31 — order yang baru lunas belakangan TIDAK ikut naik ke bulan
-  // yang sudah tutup buku. Order LUNAS lama (sebelum fitur ini ada) belum
-  // punya paidAt, jadi tidak terhitung di sini sampai statusnya disentuh
-  // ulang — bukan berarti benar-benar Rp0.
-  { k: "collectedValue", label: "Lunas", title: "Nilai order periode ini yang SUDAH LUNAS sampai jam 12 malam tanggal terakhir periode ini — basis komisi sales. Beda dari Nilai (total closing/\"reach\", termasuk yang belum dibayar penuh). Selisih Nilai − Lunas = masih DP/proses pengambilan/pengiriman." },
+  // Lunas (30 Agustus 2026, populasi DIPERBAIKI 31 Agustus 2026) — BASIS
+  // KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS
+  // (Order.paidAt) DI DALAM periode ini. Populasi ini BEDA dari kolom Nilai
+  // (Reach, basisnya kapan order DIBUAT) — order Agustus yang baru lunas
+  // September GESER jadi bagian Lunas September, bukan Agustus (keputusan
+  // eksplisit: closing tetap dihargai walau nyebrang bulan, bukan hangus).
+  // Konsekuensinya kolom ini TIDAK SELALU "Nilai − Lunas = belum lunas" pas
+  // ke rupiah — wajar kalau ada leakage kecil antar-bulan. Order LUNAS lama
+  // (sebelum fitur paidAt ada) belum punya paidAt, jadi tidak terhitung di
+  // sini sampai statusnya disentuh ulang — bukan berarti benar-benar Rp0.
+  { k: "collectedValue", label: "Lunas", title: "Basis komisi: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini. Order dari bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus) — makanya beda populasi dari kolom Nilai (Reach, basisnya kapan order dibuat)." },
   { k: "aov",        label: "AOV",        title: "AOV (Average Order Value) = total Nilai ÷ jumlah Order di periode ini — rata-rata besar 1 order." },
   { k: "percentToTarget", label: "% Target", title: "% Target = (nilai closing BULAN INI, bukan periode yang dipilih di atas) ÷ (target bulanan dari Pengaturan > Target Sales) × 100%." },
 ];
@@ -137,8 +138,8 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           index={1} label="Nilai Lunas Tim"
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
-          sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses`}
-          tooltip="BASIS KOMISI: nilai order periode ini yang SUDAH LUNAS sampai jam 12 malam tanggal terakhir periode ini (Order.paidAt) — terkunci, tidak bergeser walau laporan dibuka belakangan. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
+          sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
+          tooltip="BASIS KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini — order bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus), jadi populasinya BEDA dari 'Nilai Penjualan Tim' (basisnya kapan order dibuat). Angka ini TERKUNCI per periode: dibuka belakangan pun hasilnya sama. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
         />
         <KpiCard
           index={2} label="Konversi Tim"

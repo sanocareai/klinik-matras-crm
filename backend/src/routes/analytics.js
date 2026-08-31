@@ -714,25 +714,31 @@ export async function computeSalesRow(u, ctx) {
       },
       _count: { _all: true }, _sum: { value: true },
     }),
-    // BASIS KOMISI SALES (30 Agustus 2026) — sengaja filter `paidAt`, BUKAN
-    // `paymentStatus: "LUNAS"` polos. `paymentStatus` itu status SEKARANG
-    // (bisa berubah kapan saja, termasuk SETELAH bulan tutup buku), sedang
-    // `paidAt` itu HISTORIS: kapan order itu benar-benar jadi lunas
-    // (services/paymentLedger.js). `paidAt: { lt: selesai }` = "lunas
-    // SAMPAI jam 12 malam tanggal terakhir periode ini" — pertanyaan asli
-    // owner soal skema komisi. Efeknya: laporan yang dibuka tanggal 5
-    // bulan berikutnya akan tetap melaporkan angka yang SAMA PERSIS dengan
-    // kalau dicek pas jam 12 malam tanggal 31 — order yang baru lunas
-    // belakangan TIDAK ikut "naik" ke bulan yang sudah tutup buku (order
-    // itu tetap dihitung LEAD-nya di grossValue bulan ini, cuma
-    // commission-nya jatuh ke bulan saat benar-benar lunas, sesuai
-    // paidAt-nya, kalau nanti dihitung ulang untuk bulan itu).
+    // BASIS KOMISI SALES (30 Agustus 2026, populasi DIPERBAIKI 31 Agustus
+    // 2026 — keputusan eksplisit owner) — filter `paidAt` LANGSUNG ke
+    // rentang periode ini, LEPAS dari `buildDateWhere`/kapan order itu
+    // DIBUAT. Ini SENGAJA populasi BEDA dari grossValue di atas (yang
+    // basisnya createdAt) — keduanya menjawab pertanyaan beda:
+    //   grossValue (Reach)   = "lead/order yang MASUK bulan ini" — order
+    //                          SELAMANYA menempel ke bulan dia dibuat.
+    //   collectedValue (Lunas) = "duit yang CAIR bulan ini" — order Agustus
+    //                          yang baru lunas September GESER jadi bagian
+    //                          Lunas September (bukan hangus, bukan juga
+    //                          tetap di Agustus), match aturan bisnis: sales
+    //                          tetap dapat komisi walau closingnya nyebrang
+    //                          bulan, cuma telat sebulan.
+    // `paidAt < selesai` (bukan `<= akhir hari ini`) tetap menjamin laporan
+    // yang dibuka BELAKANGAN (mis. tanggal 5) melaporkan angka SAMA PERSIS
+    // dengan snapshot jam 12 malam tanggal terakhir periode — order yang
+    // baru lunas SETELAH periode ini tutup TIDAK ikut "bocor mundur" ke
+    // periode yang sudah tutup buku (dia akan masuk hitungan Lunas periode
+    // BERIKUTNYA kalau nanti dihitung ulang untuk periode itu).
     // Order LUNAS lama (sebelum fitur paidAt ada) punya paidAt NULL —
     // tidak di-backfill (lihat catatan migration) — jadi TIDAK ikut
     // terhitung di sini sampai paymentStatus-nya disentuh ulang.
     prisma.order.aggregate({
       where: {
-        ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paidAt: { not: null, lt: selesai },
+        status: { not: "CANCELLED" }, paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: mineAtribusi } },
       },
       _sum: { value: true },
