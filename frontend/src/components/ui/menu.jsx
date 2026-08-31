@@ -29,7 +29,17 @@ export function Menu({ trigger, children, align = "end", sideOffset = 6, classNa
           sideOffset={sideOffset}
           className={cn(
             "z-[1100] min-w-[180px] rounded-xl bg-surface p-1.5 shadow-popover outline-none",
-            "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+            // BUG DIPERBAIKI (31 Agustus 2026, laporan owner: "animasi
+            // perpindahan sangat patah" di dropdown status/driver Armada) —
+            // sebelumnya CUMA kelas animasi MASUK yang diberi (fade-in-0,
+            // zoom-in-95). `data-[state=closed]:animate-out` sendirian tidak
+            // menganimasikan apa pun tanpa kelas fade-out/zoom-out yang
+            // menyertainya (persis pola lengkap di modal.jsx) — jadi menutup
+            // selalu terasa mendadak/patah walau membuka sudah mulus.
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+            "data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+            "duration-150 ease-out",
             className
           )}
         >

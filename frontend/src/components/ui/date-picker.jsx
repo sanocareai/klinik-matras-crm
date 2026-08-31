@@ -21,11 +21,30 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // sama, CalendarMonth sudah menangani kasus itu sebagai "isSingleDay").
 //
 // value: "YYYY-MM-DD" | "" — string kosong = tidak ada filter ("Semua tanggal").
+// Animasi buka SEKALIGUS tutup (31 Agustus 2026, laporan owner: perpindahan
+// "sangat patah"). Popover ini BUKAN Radix (dibangun manual — CalendarMonth
+// butuh konten bebas, bukan daftar MenuItem), jadi tidak otomatis dapat
+// Presence: React biasanya melepas elemen dari DOM SEKETIKA `open` jadi
+// false, sebelum sempat memutar animasi keluar sama sekali (persis gejala
+// "patah" yang dilaporkan). DELAY_MS menahan elemen tetap ter-mount selama
+// durasi animasi keluar (samakan dengan durasi kelas animate-out di bawah)
+// sebelum benar-benar dilepas — dipakai juga untuk animasi status/driver
+// (Menu.jsx, Radix DropdownMenu, dapat Presence otomatis dan SUDAH diperbaiki
+// terpisah di sana) supaya ketiga filter terasa satu tempo yang sama.
+const DELAY_MS = 150;
+
 export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [anchor, setAnchor] = useState(() => (value ? dayjs(value) : todayWIB()).startOf("month"));
   const rootRef = useRef(null);
   const active = !!value;
+
+  useEffect(() => {
+    if (open) { setMounted(true); return; }
+    const t = setTimeout(() => setMounted(false), DELAY_MS);
+    return () => clearTimeout(t);
+  }, [open]);
 
   // Sinkron bulan yang ditampilkan tiap kali popover dibuka — supaya buka-
   // tutup-buka lagi selalu mulai dari bulan tanggal terpilih, bukan nyangkut
@@ -71,11 +90,18 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
         <ChevronDown size={13} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
       </button>
 
-      {open && (
+      {mounted && (
         <div
           role="dialog"
           aria-label="Pilih tanggal"
-          className="absolute left-0 top-9 z-[1100] w-[264px] rounded-xl bg-surface p-3 shadow-popover"
+          aria-hidden={!open}
+          className={cn(
+            "absolute left-0 top-9 z-[1100] w-[264px] origin-top-left rounded-xl bg-surface p-3 shadow-popover",
+            "duration-150 ease-out",
+            open
+              ? "animate-in fade-in-0 zoom-in-95"
+              : "pointer-events-none animate-out fade-out-0 zoom-out-95"
+          )}
         >
           <div className="mb-1 flex items-center justify-between">
             <button
