@@ -268,6 +268,11 @@ orderRouter.patch("/:id", async (req, res) => {
             where: { orderId: updated.id, status: { not: "CANCELLED" } },
             data: { status: "CANCELLED" },
           });
+          // Job yang belum jalan tidak punya alasan lagi untuk ada — lihat
+          // catatan lengkap di checkCancelBlockers/hapusJobBelumJalan di
+          // atas (31 Agustus 2026, laporan sales tidak bisa membatalkan
+          // order gara-gara job kerangka kosong).
+          await hapusJobBelumJalan(tx, updated.id);
         } else if (status === "DELIVERED") {
           const unitEnRoute = await tx.unit.findFirst({
             where: {
@@ -847,13 +852,26 @@ orderRouter.delete("/:id", async (req, res) => {
 // AWAITING_PICKUP order-nya sudah CANCELLED — sebagian besar via jalur ini.
 // Sekarang SATU fungsi dipakai KEDUANYA supaya tidak ada lagi jalur kedua
 // yang lupa diberi pengaman yang sama.
+// Job dianggap "komitmen nyata" (blokir cancel) HANYA kalau driver SUDAH
+// bergerak (EN_ROUTE/ARRIVED) atau SUDAH selesai (COMPLETED) — bukan
+// sekadar ADA. Ditemukan 31 Agustus 2026 (laporan sales, screenshot):
+// sales gagal membatalkan order yang job-nya cuma UNSCHEDULED (kerangka
+// otomatis dari armadaAutoJob.js — tanpa driver, tanpa tanggal, TIDAK ADA
+// komitmen fisik apa pun). Job seperti ini dibersihkan otomatis saat
+// order dibatalkan (lihat hapusJobBelumJalan di bawah), bukan jadi alasan
+// menolak sales.
+const JOB_STATUS_BLOKIR_CANCEL = ["EN_ROUTE", "ARRIVED", "COMPLETED"];
+
 async function checkCancelBlockers(orderId) {
-  const [units, jobCount, paymentCount, scopeRevisionCount] = await Promise.all([
+  const [units, jobsBlokir, paymentCount, scopeRevisionCount] = await Promise.all([
     prisma.unit.findMany({
       where: { orderId },
       select: { id: true, status: true, currentStageId: true, unitCode: true },
     }),
-    prisma.job.count({ where: { orderId } }),
+    prisma.job.findMany({
+      where: { orderId, status: { in: JOB_STATUS_BLOKIR_CANCEL } },
+      select: { id: true },
+    }),
     prisma.payment.count({ where: { orderId } }),
     prisma.scopeRevision.count({ where: { orderId } }),
   ]);
@@ -865,10 +883,21 @@ async function checkCancelBlockers(orderId) {
   if (inFlightUnits.length > 0) {
     blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
   }
-  if (jobCount > 0) blockers.push(`${jobCount} penjadwalan pickup/pengiriman`);
+  if (jobsBlokir.length > 0) blockers.push(`${jobsBlokir.length} job pickup/pengiriman sedang berjalan atau sudah selesai`);
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
   return { blockers, units };
+}
+
+// Job yang BELUM jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak punya alasan
+// untuk tetap ada begitu order-nya dibatalkan — dihapus, sama seperti
+// dispatcher hapus manual lewat DELETE /armada/jobs/:id (guard status
+// yang SAMA persis, lihat armada.js). Job EN_ROUTE/ARRIVED/COMPLETED tidak
+// akan pernah sampai sini — checkCancelBlockers sudah menolak lebih dulu.
+async function hapusJobBelumJalan(tx, orderId) {
+  await tx.job.deleteMany({
+    where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
+  });
 }
 
 // POST /api/orders/:id/cancel — "hapus" yang aman untuk order yang sudah
@@ -906,6 +935,7 @@ orderRouter.post("/:id/cancel", async (req, res) => {
           data: { status: "CANCELLED" },
         });
       }
+      await hapusJobBelumJalan(tx, req.params.id);
       const result = await tx.order.update({
         where: { id: req.params.id },
         data: {
