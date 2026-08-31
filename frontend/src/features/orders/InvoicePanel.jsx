@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   FileText, Send, Eye, Ban, Check, Loader2, Copy, CalendarClock, AlertTriangle,
@@ -99,6 +100,7 @@ function buatTeksInvoice(v) {
 }
 
 export default function InvoicePanel({ orderId, onChanged }) {
+  const navigate = useNavigate();
   const [view, setView]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [aksi, setAksi]       = useState(null); // nama aksi yang sedang jalan
@@ -266,6 +268,16 @@ export default function InvoicePanel({ orderId, onChanged }) {
         </p>
         {customer.salesOwner && (
           <p className="mt-1.5 text-[11.5px] text-ink3">Sales: {customer.salesOwner}</p>
+        )}
+        {customer.id && (
+          // Navigasi dalam aplikasi yang sama — lihat catatan di ReadinessPanel.jsx.
+          <button
+            type="button"
+            onClick={() => navigate(`/customers?id=${customer.id}`)}
+            className="mt-2 text-[11.5px] font-semibold text-accent hover:underline"
+          >
+            Buka profil pelanggan →
+          </button>
         )}
       </div>
 

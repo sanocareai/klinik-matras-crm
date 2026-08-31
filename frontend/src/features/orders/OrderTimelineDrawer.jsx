@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
@@ -590,26 +591,44 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
     return () => window.removeEventListener("keydown", onKey);
   }, [order, onClose]);
 
-  if (!order) return null;
+  // Animasi slide-in/out (31 Agustus 2026) — sebelumnya drawer ini muncul
+  // TANPA transisi sama sekali (langsung `return null` begitu `order` jadi
+  // null, jadi AnimatePresence tidak sempat memutar animasi keluar). Isi
+  // JSX di bawah dibuat memakai `o` (SNAPSHOT order terakhir yang tidak-null),
+  // BUKAN `order` (prop asli) — supaya saat `order` sudah jadi null (drawer
+  // sedang animasi menutup), konten yang masih tampil di layar tidak crash
+  // membaca field dari null. "Adjust state during render" ini pola resmi
+  // React utk derive state dari prop tanpa efek tambahan/flash 1 frame.
+  const [frozen, setFrozen] = useState(order);
+  if (order && order !== frozen) setFrozen(order);
+  const o = order || frozen;
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-black/30 animate-fade-in"
+    <AnimatePresence>
+      {order && o && (
+      <>
+      <motion.div
+        key="overlay"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="fixed inset-0 z-40 bg-black/30"
         onClick={onClose}
         aria-hidden="true"
       />
-      <aside
+      <motion.aside
+        key="drawer"
         role="dialog" aria-modal="true" aria-label="Riwayat status order"
+        initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+        transition={{ type: "tween", duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
         className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-base shadow-popover"
       >
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3.5">
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-ink">
-              {order.customerName || order.customerPhone || "Tanpa nama"}
+              {o.customerName || o.customerPhone || "Tanpa nama"}
             </p>
             <span className="mt-1 inline-flex items-center gap-1 rounded-chip bg-greenbg px-2 py-0.5 font-mono text-[11px] font-bold text-green">
-              <Hash size={10} />{order.orderNumber || "tanpa ID order"}
+              <Hash size={10} />{o.orderNumber || "tanpa ID order"}
             </span>
           </div>
           <button
@@ -624,10 +643,10 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           {/* Ringkasan order */}
           <div className="grid grid-cols-2 gap-2.5">
             {[
-              { l: "Status", v: ORDER_STATUS_LABELS[order.status] || order.status },
-              { l: "Pembayaran", v: PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus },
-              { l: "Nilai", v: formatRupiah(order.value || 0) },
-              { l: "Lama di status", v: `${order.daysInStatus} hari${order.daysInStatusPerkiraan ? "*" : ""}` },
+              { l: "Status", v: ORDER_STATUS_LABELS[o.status] || o.status },
+              { l: "Pembayaran", v: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus },
+              { l: "Nilai", v: formatRupiah(o.value || 0) },
+              { l: "Lama di status", v: `${o.daysInStatus} hari${o.daysInStatusPerkiraan ? "*" : ""}` },
             ].map((k) => (
               <div key={k.l} className="rounded-xl bg-surface p-2.5 shadow-card">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">{k.l}</p>
@@ -637,17 +656,17 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           </div>
 
           <div className="mt-3">
-            <ReadinessPanel order={order} onOpenChat={(o) => { onOpenChat(o); onClose(); }} />
+            <ReadinessPanel order={o} onOpenChat={(ord) => { onOpenChat(ord); onClose(); }} />
           </div>
 
           <div className="mt-3">
-            <DetailPesananSection order={order} />
+            <DetailPesananSection order={o} />
           </div>
 
-          {order.conversationId && (
+          {o.conversationId && (
             <button
               type="button"
-              onClick={() => { onOpenChat(order); onClose(); }}
+              onClick={() => { onOpenChat(o); onClose(); }}
               className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-accentbg px-3 py-2.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent hover:text-white"
             >
               <MessageSquare size={14} /> Buka chat customer
@@ -680,18 +699,18 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
 
           {tab === "dokumentasi" ? (
             <div className="mt-4">
-              <DocumentationTab orderId={order.id} conversationId={order.conversationId} />
+              <DocumentationTab orderId={o.id} conversationId={o.conversationId} />
             </div>
           ) : tab === "pembayaran" ? (
             <div className="mt-4">
-              <PaymentTab order={order} onRecorded={onPaymentRecorded} />
+              <PaymentTab order={o} onRecorded={onPaymentRecorded} />
             </div>
           ) : tab === "invoice" ? (
             <div className="mt-4">
               {/* onChanged: pembayaran/status invoice bisa ikut mengubah
                   ringkasan order di atas — pakai callback yang SAMA dengan
                   tab Pembayaran supaya papan order di belakang ikut segar. */}
-              <InvoicePanel orderId={order.id} onChanged={onPaymentRecorded} />
+              <InvoicePanel orderId={o.id} onChanged={onPaymentRecorded} />
             </div>
           ) : (
           <>
@@ -720,7 +739,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
                 </div>
                 <div className="pb-4">
                   <p className="text-[13px] font-semibold text-ink">Order dibuat</p>
-                  <p className="text-[11px] text-ink3">{formatTanggal(data?.dibuatPada || order.createdAt)}</p>
+                  <p className="text-[11px] text-ink3">{formatTanggal(data?.dibuatPada || o.createdAt)}</p>
                 </div>
               </li>
 
@@ -752,19 +771,21 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           </>
           )}
 
-          {order.hasComplaint && (
+          {o.hasComplaint && (
             <div className="mt-5 rounded-xl bg-redbg px-3.5 py-3">
               <p className="text-xs font-bold text-red">Ada komplain</p>
-              {order.complaintDetail && (
-                <p className="mt-1 text-[11px] leading-relaxed text-ink">{order.complaintDetail}</p>
+              {o.complaintDetail && (
+                <p className="mt-1 text-[11px] leading-relaxed text-ink">{o.complaintDetail}</p>
               )}
-              {order.complaintDate && (
-                <p className="mt-1 text-[11px] text-ink3">{formatTanggal(order.complaintDate)}</p>
+              {o.complaintDate && (
+                <p className="mt-1 text-[11px] text-ink3">{formatTanggal(o.complaintDate)}</p>
               )}
             </div>
           )}
         </div>
-      </aside>
-    </>
+      </motion.aside>
+      </>
+      )}
+    </AnimatePresence>
   );
 }

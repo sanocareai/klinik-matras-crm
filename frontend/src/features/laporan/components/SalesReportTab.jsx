@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Download, Info, Crown, Loader2, ExternalLink } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
@@ -74,6 +75,7 @@ const KOLOM = [
 ];
 
 export default function SalesReportTab({ report, targetReport, grossTotalPerusahaan, onExport, range }) {
+  const navigate = useNavigate();
   const cmp = compareLabel(range);
 
   // Rincian order per-individu di balik kolom "Lunas" (30 Agustus 2026) —
@@ -553,13 +555,17 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                     <tr key={o.id} className="border-b border-line last:border-0">
                       <td className="py-2 pr-2 text-ink2">{o.orderNumber || "—"}</td>
                       <td className="py-2 pr-2 text-ink2">
-                        <a
-                          href={`/customers?id=${o.customerId}`}
-                          target="_blank" rel="noreferrer"
+                        {/* Navigasi dalam aplikasi yang sama, BUKAN tab/window
+                            baru — sebelumnya <a target="_blank">, yang di
+                            PWA/Capacitor terbuka sebagai jendela app terpisah
+                            (ditemukan lewat laporan owner, 31 Agustus 2026). */}
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/customers?id=${o.customerId}`)}
                           className="inline-flex items-center gap-1 hover:text-accent hover:underline"
                         >
                           {o.customerName || "—"} <ExternalLink size={10} />
-                        </a>
+                        </button>
                       </td>
                       <td className="py-2 pr-2 tabular-nums text-ink3">
                         {formatTanggalPendek(o.paidAt)}

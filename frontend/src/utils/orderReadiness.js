@@ -32,12 +32,19 @@ export const READINESS_META = {
   BLOCKED:    { label: "Blocked",     tone: "red" },
 };
 
+// PENTING: `label` di SEMUA rule adalah KALIMAT UTUH ("X belum diisi", "Belum
+// ada Y") — pemanggil (ReadinessPanel) menampilkannya APA ADANYA, TIDAK
+// menempelkan sufiks generik. Alasannya konkret (ditemukan 31 Agustus 2026):
+// sufiks generik "{label} belum diisi" salah kalau field-nya SELALU terisi
+// tapi nilainya "belum terjadi" (mis. paymentStatus default BELUM_BAYAR itu
+// bukan kosong) — user sempat bingung dibilang "belum diisi" padahal dia
+// SUDAH pilih "Belum Bayar" secara eksplisit di dropdown.
 const BLOCKER_RULES = [
-  { key: "customerName",  label: "Nama pelanggan",   check: (o) => !!o.customerName },
-  { key: "customerPhone", label: "Nomor HP",         check: (o) => !!o.customerPhone },
-  { key: "address",       label: "Alamat pengiriman", check: (o) => !!(o.deliveryAddress || "").trim() },
-  { key: "items",         label: "Layanan/paket",    check: (o) => (o.items?.length || 0) > 0 },
-  { key: "price",         label: "Harga (nilai order)", check: (o) => (o.value || 0) > 0 },
+  { key: "customerName",  label: "Nama pelanggan belum diisi", check: (o) => !!o.customerName },
+  { key: "customerPhone", label: "Nomor HP belum diisi",       check: (o) => !!o.customerPhone },
+  { key: "address",       label: "Alamat pengiriman belum diisi", check: (o) => !!(o.deliveryAddress || "").trim() },
+  { key: "items",         label: "Belum ada layanan/paket dipilih", check: (o) => (o.items?.length || 0) > 0 },
+  { key: "price",         label: "Harga (nilai order) belum diisi", check: (o) => (o.value || 0) > 0 },
 ];
 
 const WARNING_RULES = [
@@ -45,20 +52,20 @@ const WARNING_RULES = [
   // ukuran berbeda (kalau ada) dan TIDAK memakai field ini, jadi jangan
   // ditandai "kurang lengkap" untuk order yang memang bukan kasur.
   {
-    key: "ukuranKasur", label: "Ukuran kasur",
+    key: "ukuranKasur", label: "Ukuran kasur belum diisi",
     relevan: (o) => (o.productLine || "KASUR") === "KASUR",
     check: (o) => !!parseOrderNotes(o.notes).ukuranKasur,
   },
   {
-    key: "pickupDate", label: "Jadwal pickup",
+    key: "pickupDate", label: "Jadwal pickup belum diisi",
     check: (o) => !!(o.pickupConfirmedDate || o.pickupEstimate),
   },
-  { key: "salesOwner", label: "Sales pemegang", check: (o) => !!o.assignedSales },
-  // Belum ada uang masuk sama sekali bukan penghalang mutlak (ada kasus sah
-  // COD/bayar di tempat), tapi layak ditinjau sebelum dikirim ke lapangan.
-  { key: "payment", label: "Status pembayaran", check: (o) => o.paymentStatus !== "BELUM_BAYAR" },
+  { key: "salesOwner", label: "Belum ada sales pemegang", check: (o) => !!o.assignedSales },
+  // Bukan penghalang mutlak (ada kasus sah COD/bayar di tempat), tapi layak
+  // ditinjau sebelum dikirim ke lapangan.
+  { key: "payment", label: "Belum ada pembayaran masuk", check: (o) => o.paymentStatus !== "BELUM_BAYAR" },
   {
-    key: "complaintNotes", label: "Catatan keluhan",
+    key: "complaintNotes", label: "Catatan keluhan belum diisi",
     relevan: (o) => !!o.hasComplaint,
     check: (o) => !!parseOrderNotes(o.notes).keluhanCustomer,
   },

@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { CheckCircle2, AlertTriangle, Ban, MessageSquare, UserRound } from "lucide-react";
 import { evaluateReadiness, READINESS } from "@/utils/orderReadiness.js";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils.js";
 // di sana, lewat OrderSection.jsx) dan buka chat customer — dua-duanya
 // sudah jalur navigasi yang ADA, bukan fitur baru.
 export default function ReadinessPanel({ order, onOpenChat }) {
+  const navigate = useNavigate();
   const hasil = evaluateReadiness(order);
   if (!hasil) return null; // CANCELLED — tidak relevan dinilai
 
@@ -49,7 +51,7 @@ export default function ReadinessPanel({ order, onOpenChat }) {
           {hasil.missingBlockers.map((r) => (
             <li key={r.key} className="flex items-center gap-1.5 text-[12px] text-ink">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red" />
-              {r.label} belum diisi
+              {r.label}
             </li>
           ))}
         </ul>
@@ -59,7 +61,7 @@ export default function ReadinessPanel({ order, onOpenChat }) {
           {hasil.missingWarnings.map((r) => (
             <li key={r.key} className="flex items-center gap-1.5 text-[12px] text-ink2">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange" />
-              {r.label} belum diisi
+              {r.label}
             </li>
           ))}
         </ul>
@@ -67,13 +69,18 @@ export default function ReadinessPanel({ order, onOpenChat }) {
 
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {order.customerId && (
-          <a
-            href={`/customers?id=${order.customerId}`}
-            target="_blank" rel="noreferrer"
+          // Navigasi DALAM APLIKASI YANG SAMA (bukan tab/window baru) — pola
+          // yang sama dengan RecentActivityCard.jsx & Pipeline.jsx. Sebelumnya
+          // ini pakai <a target="_blank">, yang di PWA/Capacitor terbuka
+          // sebagai JENDELA APLIKASI TERPISAH (bukan tab browser biasa),
+          // kelihatan seperti dua app beda — ditemukan lewat laporan owner.
+          <button
+            type="button"
+            onClick={() => navigate(`/customers?id=${order.customerId}`)}
             className="flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-[11.5px] font-semibold text-ink2 shadow-card transition-colors hover:text-ink"
           >
             <UserRound size={12} /> Lengkapi di profil pelanggan
-          </a>
+          </button>
         )}
         {order.conversationId && (
           <button
