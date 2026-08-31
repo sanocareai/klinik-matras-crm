@@ -8,6 +8,7 @@ import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
+import { ensureInvoiceForOrder } from "../services/invoice.js";
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { buatFileVCard } from "../services/vcard.js";
 
@@ -694,6 +695,13 @@ customerRouter.post("/:id/orders", async (req, res) => {
         await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
         await syncOrderStatus(tx, created.id);
       }
+
+      // Draft invoice lahir BERSAMA order-nya, di transaksi yang SAMA (31
+      // Agustus 2026) — sales tidak perlu langkah manual "buat invoice", dan
+      // order yang gagal dibuat tidak meninggalkan invoice yatim. Nominalnya
+      // TIDAK disalin ke sini (order ini masih `value: 0`, itemnya menyusul)
+      // — semua angka diturunkan saat invoice dibaca. Lihat services/invoice.js.
+      await ensureInvoiceForOrder(tx, { orderId: created.id, userId: req.user?.id || null });
 
       return tx.order.findUnique({
         where: { id: created.id },

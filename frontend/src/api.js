@@ -606,6 +606,11 @@ export const api = {
   createPromo: (data) => request("/promos", { method: "POST", body: JSON.stringify(data) }),
   updatePromo: (id, data) => request(`/promos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
+  // Invoice (31 Agustus 2026) — nominal & status SELALU dari backend
+  // (services/invoice.js), UI tidak pernah menghitung tagihan sendiri.
+  getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
+  updateOrderInvoice: (orderId, data) =>
+    request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
   updateOrderItem: (itemId, data) =>

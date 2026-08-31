@@ -284,6 +284,7 @@ model User {
   notes                     Note[]
   salesTargets              SalesTarget[]
   adSpends                  AdSpend[]
+  invoicesCreated           Invoice[]                @relation("InvoiceCreator")
   pushTokens                PushToken[]
   sentMessages              Message[]                @relation("MessageSender")
   firstResponderFor         Conversation[]           @relation("FirstResponder")
@@ -973,10 +974,68 @@ model Order {
   payments          Payment[]
   scopeRevisions    ScopeRevision[]
   revisionLogs      OrderRevisionLog[]
+  invoice           Invoice?
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
   @@index([promoId])
+}
+
+// ─── INVOICE (31 Agustus 2026) ──────────────────────────────────────────────
+// Satu order = satu invoice (@unique orderId). Draft dibuat OTOMATIS begitu
+// order lahir (routes/customers.js POST /:id/orders) supaya sales tidak perlu
+// langkah manual tambahan.
+//
+// ⚠️ YANG SENGAJA **TIDAK** DISIMPAN DI SINI: nominal apa pun (harga, diskon,
+// DP, sisa tagihan). Semuanya DITURUNKAN saat dibaca dari Order + OrderItem +
+// ledger Payment lewat services/invoice.js. Alasannya konkret: order lahir
+// dengan `value: 0` dan item-nya baru ditambahkan SETELAH itu (lihat POST
+// /:id/orders) — invoice yang menyalin angka saat dibuat akan selamanya
+// Rp0. Menyalin angka juga berarti dua sumber kebenaran untuk uang yang
+// sama, persis kelas bug yang sudah berulang di project ini (Order.value vs
+// SUM(items), paymentStatus vs ledger). Kalau suatu saat invoice perlu
+// "dibekukan" saat dikirim ke customer (harga berubah setelah terkirim),
+// itu keputusan terpisah: tambahkan kolom snapshot BARU, JANGAN ubah arti
+// kolom yang ada.
+enum InvoiceStatus {
+  DRAFT // baru dibuat otomatis, belum dikirim ke customer
+  SENT // sudah dikirim ke customer (WA/PDF)
+  VIEWED // customer sudah membuka/konfirmasi terima
+  PARTIALLY_PAID // ada pembayaran tapi belum lunas (TURUNAN ledger, bukan diketik)
+  PAID // lunas (TURUNAN ledger)
+  CANCELLED // dibatalkan (mis. order batal)
+  OVERDUE // lewat jatuh tempo & belum lunas (TURUNAN dueDate + ledger)
+}
+
+model Invoice {
+  id            String @id @default(cuid())
+  invoiceNumber String @unique @map("invoice_number") // INV-DDMMYYYY-NNN
+  orderId       String @unique @map("order_id")
+  order         Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // HANYA tahap yang diputuskan MANUSIA yang disimpan (draft → terkirim →
+  // dilihat, atau dibatalkan). PARTIALLY_PAID/PAID/OVERDUE TIDAK PERNAH
+  // ditulis ke kolom ini — ketiganya diturunkan dari ledger Payment +
+  // dueDate tiap kali dibaca (statusEfektif() di services/invoice.js), jadi
+  // status invoice mustahil bertentangan dengan kebenaran uangnya.
+  lifecycleStatus InvoiceStatus @default(DRAFT) @map("lifecycle_status")
+
+  sentAt      DateTime? @map("sent_at")
+  viewedAt    DateTime? @map("viewed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  dueDate     DateTime? @map("due_date") @db.Date
+
+  notes String? // catatan yang IKUT TERCETAK di invoice (bukan catatan internal order)
+
+  // SetNull, bukan Restrict: sales yang membuat invoice resign, invoice &
+  // riwayat tagihannya TETAP ada (pola sama Promo.createdById).
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("InvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([lifecycleStatus])
+  @@map("invoices")
 }
 
 // D-026 — katalog kampanye promo, dikelola admin (Pengaturan > Promo).

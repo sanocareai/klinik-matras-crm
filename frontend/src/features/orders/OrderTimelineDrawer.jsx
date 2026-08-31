@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
-  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText,
+  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText,
 } from "lucide-react";
+import InvoicePanel from "./InvoicePanel.jsx";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -654,8 +655,9 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           <div className="mt-4 flex gap-1 rounded-xl bg-inset p-1">
             {[
               { key: "status", label: "Status", icon: Clock },
-              { key: "dokumentasi", label: "Dokumentasi", icon: Camera },
-              { key: "pembayaran", label: "Pembayaran", icon: Wallet },
+              { key: "dokumentasi", label: "Dokumen", icon: Camera },
+              { key: "pembayaran", label: "Bayar", icon: Wallet },
+              { key: "invoice", label: "Invoice", icon: FileText },
             ].map((t) => (
               <button
                 key={t.key}
@@ -678,6 +680,13 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           ) : tab === "pembayaran" ? (
             <div className="mt-4">
               <PaymentTab order={order} onRecorded={onPaymentRecorded} />
+            </div>
+          ) : tab === "invoice" ? (
+            <div className="mt-4">
+              {/* onChanged: pembayaran/status invoice bisa ikut mengubah
+                  ringkasan order di atas — pakai callback yang SAMA dengan
+                  tab Pembayaran supaya papan order di belakang ikut segar. */}
+              <InvoicePanel orderId={order.id} onChanged={onPaymentRecorded} />
             </div>
           ) : (
           <>

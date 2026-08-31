@@ -12,6 +12,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { buildInvoiceView, setInvoiceLifecycle } from "../services/invoice.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
 import { sendText, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -579,6 +580,60 @@ orderRouter.get("/", async (req, res) => {
   } catch (err) {
     console.error("orders list error:", err);
     res.status(500).json({ error: "Gagal memuat daftar order" });
+  }
+});
+
+// ── INVOICE (31 Agustus 2026) ──────────────────────────────────────────────
+// Semua logikanya di services/invoice.js — route ini sengaja tipis: ambil,
+// validasi input seperlunya, kembalikan. Jangan menaruh aturan nominal/status
+// di sini (itu yang bikin logika tagihan tersebar & saling bertentangan).
+
+// GET /api/orders/:id/invoice — invoice + seluruh nominal turunannya.
+// Membuat draft on-demand kalau order ini lahir SEBELUM fitur invoice ada
+// (tidak ada backfill massal — invoice lahir saat pertama kali dibuka).
+orderRouter.get("/:id/invoice", async (req, res) => {
+  try {
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
+    res.json(view);
+  } catch (err) {
+    console.error("get invoice error:", err);
+    res.status(500).json({ error: "Gagal memuat invoice" });
+  }
+});
+
+// PATCH /api/orders/:id/invoice — ubah tahap manual (DRAFT/SENT/VIEWED/
+// CANCELLED) dan/atau jatuh tempo & catatan cetak. Status uang
+// (PAID/PARTIALLY_PAID/OVERDUE) TIDAK bisa diset dari sini — ditolak keras
+// oleh setInvoiceLifecycle(), lihat alasannya di services/invoice.js.
+orderRouter.patch("/:id/invoice", async (req, res) => {
+  const { lifecycleStatus, dueDate, notes } = req.body;
+  try {
+    // Pastikan invoice-nya ada dulu (order lama belum punya).
+    const ada = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    if (!ada) return res.status(404).json({ error: "Order tidak ditemukan" });
+
+    if (dueDate !== undefined || notes !== undefined) {
+      await prisma.invoice.update({
+        where: { orderId: req.params.id },
+        data: {
+          // "" / null = kosongkan lagi (pola sama field opsional lain di file ini).
+          ...(dueDate !== undefined && {
+            dueDate: dueDate ? parseTanggalKalender(dueDate, "Jatuh Tempo") : null,
+          }),
+          ...(notes !== undefined && { notes: notes || null }),
+        },
+      });
+    }
+    if (lifecycleStatus !== undefined) {
+      await setInvoiceLifecycle(req.params.id, lifecycleStatus);
+    }
+
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error("patch invoice error:", err);
+    res.status(500).json({ error: "Gagal memperbarui invoice" });
   }
 });
 
