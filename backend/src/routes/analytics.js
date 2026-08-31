@@ -714,9 +714,25 @@ export async function computeSalesRow(u, ctx) {
       },
       _count: { _all: true }, _sum: { value: true },
     }),
+    // BASIS KOMISI SALES (30 Agustus 2026) — sengaja filter `paidAt`, BUKAN
+    // `paymentStatus: "LUNAS"` polos. `paymentStatus` itu status SEKARANG
+    // (bisa berubah kapan saja, termasuk SETELAH bulan tutup buku), sedang
+    // `paidAt` itu HISTORIS: kapan order itu benar-benar jadi lunas
+    // (services/paymentLedger.js). `paidAt: { lt: selesai }` = "lunas
+    // SAMPAI jam 12 malam tanggal terakhir periode ini" — pertanyaan asli
+    // owner soal skema komisi. Efeknya: laporan yang dibuka tanggal 5
+    // bulan berikutnya akan tetap melaporkan angka yang SAMA PERSIS dengan
+    // kalau dicek pas jam 12 malam tanggal 31 — order yang baru lunas
+    // belakangan TIDAK ikut "naik" ke bulan yang sudah tutup buku (order
+    // itu tetap dihitung LEAD-nya di grossValue bulan ini, cuma
+    // commission-nya jatuh ke bulan saat benar-benar lunas, sesuai
+    // paidAt-nya, kalau nanti dihitung ulang untuk bulan itu).
+    // Order LUNAS lama (sebelum fitur paidAt ada) punya paidAt NULL —
+    // tidak di-backfill (lihat catatan migration) — jadi TIDAK ikut
+    // terhitung di sini sampai paymentStatus-nya disentuh ulang.
     prisma.order.aggregate({
       where: {
-        ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paymentStatus: "LUNAS",
+        ...buildDateWhere(from, to), status: { not: "CANCELLED" }, paidAt: { not: null, lt: selesai },
         customer: { conversations: { some: mineAtribusi } },
       },
       _sum: { value: true },

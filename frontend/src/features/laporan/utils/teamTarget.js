@@ -29,9 +29,14 @@ export function computeTeamTarget(report) {
   const teamGrossAll = (total?.grossValue || 0) + teamLeadRows.reduce((s, r) => s + r.grossValue, 0);
   const teamOrdersAll = (total?.orders || 0) + teamLeadRows.reduce((s, r) => s + r.orders, 0);
   const teamAovAll = teamOrdersAll > 0 ? Math.round(teamGrossAll / teamOrdersAll) : 0;
+  // teamCollectedAll (30 Agustus 2026) — sama pola dengan teamGrossAll,
+  // tapi basis KOMISI: nilai yang sudah lunas (Order.paidAt) sampai batas
+  // periode, bukan sekadar closing/reach. Lihat catatan panjang di
+  // routes/analytics.js #computeSalesRow.
+  const teamCollectedAll = (total?.collectedValue || 0) + teamLeadRows.reduce((s, r) => s + (r.collectedValue || 0), 0);
 
   return {
-    teamLeadRows, teamLead, teamGrossAll, teamOrdersAll, teamAovAll,
+    teamLeadRows, teamLead, teamGrossAll, teamOrdersAll, teamAovAll, teamCollectedAll,
     percentToTarget: (teamLead ? teamLead.teamPercentToTarget : total?.percentToTarget) ?? null,
     targetValue: (teamLead ? teamLead.target : total?.target) || 0,
   };

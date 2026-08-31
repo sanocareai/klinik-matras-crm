@@ -171,11 +171,22 @@ orderRouter.patch("/:id", async (req, res) => {
     const order = await prisma.$transaction(async (tx) => {
       const sebelum = await tx.order.findUnique({
         where: { id: req.params.id },
-        select: { status: true },
+        select: { status: true, paymentStatus: true },
       });
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
       }
+
+      // paidAt (30 Agustus 2026) — dropdown manual di sini adalah jalur LAIN
+      // ke paymentStatus di luar recomputeOrderPaymentStatus() (services/
+      // paymentLedger.js, dipakai jalur Payment/pengiriman) — HARUS pakai
+      // aturan transisi yang SAMA supaya basis komisi sales konsisten
+      // dari jalur mana pun paymentStatus berubah. Lihat komentar panjang
+      // di schema.prisma.
+      const paidAtPatch = paymentStatus === undefined ? {}
+        : paymentStatus === "LUNAS"
+          ? (sebelum.paymentStatus === "LUNAS" ? {} : { paidAt: new Date() })
+          : { paidAt: null };
 
       const updated = await tx.order.update({
         where: { id: req.params.id },
@@ -190,6 +201,7 @@ orderRouter.patch("/:id", async (req, res) => {
             statusLocked: false, statusOverrideById: null, statusOverrideAt: null, statusOverrideNote: null,
           }),
           ...(paymentStatus     !== undefined && { paymentStatus }),
+          ...paidAtPatch,
           ...(quantity          !== undefined && { quantity: Number(quantity) }),
           ...(notes             !== undefined && { notes }),
           ...(orderNumber       !== undefined && { orderNumber: orderNumber?.trim() || null }),

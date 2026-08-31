@@ -855,6 +855,23 @@ model Order {
   statusOverrideAt   DateTime?     @map("status_override_at")
   statusOverrideNote String?       @map("status_override_note")
   paymentStatus      PaymentStatus @default(BELUM_BAYAR)
+  // paidAt (30 Agustus 2026) — kapan order ini PERTAMA KALI jadi LUNAS,
+  // diisi OTOMATIS oleh recomputeOrderPaymentStatus() (services/paymentLedger.js),
+  // BUKAN diinput manual. Dipakai basis KOMISI SALES: "reach" bulan ini
+  // (grossValue, order dibuat bulan itu) sering campuran lead bulan lalu +
+  // bulan ini, tapi komisi cuma dihitung dari yang SUDAH LUNAS "sampai jam
+  // 12 malam tanggal terakhir bulan itu" — tanpa timestamp ini, laporan
+  // yang dibuka BELAKANGAN (mis. tanggal 5 bulan berikutnya) akan
+  // melaporkan angka LUNAS lebih besar dari yang sebenarnya berlaku saat
+  // itu (order yang telat bayar ikut "naik" ke bulan yang salah). Dengan
+  // paidAt, basis komisi = SUM(value) WHERE paidAt BETWEEN awal-akhir
+  // bulan — angkanya TERKUNCI, tidak bergeser kapan pun laporan dibuka.
+  // Turun ke null lagi kalau statusnya keluar dari LUNAS (koreksi/dibatalkan)
+  // — supaya paidAt selalu konsisten dengan status SEKARANG, bukan riwayat
+  // basi. Naik ulang ke waktu SEKARANG kalau lunas lagi setelah itu (bukan
+  // "pertama kali sepanjang masa") — itu yang benar-benar mencerminkan
+  // "kapan uangnya benar-benar dianggap masuk", termasuk setelah koreksi.
+  paidAt             DateTime?     @map("paid_at")
   category           OrderCategory @default(LAYANAN)
   // productLine (29 Agustus 2026) — default KASUR supaya migrasi backfill
   // otomatis SEMUA order lama sbg Kasur (fakta historis, 100% order sebelum

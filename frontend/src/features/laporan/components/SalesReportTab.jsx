@@ -55,6 +55,16 @@ const KOLOM = [
   { k: "spamRate",   label: "Spam %",     title: "Spam % = (chat yang dia pegang ditandai SPAM) ÷ (chat SPAM + chat yang dia tangani) × 100%. Bukan penalti performa — cuma pengawas, layak ditinjau kalau jauh di atas rata-rata tim." },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
   { k: "grossValue", label: "Nilai",      title: "Total nilai (Rupiah) semua order masuk di periode ini — belum tentu sudah terbayar lunas." },
+  // Lunas (30 Agustus 2026) — BASIS KOMISI: nilai order dari periode ini
+  // yang sudah lunas SAMPAI jam 12 malam tanggal terakhir periode ini
+  // (Order.paidAt, diisi otomatis begitu status jadi LUNAS — lihat
+  // services/paymentLedger.js). Angka ini TERKUNCI: dibuka tanggal 5 bulan
+  // berikutnya pun hasilnya sama persis dengan dicek pas jam 12 malam
+  // tanggal 31 — order yang baru lunas belakangan TIDAK ikut naik ke bulan
+  // yang sudah tutup buku. Order LUNAS lama (sebelum fitur ini ada) belum
+  // punya paidAt, jadi tidak terhitung di sini sampai statusnya disentuh
+  // ulang — bukan berarti benar-benar Rp0.
+  { k: "collectedValue", label: "Lunas", title: "Nilai order periode ini yang SUDAH LUNAS sampai jam 12 malam tanggal terakhir periode ini — basis komisi sales. Beda dari Nilai (total closing/\"reach\", termasuk yang belum dibayar penuh). Selisih Nilai − Lunas = masih DP/proses pengambilan/pengiriman." },
   { k: "aov",        label: "AOV",        title: "AOV (Average Order Value) = total Nilai ÷ jumlah Order di periode ini — rata-rata besar 1 order." },
   { k: "percentToTarget", label: "% Target", title: "% Target = (nilai closing BULAN INI, bukan periode yang dipilih di atas) ÷ (target bulanan dari Pengaturan > Target Sales) × 100%." },
 ];
@@ -73,7 +83,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
   // Progres target TIM (Nilai/Order/AOV) — ini MEMANG ikut `range` yang
   // dipilih (jawab "berapa closing tim di periode ini"). Lihat utils/teamTarget.js
   // untuk kenapa ini SATU sumber kebenaran dipakai bersama RingkasanTab.jsx.
-  const { teamLeadRows, teamGrossAll, teamOrdersAll, teamAovAll } = computeTeamTarget(report);
+  const { teamLeadRows, teamGrossAll, teamOrdersAll, teamAovAll, teamCollectedAll } = computeTeamTarget(report);
 
   // Semua "% Target"/progres-ke-target di bawah ini SENGAJA baca `targetReport`
   // (selalu bulan berjalan, lihat catatan panjang di Laporan.jsx#salesReportBulanIni)
@@ -114,24 +124,31 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       </div>
 
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard
           index={0} hero label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}
           format={(v) => formatRupiah(Math.round(v))}
           growth={report?.growthTeamGrossValue} compareLabel={cmp}
           sub={`${teamOrdersAll} order · AOV ${formatRupiahShort(teamAovAll)}`}
-          tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas."
+          tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
         />
         <KpiCard
-          index={1} label="Konversi Tim"
+          index={1} label="Nilai Lunas Tim"
+          numericValue={teamCollectedAll}
+          format={(v) => formatRupiah(Math.round(v))}
+          sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses`}
+          tooltip="BASIS KOMISI: nilai order periode ini yang SUDAH LUNAS sampai jam 12 malam tanggal terakhir periode ini (Order.paidAt) — terkunci, tidak bergeser walau laporan dibuka belakangan. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
+        />
+        <KpiCard
+          index={2} label="Konversi Tim"
           numericValue={total?.conversionRate || 0}
           format={(v) => (total?.conversionRate != null ? `${v.toFixed(1)}%` : "—")}
           sub={`${total?.paidCustomers || 0} pelanggan pindah ke Transaksi di periode ini`}
           tooltip={`Konversi Tim = (pelanggan pindah ke Transaksi) ÷ (percakapan yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut). Contoh: ${total?.paidCustomers || 0} pindah Transaksi dari ${total?.handled || 0} percakapan ditangani. ⚠️ BEDA dengan "Conversion" di Dashboard (keduanya BENAR, bukan salah satu salah hitung): angka ini basisnya PERCAKAPAN yang ditangani tim di periode ini, TERMASUK lead LAMA (lahir bulan sebelumnya) yang baru closing sekarang; "Conversion" Dashboard basisnya LEAD BARU yang lahir di periode ini saja. Makanya penyebut & pembilangnya beda dan wajar angkanya tidak sama.`}
         />
         <KpiCard
-          index={2} label="Target Tim"
+          index={3} label="Target Tim"
           numericValue={targetInfo.percentToTarget || 0}
           format={() => (targetInfo.percentToTarget != null ? `${targetInfo.percentToTarget}%` : "—")}
           sub={
@@ -144,14 +161,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip="Progres closing tim terhadap target BULANAN — SELALU bulan berjalan, tidak ikut rentang tanggal yang dipilih di atas."
         />
         <KpiCard
-          index={3} label="AOV Tim"
+          index={4} label="AOV Tim"
           numericValue={teamAovAll}
           format={(v) => (teamAovAll > 0 ? formatRupiah(Math.round(v)) : "—")}
           sub="rata-rata nilai per order, seluruh tim"
           tooltip="Nilai order rata-rata (total nilai / jumlah order) seluruh tim di periode yang dipilih di atas."
         />
         <KpiCard
-          index={4} label="Chat Spam"
+          index={5} label="Chat Spam"
           numericValue={total?.spamCount || 0}
           format={(v) => Math.round(v).toLocaleString("id-ID")}
           sub={total?.spamRate != null ? `${total.spamRate}% dari chat yang ditangani tim` : "belum ada chat yang ditangani"}
@@ -360,6 +377,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
                         {formatRupiahShort(r.grossValue)}
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-green">
+                        {formatRupiahShort(r.collectedValue || 0)}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
                         {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
                       </td>
@@ -392,6 +412,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
                         {formatRupiahShort(r.grossValue)}
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-green">
+                        {formatRupiahShort(r.collectedValue || 0)}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
                         {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
                       </td>
@@ -421,6 +444,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink">{total.orders}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
                       {formatRupiahShort(total.grossValue)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-green">
+                      {formatRupiahShort(total.collectedValue || 0)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
                       {total.aov > 0 ? formatRupiahShort(total.aov) : "—"}

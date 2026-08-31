@@ -17,7 +17,7 @@
 // begitu Payment tercatat; verifikasi cuma mencocokkan setoran driver.
 export async function recomputeOrderPaymentStatus(tx, orderId) {
   const [order, sum] = await Promise.all([
-    tx.order.findUnique({ where: { id: orderId }, select: { value: true } }),
+    tx.order.findUnique({ where: { id: orderId }, select: { value: true, paymentStatus: true } }),
     tx.payment.aggregate({ where: { orderId }, _sum: { amount: true } }),
   ]);
   if (!order) return null;
@@ -28,6 +28,20 @@ export async function recomputeOrderPaymentStatus(tx, orderId) {
   const paymentStatus =
     paid <= 0 ? "BELUM_BAYAR" : order.value > 0 && paid >= order.value ? "LUNAS" : "DP";
 
-  await tx.order.update({ where: { id: orderId }, data: { paymentStatus } });
+  // paidAt (30 Agustus 2026) — basis komisi sales, lihat komentar panjang
+  // di schema.prisma. Cuma diset saat TRANSISI masuk ke LUNAS (bukan tiap
+  // recompute — order yang SUDAH LUNAS lalu dapat Payment susulan/koreksi
+  // kecil tidak boleh menggeser paidAt-nya), dan di-null-kan lagi kalau
+  // keluar dari LUNAS (koreksi/refund sebagian) supaya paidAt selalu
+  // konsisten dengan status SEKARANG, bukan riwayat basi.
+  const paidAt =
+    paymentStatus === "LUNAS"
+      ? (order.paymentStatus === "LUNAS" ? undefined : new Date()) // undefined = jangan sentuh field ini
+      : null;
+
+  await tx.order.update({
+    where: { id: orderId },
+    data: paidAt === undefined ? { paymentStatus } : { paymentStatus, paidAt },
+  });
   return { paid, outstanding: Math.max(order.value - paid, 0), paymentStatus };
 }
