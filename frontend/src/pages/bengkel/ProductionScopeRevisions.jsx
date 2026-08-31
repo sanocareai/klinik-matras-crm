@@ -13,6 +13,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { SCOPE_REVISION_STATUS_REAL, SCOPE_REVISION_VIA_REAL } from "@/features/bengkel/unitStatus.js";
+import { formatTanggalJam } from "@/utils/formatDate.js";
 
 function currentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -143,11 +144,11 @@ export default function ProductionScopeRevisions() {
                 <THead>
                   <TR>
                     <TH>Unit</TH><TH>Order</TH><TH>Temuan</TH>
-                    <TH>Layanan</TH><TH>Selisih</TH><TH>Status</TH><TH>Diajukan Oleh</TH>
+                    <TH>Layanan</TH><TH>Selisih</TH><TH>Status</TH><TH>Diajukan Oleh</TH><TH>Tanggal</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  {loading && <TableSkeletonRows rows={6} cols={7} />}
+                  {loading && <TableSkeletonRows rows={6} cols={8} />}
                   {!loading && revisions?.map((r) => (
                     <TR key={r.id} clickable onClick={() => openRow(r)}>
                       <TD className="font-semibold text-ink">{r.unit?.unitCode || "—"}</TD>
@@ -163,6 +164,7 @@ export default function ProductionScopeRevisions() {
                         </Badge>
                       </TD>
                       <TD className="text-ink2">{r.createdBy?.name || "—"}</TD>
+                      <TD className="whitespace-nowrap text-ink2">{formatTanggalJam(r.createdAt)}</TD>
                     </TR>
                   ))}
                 </TBody>

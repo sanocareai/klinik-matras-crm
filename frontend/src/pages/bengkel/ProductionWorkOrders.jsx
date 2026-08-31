@@ -11,6 +11,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
+import { formatTanggal } from "@/utils/formatDate.js";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
 } from "@/features/bengkel/unitStatus.js";
@@ -152,11 +153,11 @@ export default function ProductionWorkOrders() {
                   <THead>
                     <TR>
                       <TH>Kode Unit</TH><TH>Order</TH><TH>Pelanggan</TH>
-                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Status</TH>
+                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Update Terakhir</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={8} cols={8} />}
+                    {loading && <TableSkeletonRows rows={8} cols={9} />}
                     {!loading && rows?.map((u) => (
                       <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
                         <TD className="font-semibold text-ink">{u.unitCode}</TD>
@@ -172,6 +173,7 @@ export default function ProductionWorkOrders() {
                         </TD>
                         <TD truncate className="text-ink2">{u.service?.labelId || <span className="text-ink3">—</span>}</TD>
                         <TD truncate className="text-ink2">{u.currentStage?.labelId || <span className="text-ink3">—</span>}</TD>
+                        <TD className="whitespace-nowrap text-ink2">{formatTanggal(u.updatedAt)}</TD>
                         <TD>
                           <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"}>
                             {UNIT_STATUS_REAL[u.status]?.label || u.status}
@@ -202,6 +204,7 @@ export default function ProductionWorkOrders() {
                         {u.order?.orderNumber || "—"}
                         {(u.merk || u.ukuran) && ` · ${[u.merk, u.ukuran].filter(Boolean).join(" ")}`}
                         {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
+                        {` · ${formatTanggal(u.updatedAt)}`}
                       </div>
                     </button>
                   </li>

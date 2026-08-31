@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
+import { formatTanggalJam } from "@/utils/formatDate.js";
 import { STAGE_LOG_STATUS } from "@/features/bengkel/unitStatus.js";
 
 // Antrean QC — Production Tahap 3. Daftar unit yang currentStage-nya
@@ -74,11 +75,11 @@ export default function ProductionQcQueue() {
                   <THead>
                     <TR>
                       <TH>Kode Unit</TH><TH>Order</TH><TH>Pelanggan</TH>
-                      <TH>Layanan</TH><TH>Tahap QC</TH><TH>Status</TH>
+                      <TH>Layanan</TH><TH>Tahap QC</TH><TH>Menunggu Sejak</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={6} cols={6} />}
+                    {loading && <TableSkeletonRows rows={6} cols={7} />}
                     {!loading && units?.map((u) => (
                       <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
                         <TD className="font-semibold text-ink">{u.unitCode}</TD>
@@ -86,6 +87,7 @@ export default function ProductionQcQueue() {
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
                         <TD truncate className="text-ink2">{u.service?.labelId || "—"}</TD>
                         <TD truncate className="text-ink2">{u.currentStage?.labelId || "—"}</TD>
+                        <TD className="whitespace-nowrap text-ink2">{formatTanggalJam(u.sinceAt)}</TD>
                         <TD>
                           <Badge variant={STAGE_LOG_STATUS[QC_STATE_STATUS[u.qcState]]?.tone || "neutral"}>
                             {STAGE_LOG_STATUS[QC_STATE_STATUS[u.qcState]]?.label || u.qcState}
@@ -114,6 +116,7 @@ export default function ProductionQcQueue() {
                       <div className="mt-0.5 truncate text-[13px] text-ink">{u.order?.customer?.name || "—"}</div>
                       <div className="mt-0.5 truncate text-[11px] text-ink2">
                         {u.order?.orderNumber || "—"}{u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
+                        {` · ${formatTanggalJam(u.sinceAt)}`}
                       </div>
                     </button>
                   </li>

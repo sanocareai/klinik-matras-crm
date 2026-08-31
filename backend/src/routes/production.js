@@ -403,7 +403,12 @@ productionRouter.get("/qc-queue", requirePermission(P.UNIT_READ), async (req, re
     const withState = units.map((u) => {
       const last = lastByUnit[u.id];
       const qcState = !last ? "READY" : last.action === "START" ? "IN_PROGRESS" : last.action === "FAIL" ? "BLOCKED" : "READY";
-      return { ...u, qcState };
+      // sinceAt = sejak kapan unit ini di kondisi qcState SEKARANG (31 Agustus
+      // 2026 — laporan owner: halaman ini tidak tampil tanggal sama sekali).
+      // Pakai createdAt log terakhir kalau ada (jam persis START/FAIL-nya),
+      // fallback ke Unit.createdAt untuk yang belum pernah tersentuh log QC
+      // sama sekali (qcState READY sejak lahir).
+      return { ...u, qcState, sinceAt: last?.createdAt || u.createdAt };
     });
 
     res.json({ units: withState });

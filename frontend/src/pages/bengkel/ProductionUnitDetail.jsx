@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
+import { formatTanggalJam } from "@/utils/formatDate.js";
 import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
@@ -16,6 +17,16 @@ import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, STAGE_LOG_STATUS, BLOCK_REASON_REAL,
   FIT_VERDICT_REAL, PREFERENCE_OVERRIDE_REAL, SCOPE_REVISION_STATUS_REAL,
 } from "@/features/bengkel/unitStatus.js";
+
+// Label kejadian log tahap, dipasangkan dengan tanggalnya di "Jalur Tahap
+// Produksi" (D-038, 31 Agustus 2026) — enum action dari unit_stage_logs.
+const AKSI_LOG_LABEL = {
+  START: "Dimulai",
+  PAUSE: "Dijeda",
+  COMPLETE: "Selesai",
+  FAIL: "Gagal",
+  SKIP: "Dilewati",
+};
 
 function currentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -286,20 +297,33 @@ export default function ProductionUnitDetail() {
               </CardDescription>
             </CardHeader>
             <ul className="divide-y divide-line">
-              {path.map((p, i) => (
-                <li key={p.stage.id} className={`flex items-center gap-3 px-4 py-2.5 ${p.isCurrent ? "bg-accentbg" : ""}`}>
-                  <span className="w-5 shrink-0 text-center text-[11px] font-bold text-ink3">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12.5px] font-semibold text-ink">{p.stage.labelId}</p>
-                    <p className="text-[10.5px] text-ink3">
-                      {p.stage.phase}{p.stage.requiresQc && " · Gerbang QC"}{p.stage.requiresPhoto && " · Wajib Foto"}{p.stage.isOptional && " · Opsional"}
-                    </p>
-                  </div>
-                  <Badge variant={STAGE_LOG_STATUS[p.status]?.tone || "neutral"} className="shrink-0">
-                    {STAGE_LOG_STATUS[p.status]?.label}
-                  </Badge>
-                </li>
-              ))}
+              {path.map((p, i) => {
+                // Tanggal per tahap (31 Agustus 2026, D-038 — laporan owner:
+                // jalur tahap tidak tampil tanggal sama sekali). p.logs sudah
+                // terurut ASC dari backend (GET /units/:id/timeline), jadi
+                // entri terakhir = kejadian TERBARU pada tahap ini.
+                const lastLog = p.logs?.[p.logs.length - 1];
+                const labelAksi = lastLog && AKSI_LOG_LABEL[lastLog.action];
+                return (
+                  <li key={p.stage.id} className={`flex items-center gap-3 px-4 py-2.5 ${p.isCurrent ? "bg-accentbg" : ""}`}>
+                    <span className="w-5 shrink-0 text-center text-[11px] font-bold text-ink3">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-semibold text-ink">{p.stage.labelId}</p>
+                      <p className="text-[10.5px] text-ink3">
+                        {p.stage.phase}{p.stage.requiresQc && " · Gerbang QC"}{p.stage.requiresPhoto && " · Wajib Foto"}{p.stage.isOptional && " · Opsional"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <Badge variant={STAGE_LOG_STATUS[p.status]?.tone || "neutral"}>
+                        {STAGE_LOG_STATUS[p.status]?.label}
+                      </Badge>
+                      {lastLog && (
+                        <p className="mt-1 text-[10px] text-ink3">{labelAksi} {formatTanggalJam(lastLog.createdAt)}</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </Card>
 
@@ -320,6 +344,7 @@ export default function ProductionUnitDetail() {
                       {t.customerPreferenceOverride && ` · Override: ${t.customerPreferenceOverride}`}
                       {" · "}{t.testedBy?.name || "—"}
                     </p>
+                    <p className="mt-0.5 text-[10.5px] text-ink3">{formatTanggalJam(t.createdAt)}</p>
                   </li>
                 ))}
               </ul>
