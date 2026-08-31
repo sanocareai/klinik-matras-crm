@@ -654,6 +654,7 @@ export const api = {
   // deret adaptif) & laporan sales mendalam — keduanya menghormati from/to.
   getBusinessSummary: (params) => request("/analytics/business-summary" + buildQuery(params)),
   getSalesReport: (params) => request("/analytics/sales-report" + buildQuery(params)),
+  getSalesLunasDetail: (params) => request("/analytics/sales-report/lunas-detail" + buildQuery(params)),
   getAnalyticsSourcePerformance: (params) => request("/analytics/source-performance" + buildQuery(params)),
   // Rincian per iklan/kreatif spesifik (bukan cuma per platform) — lihat
   // catatan panjang di backend/src/routes/analytics.js.

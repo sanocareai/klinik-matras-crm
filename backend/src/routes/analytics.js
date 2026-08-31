@@ -1284,6 +1284,66 @@ analyticsRouter.get("/sales-report", async (req, res) => {
   }
 });
 
+// GET /analytics/sales-report/lunas-detail?userId=&from=&to= ────────────────
+// Rincian ORDER-LEVEL di balik angka "Lunas" (collectedValue) SATU sales di
+// /sales-report — komisi dihitung PER INDIVIDU (bukan per tim), jadi admin
+// perlu lihat order mana saja yang menyusun angka lunas orang itu, bukan
+// cuma total rupiahnya. Dibuat endpoint TERPISAH (bukan disisipkan ke
+// response /sales-report utama) — endpoint itu sudah berat (8+ sales tiap
+// buka), menambah daftar order penuh ke SEMUA baris akan memperlambatnya
+// padahal detail ini cuma dibutuhkan kalau admin benar-benar klik lihat.
+//
+// WHERE-nya WAJIB identik dengan query `lunasAgg` di computeSalesRow (paidAt
+// di rentang periode, TIDAK peduli kapan order dibuat — lihat komentar
+// panjang di sana soal "geser ke bulan lunasnya") — kalau berbeda, jumlah
+// baris di sini tidak akan pernah cocok dengan angka ringkasan yang sudah
+// dipercaya, dan itu yang paling gampang bikin curiga salah hitung.
+analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
+  try {
+    const { userId, from, to } = req.query;
+    if (!userId) return res.status(400).json({ error: "userId wajib diisi" });
+
+    const mulai   = from ? startOfDayWIB(from) : new Date("1970-01-01T00:00:00Z");
+    const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
+
+    const orders = await prisma.order.findMany({
+      where: {
+        status: { not: "CANCELLED" },
+        paidAt: { gte: mulai, lt: selesai },
+        customer: { conversations: { some: { type: "INDIVIDUAL", assignedToId: userId } } },
+      },
+      select: {
+        id: true, orderNumber: true, value: true, createdAt: true, paidAt: true,
+        category: true,
+        customer: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { paidAt: "asc" },
+    });
+
+    res.json({
+      total: orders.reduce((s, o) => s + o.value, 0),
+      orders: orders.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        value: o.value,
+        createdAt: o.createdAt,
+        paidAt: o.paidAt,
+        category: o.category,
+        // lintasBulan = order ini "geser" dari bulan pembuatannya — sinyal
+        // untuk UI menandai baris ini beda dari mayoritas (dibuat & lunas
+        // bulan yang sama), bukan berarti ada yang salah.
+        lintasBulan: new Date(o.createdAt) < mulai,
+        customerId: o.customer?.id || null,
+        customerName: o.customer?.name || null,
+        customerPhone: o.customer?.phone || null,
+      })),
+    });
+  } catch (err) {
+    console.error("sales-report/lunas-detail error:", err);
+    res.status(500).json({ error: "Gagal memuat rincian order lunas" });
+  }
+});
+
 analyticsRouter.get("/performance", async (req, res) => {
   try {
     const { from, to } = req.query;

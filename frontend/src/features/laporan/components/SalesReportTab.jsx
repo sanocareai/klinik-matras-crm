@@ -1,11 +1,14 @@
-import React from "react";
-import { Download, Info, Crown } from "lucide-react";
+import React, { useState } from "react";
+import { Download, Info, Crown, Loader2, ExternalLink } from "lucide-react";
 import Avatar from "../../../components/Avatar.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import { Modal } from "@/components/ui/modal.jsx";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
+import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
-import { compareLabel } from "@/lib/dateRange.js";
+import { compareLabel, toApiParams } from "@/lib/dateRange.js";
 import { computeTeamTarget } from "../utils/teamTarget.js";
+import { api } from "@/api.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -72,6 +75,22 @@ const KOLOM = [
 
 export default function SalesReportTab({ report, targetReport, grossTotalPerusahaan, onExport, range }) {
   const cmp = compareLabel(range);
+
+  // Rincian order per-individu di balik kolom "Lunas" (30 Agustus 2026) —
+  // komisi dihitung PER SALES, bukan per tim, jadi admin perlu lihat order
+  // MANA SAJA yang menyusun angka lunas satu orang, bukan cuma totalnya.
+  // Fetch on-demand (bukan sekaligus utk semua sales di /sales-report) —
+  // endpoint itu sudah berat, detail ini cuma perlu dimuat kalau diklik.
+  const [lunasDetail, setLunasDetail] = useState(null); // { userId, name, loading, data, error }
+  async function openLunasDetail(userId, name) {
+    setLunasDetail({ userId, name, loading: true, data: null, error: null });
+    try {
+      const data = await api.getSalesLunasDetail({ userId, ...toApiParams(range) });
+      setLunasDetail({ userId, name, loading: false, data, error: null });
+    } catch (err) {
+      setLunasDetail({ userId, name, loading: false, data: null, error: err.message });
+    }
+  }
   const semuaRows = report?.rows || [];
   // Baris "Team Lead" (Novi) TERPISAH dari leaderboard/tabel 8 sales biasa
   // di bawah sini (25 Agustus 2026) — target dia mewakili target TIM
@@ -378,8 +397,15 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
                         {formatRupiahShort(r.grossValue)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-green">
-                        {formatRupiahShort(r.collectedValue || 0)}
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openLunasDetail(r.userId, r.name)}
+                          className="font-semibold tabular-nums text-green underline decoration-dotted underline-offset-2 hover:text-green/80"
+                          title="Lihat rincian order lunas personal (basis komisi)"
+                        >
+                          {formatRupiahShort(r.collectedValue || 0)}
+                        </button>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
                         {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
@@ -413,8 +439,15 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-ink">
                         {formatRupiahShort(r.grossValue)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-green">
-                        {formatRupiahShort(r.collectedValue || 0)}
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openLunasDetail(r.userId, r.name)}
+                          className="font-semibold tabular-nums text-green underline decoration-dotted underline-offset-2 hover:text-green/80"
+                          title="Lihat rincian order lunas personal (basis komisi)"
+                        >
+                          {formatRupiahShort(r.collectedValue || 0)}
+                        </button>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
                         {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
@@ -475,9 +508,81 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
             {" "}"Total tim" di baris terakhir HANYA menjumlahkan 8 sales biasa —
             TIDAK termasuk closing pribadi Team Lead (beda dengan KPI "Nilai
             Penjualan Tim" di atas, yang sudah menggabungkan keduanya).
+            {" "}Angka <strong className="text-green">Lunas</strong> tiap sales bisa
+            diklik untuk lihat rincian order-nya satu per satu — basis komisi
+            dihitung PER ORANG, jadi rincian ini yang dipakai untuk hitung
+            komisi masing-masing, bukan total tim.
           </p>
         </ChartCard>
       )}
+
+      {/* ── Rincian order lunas per individu (basis komisi) ─────────────── */}
+      <Modal
+        open={!!lunasDetail}
+        onOpenChange={(open) => { if (!open) setLunasDetail(null); }}
+        title={lunasDetail ? `Rincian Lunas — ${lunasDetail.name}` : ""}
+        description="Order yang jadi lunas di periode ini — basis komisi personal, bukan tim."
+        className="w-[620px]"
+      >
+        {lunasDetail?.loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-[13px] text-ink3">
+            <Loader2 size={16} className="animate-spin" /> Memuat…
+          </div>
+        ) : lunasDetail?.error ? (
+          <p className="py-8 text-center text-[12.5px] text-red">Gagal memuat: {lunasDetail.error}</p>
+        ) : !lunasDetail?.data?.orders?.length ? (
+          <p className="py-8 text-center text-[12.5px] text-ink3">Belum ada order lunas di periode ini.</p>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center justify-between rounded-btn bg-inset px-3 py-2">
+              <span className="text-[12.5px] text-ink2">{lunasDetail.data.orders.length} order</span>
+              <span className="font-semibold tabular-nums text-green">{formatRupiah(lunasDetail.data.total)}</span>
+            </div>
+            <div className="max-h-[360px] overflow-y-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink3">
+                    <th className="pb-2 pr-2 font-medium">Order</th>
+                    <th className="pb-2 pr-2 font-medium">Pelanggan</th>
+                    <th className="pb-2 pr-2 font-medium">Tgl Lunas</th>
+                    <th className="pb-2 text-right font-medium">Nilai</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lunasDetail.data.orders.map((o) => (
+                    <tr key={o.id} className="border-b border-line last:border-0">
+                      <td className="py-2 pr-2 text-ink2">{o.orderNumber || "—"}</td>
+                      <td className="py-2 pr-2 text-ink2">
+                        <a
+                          href={`/customers?id=${o.customerId}`}
+                          target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 hover:text-accent hover:underline"
+                        >
+                          {o.customerName || "—"} <ExternalLink size={10} />
+                        </a>
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums text-ink3">
+                        {formatTanggalPendek(o.paidAt)}
+                        {o.lintasBulan && (
+                          <span
+                            className="ml-1.5 rounded-full bg-orangebg px-1.5 py-0.5 text-[10px] font-medium text-orange"
+                            title={`Dibuat ${formatTanggalPendek(o.createdAt)} — lintas bulan dari pembuatannya`}
+                          >
+                            lintas bulan
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right font-semibold tabular-nums text-ink">
+                        {formatRupiah(o.value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
