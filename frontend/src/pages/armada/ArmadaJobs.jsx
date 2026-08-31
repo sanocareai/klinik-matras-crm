@@ -69,7 +69,8 @@ const selectClass =
 function isDriverOnlyUser() {
   try {
     const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
-    return roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // HELPER (D-037) diperlakukan sama dengan DRIVER di sini.
+    return roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
   } catch {
     return false;
   }

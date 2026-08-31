@@ -152,6 +152,7 @@ async function notifyDriverGroup(job, photoUrls, headline) {
 
 const jobInclude = {
   driver: { select: { id: true, name: true } },
+  helper: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true } },
   payments: {
     select: { id: true, amount: true, method: true, createdAt: true, verifications: { select: { id: true } } },
@@ -269,6 +270,23 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
   try {
     const rows = await prisma.userRole.findMany({
       where: { role: "DRIVER" },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { user: { name: "asc" } },
+    });
+    res.json(rows.map((r) => r.user));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/helpers — daftar TERPISAH dari /drivers (D-037, 31
+// Agustus 2026). SENGAJA query role HELPER, bukan DRIVER — kolam nama
+// pendamping tidak pernah tercampur dengan pilihan driver, walau satu
+// orang secara teknis bisa punya dua-duanya (lihat catatan enum Role).
+armadaRouter.get("/helpers", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const rows = await prisma.userRole.findMany({
+      where: { role: "HELPER" },
       include: { user: { select: { id: true, name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -1225,7 +1243,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
     if (job.status !== "FAILED") throw new ArmadaError("Hanya job berstatus Gagal yang bisa dijadwalkan ulang lewat sini");
 
-    const { scheduledDate, timeWindow, driverId, vehicleId, reason, customerConfirmed } = req.body;
+    const { scheduledDate, timeWindow, driverId, helperId, vehicleId, reason, customerConfirmed } = req.body;
     if (!scheduledDate) throw new ArmadaError("Tanggal baru wajib diisi");
     if (!reason?.trim()) throw new ArmadaError("Alasan reschedule wajib diisi");
 
@@ -1238,6 +1256,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
         scheduledDate: nextDate,
         timeWindow: timeWindow || null,
         driverId: nextDriverId,
+        helperId: helperId || null,
         vehicleId: vehicleId || null,
         status: deriveStatus(!!nextDriverId, !!nextDate),
         rescheduleReason: reason.trim(),
@@ -1454,8 +1473,14 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     const from = new Date(centerDate); from.setUTCDate(from.getUTCDate() - 1);
     const to = new Date(centerDate); to.setUTCDate(to.getUTCDate() + 2); // +1 hari, eksklusif
 
+    // D-037 (31 Agustus 2026) — helper melihat job yang sama dengan driver
+    // TERPISAH: OR driverId/helperId, bukan cuma driverId. Helper accompany
+    // driver di lapangan, wajar kalau dia juga mau lihat "Job Saya" hari itu.
     const jobs = await prisma.job.findMany({
-      where: { driverId: req.user.id, scheduledDate: { gte: from, lt: to } },
+      where: {
+        OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
+        scheduledDate: { gte: from, lt: to },
+      },
       include: jobInclude,
       orderBy: [{ scheduledDate: "asc" }, { sequence: "asc" }, { createdAt: "asc" }],
     });
@@ -1469,9 +1494,11 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
 armadaRouter.get("/jobs/:id", requirePermission(P.JOB_OWN_READ), async (req, res) => {
   try {
     const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id }, include: jobInclude });
-    // Driver TANPA JOB_WRITE penuh hanya boleh lihat job miliknya sendiri.
-    // Dispatcher/admin (punya JOB_READ) lolos tanpa cek ini.
-    if (!hasPermission(req.user, P.JOB_READ) && job.driverId !== req.user.id) {
+    // Driver/helper TANPA JOB_READ penuh hanya boleh lihat job miliknya
+    // sendiri (D-037: driver ATAU helper). Dispatcher/admin (punya
+    // JOB_READ) lolos tanpa cek ini.
+    const milikSaya = job.driverId === req.user.id || job.helperId === req.user.id;
+    if (!hasPermission(req.user, P.JOB_READ) && !milikSaya) {
       return res.status(403).json({ error: "Bukan job Anda" });
     }
     res.json(job);
@@ -1480,10 +1507,10 @@ armadaRouter.get("/jobs/:id", requirePermission(P.JOB_OWN_READ), async (req, res
   }
 });
 
-// POST /api/armada/jobs { type, unitIds, scheduledDate?, driverId?, vehicleId?, timeWindow?, addressText? }
+// POST /api/armada/jobs { type, unitIds, scheduledDate?, driverId?, helperId?, vehicleId?, timeWindow?, addressText? }
 armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
-    const { type, unitIds, scheduledDate, driverId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
+    const { type, unitIds, scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
     if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
     if (!Array.isArray(unitIds) || unitIds.length === 0) throw new ArmadaError("Pilih minimal 1 unit");
 
@@ -1529,6 +1556,7 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
         orderId: [...orderIds][0],
         scheduledDate: toDateOnly(scheduledDate),
         driverId: driverId || null,
+        helperId: helperId || null,
         vehicleId: vehicleId || null,
         timeWindow: timeWindow || null,
         addressText: addressText || null,
@@ -1563,10 +1591,11 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
-    const { scheduledDate, driverId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
+    const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
     const data = {};
     if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
     if (driverId !== undefined) data.driverId = driverId || null;
+    if (helperId !== undefined) data.helperId = helperId || null;
     if (vehicleId !== undefined) {
       if (vehicleId) {
         const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
@@ -1613,11 +1642,14 @@ armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res
 });
 
 // Guard bersama untuk endpoint driver (start/arrive/complete/fail/photos):
-// job harus milik driver yang login, KECUALI user punya JOB_WRITE penuh
-// (dispatcher/admin boleh operasikan atas nama driver kalau perlu).
+// job harus milik driver ATAU helper yang login (D-037, 31 Agustus 2026 —
+// keduanya sama-sama di lapangan, siapa pun yang pegang HP saat itu boleh
+// menekan tombolnya), KECUALI user punya JOB_WRITE penuh (dispatcher/admin
+// boleh operasikan atas nama driver/helper kalau perlu).
 async function loadOwnedJob(req) {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
-  if (!hasPermission(req.user, P.JOB_WRITE) && job.driverId !== req.user.id) {
+  const milikSaya = job.driverId === req.user.id || job.helperId === req.user.id;
+  if (!hasPermission(req.user, P.JOB_WRITE) && !milikSaya) {
     throw new ArmadaError("Bukan job Anda", 403);
   }
   return job;

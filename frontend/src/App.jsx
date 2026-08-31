@@ -75,7 +75,10 @@ function ArmadaLanding() {
   let driverOnly = false;
   try {
     const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
-    driverOnly = roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // D-037 (31 Agustus 2026) — HELPER (pendamping driver) diperlakukan SAMA
+    // dengan DRIVER di sini: permission-nya identik (JOB_OWN_READ saja),
+    // dispatcher board akan gagal 403 untuknya juga.
+    driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
   } catch { /* user tidak terbaca — perlakukan sebagai non-driver */ }
   return <Navigate to={driverOnly ? "/armada/jobs" : "/armada/dashboard"} replace />;
 }

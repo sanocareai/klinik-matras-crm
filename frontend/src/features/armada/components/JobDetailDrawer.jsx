@@ -92,6 +92,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [drivers, setDrivers] = useState([]);
+  const [helpers, setHelpers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -119,8 +120,8 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // render), tapi murah untuk dimuat lebih dulu daripada nunggu klik.
   useEffect(() => {
     if (!jobId) return;
-    Promise.all([api.getDrivers(), api.getVehicles()])
-      .then(([d, v]) => { setDrivers(d || []); setVehicles((v.vehicles || []).filter((x) => x.active)); })
+    Promise.all([api.getDrivers(), api.getHelpers(), api.getVehicles()])
+      .then(([d, h, v]) => { setDrivers(d || []); setHelpers(h || []); setVehicles((v.vehicles || []).filter((x) => x.active)); })
       .catch(() => {});
   }, [jobId]);
 
@@ -250,6 +251,22 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         onPick={(id) => ubahJadwal({ driverId: id })}
                       />
                     </div>
+                    {/* Helper (pendamping driver, D-037, 31 Agustus 2026) —
+                        OPSIONAL, kolam nama TERPISAH dari Driver di atas
+                        (lihat GET /armada/helpers). Job boleh jalan tanpa
+                        helper sama sekali, karena itu "Tanpa helper" dan
+                        bukan "Belum ditugaskan" (beda nuansa: yang satu
+                        wajar dikosongkan, yang satu perlu ditindaklanjuti). */}
+                    <div>
+                      <label className="mb-1.5 block text-[11px] text-ink2">Helper</label>
+                      <ChipPilih
+                        items={helpers}
+                        selectedId={job.helperId}
+                        disabled={busy}
+                        kosongLabel="Tanpa helper"
+                        onPick={(id) => ubahJadwal({ helperId: id })}
+                      />
+                    </div>
                     {/* Kendaraan: 1 pilihan saja -> auto-terisi (lihat efek di
                         atas), tampil sebagai info, bukan pilihan berulang.
                         >1 kendaraan baru tampil chip yang sama pola dgn Driver. */}
@@ -293,6 +310,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       {job.timeWindow ? ` · ${job.timeWindow}` : ""}
                     </Baris>
                     <Baris icon={User} label="Driver">{job.driver?.name || "Belum ditugaskan"}</Baris>
+                    <Baris icon={User} label="Helper">{job.helper?.name || null}</Baris>
                     <Baris icon={Truck} label="Kendaraan">
                       {job.vehicle ? `${job.vehicle.plateNumber} (${job.vehicle.type})` : null}
                     </Baris>

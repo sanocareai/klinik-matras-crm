@@ -247,6 +247,12 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
       ) : (
         <div className="mt-3 space-y-1 text-xs text-ink2">
           {job.driver && <p className="flex items-center gap-1.5"><User className="h-3 w-3" /> {job.driver.name}</p>}
+          {/* Helper (D-037, 31 Agustus 2026) — read-only di kartu papan ini,
+              sengaja TIDAK dibuat editable di sini. Penugasan helper
+              lengkap (bareng driver+kendaraan+tanggal) tetap di
+              JobDetailDrawer supaya tidak ada 2 tempat kontrol yang bisa
+              drift satu sama lain untuk field yang sama. */}
+          {job.helper && <p className="flex items-center gap-1.5"><User className="h-3 w-3" /> {job.helper.name} <span className="text-ink3">(helper)</span></p>}
           {job.vehicle && <p className="flex items-center gap-1.5"><Truck className="h-3 w-3" /> {job.vehicle.plateNumber}</p>}
           {job.addressText && <p className="flex items-center gap-1.5"><MapPin className="h-3 w-3" /> {job.addressText}</p>}
           {job.status === "FAILED" && job.failureReason && (
@@ -497,7 +503,9 @@ export default function Armada() {
 
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
-  const isDriverOnly = !allowed && roles.includes("DRIVER");
+  // HELPER (D-037, 31 Agustus 2026) ikut mendarat di tampilan "Job Saya"
+  // driver — permission-nya identik (JOB_OWN_READ/WRITE).
+  const isDriverOnly = !allowed && roles.some((r) => ["DRIVER", "HELPER"].includes(r));
 
   const load = useCallback(async () => {
     try {

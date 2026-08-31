@@ -159,6 +159,14 @@ export const ROLE_PERMISSIONS = {
     P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
   ],
 
+  // Helper (pendamping driver, D-037, 31 Agustus 2026) — permission SAMA
+  // dengan DRIVER (boleh buka "Job Saya" untuk job yang dia bantu), tapi
+  // role TERPISAH: helper TIDAK PERNAH muncul di daftar pilihan driver
+  // (GET /armada/drivers cuma query role DRIVER, lihat armada.js).
+  HELPER: [
+    P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
+  ],
+
   FINANCE: [
     P.PAYMENT_READ, P.PAYMENT_WRITE,
     P.ORDER_READ, P.ORDER_PRICE_READ,
@@ -210,7 +218,7 @@ export const PORTALS = [
     label: "Delivery & Fulfillment",
     description: "Penjadwalan armada, rute, instalasi, proof of delivery, dan SLA.",
     path: "/armada",
-    roles: ["ADMIN", "DISPATCHER", "DRIVER"],
+    roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER"],
   },
   {
     key: "kendali",

@@ -390,7 +390,8 @@ export default function Layout({ user, onLogout, children }) {
   // sungguhan (sebelumnya semua pengujian pakai admin, yang punya semua hak).
   const division = React.useMemo(() => {
     const roles = rolesOf(user);
-    const driverOnly = roles.includes("DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // HELPER (D-037) ikut disederhanakan sidebarnya sama seperti DRIVER.
+    const driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey !== "armada" || !driverOnly) return divisionBase;
     return {
       ...divisionBase,

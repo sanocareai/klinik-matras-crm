@@ -228,6 +228,8 @@ export const api = {
     return request(`/armada/reports/summary${qs ? `?${qs}` : ""}`);
   },
   getDrivers: () => request("/armada/drivers"),
+  // D-037 (31 Agustus 2026) — daftar TERPISAH dari driver, lihat armada.js.
+  getHelpers: () => request("/armada/helpers"),
   getDriverGroup: () => request("/armada/driver-group"),
   setDriverGroup: (conversationId) =>
     request("/armada/driver-group", { method: "PUT", body: JSON.stringify({ conversationId }) }),

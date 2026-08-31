@@ -23,6 +23,13 @@ enum Role {
   DISPATCHER
   DRIVER
   FINANCE
+  // Pendamping driver di lapangan (bantu angkat/pasang kasur) — 31 Agustus
+  // 2026, permintaan owner: "1 driver, 1 helper". SENGAJA role terpisah dari
+  // DRIVER (bukan alias) — daftar pilihan driver (Agung/Alwan/Apriansyah)
+  // TIDAK berubah, helper adalah kolam nama yang beda sama sekali. Permission
+  // SAMA dengan DRIVER (lihat permissions.js) supaya helper juga bisa buka
+  // "Job Saya" di HP kalau perlu — tapi tidak pernah muncul di daftar driver.
+  HELPER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).
@@ -290,6 +297,7 @@ model User {
   messageTemplates          MessageTemplate[]
   unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver              Job[]                    @relation("JobDriver")
+  jobsAsHelper              Job[]                    @relation("JobHelper")
   jobPositionPings          JobPositionPing[]        @relation("JobPositionPingDriver")
   // D-035 — armada: PIC kendaraan, biaya, servis, insiden
   vehiclesAsPic             Vehicle[]                @relation("VehiclePic")
@@ -1274,6 +1282,13 @@ model Job {
   driver   User?     @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
   status   JobStatus @default(UNSCHEDULED)
 
+  // Pendamping driver (31 Agustus 2026, D-037) — OPSIONAL, satu job bisa
+  // jalan tanpa helper sama sekali (banyak kasus 1 orang cukup). Kolam
+  // nama TERPISAH dari driver (role HELPER, bukan DRIVER) walau satu orang
+  // SECARA TEKNIS bisa punya dua-duanya (lihat catatan enum Role).
+  helperId String? @map("helper_id")
+  helper   User?   @relation("JobHelper", fields: [helperId], references: [id], onDelete: SetNull)
+
   // Urutan stop dalam rute driver+tanggal+tipe hari itu (FR-L-03) — NULL
   // sampai dispatcher mengurutkan lewat PATCH /armada/route/reorder. Bukan
   // unique constraint: hanya perlu urutan RELATIF di dalam grup
@@ -1368,6 +1383,7 @@ model Job {
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
+  @@index([helperId])
   @@index([status, scheduledDate]) // papan Armada
   @@index([routeId, sequence]) // urutan stop dalam satu rute
   @@index([vehicleId])
