@@ -97,7 +97,39 @@ export function hitungNominal(order, payments = []) {
   // terpisah supaya tetap terlihat, tidak diam-diam masuk total.
   const totalTagihan = totalLayanan + ongkir;
 
-  const dibayar = payments.reduce((s, p) => s + (p.amount || 0), 0);
+  // ⚠️ LEDGER KOSONG BUKAN BERARTI BELUM BAYAR (ditemukan saat uji ke data
+  // production, 31 Agustus 2026). Tabel `payments` di production masih NOL
+  // baris: 228 order berstatus LUNAS mendapat status itu lewat dropdown
+  // manual (services/paymentLedger.js baru dipakai jalur Payment/pengiriman
+  // yang belum jalan). Kalau invoice cuma percaya ledger, SEMUA order lama
+  // yang sudah lunas akan menagih ulang uang yang sudah dibayar — salah
+  // yang langsung terlihat customer.
+  //
+  // Jadi: ledger dipakai kalau ADA isinya (paling akurat, ada rincian per
+  // pembayaran). Kalau kosong, jatuh ke Order.paymentStatus yang memang
+  // sinyal operasional yang dipakai tim hari ini. `sumber` ikut dikembalikan
+  // supaya UI JUJUR menyebut angkanya dari mana — bukan mengarang rincian
+  // pembayaran yang tidak pernah dicatat.
+  const dibayarLedger = payments.reduce((s, p) => s + (p.amount || 0), 0);
+  const adaLedger = payments.length > 0;
+
+  let dibayar = dibayarLedger;
+  let sumber = "ledger";
+  let dibayarTidakRinci = false;
+
+  if (!adaLedger) {
+    sumber = "statusManual";
+    if (order.paymentStatus === "LUNAS") {
+      dibayar = totalTagihan; // dianggap lunas penuh sesuai status
+    } else if (order.paymentStatus === "DP") {
+      // Tahu "sudah DP" tapi TIDAK tahu berapa — tidak boleh dikarang.
+      dibayar = 0;
+      dibayarTidakRinci = true;
+    } else {
+      dibayar = 0;
+    }
+  }
+
   const sisa = Math.max(totalTagihan - dibayar, 0);
 
   return {
@@ -112,6 +144,11 @@ export function hitungNominal(order, payments = []) {
     dibayar,
     sisa,
     lunas: totalTagihan > 0 && dibayar >= totalTagihan,
+    // "ledger" = ada rincian pembayaran tercatat; "statusManual" = angka
+    // mengikuti dropdown status bayar di order, tanpa rincian.
+    sumber,
+    // true = statusnya DP tapi nominalnya tidak pernah tercatat di mana pun.
+    dibayarTidakRinci,
   };
 }
 
@@ -131,7 +168,10 @@ export function statusEfektif({ invoice, nominal, now = new Date() }) {
   // sebagai masalah, bukan "sedang berjalan normal".
   if (invoice.dueDate && new Date(invoice.dueDate) < now) return "OVERDUE";
 
-  if (nominal.dibayar > 0) return "PARTIALLY_PAID";
+  // `dibayarTidakRinci` = status order bilang DP tapi nominalnya tidak
+  // pernah tercatat — tetap PARTIALLY_PAID (kenyataannya memang sudah ada
+  // uang masuk), walau angkanya nol di layar.
+  if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) return "PARTIALLY_PAID";
 
   // Belum ada uang masuk sama sekali → tahap manualnya yang berlaku.
   return invoice.lifecycleStatus; // DRAFT | SENT | VIEWED

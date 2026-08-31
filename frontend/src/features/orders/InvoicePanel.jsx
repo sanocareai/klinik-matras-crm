@@ -221,13 +221,31 @@ export default function InvoicePanel({ orderId, onChanged }) {
         <BarisUang label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} strong />
 
         <div className="my-2 border-t border-line" />
-        <BarisUang label="Sudah dibayar" value={formatRupiah(nominal.dibayar)} tone="green" />
+        <BarisUang
+          label="Sudah dibayar"
+          hint={nominal.dibayarTidakRinci ? "(nominal DP belum tercatat)" : null}
+          value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar)}
+          tone="green"
+        />
         <BarisUang
           label="Sisa tagihan"
-          value={formatRupiah(nominal.sisa)}
+          value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa)}
           tone={nominal.sisa > 0 ? "red" : "green"}
           strong
         />
+
+        {/* Jujur soal ASAL angkanya — jangan sampai terbaca seolah ada
+            rincian pembayaran tercatat padahal cuma dropdown status. */}
+        {nominal.sumber === "statusManual" && (
+          <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-orangebg px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-orange" />
+            <span>
+              Angka bayar mengikuti <strong>status pembayaran order</strong> — belum ada rincian
+              pembayaran tercatat (siapa terima, kapan, lewat apa). Catat di tab
+              <strong> Bayar</strong> supaya invoice punya jejak yang bisa diaudit.
+            </span>
+          </p>
+        )}
 
         {nominal.ongkirKlaimGaransi > 0 && (
           <p className="mt-2 text-[11px] leading-relaxed text-ink3">
