@@ -675,12 +675,34 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           job={[order.deliveryJob, order.pickupJob].find((j) => j && ["EN_ROUTE", "ARRIVED"].includes(j.status))}
           className="mt-2"
         />
-        {order.pickupJob?.driverName && (
+        {/* Tanggal pengambilan/pengiriman (D-040, 31 Agustus 2026 — laporan
+            owner: "kalau diisi admin/dispatcher, itu terupdate juga di
+            order tim sales"). Datanya SUDAH mengalir ke sini dari dulu
+            (pickupJob/deliveryJob.scheduledDate, sama persis job yang
+            dispatcher isi di Delivery & Fulfillment) — cuma belum pernah
+            dirender di halaman ini. Job & Order berbagi baris database
+            yang SAMA, jadi tidak ada sinkronisasi terpisah yang perlu
+            dibangun — begitu dispatcher simpan tanggal, sales yang buka
+            profil ini lihat nilai yang sama tanpa refresh apa pun selain
+            buka ulang drawer. */}
+        {order.pickupJob?.scheduledDate && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Pengambilan dijadwalkan: {formatTanggal(order.pickupJob.scheduledDate)}
+            {order.pickupJob.driverName && ` · ${order.pickupJob.driverName}`}
+          </p>
+        )}
+        {!order.pickupJob?.scheduledDate && order.pickupJob?.driverName && (
           <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
             Diambil oleh {order.pickupJob.driverName}
           </p>
         )}
-        {order.deliveryJob?.driverName && (
+        {order.deliveryJob?.scheduledDate && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Pengiriman dijadwalkan: {formatTanggal(order.deliveryJob.scheduledDate)}
+            {order.deliveryJob.driverName && ` · ${order.deliveryJob.driverName}`}
+          </p>
+        )}
+        {!order.deliveryJob?.scheduledDate && order.deliveryJob?.driverName && (
           <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
             Dikirim oleh {order.deliveryJob.driverName}
           </p>

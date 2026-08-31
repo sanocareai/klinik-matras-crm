@@ -72,6 +72,18 @@ export function unitCountOf(job) {
   return job?.units?.length || 0;
 }
 
+// Link Google Maps satu sumber kebenaran (D-040, 31 Agustus 2026 — sebelum
+// ini disalin 2x persis sama di Armada.jsx & DriverJobs.jsx, gampang diam-
+// diam beda kalau salah satu diubah). Utamakan koordinat hasil geocode
+// (akurat, pin persis) — fallback ke pencarian teks alamat kalau job belum
+// sempat di-geocode (tetap berfungsi, cuma Google yang mencari sendiri).
+// TIDAK butuh API key/billing — ini URL publik `maps/dir` biasa.
+export function mapsUrl(job) {
+  if (job?.lat && job?.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
+  if (job?.addressText) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.addressText)}`;
+  return null;
+}
+
 // Label ringkas manusiawi untuk 1 job (D-037 lanjutan, 31 Agustus 2026 —
 // laporan owner: kolom "Job" cuma tampil 8 karakter acak dari cuid,
 // "a4d74468" dst, tidak bisa disebut ke driver/customer). Job SELALU

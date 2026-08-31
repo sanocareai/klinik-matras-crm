@@ -119,7 +119,10 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
   // Unit yang lahir di bucket lain (mis. status order sudah PROCESSING saat
   // unit ditambahkan belakangan) tidak butuh job pickup sama sekali.
   if (status === "AWAITING_PICKUP") {
-    await ensurePickupJobForOrder(tx, order.id);
+    // Lewat `order` utuh (bukan cuma id) — D-040, alamat sales
+    // (deliveryAddress/deliveryCity) langsung diisi ke job baru, lihat
+    // catatan lengkap di armadaAutoJob.js.
+    await ensurePickupJobForOrder(tx, order);
   }
 
   return tx.unit.findMany({

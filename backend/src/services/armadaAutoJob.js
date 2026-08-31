@@ -51,7 +51,27 @@ import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
  * ada unit yang perlu diurus (order ini tidak punya unit AWAITING_PICKUP
  * yang masih bebas).
  */
-export async function ensurePickupJobForOrder(tx, orderId) {
+// D-040 (31 Agustus 2026, laporan owner: "alamat udah ada semua [di
+// Order], masukkan ke sini juga") — job pickup yang lahir di sini
+// sebelumnya SELALU addressText null, memaksa dispatcher klik "Pakai
+// alamat order" satu-satu di JobDetailDrawer untuk tiap job baru. Alamat
+// sales (Order.deliveryAddress/deliveryCity, D-027/D-032) sudah PASTI ada
+// duluan (order dibuat sebelum unit/job-nya), jadi diisi LANGSUNG di sini
+// — bukan lagi cuma "saran" yang menunggu diklik.
+//
+// SENGAJA TIDAK geocode (isi lat/lng) di sini — geocodeAddress() adalah
+// panggilan HTTP eksternal (Nominatim/Google), dan fungsi ini jalan DI
+// DALAM transaksi Postgres (tx) yang sama dengan penulisan Unit — menahan
+// transaksi terbuka menunggu jaringan luar berisiko timeout/lock lama
+// kalau geocode lambat/gagal. Lat/lng untuk alamat yang baru diisi di sini
+// diurus scripts/backfill-job-address-geocode.mjs (dijalankan terpisah,
+// di luar transaksi apa pun, dengan jeda hormat rate-limit Nominatim).
+function alamatDariOrder(order) {
+  return [order.deliveryAddress, order.deliveryCity].filter(Boolean).join(", ") || null;
+}
+
+export async function ensurePickupJobForOrder(tx, order) {
+  const orderId = order.id;
   const freeUnits = await tx.unit.findMany({
     where: {
       orderId,
@@ -68,7 +88,7 @@ export async function ensurePickupJobForOrder(tx, orderId) {
 
   const existing = await tx.job.findFirst({
     where: { orderId, type: "PICKUP", status: "UNSCHEDULED" },
-    select: { id: true },
+    select: { id: true, addressText: true },
   });
 
   if (existing) {
@@ -76,6 +96,14 @@ export async function ensurePickupJobForOrder(tx, orderId) {
       data: freeUnits.map((u) => ({ jobId: existing.id, unitId: u.id })),
       skipDuplicates: true,
     });
+    // Job existing yang belum sempat punya alamat (dibuat sebelum fix ini,
+    // atau dispatcher belum sempat isi manual) — lengkapi juga, konsisten
+    // dengan job baru di bawah. Job yang SUDAH punya alamat (manual/
+    // otomatis sebelumnya) TIDAK ditimpa.
+    if (!existing.addressText) {
+      const alamat = alamatDariOrder(order);
+      if (alamat) await tx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
+    }
     return existing.id;
   }
 
@@ -84,6 +112,7 @@ export async function ensurePickupJobForOrder(tx, orderId) {
       type: "PICKUP",
       orderId,
       status: "UNSCHEDULED",
+      addressText: alamatDariOrder(order),
       units: { create: freeUnits.map((u) => ({ unitId: u.id })) },
     },
     select: { id: true },

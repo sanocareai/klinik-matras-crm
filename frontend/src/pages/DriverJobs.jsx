@@ -10,6 +10,7 @@ import { getQueue, removeAction } from "../utils/offlineQueue.js";
 import { submitOrQueue } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
 import { useDriverTracking } from "../hooks/useDriverTracking.js";
+import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -38,12 +39,6 @@ const STATUS_LABEL = {
   ASSIGNED: "Siap Dimulai", EN_ROUTE: "Dalam Perjalanan", ARRIVED: "Tiba di Lokasi",
   COMPLETED: "Selesai", FAILED: "Gagal",
 };
-
-function mapsUrl(job) {
-  if (job.lat && job.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
-  if (job.addressText) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.addressText)}`;
-  return null;
-}
 
 // ── Kapsul foto (dipakai form Selesai & Gagal & Pembayaran) — foto disimpan
 // LOKAL (File, sudah dikompres), belum diupload. Preview pakai object URL.

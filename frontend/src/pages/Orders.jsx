@@ -300,6 +300,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
               <p key={i} className="flex items-center gap-1 truncate text-[11px] text-ink3">
                 <Truck size={11} className="shrink-0" />
                 {j.label}: {JOB_STATUS_REAL[j.status]?.label || j.status}
+                {j.scheduledDate ? ` · ${formatTanggalPendek(j.scheduledDate)}` : ""}
                 {j.driverName ? ` · ${j.driverName}` : ""}
               </p>
             ))}

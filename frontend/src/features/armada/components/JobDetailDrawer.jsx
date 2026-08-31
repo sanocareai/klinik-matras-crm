@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, MapPin, Phone, Package, Truck, User, Clock, Camera, Loader2 } from "lucide-react";
+import { X, MapPin, Phone, Package, Truck, User, Clock, Camera, Loader2, Navigation } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -9,7 +9,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
-import { JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf } from "../jobStatus.js";
+import { JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
 // Drawer detail job — data NYATA dari GET /armada/jobs/:id.
@@ -268,6 +268,21 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       </a>
                     )}
                   </Baris>
+                  {/* Navigasi (D-040, 31 Agustus 2026) — dulu cuma ada di HP
+                      driver (DriverJobs.jsx), sekarang tersedia juga di
+                      drawer dispatcher supaya bisa langsung cek lokasi di
+                      Maps tanpa harus jadi driver yang login. Link publik
+                      Google Maps biasa, TIDAK butuh API key/billing. */}
+                  {mapsUrl(job) && (
+                    <div className="py-2">
+                      <a
+                        href={mapsUrl(job)} target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
+                      >
+                        <Navigation size={13} /> Buka di Google Maps
+                      </a>
+                    </div>
+                  )}
                   {/* Alamat & Catatan Akses pindah jadi field EDITABLE di kartu
                       Penugasan di bawah selama job masih boleh diedit — baris
                       read-only di sini cuma untuk job yang statusnya sudah

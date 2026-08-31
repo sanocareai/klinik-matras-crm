@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -18,7 +18,7 @@ import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
-  customerOf, orderNumberOf, unitCountOf, jobLabelOf,
+  customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
 } from "@/features/armada/jobStatus.js";
 
 // Jadwal & Penugasan — Delivery Tahap 2.
@@ -326,7 +326,23 @@ export default function ArmadaJobs() {
                                 ? <span className="text-ink3">—</span>
                                 : <span className="text-orange">Belum</span>}
                           </TD>
-                          <TD truncate className="max-w-[180px] text-ink2">{j.addressText || "—"}</TD>
+                          <TD truncate className="max-w-[180px] text-ink2">
+                            {j.addressText ? (
+                              <span className="inline-flex items-center gap-1">
+                                {mapsUrl(j) && (
+                                  <a
+                                    href={mapsUrl(j)} target="_blank" rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Buka di Google Maps"
+                                    className="shrink-0 text-accent hover:text-accent/80"
+                                  >
+                                    <Navigation size={12} />
+                                  </a>
+                                )}
+                                <span className="truncate">{j.addressText}</span>
+                              </span>
+                            ) : "—"}
+                          </TD>
                           <TD numeric>{unitCountOf(j)}</TD>
                           <TD truncate className={cn(!j.driver && !historis && "text-orange")}>
                             {j.driver?.name || (historis ? "—" : "Belum ada")}
