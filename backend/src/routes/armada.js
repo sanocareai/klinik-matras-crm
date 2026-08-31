@@ -154,6 +154,23 @@ const jobInclude = {
   driver: { select: { id: true, name: true } },
   helper: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true } },
+  // BUG DITEMUKAN 31 Agustus 2026 (laporan owner: JobDetailDrawer terasa
+  // "kosong" — Kontak & Timeline status Order tidak pernah muncul). Job
+  // punya relasi LANGSUNG ke Order (job.orderId, lihat schema.prisma), TAPI
+  // jobInclude sebelumnya cuma meng-include Order lewat jalur BERLAPIS
+  // job.units[].unit.order (dipakai jobStatus.js customerOf()/orderNumberOf()
+  // sebagai FALLBACK). JobDetailDrawer.jsx membaca job.order LANGSUNG
+  // (DeliveryTimeline, link telepon Kontak) TANPA fallback ke jalur
+  // berlapis itu — jadi job.order selalu `undefined`, bukan cuma kadang
+  // kosong. Field yang dipilih SAMA dengan units[].unit.order di bawah
+  // (termasuk deliveryAddress/deliveryCity D-032, dipakai prefill alamat).
+  order: {
+    select: {
+      id: true, orderNumber: true, status: true,
+      deliveryAddress: true, deliveryCity: true,
+      customer: { select: { id: true, name: true, phone: true } },
+    },
+  },
   payments: {
     select: { id: true, amount: true, method: true, createdAt: true, verifications: { select: { id: true } } },
   },

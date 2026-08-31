@@ -5,6 +5,7 @@ import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
@@ -98,6 +99,18 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [actionError, setActionError] = useState("");
   const [showForm, setShowForm] = useState(null); // "complete" | "fail" | null
 
+  // Draft Alamat/Catatan Akses/Jam (31 Agustus 2026, D-039 — laporan owner:
+  // "form order-nya bisa buat lebih lengkap?", drawer ini sebelumnya cuma
+  // menampilkan ketiganya read-only, tidak pernah bisa diisi/diubah dari
+  // sini sama sekali walau backend PATCH /jobs/:id sudah menerima ketiganya
+  // sejak awal — satu-satunya jalur edit yang ada cuma di board lama
+  // (Armada.jsx JobCard). State LOKAL (bukan baca langsung dari job seperti
+  // driver/helper/kendaraan) karena user mengetik huruf demi huruf sebelum
+  // blur-simpan — pola sama dengan address di JobCard.
+  const [address, setAddress] = useState("");
+  const [accessNotes, setAccessNotes] = useState("");
+  const [timeWindow, setTimeWindow] = useState("");
+
   function muat() {
     if (!jobId) return;
     setLoading(true);
@@ -127,6 +140,25 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
   const units = job?.units?.map((ju) => ju.unit) || [];
   const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
+
+  // Sinkron draft SEKALI per job dibuka (job?.id, bukan job) — supaya PATCH
+  // lain yang mengubah job (mis. pilih driver) tidak diam-diam menimpa ketikan
+  // Alamat/Catatan yang belum sempat di-blur.
+  useEffect(() => {
+    if (!job) return;
+    setAddress(job.addressText || "");
+    setAccessNotes(job.accessNotes || "");
+    setTimeWindow(job.timeWindow || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id]);
+
+  // Alamat SALES/rencana (Order.deliveryAddress/deliveryCity, D-027/D-032) —
+  // SARAN, bukan auto-fill (lihat tombol "Pakai alamat order" di bawah),
+  // pola sama persis dengan JobCard di Armada.jsx supaya tidak ada 2
+  // implementasi prefill yang bisa diam-diam beda.
+  const prefillAddress = job?.order
+    ? [job.order.deliveryAddress, job.order.deliveryCity].filter(Boolean).join(", ")
+    : "";
 
   // Armada Sano cuma punya 1 kendaraan aktif hari ini (CLAUDE.md §1) — kalau
   // memang cuma ada 1 pilihan, tidak ada gunanya minta dispatcher memilih
@@ -230,8 +262,17 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       </a>
                     )}
                   </Baris>
-                  <Baris icon={MapPin} label="Alamat">{job.addressText}</Baris>
-                  <Baris label="Catatan akses">{job.accessNotes}</Baris>
+                  {/* Alamat & Catatan Akses pindah jadi field EDITABLE di kartu
+                      Penugasan di bawah selama job masih boleh diedit — baris
+                      read-only di sini cuma untuk job yang statusnya sudah
+                      lewat (EN_ROUTE/dst), supaya tidak ada 2 tampilan nilai
+                      yang sama (satu bisa diketik, satu cuma teks) sekaligus. */}
+                  {!editable && (
+                    <>
+                      <Baris icon={MapPin} label="Alamat">{job.addressText}</Baris>
+                      <Baris label="Catatan akses">{job.accessNotes}</Baris>
+                    </>
+                  )}
                 </div>
 
                 {/* Assign — HANYA muncul kalau job masih di status yang boleh
@@ -288,14 +329,66 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         </p>
                       )
                     )}
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
+                        <DatePicker
+                          value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
+                          onChange={(v) => ubahJadwal({ scheduledDate: v || null })}
+                          placeholder="Pilih tanggal"
+                          className="w-full"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="mb-1 block text-[11px] text-ink2">Jam (opsional)</label>
+                        <input
+                          value={timeWindow}
+                          onChange={(e) => setTimeWindow(e.target.value)}
+                          onBlur={() => timeWindow !== (job.timeWindow || "") && ubahJadwal({ timeWindow: timeWindow || null })}
+                          disabled={busy}
+                          placeholder="mis. 09:00–12:00"
+                          className={selectClass}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Alamat & Catatan Akses (D-039, 31 Agustus 2026) — dulu
+                        cuma bisa diedit dari board lama (Armada.jsx JobCard),
+                        sekarang tersedia langsung di drawer supaya dispatcher
+                        tidak perlu pindah tampilan untuk melengkapi job. */}
                     <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
+                      <label className="mb-1 block text-[11px] text-ink2">Alamat</label>
                       <input
-                        type="date"
-                        className={selectClass}
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        onBlur={() => address !== (job.addressText || "") && ubahJadwal({ addressText: address })}
                         disabled={busy}
-                        value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
-                        onChange={(e) => ubahJadwal({ scheduledDate: e.target.value || null })}
+                        placeholder="Alamat pengambilan/pengiriman"
+                        className={selectClass}
+                      />
+                      {/* Cuma muncul kalau field masih kosong DAN order-nya
+                          punya alamat sales (D-027/D-032) — klik = niat
+                          jelas isi + langsung simpan, bukan sekadar saran
+                          pasif yang bisa terlewat. */}
+                      {!address && prefillAddress && (
+                        <button
+                          type="button"
+                          onClick={() => { setAddress(prefillAddress); ubahJadwal({ addressText: prefillAddress }); }}
+                          className="mt-1 text-left text-[11px] text-accent hover:underline"
+                        >
+                          Pakai alamat order: {prefillAddress}
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Catatan Akses (opsional)</label>
+                      <input
+                        value={accessNotes}
+                        onChange={(e) => setAccessNotes(e.target.value)}
+                        onBlur={() => accessNotes !== (job.accessNotes || "") && ubahJadwal({ accessNotes: accessNotes || null })}
+                        disabled={busy}
+                        placeholder="mis. patokan rumah, nomor pagar, titip satpam"
+                        className={selectClass}
                       />
                     </div>
                   </div>
