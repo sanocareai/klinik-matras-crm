@@ -22,13 +22,25 @@ Growth (sudah lama aktif):
 
 Operasional (ditambahkan 21 Agustus 2026 — lihat §19):
 - 2 Owner/Admin: Juri, Kemal
-- Kepala Produksi: Imam (PRODUCTION_LEAD)
+- Kepala Produksi: Imam (PRODUCTION_LEAD, QC_LEAD — lihat catatan Driver/Helper di bawah)
 - Admin Produksi: Ferdy (PRODUCTION_LEAD, tangan kanan Imam)
 - Natasha: SEMUA 9 peran (permintaan eksplisit owner — lihat peringatan §19)
-- 3 Driver: Apriansyah, Agung, Alwan
 
-Akun uji "Uji — …" (bengkel@/qc@/gudang@/dispatcher@/driver@/finance@) MASIH
-ADA dan belum dipakai apa pun (0 jejak aktivitas). Aman dihapus kapan saja.
+**Driver & Helper (D-037, 31 Agustus 2026) — 8 orang, SEMUA punya KEDUA
+role** (permintaan owner: "helper bisa jadi driver dan driver bisa jadi
+helper" — perjalanan pagi-malam butuh gantian menyetir): Apriansyah,
+Agung, Alwan, Ujang Sigit, Mingkeng, Imam, Arman, Rifky. Role terpisah di
+sistem (Role.DRIVER vs Role.HELPER, `GET /armada/drivers` vs `GET
+/armada/helpers` query berbeda) tapi POOL ORANGNYA IDENTIK — jangan
+bingung dengan "Rifki" (SALES, orang berbeda, bukan typo). Imam TETAP 1
+akun (Kepala Produksi + Helper/Driver sekaligus, bukan akun terpisah).
+Tugas helper: bantu di perjalanan (gantian nyetir), komunikasi/konfirmasi
+pengiriman ke customer, dokumentasi pengiriman.
+
+⚠️ 6 akun uji "Uji — …" (bengkel@/qc@/gudang@/dispatcher@/driver@/
+finance@) yang SEBELUMNYA disebut di sini SUDAH DIHAPUS 31 Agustus 2026
+(0 jejak aktivitas, sesuai catatan lama di baris ini) — kalau perlu
+akun uji baru untuk role manapun, buat ulang manual.
 
 - Email: `namadepan@klinikmatras.com`, semua huruf kecil
 - Password semua: kasursehat1 (sementara, perlu diubah per user)
