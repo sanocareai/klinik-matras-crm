@@ -535,10 +535,43 @@ orderRouter.get("/", async (req, res) => {
       _count: { _all: true }, _sum: { value: true },
     });
 
+    // KPI ringkasan (30 Agustus 2026) — BUG YANG DIPERBAIKI: sebelum ini
+    // kartu "Total order"/"Nilai order"/"Belum lunas" di Orders.jsx dihitung
+    // dari `items` yang SUDAH DIPOTONG `limit` (default 200) — begitu order
+    // aktif bulan itu lebih dari 200, kartu diam-diam melaporkan angka
+    // undercount TANPA tanda apa pun di kartunya sendiri (cuma ada catatan
+    // kecil "dibatasi 200" di footer, gampang terlewat), dan tidak pernah
+    // cocok dengan Laporan > Sales/Ringkasan yang aggregate-nya memang
+    // unbounded. Ditemukan lewat pertanyaan owner "kenapa beda". Dua agregat
+    // di bawah TIDAK terkena `limit` sama sekali (SELECT SUM/COUNT langsung,
+    // bukan ambil semua baris) — pola sama dengan `perStatus` di atas. Pakai
+    // `AND: [where, ...]` (bukan spread `{...where, status:...}`) supaya
+    // filter status yang SUDAH dipilih user (kalau ada) tidak diam-diam
+    // tertimpa — dua kondisi digabung, bukan saling mengganti.
+    const [aktifAgg, belumLunasAgg] = await Promise.all([
+      prisma.order.aggregate({
+        where: { AND: [where, { status: { not: "CANCELLED" } }] },
+        _count: { _all: true }, _sum: { value: true },
+      }),
+      prisma.order.aggregate({
+        where: { AND: [where, { status: { not: "CANCELLED" }, paymentStatus: { not: "LUNAS" } }] },
+        _sum: { value: true },
+      }),
+    ]);
+
     res.json({
       items,
       total: items.length,
       truncated: items.length >= limit,
+      // summary = angka TRUE untuk seluruh order yang cocok filter (tidak
+      // kepotong `limit`) — dipakai kartu KPI. `items`/`total`/`truncated`
+      // di atas TETAP untuk tabel/daftar (memang sengaja dibatasi demi
+      // kecepatan), dua hal beda tujuan, jangan disatukan.
+      summary: {
+        totalOrderAktif: aktifAgg._count._all,
+        nilaiOrderAktif: aktifAgg._sum.value || 0,
+        belumLunas:      belumLunasAgg._sum.value || 0,
+      },
       perStatus: perStatus.map((g) => ({
         status: g.status, count: g._count._all, value: g._sum.value || 0,
       })),

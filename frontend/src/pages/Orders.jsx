@@ -496,8 +496,19 @@ export default function Orders() {
   // & bisa dibuka di tab statusnya, cuma tidak ikut membesarkan angka
   // ringkasan yang mengaku "total".
   const itemsAktif = useMemo(() => items.filter((o) => o.status !== "CANCELLED"), [items]);
-  const totalNilai  = itemsAktif.reduce((s, o) => s + (o.value || 0), 0);
-  const belumLunas  = itemsAktif.filter((o) => o.paymentStatus !== "LUNAS")
+  // BUG YANG DIPERBAIKI (30 Agustus 2026, ditemukan lewat pertanyaan owner
+  // "kenapa beda dengan Laporan Sales/Ringkasan?"): `itemsAktif` berasal
+  // dari `items`, yang DIPOTONG `limit` backend (default 200) — begitu
+  // order aktif bulan itu lebih dari 200, "Total order"/"Nilai
+  // order"/"Belum lunas" DIAM-DIAM undercount (di production Agustus 2026:
+  // 195 order/Rp467jt di sini vs 213 order/Rp511,7jt yang BENAR di Laporan,
+  // selisih 18 order tertua bulan itu yang kepotong). `data.summary` dari
+  // backend adalah agregat SQL langsung (SUM/COUNT), TIDAK kena `limit`
+  // sama sekali — dipakai di sini, `itemsAktif` cuma fallback kalau API
+  // lama (belum ada field ini) atau belum sempat dimuat.
+  const totalOrderAktif = data?.summary?.totalOrderAktif ?? itemsAktif.length;
+  const totalNilai  = data?.summary?.nilaiOrderAktif ?? itemsAktif.reduce((s, o) => s + (o.value || 0), 0);
+  const belumLunas  = data?.summary?.belumLunas ?? itemsAktif.filter((o) => o.paymentStatus !== "LUNAS")
                            .reduce((s, o) => s + (o.value || 0), 0);
   // Total Pelanggan & Repeat Order (26 Agustus 2026, permintaan owner) —
   // dihitung dari `itemsAktif` (order aktif yang SUDAH difilter — rentang
@@ -527,7 +538,7 @@ export default function Orders() {
   }, [itemsAktif]);
   const totalPelanggan = orderPerPelanggan.size;
   const repeatPelanggan = [...orderPerPelanggan.values()].filter((n) => n >= 2).length;
-  const aov = itemsAktif.length > 0 ? Math.round(totalNilai / itemsAktif.length) : 0;
+  const aov = totalOrderAktif > 0 ? Math.round(totalNilai / totalOrderAktif) : 0;
   // Rata-rata Proses (rekomendasi, permintaan owner) — dari order DIBUAT
   // sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered
   // di rentang/filter yang sedang aktif. `statusSince` (dari GET /orders)
@@ -832,15 +843,15 @@ export default function Orders() {
         {!loading && items.length > 0 && (
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {[
-              { l: "Total order", v: itemsAktif.length.toLocaleString("id-ID"),
-                tip: "Order aktif yang cocok dengan filter — CANCELLED tidak dihitung, konsisten dengan Dashboard & Laporan." },
+              { l: "Total order", v: totalOrderAktif.toLocaleString("id-ID"),
+                tip: "Order aktif yang cocok dengan filter — CANCELLED tidak dihitung, konsisten dengan Dashboard & Laporan. Dihitung dari agregat penuh (tidak kepotong batas 200 baris tabel di bawah)." },
               { l: "Total pelanggan", v: totalPelanggan.toLocaleString("id-ID"),
                 tip: "Pelanggan UNIK (baru ATAU lama) yang bikin order di periode/filter ini. Beda dari kartu \"Conversion\" di Dashboard — itu cuma menghitung lead BARU yang masuk di periode yang sama, tidak termasuk pelanggan lama yang order lagi." },
               { l: "Repeat order", v: repeatPelanggan.toLocaleString("id-ID"), tone: repeatPelanggan > 0 ? "text-green" : undefined,
                 tip: "Dari Total Pelanggan di atas, berapa yang bikin order LEBIH dari sekali DI PERIODE/FILTER INI (bukan status repeat sepanjang riwayat pelanggan itu)." },
               { l: "Nilai order", v: formatRupiah(totalNilai),
                 tip: "Total nilai order aktif (CANCELLED tidak dihitung) — belum tentu sudah dibayar lunas." },
-              { l: "AOV", v: itemsAktif.length > 0 ? formatRupiah(aov) : "—",
+              { l: "AOV", v: totalOrderAktif > 0 ? formatRupiah(aov) : "—",
                 tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
               { l: "Belum lunas", v: formatRupiah(belumLunas),
                 tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar)." },
@@ -874,10 +885,16 @@ export default function Orders() {
         )}
 
         {data?.truncated && (
-          <p className="mb-3 text-[11px] text-ink3">
-            Menampilkan {items.length} order terbaru (dibatasi demi kecepatan). Pakai
-            pencarian atau filter untuk mempersempit.
-          </p>
+          <div className="mb-3 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[11.5px] leading-relaxed text-ink">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-orange" />
+            <p>
+              Tabel di bawah cuma menampilkan {items.length} order terbaru (dibatasi demi kecepatan) —
+              pakai pencarian/filter untuk mempersempit kalau perlu lihat semuanya.{" "}
+              <strong>Kartu Total order/Nilai order/AOV/Belum lunas di atas TETAP akurat</strong> (dihitung
+              dari agregat penuh, tidak ikut kepotong) — yang masih dari daftar terpotong ini cuma
+              Repeat Order, Rata-rata Proses, dan Komplain.
+            </p>
+          </div>
         )}
 
         {loading ? (
