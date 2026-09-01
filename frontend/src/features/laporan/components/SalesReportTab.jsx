@@ -69,7 +69,7 @@ const KOLOM = [
   // ke rupiah — wajar kalau ada leakage kecil antar-bulan. Order LUNAS lama
   // (sebelum fitur paidAt ada) belum punya paidAt, jadi tidak terhitung di
   // sini sampai statusnya disentuh ulang — bukan berarti benar-benar Rp0.
-  { k: "collectedValue", label: "Lunas", title: "Basis komisi: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini. Order dari bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus) — makanya beda populasi dari kolom Nilai (Reach, basisnya kapan order dibuat)." },
+  { k: "collectedValue", label: "Lunas", title: "Basis komisi: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini. Order dari bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus) — makanya beda populasi dari kolom Nilai (Reach, basisnya kapan order dibuat). ⚠️ Angka ini TERKUNCI ke periode yang dipilih (kalau lunasnya SETELAH tanggal terakhir periode, tidak ikut — geser ke periode berikutnya) — BEDA dari kartu \"Belum Lunas\" di halaman Order, yang LIVE ikut status sekarang. Dua-duanya benar, cuma menjawab pertanyaan beda (komisi terkunci vs status operasional saat ini)." },
   { k: "aov",        label: "AOV",        title: "AOV (Average Order Value) = total Nilai ÷ jumlah Order di periode ini — rata-rata besar 1 order." },
   { k: "percentToTarget", label: "% Target", title: "% Target = (nilai closing BULAN INI, bukan periode yang dipilih di atas) ÷ (target bulanan dari Pengaturan > Target Sales) × 100%." },
 ];
@@ -160,7 +160,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
           sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
-          tooltip="BASIS KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini — order bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus), jadi populasinya BEDA dari 'Nilai Penjualan Tim' (basisnya kapan order dibuat). Angka ini TERKUNCI per periode: dibuka belakangan pun hasilnya sama. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
+          tooltip="BASIS KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini — order bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus), jadi populasinya BEDA dari 'Nilai Penjualan Tim' (basisnya kapan order dibuat). Angka ini TERKUNCI per periode: dibuka belakangan pun hasilnya sama — order yang lunasnya SETELAH tanggal terakhir periode ini geser ke periode berikutnya, bukan ikut naik di sini. Beda dari kartu 'Belum Lunas' di halaman Order yang LIVE ikut status sekarang, bukan salah hitung kalau angkanya tidak sama. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
         />
         <KpiCard
           index={2} label="Konversi Tim"

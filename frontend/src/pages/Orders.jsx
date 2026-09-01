@@ -859,7 +859,7 @@ export default function Orders() {
               { l: "AOV", v: totalOrderAktif > 0 ? formatRupiah(aov) : "—",
                 tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
               { l: "Belum lunas", v: formatRupiah(belumLunas),
-                tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar)." },
+                tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar) — dihitung LIVE dari status SEKARANG, ikut naik/turun kapan pun status order berubah. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru dibayar SETELAH tanggal terakhir periode itu tidak ikut, geser ke periode berikutnya) — dua angka ini akan berbeda kalau ada order yang baru lunas SETELAH bulan laporannya tutup buku, dan itu memang disengaja, bukan salah hitung." },
               { l: "Rata-rata proses", v: avgProsesHari != null ? `${avgProsesHari.toFixed(1)} hari` : "—",
                 tip: "Rata-rata lama dari order DIBUAT sampai berstatus DELIVERED, dihitung dari order yang SUDAH delivered di periode/filter ini. Order yang masih berjalan tidak dihitung — waktu prosesnya belum final." },
               { l: "Komplain", v: complaintRate != null ? `${complaintRate}%` : "—", tone: complaintRate > 5 ? "text-red" : undefined,
