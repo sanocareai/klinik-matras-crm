@@ -106,20 +106,27 @@ async function syncOrderValue(orderId) {
 //
 // Return null (response error sudah dikirim) kalau diblokir/order tidak ada;
 // return { id, paymentStatus } kalau boleh lanjut.
+// ⚠️ DIPERKETAT LAGI (1 September 2026, permintaan eksplisit owner) — ini
+// MEMBALIKKAN keputusan 26 Agustus 2026 yang tadinya melonggarkan akses
+// LUNAS ke SALES juga. Owner sadar ini kebalikannya (dikonfirmasi lewat
+// pertanyaan langsung sebelum diubah): order yang sudah LUNAS sekarang
+// HANYA admin yang bisa mengedit — SALES yang perlu revisi WAJIB minta
+// admin yang mengeksekusi perubahannya (bukan alur pengajuan/approval
+// terpisah — itu opsi B yang TIDAK dipilih, lebih besar & belum diperlukan).
 async function guardOrderLocked(req, res, orderId, aksi) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, paymentStatus: true } });
   if (!order) { res.status(404).json({ error: "Order tidak ditemukan" }); return null; }
   if (order.paymentStatus === "LUNAS") {
     const roles = rolesOf(req.user);
-    if (!roles.includes("ADMIN") && !roles.includes("SALES")) {
+    if (!roles.includes("ADMIN")) {
       res.status(403).json({
-        error: `Order ini sudah LUNAS — cuma admin/sales yang bisa ${aksi}. ` +
-          `Kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya.`,
+        error: `Order ini sudah LUNAS dan terkunci — cuma admin yang bisa ${aksi}. ` +
+          `Minta admin untuk mengubahnya, atau kalau pelanggan minta revisi, tandai lewat "Ajukan Revisi" (komplain) di profilnya.`,
       });
       return null;
     }
-    // Tercatat untuk SIAPA PUN yang lolos (admin ATAU sales) — audit trail
-    // tetap utuh walau aksesnya sekarang lebih longgar dari sebelumnya.
+    // Tetap tercatat siapa admin-nya & kapan — jejak audit TIDAK berubah,
+    // cuma yang boleh sampai ke titik ini sekarang admin saja.
     await prisma.orderRevisionLog.create({
       data: { orderId, editedById: req.user?.id || null, note: aksi.charAt(0).toUpperCase() + aksi.slice(1) },
     }).catch((e) => console.warn("[order-lock] gagal catat revision log:", e.message));

@@ -347,13 +347,11 @@ export default function Orders() {
   // untuk gerbang admin-only lain (SalesGroupSettings) yang TIDAK ikut
   // longgar ke SALES — jangan disatukan dengan canEditLunas.
   const isAdmin = useMemo(() => isAdminUser(currentUser()), []);
-  // REVISI 26 Agustus 2026 (permintaan owner): SALES ikut diizinkan
-  // mengedit order LUNAS, bukan cuma admin — cermin persis perubahan
-  // guardOrderLocked() di backend.
-  const canEditLunas = useMemo(() => {
-    const roles = rolesOf(currentUser());
-    return isAdmin || roles.includes("SALES");
-  }, [isAdmin]);
+  // ⚠️ DIPERKETAT LAGI (1 September 2026) — membalikkan revisi 26 Agustus
+  // yang tadinya melonggarkan ke SALES. Sekarang cuma admin, cermin persis
+  // guardOrderLocked() di backend (yang benar-benar menegakkan kuncinya —
+  // ini cuma UI, sengaja tidak dipisah supaya SATU aturan, tidak drift).
+  const canEditLunas = isAdmin;
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1152,6 +1150,7 @@ export default function Orders() {
         onClose={() => setTimelineOrder(null)}
         onOpenChat={bukaChat}
         onPaymentRecorded={load}
+        canEditLunas={canEditLunas}
       />
     </PageContainer>
   );

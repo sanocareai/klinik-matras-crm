@@ -167,7 +167,7 @@ function DetailPesananSection({ order }) {
 // tercatat (services/paymentLedger.js) — `onRecorded` di sini cuma
 // memicu Orders.jsx refetch daftar order supaya badge status langsung
 // menampilkan nilai baru tanpa navigasi ulang.
-function PaymentTab({ order, onRecorded }) {
+function PaymentTab({ order, onRecorded, canEditLunas }) {
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState(false);
@@ -261,7 +261,16 @@ function PaymentTab({ order, onRecorded }) {
         );
       })}
 
-      {!form ? (
+      {/* Order LUNAS + bukan admin (1 September 2026) — kunci proaktif di UI
+          supaya sales tidak isi form lalu baru kaget 403 saat submit; alasan
+          & pesan yang sama dengan guardOrderLocked() di backend, yang tetap
+          jadi penegak sesungguhnya (ini cuma UX). */}
+      {order.paymentStatus === "LUNAS" && !canEditLunas ? (
+        <p className="flex items-center gap-1.5 rounded-xl bg-inset px-3.5 py-3 text-center text-[12px] text-ink3">
+          <Wallet size={14} className="shrink-0" />
+          Order ini sudah LUNAS dan terkunci — cuma admin yang bisa mencatat pembayaran baru.
+        </p>
+      ) : !form ? (
         <button
           type="button" onClick={() => setForm(true)}
           className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-accentbg text-[13px] font-semibold text-accent"
@@ -562,7 +571,7 @@ const TONE = {
   READY: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded }) {
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
@@ -703,7 +712,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
           ) : tab === "pembayaran" ? (
             <div className="mt-4">
-              <PaymentTab order={o} onRecorded={onPaymentRecorded} />
+              <PaymentTab order={o} onRecorded={onPaymentRecorded} canEditLunas={canEditLunas} />
             </div>
           ) : tab === "invoice" ? (
             <div className="mt-4">

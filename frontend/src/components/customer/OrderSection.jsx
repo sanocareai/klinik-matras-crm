@@ -16,7 +16,7 @@ import {
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
   resolveVariantKey,
 } from "../../utils/format.js";
-import { isAdminUser, rolesOf } from "../../lib/roles.js";
+import { isAdminUser } from "../../lib/roles.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
@@ -26,12 +26,13 @@ import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.
 // pilot: order yang sudah terkirim tapi BELUM lunas (COD belum ditagih,
 // dst) ternyata tetap butuh diedit sales — uang yang sudah pindah tangan
 // itu yang perlu dijaga.
-// Revisi 26 Agustus 2026 (permintaan owner): SALES ikut diizinkan
-// mengedit, tidak lagi admin-only — cermin persis guardOrderLocked().
+// ⚠️ DIPERKETAT LAGI (1 September 2026) — membalikkan revisi 26 Agustus
+// yang tadinya melonggarkan ke SALES. Sekarang cuma admin, cermin persis
+// guardOrderLocked() di backend.
 function canEditLunasOrder() {
   try {
     const user = JSON.parse(localStorage.getItem("user") || "null");
-    return isAdminUser(user) || rolesOf(user).includes("SALES");
+    return isAdminUser(user);
   } catch { return false; }
 }
 // Nama sales yang SEDANG login — dipakai baris "CS:" pesan WA (lihat
@@ -2055,6 +2056,7 @@ export default function OrderSection({ customer, onUpdate }) {
         onClose={() => setTimelineOrder(null)}
         onOpenChat={bukaChat}
         onPaymentRecorded={refresh}
+        canEditLunas={canEditLunasOrder()}
       />
     </div>
   );
