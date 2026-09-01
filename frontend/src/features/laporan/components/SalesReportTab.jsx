@@ -540,6 +540,13 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
               <span className="text-[12.5px] text-ink2">{lunasDetail.data.orders.length} order</span>
               <span className="font-semibold tabular-nums text-green">{formatRupiah(lunasDetail.data.total)}</span>
             </div>
+            {lunasDetail.data.orders.some((o) => o.paidAtPerkiraan) && (
+              <p className="mb-3 rounded-btn bg-orangebg px-3 py-2 text-[11px] leading-relaxed text-ink">
+                Baris bertanda <strong>"perkiraan"</strong> punya tanggal lunas ASLI yang tidak pernah tercatat
+                (order lama, sebelum sistem melacak tanggal lunas) — <strong>31 Agustus 2026</strong> di sana
+                cuma tanggal saat kita mencatatnya secara darurat sekali jalan, bukan tanggal lunas sesungguhnya.
+              </p>
+            )}
             <div className="max-h-[360px] overflow-y-auto">
               <table className="w-full text-[12.5px]">
                 <thead>
@@ -569,7 +576,14 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       </td>
                       <td className="py-2 pr-2 tabular-nums text-ink3">
                         {formatTanggalPendek(o.paidAt)}
-                        {o.lintasBulan && (
+                        {o.paidAtPerkiraan ? (
+                          <span
+                            className="ml-1.5 rounded-full bg-inset px-1.5 py-0.5 text-[10px] font-medium text-ink3"
+                            title="Tanggal lunas ASLI order ini tidak pernah tercatat (dari sebelum sistem melacak paidAt) — 31 Agustus 2026 di sini cuma tanggal pencatatan darurat sekali jalan, bukan tanggal lunas sesungguhnya."
+                          >
+                            perkiraan
+                          </span>
+                        ) : o.lintasBulan && (
                           <span
                             className="ml-1.5 rounded-full bg-orangebg px-1.5 py-0.5 text-[10px] font-medium text-orange"
                             title={`Dibuat ${formatTanggalPendek(o.createdAt)} — lintas bulan dari pembuatannya`}

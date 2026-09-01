@@ -1298,6 +1298,16 @@ analyticsRouter.get("/sales-report", async (req, res) => {
 // panjang di sana soal "geser ke bulan lunasnya") — kalau berbeda, jumlah
 // baris di sini tidak akan pernah cocok dengan angka ringkasan yang sudah
 // dipercaya, dan itu yang paling gampang bikin curiga salah hitung.
+// Timestamp PERSIS dari operasi "tutup buku" satu-kali 31 Agustus 2026
+// (lihat schema.prisma catatan Order.paidAt) — 130 order yang SAAT ITU
+// sudah LUNAS diisi `paidAt = waktu itu juga`, KARENA tanggal aslinya
+// sungguh tidak pernah tercatat di mana pun (ledger Payment kosong).
+// BUKAN tanggal lunas sesungguhnya order-order itu — cuma "kapan kita
+// pertama kali mencatatnya secara darurat". Dipakai UI untuk menandai
+// jujur mana yang perkiraan vs yang benar-benar tercatat sendiri oleh
+// sistem (pola sama dengan daysInStatusPerkiraan di endpoint lain).
+const PAID_AT_BACKFILL_31_AGT = new Date("2026-08-31T05:35:57.201Z");
+
 analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
   try {
     const { userId, from, to } = req.query;
@@ -1333,6 +1343,9 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
         // untuk UI menandai baris ini beda dari mayoritas (dibuat & lunas
         // bulan yang sama), bukan berarti ada yang salah.
         lintasBulan: new Date(o.createdAt) < mulai,
+        // paidAtPerkiraan = tanggal ini dari backfill darurat 31 Agustus,
+        // BUKAN tanggal lunas asli order ini (yang sungguh tidak diketahui).
+        paidAtPerkiraan: o.paidAt && new Date(o.paidAt).getTime() === PAID_AT_BACKFILL_31_AGT.getTime(),
         customerId: o.customer?.id || null,
         customerName: o.customer?.name || null,
         customerPhone: o.customer?.phone || null,
