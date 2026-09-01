@@ -616,10 +616,55 @@ export default function Orders() {
     }
   }
 
+  const [exporting, setExporting] = useState(false);
+
   async function handleExport() {
+    // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner: "gue set
+    // bulan Agustus full, lalu download laporannya" — export sempat diam-
+    // diam kepotong). SEBELUMNYA fungsi ini pakai `items` (state daftar di
+    // layar, ikut kepotong `limit` default backend) — order ke-201 ke atas
+    // TIDAK PERNAH masuk file .xlsx, tanpa peringatan apa pun DI DALAM file
+    // itu sendiri (beda dari kartu KPI yang sudah diperbaiki sebelumnya
+    // pakai agregat terpisah — export ini TERLEWAT waktu itu). Sekarang
+    // fetch ULANG dengan filter yang SAMA PERSIS + limit besar (backend
+    // sekarang boleh sampai 5000, lihat catatan di routes/orders.js),
+    // BUKAN mengandalkan `items` yang mungkin sudah kepotong di layar.
+    setExporting(true);
+    let semuaOrder;
+    try {
+      const res = await api.getOrders({
+        search: debounced || undefined,
+        status: fStatus || undefined,
+        category: fKategori || undefined,
+        paymentStatus: fBayar || undefined,
+        salesId: fSales || undefined,
+        promoId: fPromo || undefined,
+        pipelineStage: fPipeline || undefined,
+        limit: 5000,
+        ...toApiParams(range),
+      });
+      if (res.truncated) {
+        // JUJUR, bukan diam-diam: 5000 seharusnya jauh lebih dari cukup
+        // untuk sebulan data (~220 order/bulan per Agustus 2026) — kalau
+        // sampai kena juga, itu pantas dicurigai (rentang tanggal terlalu
+        // lebar/tanpa filter), sales/admin WAJIB tahu sebelum percaya
+        // filenya lengkap.
+        alert(
+          `⚠️ Data lebih dari 5000 order cocok dengan filter ini — file yang didownload TIDAK LENGKAP.\n` +
+          `Persempit rentang tanggal atau tambah filter dulu sebelum export.`
+        );
+      }
+      semuaOrder = res.items;
+    } catch (e) {
+      alert("Gagal memuat data untuk export: " + e.message);
+      setExporting(false);
+      return;
+    }
+    setExporting(false);
+
     const { exportToExcelMultiSheet } = await import("../utils/export.js");
 
-    const sheetOrder = items.map((o) => {
+    const sheetOrder = semuaOrder.map((o) => {
       // Merk/ukuran/keluhan kasur disimpan JSON di o.notes, bukan kolom
       // sendiri — sama parser yang dipakai OrderSection.jsx (drawer
       // profil pelanggan), supaya export TIDAK PERNAH beda baca dari UI.
@@ -673,6 +718,16 @@ export default function Orders() {
         "Perkiraan?": o.daysInStatusPerkiraan ? "Ya" : "Tidak",
         Mandek: isMandek(o) ? "Ya" : "",
         Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
+        // "Sudah Lunas?" + "Tanggal Lunas" (1 September 2026, permintaan
+        // owner: export tidak ada tanda jelas mana yang lunas) — kolom
+        // Ya/Tidak eksplisit, TERPISAH dari "Pembayaran" di atas supaya
+        // gampang di-filter Excel tanpa perlu tahu isi teksnya "Lunas" vs
+        // "LUNAS" vs dll. Tanggal Lunas = Order.paidAt (kapan BENAR-BENAR
+        // ditandai lunas, bukan tanggal order dibuat) — kosong kalau belum
+        // pernah lunas ATAU order LUNAS lama dari sebelum fitur ini ada
+        // (paidAt belum tercatat, lihat catatan di services/paymentLedger.js).
+        "Sudah Lunas?": o.paymentStatus === "LUNAS" ? "Ya" : "Tidak",
+        "Tanggal Lunas": o.paidAt ? o.paidAt.slice(0, 10) : "",
 
         // ── Nilai & harga ────────────────────────────────────────────────
         // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
@@ -713,7 +768,7 @@ export default function Orders() {
     // direpresentasikan jujur di sheet 1-baris-1-order. Ini sheet yang
     // dipakai utk pertanyaan "disiplin nego" (per sales, per layanan) —
     // alasan utama katalog harga ini dibangun.
-    const sheetLayanan = items.flatMap((o) =>
+    const sheetLayanan = semuaOrder.flatMap((o) =>
       (o.items || []).map((it) => {
         const dariKatalog = it.priceItemId != null;
         const dibawahStandard = it.standardPrice != null && it.harga < it.standardPrice;
@@ -838,8 +893,8 @@ export default function Orders() {
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
               <RefreshCw size={14} /> Refresh
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleExport} disabled={items.length === 0}>
-              <Download size={14} /> Export
+            <Button variant="ghost" size="sm" onClick={handleExport} disabled={items.length === 0 || exporting}>
+              <Download size={14} /> {exporting ? "Menyiapkan…" : "Export"}
             </Button>
           </>
         }

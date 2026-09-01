@@ -399,7 +399,17 @@ orderRouter.post("/:id/payments", async (req, res) => {
 orderRouter.get("/", async (req, res) => {
   try {
     const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished } = req.query;
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
+    // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
+    // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
+    // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
+    // memakai `items` yang SAMA (state daftar, bukan agregat terpisah)
+    // untuk membangun file .xlsx — order ke-501 ke atas diam-diam TIDAK
+    // PERNAH masuk file yang didownload, tanpa peringatan apa pun DI
+    // DALAM file itu sendiri. Dinaikkan ke 5000 (Agustus 2026 production
+    // baru ~220 order/bulan, jauh di bawah ini) — frontend export
+    // memanggil dengan `limit=5000` eksplisit, list biasa TETAP default
+    // 200 (tidak ada perubahan perilaku/performa utk pemakaian sehari-hari).
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 5000);
 
     // Filter per sales & per tahap pipeline SAMA-SAMA lewat Customer (bukan
     // Order langsung) — digabung jadi SATU objek `customer` supaya kalau
