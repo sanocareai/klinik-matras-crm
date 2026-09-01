@@ -515,6 +515,11 @@ export default function Orders() {
   const totalNilai  = data?.summary?.nilaiOrderAktif ?? itemsAktif.reduce((s, o) => s + (o.value || 0), 0);
   const belumLunas  = data?.summary?.belumLunas ?? itemsAktif.filter((o) => o.paymentStatus !== "LUNAS")
                            .reduce((s, o) => s + (o.value || 0), 0);
+  // Lunas (1 September 2026, permintaan owner) — TETAP live/status-sekarang,
+  // pola SAMA dengan Belum Lunas di atas (bukan basis terkunci ala Laporan
+  // Sales — satu halaman sengaja pakai SATU logika, biar tidak menambah
+  // kebingungan yang baru saja diluruskan lewat tooltip di kartu Belum Lunas).
+  const lunas = Math.max(totalNilai - belumLunas, 0);
   // Total Pelanggan & Repeat Order (26 Agustus 2026, permintaan owner) —
   // dihitung dari `itemsAktif` (order aktif yang SUDAH difilter — rentang
   // tanggal/kategori/pembayaran/dst di atas), BUKAN dari seluruh histori
@@ -858,6 +863,8 @@ export default function Orders() {
                 tip: "Total nilai order aktif (CANCELLED tidak dihitung) — belum tentu sudah dibayar lunas." },
               { l: "AOV", v: totalOrderAktif > 0 ? formatRupiah(aov) : "—",
                 tip: "Average Order Value = Nilai order ÷ Total order aktif — rata-rata besar 1 order di periode/filter ini." },
+              { l: "Lunas", v: formatRupiah(lunas), tone: "text-green",
+                tip: "Nilai order aktif yang status pembayarannya SUDAH Lunas — dihitung LIVE dari status SEKARANG (Nilai order − Belum lunas), ikut naik kapan pun ada order yang baru dibayar. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru lunas SETELAH tanggal terakhir periode itu geser ke periode berikutnya, tidak ikut naik di sana) — dua angka ini bisa beda dan itu memang disengaja, bukan salah hitung." },
               { l: "Belum lunas", v: formatRupiah(belumLunas),
                 tip: "Nilai order aktif yang status pembayarannya BELUM Lunas (DP atau Belum Bayar) — dihitung LIVE dari status SEKARANG, ikut naik/turun kapan pun status order berubah. BEDA dari kolom \"Lunas\" di Laporan > Sales, yang terkunci per periode (order yang baru dibayar SETELAH tanggal terakhir periode itu tidak ikut, geser ke periode berikutnya) — dua angka ini akan berbeda kalau ada order yang baru lunas SETELAH bulan laporannya tutup buku, dan itu memang disengaja, bukan salah hitung." },
               { l: "Rata-rata proses", v: avgProsesHari != null ? `${avgProsesHari.toFixed(1)} hari` : "—",
