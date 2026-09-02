@@ -865,7 +865,11 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
       `Halo ${namaSapaan}, berikut invoice untuk pesanan Anda 🙏\n` +
       `Terima kasih sudah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.\n\n` +
       `Invoice No: ${view.invoice.invoiceNumber}\n` +
-      `Order: ${view.order.orderNumber || "-"}`;
+      // Gabung invoice lintas-order (2 Sep 2026) — pakai view.orders[]
+      // (SEMUA order dalam bundle), bukan view.order (cuma primary).
+      // Bug nyata: caption WA cuma nyebut 1 order padahal invoice-nya
+      // gabungan 3 order — customer/sales bisa salah kira cuma 1 resi.
+      `Order: ${(view.orders || [view.order]).map((o) => o.orderNumber).filter(Boolean).join(", ") || "-"}`;
 
     let wahaMsg;
     try {
