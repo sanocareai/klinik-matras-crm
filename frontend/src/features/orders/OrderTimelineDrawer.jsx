@@ -810,18 +810,18 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               { key: "status", label: "Status", icon: Clock },
               { key: "dokumentasi", label: "Dokumen", icon: Camera },
               { key: "pembayaran", label: "Bayar", icon: Wallet },
-              { key: "invoice", label: "Invoice", icon: FileText },
+              { key: "invoice", label: "Invoice & Guarantee", icon: FileText },
             ].map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold transition-colors",
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-center text-[11px] font-semibold leading-tight transition-colors",
                   tab === t.key ? "bg-base text-ink shadow-card" : "text-ink3 hover:text-ink2"
                 )}
               >
-                <t.icon size={13} /> {t.label}
+                <t.icon size={13} className="shrink-0" /> <span>{t.label}</span>
               </button>
             ))}
           </div>
