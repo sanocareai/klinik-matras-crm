@@ -397,6 +397,15 @@ customerRouter.get("/:id", async (req, res) => {
             },
             orderBy: { createdAt: "desc" },
           },
+          // D-041 (2 Sep 2026) — badge "Invoice Terkirim" di riwayat order
+          // customer (lihat OrderSection.jsx), supaya sales yang buka order
+          // BARU utk repeat customer langsung ngeh order LAMA mana yang
+          // dokumennya sudah diterima customer — tidak sengaja digabung/
+          // dianggap "belum diapa-apain" (lihat services/invoice.js
+          // attachOrderToInvoice, yang justru MENOLAK gabung kalau sudah
+          // sentAt — badge ini cuma bikin batasan itu KELIHATAN dari list,
+          // bukan aturan baru).
+          invoice: { select: { invoiceNumber: true, lifecycleStatus: true, sentAt: true, combinedIntoId: true } },
         },
       },
       assignedSales: true,

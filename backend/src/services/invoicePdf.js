@@ -246,9 +246,28 @@ export function renderInvoicePdf(view) {
     const MARGIN = 42;
     const KONTEN_LEBAR = pageWidth - MARGIN * 2;
 
+    const BATAS_BAWAH_HALAMAN = 40;
+
     // ── Latar halaman ────────────────────────────────────────────────────
     doc.rect(0, 0, pageWidth, pageHeight).fill(HALAMAN_BG);
     gambarBlob(doc, pageWidth, pageHeight);
+
+    // Pindah halaman (2 Sep 2026, dukungan multi-halaman utk order B2B/hotel
+    // dgn banyak item, mis. Discovery Ancol) — SEMUA posisi di file ini
+    // dihitung eksplisit (x/y absolut), pdfkit TIDAK auto-paginate teks
+    // yang ditulis dengan cara begitu, jadi tanpa fungsi ini konten yang
+    // kepanjangan akan diam-diam kepotong/tenggelam di luar batas halaman
+    // A4 (bug yang jadi alasan fitur ini dibuat). Halaman lanjutan sengaja
+    // TIDAK mengulang header logo besar (hemat ruang) — cuma nomor invoice
+    // kecil sebagai penanda "lanjutan".
+    function mulaiHalamanBaru() {
+      doc.addPage();
+      doc.rect(0, 0, pageWidth, pageHeight).fill(HALAMAN_BG);
+      gambarBlob(doc, pageWidth, pageHeight);
+      doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
+        .text(`${invoice.invoiceNumber} — lanjutan`, MARGIN, 30, { width: KONTEN_LEBAR });
+      return 30 + 22;
+    }
 
     // ── Header: logo kiri, "INVOICE" kanan ───────────────────────────────
     let y = 44;
@@ -372,21 +391,28 @@ export function renderInvoicePdf(view) {
     const kolDeskW = kolQtyX - kolDeskX - 12;
 
     const TINGGI_HEADER_TABEL = 30;
-    doc.roundedRect(MARGIN, y, KONTEN_LEBAR, TINGGI_HEADER_TABEL, 10).fill(BIRU);
-    doc.fontSize(9).font(FONT_JUDUL).fillColor("#ffffff");
-    // Rata tengah VERTIKAL yang presisi (bukan angka tebakan) — posisi
-    // teks = tengah bar dikurangi setengah tinggi barisnya sendiri, biar
-    // label header selalu center persis di bar birunya berapa pun tinggi
-    // barnya nanti berubah. Rata HORIZONTAL tiap kolom header SUDAH
-    // dicocokkan dengan rata isian datanya (NO./QTY center, LAYANAN kiri,
-    // HARGA SATUAN/TOTAL kanan — sama persis dengan baris item di bawahnya).
-    const yHeaderTeks = y + (TINGGI_HEADER_TABEL - doc.currentLineHeight()) / 2;
-    doc.text("NO.", kolNoX, yHeaderTeks, { width: kolNoW, align: "center" });
-    doc.text("LAYANAN", kolDeskX, yHeaderTeks, { width: kolDeskW });
-    doc.text("QTY", kolQtyX, yHeaderTeks, { width: kolQtyW, align: "center" });
-    doc.text("HARGA SATUAN", kolHargaX, yHeaderTeks, { width: kolHargaW, align: "right" });
-    doc.text("TOTAL", kolTotalX, yHeaderTeks, { width: kolTotalW, align: "right" });
-    y += TINGGI_HEADER_TABEL + 8;
+    // Dibungkus fungsi (2 Sep 2026) — dipakai lagi di tiap halaman lanjutan
+    // saat tabel item meluber (order B2B/hotel banyak item), supaya kolom
+    // NO./LAYANAN/QTY/dst tetap ada di tiap halaman, bukan cuma di halaman
+    // pertama.
+    function gambarHeaderTabel(yMulai) {
+      doc.roundedRect(MARGIN, yMulai, KONTEN_LEBAR, TINGGI_HEADER_TABEL, 10).fill(BIRU);
+      doc.fontSize(9).font(FONT_JUDUL).fillColor("#ffffff");
+      // Rata tengah VERTIKAL yang presisi (bukan angka tebakan) — posisi
+      // teks = tengah bar dikurangi setengah tinggi barisnya sendiri, biar
+      // label header selalu center persis di bar birunya berapa pun tinggi
+      // barnya nanti berubah. Rata HORIZONTAL tiap kolom header SUDAH
+      // dicocokkan dengan rata isian datanya (NO./QTY center, LAYANAN kiri,
+      // HARGA SATUAN/TOTAL kanan — sama persis dengan baris item di bawahnya).
+      const yHeaderTeks = yMulai + (TINGGI_HEADER_TABEL - doc.currentLineHeight()) / 2;
+      doc.text("NO.", kolNoX, yHeaderTeks, { width: kolNoW, align: "center" });
+      doc.text("LAYANAN", kolDeskX, yHeaderTeks, { width: kolDeskW });
+      doc.text("QTY", kolQtyX, yHeaderTeks, { width: kolQtyW, align: "center" });
+      doc.text("HARGA SATUAN", kolHargaX, yHeaderTeks, { width: kolHargaW, align: "right" });
+      doc.text("TOTAL", kolTotalX, yHeaderTeks, { width: kolTotalW, align: "right" });
+      return yMulai + TINGGI_HEADER_TABEL + 8;
+    }
+    y = gambarHeaderTabel(y);
 
     // items: view.items (top-level, sudah di-flatten & di-tag orderNumber
     // oleh services/invoice.js) — utk order tunggal isinya sama persis
@@ -410,6 +436,16 @@ export function renderInvoicePdf(view) {
       // Label kecil asal order (cuma kalau invoice ini gabungan >1 order)
       // butuh sedikit ruang tambahan di bawah nama item.
       const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + (banyakOrder ? 26 : 16));
+
+      // Pindah halaman kalau baris ini tidak muat lagi — dicek SEBELUM
+      // digambar (bukan sesudah), supaya tidak ada baris yang badannya
+      // terbelah antar 2 halaman. Header tabel biru digambar ulang di
+      // halaman baru supaya kolomnya tetap kelihatan di tiap halaman.
+      if (y + tinggiBarisIni > pageHeight - BATAS_BAWAH_HALAMAN) {
+        y = mulaiHalamanBaru();
+        y = gambarHeaderTabel(y);
+      }
+
       badgeIkon(doc, kolNoX + kolNoW - 10 + 22, y + tinggiBarisIni / 2, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, y + 6, { width: kolNoW, align: "center" });
       doc.fontSize(10).font(FONT_TEKS_MED).fillColor(GELAP).text(it.nama, kolDeskX, y + 6, { width: kolDeskW });
@@ -440,6 +476,23 @@ export function renderInvoicePdf(view) {
     doc.fontSize(9).font(FONT_TEKS);
     const tinggiSyarat = doc.heightOfString(PERUSAHAAN.syaratKetentuan, { width: bawahKiriW - padKartu * 2 });
     const syaratTinggi = 44 + tinggiSyarat;
+
+    // Perkiraan tinggi blok KANAN (rincian total) — cuma dipakai utk
+    // keputusan pindah halaman di bawah ini, BUKAN tata letak sungguhan
+    // (itu tetap dihitung persis oleh barisTotal() dkk). Sengaja dilebihkan
+    // (bukan pas-pasan) supaya tidak ada kasus konten kepotong di ujung
+    // halaman kalau perkiraannya sedikit meleset.
+    let estimasiKananTinggi = 18 * 2 + 22 + 12; // subtotal + diskon + TOTAL(bold) + garis putus
+    if (nominal.ongkir > 0) estimasiKananTinggi += 18;
+    if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) estimasiKananTinggi += 18 * 2;
+    if (nominal.dpTarget > 0 && nominal.sumber === "ledger") estimasiKananTinggi += 18;
+    if (payments && payments.length > 1) estimasiKananTinggi += 19 + payments.length * 13;
+    if (invoice.dueDate) estimasiKananTinggi += 36;
+    estimasiKananTinggi += 16 + 9 + 6 + 16 + 20; // blok "Terima kasih!" + margin aman
+
+    if (y + Math.max(syaratTinggi, estimasiKananTinggi) > pageHeight - BATAS_BAWAH_HALAMAN) {
+      y = mulaiHalamanBaru();
+    }
 
     doc.roundedRect(kartuKiriX, y, bawahKiriW, syaratTinggi, 14).fill(KARTU_BG);
     badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: BIRU_GELAP, ikon: IKON.dokumen });
@@ -554,7 +607,12 @@ export function renderInvoicePdf(view) {
     // Kalau kontennya panjang sampai lewat titik tambat, jatuh balik ke
     // "setelah konten" biar tidak tabrakan ke atas.
     const bantuanTinggi = 90;
-    const BATAS_BAWAH_HALAMAN = 40;
+    // Konten di atasnya sudah lewat titik tambat normal (invoice panjang,
+    // mis. lanjutan tabel banyak item) — daripada kartu ini kepotong di
+    // ujung halaman, pindah ke halaman baru dan tambatkan di sana.
+    if (y + bantuanTinggi > pageHeight - BATAS_BAWAH_HALAMAN) {
+      y = mulaiHalamanBaru();
+    }
     y = Math.max(y, pageHeight - BATAS_BAWAH_HALAMAN - bantuanTinggi);
     doc.roundedRect(kartuKiriX, y, KONTEN_LEBAR, bantuanTinggi, 14).fill(KARTU_BG);
     badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.headset });

@@ -556,6 +556,10 @@ orderRouter.get("/", async (req, res) => {
           },
           orderBy: { createdAt: "desc" },
         },
+        // D-041 (2 Sep 2026) — sama alasannya dengan include di
+        // routes/customers.js GET /:id: badge "Invoice Terkirim" di
+        // OrderSection.jsx supaya konsisten tampil di kedua sumber data.
+        invoice: { select: { invoiceNumber: true, lifecycleStatus: true, sentAt: true, combinedIntoId: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: limit,

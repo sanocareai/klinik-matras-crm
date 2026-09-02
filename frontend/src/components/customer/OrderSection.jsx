@@ -613,6 +613,34 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         </div>
       )}
 
+      {/* Badge "Invoice Terkirim" (2 Sep 2026, D-041) — supaya kalau customer
+          ini repeat order, sales langsung ngeh order LAMA mana yang
+          dokumennya sudah diterima customer, sebelum tergoda menggabungkan/
+          menyamakannya dengan order BARU (lihat prinsip di
+          services/invoice.js attachOrderToInvoice: invoice yang sudah
+          sentAt memang dikunci dari penggabungan — badge ini cuma bikin
+          kuncinya KELIHATAN dari daftar order, bukan aturan baru). Cuma
+          tampil kalau order INI (atau bundle invoice-nya) benar-benar sudah
+          terkirim — draft yang belum dikirim tidak perlu badge apa pun. */}
+      {order.invoice?.sentAt && (
+        <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "var(--accent-bg, #eef4fc)", borderRadius: 8 }}>
+          <Send size={12} color="var(--accent, #2563eb)" />
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--accent, #2563eb)" }}>
+            Invoice Terkirim
+            {/* Nomor cuma ditampilkan kalau order ini BUKAN anggota gabungan
+                (combinedIntoId null) — kalau anggota, nomor invoice yang
+                dipakai customer sebenarnya nomor PRIMARY bundle-nya, bukan
+                nomor invoice order ini sendiri, jadi lebih jujur tidak
+                ditampilkan sama sekali di sini daripada menampilkan angka
+                yang berpotensi menyesatkan. */}
+            {!order.invoice.combinedIntoId && order.invoice.invoiceNumber ? ` · ${order.invoice.invoiceNumber}` : ""}
+          </span>
+          <span style={{ fontSize: 10.5, color: "var(--text-secondary)", marginLeft: "auto" }}>
+            {formatTanggal(order.invoice.sentAt)}
+          </span>
+        </div>
+      )}
+
       {/* Status Pengerjaan + Status Pembayaran.
           Status Pengerjaan DIHITUNG OTOMATIS dari status unit di Bengkel
           (Integrasi Fase 1, D-006) — ikut unit yang PALING TERTINGGAL, jadi
