@@ -1378,7 +1378,21 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           <button
             className="btn btn-primary" style={{ flex: 1 }}
             disabled={!category}
-            onClick={() => setStep(1)}
+            onClick={() => {
+              // SEWA (2 Sep 2026) — Klinik Matras cuma menyewakan kasur
+              // sehat, TIDAK PERNAH sofa/divan (beda dari BARU/LAYANAN yang
+              // sudah mencakup ketiganya). Step 1 (pilih Lini Produk) jadi
+              // percuma ditanyakan utk kategori ini — auto-set KASUR &
+              // lompat langsung ke step 2 (jenis: spring/busa/multibed/dst),
+              // pola sama seperti DIVAN yang auto-skip step 2 di bawah.
+              if (category === "SEWA") {
+                setProductLine("KASUR");
+                setProductType("");
+                setStep(2);
+              } else {
+                setStep(1);
+              }
+            }}
           >
             Lanjut →
           </button>
@@ -1449,9 +1463,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
           {lineOpt?.icon} {lineOpt?.label} — Pilih Jenis
         </p>
-        <button type="button" onClick={() => setStep(1)}
+        {/* SEWA (2 Sep 2026): step 1 (Lini Produk) SENGAJA dilompati —
+            Klinik Matras cuma menyewakan kasur, tidak ada pilihan lini
+            produk lain buat "diganti". Balik langsung ke step 0. */}
+        <button type="button" onClick={() => setStep(category === "SEWA" ? 0 : 1)}
           style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
-          ← Ganti lini produk
+          {category === "SEWA" ? "← Ganti kategori" : "← Ganti lini produk"}
         </button>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
           {jenisList.map((val) => (
