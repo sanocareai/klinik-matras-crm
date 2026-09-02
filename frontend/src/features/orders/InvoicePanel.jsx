@@ -29,6 +29,8 @@ const STATUS_META = {
   OVERDUE:        { label: "Jatuh Tempo", variant: "red",     Icon: CalendarClock },
 };
 
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+
 function StatusInvoiceBadge({ status }) {
   const meta = STATUS_META[status] || STATUS_META.DRAFT;
   const { Icon } = meta;
@@ -64,7 +66,7 @@ function BarisUang({ label, value, tone, strong, hint }) {
 // backend routes/orders.js) supaya customer tidak menerima dua dokumen dengan
 // gaya & angka yang berbeda dari bisnis yang sama.
 function buatTeksInvoice(v) {
-  const { invoice, order, customer, nominal } = v;
+  const { invoice, order, customer, nominal, payments } = v;
   const rp = (n) => formatRupiah(n || 0);
   const baris = [
     `🧾 *INVOICE* — ${invoice.invoiceNumber}`,
@@ -84,9 +86,17 @@ function buatTeksInvoice(v) {
     baris.push(`Diskon ${nominal.diskonPersen}%${nominal.promoCode ? ` (${nominal.promoCode})` : ""}: -${rp(nominal.nilaiDiskon)}`);
   }
   if (nominal.ongkir) baris.push(`Ongkir: ${rp(nominal.ongkir)}`);
+  baris.push(``, `*TOTAL: ${rp(nominal.totalTagihan)}*`);
+  // Rincian per transaksi (2 Sep 2026) — kalau lebih dari 1 pembayaran
+  // (mis. DP lalu pelunasan), teks WA ikut sebutkan satu-satu, konsisten
+  // dengan PDF-nya, bukan cuma angka gabungan.
+  if (payments?.length > 1) {
+    baris.push(`Riwayat pembayaran:`);
+    payments.forEach((p) => {
+      baris.push(`• ${formatTanggalPendek(p.createdAt)} — ${rp(p.amount)} (${PAYMENT_METHOD_LABEL[p.method] || p.method})`);
+    });
+  }
   baris.push(
-    ``,
-    `*TOTAL: ${rp(nominal.totalTagihan)}*`,
     `Sudah dibayar: ${rp(nominal.dibayar)}`,
     `*Sisa: ${rp(nominal.sisa)}*`,
   );
@@ -210,7 +220,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
     );
   }
 
-  const { invoice, order, customer, nominal } = view;
+  const { invoice, order, customer, nominal, payments } = view;
   const dibatalkan = invoice.status === "CANCELLED";
 
   return (
@@ -285,6 +295,38 @@ export default function InvoicePanel({ orderId, onChanged }) {
           tone={nominal.sisa > 0 ? "red" : "green"}
           strong
         />
+
+        {/* DP disepakati (2 Sep 2026) — MURNI pembanding terhadap
+            kesepakatan awal, cuma tampil kalau ledger-nya ada (dpKurang
+            null/0 kalau dibayarTidakRinci, lihat hitungNominal). */}
+        {nominal.dpTarget > 0 && nominal.sumber === "ledger" && (
+          <p className={cn(
+            "mt-2 rounded-lg px-2.5 py-2 text-[11px] leading-relaxed",
+            nominal.dpKurang > 0 ? "bg-orangebg text-ink" : "bg-greenbg text-ink"
+          )}>
+            DP disepakati <strong>{formatRupiah(nominal.dpTarget)}</strong> —{" "}
+            {nominal.dpKurang > 0
+              ? <>kurang <strong className="text-orange">{formatRupiah(nominal.dpKurang)}</strong> dari kesepakatan.</>
+              : <strong className="text-green">terpenuhi.</strong>}
+          </p>
+        )}
+
+        {/* Rincian per transaksi (2 Sep 2026) — untuk order yang dibayar
+            bertahap (DP dulu, pelunasan belakangan), lebih dari 1 baris
+            di sini supaya customer/sales lihat riwayat lengkap. */}
+        {payments?.length > 1 && (
+          <div className="mt-2 flex flex-col gap-1 rounded-lg bg-inset px-2.5 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Riwayat Pembayaran</p>
+            {payments.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+                <span className="text-ink3">
+                  {formatTanggalPendek(p.createdAt)} · {PAYMENT_METHOD_LABEL[p.method] || p.method}
+                </span>
+                <span className="shrink-0 font-medium text-ink tabular-nums">{formatRupiah(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Jujur soal ASAL angkanya — jangan sampai terbaca seolah ada
             rincian pembayaran tercatat padahal cuma dropdown status. */}

@@ -1966,6 +1966,7 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
 
 const paymentInclude = {
   recordedBy: { select: { id: true, name: true } },
+  cancelledBy: { select: { id: true, name: true } },
   verifications: { include: { verifiedBy: { select: { id: true, name: true } } } },
   order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
   job: { select: { id: true, type: true } },

@@ -123,6 +123,11 @@ function formatTanggal(d) {
   if (!d) return "-";
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
+function formatTanggalPendek(d) {
+  if (!d) return "-";
+  return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
 
 // Heuristik ikon per item — lihat catatan lisensi/keputusan di kepala file.
 function pilihIkonItem(nama = "") {
@@ -222,7 +227,7 @@ function gambarBlob(doc, pageWidth, pageHeight) {
  */
 export function renderInvoicePdf(view) {
   return new Promise((resolve, reject) => {
-    const { invoice, order, customer, nominal } = view;
+    const { invoice, order, customer, nominal, payments } = view;
     const doc = new PDFDocument({ size: "A4", margin: 0 });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
@@ -450,6 +455,38 @@ export function renderInvoicePdf(view) {
       barisTotal("Sisa tagihan", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa), {
         bold: true, warna: nominal.sisa > 0 ? "#dc2626" : "#16a34a",
       });
+    }
+
+    // DP disepakati (2 Sep 2026) — MURNI pembanding terhadap kesepakatan
+    // awal, cuma tampil kalau ledger-nya ada (ledger kosong = dibayar sendiri
+    // tidak pasti, dpKurang sengaja 0 di services/invoice.js untuk kasus itu).
+    if (nominal.dpTarget > 0 && nominal.sumber === "ledger") {
+      yr += 4;
+      doc.fontSize(8.5).font(FONT_TEKS).fillColor(nominal.dpKurang > 0 ? "#c2410c" : "#16a34a")
+        .text(
+          nominal.dpKurang > 0
+            ? `DP disepakati ${formatRupiah(nominal.dpTarget)} — kurang ${formatRupiah(nominal.dpKurang)}`
+            : `DP disepakati ${formatRupiah(nominal.dpTarget)} — terpenuhi`,
+          bawahKananX, yr, { width: bawahKananW, align: "right" }
+        );
+      yr += 14;
+    }
+
+    // Riwayat Pembayaran per transaksi (2 Sep 2026) — cuma kalau lebih dari
+    // 1 pembayaran (DP lalu pelunasan, dst); 1 pembayaran saja sudah cukup
+    // terwakili baris "Sudah dibayar" di atas, tidak perlu diulang.
+    if (payments && payments.length > 1) {
+      yr += 6;
+      doc.fontSize(8).font(FONT_JUDUL).fillColor(ABU)
+        .text("RIWAYAT PEMBAYARAN", bawahKananX, yr, { width: bawahKananW, align: "right" });
+      yr += 13;
+      for (const p of payments) {
+        doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU)
+          .text(`${formatTanggalPendek(p.createdAt)} · ${PAYMENT_METHOD_LABEL[p.method] || p.method}`, bawahKananX, yr, { width: bawahKananW * 0.6 });
+        doc.font(FONT_TEKS_MED).fillColor(GELAP)
+          .text(formatRupiah(p.amount), bawahKananX, yr, { width: bawahKananW, align: "right" });
+        yr += 13;
+      }
     }
 
     // Badge jatuh tempo — CUMA muncul kalau invoice.dueDate memang diisi

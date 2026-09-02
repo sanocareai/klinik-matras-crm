@@ -639,6 +639,10 @@ export const api = {
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
   getOrderPayments: (orderId) => api.getPayments({ orderId }),
+  // Koreksi salah input (2 Sep 2026) — admin-only di backend, lihat
+  // routes/orders.js. Entri TIDAK dihapus, cuma ditandai batal.
+  cancelOrderPayment: (orderId, paymentId, data) =>
+    request(`/orders/${orderId}/payments/${paymentId}/cancel`, { method: "POST", body: JSON.stringify(data || {}) }),
   deleteOrder: (orderId) =>
     request(`/orders/${orderId}`, { method: "DELETE" }),
   // Alternatif hapus permanen — untuk order yang sudah punya unit/job/

@@ -148,11 +148,11 @@ orderRouter.patch("/:id", async (req, res) => {
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,
           ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType } = req.body;
+          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -257,6 +257,11 @@ orderRouter.patch("/:id", async (req, res) => {
             deliveryConfirmedDate: parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti"),
           }),
           ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
+          // dpTarget (2 Sep 2026) — DP yang DISEPAKATI dengan customer, murni
+          // pembanding di UI/invoice ("DP kurang Rp X"). "" atau null = lepas
+          // kesepakatan DP lagi (bukan "sudah dibayar 0" — beda konsep dari
+          // Payment ledger yang tetap satu-satunya sumber uang yang MASUK).
+          ...(dpTarget            !== undefined && { dpTarget: dpTarget === "" || dpTarget === null ? null : Number(dpTarget) }),
         },
         include: {
           items:         { orderBy: { sortOrder: "asc" } },
@@ -390,6 +395,48 @@ orderRouter.post("/:id/payments", async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ error: "Server error: " + err.message });
+  }
+});
+
+// POST /api/orders/:id/payments/:paymentId/cancel { reason? }
+// Koreksi salah input (2 Sep 2026, D-023 lanjutan) — ledger TETAP append-
+// only (Payment TIDAK PERNAH di-DELETE, lihat komentar di schema.prisma),
+// yang berubah cuma ditandai batal supaya keluar dari SUM(payments) dan
+// status/paidAt ikut dihitung ulang. Admin-only, pola SAMA dengan
+// guardOrderLocked() (rolesOf().includes("ADMIN")) — BUKAN
+// requirePermission(P.PAYMENT_WRITE), itu punya FINANCE di sistem Sano Hub
+// granular yang sengaja tidak dipakai orderRouter (lihat komentar di atas
+// guardOrderLocked).
+orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
+  try {
+    if (!rolesOf(req.user).includes("ADMIN")) {
+      return res.status(403).json({ error: "Cuma admin yang bisa membatalkan entri pembayaran." });
+    }
+    const { reason } = req.body;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({ where: { id: req.params.paymentId } });
+      if (!payment || payment.orderId !== req.params.id) {
+        throw Object.assign(new Error("Entri pembayaran tidak ditemukan"), { statusCode: 404 });
+      }
+      if (payment.cancelledAt) {
+        throw Object.assign(new Error("Entri ini sudah dibatalkan sebelumnya"), { statusCode: 409 });
+      }
+      await tx.payment.update({
+        where: { id: req.params.paymentId },
+        data: {
+          cancelledAt: new Date(),
+          cancelledById: req.user.id,
+          cancelReason: reason || null,
+        },
+      });
+      const status = await recomputeOrderPaymentStatus(tx, req.params.id);
+      return { status };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

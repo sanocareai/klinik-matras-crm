@@ -310,6 +310,7 @@ model User {
   qcFitTests                QcFitTest[]              @relation("QcFitTestTester")
   productionTargets         ProductionTarget[]       @relation("ProductionTargetCreator")
   paymentsRecorded          Payment[]                @relation("PaymentRecorder")
+  paymentsCancelled         Payment[]                @relation("PaymentCanceller")
   paymentsVerified          PaymentVerification[]    @relation("PaymentVerifier")
   stockMovements            StockMovement[]          @relation("StockMovementActor")
   routesAsDriver            Route[]                  @relation("RouteDriver")
@@ -873,6 +874,13 @@ model Order {
   // "pertama kali sepanjang masa") — itu yang benar-benar mencerminkan
   // "kapan uangnya benar-benar dianggap masuk", termasuk setelah koreksi.
   paidAt             DateTime?     @map("paid_at")
+  // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
+  // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
+  // model). null = tidak ada kesepakatan DP spesifik untuk order ini.
+  // Dipakai MURNI sebagai pembanding di UI/invoice ("DP kurang Rp X") —
+  // tidak memengaruhi paymentStatus/paidAt/sisa tagihan sama sekali,
+  // yang tetap 100% dari ledger vs Order.value seperti sebelumnya.
+  dpTarget           Int?          @map("dp_target")
   category           OrderCategory @default(LAYANAN)
   // productLine (29 Agustus 2026) — default KASUR supaya migrasi backfill
   // otomatis SEMUA order lama sbg Kasur (fakta historis, 100% order sebelum
@@ -1966,6 +1974,17 @@ model Payment {
   recordedBy   User   @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at")
+
+  // Pembatalan (2 Sep 2026, D-023 lanjutan) — ledger TETAP append-only,
+  // baris salah input TIDAK PERNAH dihapus, cuma ditandai batal supaya
+  // tidak ikut SUM(payments) lagi (lihat recomputeOrderPaymentStatus()).
+  // SetNull (BUKAN Restrict seperti recordedById) — ini metadata SIAPA
+  // MEMBATALKAN, bukan inti "siapa menerima uang"; admin resign tidak
+  // boleh memblokir hapus akunnya gara-gara pernah membatalkan 1 entri.
+  cancelledAt    DateTime? @map("cancelled_at")
+  cancelledById  String?   @map("cancelled_by")
+  cancelledBy    User?     @relation("PaymentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelReason   String?   @map("cancel_reason")
 
   verifications PaymentVerification[]
 

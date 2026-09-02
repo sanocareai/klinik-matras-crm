@@ -132,6 +132,15 @@ export function hitungNominal(order, payments = []) {
 
   const sisa = Math.max(totalTagihan - dibayar, 0);
 
+  // dpTarget (2 Sep 2026) — DP yang DISEPAKATI dengan customer, murni
+  // pembanding di UI/invoice ("DP kurang Rp X"), TIDAK memengaruhi sisa/
+  // totalTagihan di atas (itu tetap terhadap harga PENUH, bukan target DP).
+  // Cuma relevan kalau sumber-nya "ledger" — kalau ledger kosong, `dibayar`
+  // sendiri sudah tidak pasti (dibayarTidakRinci untuk kasus DP), jadi
+  // membandingkannya ke target akan mengarang kepastian yang tidak ada.
+  const dpTarget = order.dpTarget || null;
+  const dpKurang = dpTarget && adaLedger ? Math.max(dpTarget - dibayar, 0) : 0;
+
   return {
     totalLayanan,
     hargaSebelumDiskon,
@@ -149,6 +158,8 @@ export function hitungNominal(order, payments = []) {
     sumber,
     // true = statusnya DP tapi nominalnya tidak pernah tercatat di mana pun.
     dibayarTidakRinci,
+    dpTarget,
+    dpKurang,
   };
 }
 
@@ -186,7 +197,11 @@ export async function buildInvoiceView(orderId, { userId = null, autoCreate = tr
     include: {
       items: { orderBy: { sortOrder: "asc" } },
       promo: { select: { code: true, name: true, discountPercent: true } },
-      payments: { orderBy: { createdAt: "asc" } },
+      // cancelledAt: null — entri yang dibatalkan (koreksi salah input,
+      // lihat orders.js POST /:id/payments/:paymentId/cancel) TIDAK ikut
+      // dihitung ATAU ditampilkan di invoice; tetap ada di DB (audit),
+      // cuma bukan urusan dokumen yang dilihat customer.
+      payments: { where: { cancelledAt: null }, orderBy: { createdAt: "asc" } },
       customer: {
         select: {
           id: true, name: true, phone: true, city: true,
@@ -229,6 +244,7 @@ export async function buildInvoiceView(orderId, { userId = null, autoCreate = tr
       category: order.category,
       status: order.status,
       paymentStatus: order.paymentStatus,
+      dpTarget: order.dpTarget,
       merkKasur: order.merkKasur,
       ukuranKasur: order.ukuranKasur,
       deliveryAddress: order.deliveryAddress,

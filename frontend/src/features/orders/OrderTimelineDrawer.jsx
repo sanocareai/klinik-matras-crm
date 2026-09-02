@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
-  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText,
+  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText, Ban,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
@@ -177,6 +177,10 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState("");
+  const [editDpTarget, setEditDpTarget] = useState(false);
+  const [dpTargetDraft, setDpTargetDraft] = useState("");
+  const [savingDpTarget, setSavingDpTarget] = useState(false);
+  const [dpTargetErr, setDpTargetErr] = useState("");
 
   function load() {
     setError("");
@@ -218,8 +222,43 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
     }
   }
 
-  const paid = (payments || []).reduce((n, p) => n + p.amount, 0);
+  async function handleSaveDpTarget() {
+    const val = dpTargetDraft.trim();
+    const parsed = val === "" ? null : parseInt(val, 10);
+    if (val !== "" && (!parsed || parsed <= 0)) { setDpTargetErr("DP disepakati wajib angka lebih dari 0 (atau kosongkan)"); return; }
+    setDpTargetErr("");
+    setSavingDpTarget(true);
+    try {
+      await api.updateOrder(order.id, { dpTarget: parsed });
+      setEditDpTarget(false);
+      onRecorded?.();
+    } catch (e2) {
+      setDpTargetErr(e2.message);
+    } finally {
+      setSavingDpTarget(false);
+    }
+  }
+
+  const [cancellingId, setCancellingId] = useState(null);
+  async function handleCancel(paymentId) {
+    if (!window.confirm("Batalkan entri pembayaran ini? Riwayatnya tetap tersimpan (ditandai batal), tidak dihapus.")) return;
+    setCancellingId(paymentId);
+    try {
+      await api.cancelOrderPayment(order.id, paymentId, {});
+      load();
+      onRecorded?.();
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  // Entri yang dibatalkan TETAP tampil (jejak audit), tapi TIDAK ikut
+  // dihitung — konsisten dengan recomputeOrderPaymentStatus() di backend.
+  const paid = (payments || []).filter((p) => !p.cancelledAt).reduce((n, p) => n + p.amount, 0);
   const outstanding = Math.max((order.value || 0) - paid, 0);
+  const dpKurang = order.dpTarget ? Math.max(order.dpTarget - paid, 0) : 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -236,6 +275,63 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
         </div>
       </div>
 
+      {/* DP disepakati (2 Sep 2026) — MURNI pembanding terhadap kesepakatan
+          awal, terpisah dari Sisa Tagihan di atas (itu tetap terhadap harga
+          PENUH order, bukan target DP). Editable di sini (bukan form
+          terpisah) karena inilah tempat sales sudah mengurus pembayaran. */}
+      <div className="rounded-xl bg-surface p-2.5 shadow-card">
+        {!editDpTarget ? (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">DP Disepakati</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[12px] font-semibold text-ink2">
+                  {order.dpTarget > 0 ? formatRupiah(order.dpTarget) : "Belum diatur"}
+                </p>
+                {canEditLunas && (
+                  <button
+                    type="button"
+                    onClick={() => { setDpTargetDraft(order.dpTarget ? String(order.dpTarget) : ""); setEditDpTarget(true); }}
+                    className="rounded-lg p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+                    title="Atur DP yang disepakati"
+                  >
+                    <PenTool size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {order.dpTarget > 0 && (
+              dpKurang > 0 ? (
+                <p className="mt-1 text-[11.5px] font-semibold text-orange">
+                  Kurang {formatRupiah(dpKurang)} dari kesepakatan DP
+                </p>
+              ) : (
+                <p className="mt-1 text-[11.5px] font-semibold text-green">DP terpenuhi</p>
+              )
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <input
+              type="number" inputMode="numeric" placeholder="Nominal DP disepakati (Rp) — kosongkan untuk hapus"
+              value={dpTargetDraft} onChange={(e) => setDpTargetDraft(e.target.value)} autoFocus
+              className="h-9 rounded-lg border border-line px-3 text-[12.5px] outline-none focus:border-accent"
+            />
+            {dpTargetErr && <p className="text-[11px] text-red">{dpTargetErr}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setEditDpTarget(false); setDpTargetErr(""); }}
+                className="h-8 flex-1 rounded-lg text-[11.5px] font-semibold text-ink2">Batal</button>
+              <button
+                type="button" disabled={savingDpTarget} onClick={handleSaveDpTarget}
+                className="h-8 flex-1 rounded-lg bg-accent text-[11.5px] font-semibold text-white disabled:opacity-40"
+              >
+                {savingDpTarget ? <Loader2 size={12} className="mx-auto animate-spin" /> : "Simpan"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && <p className="text-[12px] text-red">{error}</p>}
       {!payments && !error && (
         <div className="flex flex-col gap-2">{[0, 1].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
@@ -247,16 +343,39 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
       )}
       {payments?.map((p) => {
         const verified = p.verifications?.length > 0;
+        const batal = !!p.cancelledAt;
         return (
-          <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-surface p-2.5 shadow-card">
+          <div key={p.id} className={cn("flex items-center justify-between gap-2 rounded-xl bg-surface p-2.5 shadow-card", batal && "opacity-50")}>
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-ink">{formatRupiah(p.amount)}</p>
+              <p className={cn("text-[13px] font-semibold text-ink", batal && "line-through")}>{formatRupiah(p.amount)}</p>
               <p className="text-[11px] text-ink3">
                 {PAYMENT_METHOD_LABEL[p.method] || p.method} · {p.recordedBy?.name || "—"} · {formatTanggal(p.createdAt)}
                 {p.job?.type && (p.job.type === "PICKUP" ? " · saat ambil" : " · saat kirim")}
               </p>
+              {batal && (
+                <p className="mt-0.5 text-[11px] font-medium text-red">
+                  Dibatalkan{p.cancelledBy?.name ? ` oleh ${p.cancelledBy.name}` : ""}
+                </p>
+              )}
             </div>
-            {verified && <CheckCircle2 size={14} className="shrink-0 text-green" />}
+            {batal ? (
+              <Ban size={14} className="shrink-0 text-red" />
+            ) : (
+              <div className="flex shrink-0 items-center gap-2">
+                {verified && <CheckCircle2 size={14} className="text-green" />}
+                {canEditLunas && (
+                  <button
+                    type="button"
+                    disabled={cancellingId === p.id}
+                    onClick={() => handleCancel(p.id)}
+                    title="Batalkan entri ini (koreksi salah input)"
+                    className="rounded-lg p-1 text-ink3 transition-colors hover:bg-redbg hover:text-red disabled:opacity-40"
+                  >
+                    {cancellingId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

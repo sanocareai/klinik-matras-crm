@@ -18,7 +18,10 @@
 export async function recomputeOrderPaymentStatus(tx, orderId) {
   const [order, sum] = await Promise.all([
     tx.order.findUnique({ where: { id: orderId }, select: { value: true, paymentStatus: true } }),
-    tx.payment.aggregate({ where: { orderId }, _sum: { amount: true } }),
+    // cancelledAt: null — entri yang dibatalkan (2 Sep 2026, koreksi salah
+    // input) TIDAK ikut dihitung, tapi TETAP ada di tabel (ledger tidak
+    // pernah menghapus baris, lihat komentar Payment.cancelledAt di schema).
+    tx.payment.aggregate({ where: { orderId, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   if (!order) return null;
 
