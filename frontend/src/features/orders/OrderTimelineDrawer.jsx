@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
-  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText, Ban,
+  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText, Ban, ShieldCheck,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
@@ -810,7 +810,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               { key: "status", label: "Status", icon: Clock },
               { key: "dokumentasi", label: "Dokumen", icon: Camera },
               { key: "pembayaran", label: "Bayar", icon: Wallet },
-              { key: "invoice", label: "Invoice & Guarantee", icon: FileText },
+              { key: "invoice", label: "Invoice", icon: FileText },
+              { key: "garansi", label: "Guarantee", icon: ShieldCheck },
             ].map((t) => (
               <button
                 key={t.key}
@@ -840,6 +841,9 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
                   ringkasan order di atas — pakai callback yang SAMA dengan
                   tab Pembayaran supaya papan order di belakang ikut segar. */}
               <InvoicePanel orderId={o.id} onChanged={onPaymentRecorded} />
+            </div>
+          ) : tab === "garansi" ? (
+            <div className="mt-4">
               <WarrantyPanel orderId={o.id} order={o} onChanged={onPaymentRecorded} />
             </div>
           ) : (

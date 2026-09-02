@@ -62,7 +62,7 @@ export default function WarrantyPanel({ orderId, order, onChanged }) {
   }
 
   return (
-    <div className="mt-4 flex flex-col gap-3 rounded-xl bg-surface p-3.5 shadow-card">
+    <div className="flex flex-col gap-3 rounded-xl bg-surface p-3.5 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
           <ShieldCheck size={13} /> Kartu Garansi E-Warranty
