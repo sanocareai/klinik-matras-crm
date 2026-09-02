@@ -177,11 +177,24 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
 
 // Badge lingkaran berisi 1 ikon FontAwesome — dipakai untuk avatar kartu
 // "Diterbitkan Untuk"/"Metode Pembayaran", ikon per baris item, dst.
+// Offset vertikal buat menengahkan glyph FontAwesome secara presisi (bukan
+// tebak-tebakan angka seperti sebelumnya — itu yang bikin ikon kelihatan
+// "ga rata tengah" di kartu, ditemukan lewat komplain visual owner).
+// pdfkit menaruh TOP garis teks di `y` yang diberikan, dijangkarkan dari
+// ascent font (bukan dari tinggi tinta glyph-nya) — jadi buat menengahkan
+// tinta glyph di titik cy, hitung mundur pakai metrik font FontAwesome
+// Solid sungguhan: unitsPerEm=512, ascent=459, dan titik tengah kotak
+// glyph (bbox minY/maxY) SELALU ~192 unit untuk semua ikon yang dipakai di
+// sini (dicek satu-satu lewat fontkit) — makanya SATU konstanta ini cukup
+// untuk semua ikon, tidak perlu kalibrasi manual per ikon.
+const FA_ASCENT = 459, FA_MID_Y = 192, FA_UNITS_PER_EM = 512;
 function badgeIkon(doc, cx, cy, r, { bg, ikon, warnaIkon = "#ffffff", ukuranIkon }) {
   doc.circle(cx, cy, r).fill(bg);
   const ukuran = ukuranIkon || r * 1.15;
+  const skala = ukuran / FA_UNITS_PER_EM;
+  const yTeks = cy - (FA_ASCENT - FA_MID_Y) * skala;
   doc.fontSize(ukuran).font(FONT_IKON).fillColor(warnaIkon)
-    .text(ikon, cx - r, cy - ukuran * 0.36, { width: r * 2, align: "center" });
+    .text(ikon, cx - r, yTeks, { width: r * 2, align: "center" });
 }
 
 // Pil kecil berisi teks (mis. nomor invoice) — lebar mengikuti isi.
@@ -338,11 +351,18 @@ export function renderInvoicePdf(view) {
     const TINGGI_HEADER_TABEL = 30;
     doc.roundedRect(MARGIN, y, KONTEN_LEBAR, TINGGI_HEADER_TABEL, 10).fill(BIRU);
     doc.fontSize(9).font(FONT_JUDUL).fillColor("#ffffff");
-    doc.text("NO.", kolNoX, y + 10, { width: kolNoW, align: "center" });
-    doc.text("DESKRIPSI LAYANAN", kolDeskX, y + 10, { width: kolDeskW });
-    doc.text("QTY", kolQtyX, y + 10, { width: kolQtyW, align: "center" });
-    doc.text("HARGA SATUAN", kolHargaX, y + 10, { width: kolHargaW, align: "right" });
-    doc.text("TOTAL", kolTotalX, y + 10, { width: kolTotalW, align: "right" });
+    // Rata tengah VERTIKAL yang presisi (bukan angka tebakan) — posisi
+    // teks = tengah bar dikurangi setengah tinggi barisnya sendiri, biar
+    // label header selalu center persis di bar birunya berapa pun tinggi
+    // barnya nanti berubah. Rata HORIZONTAL tiap kolom header SUDAH
+    // dicocokkan dengan rata isian datanya (NO./QTY center, LAYANAN kiri,
+    // HARGA SATUAN/TOTAL kanan — sama persis dengan baris item di bawahnya).
+    const yHeaderTeks = y + (TINGGI_HEADER_TABEL - doc.currentLineHeight()) / 2;
+    doc.text("NO.", kolNoX, yHeaderTeks, { width: kolNoW, align: "center" });
+    doc.text("LAYANAN", kolDeskX, yHeaderTeks, { width: kolDeskW });
+    doc.text("QTY", kolQtyX, yHeaderTeks, { width: kolQtyW, align: "center" });
+    doc.text("HARGA SATUAN", kolHargaX, yHeaderTeks, { width: kolHargaW, align: "right" });
+    doc.text("TOTAL", kolTotalX, yHeaderTeks, { width: kolTotalW, align: "right" });
     y += TINGGI_HEADER_TABEL + 8;
 
     const items = order.items || [];
@@ -442,30 +462,34 @@ export function renderInvoicePdf(view) {
     // ── Terima kasih — teks polos rata kanan di bawah rincian total
     // (revisi 2 Sep 2026: dulu kartu terpisah di kiri + tanda tangan
     // tulisan tangan terpisah lagi di kanan — sekarang digabung jadi SATU
-    // ucapan saja, di bawah kanan). Kalimat penutup tetap pakai tagline
-    // resmi brand "Ahlinya Kasur Sehat" (CLAUDE.md §16.7).
+    // ucapan saja, di bawah kanan). Kalimat body TIDAK mengulang "Terima
+    // kasih" (sudah ada di judulnya) dan tagline "Ahlinya Kasur Sehat"
+    // (CLAUDE.md §16.7) berdiri sendiri sebagai baris penutup — revisi
+    // wording eksplisit dari owner 2 Sep 2026.
+    const teksTerimaKasih = "telah mempercayakan tidur sehat Anda kepada Klinik Matras.";
     yr += 14;
     doc.fontSize(11).font(FONT_JUDUL).fillColor(GELAP)
       .text("Terima kasih!", bawahKananX, yr, { width: bawahKananW, align: "right" });
     yr += 16;
     doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
-      .text(
-        "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
-        bawahKananX, yr, { width: bawahKananW, align: "right" }
-      );
-    yr += doc.heightOfString(
-      "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
-      { width: bawahKananW }
-    ) + 6;
+      .text(teksTerimaKasih, bawahKananX, yr, { width: bawahKananW, align: "right" });
+    yr += doc.heightOfString(teksTerimaKasih, { width: bawahKananW }) + 6;
     doc.fontSize(9.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
-      .text("Tidur nyaman, hidup lebih sehat.", bawahKananX, yr, { width: bawahKananW, align: "right" });
+      .text("Ahlinya Kasur Sehat", bawahKananX, yr, { width: bawahKananW, align: "right" });
     yr += 16;
 
     y += Math.max(syaratTinggi, yr - y) + 22;
 
-    // ── Kartu "Butuh bantuan" — SEKARANG PALING BAWAH/PALING AKHIR
-    // (revisi 2 Sep 2026, dulu di tengah sebelum tanda tangan). ──────────
+    // ── Kartu "Butuh bantuan" — PALING BAWAH/PALING AKHIR (revisi 2 Sep
+    // 2026), dan SENGAJA ditambatkan ke tepi bawah halaman (bukan cuma
+    // "setelah konten di atasnya" seperti section lain) — kalau ditaruh
+    // langsung setelah konten, sisa ruang kosong di bawahnya kelihatan
+    // percuma untuk invoice pendek (owner menandai ini di screenshot).
+    // Kalau kontennya panjang sampai lewat titik tambat, jatuh balik ke
+    // "setelah konten" biar tidak tabrakan ke atas.
     const bantuanTinggi = 90;
+    const BATAS_BAWAH_HALAMAN = 40;
+    y = Math.max(y, pageHeight - BATAS_BAWAH_HALAMAN - bantuanTinggi);
     doc.roundedRect(kartuKiriX, y, KONTEN_LEBAR, bantuanTinggi, 14).fill(KARTU_BG);
     badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.headset });
     doc.fontSize(10.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
