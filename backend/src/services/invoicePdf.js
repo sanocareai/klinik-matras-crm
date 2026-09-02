@@ -40,15 +40,34 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-blue.png");
 const LOGO_ASPEK = 1200 / 426;
 
+// Font (revisi 2 Sep 2026 — pasangan pertama Questrial/Bebas Neue/Caveat
+// dinilai owner kurang cocok/kurang profesional). Ganti ke pasangan yang
+// lebih umum dipakai produk fintech/SaaS modern: Inter untuk isi (badan
+// teks paling teruji keterbacaannya di ukuran kecil), Plus Jakarta Sans
+// Bold/ExtraBold untuk judul & label (geometris, tegas, tapi tetap huruf
+// kecil-besar normal — bukan huruf kapital paksa seperti Bebas Neue).
+// Skrip tanda tangan "thank you" ganti dari Caveat (kesan playful/coretan)
+// ke Sacramento (kursif elegan, kesan tanda tangan formal/classy).
+//
+// Semua file WOFF diambil dari paket npm @fontsource/inter dan
+// @fontsource/plus-jakarta-sans (Google Fonts, lisensi OFL) — pdfkit lewat
+// fontkit BISA baca WOFF langsung, jadi tidak perlu instance TTF statis
+// terpisah (Inter/Plus Jakarta Sans di repo google/fonts sekarang cuma
+// didistribusikan sebagai variable font, yang tidak bisa dipilih beratnya
+// tanpa fonttools/Python — tidak tersedia di server ini).
 const FONT_DIR = path.join(__dirname, "../../assets/fonts");
-const FONT_TEKS = "Questrial";
-const FONT_JUDUL = "BebasNeue";
+const FONT_TEKS = "Inter";
+const FONT_TEKS_MED = "InterMedium";
+const FONT_JUDUL = "PlusJakartaSansBold";
+const FONT_JUDUL_XBOLD = "PlusJakartaSansExtraBold";
 const FONT_IKON = "FAIcons";
-const FONT_SKRIP = "Caveat";
-const FONT_TEKS_PATH = path.join(FONT_DIR, "Questrial-Regular.ttf");
-const FONT_JUDUL_PATH = path.join(FONT_DIR, "BebasNeue-Regular.ttf");
+const FONT_SKRIP = "Sacramento";
+const FONT_TEKS_PATH = path.join(FONT_DIR, "Inter-Regular.woff");
+const FONT_TEKS_MED_PATH = path.join(FONT_DIR, "Inter-Medium.woff");
+const FONT_JUDUL_PATH = path.join(FONT_DIR, "PlusJakartaSans-Bold.woff");
+const FONT_JUDUL_XBOLD_PATH = path.join(FONT_DIR, "PlusJakartaSans-ExtraBold.woff");
 const FONT_IKON_PATH = path.join(FONT_DIR, "fa-solid-900.ttf");
-const FONT_SKRIP_PATH = path.join(FONT_DIR, "Caveat-Bold.ttf");
+const FONT_SKRIP_PATH = path.join(FONT_DIR, "Sacramento-Regular.ttf");
 
 // Kode ikon FontAwesome Free Solid (lisensi OFL untuk font, CC BY 4.0 untuk
 // ikon — dipakai apa adanya, atribusi dicatat di sini) yang dipakai di
@@ -197,7 +216,9 @@ export function renderInvoicePdf(view) {
     doc.on("error", reject);
 
     doc.registerFont(FONT_TEKS, FONT_TEKS_PATH);
+    doc.registerFont(FONT_TEKS_MED, FONT_TEKS_MED_PATH);
     doc.registerFont(FONT_JUDUL, FONT_JUDUL_PATH);
+    doc.registerFont(FONT_JUDUL_XBOLD, FONT_JUDUL_XBOLD_PATH);
     doc.registerFont(FONT_IKON, FONT_IKON_PATH);
     doc.registerFont(FONT_SKRIP, FONT_SKRIP_PATH);
     doc.font(FONT_TEKS);
@@ -220,7 +241,7 @@ export function renderInvoicePdf(view) {
     } catch {
       // Aset logo hilang/rusak tidak boleh menggagalkan generate PDF.
     }
-    doc.fontSize(34).font(FONT_JUDUL).fillColor(BIRU)
+    doc.fontSize(32).font(FONT_JUDUL_XBOLD).fillColor(BIRU)
       .text("INVOICE", MARGIN, y + 4, { width: KONTEN_LEBAR, align: "right" });
 
     // Titik dekoratif kecil di bawah logo (meniru pola titik referensi).
@@ -331,9 +352,9 @@ export function renderInvoicePdf(view) {
       const baseline = y + TINGGI_BARIS_ITEM / 2;
       badgeIkon(doc, kolNoX + kolNoW - 10 + 22, baseline, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, baseline - 5, { width: kolNoW, align: "center" });
-      doc.fontSize(10).font(FONT_TEKS).fillColor(GELAP).text(it.nama, kolDeskX, baseline - 5, { width: kolDeskW });
-      doc.fontSize(9.5).fillColor(ABU).text("1", kolQtyX, baseline - 5, { width: kolQtyW, align: "center" });
-      doc.fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, baseline - 5, { width: kolHargaW, align: "right" });
+      doc.fontSize(10).font(FONT_TEKS_MED).fillColor(GELAP).text(it.nama, kolDeskX, baseline - 5, { width: kolDeskW });
+      doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU).text("1", kolQtyX, baseline - 5, { width: kolQtyW, align: "center" });
+      doc.font(FONT_TEKS_MED).fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, baseline - 5, { width: kolHargaW, align: "right" });
       doc.text(formatRupiah(it.harga), kolTotalX, baseline - 5, { width: kolTotalW, align: "right" });
       y += TINGGI_BARIS_ITEM;
       if (i < items.length - 1) {
