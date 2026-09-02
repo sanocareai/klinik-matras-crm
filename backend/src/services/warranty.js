@@ -52,12 +52,16 @@ export async function buildWarrantyView(orderId, { userId = null, warrantyYears 
       orderNumber: order.orderNumber,
       deliveryAddress: order.deliveryAddress,
       deliveryCity: order.deliveryCity,
-      // "Keluhan Customer" di kartu = complaintDetail (D-006/7D di
-      // CLAUDE.md — keluhan yang MENDASARI kenapa order/servis ini
-      // dibuat, mis. "bagian kiri amblas"), fallback ke notes umum kalau
-      // complaintDetail kosong. BUKAN field baru — field ini sudah ada di
-      // Order, cuma belum pernah dipakai di dokumen manapun sebelum ini.
-      keluhanCustomer: order.complaintDetail || order.notes || "-",
+      // "Keluhan Customer" di kartu = complaintDetail SAJA (D-006/7D di
+      // CLAUDE.md — keluhan yang MENDASARI kenapa order/servis ini dibuat,
+      // mis. "bagian kiri amblas"). BUG diperbaiki 3 Sep 2026: SEBELUMNYA
+      // fallback ke Order.notes kalau complaintDetail kosong — ternyata
+      // notes kadang berisi JSON metadata internal (mis. katalog/ukuran
+      // yang disimpan sales lewat form lain), BUKAN teks bebas utk
+      // customer. Menampilkannya apa adanya = bocor data internal ke
+      // dokumen customer-facing. Sekarang kosong = "-" jujur, TIDAK
+      // menebak dari field lain.
+      keluhanCustomer: order.complaintDetail || "-",
     },
     customer: {
       id: order.customer.id,

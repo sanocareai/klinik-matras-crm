@@ -62,17 +62,17 @@ const FONT_TEKS = "Inter";
 const FONT_TEKS_MED = "InterMedium";
 const FONT_JUDUL = "PlusJakartaSansBold";
 const FONT_JUDUL_XBOLD = "PlusJakartaSansExtraBold";
-const FONT_IKON = "FAIcons";
+export const FONT_IKON = "FAIcons";
 const FONT_TEKS_PATH = path.join(FONT_DIR, "Inter-Regular.woff");
 const FONT_TEKS_MED_PATH = path.join(FONT_DIR, "Inter-Medium.woff");
 const FONT_JUDUL_PATH = path.join(FONT_DIR, "PlusJakartaSans-Bold.woff");
 const FONT_JUDUL_XBOLD_PATH = path.join(FONT_DIR, "PlusJakartaSans-ExtraBold.woff");
-const FONT_IKON_PATH = path.join(FONT_DIR, "fa-solid-900.ttf");
+export const FONT_IKON_PATH = path.join(FONT_DIR, "fa-solid-900.ttf");
 
 // Kode ikon FontAwesome Free Solid (lisensi OFL untuk font, CC BY 4.0 untuk
 // ikon — dipakai apa adanya, atribusi dicatat di sini) yang dipakai di
 // invoice ini. Render sebagai teks biasa dengan FONT_IKON, BUKAN gambar.
-const IKON = {
+export const IKON = {
   user: "",
   wallet: "",
   layerGroup: "",
@@ -193,7 +193,7 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
 // sini (dicek satu-satu lewat fontkit) — makanya SATU konstanta ini cukup
 // untuk semua ikon, tidak perlu kalibrasi manual per ikon.
 const FA_ASCENT = 459, FA_MID_Y = 192, FA_UNITS_PER_EM = 512;
-function badgeIkon(doc, cx, cy, r, { bg, ikon, warnaIkon = "#ffffff", ukuranIkon }) {
+export function badgeIkon(doc, cx, cy, r, { bg, ikon, warnaIkon = "#ffffff", ukuranIkon }) {
   doc.circle(cx, cy, r).fill(bg);
   const ukuran = ukuranIkon || r * 1.15;
   const skala = ukuran / FA_UNITS_PER_EM;
@@ -203,7 +203,7 @@ function badgeIkon(doc, cx, cy, r, { bg, ikon, warnaIkon = "#ffffff", ukuranIkon
 }
 
 // Pil kecil berisi teks (mis. nomor invoice) — lebar mengikuti isi.
-function pil(doc, x, y, teks, { bg, warna, fontSize = 10, font = FONT_TEKS, padX = 10, padY = 4 }) {
+export function pil(doc, x, y, teks, { bg, warna, fontSize = 10, font = FONT_TEKS, padX = 10, padY = 4 }) {
   doc.fontSize(fontSize).font(font);
   const w = doc.widthOfString(teks) + padX * 2;
   const h = fontSize + padY * 2;

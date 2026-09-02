@@ -1,15 +1,38 @@
-// ─── PDF KARTU GARANSI E-WARRANTY (2 Sep 2026) ──────────────────────────────
+// ─── PDF KARTU GARANSI E-WARRANTY (2 Sep 2026, revisi 3 Sep 2026) ───────────
 //
 // SATU HALAMAN SENGAJA (bukan 2 "slide" seperti referensi owner) — dokumen
 // ini dikirim sebagai lampiran WhatsApp, dan preview thumbnail WA cuma
 // menampilkan HALAMAN PERTAMA; kalau cover & kartu data dipisah jadi 2
 // halaman, customer yang cuma lihat thumbnail tidak pernah melihat ID
-// Transaksi/QR klaim-nya sama sekali tanpa buka PDF-nya dulu. Digabung jadi
-// 1 halaman: hero bermerek (logo + "X YEARS of WARRANTY" emas) tetap dapat
-// momen visual di atas, TAPI info yang sungguh berguna (ID transaksi, QR
-// klaim, syarat garansi) langsung ikut kelihatan di halaman/thumbnail yang
-// sama — bukan cuma janji visual di halaman 1 lalu data "tersembunyi" di
-// halaman 2.
+// Transaksi/QR klaim-nya sama sekali tanpa buka PDF-nya dulu.
+//
+// Revisi 3 Sep 2026 (feedback owner atas draf pertama):
+// 1. Logo ganti ke assets/logo-warranty-primary.png (dari "Klinik Matras_
+//    Primary Color.png"), tetap di plakat putih kecil (logo ini BERWARNA —
+//    tanpa plakat putih, kontrasnya hilang di atas latar biru manapun).
+// 2. Biru hero DISAMAKAN dengan biru invoice (BIRU/BIRU_GELAP) — draf
+//    pertama pakai navy nyaris hitam yang tidak match brand.
+// 3. Angka tahun garansi diperbesar + efek emas berlapis (bayangan emas
+//    gelap di belakang, emas terang di atas) — kesan lebih "classy".
+// 4. BUG diperbaiki: field bebas (alamat/layanan/keluhan) yang mengandung
+//    newline manual dari input sales bikin tinggi baris SALAH HITUNG (fungsi
+//    pembungkus kata cuma split spasi, padahal doc.text() pdfkit tetap
+//    menghormati \n sebagai baris baru saat digambar) → baris berikutnya
+//    numpuk. Sekarang SEMUA teks bebas disaring (\s+ → 1 spasi) dulu
+//    sebelum diukur DAN digambar, jadi yang diukur = persis yang digambar.
+//    Sekalian: "Keluhan Customer" TIDAK LAGI fallback ke Order.notes — field
+//    itu kadang menyimpan JSON internal (metadata katalog), bukan teks utk
+//    customer; menampilkannya apa adanya adalah kebocoran data internal.
+//    Sekarang HANYA dari complaintDetail (keluhan yang mendasari servis),
+//    kosong → "-" jujur, bukan menebak dari field lain.
+// 5. Setiap baris label sekarang seragam "Label :" (dulu tanpa titik dua).
+// 6. Kartu Syarat & Ketentuan pakai biru brand yang sama (poin 2) — bukan
+//    navy terpisah yang tidak konsisten.
+// 7. Elemen gaya invoice DIPAKAI ULANG (bukan didesain ulang dari nol):
+//    titik dekoratif di bawah logo, badge ikon bulat (badgeIkon), ID
+//    Transaksi sbg pil (pil) — SEMUA di-import dari invoicePdf.js, bukan
+//    ditulis ulang, supaya PUA glyph FontAwesome-nya dijamin persis sama
+//    (menulis ulang kode ikon manual berisiko salah karakter).
 //
 // Sama seperti invoicePdf.js: file ini CUMA TATA LETAK. Semua data datang
 // dari buildWarrantyView() (services/warranty.js) — tidak ada logika bisnis
@@ -19,11 +42,12 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 import QRCode from "qrcode";
+import { IKON, FONT_IKON, FONT_IKON_PATH, badgeIkon, pil } from "./invoicePdf.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-blue.png");
-const LOGO_ASPEK = 1200 / 426;
+const LOGO_PATH = path.join(__dirname, "../../assets/logo-warranty-primary.png");
+const LOGO_ASPEK = 3000 / 978;
 
 const FONT_DIR = path.join(__dirname, "../../assets/fonts");
 const FONT_TEKS = "Inter";
@@ -35,36 +59,31 @@ const FONT_TEKS_MED_PATH = path.join(FONT_DIR, "Inter-Medium.woff");
 const FONT_JUDUL_PATH = path.join(FONT_DIR, "PlusJakartaSans-Bold.woff");
 const FONT_JUDUL_XBOLD_PATH = path.join(FONT_DIR, "PlusJakartaSans-ExtraBold.woff");
 
-// Palet — hero navy gelap (beda dari biru terang invoice, kesan "sertifikat/
-// dokumen resmi") + emas untuk angka tahun garansi (permintaan eksplisit
-// owner: "text gold untuk 10/20 YEARS of WARRANTY"). SENGAJA tanpa ikon
-// FontAwesome sama sekali (beda dari invoicePdf.js) — permintaan owner
-// "lebih minimalist, clean", dan footer cuma 1 nomor kontak jadi tidak
-// butuh baris ikon padat seperti referensi.
-const NAVY_GELAP = "#0B2358";
-const NAVY = "#15398C";
-const EMAS = "#E4C583";
+// Palet — SAMA dengan invoicePdf.js (poin 2 & 6 revisi: brand blue yang
+// konsisten, bukan navy terpisah).
+const BIRU = "#2367C2";
+const BIRU_GELAP = "#124A99";
 const TEAL = "#5FC9BB";
 const TEAL_GELAP = "#2F9C8C";
+const EMAS_TERANG = "#F3DDA3";
+const EMAS = "#E0BA6C";
+const EMAS_GELAP = "#9C7B32";
 const ABU = "#6b7280";
 const GELAP = "#1f2937";
-const GARIS = "#e2e8f0";
 const KARTU_BG = "#F7FAFD";
 
 const PERUSAHAAN = {
   website: "www.sanomatrassehat.com",
   // SATU nomor saja (permintaan eksplisit owner 2 Sep 2026 — referensi
-  // punya 2 nomor, disederhanakan jadi 1) — dipakai sama persis dengan
-  // yang tercetak di invoice (invoicePdf.js) supaya konsisten 1 kontak
-  // resmi di semua dokumen customer-facing.
+  // punya 2 nomor, disederhanakan jadi 1) — sama persis dengan yang
+  // tercetak di invoice supaya konsisten 1 kontak resmi.
   whatsapp: "0851 8728 3900",
   alamat: "Jl. Raya Keadilan, Gg Asrama Polri, No. 81, RT 5/12, Pancoran Mas, Kota Depok",
 };
 
 // Syarat & ketentuan — TEKS PERSIS dari kartu garansi fisik yang sudah
 // dipakai Klinik Matras (owner eksplisit: "jangan ubah syarat dan
-// ketentuan"). JANGAN parafrase/rapikan kalimatnya biar konsisten dengan
-// versi cetak yang sudah beredar ke customer lama.
+// ketentuan"). JANGAN parafrase/rapikan kalimatnya.
 const SYARAT_GARANSI = [
   "Label Produk/Merk tidak terlepas dan masih terpasang dengan baik.",
   "Ukuran/bentuk produk yang dikembalikan harus sesuai dengan foto.",
@@ -79,6 +98,16 @@ function formatTanggal(d) {
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+// Teks bebas (alamat/layanan/keluhan) bisa mengandung newline/tab manual
+// dari input sales — DISARING jadi 1 baris logis SEBELUM diukur/digambar
+// (lihat catatan bug #4 di kepala file). Tanpa ini, tinggi yang DIUKUR
+// (word-wrap spasi biasa) tidak pernah sama dengan tinggi yang SUNGGUH
+// digambar (doc.text() pdfkit tetap menghormati \n apa adanya).
+function bersihkanTeks(v) {
+  const t = String(v ?? "").replace(/\s+/g, " ").trim();
+  return t || "-";
+}
+
 // Nomor lokal ("0851 8728 3900") → format wa.me ("6285187283900").
 function nomorKeWaMe(nomor) {
   const digit = String(nomor).replace(/\D/g, "");
@@ -91,13 +120,14 @@ export function buildWarrantyClaimLink(invoiceNumber) {
 }
 
 // Wrap teks manual dibatasi N baris + "…" — pola sama seperti
-// tulisAlamatDibatasi di invoicePdf.js (opsi height+ellipsis bawaan pdfkit
-// terbukti tidak akurat), disalin ringkas di sini karena file ini sengaja
-// berdiri sendiri (tidak saling import dengan invoicePdf.js).
-function tulisDibatasi(doc, teks, x, y, { width, maxBaris }) {
+// tulisAlamatDibatasi di invoicePdf.js. Input WAJIB sudah lewat
+// bersihkanTeks() dulu (tidak disaring ulang di sini) supaya kontrak fungsi
+// ini jelas: "teks 1 baris logis masuk, dibungkus, tinggi yang dikembalikan
+// akurat".
+function tulisDibatasi(doc, teksBersih, x, y, { width, maxBaris }) {
   const tinggiBaris = doc.currentLineHeight();
   const lebarAman = width - 3;
-  const kata = String(teks || "-").split(" ");
+  const kata = teksBersih.split(" ");
   const barisArr = [];
   let current = "";
   let i = 0;
@@ -136,7 +166,7 @@ export async function renderWarrantyPdf(view) {
   // (gambar PDF) semua sinkron begitu buffer QR sudah ada.
   const qrBuffer = await QRCode.toBuffer(waLink, {
     type: "png", width: 400, margin: 1,
-    color: { dark: NAVY_GELAP, light: "#FFFFFFFF" },
+    color: { dark: BIRU_GELAP, light: "#FFFFFFFF" },
   });
 
   return new Promise((resolve, reject) => {
@@ -150,6 +180,7 @@ export async function renderWarrantyPdf(view) {
     doc.registerFont(FONT_TEKS_MED, FONT_TEKS_MED_PATH);
     doc.registerFont(FONT_JUDUL, FONT_JUDUL_PATH);
     doc.registerFont(FONT_JUDUL_XBOLD, FONT_JUDUL_XBOLD_PATH);
+    doc.registerFont(FONT_IKON, FONT_IKON_PATH);
     doc.font(FONT_TEKS);
 
     const pageWidth = doc.page.width;
@@ -157,20 +188,16 @@ export async function renderWarrantyPdf(view) {
     const MARGIN = 42;
     const KONTEN_LEBAR = pageWidth - MARGIN * 2;
 
-    // ── Hero navy — logo, label, angka tahun EMAS, tagline ───────────────
-    const HERO_TINGGI = 300;
-    // Gradasi diagonal tipis (kiri-atas lebih gelap → kanan-bawah sedikit
-    // lebih terang) meniru referensi tanpa perlu foto/asset tambahan.
+    // ── Hero — logo, label, angka tahun EMAS besar, tagline ──────────────
+    const HERO_TINGGI = 322;
     const gradienHero = doc.linearGradient(0, 0, pageWidth, HERO_TINGGI);
-    gradienHero.stop(0, NAVY_GELAP).stop(1, NAVY);
+    gradienHero.stop(0, BIRU_GELAP).stop(1, BIRU);
     doc.rect(0, 0, pageWidth, HERO_TINGGI).fill(gradienHero);
 
-    // Plakat putih kecil kiri-atas berisi logo asli (biru/teal) — dipilih
-    // dibanding logo versi putih polos karena versi putih menghilangkan
-    // kontras internal badge "SANOCARE" (jadi 1 blok putih tak terbaca);
-    // plakat putih di sini menjamin logo tetap terbaca persis seperti di
-    // invoice, di atas latar gelap sekalipun.
-    const plakatW = 108, plakatH = 40;
+    // Plakat putih kecil kiri-atas berisi logo BERWARNA — logo aslinya
+    // biru/teal (bukan versi putih), jadi butuh dasar terang supaya tetap
+    // terbaca di atas hero biru apa pun kecerahannya.
+    const plakatW = 104, plakatH = 38;
     doc.roundedRect(MARGIN, 26, plakatW, plakatH, 8).fill("#ffffff");
     try {
       const logoTinggi = plakatH - 14;
@@ -179,54 +206,80 @@ export async function renderWarrantyPdf(view) {
     } catch {
       // Aset logo hilang/rusak tidak boleh menggagalkan generate PDF.
     }
+    // Titik dekoratif kecil di bawah plakat (elemen dari invoicePdf.js
+    // header — dipakai ulang di sini, poin 7 revisi).
+    const dotY = 26 + plakatH + 12;
+    for (let kolom = 0; kolom < 4; kolom++) {
+      doc.circle(MARGIN + kolom * 12, dotY, 1.6).fill(TEAL);
+    }
 
-    doc.fontSize(10.5).font(FONT_JUDUL).fillColor("#ffffff")
-      .text("E - W A R R A N T Y   C A R D", MARGIN, 96, { width: KONTEN_LEBAR, align: "center", characterSpacing: 0.5 });
+    doc.fontSize(11).font(FONT_JUDUL).fillColor("#ffffff")
+      .text("E - W A R R A N T Y   C A R D", MARGIN, 98, { width: KONTEN_LEBAR, align: "center", characterSpacing: 0.5 });
 
-    doc.fontSize(58).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
-      .text(`${warrantyYears} YEARS`, MARGIN, 120, { width: KONTEN_LEBAR, align: "center" });
-    doc.fontSize(26).font(FONT_JUDUL).fillColor(EMAS)
-      .text("of WARRANTY", MARGIN, 188, { width: KONTEN_LEBAR, align: "center" });
+    // Angka tahun — efek emas berlapis (bayangan emas gelap sedikit
+    // digeser + emas terang di atas) supaya terasa lebih "classy", bukan
+    // emas datar polos (revisi poin 3).
+    const teksTahun = `${warrantyYears} YEARS`;
+    doc.fontSize(78).font(FONT_JUDUL_XBOLD).fillColor(EMAS_GELAP)
+      .text(teksTahun, MARGIN + 2, 124, { width: KONTEN_LEBAR, align: "center" });
+    doc.fontSize(78).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
+      .text(teksTahun, MARGIN, 122, { width: KONTEN_LEBAR, align: "center" });
 
-    doc.fontSize(10.5).font(FONT_TEKS).fillColor("#cfe0ff")
-      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, 236, { width: KONTEN_LEBAR, align: "center" });
+    doc.fontSize(28).font(FONT_JUDUL).fillColor(EMAS_TERANG)
+      .text("of WARRANTY", MARGIN, 212, { width: KONTEN_LEBAR, align: "center" });
 
-    // ── Kartu "KARTU GARANSI" — data transaksi (kiri) + QR klaim (kanan) ──
+    // Garis emas tipis — aksen pemisah antara headline & tagline.
+    const garisW = 64;
+    doc.roundedRect(MARGIN + (KONTEN_LEBAR - garisW) / 2, 260, garisW, 2, 1).fill(EMAS);
+
+    doc.fontSize(10.5).font(FONT_TEKS).fillColor("#dbe7fb")
+      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, 274, { width: KONTEN_LEBAR, align: "center" });
+
+    // ── "KARTU GARANSI" — data transaksi (kiri) + QR klaim (kanan) ────────
     let y = HERO_TINGGI + 30;
+    badgeIkon(doc, MARGIN + 12, y + 10, 12, { bg: TEAL, ikon: IKON.heart });
     doc.fontSize(19).font(FONT_JUDUL_XBOLD).fillColor(GELAP)
-      .text("KARTU GARANSI", MARGIN, y);
-    doc.roundedRect(MARGIN, y + 26, 44, 3, 1.5).fill(TEAL);
-    y += 42;
+      .text("KARTU GARANSI", MARGIN + 32, y);
+    y += 40;
 
     const kolKiriX = MARGIN;
     const kolKiriW = KONTEN_LEBAR * 0.6;
     const kolKananX = MARGIN + KONTEN_LEBAR * 0.68;
     const kolKananW = KONTEN_LEBAR * 0.32;
-    const labelW = 118;
+    const labelW = 128;
     let yKiri = y;
 
-    function baris(label, value, { maxBaris = 1 } = {}) {
-      doc.fontSize(9).font(FONT_TEKS_MED).fillColor(ABU).text(label, kolKiriX, yKiri, { width: labelW });
+    // Setiap baris "Label :  Nilai" (revisi poin 5: dulu tanpa titik dua).
+    function baris(label, rawValue, { maxBaris = 1, pilBadge = false } = {}) {
+      const value = bersihkanTeks(rawValue);
+      doc.fontSize(9).font(FONT_TEKS_MED).fillColor(ABU).text(`${label} :`, kolKiriX, yKiri, { width: labelW });
+      if (pilBadge) {
+        // ID Transaksi sbg pil kecil — gaya sama dgn "Invoice No." di
+        // invoicePdf.js (elemen dipakai ulang, poin 7 revisi).
+        pil(doc, kolKiriX + labelW, yKiri - 4, value, { bg: TEAL, warna: "#ffffff", fontSize: 9.5, font: FONT_TEKS_MED });
+        yKiri += 24;
+        return;
+      }
       doc.fontSize(9.8).font(FONT_TEKS_MED).fillColor(GELAP);
       if (maxBaris > 1) {
         const tinggi = tulisDibatasi(doc, value, kolKiriX + labelW, yKiri, { width: kolKiriW - labelW, maxBaris });
-        yKiri += Math.max(18, tinggi + 6);
+        yKiri += Math.max(18, tinggi + 8);
       } else {
-        doc.text(value || "-", kolKiriX + labelW, yKiri, { width: kolKiriW - labelW });
+        doc.text(value, kolKiriX + labelW, yKiri, { width: kolKiriW - labelW });
         yKiri += 18;
       }
     }
 
-    baris("Nama Customer", customer.nama || "-");
-    baris("No. WhatsApp", customer.phone || "-");
-    baris("Alamat", [order.deliveryAddress, order.deliveryCity].filter(Boolean).join(", ") || "-", { maxBaris: 2 });
-    baris("ID Transaksi", invoiceNumber);
+    baris("Nama Customer", customer.nama);
+    baris("No. WhatsApp", customer.phone);
+    baris("Alamat", [order.deliveryAddress, order.deliveryCity].filter(Boolean).join(", "), { maxBaris: 2 });
+    baris("ID Transaksi", invoiceNumber, { pilBadge: true });
     baris("Tanggal Pembelian", formatTanggal(purchaseDate));
     baris("Layanan", layanan, { maxBaris: 2 });
     baris("Keluhan Customer", order.keluhanCustomer, { maxBaris: 2 });
 
     // QR — kanan, sejajar dgn awal kolom kiri.
-    const qrUkuran = 118;
+    const qrUkuran = 116;
     const qrX = kolKananX + (kolKananW - qrUkuran) / 2;
     doc.roundedRect(qrX - 8, y - 8, qrUkuran + 16, qrUkuran + 16, 10).fill(KARTU_BG);
     doc.image(qrBuffer, qrX, y, { width: qrUkuran, height: qrUkuran });
@@ -235,21 +288,24 @@ export async function renderWarrantyPdf(view) {
 
     y = Math.max(yKiri, y + qrUkuran + 34) + 18;
 
-    // ── Syarat & Ketentuan Garansi — teks PERSIS, jangan diubah ───────────
+    // ── Syarat & Ketentuan Garansi — teks PERSIS, warna brand (poin 6) ────
     doc.fontSize(9).font(FONT_TEKS);
-    let tinggiSyarat = 40;
+    let tinggiSyarat = 44;
     const syaratLebar = KONTEN_LEBAR - 32;
     for (const poin of SYARAT_GARANSI) {
-      tinggiSyarat += doc.heightOfString(`0. ${poin}`, { width: syaratLebar - 14 }) + 6;
+      tinggiSyarat += doc.heightOfString(poin, { width: syaratLebar - 16 }) + 6;
     }
-    doc.roundedRect(MARGIN, y, KONTEN_LEBAR, tinggiSyarat, 12).fill(NAVY_GELAP);
+    const gradienSyarat = doc.linearGradient(MARGIN, y, MARGIN, y + tinggiSyarat);
+    gradienSyarat.stop(0, BIRU_GELAP).stop(1, BIRU);
+    doc.roundedRect(MARGIN, y, KONTEN_LEBAR, tinggiSyarat, 12).fill(gradienSyarat);
+    badgeIkon(doc, MARGIN + 16 + 11, y + 16 + 11, 11, { bg: "#ffffff", ikon: IKON.dokumen, warnaIkon: BIRU_GELAP, ukuranIkon: 10 });
     doc.fontSize(10.5).font(FONT_JUDUL).fillColor("#ffffff")
-      .text("SYARAT & KETENTUAN GARANSI", MARGIN + 16, y + 14, { width: syaratLebar });
-    let ySyarat = y + 36;
+      .text("SYARAT & KETENTUAN GARANSI", MARGIN + 40, y + 16 + 4, { width: syaratLebar - 24 });
+    let ySyarat = y + 42;
     SYARAT_GARANSI.forEach((poin, i) => {
       doc.fontSize(8.5).font(FONT_JUDUL).fillColor(TEAL)
         .text(`${i + 1}.`, MARGIN + 16, ySyarat, { width: 14 });
-      doc.fontSize(8.5).font(FONT_TEKS).fillColor("#dbe6f7")
+      doc.fontSize(8.5).font(FONT_TEKS).fillColor("#e4edfb")
         .text(poin, MARGIN + 32, ySyarat, { width: syaratLebar - 16 });
       ySyarat += doc.heightOfString(poin, { width: syaratLebar - 16 }) + 6;
     });
