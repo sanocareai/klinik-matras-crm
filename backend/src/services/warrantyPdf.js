@@ -290,7 +290,13 @@ export async function renderWarrantyPdf(view) {
     // Setiap baris "Label :  Nilai" (revisi poin 5: dulu tanpa titik dua).
     function baris(label, rawValue, { maxBaris = 1, pilBadge = false } = {}) {
       const value = bersihkanTeks(rawValue);
-      doc.fontSize(9).font(FONT_TEKS_MED).fillColor(ABU).text(`${label} :`, kolKiriX, yKiri, { width: labelW });
+      // Label rata KANAN dalam kolomnya (revisi 3 Sep 2026, permintaan
+      // owner: semua tanda ":" sejajar) — dulu rata kiri, jadi ":"-nya
+      // ikut posisi beda-beda sesuai panjang tiap label ("Nama Customer :"
+      // vs "ID Transaksi :" dst). Rata kanan bikin SEMUA ":" berhenti di
+      // x yang sama persis, apa pun panjang teks labelnya.
+      doc.fontSize(9).font(FONT_TEKS_MED).fillColor(ABU)
+        .text(`${label} :`, kolKiriX, yKiri, { width: labelW - 8, align: "right" });
       if (pilBadge) {
         // ID Transaksi sbg pil kecil — gaya sama dgn "Invoice No." di
         // invoicePdf.js (elemen dipakai ulang, poin 7 revisi).
