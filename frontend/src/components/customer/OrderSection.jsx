@@ -14,7 +14,7 @@ import {
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
-  resolveVariantKey,
+  resolveVariantKey, UKURAN_VARIANT_KEY,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
@@ -1588,7 +1588,18 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           {usesUkuranDropdown ? (
             <FilterDropdown
               value={ukuran} onChange={setUkuran}
-              options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
+              options={(
+                // SEWA (2 Sep 2026) — Klinik Matras cuma menyewakan ukuran
+                // 120-200 (dikonfirmasi owner + katalog RENTAL_KASUR_SEWA di
+                // seedPriceList.mjs cuma punya harga utk 4 ukuran ini, 90 &
+                // 100 sengaja null). "Ukuran Custom" juga tidak masuk akal
+                // utk sewa (bukan barang jadi milik customer). Filter pakai
+                // UKURAN_VARIANT_KEY yang SAMA dgn resolveVariantKey() —
+                // satu sumber pemetaan label→ukuran, tidak didaftar ulang.
+                category === "SEWA"
+                  ? orderOptions.ukuranKasur.filter((u) => ["120", "160", "180", "200"].includes(UKURAN_VARIANT_KEY[u]))
+                  : orderOptions.ukuranKasur
+              ).map((u) => ({ value: u, label: u }))}
               placeholder="— Pilih Ukuran —" ariaLabel="Pilih ukuran"
               triggerClassName="w-full max-w-none"
             />

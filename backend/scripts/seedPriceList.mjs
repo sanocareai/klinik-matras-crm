@@ -131,8 +131,17 @@ const ITEMS = [
   { code: "ADD_BUSA_ORTHOPEDI_2CM", name: "Tambah Busa Orthopedi 2cm", productLine: "KASUR", kind: "ADDON", sortOrder: 230,
     rates: stdOnly(K, [200000, 200000, 250000, 300000, 350000, 400000]) },
 
-  // ── KASUR · PRODUCT (kategori order BARU) — posisi 25-28 (posisi 24
-  // "Kasur Sewa" masih PENDING). ──────────────────────────────────────────
+  // Posisi 24 — "Kasur Sewa" (kategori order SEWA). Dulu PENDING karena
+  // kolom DIS di spreadsheet #DIV/0! dan ukuran 200 cuma 1 angka ambigu —
+  // owner kirim ulang angka bersih 2 Sep 2026 (screenshot terpisah, BUKAN
+  // dari spreadsheet lama itu), jadi dipakai angka baru ini, bukan yang
+  // janggal. Ukuran 90 & 100 SENGAJA null — dikonfirmasi owner Klinik
+  // Matras memang tidak menyewakan 2 ukuran itu (form order Sewa juga
+  // cuma menawarkan 120-200, lihat OrderSection.jsx).
+  { code: "RENTAL_KASUR_SEWA", name: "Kasur Sewa", productLine: "KASUR", kind: "RENTAL", sortOrder: 240,
+    rates: rate(K, [null, null, [200000, 150000], [250000, 200000], [375000, 250000], [375000, 250000]]) },
+
+  // ── KASUR · PRODUCT (kategori order BARU) — posisi 25-28. ───────────────
   { code: "PRD_MS_CUSTOM_T15", name: "Matras Sehat Custom TP T15", productLine: "KASUR", kind: "PRODUCT", sortOrder: 250,
     rates: stdOnly(K, [1890000, 1890000, 1990000, 2790000, 2990000, 3290000]) },
   { code: "PRD_MS_CUSTOM_T20", name: "Matras Sehat Custom TP T20", productLine: "KASUR", kind: "PRODUCT", discountPercent: 50, sortOrder: 260,
@@ -199,8 +208,6 @@ const PENDING = [
   // Posisi 14 — BUKAN salah baca, baris ini memang kosong total di
   // spreadsheet (nama ada, tidak ada satu pun angka harga).
   ["Harga Kaki", "Baris ada di spreadsheet tapi seluruh kolom harga kosong (bukan cuma sel tertentu) — belum ada angka sama sekali."],
-  // Posisi 24.
-  ["Kasur Sewa", "Kolom DIS berisi #DIV/0!, ukuran 90 & 100 kosong, dan ukuran 200 cuma ada 1 angka (tidak jelas itu Normal atau Standard)."],
   // Posisi 35.
   ["Hemat (Sofa)", "Hanya punya kolom standard. Belum jelas ini paket hemat atau batas bawah khusus, dan belum jelas ini baris tersendiri atau modifier dari layanan lain."],
 ];
