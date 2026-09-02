@@ -40,6 +40,25 @@ function buildDateWhere(from, to, field = "createdAt") {
   return { [field]: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } };
 }
 
+// Kecualikan order milik customer berlabel SPAM (D-041, 2 September 2026 —
+// laporan owner: akun testing owner sendiri, mis. "Giling", tidak boleh ikut
+// menaikkan angka revenue asli di Dashboard/Laporan). SPAM sudah lama dipakai
+// mengecualikan CUSTOMER dari New Leads/Conversion/leaderboard (lihat
+// custWhereKonversi di atas) — tapi query Order (Total Order/Nilai, sales
+// report) TIDAK PERNAH join ke pipelineStage customer sama sekali, jadi
+// order testing tetap menggelembungkan angka. Helper ini SATU sumber
+// kebenaran untuk celah itu — jangan tulis ulang `customer: { pipelineStage:
+// ... }` manual per query, gampang ada yang kelewat (persis kelas bug yang
+// sama seperti /overview yang dulu terlewat saat fix custWhereKonversi).
+//
+// Merge, bukan timpa — sebagian query di sini SUDAH punya filter `customer`
+// sendiri (mis. per sales, per kota); filter SPAM ditambahkan DI DALAMNYA,
+// bukan menggantikan filter yang sudah ada.
+function tanpaOrderSpam(where = {}) {
+  const { customer, ...rest } = where;
+  return { ...rest, customer: { ...customer, pipelineStage: { not: "SPAM" } } };
+}
+
 // ⚠️ Sebelumnya ada helper grantedSalesUserIds() di sini yang menghitung
 // siapa pun DIBERI peran SALES tambahan (multi-role D-010) dan
 // memasukkannya ke Laporan Sales / Target Sales. DIHAPUS 22 Agustus 2026:
@@ -132,13 +151,13 @@ analyticsRouter.get("/overview", async (req, res) => {
       prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" } } }) : Promise.resolve(null),
 
       prisma.order.aggregate({
-        where: { ...orderWhere, status: { not: "CANCELLED" } },
+        where: tanpaOrderSpam({ ...orderWhere, status: { not: "CANCELLED" } }),
         _count: { _all: true },
         _sum: { value: true },
       }),
       prevRange
         ? prisma.order.aggregate({
-            where: { createdAt: prevRange, status: { not: "CANCELLED" } },
+            where: tanpaOrderSpam({ createdAt: prevRange, status: { not: "CANCELLED" } }),
             _count: { _all: true },
             _sum: { value: true },
           })
@@ -147,7 +166,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       // thisMonth = range saat ini (atau bulan ini kalau tidak ada filter)
       (from && to)
         ? prisma.order.aggregate({
-            where: { ...orderWhere, status: { not: "CANCELLED" } },
+            where: tanpaOrderSpam({ ...orderWhere, status: { not: "CANCELLED" } }),
             _sum: { value: true },
           })
         : (async () => {
@@ -156,10 +175,10 @@ analyticsRouter.get("/overview", async (req, res) => {
             // tidak terhitung sebagai bulan berjalan.
             const { year, month } = nowPartsWIB();
             return prisma.order.aggregate({
-              where: {
+              where: tanpaOrderSpam({
                 createdAt: { gte: startOfMonthWIB(year, month) },
                 status: { not: "CANCELLED" },
-              },
+              }),
               _sum: { value: true },
             });
           })(),
@@ -193,13 +212,18 @@ analyticsRouter.get("/overview", async (req, res) => {
         ORDER BY 1
       `,
 
-      // Pendapatan bulanan 6 bulan terakhir
+      // Pendapatan bulanan 6 bulan terakhir. JOIN Customer + kecualikan SPAM
+      // (D-041, 2 September 2026) — raw SQL ini TIDAK melewati tanpaOrderSpam()
+      // (helper itu cuma untuk Prisma query builder), jadi exclude-nya
+      // ditulis langsung di sini.
       prisma.$queryRaw`
-        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
-               COALESCE(SUM(value), 0)::bigint as value
-        FROM "Order"
-        WHERE status != 'CANCELLED'
-          AND "createdAt" >= NOW() - INTERVAL '6 months'
+        SELECT to_char(date_trunc('month', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') as month,
+               COALESCE(SUM(o.value), 0)::bigint as value
+        FROM "Order" o
+        JOIN "Customer" c ON c.id = o."customerId"
+        WHERE o.status != 'CANCELLED'
+          AND c."pipelineStage" != 'SPAM'
+          AND o."createdAt" >= NOW() - INTERVAL '6 months'
         GROUP BY 1
         ORDER BY 1
       `,
@@ -404,15 +428,15 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       paidCustomers, totalCustomers, customersWithOrders, repeatCustomers, paidTanpaOrder,
       revenueRaw, customerRaw, outstandingOrders,
     ] = await Promise.all([
-      prisma.order.aggregate({ where: orderWhere, _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
-      prisma.order.aggregate({ where: { ...orderWhere, paymentStatus: "LUNAS" }, _count: { _all: true }, _sum: { value: true } }),
-      prisma.order.aggregate({ where: { ...orderWhere, paymentStatus: "DP" }, _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.aggregate({ where: tanpaOrderSpam(orderWhere), _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
+      prisma.order.aggregate({ where: tanpaOrderSpam({ ...orderWhere, paymentStatus: "LUNAS" }), _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.aggregate({ where: tanpaOrderSpam({ ...orderWhere, paymentStatus: "DP" }), _count: { _all: true }, _sum: { value: true } }),
 
-      prisma.order.groupBy({ by: ["status"], where: buildDateWhere(from, to), _count: { _all: true }, _sum: { value: true } }),
-      prisma.order.groupBy({ by: ["category"], where: orderWhere, _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.groupBy({ by: ["status"], where: tanpaOrderSpam(buildDateWhere(from, to)), _count: { _all: true }, _sum: { value: true } }),
+      prisma.order.groupBy({ by: ["category"], where: tanpaOrderSpam(orderWhere), _count: { _all: true }, _sum: { value: true } }),
 
       prisma.customer.groupBy({ by: ["city"], where: custWhere, _count: { _all: true } }),
-      prisma.order.count({ where: { ...buildDateWhere(from, to), hasComplaint: true } }),
+      prisma.order.count({ where: tanpaOrderSpam({ ...buildDateWhere(from, to), hasComplaint: true }) }),
 
       // IN [TRANSACTION, REVIEWED] — REVIEWED (dikembalikan 26 Agustus 2026)
       // adalah customer yang SUDAH lewat TRANSACTION dan lanjut kasih review
@@ -448,25 +472,30 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // Deret pendapatan & pelanggan baru — granularitas mengikuti panjang
       // rentang (lihat seriesWindow): 1 hari = per JAM, <=92 hari = HARIAN,
       // lebih panjang = BULANAN.
+      // JOIN Customer + kecualikan SPAM di ketiga granularitas (D-041, 2
+      // September 2026) — sama alasannya dengan monthlyRevenueRaw /overview.
       win.granularity === "hour"
         ? prisma.$queryRaw`
-            SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
-                   COALESCE(SUM(value), 0)::bigint AS value
-            FROM "Order" WHERE status != 'CANCELLED'
-              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            SELECT to_char(date_trunc('hour', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
+                   COALESCE(SUM(o.value), 0)::bigint AS value
+            FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+              AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`
       : win.granularity === "day"
         ? prisma.$queryRaw`
-            SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
-                   COALESCE(SUM(value), 0)::bigint AS value
-            FROM "Order" WHERE status != 'CANCELLED'
-              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            SELECT to_char(date_trunc('day', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                   COALESCE(SUM(o.value), 0)::bigint AS value
+            FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+              AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`
         : prisma.$queryRaw`
-            SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
-                   COALESCE(SUM(value), 0)::bigint AS value
-            FROM "Order" WHERE status != 'CANCELLED'
-              AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+            SELECT to_char(date_trunc('month', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                   COALESCE(SUM(o.value), 0)::bigint AS value
+            FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+              AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`,
 
       win.granularity === "hour"
@@ -498,7 +527,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // JS karena bucket-nya berbasis usia relatif ke NOW(), bukan kolom
       // tetap yang bisa di-GROUP BY langsung.
       prisma.order.findMany({
-        where: { ...orderWhere, paymentStatus: { not: "LUNAS" } },
+        where: tanpaOrderSpam({ ...orderWhere, paymentStatus: { not: "LUNAS" } }),
         select: { value: true, createdAt: true },
       }),
     ]);
@@ -708,10 +737,10 @@ export async function computeSalesRow(u, ctx) {
     // Order dalam rentang, TAUTAN sales tidak difilter tanggal (lihat
     // catatan `mineAtribusi`).
     prisma.order.aggregate({
-      where: {
+      where: tanpaOrderSpam({
         ...buildDateWhere(from, to), status: { not: "CANCELLED" },
         customer: { conversations: { some: mineAtribusi } },
-      },
+      }),
       _count: { _all: true }, _sum: { value: true },
     }),
     // BASIS KOMISI SALES (30 Agustus 2026, populasi DIPERBAIKI 31 Agustus
@@ -737,17 +766,17 @@ export async function computeSalesRow(u, ctx) {
     // tidak di-backfill (lihat catatan migration) — jadi TIDAK ikut
     // terhitung di sini sampai paymentStatus-nya disentuh ulang.
     prisma.order.aggregate({
-      where: {
+      where: tanpaOrderSpam({
         status: { not: "CANCELLED" }, paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: mineAtribusi } },
-      },
+      }),
       _sum: { value: true },
     }),
     prisma.order.count({
-      where: {
+      where: tanpaOrderSpam({
         ...buildDateWhere(from, to), hasComplaint: true,
         customer: { conversations: { some: mineAtribusi } },
-      },
+      }),
     }),
 
     // Waktu respons PERTAMA per percakapan (inbound pertama → outbound
@@ -1182,10 +1211,10 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const prevRangeSales = buildPrevRange(from, to);
     const allTeamIds = [...users.map((u) => u.id), ...teamLeadUsers.map((u) => u.id)];
     const teamGrossPrevAgg = prevRangeSales ? await prisma.order.aggregate({
-      where: {
+      where: tanpaOrderSpam({
         createdAt: prevRangeSales, status: { not: "CANCELLED" },
         customer: { conversations: { some: { assignedToId: { in: allTeamIds }, type: "INDIVIDUAL" } } },
-      },
+      }),
       _sum: { value: true },
     }) : null;
 
@@ -1317,11 +1346,11 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
     const selesai = to   ? endOfDayExclusiveWIB(to) : new Date("2999-01-01T00:00:00Z");
 
     const orders = await prisma.order.findMany({
-      where: {
+      where: tanpaOrderSpam({
         status: { not: "CANCELLED" },
         paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: { type: "INDIVIDUAL", assignedToId: userId } } },
-      },
+      }),
       select: {
         id: true, orderNumber: true, value: true, createdAt: true, paidAt: true,
         category: true,
@@ -1549,10 +1578,10 @@ analyticsRouter.get("/source-performance", async (req, res) => {
           where: { leadSource: s.leadSource, pipelineStage: "SPAM", ...custDateWhere },
         }),
         prisma.order.aggregate({
-          where: {
+          where: tanpaOrderSpam({
             customer: { leadSource: s.leadSource, ...custDateWhere },
             status: { not: "CANCELLED" },
-          },
+          }),
           _sum: { value: true },
         }),
       ]);
@@ -1642,11 +1671,11 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
 
     const result = await Promise.all(salesUsers.map(async (u) => {
       const orderAgg = await prisma.order.aggregate({
-        where: {
+        where: tanpaOrderSpam({
           customer: { assignedSalesId: u.id },
           status:   { not: "CANCELLED" },
           createdAt: { gte: startOfMonth, lt: endOfMonth },
-        },
+        }),
         _sum: { value: true },
       });
 
@@ -1736,27 +1765,32 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
     const win = seriesWindow(from, to);
 
     // date_trunc di zona WIB — lihat catatan bucket WIB di /overview.
+    // JOIN Customer + kecualikan SPAM (D-041, 2 September 2026) — sama
+    // alasannya dengan monthlyRevenueRaw /overview.
     let rows;
     if (win.granularity === "hour") {
       rows = await prisma.$queryRaw`
-          SELECT to_char(date_trunc('hour', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
-                 COALESCE(SUM(value), 0)::bigint AS value
-          FROM "Order"
-          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+          SELECT to_char(date_trunc('hour', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
+                 COALESCE(SUM(o.value), 0)::bigint AS value
+          FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else if (win.granularity === "day") {
       rows = await prisma.$queryRaw`
-          SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
-                 COALESCE(SUM(value), 0)::bigint AS value
-          FROM "Order"
-          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+          SELECT to_char(date_trunc('day', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
+                 COALESCE(SUM(o.value), 0)::bigint AS value
+          FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else {
       rows = await prisma.$queryRaw`
-          SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
-                 COALESCE(SUM(value), 0)::bigint AS value
-          FROM "Order"
-          WHERE status != 'CANCELLED' AND "createdAt" >= ${win.mulai} AND "createdAt" < ${win.selesai}
+          SELECT to_char(date_trunc('month', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
+                 COALESCE(SUM(o.value), 0)::bigint AS value
+          FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
+          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     }
 
@@ -1770,7 +1804,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
     // `points`) karena butuh COUNT, bukan cuma SUM — win.mulai/selesai yang
     // SAMA supaya AOV selalu sepadan dengan Total Revenue di atasnya.
     const orderCountAgg = await prisma.order.aggregate({
-      where: { status: { not: "CANCELLED" }, createdAt: { gte: win.mulai, lt: win.selesai } },
+      where: tanpaOrderSpam({ status: { not: "CANCELLED" }, createdAt: { gte: win.mulai, lt: win.selesai } }),
       _count: { _all: true },
     });
     const totalOrders = orderCountAgg._count._all;
@@ -2521,7 +2555,11 @@ analyticsRouter.get("/pipeline-velocity", async (req, res) => {
 analyticsRouter.get("/recent-orders", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 8, 50);
   try {
+    // D-041 (2 September 2026) — order dari customer SPAM (termasuk akun
+    // testing owner sendiri) tidak boleh muncul sebagai "order masuk" di
+    // widget ini, persis alasannya sama dengan tanpaOrderSpam() di atas.
     const orders = await prisma.order.findMany({
+      where: tanpaOrderSpam(),
       orderBy: { createdAt: "desc" },
       take: limit,
       include: {
@@ -2575,6 +2613,7 @@ analyticsRouter.get("/recent-activity", async (req, res) => {
     // mengisi feed sampai penuh, bukan menyisakan slot kosong percuma.
     const [orders, customers, transitions] = await Promise.all([
       prisma.order.findMany({
+        where: tanpaOrderSpam(), // D-041 — sama alasannya dengan /recent-orders
         orderBy: { createdAt: "desc" }, take: limit,
         select: { id: true, orderNumber: true, value: true, category: true, createdAt: true,
           customer: { select: { id: true, name: true, phone: true } } },
@@ -2874,8 +2913,8 @@ analyticsRouter.get("/recommendations", async (req, res) => {
         take: 300,
       }),
       prisma.conversation.count({ where: { status: "OPEN", type: "INDIVIDUAL", assignedToId: null } }),
-      prisma.order.findMany({ where: { status: "READY", ...custScopeRel }, select: { value: true } }),
-      prisma.order.count({ where: { hasComplaint: true, ...custScopeRel } }),
+      prisma.order.findMany({ where: tanpaOrderSpam({ status: "READY", ...custScopeRel }), select: { value: true } }),
+      prisma.order.count({ where: tanpaOrderSpam({ hasComplaint: true, ...custScopeRel }) }),
     ]);
 
     const unansweredOver2h = openConvos.filter(
@@ -2922,7 +2961,7 @@ analyticsRouter.get("/recommendations", async (req, res) => {
       for (const t of targets) {
         const agg = await prisma.order.aggregate({
           _sum: { value: true },
-          where: { createdAt: { gte: monthStart, lt: monthEnd }, customer: { assignedSalesId: t.userId } },
+          where: tanpaOrderSpam({ createdAt: { gte: monthStart, lt: monthEnd }, customer: { assignedSalesId: t.userId } }),
         });
         const achieved = agg._sum.value || 0;
         const pct = Math.round((achieved / t.targetValue) * 100);
