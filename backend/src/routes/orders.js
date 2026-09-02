@@ -715,7 +715,16 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
     const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
     const fileUrl = `${BACKEND_INTERNAL_URL}/media/invoice-pdfs/${filename}`;
 
-    const caption = `🧾 Invoice ${view.invoice.invoiceNumber} — Order ${view.order.orderNumber || "-"}`;
+    // Nama sapaan ikut override manual invoice (invoice.namaTujuan) kalau
+    // ada — konsisten dengan nama yang benar-benar tercetak di PDF-nya,
+    // supaya sapaan di WA dan nama di dokumen tidak pernah beda.
+    const namaSapaan = view.invoice.namaTujuan || view.customer.nama || "Kak";
+    const caption =
+      `🧾 *Invoice Klinik Matras*\n\n` +
+      `Halo ${namaSapaan}, berikut invoice untuk pesanan Anda 🙏\n` +
+      `Terima kasih sudah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.\n\n` +
+      `Invoice No: ${view.invoice.invoiceNumber}\n` +
+      `Order: ${view.order.orderNumber || "-"}`;
 
     let wahaMsg;
     try {
