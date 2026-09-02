@@ -1027,6 +1027,15 @@ model Invoice {
 
   notes String? // catatan yang IKUT TERCETAK di invoice (bukan catatan internal order)
 
+  // Override TAMPILAN alamat tujuan invoice — TIDAK PERNAH menulis balik ke
+  // Order.deliveryAddress/Customer (2 Sep 2026). Alasan: alamat customer yang
+  // tersimpan di data order kadang berantakan/salah ketik, tapi order itu
+  // sendiri sudah dipakai di banyak tempat lain (WA, laporan, dll) — sales
+  // butuh cara memperbaiki TAMPILAN invoice tanpa menyentuh data order asli.
+  // null = pakai alamat order apa adanya (sudah dirapikan otomatis lewat
+  // formatAlamat(), lihat services/invoicePdf.js).
+  alamatTujuan String? @map("alamat_tujuan")
+
   // SetNull, bukan Restrict: sales yang membuat invoice resign, invoice &
   // riwayat tagihannya TETAP ada (pola sama Promo.createdById).
   createdById String?  @map("created_by")

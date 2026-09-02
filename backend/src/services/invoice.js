@@ -218,6 +218,7 @@ export async function buildInvoiceView(orderId, { userId = null, autoCreate = tr
       cancelledAt: invoice.cancelledAt,
       dueDate: invoice.dueDate,
       notes: invoice.notes,
+      alamatTujuan: invoice.alamatTujuan,
       createdAt: invoice.createdAt,
       createdBy: invoice.createdBy?.name || null,
     },

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  FileText, Send, Eye, Ban, Check, Loader2, Copy, CalendarClock, AlertTriangle,
+  FileText, Send, Eye, Ban, Check, Loader2, Copy, CalendarClock, AlertTriangle, Pencil, X, RotateCcw,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -72,7 +72,7 @@ function buatTeksInvoice(v) {
     ``,
     `👤 ${customer.nama || "-"}`,
     `${customer.phone || "-"}`,
-    `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`,
+    invoice.alamatTujuan || `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`,
     ``,
     `🛏️ *Rincian*`,
     ...(order.items.length
@@ -106,6 +106,8 @@ export default function InvoicePanel({ orderId, onChanged }) {
   const [aksi, setAksi]       = useState(null); // nama aksi yang sedang jalan
   const [error, setError]     = useState(null);
   const [tersalin, setTersalin] = useState(false);
+  const [editAlamat, setEditAlamat] = useState(false);
+  const [alamatDraft, setAlamatDraft] = useState("");
 
   useEffect(() => {
     if (!orderId) return;
@@ -309,10 +311,89 @@ export default function InvoicePanel({ orderId, onChanged }) {
         <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Ditagihkan ke</p>
         <p className="text-[13px] font-semibold text-ink">{customer.nama || "—"}</p>
         <p className="text-[12px] text-ink2">{customer.phone || "—"}</p>
-        <p className="mt-0.5 text-[12px] text-ink2">
-          {order.deliveryAddress || "Alamat belum diisi"}
-          {order.deliveryCity ? `, ${order.deliveryCity}` : ""}
-        </p>
+
+        {/* Alamat yang TERCETAK di PDF invoice — bisa di-override MANUAL di
+            sini (2 Sep 2026) tanpa mengubah data order asli. Alasan: data
+            alamat order sering berantakan/salah ketik, tapi order-nya sendiri
+            sudah dipakai di banyak tempat lain (WA, laporan) jadi tidak bisa
+            asal diedit — override ini HANYA memengaruhi tampilan invoice. */}
+        {!editAlamat ? (
+          <div className="mt-0.5 flex items-start justify-between gap-2">
+            <p className="text-[12px] text-ink2">
+              {invoice.alamatTujuan || order.deliveryAddress || "Alamat belum diisi"}
+              {!invoice.alamatTujuan && order.deliveryCity ? `, ${order.deliveryCity}` : ""}
+              {invoice.alamatTujuan && (
+                <span className="ml-1.5 rounded bg-orangebg px-1.5 py-0.5 text-[10px] font-semibold text-orange">
+                  override manual
+                </span>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setAlamatDraft(
+                  invoice.alamatTujuan ||
+                  `${order.deliveryAddress || ""}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`
+                );
+                setEditAlamat(true);
+              }}
+              className="shrink-0 rounded-lg p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+              title="Perbaiki tampilan alamat di invoice"
+            >
+              <Pencil size={13} />
+            </button>
+          </div>
+        ) : (
+          <div className="mt-1 flex flex-col gap-1.5">
+            <textarea
+              value={alamatDraft}
+              onChange={(e) => setAlamatDraft(e.target.value)}
+              rows={3}
+              autoFocus
+              className="w-full resize-none rounded-lg border border-line bg-inset px-2.5 py-1.5 text-[12px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              placeholder="Alamat yang ditampilkan di invoice PDF"
+            />
+            <p className="text-[10.5px] text-ink3">
+              Cuma mengubah tampilan invoice — data alamat di order tidak ikut berubah.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={aksi === "ALAMAT"}
+                onClick={async () => {
+                  await ubah({ alamatTujuan: alamatDraft.trim() || null }, "ALAMAT");
+                  setEditAlamat(false);
+                }}
+                className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-[11.5px] font-semibold text-white hover:bg-accent/90 disabled:opacity-60"
+              >
+                {aksi === "ALAMAT" ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Simpan
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditAlamat(false)}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold text-ink3 hover:bg-hovertint"
+              >
+                <X size={12} /> Batal
+              </button>
+              {invoice.alamatTujuan && (
+                <button
+                  type="button"
+                  disabled={aksi === "ALAMAT"}
+                  onClick={async () => {
+                    await ubah({ alamatTujuan: null }, "ALAMAT");
+                    setEditAlamat(false);
+                  }}
+                  className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold text-ink3 hover:bg-hovertint"
+                  title="Kembali ke alamat order apa adanya"
+                >
+                  <RotateCcw size={12} /> Reset
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {customer.salesOwner && (
           <p className="mt-1.5 text-[11.5px] text-ink3">Sales: {customer.salesOwner}</p>
         )}

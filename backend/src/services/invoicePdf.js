@@ -19,14 +19,18 @@
 import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
+import { formatAlamat } from "../utils/formatAlamat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Wordmark lengkap (ikon + "KLINIK MATRAS" + pil "SANOCARE"), dikirim owner
-// 2 Sep 2026 (file asli: frontend/public/sano_logo_invoice/sano_logo_invoice.png,
-// di-trim whitespace-nya dengan sharp — lihat riwayat git). Rasio aspek
-// gambar ini ~2.81:1, dipakai di LOGO_ASPEK di bawah untuk hitung ukuran plat.
-const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice.png");
-const LOGO_ASPEK = 10703 / 3804;
+// Wordmark versi PUTIH (ikon + "KLINIK MATRAS" + pil "SANOCARE" — teksnya
+// putih/teal, didesain khusus untuk ditaruh LANGSUNG di atas latar berwarna),
+// dikirim owner 2 Sep 2026 (revisi ke-2, file asli:
+// frontend/public/sano_logo_invoice/klinikmatras-logo.png, di-trim
+// whitespace-nya dengan sharp — lihat riwayat git). Dipakai langsung tanpa
+// plat putih di belakangnya (revisi sebelumnya pakai plat + versi biru —
+// owner bilang itu kurang minimalis). Rasio aspek gambar ini ~3.07:1.
+const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-white.png");
+const LOGO_ASPEK = 1200 / 391;
 
 // Warna brand — diambil dari logo asli (biru "S" + silang teal).
 const BIRU = "#2367C2";
@@ -69,6 +73,54 @@ function formatRupiah(n) {
 function formatTanggal(d) {
   if (!d) return "-";
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).toUpperCase();
+}
+
+// Alamat customer/kantor kadang sangat panjang (2 Sep 2026: ditemukan alamat
+// nyata sampai 3 baris dengan catatan patokan lokasi) — dibatasi maksimal
+// N baris + "…" di baris terakhir, BUKAN dibiarkan mendorong seluruh layout
+// ke bawah tanpa batas.
+//
+// SENGAJA susun baris SENDIRI kata-per-kata pakai widthOfString() (bukan
+// opsi `height`+`ellipsis` bawaan pdfkit, dan bukan juga mundur berdasarkan
+// heightOfString total) — dua pendekatan itu sudah dicoba dan hasilnya
+// konsisten memotong SATU BARIS lebih awal dari yang diminta (minta 3 baris,
+// yang tampil cuma 2), karena menambah "…" di akhir teks yang nyaris pas
+// bisa mendorongnya meluap ke baris tambahan, lalu seluruh perhitungan
+// mundur ikut kepotong berlebihan. Menyusun baris manual & cuma
+// mempersingkat BARIS TERAKHIR itu presisi per-baris, bukan tebak-tebakan
+// tinggi total.
+function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
+  const tinggiBaris = doc.currentLineHeight();
+  const kata = teks.split(" ");
+  const barisArr = [];
+  let current = "";
+  let i = 0;
+
+  while (i < kata.length) {
+    const coba = current ? `${current} ${kata[i]}` : kata[i];
+    if (!current || doc.widthOfString(coba) <= width) {
+      current = coba;
+      i++;
+    } else {
+      barisArr.push(current);
+      current = "";
+      if (barisArr.length === maxBaris) break; // baris penuh, sisa kata dibuang/dipotong di bawah
+    }
+  }
+  if (current && barisArr.length < maxBaris) barisArr.push(current);
+
+  const terpotong = i < kata.length;
+  if (terpotong) {
+    let lastLine = barisArr[barisArr.length - 1] || "";
+    while (lastLine.length > 0 && doc.widthOfString(`${lastLine}…`) > width) {
+      const idxSpasi = lastLine.lastIndexOf(" ");
+      lastLine = idxSpasi > 0 ? lastLine.slice(0, idxSpasi) : lastLine.slice(0, -1);
+    }
+    barisArr[barisArr.length - 1] = `${lastLine}…`;
+  }
+
+  doc.text(barisArr.join("\n"), x, y, { width, ...(align && { align }) });
+  return tinggiBaris * barisArr.length;
 }
 
 // Wave dekoratif di footer — dua lapis kurva Bezier, meniru bentuk di
@@ -116,19 +168,16 @@ export function renderInvoicePdf(view) {
     const HEADER_TINGGI = 118;
     doc.rect(0, 0, pageWidth, HEADER_TINGGI).fill(BIRU);
 
-    // Wordmark logo (bukan icon+teks manual lagi) di plat putih — teks di
-    // logo asli berwarna biru/teal, TIDAK kontras kalau ditaruh langsung di
-    // atas banner biru, makanya perlu plat putih di belakangnya.
-    const PLAT_PAD = 12;
-    const logoTinggi = 58;
+    // Wordmark versi putih ditaruh LANGSUNG di atas banner biru — TANPA plat
+    // putih di belakangnya (revisi 2 Sep 2026: versi sebelumnya kelihatan
+    // terlalu besar/berat karena ada kotak putih besar; versi logo ini sudah
+    // didesain putih supaya kontras sendiri di atas warna, jadi minimalis).
+    const logoTinggi = 32;
     const logoLebar = logoTinggi * LOGO_ASPEK;
-    const platW = logoLebar + PLAT_PAD * 2;
-    const platH = logoTinggi + PLAT_PAD * 2;
-    const platX = MARGIN;
-    const platY = (HEADER_TINGGI - platH) / 2;
-    doc.roundedRect(platX, platY, platW, platH, 10).fill("#ffffff");
+    const logoX = MARGIN;
+    const logoY = (HEADER_TINGGI - logoTinggi) / 2;
     try {
-      doc.image(LOGO_PATH, platX + PLAT_PAD, platY + PLAT_PAD, { width: logoLebar, height: logoTinggi });
+      doc.image(LOGO_PATH, logoX, logoY, { width: logoLebar, height: logoTinggi });
     } catch {
       // Kalau file logo tidak ada/rusak, invoice tetap jalan tanpa logo —
       // jangan sampai satu aset hilang menggagalkan seluruh generate PDF.
@@ -141,9 +190,12 @@ export function renderInvoicePdf(view) {
     const kontakLebar = 260;
     const kontakX = pageWidth - MARGIN - kontakLebar;
     doc.fontSize(8.5).font("Helvetica").fillColor("#ffffff");
-    const tinggiAlamatHeader = doc.heightOfString(PERUSAHAAN.alamat, { width: kontakLebar, align: "right" });
+    const ALAMAT_HEADER_MAKS_BARIS = 2;
+    const tinggiAlamatHeader = doc.currentLineHeight() * ALAMAT_HEADER_MAKS_BARIS;
     let yKontak = (HEADER_TINGGI - (tinggiAlamatHeader + 12 + 11)) / 2;
-    doc.text(PERUSAHAAN.alamat, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    tulisAlamatDibatasi(doc, PERUSAHAAN.alamat, kontakX, yKontak, {
+      width: kontakLebar, maxBaris: ALAMAT_HEADER_MAKS_BARIS, align: "right",
+    });
     yKontak += tinggiAlamatHeader + 6;
     doc.font("Helvetica-Bold").text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, yKontak, { width: kontakLebar, align: "right" });
     yKontak += 13;
@@ -151,14 +203,23 @@ export function renderInvoicePdf(view) {
 
     // ── Invoice To / Invoice meta ────────────────────────────────────────
     let y = HEADER_TINGGI + 30;
-    const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
+    // `invoice.alamatTujuan` = override manual sales (2 Sep 2026, lihat
+    // schema.prisma) — kalau diisi, PAKAI APA ADANYA (sales sudah sengaja
+    // menuliskannya rapi), jangan diproses formatAlamat() lagi. Kalau kosong,
+    // pakai alamat order tapi DIRAPIKAN dulu (huruf kecil semua/singkatan
+    // nempel angka dsb — lihat utils/formatAlamat.js) — bukan mengubah data
+    // order, cuma cara menampilkannya di invoice.
+    const alamatLengkap = invoice.alamatTujuan
+      || formatAlamat(`${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`);
     const ALAMAT_LEBAR = 260;
+    const ALAMAT_MAKS_BARIS = 3;
 
     doc.fontSize(9).fillColor(ABU).font("Helvetica-Bold").text("INVOICE TO:", MARGIN, y);
     doc.fontSize(12).fillColor(GELAP).font("Helvetica-Bold").text((customer.nama || "-").toUpperCase(), MARGIN, y + 14);
-    doc.fontSize(9).font("Helvetica");
-    const tinggiAlamat = doc.heightOfString(alamatLengkap, { width: ALAMAT_LEBAR });
-    doc.fillColor(ABU).text(alamatLengkap, MARGIN, y + 32, { width: ALAMAT_LEBAR });
+    doc.fontSize(9).font("Helvetica").fillColor(ABU);
+    const tinggiAlamat = tulisAlamatDibatasi(doc, alamatLengkap, MARGIN, y + 32, {
+      width: ALAMAT_LEBAR, maxBaris: ALAMAT_MAKS_BARIS,
+    });
     doc.text(customer.phone || "-", MARGIN, y + 32 + tinggiAlamat + 4);
 
     doc.fontSize(20).fillColor(BIRU).font("Helvetica-Bold").text("INVOICE", MARGIN, y, { width: KONTEN_LEBAR, align: "right" });
