@@ -219,10 +219,12 @@ export async function renderWarrantyPdf(view) {
     const KONTEN_LEBAR = pageWidth - MARGIN * 2;
 
     // ── Hero — logo, label, angka tahun EMAS besar, tagline ──────────────
-    // Revisi 3 Sep 2026 (feedback owner): title terlalu besar/nyaris nempel
-    // margin kiri-kanan, dan jarak antar label→title→tagline terlalu rapat.
-    // HERO_TINGGI dinaikkan supaya ada ruang utk jarak yang lebih lega.
-    const HERO_TINGGI = 344;
+    // Revisi ke-2 (3 Sep 2026): revisi sebelumnya kepanjangan/kekecilan —
+    // owner kirim referensi baru (komposisi lebih "penuh", label & tagline
+    // BOLD besar, jarak antar elemen RAPAT bukan lega) dan minta disesuaikan
+    // ke arah itu — TETAP pakai asset gambar emas utk "X YEARS of WARRANTY"
+    // (bukan diganti teks), cuma sizing/komposisinya diselaraskan.
+    const HERO_TINGGI = 328;
     const gradienHero = doc.linearGradient(0, 0, pageWidth, HERO_TINGGI);
     gradienHero.stop(0, BIRU_GELAP).stop(1, BIRU);
     doc.rect(0, 0, pageWidth, HERO_TINGGI).fill(gradienHero);
@@ -241,32 +243,35 @@ export async function renderWarrantyPdf(view) {
       // Aset logo hilang/rusak tidak boleh menggagalkan generate PDF.
     }
 
-    const labelY = 92;
-    doc.fontSize(11).font(FONT_JUDUL).fillColor("#ffffff")
-      .text("E - W A R R A N T Y   C A R D", MARGIN, labelY, { width: KONTEN_LEBAR, align: "center", characterSpacing: 0.5 });
+    // Label & tagline sekarang BOLD/lebih besar (revisi ke-2, mengikuti
+    // referensi baru owner) — bukan lagi label kecil berspasi lebar +
+    // tagline tipis, itu yang bikin komposisi lama terasa "kosong".
+    const labelY = 84;
+    doc.fontSize(15).font(FONT_JUDUL_XBOLD).fillColor("#ffffff")
+      .text("E-WARRANTY CARD", MARGIN, labelY, { width: KONTEN_LEBAR, align: "center", characterSpacing: 0.5 });
 
     // Judul "X YEARS of WARRANTY" — gambar 3D emas metalik siap-pakai
     // (asset designer), bukan teks pdfkit. PNG transparan (dicek: alpha=0
     // di seluruh area luar hurufnya) jadi tinggal ditempel di atas gradasi
-    // hero. Revisi 3 Sep 2026: lebar DIKECILKAN dari 92% → 68% lebar konten
-    // (dulu nyaris nempel margin kiri-kanan, "terlalu besar" menurut
-    // owner) + jarak ke label/tagline di atas & bawahnya DILEBARKAN, biar
-    // ritme label → title → tagline terasa lega, bukan numpuk.
+    // hero. Revisi ke-2 (3 Sep 2026): diperbesar lagi ke 80% lebar konten +
+    // jarak ke label/tagline DIRAPATKAN, mengikuti komposisi "penuh & rapat"
+    // dari referensi baru owner — TETAP ada margin kiri-kanan yang jelas
+    // (bukan nempel edge-to-edge spt revisi pertama).
     const titlePath = warrantyYears === 20 ? TITLE_20_PATH : TITLE_10_PATH;
     const titleAspek = warrantyYears === 20 ? TITLE_20_ASPEK : TITLE_10_ASPEK;
-    const titleLebar = KONTEN_LEBAR * 0.68;
+    const titleLebar = KONTEN_LEBAR * 0.8;
     const titleTinggi = titleLebar / titleAspek;
-    const titleY = labelY + 40;
+    const titleY = labelY + 30;
     try {
       doc.image(titlePath, MARGIN + (KONTEN_LEBAR - titleLebar) / 2, titleY, { width: titleLebar, height: titleTinggi });
     } catch {
       // Fallback teks polos kalau asset hilang — jangan sampai generate PDF gagal total.
-      doc.fontSize(40).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
+      doc.fontSize(44).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
         .text(`${warrantyYears} YEARS of WARRANTY`, MARGIN, titleY + titleTinggi / 3, { width: KONTEN_LEBAR, align: "center" });
     }
 
-    doc.fontSize(10.5).font(FONT_TEKS).fillColor("#dbe7fb")
-      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, titleY + titleTinggi + 28, { width: KONTEN_LEBAR, align: "center" });
+    doc.fontSize(12.5).font(FONT_JUDUL).fillColor("#ffffff")
+      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, titleY + titleTinggi + 14, { width: KONTEN_LEBAR, align: "center" });
 
     // ── "KARTU GARANSI" — data transaksi (kiri) + QR klaim (kanan) ────────
     let y = HERO_TINGGI + 30;
