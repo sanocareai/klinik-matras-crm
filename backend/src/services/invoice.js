@@ -398,11 +398,19 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
   };
 }
 
-// Gabungkan invoice order SUMBER ke invoice order TARGET (target jadi
-// primary bundle). Dua-duanya HARUS milik customer yang sama, dan DUA-
-// DUANYA belum pernah terkirim (sentAt) — invoice yang sudah diterima
-// customer tidak boleh diam-diam berubah cakupannya. Auto-create invoice
-// draft utk order yang belum punya (pola sama ensureInvoiceForOrder).
+// Gabungkan bundle invoice order SUMBER dengan bundle invoice order TARGET —
+// SATU BUAH "union", bukan sekadar "tempel source ke target apa adanya".
+// Alasan (bug nyata 2 Sep 2026): order sering dibuka dari sisi yang BUKAN
+// primary suatu bundle (mis. customer sudah punya bundle {A primary, B
+// anggota}, lalu user buka panel B dan coba gabung dengan C yang berdiri
+// sendiri) — versi lama menolak keras ("B sudah jadi anggota gabungan
+// lain") padahal maksud user jelas: masukkan C ke bundle yang SAMA. Fungsi
+// ini SELALU resolve dulu ke PRIMARY sungguhan masing-masing sisi (baik
+// source maupun target boleh berupa primary, anggota, ATAU order berdiri
+// sendiri), baru union: bundle yang anggotanya LEBIH BANYAK menang (tetap
+// primary), yang kalah + SELURUH anggotanya di-reparent LANGSUNG ke
+// pemenang (flatten satu langkah — tidak pernah menyisakan rantai primary-
+// di-dalam-primary, tetap sesuai batasan v1 "cuma 1 tingkat").
 export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, userId = null }) {
   if (sourceOrderId === targetOrderId) {
     const e = new Error("Tidak bisa menggabungkan order dengan dirinya sendiri.");
@@ -428,7 +436,25 @@ export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, u
   const sourceInvoice = sourceOrder.invoice || (await ensureInvoiceForOrder(tx, { orderId: sourceOrderId, userId }));
   const targetInvoice = targetOrder.invoice || (await ensureInvoiceForOrder(tx, { orderId: targetOrderId, userId }));
 
-  if (sourceInvoice.sentAt || targetInvoice.sentAt) {
+  // Resolve ke PRIMARY sungguhan (invoice + daftar anggotanya) — kalau
+  // invoice-nya sendiri sudah `combinedIntoId` terisi, ikuti ke situ;
+  // kalau tidak, dia sendiri sudah primary/berdiri sendiri.
+  async function resolvePrimary(invoice) {
+    const id = invoice.combinedIntoId || invoice.id;
+    return tx.invoice.findUnique({
+      where: { id },
+      include: { bundledInvoices: { select: { id: true, orderId: true, sentAt: true } } },
+    });
+  }
+  const sourcePrimary = await resolvePrimary(sourceInvoice);
+  const targetPrimary = await resolvePrimary(targetInvoice);
+
+  if (sourcePrimary.id === targetPrimary.id) {
+    // Sudah 1 bundle yang sama persis — bukan error keras, cuma no-op,
+    // supaya tombol "Gabung" di UI aman diklik idempoten.
+    return { primaryInvoiceId: sourcePrimary.id };
+  }
+  if (sourcePrimary.sentAt || targetPrimary.sentAt) {
     const e = new Error(
       "Salah satu invoice sudah pernah dikirim ke customer — tidak bisa digabung lagi (riwayat dokumen " +
       "yang sudah diterima customer harus tetap akurat)."
@@ -436,25 +462,25 @@ export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, u
     e.statusCode = 409;
     throw e;
   }
-  // Cegah bundle 2 tingkat: source & target dua-duanya TIDAK BOLEH sudah
-  // jadi anggota bundle lain. Target BOLEH sudah jadi PRIMARY (anggota lain
-  // sudah nunjuk ke dia) — itu sah, tinggal tambah 1 anggota lagi.
-  if (sourceInvoice.combinedIntoId) {
-    const e = new Error("Invoice order ini sudah jadi anggota gabungan lain — pisahkan dulu sebelum digabung ke sini.");
-    e.statusCode = 409;
-    throw e;
-  }
-  if (targetInvoice.combinedIntoId) {
-    const e = new Error("Invoice order tujuan sudah jadi anggota gabungan lain — pilih order lain sebagai tujuan.");
-    e.statusCode = 409;
-    throw e;
-  }
 
-  await tx.invoice.update({
-    where: { id: sourceInvoice.id },
-    data: { combinedIntoId: targetInvoice.id },
-  });
-  return { primaryInvoiceId: targetInvoice.id };
+  // Bundle beranggota lebih banyak MENANG (tetap jadi primary) — supaya
+  // bundle yang sudah lebih "mapan" tidak berubah identitas nomor
+  // invoice-nya cuma karena digabung dengan 1 order baru yang kecil.
+  const jumlahSource = sourcePrimary.bundledInvoices.length;
+  const jumlahTarget = targetPrimary.bundledInvoices.length;
+  const [menang, kalah] = jumlahTarget >= jumlahSource ? [targetPrimary, sourcePrimary] : [sourcePrimary, targetPrimary];
+
+  await tx.invoice.update({ where: { id: kalah.id }, data: { combinedIntoId: menang.id } });
+  if (kalah.bundledInvoices.length > 0) {
+    // Flatten — seluruh anggota lama si "kalah" ikut dipindah LANGSUNG ke
+    // pemenang, bukan dibiarkan menunjuk ke "kalah" (itu akan jadi rantai
+    // 2 tingkat: anggota → kalah(sekarang anggota) → menang).
+    await tx.invoice.updateMany({
+      where: { id: { in: kalah.bundledInvoices.map((b) => b.id) } },
+      data: { combinedIntoId: menang.id },
+    });
+  }
+  return { primaryInvoiceId: menang.id };
 }
 
 // Lepaskan invoice satu order dari bundle-nya — invoice itu balik berdiri

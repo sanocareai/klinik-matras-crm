@@ -287,6 +287,10 @@ export default function InvoicePanel({ orderId, onChanged }) {
       transition={{ duration: 0.18, ease: "easeOut" }}
       className="flex flex-col gap-3"
     >
+      {error && (
+        <p className="rounded-lg bg-redbg px-3 py-2 text-[11.5px] text-red">{error}</p>
+      )}
+
       {/* Kepala invoice */}
       <div className="rounded-xl bg-surface p-3.5 shadow-card">
         <div className="flex items-start justify-between gap-2">
@@ -599,10 +603,6 @@ export default function InvoicePanel({ orderId, onChanged }) {
           </button>
         )}
       </div>
-
-      {error && (
-        <p className="rounded-lg bg-redbg px-3 py-2 text-[11.5px] text-red">{error}</p>
-      )}
 
       {/* Aksi — PDF & kirim WA (31 Agustus 2026) beneran men-generate dokumen
           server-side & mengirim ke nomor pelanggan lewat sesi WA aktifnya

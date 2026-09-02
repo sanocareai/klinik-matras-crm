@@ -729,19 +729,40 @@ orderRouter.get("/:id/invoice/pdf", async (req, res) => {
 });
 
 // GET /api/orders/:id/invoice/mergeable — order LAIN milik customer yang
-// sama, yang invoice-nya masih bisa jadi anggota gabungan (belum terkirim,
-// belum jadi anggota bundle lain). Dipakai isi picker "Gabungkan dengan
-// Order Lain" di InvoicePanel.
+// sama, yang invoice-nya masih bisa digabung ke bundle order ini (belum
+// terkirim). Dipakai isi picker "Gabungkan dengan Order Lain" di InvoicePanel.
+//
+// SENGAJA tidak difilter "belum jadi anggota bundle lain" (beda dari versi
+// awal 2 Sep 2026) — attachOrderToInvoice() sekarang melakukan UNION 2
+// bundle (bukan cuma "tempel ke primary"), jadi order yang sudah tergabung
+// di bundle LAIN tetap valid dipilih (2 bundle akan digabung jadi 1). Yang
+// TIDAK valid cuma order yang sudah 1 bundle YANG SAMA dengan order ini —
+// itu bukan "bisa digabung", itu sudah 1 dokumen yang sama.
 orderRouter.get("/:id/invoice/mergeable", async (req, res) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: req.params.id }, select: { id: true, customerId: true } });
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, customerId: true, invoice: { select: { id: true, combinedIntoId: true } } },
+    });
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+
+    let idBundleSaatIni = [order.id];
+    if (order.invoice) {
+      const primaryId = order.invoice.combinedIntoId || order.invoice.id;
+      const primaryRow = await prisma.invoice.findUnique({
+        where: { id: primaryId },
+        select: { orderId: true, bundledInvoices: { select: { orderId: true } } },
+      });
+      if (primaryRow) {
+        idBundleSaatIni = [primaryRow.orderId, ...primaryRow.bundledInvoices.map((b) => b.orderId)];
+      }
+    }
 
     const kandidat = await prisma.order.findMany({
       where: {
         customerId: order.customerId,
-        id: { not: order.id },
-        invoice: { sentAt: null, combinedIntoId: null, lifecycleStatus: { not: "CANCELLED" } },
+        id: { notIn: idBundleSaatIni },
+        invoice: { sentAt: null, lifecycleStatus: { not: "CANCELLED" } },
       },
       select: { id: true, orderNumber: true, category: true, createdAt: true, invoice: { select: { invoiceNumber: true } } },
       orderBy: { createdAt: "desc" },
