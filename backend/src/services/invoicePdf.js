@@ -21,7 +21,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOGO_PATH = path.join(__dirname, "../../assets/logo.png");
+// Wordmark lengkap (ikon + "KLINIK MATRAS" + pil "SANOCARE"), dikirim owner
+// 2 Sep 2026 (file asli: frontend/public/sano_logo_invoice/sano_logo_invoice.png,
+// di-trim whitespace-nya dengan sharp — lihat riwayat git). Rasio aspek
+// gambar ini ~2.81:1, dipakai di LOGO_ASPEK di bawah untuk hitung ukuran plat.
+const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice.png");
+const LOGO_ASPEK = 10703 / 3804;
 
 // Warna brand — diambil dari logo asli (biru "S" + silang teal).
 const BIRU = "#2367C2";
@@ -36,9 +41,6 @@ const GELAP = "#1f2937";
 // Sesuai template resmi yang dikirim owner; kalau alamat/rekening berubah,
 // cukup ubah di SATU tempat ini.
 const PERUSAHAAN = {
-  nama: "KLINIK MATRAS",
-  tagline: "by SANOCARE",
-  telp: "0851 8728 3900",
   website: "www.sanomatrassehat.com",
   whatsapp: "0851 8728 3900",
   alamat: "Jl. Raya Keadilan, Gg Asrama Polri, No. 81, RT 5/12, Pancoran Mas, Kota Depok",
@@ -114,29 +116,38 @@ export function renderInvoicePdf(view) {
     const HEADER_TINGGI = 118;
     doc.rect(0, 0, pageWidth, HEADER_TINGGI).fill(BIRU);
 
-    // Plat putih di belakang logo supaya kontras di atas banner biru.
-    const logoUkuran = 44;
-    const logoX = MARGIN;
-    const logoY = 24;
-    doc.roundedRect(logoX - 8, logoY - 8, logoUkuran + 16, logoUkuran + 16, 10).fill("#ffffff");
+    // Wordmark logo (bukan icon+teks manual lagi) di plat putih — teks di
+    // logo asli berwarna biru/teal, TIDAK kontras kalau ditaruh langsung di
+    // atas banner biru, makanya perlu plat putih di belakangnya.
+    const PLAT_PAD = 12;
+    const logoTinggi = 58;
+    const logoLebar = logoTinggi * LOGO_ASPEK;
+    const platW = logoLebar + PLAT_PAD * 2;
+    const platH = logoTinggi + PLAT_PAD * 2;
+    const platX = MARGIN;
+    const platY = (HEADER_TINGGI - platH) / 2;
+    doc.roundedRect(platX, platY, platW, platH, 10).fill("#ffffff");
     try {
-      doc.image(LOGO_PATH, logoX, logoY, { width: logoUkuran, height: logoUkuran });
+      doc.image(LOGO_PATH, platX + PLAT_PAD, platY + PLAT_PAD, { width: logoLebar, height: logoTinggi });
     } catch {
       // Kalau file logo tidak ada/rusak, invoice tetap jalan tanpa logo —
       // jangan sampai satu aset hilang menggagalkan seluruh generate PDF.
     }
 
-    const namaX = logoX + logoUkuran + 24;
-    doc.fontSize(17).fillColor("#ffffff").font("Helvetica-Bold").text(PERUSAHAAN.nama, namaX, logoY + 2);
-    doc.fontSize(9).fillColor(TEAL_MUDA).font("Helvetica-Oblique").text(PERUSAHAAN.tagline, namaX, logoY + 22);
-
-    // Info kontak — rata kanan, 2 baris.
+    // Info kontak — rata kanan, ALAMAT dulu baru WA (revisi 2 Sep 2026: baris
+    // "Telp: ..." dihapus, nomor telepon & WA memang sama jadi cuma perlu 1
+    // baris; alamat kantor dipindah ke atas supaya yang paling identitatif
+    // dibaca duluan, bukan angka).
     const kontakLebar = 260;
     const kontakX = pageWidth - MARGIN - kontakLebar;
     doc.fontSize(8.5).font("Helvetica").fillColor("#ffffff");
-    doc.text(`Telp: ${PERUSAHAAN.telp}    Web: ${PERUSAHAAN.website}`, kontakX, 30, { width: kontakLebar, align: "right" });
-    doc.text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, 44, { width: kontakLebar, align: "right" });
-    doc.text(PERUSAHAAN.alamat, kontakX, 58, { width: kontakLebar, align: "right" });
+    const tinggiAlamatHeader = doc.heightOfString(PERUSAHAAN.alamat, { width: kontakLebar, align: "right" });
+    let yKontak = (HEADER_TINGGI - (tinggiAlamatHeader + 12 + 11)) / 2;
+    doc.text(PERUSAHAAN.alamat, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    yKontak += tinggiAlamatHeader + 6;
+    doc.font("Helvetica-Bold").text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    yKontak += 13;
+    doc.font("Helvetica").fillColor(TEAL_MUDA).text(PERUSAHAAN.website, kontakX, yKontak, { width: kontakLebar, align: "right" });
 
     // ── Invoice To / Invoice meta ────────────────────────────────────────
     let y = HEADER_TINGGI + 30;
@@ -206,21 +217,40 @@ export function renderInvoicePdf(view) {
     doc.moveTo(MARGIN, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
     y += 24;
 
-    // ── Payment Method (kiri) + Rincian total (kanan) ───────────────────
+    // ── Kolom kiri (Payment Method + Terms & Conditions) dipisah garis
+    // vertikal dari kolom kanan (rincian total) — revisi 2 Sep 2026 supaya
+    // footer terlihat lebih terstruktur (dua kolom jelas), bukan teks lepas
+    // di seluruh lebar halaman. Terms & Conditions karena itu SEKARANG ikut
+    // lebar kolom kiri, bukan lebar penuh halaman seperti sebelumnya.
     const kolKiriLebar = 260;
     const kolKananX = MARGIN + kolKiriLebar + 20;
     const kolKananLebar = KONTEN_LEBAR - kolKiriLebar - 20;
+    const GARIS_PEMISAH_X = kolKananX - 10;
     const yAwalBawah = y;
 
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("PAYMENT METHOD", MARGIN, y);
-    y += 16;
-    doc.fontSize(9).font("Helvetica").fillColor(ABU).text("No. Rekening:", MARGIN, y);
-    y += 13;
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(GELAP).text(`${PERUSAHAAN.bank.nama} ${PERUSAHAAN.bank.noRekening}`, MARGIN, y);
-    y += 15;
-    doc.fontSize(9).font("Helvetica").fillColor(ABU).text(`Nama Rekening: ${PERUSAHAAN.bank.namaRekening}`, MARGIN, y, { width: kolKiriLebar });
+    // Kolom kiri: Payment Method lalu Terms & Conditions, ditulis berurutan
+    // dalam SATU alur y supaya tidak overlap kalau salah satu memanjang.
+    let yKiri = yAwalBawah;
+    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("PAYMENT METHOD", MARGIN, yKiri);
+    yKiri += 16;
+    doc.fontSize(9).font("Helvetica").fillColor(ABU).text("No. Rekening:", MARGIN, yKiri);
+    yKiri += 13;
+    doc.fontSize(10).font("Helvetica-Bold").fillColor(GELAP).text(`${PERUSAHAAN.bank.nama} ${PERUSAHAAN.bank.noRekening}`, MARGIN, yKiri);
+    yKiri += 15;
+    doc.fontSize(9).font("Helvetica").fillColor(ABU).text(`Nama Rekening: ${PERUSAHAAN.bank.namaRekening}`, MARGIN, yKiri, { width: kolKiriLebar });
+    yKiri += 30;
 
-    // Rincian nominal — kanan.
+    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("TERMS & CONDITIONS", MARGIN, yKiri);
+    yKiri += 16;
+    doc.fontSize(8.5).font("Helvetica").fillColor(ABU);
+    const BULLET_INDENT = 12;
+    for (const butir of PERUSAHAAN.syaratKetentuan) {
+      doc.text("•", MARGIN, yKiri, { width: BULLET_INDENT });
+      doc.text(butir, MARGIN + BULLET_INDENT, yKiri, { width: kolKiriLebar - BULLET_INDENT });
+      yKiri += doc.heightOfString(butir, { width: kolKiriLebar - BULLET_INDENT }) + 6;
+    }
+
+    // Kolom kanan: rincian nominal.
     let yr = yAwalBawah;
     function barisTotal(label, value, { bold = false, warna = GELAP } = {}) {
       doc.fontSize(bold ? 11 : 9.5)
@@ -252,19 +282,14 @@ export function renderInvoicePdf(view) {
       });
     }
 
-    y = Math.max(y + 14, yr) + 20;
+    // Garis pemisah vertikal antar-kolom — tinggi mengikuti kolom yang lebih
+    // panjang (biasanya kiri, karena Terms & Conditions selalu ada di sana).
+    const yAkhirBawah = Math.max(yKiri, yr);
+    doc.moveTo(GARIS_PEMISAH_X, yAwalBawah).lineTo(GARIS_PEMISAH_X, yAkhirBawah - 6).strokeColor(GARIS).stroke();
 
-    // ── Terms & Conditions ───────────────────────────────────────────────
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("TERMS & CONDITIONS", MARGIN, y);
-    y += 16;
-    doc.fontSize(8.5).font("Helvetica").fillColor(ABU);
-    for (const butir of PERUSAHAAN.syaratKetentuan) {
-      doc.text(`•  ${butir}`, MARGIN, y, { width: KONTEN_LEBAR - 10 });
-      y += doc.heightOfString(`•  ${butir}`, { width: KONTEN_LEBAR - 10 }) + 4;
-    }
+    y = yAkhirBawah + 14;
 
     if (invoice.notes) {
-      y += 10;
       doc.fontSize(9).fillColor(ABU).font("Helvetica-Bold").text("CATATAN", MARGIN, y);
       doc.fontSize(9).fillColor(GELAP).font("Helvetica").text(invoice.notes, MARGIN, y + 13, { width: KONTEN_LEBAR - 100 });
     }
