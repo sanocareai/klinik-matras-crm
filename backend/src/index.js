@@ -77,6 +77,10 @@ const vehicleReceiptsDir = path.join(__dirname, "../data/vehicle-receipts");
 // sendiri lewat jaringan Docker internal saat kirim dokumen ke WhatsApp,
 // pola sama persis dengan media lain di atas.
 const invoicePdfsDir = path.join(__dirname, "../data/invoice-pdfs");
+// PDF kartu garansi e-warranty (2 Sep 2026) — dir sendiri, pola sama persis
+// dengan invoice-pdfs di atas (WAHA butuh URL yang bisa dijangkau sendiri
+// lewat jaringan Docker internal).
+const warrantyPdfsDir = path.join(__dirname, "../data/warranty-pdfs");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
@@ -85,6 +89,7 @@ mkdirSync(paymentProofsDir, { recursive: true });
 mkdirSync(scopeRevisionPhotosDir, { recursive: true });
 mkdirSync(vehicleReceiptsDir, { recursive: true });
 mkdirSync(invoicePdfsDir, { recursive: true });
+mkdirSync(warrantyPdfsDir, { recursive: true });
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -118,6 +123,7 @@ app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
 app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
+app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);

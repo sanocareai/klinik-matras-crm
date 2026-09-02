@@ -14,6 +14,8 @@ import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.j
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
+import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
+import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -32,6 +34,7 @@ const paymentProofsDir = path.join(__dirname, "../../data/payment-proofs");
 // Sama dir dengan yang dibuat/di-serve index.js (/media/invoice-pdfs) —
 // TIDAK boleh punya definisi terpisah yang bisa drift dari situ.
 const invoicePdfsDir = path.join(__dirname, "../../data/invoice-pdfs");
+const warrantyPdfsDir = path.join(__dirname, "../../data/warranty-pdfs");
 if (!fs.existsSync(paymentProofsDir)) fs.mkdirSync(paymentProofsDir, { recursive: true });
 const proofUpload = multer({
   storage: multer.diskStorage({
@@ -908,6 +911,108 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
   } catch (err) {
     console.error("[invoice/send] error:", err);
     res.status(500).json({ error: "Gagal mengirim invoice" });
+  }
+});
+
+// ─── Kartu Garansi E-Warranty (2 Sep 2026) ──────────────────────────────────
+// Sama pola dengan invoice (route tipis, logika di services/warranty.js +
+// services/warrantyPdf.js), TAPI TANPA lifecycle draft/sent/viewed — cuma
+// "kapan terakhir dikirim & varian berapa tahun" (Order.warrantyYears/
+// warrantySentAt di-tulis lewat markWarrantySent()).
+
+// GET /api/orders/:id/warranty/pdf?years=10|20 — preview/download, TIDAK
+// menandai apa pun terkirim (sama seperti GET .../invoice/pdf).
+orderRouter.get("/:id/warranty/pdf", async (req, res) => {
+  try {
+    const years = Number(req.query.years) || undefined;
+    const view = await buildWarrantyView(req.params.id, { userId: req.user?.id || null, warrantyYears: years });
+    if (!view) return res.status(404).json({ error: "Order/pelanggan tidak ditemukan" });
+    const buffer = await renderWarrantyPdf(view);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="Kartu-Garansi-${view.invoiceNumber}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error("warranty pdf error:", err);
+    res.status(500).json({ error: "Gagal membuat PDF kartu garansi" });
+  }
+});
+
+// POST /api/orders/:id/warranty/send { years } — generate PDF + kirim ke
+// WhatsApp pelanggan, pola identik POST .../invoice/send (sesi WA aktif
+// customer yang sama, sendMedia lewat URL internal Docker).
+orderRouter.post("/:id/warranty/send", async (req, res) => {
+  const years = Number(req.body?.years);
+  if (!WARRANTY_YEARS_VALID.includes(years)) {
+    return res.status(400).json({ error: `Pilih varian garansi ${WARRANTY_YEARS_VALID.join(" atau ")} tahun.` });
+  }
+  try {
+    const view = await buildWarrantyView(req.params.id, { userId: req.user?.id || null, warrantyYears: years });
+    if (!view) return res.status(404).json({ error: "Order/pelanggan tidak ditemukan" });
+    if (!view.customer.id) {
+      return res.status(400).json({ error: "Order ini tidak punya pelanggan yang valid." });
+    }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { customerId: view.customer.id, type: "INDIVIDUAL" },
+      orderBy: { lastMessageAt: "desc" },
+      include: { customer: { select: { phone: true } } },
+    });
+    if (!conversation) {
+      return res.status(409).json({ error: "Belum ada percakapan WhatsApp dengan pelanggan ini — tidak tahu mau kirim ke sesi mana." });
+    }
+    const target = resolveSendTarget(conversation);
+    if (!target) return res.status(400).json({ error: "Nomor WhatsApp pelanggan tidak tersedia." });
+
+    const buffer = await renderWarrantyPdf(view);
+    const filename = `Kartu-Garansi-${view.invoiceNumber}-${years}th.pdf`;
+    fs.writeFileSync(path.join(warrantyPdfsDir, filename), buffer);
+    const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+    const fileUrl = `${BACKEND_INTERNAL_URL}/media/warranty-pdfs/${filename}`;
+
+    const caption =
+      `📜 *Kartu Garansi Klinik Matras — ${years} Tahun*\n\n` +
+      `Halo ${view.customer.nama || "Kak"}, berikut kartu e-garansi untuk pesanan Anda 🙏\n\n` +
+      `ID Transaksi: ${view.invoiceNumber}\n` +
+      `Order: ${view.order.orderNumber || "-"}\n\n` +
+      `Simpan dokumen ini — scan QR di dalamnya kapan saja kalau ingin mengajukan klaim garansi.`;
+
+    let wahaMsg;
+    try {
+      ({ result: wahaMsg } = await sendWithSessionFallback(conversation, (session) =>
+        sendMedia(target, { url: fileUrl, mimetype: "application/pdf", filename }, caption, "document", session)
+      ));
+    } catch (waErr) {
+      if (waErr instanceof SessionResolutionError) {
+        return res.status(409).json({ error: SESSION_UNKNOWN_ERROR });
+      }
+      console.error("[warranty/send] gagal kirim:", waErr.message);
+      return res.status(502).json({ error: `Gagal kirim kartu garansi ke WhatsApp: ${waErr.message}` });
+    }
+
+    const msg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: "OUTBOUND",
+        content: caption,
+        mediaType: "document",
+        mediaUrl: `/media/warranty-pdfs/${filename}`,
+        externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+        sentById: req.user.id,
+      },
+    });
+    const updatedConv = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, "document") },
+    });
+    emitNewMessage(conversation.id, msg);
+    emitConversationUpdate(updatedConv);
+
+    await markWarrantySent(req.params.id, years);
+
+    res.json(await buildWarrantyView(req.params.id, { userId: req.user?.id || null, warrantyYears: years }));
+  } catch (err) {
+    console.error("[warranty/send] error:", err);
+    res.status(500).json({ error: "Gagal mengirim kartu garansi" });
   }
 });
 

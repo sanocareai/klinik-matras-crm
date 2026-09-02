@@ -6,6 +6,7 @@ import {
   Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText, Ban,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
+import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
 import { api } from "../../api.js";
 import {
@@ -839,6 +840,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
                   ringkasan order di atas — pakai callback yang SAMA dengan
                   tab Pembayaran supaya papan order di belakang ikut segar. */}
               <InvoicePanel orderId={o.id} onChanged={onPaymentRecorded} />
+              <WarrantyPanel orderId={o.id} order={o} onChanged={onPaymentRecorded} />
             </div>
           ) : (
           <>

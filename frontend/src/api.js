@@ -633,6 +633,21 @@ export const api = {
     const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || "invoice.pdf";
     return { blob: await res.blob(), namaFile };
   },
+  // Kartu Garansi E-Warranty (2 Sep 2026) — lihat services/warranty.js.
+  getOrderWarrantyPdf: async (orderId, years) => {
+    const res = await fetch(BASE + `/orders/${orderId}/warranty/pdf?years=${years}`, { headers: authHeaders() });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal membuat PDF kartu garansi";
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || "kartu-garansi.pdf";
+    return { blob: await res.blob(), namaFile };
+  },
+  sendOrderWarranty: (orderId, years) =>
+    request(`/orders/${orderId}/warranty/send`, { method: "POST", body: JSON.stringify({ years }) }),
   addOrderItem: (orderId, data) =>
     request(`/orders/${orderId}/items`, { method: "POST", body: JSON.stringify(data) }),
   updateOrderItem: (itemId, data) =>

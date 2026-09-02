@@ -881,6 +881,16 @@ model Order {
   // tidak memengaruhi paymentStatus/paidAt/sisa tagihan sama sekali,
   // yang tetap 100% dari ledger vs Order.value seperti sebelumnya.
   dpTarget           Int?          @map("dp_target")
+  // Kartu garansi e-warranty (2 Sep 2026) — warrantyYears cuma 10 atau 20
+  // (dipilih manual sales/admin tiap kirim, TIDAK diturunkan otomatis dari
+  // paket manapun karena sistem ini belum menyimpan "Paket Standard/Premium"
+  // per order). null = belum pernah dikirim. Disimpan di Order (bukan tabel
+  // terpisah) sengaja SEDERHANA — beda dari Invoice yang perlu lifecycle
+  // penuh (draft/sent/viewed/gabungan dst), kartu garansi cukup "kapan
+  // terakhir dikirim & varian berapa tahun", dibuat ulang tiap kirim dari
+  // data order yang sudah ada (bukan dokumen yang di-draft dulu).
+  warrantyYears      Int?          @map("warranty_years")
+  warrantySentAt     DateTime?     @map("warranty_sent_at")
   category           OrderCategory @default(LAYANAN)
   // productLine (29 Agustus 2026) — default KASUR supaya migrasi backfill
   // otomatis SEMUA order lama sbg Kasur (fakta historis, 100% order sebelum
