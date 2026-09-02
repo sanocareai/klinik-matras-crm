@@ -49,6 +49,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, "../../assets/logo-warranty-primary.png");
 const LOGO_ASPEK = 3000 / 978;
 
+// Judul "X YEARS of WARRANTY" — asset gambar 3D emas metalik siap-pakai
+// dari designer (revisi 3 Sep 2026, poin 2), BUKAN lagi teks yang digambar
+// pdfkit. Dua varian (10/20 tahun) punya rasio aspek beda tipis, makanya
+// dicatat terpisah — jangan asumsikan sama.
+const TITLE_10_PATH = path.join(__dirname, "../../assets/ewarranty_10years_title.png");
+const TITLE_20_PATH = path.join(__dirname, "../../assets/ewarranty_20years_title.png");
+const TITLE_10_ASPEK = 1400 / 525;
+const TITLE_20_ASPEK = 1400 / 467;
+
 const FONT_DIR = path.join(__dirname, "../../assets/fonts");
 const FONT_TEKS = "Inter";
 const FONT_TEKS_MED = "InterMedium";
@@ -65,9 +74,10 @@ const BIRU = "#2367C2";
 const BIRU_GELAP = "#124A99";
 const TEAL = "#5FC9BB";
 const TEAL_GELAP = "#2F9C8C";
-const EMAS_TERANG = "#F3DDA3";
+// Dipakai HANYA sbg warna fallback kalau asset judul emas (lihat TITLE_*_PATH
+// di bawah) hilang/rusak — headline utama sekarang gambar PNG siap-pakai
+// (revisi poin 2), bukan teks pdfkit lagi.
 const EMAS = "#E0BA6C";
-const EMAS_GELAP = "#9C7B32";
 const ABU = "#6b7280";
 const GELAP = "#1f2937";
 const KARTU_BG = "#F7FAFD";
@@ -106,6 +116,26 @@ function formatTanggal(d) {
 function bersihkanTeks(v) {
   const t = String(v ?? "").replace(/\s+/g, " ").trim();
   return t || "-";
+}
+
+// Pecah 1 kalimat jadi 2 baris SEIMBANG panjangnya (revisi poin 4, 3 Sep
+// 2026) — dulu alamat cuma di-word-wrap otomatis pdfkit pada lebar tetap,
+// hasilnya baris kedua sering pendek sendiri (mis. "Mas, Kota Depok" doang)
+// yang menurut owner "kurang estetik". Dicari titik potong (antar kata)
+// yang bikin PANJANG KARAKTER kedua baris paling mendekati sama, bukan
+// sekadar "sepenuh mungkin muat di lebar kolom".
+function bagiDuaBarisSeimbang(teks) {
+  const kata = teks.split(" ");
+  if (kata.length < 2) return [teks, ""];
+  let potonganTerbaik = 1;
+  let bedaTerkecil = Infinity;
+  for (let i = 1; i < kata.length; i++) {
+    const baris1 = kata.slice(0, i).join(" ");
+    const baris2 = kata.slice(i).join(" ");
+    const beda = Math.abs(baris1.length - baris2.length);
+    if (beda < bedaTerkecil) { bedaTerkecil = beda; potonganTerbaik = i; }
+  }
+  return [kata.slice(0, potonganTerbaik).join(" "), kata.slice(potonganTerbaik).join(" ")];
 }
 
 // Nomor lokal ("0851 8728 3900") → format wa.me ("6285187283900").
@@ -196,7 +226,8 @@ export async function renderWarrantyPdf(view) {
 
     // Plakat putih kecil kiri-atas berisi logo BERWARNA — logo aslinya
     // biru/teal (bukan versi putih), jadi butuh dasar terang supaya tetap
-    // terbaca di atas hero biru apa pun kecerahannya.
+    // terbaca di atas hero biru apa pun kecerahannya. Titik dekoratif yang
+    // dulu ada di bawah plakat DIHAPUS (revisi poin 1 — owner minta hilang).
     const plakatW = 104, plakatH = 38;
     doc.roundedRect(MARGIN, 26, plakatW, plakatH, 8).fill("#ffffff");
     try {
@@ -206,34 +237,31 @@ export async function renderWarrantyPdf(view) {
     } catch {
       // Aset logo hilang/rusak tidak boleh menggagalkan generate PDF.
     }
-    // Titik dekoratif kecil di bawah plakat (elemen dari invoicePdf.js
-    // header — dipakai ulang di sini, poin 7 revisi).
-    const dotY = 26 + plakatH + 12;
-    for (let kolom = 0; kolom < 4; kolom++) {
-      doc.circle(MARGIN + kolom * 12, dotY, 1.6).fill(TEAL);
-    }
 
     doc.fontSize(11).font(FONT_JUDUL).fillColor("#ffffff")
       .text("E - W A R R A N T Y   C A R D", MARGIN, 98, { width: KONTEN_LEBAR, align: "center", characterSpacing: 0.5 });
 
-    // Angka tahun — efek emas berlapis (bayangan emas gelap sedikit
-    // digeser + emas terang di atas) supaya terasa lebih "classy", bukan
-    // emas datar polos (revisi poin 3).
-    const teksTahun = `${warrantyYears} YEARS`;
-    doc.fontSize(78).font(FONT_JUDUL_XBOLD).fillColor(EMAS_GELAP)
-      .text(teksTahun, MARGIN + 2, 124, { width: KONTEN_LEBAR, align: "center" });
-    doc.fontSize(78).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
-      .text(teksTahun, MARGIN, 122, { width: KONTEN_LEBAR, align: "center" });
-
-    doc.fontSize(28).font(FONT_JUDUL).fillColor(EMAS_TERANG)
-      .text("of WARRANTY", MARGIN, 212, { width: KONTEN_LEBAR, align: "center" });
-
-    // Garis emas tipis — aksen pemisah antara headline & tagline.
-    const garisW = 64;
-    doc.roundedRect(MARGIN + (KONTEN_LEBAR - garisW) / 2, 260, garisW, 2, 1).fill(EMAS);
+    // Judul "X YEARS of WARRANTY" — revisi poin 2: bukan lagi teks yang
+    // digambar pdfkit, tapi gambar 3D emas metalik siap-pakai (asset
+    // designer, lebih "classy" dari efek bayangan teks manual). Sudah PNG
+    // transparan (dicek: alpha=0 di seluruh area luar hurufnya), jadi
+    // tinggal ditempel di atas gradasi hero — tidak perlu kotak latar apa
+    // pun. Lebar gambar mengikuti lebar konten, tinggi menyesuaikan aspek
+    // rasio ASLI file (10 tahun & 20 tahun punya rasio sedikit berbeda).
+    const titlePath = warrantyYears === 20 ? TITLE_20_PATH : TITLE_10_PATH;
+    const titleAspek = warrantyYears === 20 ? TITLE_20_ASPEK : TITLE_10_ASPEK;
+    const titleLebar = KONTEN_LEBAR * 0.92;
+    const titleTinggi = titleLebar / titleAspek;
+    try {
+      doc.image(titlePath, MARGIN + (KONTEN_LEBAR - titleLebar) / 2, 118, { width: titleLebar, height: titleTinggi });
+    } catch {
+      // Fallback teks polos kalau asset hilang — jangan sampai generate PDF gagal total.
+      doc.fontSize(48).font(FONT_JUDUL_XBOLD).fillColor(EMAS)
+        .text(`${warrantyYears} YEARS of WARRANTY`, MARGIN, 150, { width: KONTEN_LEBAR, align: "center" });
+    }
 
     doc.fontSize(10.5).font(FONT_TEKS).fillColor("#dbe7fb")
-      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, 274, { width: KONTEN_LEBAR, align: "center" });
+      .text("Dedikasi Kami untuk Tidur Sehat dan Nyenyak Anda", MARGIN, 118 + titleTinggi + 14, { width: KONTEN_LEBAR, align: "center" });
 
     // ── "KARTU GARANSI" — data transaksi (kiri) + QR klaim (kanan) ────────
     let y = HERO_TINGGI + 30;
@@ -298,9 +326,12 @@ export async function renderWarrantyPdf(view) {
     const gradienSyarat = doc.linearGradient(MARGIN, y, MARGIN, y + tinggiSyarat);
     gradienSyarat.stop(0, BIRU_GELAP).stop(1, BIRU);
     doc.roundedRect(MARGIN, y, KONTEN_LEBAR, tinggiSyarat, 12).fill(gradienSyarat);
-    badgeIkon(doc, MARGIN + 16 + 11, y + 16 + 11, 11, { bg: "#ffffff", ikon: IKON.dokumen, warnaIkon: BIRU_GELAP, ukuranIkon: 10 });
+    // Revisi poin 3 (3 Sep 2026): badge digeser lebih ke kiri + diperkecil,
+    // dan judul digeser lebih ke kanan — jarak sebelumnya cuma ~2pt (badge
+    // & huruf "S" nyaris nempel/tumpang tindih di render nyata).
+    badgeIkon(doc, MARGIN + 16 + 9, y + 16 + 9, 9, { bg: "#ffffff", ikon: IKON.dokumen, warnaIkon: BIRU_GELAP, ukuranIkon: 9 });
     doc.fontSize(10.5).font(FONT_JUDUL).fillColor("#ffffff")
-      .text("SYARAT & KETENTUAN GARANSI", MARGIN + 40, y + 16 + 4, { width: syaratLebar - 24 });
+      .text("SYARAT & KETENTUAN GARANSI", MARGIN + 46, y + 16 + 5, { width: syaratLebar - 30 });
     let ySyarat = y + 42;
     SYARAT_GARANSI.forEach((poin, i) => {
       doc.fontSize(8.5).font(FONT_JUDUL).fillColor(TEAL)
@@ -319,8 +350,10 @@ export async function renderWarrantyPdf(view) {
       .text(`Customer Care: ${PERUSAHAAN.whatsapp}`, MARGIN, footerY + 14, { width: KONTEN_LEBAR / 2 });
     doc.fontSize(9).font(FONT_TEKS).fillColor("#ffffff")
       .text(PERUSAHAAN.website, MARGIN, footerY + 32, { width: KONTEN_LEBAR / 2 });
+    const [alamatBaris1, alamatBaris2] = bagiDuaBarisSeimbang(PERUSAHAAN.alamat);
     doc.fontSize(8.5).font(FONT_TEKS).fillColor("#eafff9")
-      .text(PERUSAHAAN.alamat, MARGIN + KONTEN_LEBAR / 2, footerY + 14, { width: KONTEN_LEBAR / 2, align: "right" });
+      .text(alamatBaris1, MARGIN + KONTEN_LEBAR / 2, footerY + 14, { width: KONTEN_LEBAR / 2, align: "right" })
+      .text(alamatBaris2, MARGIN + KONTEN_LEBAR / 2, footerY + 27, { width: KONTEN_LEBAR / 2, align: "right" });
 
     doc.end();
   });
