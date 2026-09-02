@@ -1379,16 +1379,18 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             className="btn btn-primary" style={{ flex: 1 }}
             disabled={!category}
             onClick={() => {
-              // SEWA (2 Sep 2026) — Klinik Matras cuma menyewakan kasur
-              // sehat, TIDAK PERNAH sofa/divan (beda dari BARU/LAYANAN yang
-              // sudah mencakup ketiganya). Step 1 (pilih Lini Produk) jadi
-              // percuma ditanyakan utk kategori ini — auto-set KASUR &
-              // lompat langsung ke step 2 (jenis: spring/busa/multibed/dst),
-              // pola sama seperti DIVAN yang auto-skip step 2 di bawah.
+              // SEWA (2 Sep 2026, direvisi lagi hari yang sama) — Klinik
+              // Matras cuma menyewakan SATU jenis: kasur sehat, tanpa
+              // pembeda spring/busa/multibed/dst (itu bedanya cuma relevan
+              // utk BARU/LAYANAN). Step 1 (Lini Produk) DAN step 2 (Jenis)
+              // dua-duanya dilompati — auto-set KASUR, productType kosong
+              // (tidak dipakai sama sekali utk perhitungan harga Kasur/Divan,
+              // lihat resolveVariantKey() di utils/format.js — variannya
+              // dari UKURAN, bukan jenis), langsung ke step 3 (ukuran).
               if (category === "SEWA") {
                 setProductLine("KASUR");
                 setProductType("");
-                setStep(2);
+                setStep(3);
               } else {
                 setStep(1);
               }
@@ -1499,7 +1501,10 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // baru ini, jadi Sofa/Divan pakai input bebas). ──
   if (step === 3) {
     const opt = CATEGORY_OPTIONS.find((o) => o.value === category);
-    const lineLabel = PRODUCT_LINE_LABELS[productLine] || "Produk";
+    // SEWA cuma 1 jenis kasur — label "Kasur Sehat" (istilah bisnis resmi,
+    // CLAUDE.md §16) lebih akurat daripada "Kasur" generik yang dipakai
+    // BARU/LAYANAN (yang memang punya banyak jenis kasur/sofa/divan).
+    const lineLabel = category === "SEWA" ? "Kasur Sehat" : (PRODUCT_LINE_LABELS[productLine] || "Produk");
     return (
       <div style={formBox}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
@@ -1508,9 +1513,13 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         <p style={{ margin: "0 0 4px", fontSize: 11, color: "var(--text-muted)" }}>
           {lineLabel}{productType ? ` · ${PRODUCT_TYPE_LABELS[productType]}` : ""}
         </p>
-        <button type="button" onClick={() => setStep(isKasur || productLine === "SOFA" ? 2 : 1)}
+        {/* SEWA (2 Sep 2026): step 1 & step 2 dua-duanya dilompati (cuma
+            1 jenis kasur sehat, tidak ada yang bisa "diganti jenis") —
+            balik langsung ke step 0, bukan ke step 2 yang tidak pernah
+            dikunjungi. */}
+        <button type="button" onClick={() => setStep(category === "SEWA" ? 0 : (isKasur || productLine === "SOFA" ? 2 : 1))}
           style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
-          ← Ganti jenis
+          {category === "SEWA" ? "← Ganti kategori" : "← Ganti jenis"}
         </button>
 
         {/* Berat Badan — multi-orang. KHUSUS Kasur (fitting kekerasan by
