@@ -32,6 +32,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-white.png");
 const LOGO_ASPEK = 1200 / 391;
 
+// Font kustom (2 Sep 2026, permintaan owner) — Questrial untuk teks isi
+// (body, label, angka), Bebas Neue untuk judul/heading yang menonjol (mis.
+// kata "INVOICE"). Keduanya Google Fonts open source (lisensi OFL, file
+// diunduh dari repo resmi google/fonts), dan CUMA SATU BERAT masing-masing
+// (tidak ada varian Bold) — penekanan visual di dokumen ini sengaja
+// mengandalkan ukuran & warna, bukan ketebalan huruf.
+const FONT_TEKS = "Questrial";
+const FONT_JUDUL = "BebasNeue";
+const FONT_TEKS_PATH = path.join(__dirname, "../../assets/fonts/Questrial-Regular.ttf");
+const FONT_JUDUL_PATH = path.join(__dirname, "../../assets/fonts/BebasNeue-Regular.ttf");
+
 // Warna brand — diambil dari logo asli (biru "S" + silang teal).
 const BIRU = "#2367C2";
 const BIRU_GELAP = "#124A99";
@@ -91,6 +102,14 @@ function formatTanggal(d) {
 // tinggi total.
 function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
   const tinggiBaris = doc.currentLineHeight();
+  // Margin aman 3pt: widthOfString() dipakai untuk MENYUSUN baris manual di
+  // sini, tapi doc.text() sendiri (yang benar-benar merender) punya
+  // pembulatan/kerning yang kadang menilai baris yang SAMA sebagai "tidak
+  // muat" lalu memaksanya bungkus ke baris tambahan — ditemukan nyata
+  // (kata terakhir kepental sendiri ke baris baru, mendorong seluruh baris
+  // di bawahnya, sampai numpuk dengan nomor telepon). Longgarkan ambang
+  // pas menyusun supaya tidak pernah pas-pasan di tepi lebar kolom.
+  const lebarAman = width - 3;
   const kata = teks.split(" ");
   const barisArr = [];
   let current = "";
@@ -98,7 +117,7 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
 
   while (i < kata.length) {
     const coba = current ? `${current} ${kata[i]}` : kata[i];
-    if (!current || doc.widthOfString(coba) <= width) {
+    if (!current || doc.widthOfString(coba) <= lebarAman) {
       current = coba;
       i++;
     } else {
@@ -112,14 +131,18 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
   const terpotong = i < kata.length;
   if (terpotong) {
     let lastLine = barisArr[barisArr.length - 1] || "";
-    while (lastLine.length > 0 && doc.widthOfString(`${lastLine}…`) > width) {
+    while (lastLine.length > 0 && doc.widthOfString(`${lastLine}…`) > lebarAman) {
       const idxSpasi = lastLine.lastIndexOf(" ");
       lastLine = idxSpasi > 0 ? lastLine.slice(0, idxSpasi) : lastLine.slice(0, -1);
     }
     barisArr[barisArr.length - 1] = `${lastLine}…`;
   }
 
-  doc.text(barisArr.join("\n"), x, y, { width, ...(align && { align }) });
+  // width EKSTRA LEBAR di sini (bukan `width` asli) — baris sudah pasti
+  // muat (dites pakai lebarAman di atas), tapi pdfkit tetap butuh angka
+  // lebar untuk urusan align:"right"; kalau dikasih persis `width`, risiko
+  // pembulatan yang sama seperti di atas bisa kambuh saat render sungguhan.
+  doc.text(barisArr.join("\n"), x, y, { width: width + 3, ...(align && { align }) });
   return tinggiBaris * barisArr.length;
 }
 
@@ -159,6 +182,10 @@ export function renderInvoicePdf(view) {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    doc.registerFont(FONT_TEKS, FONT_TEKS_PATH);
+    doc.registerFont(FONT_JUDUL, FONT_JUDUL_PATH);
+    doc.font(FONT_TEKS); // default dokumen — dipakai kalau ada .text() yang lupa set font eksplisit
+
     const pageWidth = doc.page.width; // 595.28
     const pageHeight = doc.page.height; // 841.89
     const MARGIN = 40;
@@ -189,7 +216,7 @@ export function renderInvoicePdf(view) {
     // dibaca duluan, bukan angka).
     const kontakLebar = 260;
     const kontakX = pageWidth - MARGIN - kontakLebar;
-    doc.fontSize(8.5).font("Helvetica").fillColor("#ffffff");
+    doc.fontSize(8.5).font(FONT_TEKS).fillColor("#ffffff");
     const ALAMAT_HEADER_MAKS_BARIS = 2;
     const tinggiAlamatHeader = doc.currentLineHeight() * ALAMAT_HEADER_MAKS_BARIS;
     let yKontak = (HEADER_TINGGI - (tinggiAlamatHeader + 12 + 11)) / 2;
@@ -197,9 +224,9 @@ export function renderInvoicePdf(view) {
       width: kontakLebar, maxBaris: ALAMAT_HEADER_MAKS_BARIS, align: "right",
     });
     yKontak += tinggiAlamatHeader + 6;
-    doc.font("Helvetica-Bold").text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    doc.text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, yKontak, { width: kontakLebar, align: "right" });
     yKontak += 13;
-    doc.font("Helvetica").fillColor(TEAL_MUDA).text(PERUSAHAAN.website, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    doc.fillColor(TEAL_MUDA).text(PERUSAHAAN.website, kontakX, yKontak, { width: kontakLebar, align: "right" });
 
     // ── Invoice To / Invoice meta ────────────────────────────────────────
     let y = HEADER_TINGGI + 30;
@@ -214,16 +241,17 @@ export function renderInvoicePdf(view) {
     const ALAMAT_LEBAR = 260;
     const ALAMAT_MAKS_BARIS = 3;
 
-    doc.fontSize(9).fillColor(ABU).font("Helvetica-Bold").text("INVOICE TO:", MARGIN, y);
-    doc.fontSize(12).fillColor(GELAP).font("Helvetica-Bold").text((customer.nama || "-").toUpperCase(), MARGIN, y + 14);
-    doc.fontSize(9).font("Helvetica").fillColor(ABU);
+    const namaTampil = invoice.namaTujuan || customer.nama || "-";
+    doc.fontSize(9).fillColor(ABU).font(FONT_JUDUL).text("INVOICE TO:", MARGIN, y);
+    doc.fontSize(13).fillColor(GELAP).font(FONT_JUDUL).text(namaTampil.toUpperCase(), MARGIN, y + 14);
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU);
     const tinggiAlamat = tulisAlamatDibatasi(doc, alamatLengkap, MARGIN, y + 32, {
       width: ALAMAT_LEBAR, maxBaris: ALAMAT_MAKS_BARIS,
     });
     doc.text(customer.phone || "-", MARGIN, y + 32 + tinggiAlamat + 4);
 
-    doc.fontSize(20).fillColor(BIRU).font("Helvetica-Bold").text("INVOICE", MARGIN, y, { width: KONTEN_LEBAR, align: "right" });
-    doc.fontSize(9).fillColor(ABU).font("Helvetica")
+    doc.fontSize(24).fillColor(BIRU).font(FONT_JUDUL).text("INVOICE", MARGIN, y - 3, { width: KONTEN_LEBAR, align: "right" });
+    doc.fontSize(9).fillColor(ABU).font(FONT_TEKS)
       .text(`Invoice No: ${invoice.invoiceNumber}`, MARGIN, y + 26, { width: KONTEN_LEBAR, align: "right" })
       .text(`Invoice Date: ${formatTanggal(invoice.createdAt)}`, MARGIN, y + 40, { width: KONTEN_LEBAR, align: "right" });
 
@@ -252,12 +280,12 @@ export function renderInvoicePdf(view) {
     const TINGGI_BARIS = 22;
 
     doc.rect(MARGIN, y, KONTEN_LEBAR, TINGGI_HEADER_TABEL).fill(BIRU);
-    doc.fontSize(8.5).font("Helvetica-Bold").fillColor("#ffffff");
-    doc.text("NO.", kolNo, y + 8, { width: kolNoLebar, align: "center" });
-    doc.text("ITEM DESCRIPTION", kolDesk + 6, y + 8, { width: kolDeskLebar - 6 });
-    doc.text("PRICE", kolHarga, y + 8, { width: kolHargaLebar - 6, align: "right" });
-    doc.text("QTY", kolQty, y + 8, { width: kolQtyLebar, align: "center" });
-    doc.text("TOTAL", kolTotal, y + 8, { width: kolTotalLebar - 6, align: "right" });
+    doc.fontSize(9.5).font(FONT_JUDUL).fillColor("#ffffff");
+    doc.text("NO.", kolNo, y + 7, { width: kolNoLebar, align: "center" });
+    doc.text("ITEM DESCRIPTION", kolDesk + 6, y + 7, { width: kolDeskLebar - 6 });
+    doc.text("PRICE", kolHarga, y + 7, { width: kolHargaLebar - 6, align: "right" });
+    doc.text("QTY", kolQty, y + 7, { width: kolQtyLebar, align: "center" });
+    doc.text("TOTAL", kolTotal, y + 7, { width: kolTotalLebar - 6, align: "right" });
     y += TINGGI_HEADER_TABEL;
 
     const items = order.items || [];
@@ -266,7 +294,7 @@ export function renderInvoicePdf(view) {
       const it = items[i];
       if (i % 2 === 1) doc.rect(MARGIN, y, KONTEN_LEBAR, TINGGI_BARIS).fill(TEAL_MUDA);
       if (it) {
-        doc.fontSize(9).font("Helvetica").fillColor(GELAP);
+        doc.fontSize(9).font(FONT_TEKS).fillColor(GELAP);
         doc.text(String(i + 1), kolNo, y + 6, { width: kolNoLebar, align: "center" });
         doc.text(it.nama, kolDesk + 6, y + 6, { width: kolDeskLebar - 10 });
         doc.text(formatRupiah(it.harga), kolHarga, y + 6, { width: kolHargaLebar - 6, align: "right" });
@@ -292,18 +320,18 @@ export function renderInvoicePdf(view) {
     // Kolom kiri: Payment Method lalu Terms & Conditions, ditulis berurutan
     // dalam SATU alur y supaya tidak overlap kalau salah satu memanjang.
     let yKiri = yAwalBawah;
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("PAYMENT METHOD", MARGIN, yKiri);
+    doc.fontSize(11).font(FONT_JUDUL).fillColor(BIRU).text("PAYMENT METHOD", MARGIN, yKiri);
     yKiri += 16;
-    doc.fontSize(9).font("Helvetica").fillColor(ABU).text("No. Rekening:", MARGIN, yKiri);
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU).text("No. Rekening:", MARGIN, yKiri);
     yKiri += 13;
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(GELAP).text(`${PERUSAHAAN.bank.nama} ${PERUSAHAAN.bank.noRekening}`, MARGIN, yKiri);
+    doc.fontSize(10).font(FONT_TEKS).fillColor(GELAP).text(`${PERUSAHAAN.bank.nama} ${PERUSAHAAN.bank.noRekening}`, MARGIN, yKiri);
     yKiri += 15;
-    doc.fontSize(9).font("Helvetica").fillColor(ABU).text(`Nama Rekening: ${PERUSAHAAN.bank.namaRekening}`, MARGIN, yKiri, { width: kolKiriLebar });
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU).text(`Nama Rekening: ${PERUSAHAAN.bank.namaRekening}`, MARGIN, yKiri, { width: kolKiriLebar });
     yKiri += 30;
 
-    doc.fontSize(10).font("Helvetica-Bold").fillColor(BIRU).text("TERMS & CONDITIONS", MARGIN, yKiri);
+    doc.fontSize(11).font(FONT_JUDUL).fillColor(BIRU).text("TERMS & CONDITIONS", MARGIN, yKiri);
     yKiri += 16;
-    doc.fontSize(8.5).font("Helvetica").fillColor(ABU);
+    doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU);
     const BULLET_INDENT = 12;
     for (const butir of PERUSAHAAN.syaratKetentuan) {
       doc.text("•", MARGIN, yKiri, { width: BULLET_INDENT });
@@ -314,11 +342,11 @@ export function renderInvoicePdf(view) {
     // Kolom kanan: rincian nominal.
     let yr = yAwalBawah;
     function barisTotal(label, value, { bold = false, warna = GELAP } = {}) {
-      doc.fontSize(bold ? 11 : 9.5)
-        .font(bold ? "Helvetica-Bold" : "Helvetica")
+      doc.fontSize(bold ? 12 : 9.5)
+        .font(bold ? FONT_JUDUL : FONT_TEKS)
         .fillColor(bold ? warna : ABU)
         .text(label, kolKananX, yr, { width: kolKananLebar * 0.55 });
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fillColor(warna)
+      doc.font(bold ? FONT_JUDUL : FONT_TEKS).fillColor(warna)
         .text(value, kolKananX, yr, { width: kolKananLebar, align: "right" });
       yr += bold ? 20 : 17;
     }
@@ -351,13 +379,13 @@ export function renderInvoicePdf(view) {
     y = yAkhirBawah + 14;
 
     if (invoice.notes) {
-      doc.fontSize(9).fillColor(ABU).font("Helvetica-Bold").text("CATATAN", MARGIN, y);
-      doc.fontSize(9).fillColor(GELAP).font("Helvetica").text(invoice.notes, MARGIN, y + 13, { width: KONTEN_LEBAR - 100 });
+      doc.fontSize(10).fillColor(ABU).font(FONT_JUDUL).text("CATATAN", MARGIN, y);
+      doc.fontSize(9).fillColor(GELAP).font(FONT_TEKS).text(invoice.notes, MARGIN, y + 13, { width: KONTEN_LEBAR - 100 });
     }
 
     // ── Wave dekoratif footer ────────────────────────────────────────────
     gambarWaveFooter(doc, pageWidth, pageHeight);
-    doc.fontSize(8).fillColor("#ffffff").font("Helvetica")
+    doc.fontSize(8).fillColor("#ffffff").font(FONT_TEKS)
       .text("Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras.", MARGIN, pageHeight - 30, {
         width: KONTEN_LEBAR, align: "center",
       });

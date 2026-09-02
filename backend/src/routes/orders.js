@@ -628,13 +628,13 @@ orderRouter.get("/:id/invoice", async (req, res) => {
 // (PAID/PARTIALLY_PAID/OVERDUE) TIDAK bisa diset dari sini — ditolak keras
 // oleh setInvoiceLifecycle(), lihat alasannya di services/invoice.js.
 orderRouter.patch("/:id/invoice", async (req, res) => {
-  const { lifecycleStatus, dueDate, notes, alamatTujuan } = req.body;
+  const { lifecycleStatus, dueDate, notes, alamatTujuan, namaTujuan } = req.body;
   try {
     // Pastikan invoice-nya ada dulu (order lama belum punya).
     const ada = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
     if (!ada) return res.status(404).json({ error: "Order tidak ditemukan" });
 
-    if (dueDate !== undefined || notes !== undefined || alamatTujuan !== undefined) {
+    if (dueDate !== undefined || notes !== undefined || alamatTujuan !== undefined || namaTujuan !== undefined) {
       await prisma.invoice.update({
         where: { orderId: req.params.id },
         data: {
@@ -643,9 +643,10 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
             dueDate: dueDate ? parseTanggalKalender(dueDate, "Jatuh Tempo") : null,
           }),
           ...(notes !== undefined && { notes: notes || null }),
-          // alamatTujuan: HANYA override tampilan PDF invoice, TIDAK PERNAH
-          // menulis balik ke Order.deliveryAddress — lihat komentar di schema.
+          // alamatTujuan/namaTujuan: HANYA override tampilan PDF invoice,
+          // TIDAK PERNAH menulis balik ke Order/Customer — lihat schema.
           ...(alamatTujuan !== undefined && { alamatTujuan: alamatTujuan || null }),
+          ...(namaTujuan !== undefined && { namaTujuan: namaTujuan || null }),
         },
       });
     }

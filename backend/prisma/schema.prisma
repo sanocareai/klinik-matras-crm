@@ -1036,6 +1036,12 @@ model Invoice {
   // formatAlamat(), lihat services/invoicePdf.js).
   alamatTujuan String? @map("alamat_tujuan")
 
+  // Sama seperti alamatTujuan di atas — override TAMPILAN nama yang tercetak
+  // di invoice (2 Sep 2026). Kasus nyata: Customer.name di CRM kadang nama
+  // panggilan/inisial, tapi invoice butuh nama lengkap resmi. null = pakai
+  // Customer.name apa adanya.
+  namaTujuan String? @map("nama_tujuan")
+
   // SetNull, bukan Restrict: sales yang membuat invoice resign, invoice &
   // riwayat tagihannya TETAP ada (pola sama Promo.createdById).
   createdById String?  @map("created_by")
