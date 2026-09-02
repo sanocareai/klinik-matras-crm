@@ -337,13 +337,21 @@ export function renderInvoicePdf(view) {
     y += kartuTinggi + 22;
 
     // ── Tabel item ───────────────────────────────────────────────────────
-    const kolNoX = MARGIN;
+    // TABEL_PAD: jarak dari tepi bar biru ke kolom NO./TOTAL — sebelumnya
+    // 0 (kolNoX = MARGIN persis, kolTotalX+kolTotalW = tepi kanan persis),
+    // jadi kedua kolom itu nempel ke sudut membulat bar-nya, kelihatan
+    // ga rata tengah/hampir keluar area (temuan visual owner). Kolom
+    // lain (LAYANAN/QTY/HARGA SATUAN) sudah otomatis dapat jarak dari
+    // hitungan gap antar-kolom, cuma NO. & TOTAL yang kena karena ada di
+    // ujung.
+    const TABEL_PAD = 14;
+    const kolNoX = MARGIN + TABEL_PAD;
     const kolNoW = 30;
     const kolDeskX = kolNoX + kolNoW + 34; // + ruang ikon bulat
     const kolQtyW = 44;
     const kolHargaW = 92;
     const kolTotalW = 92;
-    const kolTotalX = MARGIN + KONTEN_LEBAR - kolTotalW;
+    const kolTotalX = MARGIN + KONTEN_LEBAR - TABEL_PAD - kolTotalW;
     const kolHargaX = kolTotalX - kolHargaW - 12;
     const kolQtyX = kolHargaX - kolQtyW - 12;
     const kolDeskW = kolQtyX - kolDeskX - 12;
@@ -388,7 +396,7 @@ export function renderInvoicePdf(view) {
       doc.text(formatRupiah(it.harga), kolTotalX, y + 6, { width: kolTotalW, align: "right" });
       y += tinggiBarisIni;
       if (i < items.length - 1) {
-        doc.moveTo(kolNoX, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
+        doc.moveTo(MARGIN, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
         y += 1;
       }
     });
