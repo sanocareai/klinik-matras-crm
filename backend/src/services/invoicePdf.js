@@ -46,8 +46,10 @@ const LOGO_ASPEK = 1200 / 426;
 // teks paling teruji keterbacaannya di ukuran kecil), Plus Jakarta Sans
 // Bold/ExtraBold untuk judul & label (geometris, tegas, tapi tetap huruf
 // kecil-besar normal — bukan huruf kapital paksa seperti Bebas Neue).
-// Skrip tanda tangan "thank you" ganti dari Caveat (kesan playful/coretan)
-// ke Sacramento (kursif elegan, kesan tanda tangan formal/classy).
+// (Skrip tulisan tangan "thank you" — sempat pakai Sacramento — DIHAPUS
+// TOTAL di revisi berikutnya di hari yang sama: owner minta cuma 1 ucapan
+// terima kasih, bukan dua tempat terpisah. Lihat blok "Terima kasih" di
+// bawah, sekarang teks polos, bukan tanda tangan.)
 //
 // Semua file WOFF diambil dari paket npm @fontsource/inter dan
 // @fontsource/plus-jakarta-sans (Google Fonts, lisensi OFL) — pdfkit lewat
@@ -61,13 +63,11 @@ const FONT_TEKS_MED = "InterMedium";
 const FONT_JUDUL = "PlusJakartaSansBold";
 const FONT_JUDUL_XBOLD = "PlusJakartaSansExtraBold";
 const FONT_IKON = "FAIcons";
-const FONT_SKRIP = "Sacramento";
 const FONT_TEKS_PATH = path.join(FONT_DIR, "Inter-Regular.woff");
 const FONT_TEKS_MED_PATH = path.join(FONT_DIR, "Inter-Medium.woff");
 const FONT_JUDUL_PATH = path.join(FONT_DIR, "PlusJakartaSans-Bold.woff");
 const FONT_JUDUL_XBOLD_PATH = path.join(FONT_DIR, "PlusJakartaSans-ExtraBold.woff");
 const FONT_IKON_PATH = path.join(FONT_DIR, "fa-solid-900.ttf");
-const FONT_SKRIP_PATH = path.join(FONT_DIR, "Sacramento-Regular.ttf");
 
 // Kode ikon FontAwesome Free Solid (lisensi OFL untuk font, CC BY 4.0 untuk
 // ikon — dipakai apa adanya, atribusi dicatat di sini) yang dipakai di
@@ -85,6 +85,7 @@ const IKON = {
   globe: "",
   lokasi: "",
   jam: "",
+  dokumen: "",
 };
 
 // Warna — biru & teal diambil dari logo asli, sisanya palet lembut mengikuti
@@ -220,7 +221,6 @@ export function renderInvoicePdf(view) {
     doc.registerFont(FONT_JUDUL, FONT_JUDUL_PATH);
     doc.registerFont(FONT_JUDUL_XBOLD, FONT_JUDUL_XBOLD_PATH);
     doc.registerFont(FONT_IKON, FONT_IKON_PATH);
-    doc.registerFont(FONT_SKRIP, FONT_SKRIP_PATH);
     doc.font(FONT_TEKS);
 
     const pageWidth = doc.page.width;
@@ -252,14 +252,18 @@ export function renderInvoicePdf(view) {
       }
     }
 
-    // Invoice No. + Tanggal — rata kanan, di bawah judul "INVOICE".
-    let yMeta = y + 42;
+    // Invoice No. + Tanggal — rata kanan, di bawah judul "INVOICE". Revisi
+    // 2 Sep 2026: jarak ke judul "INVOICE" ditambah (dulu nyaris nempel,
+    // owner minta lebih rapi) dan pil-nya dirapikan (padding vertikal &
+    // penjajaran teks di dalam pil dihitung dari tinggi pil itu sendiri,
+    // bukan angka tetap yang gampang meleset kalau ukuran font berubah).
+    let yMeta = y + 56;
     doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
-      .text("Invoice No.", MARGIN, yMeta, { width: KONTEN_LEBAR - 130, align: "right" });
-    pil(doc, MARGIN + KONTEN_LEBAR - 118, yMeta - 5, invoice.invoiceNumber, {
+      .text("Invoice No.", MARGIN, yMeta + 3, { width: KONTEN_LEBAR - 130, align: "right" });
+    pil(doc, MARGIN + KONTEN_LEBAR - 118, yMeta - 4, invoice.invoiceNumber, {
       bg: TEAL, warna: "#ffffff", fontSize: 9.5, font: FONT_TEKS,
     });
-    yMeta += 26;
+    yMeta += 28;
     doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
       .text("Tanggal", MARGIN, yMeta, { width: KONTEN_LEBAR - 130, align: "right" });
     doc.fontSize(11).font(FONT_TEKS).fillColor(GELAP)
@@ -342,21 +346,27 @@ export function renderInvoicePdf(view) {
     y += TINGGI_HEADER_TABEL + 8;
 
     const items = order.items || [];
-    const TINGGI_BARIS_ITEM = 34;
+    const TINGGI_BARIS_ITEM_MIN = 34;
     if (items.length === 0) {
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
         .text("Belum ada item layanan pada order ini.", kolDeskX, y + 8);
-      y += TINGGI_BARIS_ITEM;
+      y += TINGGI_BARIS_ITEM_MIN;
     }
     items.forEach((it, i) => {
-      const baseline = y + TINGGI_BARIS_ITEM / 2;
-      badgeIkon(doc, kolNoX + kolNoW - 10 + 22, baseline, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
-      doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, baseline - 5, { width: kolNoW, align: "center" });
-      doc.fontSize(10).font(FONT_TEKS_MED).fillColor(GELAP).text(it.nama, kolDeskX, baseline - 5, { width: kolDeskW });
-      doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU).text("1", kolQtyX, baseline - 5, { width: kolQtyW, align: "center" });
-      doc.font(FONT_TEKS_MED).fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, baseline - 5, { width: kolHargaW, align: "right" });
-      doc.text(formatRupiah(it.harga), kolTotalX, baseline - 5, { width: kolTotalW, align: "right" });
-      y += TINGGI_BARIS_ITEM;
+      // Nama layanan panjang bisa bungkus 2+ baris (mis. paket gabungan
+      // "Paket Upgrade Fondasi + Lapisan Matras Sehat") — tinggi baris
+      // WAJIB ikut menyesuaikan, kalau tidak baris berikutnya (atau garis
+      // pemisahnya) numpuk ke teks yang masih terpotong.
+      doc.fontSize(10).font(FONT_TEKS_MED);
+      const tinggiNama = doc.heightOfString(it.nama, { width: kolDeskW });
+      const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + 16);
+      badgeIkon(doc, kolNoX + kolNoW - 10 + 22, y + tinggiBarisIni / 2, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
+      doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, y + 6, { width: kolNoW, align: "center" });
+      doc.fontSize(10).font(FONT_TEKS_MED).fillColor(GELAP).text(it.nama, kolDeskX, y + 6, { width: kolDeskW });
+      doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU).text("1", kolQtyX, y + 6, { width: kolQtyW, align: "center" });
+      doc.font(FONT_TEKS_MED).fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, y + 6, { width: kolHargaW, align: "right" });
+      doc.text(formatRupiah(it.harga), kolTotalX, y + 6, { width: kolTotalW, align: "right" });
+      y += tinggiBarisIni;
       if (i < items.length - 1) {
         doc.moveTo(kolNoX, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
         y += 1;
@@ -364,26 +374,25 @@ export function renderInvoicePdf(view) {
     });
     y += 20;
 
-    // ── Kartu "Terima kasih" (kiri) + total & jatuh tempo (kanan) ────────
+    // ── Kartu "Syarat & Ketentuan" (kiri) + total & jatuh tempo (kanan) ──
+    // Revisi 2 Sep 2026 (owner): kartu ini dulu isinya "Terima Kasih", tapi
+    // dipindah — Syarat & Ketentuan yang sebelumnya cetakan kecil di
+    // footer sekarang naik ke sini (lebih terlihat), dan "Terima Kasih"
+    // pindah jadi teks polos di bawah kanan (lihat blok setelah ini).
     const bawahKiriW = kartuW;
     const bawahKananW = kartuW;
     const bawahKananX = kartuKananX;
 
-    // Kartu kiri — Terima kasih. Kalimat penutup memakai tagline resmi
-    // brand "Ahlinya Kasur Sehat" (CLAUDE.md §16.7), BUKAN kalimat generik
-    // "perawatan kasur" — revisi eksplisit dari owner 2 Sep 2026.
-    const terimaKasihTinggi = 108;
-    doc.roundedRect(kartuKiriX, y, bawahKiriW, terimaKasihTinggi, 14).fill(KARTU_BG);
-    badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: BIRU_GELAP, ikon: IKON.heart });
-    doc.fontSize(11.5).font(FONT_JUDUL).fillColor(GELAP)
-      .text("TERIMA KASIH!", kartuKiriX + padKartu + 32, y + padKartu + 5, { width: bawahKiriW - padKartu * 2 - 32 });
+    doc.fontSize(9).font(FONT_TEKS);
+    const tinggiSyarat = doc.heightOfString(PERUSAHAAN.syaratKetentuan, { width: bawahKiriW - padKartu * 2 });
+    const syaratTinggi = 44 + tinggiSyarat;
+
+    doc.roundedRect(kartuKiriX, y, bawahKiriW, syaratTinggi, 14).fill(KARTU_BG);
+    badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: BIRU_GELAP, ikon: IKON.dokumen });
+    doc.fontSize(11).font(FONT_JUDUL).fillColor(GELAP)
+      .text("SYARAT & KETENTUAN", kartuKiriX + padKartu + 32, y + padKartu + 8, { width: bawahKiriW - padKartu * 2 - 32 });
     doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
-      .text(
-        "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
-        kartuKiriX + padKartu, y + padKartu + 32, { width: bawahKiriW - padKartu * 2 }
-      );
-    doc.fontSize(9.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
-      .text("TIDUR NYAMAN, HIDUP LEBIH SEHAT", kartuKiriX + padKartu, y + terimaKasihTinggi - 24, { width: bawahKiriW - padKartu * 2 });
+      .text(PERUSAHAAN.syaratKetentuan, kartuKiriX + padKartu, y + padKartu + 32, { width: bawahKiriW - padKartu * 2 });
 
     // Kartu kanan — rincian total.
     let yr = y + 6;
@@ -422,16 +431,40 @@ export function renderInvoicePdf(view) {
       const teksBadge = `Bayar sebelum ${formatTanggal(invoice.dueDate)}`;
       doc.fontSize(9).font(FONT_TEKS);
       const lebarBadge = Math.min(doc.widthOfString(teksBadge) + 56, bawahKananW);
-      doc.roundedRect(bawahKananX, yr, lebarBadge, 30, 15).fill(BIRU_GELAP);
-      doc.fontSize(11).font(FONT_IKON).fillColor(TEAL).text(IKON.jam, bawahKananX + 14, yr + 9, { width: 16 });
+      doc.roundedRect(bawahKananX + bawahKananW - lebarBadge, yr, lebarBadge, 30, 15).fill(BIRU_GELAP);
+      doc.fontSize(11).font(FONT_IKON).fillColor(TEAL)
+        .text(IKON.jam, bawahKananX + bawahKananW - lebarBadge + 14, yr + 9, { width: 16 });
       doc.fontSize(9).font(FONT_TEKS).fillColor("#ffffff")
-        .text(teksBadge, bawahKananX + 34, yr + 10, { width: lebarBadge - 44 });
+        .text(teksBadge, bawahKananX + bawahKananW - lebarBadge + 34, yr + 10, { width: lebarBadge - 44 });
       yr += 30;
     }
 
-    y += Math.max(terimaKasihTinggi, yr - y) + 20;
+    // ── Terima kasih — teks polos rata kanan di bawah rincian total
+    // (revisi 2 Sep 2026: dulu kartu terpisah di kiri + tanda tangan
+    // tulisan tangan terpisah lagi di kanan — sekarang digabung jadi SATU
+    // ucapan saja, di bawah kanan). Kalimat penutup tetap pakai tagline
+    // resmi brand "Ahlinya Kasur Sehat" (CLAUDE.md §16.7).
+    yr += 14;
+    doc.fontSize(11).font(FONT_JUDUL).fillColor(GELAP)
+      .text("Terima kasih!", bawahKananX, yr, { width: bawahKananW, align: "right" });
+    yr += 16;
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
+      .text(
+        "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
+        bawahKananX, yr, { width: bawahKananW, align: "right" }
+      );
+    yr += doc.heightOfString(
+      "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
+      { width: bawahKananW }
+    ) + 6;
+    doc.fontSize(9.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
+      .text("Tidur nyaman, hidup lebih sehat.", bawahKananX, yr, { width: bawahKananW, align: "right" });
+    yr += 16;
 
-    // ── Kartu "Butuh bantuan" ─────────────────────────────────────────────
+    y += Math.max(syaratTinggi, yr - y) + 22;
+
+    // ── Kartu "Butuh bantuan" — SEKARANG PALING BAWAH/PALING AKHIR
+    // (revisi 2 Sep 2026, dulu di tengah sebelum tanda tangan). ──────────
     const bantuanTinggi = 90;
     doc.roundedRect(kartuKiriX, y, KONTEN_LEBAR, bantuanTinggi, 14).fill(KARTU_BG);
     badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.headset });
@@ -450,30 +483,6 @@ export function renderInvoicePdf(view) {
     tulisAlamatDibatasi(doc, PERUSAHAAN.alamat, kolomKananBantuanX + 18, yBantuan + 11, {
       width: KONTEN_LEBAR - (kolomKananBantuanX + 18 - kartuKiriX) - padKartu, maxBaris: 2,
     });
-
-    y += bantuanTinggi + 26;
-
-    // ── Tanda tangan "thank you" tulisan tangan ──────────────────────────
-    // Ikon hati dirender TERPISAH pakai FONT_IKON (FontAwesome) — Caveat
-    // (font skrip tulisan tangan) tidak punya glyph simbol hati ("♥"),
-    // hasilnya kotak kosong kalau dipaksa jadi satu string dengan font itu.
-    const teksThankYou = "thank you";
-    doc.fontSize(30).font(FONT_SKRIP);
-    const lebarThankYou = doc.widthOfString(teksThankYou);
-    const lebarHatiIkon = 18;
-    const xThankYou = MARGIN + KONTEN_LEBAR - lebarThankYou - lebarHatiIkon - 8;
-    doc.fillColor(TEAL_GELAP).text(teksThankYou, xThankYou, y, { width: lebarThankYou + 4 });
-    doc.fontSize(lebarHatiIkon).font(FONT_IKON).fillColor(TEAL_GELAP)
-      .text(IKON.heart, xThankYou + lebarThankYou + 6, y + 10, { width: lebarHatiIkon + 4 });
-
-    // ── Syarat & Ketentuan — cetak kecil di paling bawah (tetap ada sesuai
-    // ketentuan bisnis §16.8/keputusan sebelumnya, dikemas ringkas 1
-    // paragraf supaya cocok dengan gaya kartu-lembut desain baru ini,
-    // bukan daftar bullet seperti desain sebelumnya). ───────────────────
-    y = pageHeight - 56;
-    doc.moveTo(MARGIN, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
-    doc.fontSize(7.5).font(FONT_TEKS).fillColor(ABU)
-      .text(`Syarat & Ketentuan — ${PERUSAHAAN.syaratKetentuan}`, MARGIN, y + 8, { width: KONTEN_LEBAR, align: "center" });
 
     doc.end();
   });
