@@ -1,4 +1,5 @@
-// ─── PDF INVOICE — server-side (31 Agustus 2026, redesain 2 September 2026) ──
+// ─── PDF INVOICE — server-side (31 Agustus 2026, redesain ke-3: 2 September
+// 2026) ───────────────────────────────────────────────────────────────────
 // Pakai `pdfkit` (layout PDF murni JS), BUKAN Puppeteer/Playwright — VPS ini
 // kecil (Sumopod, target biaya <Rp300rb/bulan, lihat CLAUDE.md §2) dan
 // headless Chromium butuh ratusan MB disk + RAM per render. pdfkit generate
@@ -12,9 +13,18 @@
 // beda angka, itu artinya ada yang menghitung ulang di salah satu tempat —
 // jangan biarkan itu terjadi.
 //
-// Desain (2 Sep 2026): mengikuti template resmi yang dikirim owner (header
-// biru dengan logo Klinik Matras, tabel item bergaris, metode pembayaran,
-// terms & conditions, wave dekoratif) — BUKAN desain bebas Claude.
+// Desain (2 Sep 2026, redesain ke-3): mengikuti referensi kartu-lembut/ikon
+// bulat yang dikirim owner — latar terang, kartu rounded, badge pil, ikon
+// FontAwesome, tanda tangan "thank you" tulisan tangan. Menggantikan desain
+// header-biru sebelumnya sepenuhnya.
+//
+// Ikon per baris item dipilih dari KATA KUNCI nama layanan (lihat
+// pilihIkonItem()) — heuristik best-effort, BUKAN kategori resmi dari
+// database (OrderItem cuma punya `layananName`, tidak ada field kategori/
+// deskripsi terpisah). Kalau tidak cocok kata kunci mana pun, jatuh ke ikon
+// gerigi generik — tidak pernah mengarang teks deskripsi tambahan yang tidak
+// ada di data (dikonfirmasi ke owner 2 Sep 2026: skip subjudul deskripsi,
+// bukan diisi teks template).
 
 import PDFDocument from "pdfkit";
 import path from "path";
@@ -22,39 +32,55 @@ import { fileURLToPath } from "url";
 import { formatAlamat } from "../utils/formatAlamat.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Wordmark versi PUTIH (ikon + "KLINIK MATRAS" + pil "SANOCARE" — teksnya
-// putih/teal, didesain khusus untuk ditaruh LANGSUNG di atas latar berwarna),
-// dikirim owner 2 Sep 2026 (revisi ke-2, file asli:
-// frontend/public/sano_logo_invoice/klinikmatras-logo.png, di-trim
-// whitespace-nya dengan sharp — lihat riwayat git). Dipakai langsung tanpa
-// plat putih di belakangnya (revisi sebelumnya pakai plat + versi biru —
-// owner bilang itu kurang minimalis). Rasio aspek gambar ini ~3.07:1.
-const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-white.png");
-const LOGO_ASPEK = 1200 / 391;
 
-// Font kustom (2 Sep 2026, permintaan owner) — Questrial untuk teks isi
-// (body, label, angka), Bebas Neue untuk judul/heading yang menonjol (mis.
-// kata "INVOICE"). Keduanya Google Fonts open source (lisensi OFL, file
-// diunduh dari repo resmi google/fonts), dan CUMA SATU BERAT masing-masing
-// (tidak ada varian Bold) — penekanan visual di dokumen ini sengaja
-// mengandalkan ukuran & warna, bukan ketebalan huruf.
+// Logo versi BIRU (untuk latar terang) — desain header-biru sebelumnya
+// (dibuang bersama file ini) pakai versi putih karena latarnya gelap.
+// Sumber asli: frontend/public/sano_logo_invoice/sano_logo_invoice.png,
+// di-trim sharp.
+const LOGO_PATH = path.join(__dirname, "../../assets/logo-invoice-blue.png");
+const LOGO_ASPEK = 1200 / 426;
+
+const FONT_DIR = path.join(__dirname, "../../assets/fonts");
 const FONT_TEKS = "Questrial";
 const FONT_JUDUL = "BebasNeue";
-const FONT_TEKS_PATH = path.join(__dirname, "../../assets/fonts/Questrial-Regular.ttf");
-const FONT_JUDUL_PATH = path.join(__dirname, "../../assets/fonts/BebasNeue-Regular.ttf");
+const FONT_IKON = "FAIcons";
+const FONT_SKRIP = "Caveat";
+const FONT_TEKS_PATH = path.join(FONT_DIR, "Questrial-Regular.ttf");
+const FONT_JUDUL_PATH = path.join(FONT_DIR, "BebasNeue-Regular.ttf");
+const FONT_IKON_PATH = path.join(FONT_DIR, "fa-solid-900.ttf");
+const FONT_SKRIP_PATH = path.join(FONT_DIR, "Caveat-Bold.ttf");
 
-// Warna brand — diambil dari logo asli (biru "S" + silang teal).
+// Kode ikon FontAwesome Free Solid (lisensi OFL untuk font, CC BY 4.0 untuk
+// ikon — dipakai apa adanya, atribusi dicatat di sini) yang dipakai di
+// invoice ini. Render sebagai teks biasa dengan FONT_IKON, BUKAN gambar.
+const IKON = {
+  user: "",
+  wallet: "",
+  layerGroup: "",
+  shirt: "",
+  wrench: "",
+  droplet: "",
+  gear: "",
+  heart: "",
+  headset: "",
+  globe: "",
+  lokasi: "",
+  jam: "",
+};
+
+// Warna — biru & teal diambil dari logo asli, sisanya palet lembut mengikuti
+// referensi (latar terang, kartu biru-abu sangat muda).
 const BIRU = "#2367C2";
 const BIRU_GELAP = "#124A99";
 const TEAL = "#5FC9BB";
-const TEAL_MUDA = "#E9F8F5";
+const TEAL_GELAP = "#2F9C8C";
+const KARTU_BG = "#EEF4FC";
+const HALAMAN_BG = "#F7FAFD";
+const BLOB_WARNA = "#E3ECFB";
 const ABU = "#6b7280";
-const GARIS = "#e5e7eb";
+const GARIS = "#e2e8f0";
 const GELAP = "#1f2937";
 
-// Info perusahaan — TIDAK berubah per invoice, sama untuk semua transaksi.
-// Sesuai template resmi yang dikirim owner; kalau alamat/rekening berubah,
-// cukup ubah di SATU tempat ini.
 const PERUSAHAAN = {
   website: "www.sanomatrassehat.com",
   whatsapp: "0851 8728 3900",
@@ -64,51 +90,38 @@ const PERUSAHAAN = {
     noRekening: "1230013546272",
     namaRekening: "PT Sano Kreasi Utama",
   },
-  syaratKetentuan: [
-    "Harga sudah termasuk biaya antar-jemput (Free Delivery).",
-    "Tidak ada pembayaran di muka (No DP required).",
-    "Pembayaran lunas dilakukan saat serah terima barang di lokasi pelanggan (COD/Transfer saat barang sampai).",
-    "Harap periksa kondisi barang sebelum melakukan pembayaran.",
-  ],
+  syaratKetentuan:
+    "Harga sudah termasuk biaya antar-jemput (Free Delivery). Tidak ada pembayaran di muka. " +
+    "Pembayaran lunas dilakukan saat serah terima barang di lokasi pelanggan (COD/Transfer saat " +
+    "barang sampai). Harap periksa kondisi barang sebelum melakukan pembayaran.",
 };
 
-const MIN_BARIS_TABEL = 6; // baris kosong ditambahkan sampai jumlah ini — pola dari template asli
-
-// Backend TIDAK punya formatter Rupiah/tanggal bersama (frontend punya versi
-// sendiri, tapi tidak bisa di-import lintas paket) — dua fungsi kecil ini
-// pola yang SAMA dengan formatRpWa()/formatTanggalOrder() lokal di
-// routes/orders.js (ringkasan WA order), bukan util baru yang tersebar.
 function formatRupiah(n) {
   return `Rp${Math.round(n || 0).toLocaleString("id-ID")}`;
 }
 function formatTanggal(d) {
   if (!d) return "-";
-  return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).toUpperCase();
+  return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-// Alamat customer/kantor kadang sangat panjang (2 Sep 2026: ditemukan alamat
-// nyata sampai 3 baris dengan catatan patokan lokasi) — dibatasi maksimal
-// N baris + "…" di baris terakhir, BUKAN dibiarkan mendorong seluruh layout
-// ke bawah tanpa batas.
-//
-// SENGAJA susun baris SENDIRI kata-per-kata pakai widthOfString() (bukan
-// opsi `height`+`ellipsis` bawaan pdfkit, dan bukan juga mundur berdasarkan
-// heightOfString total) — dua pendekatan itu sudah dicoba dan hasilnya
-// konsisten memotong SATU BARIS lebih awal dari yang diminta (minta 3 baris,
-// yang tampil cuma 2), karena menambah "…" di akhir teks yang nyaris pas
-// bisa mendorongnya meluap ke baris tambahan, lalu seluruh perhitungan
-// mundur ikut kepotong berlebihan. Menyusun baris manual & cuma
-// mempersingkat BARIS TERAKHIR itu presisi per-baris, bukan tebak-tebakan
-// tinggi total.
+// Heuristik ikon per item — lihat catatan lisensi/keputusan di kepala file.
+function pilihIkonItem(nama = "") {
+  const n = nama.toLowerCase();
+  if (/fondasi|per\b|pegas|frame|struktur|rangka/.test(n)) return IKON.wrench;
+  if (/busa|lapisan|layer/.test(n)) return IKON.layerGroup;
+  if (/kain|cover|sarung|fabric/.test(n)) return IKON.shirt;
+  if (/sanitasi|cuci|bersih|vakum|steam/.test(n)) return IKON.droplet;
+  return IKON.gear;
+}
+
+// Alamat customer/kantor kadang sangat panjang — dibatasi maksimal N baris
+// + "…" di baris terakhir. Lihat riwayat: opsi height+ellipsis bawaan
+// pdfkit terbukti memotong 1 baris lebih awal dari yang diminta, jadi baris
+// disusun manual kata-per-kata pakai widthOfString(), dengan margin aman
+// beberapa pt supaya pembulatan pdfkit saat render sungguhan tidak
+// menggeser 1 kata ke baris tambahan yang tidak diperhitungkan.
 function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
   const tinggiBaris = doc.currentLineHeight();
-  // Margin aman 3pt: widthOfString() dipakai untuk MENYUSUN baris manual di
-  // sini, tapi doc.text() sendiri (yang benar-benar merender) punya
-  // pembulatan/kerning yang kadang menilai baris yang SAMA sebagai "tidak
-  // muat" lalu memaksanya bungkus ke baris tambahan — ditemukan nyata
-  // (kata terakhir kepental sendiri ke baris baru, mendorong seluruh baris
-  // di bawahnya, sampai numpuk dengan nomor telepon). Longgarkan ambang
-  // pas menyusun supaya tidak pernah pas-pasan di tepi lebar kolom.
   const lebarAman = width - 3;
   const kata = teks.split(" ");
   const barisArr = [];
@@ -123,7 +136,7 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
     } else {
       barisArr.push(current);
       current = "";
-      if (barisArr.length === maxBaris) break; // baris penuh, sisa kata dibuang/dipotong di bawah
+      if (barisArr.length === maxBaris) break;
     }
   }
   if (current && barisArr.length < maxBaris) barisArr.push(current);
@@ -138,34 +151,35 @@ function tulisAlamatDibatasi(doc, teks, x, y, { width, maxBaris, align }) {
     barisArr[barisArr.length - 1] = `${lastLine}…`;
   }
 
-  // width EKSTRA LEBAR di sini (bukan `width` asli) — baris sudah pasti
-  // muat (dites pakai lebarAman di atas), tapi pdfkit tetap butuh angka
-  // lebar untuk urusan align:"right"; kalau dikasih persis `width`, risiko
-  // pembulatan yang sama seperti di atas bisa kambuh saat render sungguhan.
   doc.text(barisArr.join("\n"), x, y, { width: width + 3, ...(align && { align }) });
   return tinggiBaris * barisArr.length;
 }
 
-// Wave dekoratif di footer — dua lapis kurva Bezier, meniru bentuk di
-// template asli (bukan grafik lepas, digambar langsung karena pdfkit tidak
-// bisa import SVG kompleks).
-function gambarWaveFooter(doc, pageWidth, pageHeight) {
-  const tinggi = 70;
-  const dasar = pageHeight;
-  const puncak = pageHeight - tinggi;
+// Badge lingkaran berisi 1 ikon FontAwesome — dipakai untuk avatar kartu
+// "Diterbitkan Untuk"/"Metode Pembayaran", ikon per baris item, dst.
+function badgeIkon(doc, cx, cy, r, { bg, ikon, warnaIkon = "#ffffff", ukuranIkon }) {
+  doc.circle(cx, cy, r).fill(bg);
+  const ukuran = ukuranIkon || r * 1.15;
+  doc.fontSize(ukuran).font(FONT_IKON).fillColor(warnaIkon)
+    .text(ikon, cx - r, cy - ukuran * 0.36, { width: r * 2, align: "center" });
+}
 
+// Pil kecil berisi teks (mis. nomor invoice) — lebar mengikuti isi.
+function pil(doc, x, y, teks, { bg, warna, fontSize = 10, font = FONT_TEKS, padX = 10, padY = 4 }) {
+  doc.fontSize(fontSize).font(font);
+  const w = doc.widthOfString(teks) + padX * 2;
+  const h = fontSize + padY * 2;
+  doc.roundedRect(x, y, w, h, h / 2).fill(bg);
+  doc.fillColor(warna).text(teks, x, y + padY - 0.5, { width: w, align: "center" });
+  return w;
+}
+
+// Blob dekoratif — lingkaran besar transparan-lembut di pojok, meniru
+// bentuk organik di referensi tanpa perlu SVG kompleks.
+function gambarBlob(doc, pageWidth, pageHeight) {
   doc.save();
-  doc.path(
-    `M0,${puncak + 25} C${pageWidth * 0.25},${puncak - 15} ${pageWidth * 0.4},${puncak + 40} ${pageWidth * 0.65},${puncak + 10} ` +
-    `C${pageWidth * 0.85},${puncak - 12} ${pageWidth * 0.95},${puncak + 15} ${pageWidth},${puncak} ` +
-    `L${pageWidth},${dasar} L0,${dasar} Z`
-  ).fill(BIRU);
-
-  doc.path(
-    `M0,${puncak + 40} C${pageWidth * 0.2},${puncak + 10} ${pageWidth * 0.35},${puncak + 55} ${pageWidth * 0.55},${puncak + 30} ` +
-    `C${pageWidth * 0.7},${puncak + 12} ${pageWidth * 0.8},${puncak + 45} ${pageWidth},${puncak + 20} ` +
-    `L${pageWidth},${dasar} L0,${dasar} Z`
-  ).fillOpacity(0.55).fill(TEAL);
+  doc.circle(-60, -40, 140).fillOpacity(0.6).fill(BLOB_WARNA);
+  doc.circle(-50, pageHeight - 60, 110).fillOpacity(0.5).fill(BLOB_WARNA);
   doc.restore();
 }
 
@@ -184,211 +198,261 @@ export function renderInvoicePdf(view) {
 
     doc.registerFont(FONT_TEKS, FONT_TEKS_PATH);
     doc.registerFont(FONT_JUDUL, FONT_JUDUL_PATH);
-    doc.font(FONT_TEKS); // default dokumen — dipakai kalau ada .text() yang lupa set font eksplisit
+    doc.registerFont(FONT_IKON, FONT_IKON_PATH);
+    doc.registerFont(FONT_SKRIP, FONT_SKRIP_PATH);
+    doc.font(FONT_TEKS);
 
-    const pageWidth = doc.page.width; // 595.28
-    const pageHeight = doc.page.height; // 841.89
-    const MARGIN = 40;
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const MARGIN = 42;
     const KONTEN_LEBAR = pageWidth - MARGIN * 2;
 
-    // ── Header: banner biru dengan logo + info kontak ───────────────────
-    const HEADER_TINGGI = 118;
-    doc.rect(0, 0, pageWidth, HEADER_TINGGI).fill(BIRU);
+    // ── Latar halaman ────────────────────────────────────────────────────
+    doc.rect(0, 0, pageWidth, pageHeight).fill(HALAMAN_BG);
+    gambarBlob(doc, pageWidth, pageHeight);
 
-    // Wordmark versi putih ditaruh LANGSUNG di atas banner biru — TANPA plat
-    // putih di belakangnya (revisi 2 Sep 2026: versi sebelumnya kelihatan
-    // terlalu besar/berat karena ada kotak putih besar; versi logo ini sudah
-    // didesain putih supaya kontras sendiri di atas warna, jadi minimalis).
-    const logoTinggi = 32;
+    // ── Header: logo kiri, "INVOICE" kanan ───────────────────────────────
+    let y = 44;
+    const logoTinggi = 46;
     const logoLebar = logoTinggi * LOGO_ASPEK;
-    const logoX = MARGIN;
-    const logoY = (HEADER_TINGGI - logoTinggi) / 2;
     try {
-      doc.image(LOGO_PATH, logoX, logoY, { width: logoLebar, height: logoTinggi });
+      doc.image(LOGO_PATH, MARGIN, y, { width: logoLebar, height: logoTinggi });
     } catch {
-      // Kalau file logo tidak ada/rusak, invoice tetap jalan tanpa logo —
-      // jangan sampai satu aset hilang menggagalkan seluruh generate PDF.
+      // Aset logo hilang/rusak tidak boleh menggagalkan generate PDF.
+    }
+    doc.fontSize(34).font(FONT_JUDUL).fillColor(BIRU)
+      .text("INVOICE", MARGIN, y + 4, { width: KONTEN_LEBAR, align: "right" });
+
+    // Titik dekoratif kecil di bawah logo (meniru pola titik referensi).
+    const dotY = y + logoTinggi + 14;
+    for (let baris = 0; baris < 2; baris++) {
+      for (let kolom = 0; kolom < 4; kolom++) {
+        doc.circle(MARGIN + kolom * 12, dotY + baris * 10, 1.6).fill(TEAL);
+      }
     }
 
-    // Info kontak — rata kanan, ALAMAT dulu baru WA (revisi 2 Sep 2026: baris
-    // "Telp: ..." dihapus, nomor telepon & WA memang sama jadi cuma perlu 1
-    // baris; alamat kantor dipindah ke atas supaya yang paling identitatif
-    // dibaca duluan, bukan angka).
-    const kontakLebar = 260;
-    const kontakX = pageWidth - MARGIN - kontakLebar;
-    doc.fontSize(8.5).font(FONT_TEKS).fillColor("#ffffff");
-    const ALAMAT_HEADER_MAKS_BARIS = 2;
-    const tinggiAlamatHeader = doc.currentLineHeight() * ALAMAT_HEADER_MAKS_BARIS;
-    let yKontak = (HEADER_TINGGI - (tinggiAlamatHeader + 12 + 11)) / 2;
-    tulisAlamatDibatasi(doc, PERUSAHAAN.alamat, kontakX, yKontak, {
-      width: kontakLebar, maxBaris: ALAMAT_HEADER_MAKS_BARIS, align: "right",
+    // Invoice No. + Tanggal — rata kanan, di bawah judul "INVOICE".
+    let yMeta = y + 42;
+    doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
+      .text("Invoice No.", MARGIN, yMeta, { width: KONTEN_LEBAR - 130, align: "right" });
+    pil(doc, MARGIN + KONTEN_LEBAR - 118, yMeta - 5, invoice.invoiceNumber, {
+      bg: TEAL, warna: "#ffffff", fontSize: 9.5, font: FONT_TEKS,
     });
-    yKontak += tinggiAlamatHeader + 6;
-    doc.text(`WA: ${PERUSAHAAN.whatsapp}`, kontakX, yKontak, { width: kontakLebar, align: "right" });
-    yKontak += 13;
-    doc.fillColor(TEAL_MUDA).text(PERUSAHAAN.website, kontakX, yKontak, { width: kontakLebar, align: "right" });
+    yMeta += 26;
+    doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
+      .text("Tanggal", MARGIN, yMeta, { width: KONTEN_LEBAR - 130, align: "right" });
+    doc.fontSize(11).font(FONT_TEKS).fillColor(GELAP)
+      .text(formatTanggal(invoice.createdAt), MARGIN, yMeta - 1, { width: KONTEN_LEBAR, align: "right" });
 
-    // ── Invoice To / Invoice meta ────────────────────────────────────────
-    let y = HEADER_TINGGI + 30;
-    // `invoice.alamatTujuan` = override manual sales (2 Sep 2026, lihat
-    // schema.prisma) — kalau diisi, PAKAI APA ADANYA (sales sudah sengaja
-    // menuliskannya rapi), jangan diproses formatAlamat() lagi. Kalau kosong,
-    // pakai alamat order tapi DIRAPIKAN dulu (huruf kecil semua/singkatan
-    // nempel angka dsb — lihat utils/formatAlamat.js) — bukan mengubah data
-    // order, cuma cara menampilkannya di invoice.
-    const alamatLengkap = invoice.alamatTujuan
-      || formatAlamat(`${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`);
-    const ALAMAT_LEBAR = 260;
-    const ALAMAT_MAKS_BARIS = 3;
+    y = Math.max(dotY + 30, yMeta + 22);
+
+    // ── Dua kartu: Diterbitkan Untuk / Metode Pembayaran ─────────────────
+    const kartuGap = 16;
+    const kartuW = (KONTEN_LEBAR - kartuGap) / 2;
+    const kartuKiriX = MARGIN;
+    const kartuKananX = MARGIN + kartuW + kartuGap;
 
     const namaTampil = invoice.namaTujuan || customer.nama || "-";
-    doc.fontSize(9).fillColor(ABU).font(FONT_JUDUL).text("INVOICE TO:", MARGIN, y);
-    doc.fontSize(13).fillColor(GELAP).font(FONT_JUDUL).text(namaTampil.toUpperCase(), MARGIN, y + 14);
+    const alamatLengkap = invoice.alamatTujuan
+      || formatAlamat(`${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`);
+
+    doc.fontSize(9).font(FONT_TEKS);
+    const tinggiAlamatKartu = Math.min(
+      doc.heightOfString(alamatLengkap, { width: kartuW - 30 }),
+      doc.currentLineHeight() * 3
+    );
+    const kartuKiriTinggi = 78 + tinggiAlamatKartu;
+    const kartuKananTinggi = 118;
+    const kartuTinggi = Math.max(kartuKiriTinggi, kartuKananTinggi);
+
+    doc.roundedRect(kartuKiriX, y, kartuW, kartuTinggi, 14).fill(KARTU_BG);
+    doc.roundedRect(kartuKananX, y, kartuW, kartuTinggi, 14).fill(KARTU_BG);
+
+    // Kartu kiri: Diterbitkan Untuk
+    const padKartu = 16;
+    badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.user });
+    doc.fontSize(9).font(FONT_JUDUL).fillColor(TEAL_GELAP)
+      .text("DITERBITKAN UNTUK", kartuKiriX + padKartu + 32, y + padKartu + 6, { width: kartuW - padKartu * 2 - 32 });
+    let yKartuKiri = y + padKartu + 30;
+    doc.fontSize(11.5).font(FONT_JUDUL).fillColor(GELAP)
+      .text(namaTampil, kartuKiriX + padKartu, yKartuKiri, { width: kartuW - padKartu * 2 });
+    yKartuKiri += 16;
     doc.fontSize(9).font(FONT_TEKS).fillColor(ABU);
-    const tinggiAlamat = tulisAlamatDibatasi(doc, alamatLengkap, MARGIN, y + 32, {
-      width: ALAMAT_LEBAR, maxBaris: ALAMAT_MAKS_BARIS,
+    const tinggiAlamatDipakai = tulisAlamatDibatasi(doc, alamatLengkap, kartuKiriX + padKartu, yKartuKiri, {
+      width: kartuW - padKartu * 2, maxBaris: 3,
     });
-    doc.text(customer.phone || "-", MARGIN, y + 32 + tinggiAlamat + 4);
+    doc.text(customer.phone || "-", kartuKiriX + padKartu, yKartuKiri + tinggiAlamatDipakai + 3);
 
-    doc.fontSize(24).fillColor(BIRU).font(FONT_JUDUL).text("INVOICE", MARGIN, y - 3, { width: KONTEN_LEBAR, align: "right" });
-    doc.fontSize(9).fillColor(ABU).font(FONT_TEKS)
-      .text(`Invoice No: ${invoice.invoiceNumber}`, MARGIN, y + 26, { width: KONTEN_LEBAR, align: "right" })
-      .text(`Invoice Date: ${formatTanggal(invoice.createdAt)}`, MARGIN, y + 40, { width: KONTEN_LEBAR, align: "right" });
+    // Kartu kanan: Metode Pembayaran
+    badgeIkon(doc, kartuKananX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.wallet });
+    doc.fontSize(9).font(FONT_JUDUL).fillColor(TEAL_GELAP)
+      .text("METODE PEMBAYARAN", kartuKananX + padKartu + 32, y + padKartu + 6, { width: kartuW - padKartu * 2 - 32 });
+    let yKartuKanan = y + padKartu + 30;
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU).text("Transfer Bank", kartuKananX + padKartu, yKartuKanan);
+    yKartuKanan += 14;
+    doc.fontSize(11.5).font(FONT_JUDUL).fillColor(GELAP).text(`BANK ${PERUSAHAAN.bank.nama.toUpperCase()}`, kartuKananX + padKartu, yKartuKanan);
+    yKartuKanan += 15;
+    doc.fontSize(11).font(FONT_TEKS).fillColor(GELAP).text(PERUSAHAAN.bank.noRekening, kartuKananX + padKartu, yKartuKanan);
+    yKartuKanan += 14;
+    doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU).text(`a.n. ${PERUSAHAAN.bank.namaRekening}`, kartuKananX + padKartu, yKartuKanan, { width: kartuW - padKartu * 2 });
 
-    // Blok kanan (INVOICE/nomor/tanggal) tingginya tetap (~54pt dari y), tapi
-    // blok kiri (nama+alamat+telp) bisa lebih tinggi kalau alamat panjang
-    // (alamat pengiriman customer nyata sering 2-3 baris, BUKAN kasus tepi) —
-    // tabel item harus mulai di bawah blok yang LEBIH TINGGI, jangan asumsikan
-    // tinggi tetap seperti sebelumnya (itu yang menyebabkan alamat panjang
-    // bertabrakan dengan baris telepon).
-    const tinggiBlokKiri = 32 + tinggiAlamat + 4 + 12;
-    y += Math.max(tinggiBlokKiri, 54) + 26;
+    y += kartuTinggi + 22;
 
     // ── Tabel item ───────────────────────────────────────────────────────
-    const kolNo = MARGIN;
-    const kolNoLebar = 30;
-    const kolDesk = kolNo + kolNoLebar;
-    const kolDeskLebar = 240;
-    const kolHarga = kolDesk + kolDeskLebar;
-    const kolHargaLebar = 90;
-    const kolQty = kolHarga + kolHargaLebar;
-    const kolQtyLebar = 45;
-    const kolTotal = kolQty + kolQtyLebar;
-    const kolTotalLebar = MARGIN + KONTEN_LEBAR - kolTotal;
+    const kolNoX = MARGIN;
+    const kolNoW = 30;
+    const kolDeskX = kolNoX + kolNoW + 34; // + ruang ikon bulat
+    const kolQtyW = 44;
+    const kolHargaW = 92;
+    const kolTotalW = 92;
+    const kolTotalX = MARGIN + KONTEN_LEBAR - kolTotalW;
+    const kolHargaX = kolTotalX - kolHargaW - 12;
+    const kolQtyX = kolHargaX - kolQtyW - 12;
+    const kolDeskW = kolQtyX - kolDeskX - 12;
 
-    const TINGGI_HEADER_TABEL = 24;
-    const TINGGI_BARIS = 22;
-
-    doc.rect(MARGIN, y, KONTEN_LEBAR, TINGGI_HEADER_TABEL).fill(BIRU);
-    doc.fontSize(9.5).font(FONT_JUDUL).fillColor("#ffffff");
-    doc.text("NO.", kolNo, y + 7, { width: kolNoLebar, align: "center" });
-    doc.text("ITEM DESCRIPTION", kolDesk + 6, y + 7, { width: kolDeskLebar - 6 });
-    doc.text("PRICE", kolHarga, y + 7, { width: kolHargaLebar - 6, align: "right" });
-    doc.text("QTY", kolQty, y + 7, { width: kolQtyLebar, align: "center" });
-    doc.text("TOTAL", kolTotal, y + 7, { width: kolTotalLebar - 6, align: "right" });
-    y += TINGGI_HEADER_TABEL;
+    const TINGGI_HEADER_TABEL = 30;
+    doc.roundedRect(MARGIN, y, KONTEN_LEBAR, TINGGI_HEADER_TABEL, 10).fill(BIRU);
+    doc.fontSize(9).font(FONT_JUDUL).fillColor("#ffffff");
+    doc.text("NO.", kolNoX, y + 10, { width: kolNoW, align: "center" });
+    doc.text("DESKRIPSI LAYANAN", kolDeskX, y + 10, { width: kolDeskW });
+    doc.text("QTY", kolQtyX, y + 10, { width: kolQtyW, align: "center" });
+    doc.text("HARGA SATUAN", kolHargaX, y + 10, { width: kolHargaW, align: "right" });
+    doc.text("TOTAL", kolTotalX, y + 10, { width: kolTotalW, align: "right" });
+    y += TINGGI_HEADER_TABEL + 8;
 
     const items = order.items || [];
-    const jumlahBaris = Math.max(items.length, MIN_BARIS_TABEL);
-    for (let i = 0; i < jumlahBaris; i++) {
-      const it = items[i];
-      if (i % 2 === 1) doc.rect(MARGIN, y, KONTEN_LEBAR, TINGGI_BARIS).fill(TEAL_MUDA);
-      if (it) {
-        doc.fontSize(9).font(FONT_TEKS).fillColor(GELAP);
-        doc.text(String(i + 1), kolNo, y + 6, { width: kolNoLebar, align: "center" });
-        doc.text(it.nama, kolDesk + 6, y + 6, { width: kolDeskLebar - 10 });
-        doc.text(formatRupiah(it.harga), kolHarga, y + 6, { width: kolHargaLebar - 6, align: "right" });
-        doc.text("1", kolQty, y + 6, { width: kolQtyLebar, align: "center" });
-        doc.text(formatRupiah(it.harga), kolTotal, y + 6, { width: kolTotalLebar - 6, align: "right" });
+    const TINGGI_BARIS_ITEM = 34;
+    if (items.length === 0) {
+      doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
+        .text("Belum ada item layanan pada order ini.", kolDeskX, y + 8);
+      y += TINGGI_BARIS_ITEM;
+    }
+    items.forEach((it, i) => {
+      const baseline = y + TINGGI_BARIS_ITEM / 2;
+      badgeIkon(doc, kolNoX + kolNoW - 10 + 22, baseline, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
+      doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, baseline - 5, { width: kolNoW, align: "center" });
+      doc.fontSize(10).font(FONT_TEKS).fillColor(GELAP).text(it.nama, kolDeskX, baseline - 5, { width: kolDeskW });
+      doc.fontSize(9.5).fillColor(ABU).text("1", kolQtyX, baseline - 5, { width: kolQtyW, align: "center" });
+      doc.fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, baseline - 5, { width: kolHargaW, align: "right" });
+      doc.text(formatRupiah(it.harga), kolTotalX, baseline - 5, { width: kolTotalW, align: "right" });
+      y += TINGGI_BARIS_ITEM;
+      if (i < items.length - 1) {
+        doc.moveTo(kolNoX, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
+        y += 1;
       }
-      y += TINGGI_BARIS;
-    }
-    doc.moveTo(MARGIN, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
-    y += 24;
+    });
+    y += 20;
 
-    // ── Kolom kiri (Payment Method + Terms & Conditions) dipisah garis
-    // vertikal dari kolom kanan (rincian total) — revisi 2 Sep 2026 supaya
-    // footer terlihat lebih terstruktur (dua kolom jelas), bukan teks lepas
-    // di seluruh lebar halaman. Terms & Conditions karena itu SEKARANG ikut
-    // lebar kolom kiri, bukan lebar penuh halaman seperti sebelumnya.
-    const kolKiriLebar = 260;
-    const kolKananX = MARGIN + kolKiriLebar + 20;
-    const kolKananLebar = KONTEN_LEBAR - kolKiriLebar - 20;
-    const GARIS_PEMISAH_X = kolKananX - 10;
-    const yAwalBawah = y;
+    // ── Kartu "Terima kasih" (kiri) + total & jatuh tempo (kanan) ────────
+    const bawahKiriW = kartuW;
+    const bawahKananW = kartuW;
+    const bawahKananX = kartuKananX;
 
-    // Kolom kiri: Payment Method lalu Terms & Conditions, ditulis berurutan
-    // dalam SATU alur y supaya tidak overlap kalau salah satu memanjang.
-    let yKiri = yAwalBawah;
-    doc.fontSize(11).font(FONT_JUDUL).fillColor(BIRU).text("PAYMENT METHOD", MARGIN, yKiri);
-    yKiri += 16;
-    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU).text("No. Rekening:", MARGIN, yKiri);
-    yKiri += 13;
-    doc.fontSize(10).font(FONT_TEKS).fillColor(GELAP).text(`${PERUSAHAAN.bank.nama} ${PERUSAHAAN.bank.noRekening}`, MARGIN, yKiri);
-    yKiri += 15;
-    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU).text(`Nama Rekening: ${PERUSAHAAN.bank.namaRekening}`, MARGIN, yKiri, { width: kolKiriLebar });
-    yKiri += 30;
+    // Kartu kiri — Terima kasih. Kalimat penutup memakai tagline resmi
+    // brand "Ahlinya Kasur Sehat" (CLAUDE.md §16.7), BUKAN kalimat generik
+    // "perawatan kasur" — revisi eksplisit dari owner 2 Sep 2026.
+    const terimaKasihTinggi = 108;
+    doc.roundedRect(kartuKiriX, y, bawahKiriW, terimaKasihTinggi, 14).fill(KARTU_BG);
+    badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: BIRU_GELAP, ikon: IKON.heart });
+    doc.fontSize(11.5).font(FONT_JUDUL).fillColor(GELAP)
+      .text("TERIMA KASIH!", kartuKiriX + padKartu + 32, y + padKartu + 5, { width: bawahKiriW - padKartu * 2 - 32 });
+    doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
+      .text(
+        "Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.",
+        kartuKiriX + padKartu, y + padKartu + 32, { width: bawahKiriW - padKartu * 2 }
+      );
+    doc.fontSize(9.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
+      .text("TIDUR NYAMAN, HIDUP LEBIH SEHAT", kartuKiriX + padKartu, y + terimaKasihTinggi - 24, { width: bawahKiriW - padKartu * 2 });
 
-    doc.fontSize(11).font(FONT_JUDUL).fillColor(BIRU).text("TERMS & CONDITIONS", MARGIN, yKiri);
-    yKiri += 16;
-    doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU);
-    const BULLET_INDENT = 12;
-    for (const butir of PERUSAHAAN.syaratKetentuan) {
-      doc.text("•", MARGIN, yKiri, { width: BULLET_INDENT });
-      doc.text(butir, MARGIN + BULLET_INDENT, yKiri, { width: kolKiriLebar - BULLET_INDENT });
-      yKiri += doc.heightOfString(butir, { width: kolKiriLebar - BULLET_INDENT }) + 6;
-    }
-
-    // Kolom kanan: rincian nominal.
-    let yr = yAwalBawah;
+    // Kartu kanan — rincian total.
+    let yr = y + 6;
     function barisTotal(label, value, { bold = false, warna = GELAP } = {}) {
-      doc.fontSize(bold ? 12 : 9.5)
+      doc.fontSize(bold ? 13 : 9.5)
         .font(bold ? FONT_JUDUL : FONT_TEKS)
         .fillColor(bold ? warna : ABU)
-        .text(label, kolKananX, yr, { width: kolKananLebar * 0.55 });
+        .text(label, bawahKananX, yr, { width: bawahKananW * 0.5 });
       doc.font(bold ? FONT_JUDUL : FONT_TEKS).fillColor(warna)
-        .text(value, kolKananX, yr, { width: kolKananLebar, align: "right" });
-      yr += bold ? 20 : 17;
+        .text(value, bawahKananX, yr, { width: bawahKananW, align: "right" });
+      yr += bold ? 22 : 18;
     }
-
     const subTotal = nominal.diskonPersen ? nominal.hargaSebelumDiskon : nominal.totalLayanan;
-    barisTotal("Sub Total", formatRupiah(subTotal));
-    barisTotal("PPN 10%", formatRupiah(0));
+    barisTotal("Subtotal", formatRupiah(subTotal));
+    barisTotal(
+      nominal.diskonPersen ? `Diskon${nominal.promoCode ? ` (${nominal.promoCode})` : ""}` : "Diskon",
+      nominal.diskonPersen ? `-${formatRupiah(nominal.nilaiDiskon)}` : "–"
+    );
     if (nominal.ongkir > 0) barisTotal("Ongkir", formatRupiah(nominal.ongkir));
-    if (nominal.diskonPersen) {
-      barisTotal(`Discount${nominal.promoCode ? ` (${nominal.promoCode})` : ""}`, formatRupiah(nominal.nilaiDiskon));
-    }
-    doc.moveTo(kolKananX, yr + 2).lineTo(kolKananX + kolKananLebar, yr + 2).dash(2, { space: 2 }).strokeColor(GARIS).stroke();
+    doc.moveTo(bawahKananX, yr + 3).lineTo(bawahKananX + bawahKananW, yr + 3).dash(2, { space: 2 }).strokeColor(GARIS).stroke();
     doc.undash();
-    yr += 10;
+    yr += 12;
     barisTotal("TOTAL", formatRupiah(nominal.totalTagihan), { bold: true, warna: BIRU });
 
     if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) {
-      yr += 4;
       barisTotal("Sudah dibayar", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar), { warna: "#16a34a" });
       barisTotal("Sisa tagihan", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa), {
         bold: true, warna: nominal.sisa > 0 ? "#dc2626" : "#16a34a",
       });
     }
 
-    // Garis pemisah vertikal antar-kolom — tinggi mengikuti kolom yang lebih
-    // panjang (biasanya kiri, karena Terms & Conditions selalu ada di sana).
-    const yAkhirBawah = Math.max(yKiri, yr);
-    doc.moveTo(GARIS_PEMISAH_X, yAwalBawah).lineTo(GARIS_PEMISAH_X, yAkhirBawah - 6).strokeColor(GARIS).stroke();
-
-    y = yAkhirBawah + 14;
-
-    if (invoice.notes) {
-      doc.fontSize(10).fillColor(ABU).font(FONT_JUDUL).text("CATATAN", MARGIN, y);
-      doc.fontSize(9).fillColor(GELAP).font(FONT_TEKS).text(invoice.notes, MARGIN, y + 13, { width: KONTEN_LEBAR - 100 });
+    // Badge jatuh tempo — CUMA muncul kalau invoice.dueDate memang diisi
+    // (jangan mengarang tanggal kalau belum ditentukan sales/admin).
+    if (invoice.dueDate) {
+      yr += 6;
+      const teksBadge = `Bayar sebelum ${formatTanggal(invoice.dueDate)}`;
+      doc.fontSize(9).font(FONT_TEKS);
+      const lebarBadge = Math.min(doc.widthOfString(teksBadge) + 56, bawahKananW);
+      doc.roundedRect(bawahKananX, yr, lebarBadge, 30, 15).fill(BIRU_GELAP);
+      doc.fontSize(11).font(FONT_IKON).fillColor(TEAL).text(IKON.jam, bawahKananX + 14, yr + 9, { width: 16 });
+      doc.fontSize(9).font(FONT_TEKS).fillColor("#ffffff")
+        .text(teksBadge, bawahKananX + 34, yr + 10, { width: lebarBadge - 44 });
+      yr += 30;
     }
 
-    // ── Wave dekoratif footer ────────────────────────────────────────────
-    gambarWaveFooter(doc, pageWidth, pageHeight);
-    doc.fontSize(8).fillColor("#ffffff").font(FONT_TEKS)
-      .text("Terima kasih telah mempercayakan tidur sehat Anda kepada Klinik Matras.", MARGIN, pageHeight - 30, {
-        width: KONTEN_LEBAR, align: "center",
-      });
+    y += Math.max(terimaKasihTinggi, yr - y) + 20;
+
+    // ── Kartu "Butuh bantuan" ─────────────────────────────────────────────
+    const bantuanTinggi = 90;
+    doc.roundedRect(kartuKiriX, y, KONTEN_LEBAR, bantuanTinggi, 14).fill(KARTU_BG);
+    badgeIkon(doc, kartuKiriX + padKartu + 12, y + padKartu + 12, 12, { bg: TEAL, ikon: IKON.headset });
+    doc.fontSize(10.5).font(FONT_JUDUL).fillColor(TEAL_GELAP)
+      .text("BUTUH BANTUAN?", kartuKiriX + padKartu + 32, y + padKartu + 6, { width: 200 });
+    doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU).text("Customer Care", kartuKiriX + padKartu + 32, y + padKartu + 22);
+    doc.fontSize(10.5).font(FONT_JUDUL).fillColor(GELAP).text(PERUSAHAAN.whatsapp, kartuKiriX + padKartu + 32, y + padKartu + 34);
+
+    const kolomKananBantuanX = kartuKiriX + KONTEN_LEBAR * 0.48;
+    let yBantuan = y + padKartu + 6;
+    doc.fontSize(9).font(FONT_IKON).fillColor(TEAL_GELAP).text(IKON.globe, kolomKananBantuanX, yBantuan, { width: 14 });
+    doc.fontSize(9).font(FONT_TEKS).fillColor(GELAP).text(PERUSAHAAN.website, kolomKananBantuanX + 18, yBantuan - 1);
+    yBantuan += 18;
+    doc.fontSize(9).font(FONT_IKON).fillColor(TEAL_GELAP).text(IKON.lokasi, kolomKananBantuanX, yBantuan, { width: 14 });
+    doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU).text("Workshop:", kolomKananBantuanX + 18, yBantuan - 1);
+    tulisAlamatDibatasi(doc, PERUSAHAAN.alamat, kolomKananBantuanX + 18, yBantuan + 11, {
+      width: KONTEN_LEBAR - (kolomKananBantuanX + 18 - kartuKiriX) - padKartu, maxBaris: 2,
+    });
+
+    y += bantuanTinggi + 26;
+
+    // ── Tanda tangan "thank you" tulisan tangan ──────────────────────────
+    // Ikon hati dirender TERPISAH pakai FONT_IKON (FontAwesome) — Caveat
+    // (font skrip tulisan tangan) tidak punya glyph simbol hati ("♥"),
+    // hasilnya kotak kosong kalau dipaksa jadi satu string dengan font itu.
+    const teksThankYou = "thank you";
+    doc.fontSize(30).font(FONT_SKRIP);
+    const lebarThankYou = doc.widthOfString(teksThankYou);
+    const lebarHatiIkon = 18;
+    const xThankYou = MARGIN + KONTEN_LEBAR - lebarThankYou - lebarHatiIkon - 8;
+    doc.fillColor(TEAL_GELAP).text(teksThankYou, xThankYou, y, { width: lebarThankYou + 4 });
+    doc.fontSize(lebarHatiIkon).font(FONT_IKON).fillColor(TEAL_GELAP)
+      .text(IKON.heart, xThankYou + lebarThankYou + 6, y + 10, { width: lebarHatiIkon + 4 });
+
+    // ── Syarat & Ketentuan — cetak kecil di paling bawah (tetap ada sesuai
+    // ketentuan bisnis §16.8/keputusan sebelumnya, dikemas ringkas 1
+    // paragraf supaya cocok dengan gaya kartu-lembut desain baru ini,
+    // bukan daftar bullet seperti desain sebelumnya). ───────────────────
+    y = pageHeight - 56;
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + KONTEN_LEBAR, y).strokeColor(GARIS).stroke();
+    doc.fontSize(7.5).font(FONT_TEKS).fillColor(ABU)
+      .text(`Syarat & Ketentuan — ${PERUSAHAAN.syaratKetentuan}`, MARGIN, y + 8, { width: KONTEN_LEBAR, align: "center" });
 
     doc.end();
   });
