@@ -74,6 +74,12 @@ export default function WarrantyPanel({ orderId, order, onChanged }) {
         )}
       </div>
 
+      <p className="text-[11px] leading-relaxed text-ink3">
+        Nama & alamat pemilik garansi ikut nama/alamat yang tercetak di invoice
+        order ini — kalau perlu dikoreksi, edit lewat pencil di kartu{" "}
+        <strong>"Ditagihkan ke"</strong> pada panel Invoice di atas.
+      </p>
+
       <div className="flex items-center gap-1.5">
         {WARRANTY_YEARS.map((th) => (
           <button

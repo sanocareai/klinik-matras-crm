@@ -50,8 +50,13 @@ export async function buildWarrantyView(orderId, { userId = null, warrantyYears 
     order: {
       id: order.id,
       orderNumber: order.orderNumber,
-      deliveryAddress: order.deliveryAddress,
-      deliveryCity: order.deliveryCity,
+      // alamatTujuan (2 Sep 2026, InvoicePanel "Ditagihkan ke") dipakai
+      // ULANG di sini — ID Transaksi kartu garansi ini MEMANG nomor
+      // invoice order yang sama, jadi kalau sales sudah mengoreksi
+      // alamat/nama tampilan invoice, kartu garansi wajib ikut konsisten
+      // (bukan diam-diam menampilkan versi lama yang belum dikoreksi).
+      deliveryAddress: invoice.alamatTujuan || order.deliveryAddress,
+      deliveryCity: invoice.alamatTujuan ? null : order.deliveryCity,
       // "Keluhan Customer" di kartu = complaintDetail SAJA (D-006/7D di
       // CLAUDE.md — keluhan yang MENDASARI kenapa order/servis ini dibuat,
       // mis. "bagian kiri amblas"). BUG diperbaiki 3 Sep 2026: SEBELUMNYA
@@ -65,7 +70,9 @@ export async function buildWarrantyView(orderId, { userId = null, warrantyYears 
     },
     customer: {
       id: order.customer.id,
-      nama: order.customer.name,
+      // namaTujuan (2 Sep 2026, InvoicePanel "Ditagihkan ke") dipakai
+      // ULANG — lihat alasan sama di atas untuk alamat.
+      nama: invoice.namaTujuan || order.customer.name,
       phone: order.customer.phone,
     },
     layanan,
