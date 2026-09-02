@@ -140,18 +140,29 @@ export function renderInvoicePdf(view) {
 
     // ── Invoice To / Invoice meta ────────────────────────────────────────
     let y = HEADER_TINGGI + 30;
+    const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
+    const ALAMAT_LEBAR = 260;
+
     doc.fontSize(9).fillColor(ABU).font("Helvetica-Bold").text("INVOICE TO:", MARGIN, y);
     doc.fontSize(12).fillColor(GELAP).font("Helvetica-Bold").text((customer.nama || "-").toUpperCase(), MARGIN, y + 14);
-    doc.fontSize(9).fillColor(ABU).font("Helvetica")
-      .text(`${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`, MARGIN, y + 32, { width: 260 })
-      .text(customer.phone || "-", MARGIN, y + 46);
+    doc.fontSize(9).font("Helvetica");
+    const tinggiAlamat = doc.heightOfString(alamatLengkap, { width: ALAMAT_LEBAR });
+    doc.fillColor(ABU).text(alamatLengkap, MARGIN, y + 32, { width: ALAMAT_LEBAR });
+    doc.text(customer.phone || "-", MARGIN, y + 32 + tinggiAlamat + 4);
 
     doc.fontSize(20).fillColor(BIRU).font("Helvetica-Bold").text("INVOICE", MARGIN, y, { width: KONTEN_LEBAR, align: "right" });
     doc.fontSize(9).fillColor(ABU).font("Helvetica")
       .text(`Invoice No: ${invoice.invoiceNumber}`, MARGIN, y + 26, { width: KONTEN_LEBAR, align: "right" })
       .text(`Invoice Date: ${formatTanggal(invoice.createdAt)}`, MARGIN, y + 40, { width: KONTEN_LEBAR, align: "right" });
 
-    y += 80;
+    // Blok kanan (INVOICE/nomor/tanggal) tingginya tetap (~54pt dari y), tapi
+    // blok kiri (nama+alamat+telp) bisa lebih tinggi kalau alamat panjang
+    // (alamat pengiriman customer nyata sering 2-3 baris, BUKAN kasus tepi) —
+    // tabel item harus mulai di bawah blok yang LEBIH TINGGI, jangan asumsikan
+    // tinggi tetap seperti sebelumnya (itu yang menyebabkan alamat panjang
+    // bertabrakan dengan baris telepon).
+    const tinggiBlokKiri = 32 + tinggiAlamat + 4 + 12;
+    y += Math.max(tinggiBlokKiri, 54) + 26;
 
     // ── Tabel item ───────────────────────────────────────────────────────
     const kolNo = MARGIN;
