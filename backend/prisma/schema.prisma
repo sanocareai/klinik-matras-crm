@@ -1057,7 +1057,25 @@ model Invoice {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  // Gabung invoice lintas-order (2 Sep 2026) — SELF-REFERENCE tambahan,
+  // BUKAN mengganti relasi orderId di atas. null (default) = invoice
+  // berdiri sendiri, PERSIS seperti sebelum fitur ini ada — hitungNominal/
+  // buildInvoiceView(orderId) TIDAK BERUBAH SAMA SEKALI untuk kasus ini.
+  // Kalau diisi: invoice ini "dilipat" jadi anggota bundle invoice target
+  // (primary) — dokumen yang benar-benar dikirim/dilihat customer adalah
+  // punya PRIMARY, gabungan dari buildInvoiceView() tiap anggota yang
+  // dijumlahkan (services/invoice.js#buildCombinedInvoiceView), BUKAN
+  // dihitung ulang dari order mentah gabungan (itu akan mengacak diskon/
+  // promo per order yang sudah benar). SetNull: hapus/lepas primary tidak
+  // boleh merusak invoice anggota, cuma balik jadi berdiri sendiri lagi.
+  // Sengaja 1 tingkat saja (anggota TIDAK BOLEH jadi primary bundle lain)
+  // — dijaga di attachOrderToInvoice(), bukan di skema.
+  combinedIntoId  String?   @map("combined_into_id")
+  combinedInto    Invoice?  @relation("InvoiceBundle", fields: [combinedIntoId], references: [id], onDelete: SetNull)
+  bundledInvoices Invoice[] @relation("InvoiceBundle")
+
   @@index([lifecycleStatus])
+  @@index([combinedIntoId])
   @@map("invoices")
 }
 

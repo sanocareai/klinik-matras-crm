@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  FileText, Send, Eye, Ban, Check, Loader2, Copy, CalendarClock, AlertTriangle, Pencil, X, RotateCcw,
+  FileText, Send, Eye, Ban, Check, Loader2, Copy, CalendarClock, AlertTriangle, Pencil, X, RotateCcw, GitMerge,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -66,19 +66,19 @@ function BarisUang({ label, value, tone, strong, hint }) {
 // backend routes/orders.js) supaya customer tidak menerima dua dokumen dengan
 // gaya & angka yang berbeda dari bisnis yang sama.
 function buatTeksInvoice(v) {
-  const { invoice, order, customer, nominal, payments } = v;
+  const { invoice, order, orders, items, customer, nominal, payments } = v;
   const rp = (n) => formatRupiah(n || 0);
   const baris = [
     `🧾 *INVOICE* — ${invoice.invoiceNumber}`,
-    `Order: ${order.orderNumber || "-"}`,
+    `Order: ${(orders || [order]).map((o) => o.orderNumber).filter(Boolean).join(", ") || "-"}`,
     ``,
     `👤 ${invoice.namaTujuan || customer.nama || "-"}`,
     `${customer.phone || "-"}`,
     invoice.alamatTujuan || `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`,
     ``,
     `🛏️ *Rincian*`,
-    ...(order.items.length
-      ? order.items.map((i) => `• ${i.nama}: ${rp(i.harga)}`)
+    ...((items?.length ?? order.items.length)
+      ? (items || order.items).map((i) => `• ${i.nama}: ${rp(i.harga)}`)
       : ["• (belum ada item)"]),
   ];
   if (nominal.diskonPersen) {
@@ -119,6 +119,12 @@ export default function InvoicePanel({ orderId, onChanged }) {
   const [editPenerima, setEditPenerima] = useState(false);
   const [namaDraft, setNamaDraft] = useState("");
   const [alamatDraft, setAlamatDraft] = useState("");
+  // Gabung invoice lintas-order (2 Sep 2026).
+  const [showMergePicker, setShowMergePicker] = useState(false);
+  const [mergeCandidates, setMergeCandidates] = useState([]);
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [attachingId, setAttachingId] = useState(null);
+  const [detachingId, setDetachingId] = useState(null);
 
   useEffect(() => {
     if (!orderId) return;
@@ -188,6 +194,55 @@ export default function InvoicePanel({ orderId, onChanged }) {
     }
   }
 
+  async function bukaMergePicker() {
+    if (showMergePicker) { setShowMergePicker(false); return; }
+    setShowMergePicker(true);
+    setMergeLoading(true);
+    try {
+      const list = await api.getMergeableOrders(orderId);
+      setMergeCandidates(list);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setMergeLoading(false);
+    }
+  }
+
+  async function gabungkanKe(targetOrderId) {
+    setAttachingId(targetOrderId);
+    try {
+      const r = await api.attachOrderToInvoice(orderId, targetOrderId);
+      setView(r);
+      setShowMergePicker(false);
+      setError(null);
+      onChanged?.(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAttachingId(null);
+    }
+  }
+
+  async function pisahkan(memberOrderId) {
+    setDetachingId(memberOrderId);
+    try {
+      // detach dipanggil dengan order id ANGGOTA yang mau dipisah — bisa
+      // beda dari `orderId` panel ini (panel bisa dibuka dari primary,
+      // tapi anggota mana pun boleh dipisah). Refetch dari `orderId` panel
+      // supaya tampilan yang di-refresh selalu punya sudut pandang yang benar.
+      await api.detachInvoiceFromBundle(memberOrderId);
+      const r = await api.getOrderInvoice(orderId);
+      setView(r);
+      setError(null);
+      onChanged?.(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDetachingId(null);
+    }
+  }
+
   async function kirimWa() {
     setAksi("KIRIM");
     try {
@@ -220,8 +275,10 @@ export default function InvoicePanel({ orderId, onChanged }) {
     );
   }
 
-  const { invoice, order, customer, nominal, payments } = view;
+  const { invoice, order, orders = [order], items: itemsGabungan, customer, nominal, payments } = view;
+  const items = itemsGabungan || order.items;
   const dibatalkan = invoice.status === "CANCELLED";
+  const primaryOrderId = orders[0]?.id;
 
   return (
     <motion.div
@@ -253,16 +310,81 @@ export default function InvoicePanel({ orderId, onChanged }) {
         )}
       </div>
 
+      {/* Gabung invoice lintas-order (2 Sep 2026) — chip per order anggota
+          (+ "Pisahkan" utk yg bukan primary) begitu invoice ini gabungan,
+          dan tombol "Gabungkan dengan Order Lain" selama belum terkirim. */}
+      {orders.length > 1 && (
+        <div className="rounded-xl bg-surface p-3.5 shadow-card">
+          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
+            Gabungan {orders.length} Order
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {orders.map((o) => (
+              <span key={o.id} className="flex items-center gap-1 rounded-lg bg-inset px-2 py-1 text-[11.5px] font-medium text-ink2">
+                {o.orderNumber || o.id}
+                {o.id !== primaryOrderId && !invoice.sentAt && (
+                  <button
+                    type="button"
+                    disabled={detachingId === o.id}
+                    onClick={() => pisahkan(o.id)}
+                    className="text-ink3 hover:text-red"
+                    title="Pisahkan order ini dari gabungan"
+                  >
+                    {detachingId === o.id ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!invoice.sentAt && !dibatalkan && (
+        <div className="rounded-xl bg-surface p-3.5 shadow-card">
+          <button
+            type="button"
+            onClick={bukaMergePicker}
+            className="flex w-full items-center justify-between gap-2 text-[12.5px] font-semibold text-accent"
+          >
+            <span className="flex items-center gap-1.5"><GitMerge size={14} /> Gabungkan dengan Order Lain</span>
+            {mergeLoading && <Loader2 size={13} className="animate-spin" />}
+          </button>
+          {showMergePicker && (
+            <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2">
+              {!mergeLoading && mergeCandidates.length === 0 && (
+                <p className="text-[11.5px] text-ink3">Tidak ada order lain milik pelanggan ini yang bisa digabung.</p>
+              )}
+              {mergeCandidates.map((c) => (
+                <button
+                  key={c.orderId}
+                  type="button"
+                  disabled={attachingId === c.orderId}
+                  onClick={() => gabungkanKe(c.orderId)}
+                  className="flex items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-1.5 text-left text-[12px] text-ink2 transition-colors hover:bg-hovertint disabled:opacity-60"
+                >
+                  <span>{c.orderNumber} <span className="text-ink3">({c.category})</span></span>
+                  {attachingId === c.orderId ? <Loader2 size={12} className="animate-spin" /> : <span className="font-semibold text-accent">Gabung</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Rincian tagihan */}
       <div className="rounded-xl bg-surface p-3.5 shadow-card">
         <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Rincian</p>
-        {order.items.length === 0 ? (
+        {items.length === 0 ? (
           <p className="py-2 text-[12.5px] text-ink3">
             Belum ada item layanan — nominal masih Rp0 sampai item ditambahkan di order.
           </p>
         ) : (
-          order.items.map((i) => (
-            <BarisUang key={i.id} label={i.nama} value={formatRupiah(i.harga)} />
+          items.map((i) => (
+            <BarisUang
+              key={i.id}
+              label={orders.length > 1 && i.orderNumber ? `${i.nama} · ${i.orderNumber}` : i.nama}
+              value={formatRupiah(i.harga)}
+            />
           ))
         )}
 

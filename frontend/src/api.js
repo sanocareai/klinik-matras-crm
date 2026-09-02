@@ -612,6 +612,12 @@ export const api = {
   updateOrderInvoice: (orderId, data) =>
     request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
   sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  // Gabung invoice lintas-order (2 Sep 2026) — lihat services/invoice.js.
+  getMergeableOrders: (orderId) => request(`/orders/${orderId}/invoice/mergeable`),
+  attachOrderToInvoice: (orderId, targetOrderId) =>
+    request(`/orders/${orderId}/invoice/attach`, { method: "POST", body: JSON.stringify({ targetOrderId }) }),
+  detachInvoiceFromBundle: (orderId) =>
+    request(`/orders/${orderId}/invoice/detach`, { method: "POST" }),
   // PDF = FILE, bukan JSON — sama alasan dengan exportCustomersVCard di atas:
   // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
   // otorisasi (endpoint ini dijaga requireAuth di backend).

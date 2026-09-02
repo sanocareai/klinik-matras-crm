@@ -227,7 +227,7 @@ function gambarBlob(doc, pageWidth, pageHeight) {
  */
 export function renderInvoicePdf(view) {
   return new Promise((resolve, reject) => {
-    const { invoice, order, customer, nominal, payments } = view;
+    const { invoice, order, orders, items: itemsGabungan, customer, nominal, payments } = view;
     const doc = new PDFDocument({ size: "A4", margin: 0 });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
@@ -286,6 +286,16 @@ export function renderInvoicePdf(view) {
       .text("Tanggal", MARGIN, yMeta, { width: KONTEN_LEBAR - 130, align: "right" });
     doc.fontSize(11).font(FONT_TEKS).fillColor(GELAP)
       .text(formatTanggal(invoice.createdAt), MARGIN, yMeta - 1, { width: KONTEN_LEBAR, align: "right" });
+
+    // Gabung invoice lintas-order (2 Sep 2026) — baris tambahan cuma
+    // muncul kalau invoice ini gabungan (orders.length > 1); untuk order
+    // tunggal, blok ini tidak dieksekusi sama sekali (tata letak identik
+    // dengan sebelum fitur ini ada).
+    if (orders.length > 1) {
+      yMeta += 16;
+      doc.fontSize(8).font(FONT_TEKS).fillColor(ABU)
+        .text(`Order: ${orders.map((o) => o.orderNumber).join(", ")}`, MARGIN, yMeta, { width: KONTEN_LEBAR, align: "right" });
+    }
 
     y = Math.max(dotY + 30, yMeta + 22);
 
@@ -378,7 +388,12 @@ export function renderInvoicePdf(view) {
     doc.text("TOTAL", kolTotalX, yHeaderTeks, { width: kolTotalW, align: "right" });
     y += TINGGI_HEADER_TABEL + 8;
 
-    const items = order.items || [];
+    // items: view.items (top-level, sudah di-flatten & di-tag orderNumber
+    // oleh services/invoice.js) — utk order tunggal isinya sama persis
+    // dengan order.items dulu, cuma sekarang lewat 1 field yang juga jalan
+    // ketika invoice-nya gabungan (lihat buildCombinedInvoiceView).
+    const items = itemsGabungan || order.items || [];
+    const banyakOrder = orders.length > 1;
     const TINGGI_BARIS_ITEM_MIN = 34;
     if (items.length === 0) {
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
@@ -392,10 +407,16 @@ export function renderInvoicePdf(view) {
       // pemisahnya) numpuk ke teks yang masih terpotong.
       doc.fontSize(10).font(FONT_TEKS_MED);
       const tinggiNama = doc.heightOfString(it.nama, { width: kolDeskW });
-      const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + 16);
+      // Label kecil asal order (cuma kalau invoice ini gabungan >1 order)
+      // butuh sedikit ruang tambahan di bawah nama item.
+      const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + (banyakOrder ? 26 : 16));
       badgeIkon(doc, kolNoX + kolNoW - 10 + 22, y + tinggiBarisIni / 2, 13, { bg: KARTU_BG, ikon: pilihIkonItem(it.nama), warnaIkon: TEAL_GELAP, ukuranIkon: 11 });
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(GELAP).text(String(i + 1), kolNoX, y + 6, { width: kolNoW, align: "center" });
       doc.fontSize(10).font(FONT_TEKS_MED).fillColor(GELAP).text(it.nama, kolDeskX, y + 6, { width: kolDeskW });
+      if (banyakOrder && it.orderNumber) {
+        doc.fontSize(7.5).font(FONT_TEKS).fillColor(ABU)
+          .text(`· ${it.orderNumber}`, kolDeskX, y + 6 + tinggiNama + 2, { width: kolDeskW });
+      }
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU).text("1", kolQtyX, y + 6, { width: kolQtyW, align: "center" });
       doc.font(FONT_TEKS_MED).fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, y + 6, { width: kolHargaW, align: "right" });
       doc.text(formatRupiah(it.harga), kolTotalX, y + 6, { width: kolTotalW, align: "right" });

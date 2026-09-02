@@ -12,7 +12,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
-import { buildInvoiceView, setInvoiceLifecycle } from "../services/invoice.js";
+import { buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus } from "../services/orderStatusSync.js";
@@ -725,6 +725,75 @@ orderRouter.get("/:id/invoice/pdf", async (req, res) => {
   } catch (err) {
     console.error("invoice pdf error:", err);
     res.status(500).json({ error: "Gagal membuat PDF invoice" });
+  }
+});
+
+// GET /api/orders/:id/invoice/mergeable — order LAIN milik customer yang
+// sama, yang invoice-nya masih bisa jadi anggota gabungan (belum terkirim,
+// belum jadi anggota bundle lain). Dipakai isi picker "Gabungkan dengan
+// Order Lain" di InvoicePanel.
+orderRouter.get("/:id/invoice/mergeable", async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: req.params.id }, select: { id: true, customerId: true } });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+
+    const kandidat = await prisma.order.findMany({
+      where: {
+        customerId: order.customerId,
+        id: { not: order.id },
+        invoice: { sentAt: null, combinedIntoId: null, lifecycleStatus: { not: "CANCELLED" } },
+      },
+      select: { id: true, orderNumber: true, category: true, createdAt: true, invoice: { select: { invoiceNumber: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(kandidat.map((o) => ({
+      orderId: o.id, orderNumber: o.orderNumber, category: o.category,
+      createdAt: o.createdAt, invoiceNumber: o.invoice?.invoiceNumber || null,
+    })));
+  } catch (err) {
+    console.error("get mergeable orders error:", err);
+    res.status(500).json({ error: "Gagal memuat daftar order yang bisa digabung" });
+  }
+});
+
+// POST /api/orders/:id/invoice/attach { targetOrderId } — gabungkan invoice
+// order INI ke invoice order TARGET (target jadi primary bundle). Bukan
+// admin-only seperti guardOrderLocked() — ini cuma pengelompokan dokumen,
+// bukan mengubah data uang — tapi tetap tolak kalau salah satu order sudah
+// LUNAS+terkunci, konsisten dengan aturan edit order yang sudah ada.
+orderRouter.post("/:id/invoice/attach", async (req, res) => {
+  const { targetOrderId } = req.body;
+  if (!targetOrderId) return res.status(400).json({ error: "targetOrderId wajib diisi" });
+  try {
+    const guardedSource = await guardOrderLocked(req, res, req.params.id, "menggabungkan invoice order ini");
+    if (!guardedSource) return;
+    const guardedTarget = await guardOrderLocked(req, res, targetOrderId, "menjadi tujuan gabungan invoice");
+    if (!guardedTarget) return;
+
+    await prisma.$transaction((tx) => attachOrderToInvoice(tx, {
+      sourceOrderId: req.params.id, targetOrderId, userId: req.user?.id || null,
+    }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error("attach invoice error:", err);
+    res.status(500).json({ error: "Gagal menggabungkan invoice" });
+  }
+});
+
+// POST /api/orders/:id/invoice/detach — lepaskan invoice order ini dari
+// bundle-nya, kembali berdiri sendiri seperti sebelum digabung.
+orderRouter.post("/:id/invoice/detach", async (req, res) => {
+  try {
+    const guarded = await guardOrderLocked(req, res, req.params.id, "memisahkan invoice order ini");
+    if (!guarded) return;
+
+    await prisma.$transaction((tx) => detachInvoiceFromBundle(tx, { orderId: req.params.id }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    console.error("detach invoice error:", err);
+    res.status(500).json({ error: "Gagal memisahkan invoice" });
   }
 });
 
