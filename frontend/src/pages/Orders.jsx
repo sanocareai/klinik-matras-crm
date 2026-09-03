@@ -367,9 +367,17 @@ export default function Orders() {
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
-  // Filter tanggal order DIBUAT (Order.createdAt) — default "Hari ini",
-  // konsisten dengan Dashboard & Pipeline.
-  const [range, setRange] = useState(() => makeRange("today"));
+  // Filter tanggal order DIBUAT (Order.createdAt) — default "Semua waktu"
+  // (3 Sep 2026, revisi dari "Hari ini"). Beda sengaja dari Dashboard/
+  // Pipeline (yang defaultnya memang "Hari ini"/rentang laporan): halaman
+  // ini bukan laporan periode, tapi PAPAN KERJA order — order yang dibuat
+  // BEBERAPA HARI lalu tapi masih berjalan (Pending/Pickup/Processing/
+  // Ready) TIDAK BOLEH hilang dari layar cuma karena filter tanggal
+  // sempit. Kolom per status di bawah sudah cukup memisahkan mana yang
+  // masih aktif vs sudah Delivered/Cancelled — filter tanggal di sini
+  // murni buat mempersempit kalau memang perlu, bukan default tersembunyi
+  // yang bikin order lama "hilang" tanpa disadari.
+  const [range, setRange] = useState(() => makeRange("all_time"));
   // Sort tabel — HANYA berlaku di view="table" (papan Kanban dikelompokkan
   // per status, "urutkan" tidak berarti apa-apa di situ). Klik pertama =
   // asc, klik lagi di kolom yang sama = flip, sama seperti Customers.jsx.
