@@ -11,8 +11,7 @@
 // REQUEST_DENIED (dites langsung, kartu debit user ditolak di Google
 // Console), jadi Geocoding & Distance Matrix API tidak bisa dipakai sampai
 // itu beres. Supaya fitur peta/rute TIDAK ikut mati total menunggu urusan
-// billing yang di luar kendali sistem ini, TIGA fallback GRATIS (tanpa API
-// key, tanpa kartu) ditambahkan di sini:
+// billing yang di luar kendali sistem ini, fallback GRATIS ditambahkan:
 //   - Geocoding  -> (1) link Google Maps yang nempel di addressText kalau
 //                   ada (PALING akurat, lihat geocodeFromMapsLink), lalu
 //                   (2) OpenStreetMap Nominatim kalau tidak ada link
@@ -22,10 +21,25 @@
 // Google lagi TANPA perlu ubah kode, tidak perlu "matikan mode fallback"
 // manual. Setiap hasil fallback ditandai `estimate: true` supaya UI bisa
 // jujur bilang "≈ perkiraan", bukan menyajikan angka kasar seolah presisi.
+//
+// FASE 3 (4 September 2026) — kartu KREDIT pun ditolak Google Cloud
+// (laporan owner: "google maps api gabisa ditopup udah pake credit card").
+// LocationIQ ditambahkan sebagai tingkat KEDUA (di atas Nominatim, di
+// bawah Google): geocoder berbasis OSM juga, TAPI hosted+di-cache lebih
+// baik dari Nominatim publik (akurasi lebih tinggi utk alamat Indonesia
+// yang tidak terlalu detail) DAN sekalian API rute jalan asli (bukan
+// haversine) — dan yang PALING PENTING, pendaftarannya TIDAK MEMINTA
+// kartu kredit sama sekali untuk tingkat gratisnya (5.000 request/hari).
+// Diaktifkan cuma dengan mengisi `LOCATIONIQ_API_KEY` di .env — kalau
+// kosong, sistem diam-diam lanjut ke Nominatim seperti sebelumnya, TIDAK
+// ADA perubahan perilaku sampai key itu benar-benar diisi. Daftar gratis:
+// https://locationiq.com/register (isi email, verifikasi email, selesai).
 
 const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+const LOCATIONIQ_SEARCH_URL = "https://us1.locationiq.com/v1/search";
+const LOCATIONIQ_DIRECTIONS_URL = "https://us1.locationiq.com/v1/directions/driving";
 
 // Nominatim WAJIB User-Agent yang mengidentifikasi aplikasi (kebijakan
 // pemakaian resminya) — tanpa ini permintaan bisa ditolak/diblokir diam-diam.
@@ -63,6 +77,14 @@ export function mapsConfigured() {
   return apiKey().length > 0;
 }
 
+function locationIqKey() {
+  return process.env.LOCATIONIQ_API_KEY || "";
+}
+
+export function locationIqConfigured() {
+  return locationIqKey().length > 0;
+}
+
 async function geocodeGoogle(text) {
   const url = `${GEOCODE_URL}?address=${encodeURIComponent(text)}&region=id&key=${apiKey()}`;
   const res = await fetch(url);
@@ -71,6 +93,34 @@ async function geocodeGoogle(text) {
   if (data.status !== "OK" || !data.results?.[0]) return null;
   const { lat, lng } = data.results[0].geometry.location;
   return { lat, lng, estimate: false };
+}
+
+async function locationIqSearch(text) {
+  const url = `${LOCATIONIQ_SEARCH_URL}?key=${locationIqKey()}&q=${encodeURIComponent(text)}&format=json&countrycodes=id&limit=1`;
+  const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
+  if (res.status === 404) return null; // LocationIQ balas 404 polos kalau tidak ketemu, bukan array kosong
+  if (!res.ok) throw new Error(`LocationIQ HTTP ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data) || !data[0]) return null;
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), estimate: true };
+}
+
+// Sama pola penyederhanaan bertahap dengan geocodeNominatim di bawah —
+// LocationIQ juga berbasis data OSM, jadi alamat super-detail ala sales
+// ("blok a25 no 19b") kemungkinan sama-sama tidak ketemu utuh. Rate limit
+// gratis LocationIQ (2 req/detik) lebih longgar dari Nominatim publik (1
+// req/detik), tapi jeda yang sama tetap dipakai di sini — aman, tidak ada
+// ruginya berhati-hati.
+async function geocodeLocationIQ(text) {
+  const segmen = text.split(",").map((s) => s.trim()).filter(Boolean);
+  for (let mulai = 0; mulai < segmen.length; mulai++) {
+    const coba = segmen.slice(mulai).join(", ");
+    if (!coba) continue;
+    const hasil = await locationIqSearch(coba);
+    if (hasil) return hasil;
+    if (mulai < segmen.length - 1) await new Promise((r) => setTimeout(r, 600));
+  }
+  return null;
 }
 
 async function nominatimSearch(text) {
@@ -131,7 +181,20 @@ export async function geocodeAddress(text) {
       const hasil = await geocodeGoogle(text);
       if (hasil) return hasil;
     } catch (err) {
-      console.error("[maps] Google geocode gagal, coba Nominatim:", err.message);
+      console.error("[maps] Google geocode gagal, lanjut ke tingkat berikutnya:", err.message);
+    }
+  }
+
+  // LocationIQ (D-044, 4 September 2026) — dicoba SEBELUM Nominatim publik:
+  // sama-sama gratis & berbasis OSM, tapi hosted+cache-nya biasanya lebih
+  // akurat utk alamat Indonesia. Diam-diam dilewati kalau key belum diisi
+  // (locationIqConfigured() false) — bukan error, cuma belum diaktifkan.
+  if (locationIqConfigured()) {
+    try {
+      const hasil = await geocodeLocationIQ(text);
+      if (hasil) return hasil;
+    } catch (err) {
+      console.error("[maps] LocationIQ geocode gagal, coba Nominatim:", err.message);
     }
   }
 
@@ -173,6 +236,27 @@ function haversineLegs(stops) {
   return legs;
 }
 
+// Rute jalan ASLI dari LocationIQ (bukan garis lurus) — D-044, 4 September
+// 2026. SATU permintaan untuk SELURUH rute (semua stop jadi satu string
+// koordinat "lon,lat;lon,lat;..."), sama semangatnya dengan Distance Matrix
+// Google di atas: hemat kuota gratis (2 req/detik, jangan dipanggil per-leg).
+// `overview=false` — tidak butuh geometri garis rute, cuma jarak/durasi per
+// leg, jadi respons lebih ringan.
+async function routeLegsLocationIQ(stops) {
+  const koordinat = stops.map((s) => `${s.lng},${s.lat}`).join(";");
+  const url = `${LOCATIONIQ_DIRECTIONS_URL}/${koordinat}?key=${locationIqKey()}&overview=false&steps=false`;
+  const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
+  if (!res.ok) throw new Error(`LocationIQ Directions HTTP ${res.status}`);
+  const data = await res.json();
+  const legs = data.routes?.[0]?.legs;
+  if (!Array.isArray(legs) || legs.length !== stops.length - 1) return null;
+  return legs.map((leg) => ({
+    distanceMeters: Math.round(leg.distance),
+    durationSeconds: Math.round(leg.duration),
+    estimate: false, // rute jalan asli, bukan garis lurus — sama tingkat kepercayaan dengan Google
+  }));
+}
+
 // routeLegs(stops) — stops: array of { lat, lng } TERURUT (urutan dispatcher).
 // Kembalikan array leg [{ distanceMeters, durationSeconds, estimate }] antara
 // stop[i] dan stop[i+1], panjang stops.length-1. Elemen null (HANYA jalur
@@ -201,7 +285,19 @@ export async function routeLegs(stops) {
         return { distanceMeters: el.distance.value, durationSeconds: el.duration.value, estimate: false };
       });
     } catch (err) {
-      console.error("[maps] Distance Matrix gagal, pakai estimasi garis lurus:", err.message);
+      console.error("[maps] Distance Matrix gagal, coba LocationIQ:", err.message);
+    }
+  }
+
+  // LocationIQ Directions (D-044) — rute jalan ASLI, bukan garis lurus,
+  // dicoba SEBELUM jatuh ke haversine. Diam-diam dilewati kalau key belum
+  // diisi.
+  if (locationIqConfigured()) {
+    try {
+      const legs = await routeLegsLocationIQ(stops);
+      if (legs) return legs;
+    } catch (err) {
+      console.error("[maps] LocationIQ Directions gagal, pakai estimasi garis lurus:", err.message);
     }
   }
 
