@@ -16,6 +16,7 @@ import { rolesOf } from "@/lib/roles.js";
 import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
+import { SalesBadge, EstimasiBadge, JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
@@ -319,14 +320,23 @@ export default function ArmadaJobs() {
                         <TR key={j.id} clickable onClick={() => setOpenJobId(j.id)}>
                           <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
                           <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
-                          <TD truncate>{customerOf(j) || "—"}</TD>
+                          <TD truncate>
+                            <div className="truncate font-medium text-ink">{customerOf(j) || "—"}</div>
+                            {/* Sales pemilik order (D-043, 2 September 2026) —
+                                baris kedua kecil di bawah nama, bukan kolom
+                                baru sendiri (tabel sudah cukup lebar). */}
+                            <SalesBadge job={j} className="mt-1 max-w-[160px] py-0.5 pl-0.5" />
+                          </TD>
                           <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
                           <TD className="whitespace-nowrap">
-                            {j.scheduledDate
-                              ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                              : historis
-                                ? <span className="text-ink3">—</span>
-                                : <span className="text-orange">Belum</span>}
+                            <div>
+                              {j.scheduledDate
+                                ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+                                : historis
+                                  ? <span className="text-ink3">—</span>
+                                  : <span className="text-orange">Belum</span>}
+                            </div>
+                            <EstimasiBadge job={j} className="mt-1" />
                           </TD>
                           <TD truncate className="max-w-[180px] text-ink2">
                             {j.addressText ? (
@@ -386,6 +396,7 @@ export default function ArmadaJobs() {
                             {j.driver?.name || (historis ? "—" : "Belum ada driver")}
                           </span>
                         </div>
+                        <JobMetaRow job={j} className="mt-1.5" />
                       </button>
                     </li>
                     );

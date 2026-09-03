@@ -168,7 +168,7 @@ const jobInclude = {
     select: {
       id: true, orderNumber: true, status: true,
       deliveryAddress: true, deliveryCity: true,
-      customer: { select: { id: true, name: true, phone: true } },
+      customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
     },
   },
   payments: {
@@ -192,7 +192,10 @@ const jobInclude = {
               // ini jalur baca-saja, tidak menimpa job.addressText yang
               // sudah diisi/diverifikasi driver.
               deliveryAddress: true, deliveryCity: true,
-              customer: { select: { id: true, name: true, phone: true } },
+              // assignedSales (D-043, 2 September 2026) — laporan owner:
+              // dispatcher perlu tahu SIAPA sales yang pegang order ini
+              // (buat koordinasi/tanya-jawab), bukan cuma nama customer.
+              customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
             },
           },
         },
@@ -1620,7 +1623,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
-    const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes } = req.body;
+    const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes, estimatedDurationMinutes } = req.body;
     const data = {};
     if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
     if (driverId !== undefined) data.driverId = driverId || null;
@@ -1634,6 +1637,12 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     }
     if (timeWindow !== undefined) data.timeWindow = timeWindow;
     if (accessNotes !== undefined) data.accessNotes = accessNotes;
+    // Estimasi durasi pengerjaan (D-043) — menit bulat, null = belum diisi.
+    if (estimatedDurationMinutes !== undefined) {
+      data.estimatedDurationMinutes = estimatedDurationMinutes === null || estimatedDurationMinutes === ""
+        ? null
+        : Math.max(0, Math.round(Number(estimatedDurationMinutes)) || 0) || null;
+    }
     // Re-geocode HANYA kalau alamat teksnya benar-benar berubah — supaya
     // PATCH lain (ganti driver, reschedule) tidak boros kuota Geocoding API
     // untuk alamat yang sama persis.

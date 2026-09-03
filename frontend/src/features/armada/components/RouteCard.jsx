@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils.js";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf } from "../jobStatus.js";
+import { JobMetaRow } from "./JobBadges.jsx";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
 // ATAU dari kolom rute lain, plus drag-reorder stop di dalamnya.
@@ -131,6 +132,7 @@ export default function RouteCard({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <div className="truncate text-[10px] text-ink2">{j.addressText || "—"}</div>
+                  <JobMetaRow job={j} className="mt-1" />
                 </div>
                 {isDraft && (
                   <button

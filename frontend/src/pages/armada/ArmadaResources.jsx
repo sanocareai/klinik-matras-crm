@@ -926,8 +926,12 @@ function RingkasanBiayaTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <Field label="Dari"><DatePicker value={from} onChange={setFrom} placeholder="Semua tanggal" /></Field>
-        <Field label="Sampai"><DatePicker value={to} onChange={setTo} placeholder="Semua tanggal" /></Field>
+        {/* Ringkasan biaya = laporan MASA LALU (BBM/servis yang sudah
+            terjadi) — beda dari DatePicker lain di Delivery yang justru
+            butuh tanggal masa depan untuk menjadwalkan. allowFuture={false}
+            eksplisit di sini, lihat catatan lengkap di date-picker.jsx. */}
+        <Field label="Dari"><DatePicker value={from} onChange={setFrom} placeholder="Semua tanggal" allowFuture={false} /></Field>
+        <Field label="Sampai"><DatePicker value={to} onChange={setTo} placeholder="Semua tanggal" allowFuture={false} /></Field>
       </div>
 
       <Card className="overflow-hidden">

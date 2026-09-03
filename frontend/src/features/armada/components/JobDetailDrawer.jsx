@@ -9,7 +9,11 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
-import { JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl } from "../jobStatus.js";
+import { SalesBadge } from "./JobBadges.jsx";
+import {
+  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
+  salesPersonOf, estimasiDurasiLabel, ESTIMASI_DURASI_PRESET,
+} from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
 // Drawer detail job — data NYATA dari GET /armada/jobs/:id.
@@ -261,6 +265,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                 )}
 
                 <div className="divide-y divide-line">
+                  {/* Sales pemilik order (D-043, 2 September 2026) — laporan
+                      owner: dispatcher perlu tahu siapa sales-nya buat
+                      koordinasi/tanya-jawab kalau ada kendala di lapangan. */}
+                  <Baris icon={User} label="Sales Person">
+                    {salesPersonOf(job) && <SalesBadge job={job} />}
+                  </Baris>
                   <Baris icon={Phone} label="Kontak">
                     {job.order?.customer?.phone && (
                       <a href={`tel:${job.order.customer.phone}`} className="text-accent hover:underline">
@@ -373,6 +383,45 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       </div>
                     </div>
 
+                    {/* Estimasi durasi pengerjaan (D-043, 2 September 2026) —
+                        chip preset (bukan ChipPilih — itu berbasis Avatar
+                        untuk driver/helper, tidak cocok untuk durasi) supaya
+                        dispatcher tinggal ketuk untuk kasus umum. */}
+                    <div>
+                      <label className="mb-1.5 block text-[11px] text-ink2">Estimasi Durasi (opsional)</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => ubahJadwal({ estimatedDurationMinutes: null })}
+                          className={cn(
+                            "flex h-7 items-center rounded-full border-2 px-2.5 text-[11px] font-medium transition-colors disabled:opacity-50",
+                            !job.estimatedDurationMinutes ? "border-ink3 bg-inset text-ink2" : "border-border text-ink3 hover:border-ink3"
+                          )}
+                        >
+                          Belum diisi
+                        </button>
+                        {ESTIMASI_DURASI_PRESET.map((p) => {
+                          const active = job.estimatedDurationMinutes === p.menit;
+                          return (
+                            <button
+                              key={p.menit}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => ubahJadwal({ estimatedDurationMinutes: p.menit })}
+                              className={cn(
+                                "flex h-7 items-center gap-1 rounded-full border-2 px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
+                                active ? "border-orange bg-orangebg text-orange" : "border-border text-ink2 hover:border-ink3"
+                              )}
+                            >
+                              <Clock size={11} className="shrink-0" />
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Alamat & Catatan Akses (D-039, 31 Agustus 2026) — dulu
                         cuma bisa diedit dari board lama (Armada.jsx JobCard),
                         sekarang tersedia langsung di drawer supaya dispatcher
@@ -429,6 +478,9 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     <Baris icon={User} label="Helper">{job.helper?.name || null}</Baris>
                     <Baris icon={Truck} label="Kendaraan">
                       {job.vehicle ? `${job.vehicle.plateNumber} (${job.vehicle.type})` : null}
+                    </Baris>
+                    <Baris icon={Clock} label="Estimasi Durasi">
+                      {estimasiDurasiLabel(job.estimatedDurationMinutes)}
                     </Baris>
                   </div>
                 )}

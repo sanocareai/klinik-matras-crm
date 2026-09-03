@@ -21,6 +21,20 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // sama, CalendarMonth sudah menangani kasus itu sebagai "isSingleDay").
 //
 // value: "YYYY-MM-DD" | "" — string kosong = tidak ada filter ("Semua tanggal").
+//
+// BUG DIPERBAIKI (2 September 2026, laporan owner: "rute, jadwal penugasan
+// [tidak] bisa dibuat untuk tanggal berapapun... besok, lusa, 1 minggu") —
+// CalendarMonth (dipakai di dalam) DEFAULT membatasi tanggal maksimal ke
+// HARI INI kalau `maxDate` tidak diberikan (cocok untuk DateRangePicker di
+// Laporan, yang memang laporan masa lalu). DatePicker ini dipasang ulang di
+// JobDetailDrawer (Tanggal job) & ArmadaRoutes/ArmadaDashboard/ArmadaJobs
+// (semua butuh tanggal MASA DEPAN — job dijadwalkan ke depan, bukan cuma
+// difilter ke belakang) TANPA meneruskan itu — jadi warisan default "cuma
+// sampai hari ini" ikut kebawa ke tempat yang salah, tanggal besok/lusa
+// tidak bisa diklik sama sekali. `allowFuture` (default true DI SINI,
+// beda dari default CalendarMonth) membuka itu; ArmadaResources.jsx
+// (Ringkasan Biaya, laporan historis) SENGAJA pasang `allowFuture={false}`.
+const MAKS_TANPA_BATAS = todayWIB().add(2, "year").format("YYYY-MM-DD");
 // Animasi buka SEKALIGUS tutup (31 Agustus 2026, laporan owner: perpindahan
 // "sangat patah"). Popover ini BUKAN Radix (dibangun manual — CalendarMonth
 // butuh konten bebas, bukan daftar MenuItem), jadi tidak otomatis dapat
@@ -33,7 +47,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // terpisah di sana) supaya ketiga filter terasa satu tempo yang sama.
 const DELAY_MS = 150;
 
-export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className }) {
+export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [anchor, setAnchor] = useState(() => (value ? dayjs(value) : todayWIB()).startOf("month"));
@@ -112,13 +126,18 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
             </button>
             <button
               type="button" onClick={() => setAnchor((a) => a.add(1, "month"))}
-              aria-label="Bulan berikutnya" className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint"
+              aria-label="Bulan berikutnya"
+              disabled={!allowFuture && anchor.add(1, "month").isAfter(todayWIB().startOf("month"))}
+              className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint disabled:pointer-events-none disabled:opacity-30"
             >
               <ChevronRight size={15} />
             </button>
           </div>
 
-          <CalendarMonth month={anchor} from={value || null} to={value || null} onPick={pilih} />
+          <CalendarMonth
+            month={anchor} from={value || null} to={value || null} onPick={pilih}
+            maxDate={allowFuture ? MAKS_TANPA_BATAS : undefined}
+          />
 
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
             <button

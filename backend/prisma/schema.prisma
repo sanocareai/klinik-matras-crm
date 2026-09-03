@@ -1411,6 +1411,14 @@ model Job {
 
   scheduledDate DateTime? @map("scheduled_date") @db.Date
   timeWindow    String?   @map("time_window")
+  // Estimasi durasi pengerjaan dalam MENIT (D-043, 2 September 2026,
+  // permintaan owner: "catatan estimasi waktu" per job — mis. "~2 jam").
+  // Angka bulat menit (bukan enum preset) supaya fleksibel ("~1.5 jam" =
+  // 90) tapi label tampilan tetap dibulatkan ke jam/menit yang wajar di
+  // frontend (lihat estimasiDurasiLabel() di jobStatus.js) — BEDA dari
+  // timeWindow (jam KUNJUNGAN, "09:00-12:00") — ini "berapa LAMA job-nya
+  // berlangsung", bukan "jam berapa mulai".
+  estimatedDurationMinutes Int? @map("estimated_duration_minutes")
 
   driverId String?   @map("driver_id")
   driver   User?     @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)

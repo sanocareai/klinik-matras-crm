@@ -72,6 +72,42 @@ export function unitCountOf(job) {
   return job?.units?.length || 0;
 }
 
+// Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
+// dispatcher perlu tahu siapa sales-nya buat koordinasi). Pola fallback
+// SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
+// jalur berlapis units[].unit.order kalau job.order belum ke-load.
+export function salesPersonOf(job) {
+  return (
+    job?.order?.customer?.assignedSales?.name ||
+    job?.units?.[0]?.unit?.order?.customer?.assignedSales?.name ||
+    null
+  );
+}
+
+// Label ringkas estimasi durasi ("~30 menit", "~2 jam", "~1,5 jam") dari
+// Job.estimatedDurationMinutes (D-043). null/0 -> null (biar pemanggil
+// putuskan sendiri mau tampil apa saat belum diisi, bukan dipaksa "-").
+export function estimasiDurasiLabel(minutes) {
+  if (!minutes || minutes <= 0) return null;
+  if (minutes < 60) return `~${minutes} menit`;
+  const jam = minutes / 60;
+  const dibulatkan = Math.round(jam * 2) / 2; // kelipatan 0,5 jam
+  const teks = Number.isInteger(dibulatkan) ? `${dibulatkan}` : dibulatkan.toFixed(1).replace(".", ",");
+  return `~${teks} jam`;
+}
+
+// Preset durasi umum untuk chip picker (D-043) — dalam menit. Dipakai
+// JobDetailDrawer supaya dispatcher tinggal ketuk, bukan ketik angka manual
+// untuk kasus paling umum (custom tetap bisa lewat input angka).
+export const ESTIMASI_DURASI_PRESET = [
+  { menit: 30, label: "30 menit" },
+  { menit: 60, label: "1 jam" },
+  { menit: 90, label: "1,5 jam" },
+  { menit: 120, label: "2 jam" },
+  { menit: 180, label: "3 jam" },
+  { menit: 240, label: "Setengah hari" },
+];
+
 // Link Google Maps satu sumber kebenaran (D-040, 31 Agustus 2026 — sebelum
 // ini disalin 2x persis sama di Armada.jsx & DriverJobs.jsx, gampang diam-
 // diam beda kalau salah satu diubah). Utamakan koordinat hasil geocode
