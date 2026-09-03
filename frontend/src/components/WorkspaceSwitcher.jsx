@@ -21,7 +21,7 @@ export const WORKSPACES = [
   { key: "growth",    label: "Sales CRM & Omnichannel",    to: "/dashboard", Icon: Users,   roles: ["ADMIN", "SALES"] },
   { key: "bengkel",   label: "Production Operations",      to: "/bengkel",   Icon: Wrench,  roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
   { key: "warehouse", label: "Warehouse & Inventory Control", to: "/gudang", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
-  { key: "armada",    label: "Delivery & Fulfillment",     to: "/armada",    Icon: Truck,   roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER"] },
+  { key: "armada",    label: "Delivery & Fulfillment",     to: "/armada",    Icon: Truck,   roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"] },
   { key: "kendali",   label: "All Teams Dashboard",        to: "/kendali",   Icon: Gauge,   roles: ["ADMIN", "FINANCE"] },
 ];
 

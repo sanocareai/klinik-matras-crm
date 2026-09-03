@@ -10,11 +10,19 @@ import { isAdminUser } from "@/lib/roles.js";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
 import { PageContainer } from "@/components/ui/page.jsx";
 
-// Label & warna peran — SEMUA 9 peran yang dikenal sistem otorisasi
+// Label & warna peran — SEMUA peran yang dikenal sistem otorisasi
 // (backend/src/constants/permissions.js ROLE_PERMISSIONS), bukan cuma
 // ADMIN/SALES/CS lama. "CS" DIHAPUS di sini — bukan pengurangan fitur,
 // itu memang bukan peran valid di enum Role Prisma; membuat user dengan
 // role itu sebelumnya akan gagal diam-diam di backend.
+//
+// BUG DIPERBAIKI (2 September 2026, D-042, laporan owner: "gue ingin bisa
+// ubah-ubah role di CRM langsung tanpa harus coding") — HELPER (D-037,
+// ditambahkan 31 Agustus 2026) SEMPAT TERLEWAT dari daftar ini, jadi
+// halaman ini (satu-satunya tempat ubah peran tanpa coding) tidak bisa
+// memberi/mencabut role itu sama sekali walau backend sudah mendukungnya
+// sejak awal — harus lewat script manual. Sekarang ditambahkan bersamaan
+// dengan LEADER_DRIVER (role baru, supervisor lapangan Delivery).
 const ROLE_LABELS = {
   ADMIN: "Admin",
   SALES: "Sales",
@@ -24,6 +32,8 @@ const ROLE_LABELS = {
   WAREHOUSE: "Gudang",
   DISPATCHER: "Dispatcher",
   DRIVER: "Driver",
+  HELPER: "Helper",
+  LEADER_DRIVER: "Leader Driver",
   FINANCE: "Keuangan",
 };
 // Sejak redesain 22 Agustus 2026 nilai ini cuma dipakai sebagai warna titik
@@ -40,6 +50,8 @@ const ROLE_COLORS = {
   WAREHOUSE:         { color: "#b45309" },
   DISPATCHER:        { color: "#059669" },
   DRIVER:            { color: "#059669" },
+  HELPER:            { color: "#0d9488" },
+  LEADER_DRIVER:     { color: "#0369a1" },
   FINANCE:           { color: "#7c3aed" },
 };
 const ALL_ROLES = Object.keys(ROLE_LABELS);

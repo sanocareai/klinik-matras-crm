@@ -68,8 +68,10 @@ const TABS = [
 function isDriverOnlyUser() {
   try {
     const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
-    // HELPER (D-037) diperlakukan sama dengan DRIVER di sini.
-    return roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // HELPER (D-037) diperlakukan sama dengan DRIVER di sini. LEADER_DRIVER
+    // (D-042) diperlakukan sama dengan ADMIN/DISPATCHER — punya JOB_READ
+    // penuh, berhak tampilan "Daftar" dispatcher lengkap.
+    return roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
   } catch {
     return false;
   }

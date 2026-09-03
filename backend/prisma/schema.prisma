@@ -30,6 +30,13 @@ enum Role {
   // SAMA dengan DRIVER (lihat permissions.js) supaya helper juga bisa buka
   // "Job Saya" di HP kalau perlu — tapi tidak pernah muncul di daftar driver.
   HELPER
+  // Supervisor lapangan (D-042, 2 September 2026, permintaan owner: role
+  // "leader driver" di Delivery & Fulfillment). BEDA dari DISPATCHER (admin
+  // kantor, permission CRM lebih luas) — leader driver dilihat "dari sisi
+  // driver": tetap punya job:own (bisa jadi driver aktif sendiri) DITAMBAH
+  // job:read/write + route:write supaya bisa lihat & atur ulang job/rute
+  // SEMUA driver lain, bukan cuma job miliknya sendiri. Lihat permissions.js.
+  LEADER_DRIVER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).

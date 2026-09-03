@@ -78,7 +78,11 @@ function ArmadaLanding() {
     // D-037 (31 Agustus 2026) — HELPER (pendamping driver) diperlakukan SAMA
     // dengan DRIVER di sini: permission-nya identik (JOB_OWN_READ saja),
     // dispatcher board akan gagal 403 untuknya juga.
-    driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // LEADER_DRIVER (D-042, 2 September 2026) diperlakukan SAMA dengan
+    // ADMIN/DISPATCHER di sini — dia punya JOB_READ penuh (supervisor
+    // lapangan, bukan cuma job:own), jadi berhak tampilan dispatcher
+    // lengkap, bukan mode "Job Saya" mobile-only milik DRIVER/HELPER polos.
+    driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
   } catch { /* user tidak terbaca — perlakukan sebagai non-driver */ }
   return <Navigate to={driverOnly ? "/armada/jobs" : "/armada/dashboard"} replace />;
 }

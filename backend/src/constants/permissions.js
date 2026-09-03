@@ -167,6 +167,17 @@ export const ROLE_PERMISSIONS = {
     P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
   ],
 
+  // Leader Driver (D-042, 2 September 2026, permintaan owner) — supervisor
+  // lapangan. DRIVER (job:own, boleh jadi driver aktif sendiri) DITAMBAH
+  // hak DISPATCHER yang relevan buat mengatur driver/helper LAIN (job:read/
+  // write penuh + route:write) — TAPI TIDAK dapat CUSTOMER_READ/ORDER_READ/
+  // UNIT_READ milik DISPATCHER (itu visibilitas CRM/produksi kantor, di luar
+  // lingkup "dari sisi driver" yang diminta).
+  LEADER_DRIVER: [
+    P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
+    P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
+  ],
+
   FINANCE: [
     P.PAYMENT_READ, P.PAYMENT_WRITE,
     P.ORDER_READ, P.ORDER_PRICE_READ,
@@ -218,7 +229,7 @@ export const PORTALS = [
     label: "Delivery & Fulfillment",
     description: "Penjadwalan armada, rute, instalasi, proof of delivery, dan SLA.",
     path: "/armada",
-    roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER"],
+    roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"],
   },
   {
     key: "kendali",

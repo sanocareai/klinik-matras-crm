@@ -496,7 +496,10 @@ export default function Armada() {
   const [creating, setCreating] = useState(false);
 
   const roles = currentRoles();
-  const allowed = roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+  // LEADER_DRIVER (D-042, 2 September 2026) digabung ke grup "allowed" —
+  // punya JOB_READ penuh, berhak papan dispatcher lengkap seperti ADMIN/
+  // DISPATCHER, bukan cuma "Job Saya".
+  const allowed = roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
   // HELPER (D-037, 31 Agustus 2026) ikut mendarat di tampilan "Job Saya"
   // driver — permission-nya identik (JOB_OWN_READ/WRITE).
   const isDriverOnly = !allowed && roles.some((r) => ["DRIVER", "HELPER"].includes(r));
