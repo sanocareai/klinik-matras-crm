@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
-  Wallet, PackageCheck, Wrench, Truck, PenTool, Hash, MapPin, Link2, Weight,
-  Bed, HeartPulse, Banknote, CalendarClock, Tag, MessageSquareText, FileText, Ban, ShieldCheck,
+  Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
+  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
@@ -29,38 +29,52 @@ const KATEGORI_TONE = {
   PENGIRIMAN:  { icon: Truck,        chip: "bg-greenbg text-green",   dot: "bg-green" },
 };
 
-// D-030 (revisi 20 Agustus 2026) — "rincian pesanan" sebelumnya cuma
-// ringkasan status/pembayaran/nilai, tanpa alamat pengiriman & detail
-// produk (persis yang tampak di reference tracking marketplace: alamat,
-// merk/ukuran kasur, keluhan, ongkir, estimasi pickup, dst). Semua field
-// ini SUDAH ada di `order` (D-027/D-028/D-029) — tinggal ditampilkan.
-const DETAIL_TONE = {
-  address: { icon: MapPin,           hex: "#ea580c" },
-  link:    { icon: Link2,            hex: "#0891b2" },
-  bed:     { icon: Bed,              hex: "#7c3aed" },
-  weight:  { icon: Weight,           hex: "#2563eb" },
-  note:    { icon: MessageSquareText,hex: "#4b5563" },
-  health:  { icon: HeartPulse,       hex: "#dc2626" },
-  money:   { icon: Banknote,         hex: "#16a34a" },
-  pickup:  { icon: CalendarClock,    hex: "#0891b2" },
-  delivery: { icon: Truck,           hex: "#16a34a" },
-  promo:   { icon: Tag,              hex: "#db2777" },
-};
-function DetailRow({ tone, label, children }) {
-  const t = DETAIL_TONE[tone];
-  const Icon = t.icon;
+// D-030 (revisi 20 Agustus 2026, redesain 3 Sep 2026) — "rincian pesanan"
+// sebelumnya cuma ringkasan status/pembayaran/nilai, tanpa alamat
+// pengiriman & detail produk (persis yang tampak di reference tracking
+// marketplace: alamat, merk/ukuran kasur, keluhan, ongkir, estimasi
+// pickup, dst). Semua field ini SUDAH ada di `order` (D-027/D-028/D-029)
+// — tinggal ditampilkan. Redesain 3 Sep 2026 mengelompokkannya jadi kartu
+// bertema (lihat KartuTema/BarisMini di bawah) alih-alih 1 daftar baris
+// panjang tak berkelompok.
+
+// Header kartu bertema (3 Sep 2026, redesain "Rincian Order") — ikon dalam
+// badge bulat berwarna + strip aksen tipis di tepi atas kartu, supaya tiap
+// kelompok info (Produk, Pengiriman, Kondisi) kebaca beda sekilas mata
+// tanpa harus baca teksnya dulu — sebelumnya SEMUA baris ditumpuk rata
+// dalam 1 kartu panjang berdivider tipis, jadi monoton (feedback owner:
+// "ga boring, estetik").
+function KartuTema({ icon: Icon, hex, title, right, children }) {
   return (
-    <div className="flex gap-2.5 border-b border-line py-2.5 last:border-0">
-      <span
-        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-        style={{ background: `${t.hex}1f`, color: t.hex }}
-      >
-        <Icon size={12} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-ink3">{label}</p>
-        <div className="mt-0.5 text-[13px] text-ink">{children}</div>
+    <div className="overflow-hidden rounded-xl bg-surface shadow-card">
+      <div className="h-[3px]" style={{ background: hex }} />
+      <div className="p-3.5">
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ background: `${hex}1f`, color: hex }}
+            >
+              <Icon size={14} />
+            </span>
+            <p className="text-[11.5px] font-bold uppercase tracking-wide text-ink2">{title}</p>
+          </div>
+          {right}
+        </div>
+        {children}
       </div>
+    </div>
+  );
+}
+
+// Baris ringkas TANPA ikon sendiri (dipakai DI DALAM KartuTema — ikon
+// kelompoknya sudah ada di header, mengulang ikon per baris di dalamnya
+// cuma bikin ramai tanpa nambah informasi).
+function BarisMini({ label, children }) {
+  return (
+    <div className="border-b border-line py-2 last:border-0 last:pb-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink3">{label}</p>
+      <div className="mt-0.5 text-[12.5px] leading-relaxed text-ink">{children}</div>
     </div>
   );
 }
@@ -68,95 +82,127 @@ function DetailRow({ tone, label, children }) {
 function DetailPesananSection({ order }) {
   const info = parseOrderNotes(order.notes);
   const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
-  const layanan = (order.items || []).map((it) => it.layananName).filter(Boolean).join(", ");
+  const items = order.items || [];
   // Label baris dinamis (29 Agustus 2026) — dulu selalu "Kasur" krn cuma
   // ada satu lini produk. lineLabel fallback "Kasur" utk order lama
   // (sebelum kolom productLine ada, migrasi backfill semuanya ke KASUR).
   const lineLabel = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
-  const produk = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, info.ukuranKasur].filter(Boolean).join(" · ");
+  const spesifikasi = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, info.ukuranKasur].filter(Boolean);
+
+  const adaPengiriman = order.deliveryAddress || order.deliveryCity || order.locationUrl
+    || order.pickupEstimate || order.pickupConfirmedDate
+    || order.deliveryEstimate || order.deliveryConfirmedDate
+    || order.ongkir || order.ongkirKlaimGaransi;
+  const adaKondisi = info.keluhanCustomer || berat || order.healthStatus || order.promo;
 
   return (
-    <div className="rounded-xl bg-surface px-3 shadow-card">
-      <DetailRow tone="address" label="Alamat Pengiriman">
-        {order.deliveryAddress || order.deliveryCity ? (
-          <>
-            {order.deliveryAddress || ""}
-            {order.deliveryCity && <span className="font-semibold"> · {order.deliveryCity}</span>}
-          </>
-        ) : <span className="text-ink3">—</span>}
-      </DetailRow>
+    <div className="flex flex-col gap-2.5">
+      {/* Produk & Layanan — sekarang RINCIAN PER ITEM + HARGA (sebelumnya
+          cuma nama layanan digabung koma tanpa harga sama sekali, sales
+          harus buka tab lain buat tahu breakdown-nya). Chip spesifikasi
+          (merk/ukuran/jenis) dipisah dari daftar item supaya jelas mana
+          "atribut kasur" vs "apa yang ditagihkan". */}
+      <KartuTema icon={Bed} hex="#7c3aed" title={`${lineLabel} & Layanan`}>
+        {spesifikasi.length > 0 && (
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {spesifikasi.map((s) => (
+              <span key={s} className="rounded-chip bg-inset px-2.5 py-1 text-[11.5px] font-semibold text-ink2">
+                {s}
+              </span>
+            ))}
+          </div>
+        )}
+        {items.length > 0 ? (
+          <div>
+            {items.map((it, i) => (
+              <div key={it.id || i} className="flex items-baseline justify-between gap-3 border-b border-line py-1.5 last:border-0">
+                <span className="text-[12.5px] text-ink">{it.layananName}</span>
+                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink">{formatRupiah(it.harga)}</span>
+              </div>
+            ))}
+            <div className="mt-1.5 flex items-baseline justify-between border-t border-line pt-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-ink3">Total</span>
+              <span className="text-[14px] font-bold tabular-nums text-accent">{formatRupiah(order.value || 0)}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[12.5px] text-ink3">Belum ada item layanan tercatat.</p>
+        )}
+      </KartuTema>
 
-      {order.locationUrl && (
-        <DetailRow tone="link" label="Link Lokasi">
-          <a href={order.locationUrl} target="_blank" rel="noreferrer" className="text-accent underline">
-            Buka lokasi ↗
-          </a>
-        </DetailRow>
-      )}
-
-      {(produk || layanan) && (
-        <DetailRow tone="bed" label={`${lineLabel} & Layanan`}>
-          {produk && <p>{produk}</p>}
-          {layanan && <p className={cn(produk && "mt-0.5 text-ink2")}>{layanan}</p>}
-        </DetailRow>
-      )}
-
-      {info.keluhanCustomer && (
-        <DetailRow tone="note" label="Keluhan / Catatan">
-          {info.keluhanCustomer}
-        </DetailRow>
-      )}
-
-      {berat && (
-        <DetailRow tone="weight" label="Berat Badan">
-          {berat}
-        </DetailRow>
-      )}
-
-      {order.healthStatus && (
-        <DetailRow tone="health" label="Kondisi Kesehatan">
-          <span className={order.healthStatus === "SAKIT" ? "font-semibold text-red" : "font-semibold text-green"}>
-            {HEALTH_LABELS[order.healthStatus] || order.healthStatus}
-          </span>
-          {(order.complaintCategory || []).length > 0 && (
-            <span className="text-ink2"> — {order.complaintCategory.map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", ")}</span>
+      {/* Pengiriman — alamat/lokasi/jadwal/ongkir dikelompokkan jadi 1
+          kartu (dulu tersebar sebagai baris-baris terpisah bercampur
+          dengan info produk & kondisi, padahal semuanya soal "kapan &
+          ke mana barang ini pergi"). */}
+      {adaPengiriman && (
+        <KartuTema icon={Truck} hex="#ea580c" title="Pengiriman">
+          {(order.deliveryAddress || order.deliveryCity) && (
+            <BarisMini label="Alamat">
+              {order.deliveryAddress || ""}
+              {order.deliveryCity && <span className="font-semibold"> · {order.deliveryCity}</span>}
+            </BarisMini>
           )}
-        </DetailRow>
-      )}
-
-      {(order.ongkir || order.ongkirKlaimGaransi) && (
-        <DetailRow tone="money" label="Ongkir">
-          {order.ongkir ? formatRupiah(order.ongkir) : "Rp0"}
-          {order.ongkirKlaimGaransi ? ` · Klaim Garansi: ${formatRupiah(order.ongkirKlaimGaransi)}` : ""}
-        </DetailRow>
-      )}
-
-      {(order.pickupEstimate || order.pickupConfirmedDate) && (
-        <DetailRow tone="pickup" label="Jadwal Pick Up">
-          {order.pickupEstimate && <p>{order.pickupEstimate}</p>}
-          {order.pickupConfirmedDate && (
-            <p className={cn(order.pickupEstimate && "mt-0.5 text-ink2")}>
-              Pasti: {formatTanggal(order.pickupConfirmedDate)}
-            </p>
+          {order.locationUrl && (
+            <BarisMini label="Link Lokasi">
+              <a href={order.locationUrl} target="_blank" rel="noreferrer" className="font-semibold text-accent underline">
+                Buka lokasi ↗
+              </a>
+            </BarisMini>
           )}
-        </DetailRow>
-      )}
-
-      {(order.deliveryEstimate || order.deliveryConfirmedDate) && (
-        <DetailRow tone="delivery" label="Jadwal Kirim">
-          {order.deliveryEstimate && <p>{order.deliveryEstimate}</p>}
-          {order.deliveryConfirmedDate && (
-            <p className={cn(order.deliveryEstimate && "mt-0.5 text-ink2")}>
-              Pasti: {formatTanggal(order.deliveryConfirmedDate)}
-            </p>
+          {(order.pickupEstimate || order.pickupConfirmedDate) && (
+            <BarisMini label="Jadwal Pick Up">
+              {order.pickupEstimate && <p>{order.pickupEstimate}</p>}
+              {order.pickupConfirmedDate && (
+                <p className={cn(order.pickupEstimate && "mt-0.5 text-ink2")}>
+                  Pasti: {formatTanggal(order.pickupConfirmedDate)}
+                </p>
+              )}
+            </BarisMini>
           )}
-        </DetailRow>
+          {(order.deliveryEstimate || order.deliveryConfirmedDate) && (
+            <BarisMini label="Jadwal Kirim">
+              {order.deliveryEstimate && <p>{order.deliveryEstimate}</p>}
+              {order.deliveryConfirmedDate && (
+                <p className={cn(order.deliveryEstimate && "mt-0.5 text-ink2")}>
+                  Pasti: {formatTanggal(order.deliveryConfirmedDate)}
+                </p>
+              )}
+            </BarisMini>
+          )}
+          {(order.ongkir || order.ongkirKlaimGaransi) && (
+            <BarisMini label="Ongkir">
+              {order.ongkir ? formatRupiah(order.ongkir) : "Rp0"}
+              {order.ongkirKlaimGaransi ? ` · Klaim Garansi: ${formatRupiah(order.ongkirKlaimGaransi)}` : ""}
+            </BarisMini>
+          )}
+        </KartuTema>
       )}
 
-      {order.promo && (
-        <DetailRow tone="promo" label="Promo">
-          {promoLabel(order.promo)}
-        </DetailRow>
+      {/* Kondisi & Catatan — keluhan, berat badan, kesehatan, promo. */}
+      {adaKondisi && (
+        <KartuTema icon={HeartPulse} hex="#475569" title="Kondisi & Catatan">
+          {info.keluhanCustomer && (
+            <BarisMini label="Keluhan / Catatan">{info.keluhanCustomer}</BarisMini>
+          )}
+          {berat && <BarisMini label="Berat Badan">{berat}</BarisMini>}
+          {order.healthStatus && (
+            <BarisMini label="Kondisi Kesehatan">
+              <span className={order.healthStatus === "SAKIT" ? "font-semibold text-red" : "font-semibold text-green"}>
+                {HEALTH_LABELS[order.healthStatus] || order.healthStatus}
+              </span>
+              {(order.complaintCategory || []).length > 0 && (
+                <span className="text-ink2"> — {order.complaintCategory.map((c) => HEALTH_COMPLAINT_LABELS[c] || c).join(", ")}</span>
+              )}
+            </BarisMini>
+          )}
+          {order.promo && (
+            <BarisMini label="Promo">
+              <span className="inline-flex items-center gap-1 rounded-chip bg-accentbg px-2 py-0.5 font-semibold text-accent">
+                <Tag size={11} /> {promoLabel(order.promo)}
+              </span>
+            </BarisMini>
+          )}
+        </KartuTema>
       )}
     </div>
   );
