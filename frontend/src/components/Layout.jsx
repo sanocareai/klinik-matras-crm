@@ -214,18 +214,45 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
+    // Dikelompokkan 4 September 2026 (laporan owner: "sidebar bisa dibuat
+    // lebih rapih khusus Delivery Hub?") — sebelumnya 9 menu rata dalam SATU
+    // section ("DELIVERY & FULFILLMENT"), semuanya bobot visual sama padahal
+    // sifatnya beda jauh (kerja harian vs sumber daya vs penanganan
+    // masalah vs laporan). Pola pengelompokan SAMA dengan divisi lain
+    // (Growth punya 6 section, Bengkel/Gudang beberapa juga) — bukan pola
+    // baru, cuma menyusul yang sudah dipakai di tempat lain.
+    //
+    // ⚠️ Kalau menambah/memindah item di sini, cek juga `driverOnly` di
+    // Layout() bawah — dulu mengasumsikan SEMUA menu ada di sections[0]
+    // (aman waktu cuma 1 section), sekarang di-flatten lintas section
+    // supaya tidak diam-diam patah kalau susunan section berubah lagi.
     sections: [
       {
-        section: "DELIVERY & FULFILLMENT",
+        section: "OPERASIONAL",
         items: [
           { to: "/armada/dashboard", label: "Dashboard",           Icon: LayoutDashboard },
           { to: "/armada/jobs",      label: "Jadwal & Penugasan",  Icon: CalendarClock },
           { to: "/armada/routes",    label: "Route Planner",       Icon: Route },
           { to: "/armada/tracking",  label: "Live Tracking",       Icon: MapPin },
+        ],
+      },
+      {
+        section: "ARMADA",
+        items: [
           { to: "/armada/resources", label: "Driver & Armada",     Icon: Truck },
+        ],
+      },
+      {
+        section: "DOKUMEN & KENDALA",
+        items: [
           { to: "/armada/pod",       label: "Proof of Delivery",   Icon: ClipboardCheck },
           { to: "/armada/issues",    label: "Kendala & Reschedule",Icon: AlertTriangle },
           { to: "/armada/returns",   label: "Retur",               Icon: Undo2 },
+        ],
+      },
+      {
+        section: "LAPORAN",
+        items: [
           { to: "/armada/reports",   label: "Laporan",             Icon: BarChart3 },
         ],
       },
@@ -398,7 +425,12 @@ export default function Layout({ user, onLogout, children }) {
       ...divisionBase,
       sections: [{
         section: "TUGAS SAYA",
-        items: divisionBase.sections[0].items.filter((i) => i.to === "/armada/jobs")
+        // Di-flatten lintas SEMUA section (4 September 2026) — dulu cuma
+        // sections[0], aman waktu Delivery masih 1 section rata, sekarang
+        // dipecah 4 section (Operasional/Armada/Dokumen/Laporan) supaya
+        // pencarian "/armada/jobs" tidak diam-diam patah tergantung section
+        // mana dia ditaruh.
+        items: divisionBase.sections.flatMap((s) => s.items).filter((i) => i.to === "/armada/jobs")
           .map((i) => ({ ...i, label: "Job Saya" })),
       }],
     };
