@@ -10,6 +10,20 @@
 // tim) dibagi target tim miliknya — BUKAN cuma closing pribadinya sendirian
 // (yang akan selalu jauh dari target, karena memang bukan dia yang closing
 // semuanya). Kalau BELUM ada team lead diset, jatuh ke jumlah target 8 sales.
+// Nama bulan target eksplisit (3 Sep 2026, feedback owner) — target selalu
+// bulan KALENDER SEKARANG (lihat catatan di Laporan.jsx#salesReportBulanIni),
+// TIDAK ikut rentang tanggal yang sedang dipilih di halaman. Sebelumnya label
+// di UI cuma bilang "bulan ini"/"bulan berjalan" tanpa nama bulannya — begitu
+// user browsing rentang bulan LAIN (mis. Agustus), angka target yang memang
+// sengaja tetap terlihat seperti "tidak berubah"/nyangkut. Dipakai bareng
+// SalesReportTab.jsx & RingkasanTab.jsx — SATU sumber nama bulan, sama alasan
+// computeTeamTarget() di atas.
+const NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+export function namaBulanTarget(periodeTarget) {
+  if (!periodeTarget?.month) return "bulan berjalan";
+  return `${NAMA_BULAN[periodeTarget.month]} ${periodeTarget.year}`;
+}
+
 export function computeTeamTarget(report) {
   const rows = report?.rows || [];
   const total = report?.total;

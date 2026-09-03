@@ -8,7 +8,7 @@ import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel, toApiParams } from "@/lib/dateRange.js";
-import { computeTeamTarget } from "../utils/teamTarget.js";
+import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import { api } from "@/api.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
@@ -115,6 +115,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
   // jauh lebih tinggi. Metrik AKTIVITAS (orders, conversionRate, dst di atas)
   // TETAP ikut `range` — cuma bagian target yang dikunci ke bulan berjalan.
   const targetInfo = computeTeamTarget(targetReport);
+  const labelBulanTarget = namaBulanTarget(targetReport?.periodeTarget);
   const targetByUserId = new Map(
     (targetReport?.rows || []).filter((r) => !r.isTeamLead).map((r) => [r.userId, r])
   );
@@ -176,11 +177,11 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           sub={
             targetInfo.teamLead
               ? (targetInfo.teamLead.target > 0
-                  ? `${formatRupiahShort(targetInfo.teamLead.teamGrossValue)} / ${formatRupiahShort(targetInfo.teamLead.target)} (target tim, bulan berjalan)`
+                  ? `${formatRupiahShort(targetInfo.teamLead.teamGrossValue)} / ${formatRupiahShort(targetInfo.teamLead.target)} (target tim, ${labelBulanTarget})`
                   : "Target tim belum diset (Pengaturan > Target Sales)")
-              : `${formatRupiahShort(targetInfo.teamGrossAll)} / ${formatRupiahShort(targetInfo.targetValue)} (jumlah target individu, bulan berjalan)`
+              : `${formatRupiahShort(targetInfo.teamGrossAll)} / ${formatRupiahShort(targetInfo.targetValue)} (jumlah target individu, ${labelBulanTarget})`
           }
-          tooltip="Progres closing tim terhadap target BULANAN — SELALU bulan berjalan, tidak ikut rentang tanggal yang dipilih di atas."
+          tooltip={`Progres closing tim terhadap target BULANAN — SELALU ${labelBulanTarget}, tidak ikut rentang tanggal yang dipilih di atas.`}
         />
         <KpiCard
           index={4} label="AOV Tim"
@@ -258,9 +259,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                     </div>
                     <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-ink3">
                       {mtd?.teamPercentToTarget != null
-                        ? `${mtd.teamPercentToTarget}% dari target tim bulan ini`
+                        ? `${mtd.teamPercentToTarget}% dari target tim ${labelBulanTarget}`
                         : "Target tim belum diset (Pengaturan > Target Sales)"}
-                      <InfoTooltip text="Target TIM (gabungan closing timnya + closing pribadi), bulan berjalan — tidak ikut rentang tanggal yang dipilih di atas." />
+                      <InfoTooltip text={`Target TIM (gabungan closing timnya + closing pribadi), ${labelBulanTarget} — tidak ikut rentang tanggal yang dipilih di atas.`} />
                     </span>
                   </div>
                 </div>
@@ -315,8 +316,8 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       style={{ width: `${Math.min(mtd?.percentToTarget ?? 0, 100)}%` }}
                     />
                   </div>
-                  <span className="mt-1 inline-block text-[11px] text-ink3" title="Bulan berjalan — tidak ikut rentang tanggal di atas">
-                    {mtd?.percentToTarget != null ? `${mtd.percentToTarget}% dari target bulan ini` : "Target belum diset"}
+                  <span className="mt-1 inline-block text-[11px] text-ink3" title={`${labelBulanTarget} — tidak ikut rentang tanggal di atas`}>
+                    {mtd?.percentToTarget != null ? `${mtd.percentToTarget}% dari target ${labelBulanTarget}` : "Target belum diset"}
                   </span>
                 </div>
               </div>
@@ -412,7 +413,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink2">
                         {r.aov > 0 ? formatRupiahShort(r.aov) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2" title="Target TIM, bulan berjalan — tidak ikut rentang tanggal di atas">
+                      <td className="px-3 py-2.5 text-right tabular-nums text-ink2" title={`Target TIM, ${labelBulanTarget} — tidak ikut rentang tanggal di atas`}>
                         {mtd?.teamPercentToTarget != null ? `${mtd.teamPercentToTarget}% (tim)` : "—"}
                       </td>
                     </tr>
@@ -501,8 +502,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
             adalah keadaan, bukan kejadian di dalam periode. Semua kolom lain
             mengikuti rentang yang dipilih di atas.
             {" "}Kolom <strong>% Target</strong> SELALU memakai penjualan &
-            target <strong>bulan berjalan</strong>
-            {report?.periodeTarget ? ` (${report.periodeTarget.month}/${report.periodeTarget.year})` : ""},
+            target <strong>{labelBulanTarget}</strong>,
             TIDAK ikut rentang tanggal yang dipilih di atas — kalau di-set
             "Hari ini", % Target tetap menunjukkan progres SEBULAN PENUH
             (bukan closing hari ini dibagi target sebulan, yang akan selalu

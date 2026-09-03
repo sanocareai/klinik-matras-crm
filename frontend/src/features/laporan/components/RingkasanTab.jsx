@@ -7,7 +7,7 @@ import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS, SOURCE_LABELS } from "@/utils/format.js";
 import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
-import { computeTeamTarget } from "../utils/teamTarget.js";
+import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
@@ -104,6 +104,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
   // targetReport SENGAJA month-to-date TETAP, tidak ikut `range` yang
   // dipilih — lihat catatan panjang di Laporan.jsx#salesReportBulanIni.
   const { teamGrossAll, percentToTarget, targetValue } = computeTeamTarget(targetReport);
+  const labelBulanTarget = namaBulanTarget(targetReport?.periodeTarget);
   const sumberLead = [...(overview?.leadSourceBreakdown || [])].sort((a, b) => b.count - a.count);
   const sumberLeadMax = Math.max(1, ...sumberLead.map((r) => r.count));
   const sumberLeadTotal = sumberLead.reduce((s, r) => s + r.count, 0);
@@ -153,7 +154,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                   catatan Laporan.jsx#salesReportBulanIni). Ditandai eksplisit
                   supaya tidak membingungkan saat rentang lain (mis. "Hari
                   ini") sedang dipilih untuk sisa halaman. */}
-              <span className="ml-1.5 font-normal text-ink4">· bulan berjalan</span>
+              <span className="ml-1.5 font-normal text-ink4">· {labelBulanTarget}</span>
             </p>
             <span className="text-xs text-ink3">
               {formatRupiah(teamGrossAll)} <span className="text-ink3">/ {formatRupiah(targetValue)}</span>
