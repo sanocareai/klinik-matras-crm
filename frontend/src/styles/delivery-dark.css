@@ -1,0 +1,233 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DELIVERY HUB — DARK MODE "PREMIUM" (D-045, 4 September 2026)
+
+   PILOT, BUKAN GLOBAL. Permintaan owner: dark mode SANSS dibuat setara
+   referensi dashboard modern (Quantix/Aura Bank/Salesforce) — "ada glow,
+   gradient, glass effect". Dikunci ke Delivery Hub dulu supaya bisa dinilai
+   hasilnya sebelum menyeret Sales CRM/Produksi/Gudang ikut berubah.
+
+   PAGAR (dua lapis, dua-duanya WAJIB):
+     [data-theme="dark"]        → light mode TIDAK PERNAH tersentuh
+     [data-division="armada"]   → modul lain TIDAK PERNAH tersentuh
+   Atribut kedua dipasang di <div class="app-shell"> (components/Layout.jsx).
+
+   ⚠️ JANGAN memindahkan aturan file ini ke tokens.css sebelum diputuskan
+   jadi standar global — token di sana dipakai lintas modul, dan seluruh
+   file ini memang SENGAJA "berani" (glow, gradien, blur) dengan cara yang
+   belum tentu cocok untuk halaman padat-data seperti Inbox/Laporan.
+
+   Biaya render: backdrop-filter itu MAHAL. Dipakai TERBATAS — hanya pada
+   permukaan besar yang jumlahnya sedikit per layar (kartu panel, drawer,
+   topbar), BUKAN pada elemen berulang (baris tabel, chip, badge) yang bisa
+   ratusan sekaligus.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] [data-division="armada"] {
+  /* Ground SEDIKIT diangkat dari #000 murni. Hitam absolut membuat kartu
+     gelap "menempel" ke latar dan hilang kedalamannya — semua referensi
+     memakai near-black, bukan #000. */
+  --dh-ground: #07070B;
+  --dh-surface: rgba(23, 23, 30, 0.72);
+  --dh-surface-solid: #16161C;
+  --dh-elevated: rgba(32, 32, 42, 0.78);
+  --dh-hairline: rgba(255, 255, 255, 0.08);
+  --dh-hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* Aksen: biru SANSS dipertahankan sebagai identitas, ungu/violet dipakai
+     sebagai warna kedua untuk gradien — bukan palet baru dari nol, tapi
+     perpanjangan dari --accent yang sudah ada. */
+  --dh-accent: #4C8DFF;
+  --dh-accent-2: #A177FF;
+  --dh-glow-accent: rgba(76, 141, 255, 0.28);
+  --dh-glow-violet: rgba(161, 119, 255, 0.22);
+}
+
+/* ── 1. LATAR: near-black + dua glow ambient + tekstur bintik halus ────────
+   Tiga lapis di satu elemen (radial, radial, dot-grid) — bukan tiga div
+   bertumpuk, supaya tidak menambah node DOM di setiap halaman. */
+[data-theme="dark"] [data-division="armada"] .app-content {
+  background-color: var(--dh-ground);
+  background-image:
+    radial-gradient(900px 520px at 12% -8%, var(--dh-glow-accent), transparent 68%),
+    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-violet), transparent 70%),
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
+  background-size: auto, auto, 34px 34px;
+  background-attachment: fixed, fixed, fixed;
+}
+
+/* Sidebar ikut near-black + glow lembut di puncaknya, supaya tidak terlihat
+   sebagai kolom hitam mati di sebelah konten yang bercahaya. */
+[data-theme="dark"] [data-division="armada"] .sidebar {
+  background-color: rgba(9, 9, 14, 0.92);
+  background-image: radial-gradient(420px 300px at 50% -12%, rgba(76, 141, 255, 0.18), transparent 72%);
+  border-right: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(18px);
+}
+
+/* Topbar jadi kaca: konten di belakangnya terlihat samar saat di-scroll —
+   ini inti "glass effect" yang diminta, dan paling terasa justru di bar
+   yang menempel di atas konten yang bergerak.
+   Selektor `> header` (bukan `.topbar`) — Topbar.jsx memakai kelas Tailwind
+   inline, tidak punya kelas semantik sendiri. */
+[data-theme="dark"] [data-division="armada"] .app-content > header {
+  background-color: rgba(10, 10, 16, 0.66) !important;
+  backdrop-filter: blur(20px) saturate(140%);
+  border-bottom: 1px solid var(--dh-hairline);
+}
+
+/* ── 2. KARTU: kaca + hairline + highlight tepi atas ──────────────────────
+   `::before` menggambar garis cahaya tipis di tepi ATAS kartu (pola yang
+   dipakai hampir semua dashboard gelap modern) — memberi kesan permukaan
+   memantulkan cahaya dari atas, bukan kotak datar berwarna beda. */
+[data-theme="dark"] [data-division="armada"] .card,
+[data-theme="dark"] [data-division="armada"] [class*="rounded-card"],
+[data-theme="dark"] [data-division="armada"] .settings-card {
+  position: relative;
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid var(--dh-hairline);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px -24px rgba(0, 0, 0, 0.9);
+}
+
+[data-theme="dark"] [data-division="armada"] .card::before,
+[data-theme="dark"] [data-division="armada"] [class*="rounded-card"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.22) 18%,
+    rgba(255, 255, 255, 0.22) 82%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* ── 3. SIDEBAR: pill aktif jadi bergradien + glow ────────────────────────
+   Referensi Quantix: item aktif bukan sekadar teks biru, tapi permukaan
+   sendiri yang menyala halus.
+   Yang diwarnai `.nav-pill` — elemen TERPISAH yang digeser framer-motion
+   (layoutId="sidebarActivePill", lihat SidebarLink.jsx), bukan latar
+   `.sidebar-link` itu sendiri. Mewarnai link-nya akan menghasilkan DUA
+   permukaan menyala yang saling tumpuk saat pill sedang beranimasi pindah. */
+[data-theme="dark"] [data-division="armada"] .nav-pill {
+  background-image: linear-gradient(
+    100deg,
+    rgba(76, 141, 255, 0.30),
+    rgba(161, 119, 255, 0.16) 62%,
+    rgba(161, 119, 255, 0.04)
+  );
+  border: 1px solid rgba(76, 141, 255, 0.34);
+  box-shadow: 0 8px 24px -12px rgba(76, 141, 255, 0.55);
+}
+
+/* Ikon & label item aktif ikut dicerahkan — di atas pill bergradien, warna
+   teks default (abu 60%) jadi kurang kontras. */
+[data-theme="dark"] [data-division="armada"] .sidebar-link.active .nav-label,
+[data-theme="dark"] [data-division="armada"] .sidebar-link.active .nav-icon {
+  color: #EAF1FF;
+}
+
+/* Label kelompok sidebar (OPERASIONAL/ARMADA/dst) dibuat lebih redup + rapat
+   — di light mode kontrasnya pas, di atas near-black jadi terlalu menonjol
+   dan bersaing dengan item menu yang sesungguhnya. */
+[data-theme="dark"] [data-division="armada"] .sidebar-section-label {
+  color: rgba(245, 245, 247, 0.34);
+  letter-spacing: 0.08em;
+}
+
+/* ── 4. TOMBOL PRIMER: gradien, bukan biru rata ───────────────────────────*/
+[data-theme="dark"] [data-division="armada"] .btn-primary,
+[data-theme="dark"] [data-division="armada"] [class*="bg-accent"]:is(button, a) {
+  background-image: linear-gradient(135deg, #4C8DFF, #7B6BFF 55%, #A177FF);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 26px -12px rgba(90, 120, 255, 0.85);
+}
+
+/* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────
+   TIDAK memakai backdrop-filter di level baris (bisa ratusan baris — mahal).
+   Cukup latar semi-transparan + hairline. */
+[data-theme="dark"] [data-division="armada"] thead th {
+  background-color: rgba(18, 18, 24, 0.82);
+  border-bottom: 1px solid var(--dh-hairline-strong);
+  color: rgba(245, 245, 247, 0.52);
+}
+
+[data-theme="dark"] [data-division="armada"] tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background-color 140ms ease;
+}
+
+[data-theme="dark"] [data-division="armada"] tbody tr:hover {
+  background-color: rgba(76, 141, 255, 0.07);
+}
+
+/* ── 6. INPUT & KONTROL: permukaan cekung, bukan kotak berbingkai ─────────*/
+[data-theme="dark"] [data-division="armada"] input,
+[data-theme="dark"] [data-division="armada"] select,
+[data-theme="dark"] [data-division="armada"] textarea {
+  background-color: rgba(255, 255, 255, 0.045);
+  border-color: var(--dh-hairline);
+}
+
+[data-theme="dark"] [data-division="armada"] input:focus,
+[data-theme="dark"] [data-division="armada"] select:focus,
+[data-theme="dark"] [data-division="armada"] textarea:focus {
+  border-color: rgba(76, 141, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.14);
+}
+
+/* ── 7. DRAWER / MODAL: kaca pekat + glow tepi ────────────────────────────*/
+[data-theme="dark"] [data-division="armada"] [role="dialog"] {
+  background-color: rgba(14, 14, 20, 0.92) !important;
+  backdrop-filter: blur(24px) saturate(140%);
+  border-left: 1px solid var(--dh-hairline-strong);
+}
+
+/* ── 8. AKSEN GRADIEN SELEKTIF (pola referensi #3) ────────────────────────
+   Kelas OPT-IN, dipasang manual di komponen untuk SATU hal terpenting di
+   layar — sengaja BUKAN aturan otomatis: begitu semua kartu menyala,
+   tidak ada lagi yang menonjol dan hierarkinya hilang. */
+[data-theme="dark"] [data-division="armada"] .dh-highlight {
+  position: relative;
+  background-image:
+    linear-gradient(135deg, rgba(255, 138, 76, 0.16), rgba(161, 119, 255, 0.16) 60%, transparent),
+    linear-gradient(rgba(23, 23, 30, 0.72), rgba(23, 23, 30, 0.72));
+  border-color: rgba(255, 138, 76, 0.3);
+  box-shadow: 0 12px 40px -20px rgba(255, 138, 76, 0.55);
+}
+
+/* Garis aksen kiri per kartu (pola kartu koin Quantix). Warnanya diambil
+   dari variabel yang diset inline oleh komponen (--dh-bar), jadi satu
+   aturan CSS melayani semua warna status/divisi tanpa kelas per-warna. */
+[data-theme="dark"] [data-division="armada"] .dh-bar-left::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--dh-bar, var(--dh-accent));
+  box-shadow: 0 0 16px 0 var(--dh-bar, var(--dh-accent));
+  opacity: 0.9;
+}
+
+/* ── 9. ANGKA BESAR: sedikit cahaya supaya KPI terbaca "hidup" ────────────*/
+[data-theme="dark"] [data-division="armada"] .dh-figure {
+  text-shadow: 0 0 28px rgba(255, 255, 255, 0.18);
+  letter-spacing: -0.02em;
+}
+
+/* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────
+   backdrop-filter dimatikan total kalau user minta gerak/efek dikurangi —
+   sekaligus jalur aman untuk perangkat yang berat merender blur. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="dark"] [data-division="armada"] * {
+    backdrop-filter: none !important;
+  }
+}

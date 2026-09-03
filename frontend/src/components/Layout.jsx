@@ -542,7 +542,14 @@ export default function Layout({ user, onLogout, children }) {
   const roleLower = displayRole.toLowerCase();
 
   return (
-    <div className={cn("app-shell", collapsed && "sidebar-collapsed")}>
+    // data-division — PAGAR untuk tema per-divisi (D-045, 4 September 2026).
+    // Dark mode "premium" (glow/gradient/glass) SENGAJA dipasang sebagai
+    // PILOT di Delivery Hub dulu, bukan global: token warna di tokens.css
+    // dipakai SEMUA modul, jadi mengubahnya di sana akan langsung menyeret
+    // Sales CRM/Produksi/Gudang ikut berubah tanpa sempat dinilai. Atribut
+    // ini membuat CSS-nya bisa dikunci ke `[data-theme="dark"]
+    // [data-division="armada"]` saja — lihat styles/delivery-dark.css.
+    <div className={cn("app-shell", collapsed && "sidebar-collapsed")} data-division={divisionKey || "hub"}>
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 

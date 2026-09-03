@@ -34,6 +34,11 @@ import "./styles/tailwind.css";
 // di-import terakhir, nilai DS v2 yang menang, sehingga ~3.000 baris CSS lama
 // ikut palet baru + dark mode tanpa ditulis ulang. Jangan pindahkan ke atas.
 import "./styles/tokens.css";
+// SESUDAH tokens.css — lapisan tema gelap khusus Delivery Hub (D-045) yang
+// MENIMPA sebagian token/permukaan default di sana. Dikunci ganda ke
+// [data-theme="dark"] + [data-division="armada"], jadi light mode & modul
+// lain tidak tersentuh sama sekali. Lihat catatan lengkap di file itu.
+import "./styles/delivery-dark.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <QueryClientProvider client={queryClient}>
