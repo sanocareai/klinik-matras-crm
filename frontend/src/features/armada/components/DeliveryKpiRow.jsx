@@ -43,7 +43,10 @@ export default function DeliveryKpiRow({ items }) {
               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", tone.dot)} aria-hidden />
               <span className="truncate text-[11px] font-semibold text-ink2">{k.label}</span>
             </span>
-            <strong className={cn("mt-1.5 block text-[26px] font-bold leading-none tracking-tight", tone.value)}>
+            {/* dh-figure (D-045) — cahaya halus di angka besar, HANYA aktif di
+                dark mode Delivery (lihat styles/delivery-dark.css); di light
+                mode kelas ini tidak punya aturan sama sekali = tidak berefek. */}
+            <strong className={cn("dh-figure mt-1.5 block text-[26px] font-bold leading-none tracking-tight", tone.value)}>
               {k.value}
             </strong>
           </button>

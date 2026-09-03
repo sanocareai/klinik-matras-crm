@@ -13,6 +13,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { cn } from "@/lib/utils.js";
 import Avatar from "@/components/Avatar.jsx";
 import DeliveryKpiRow from "@/features/armada/components/DeliveryKpiRow.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
@@ -321,7 +322,17 @@ export default function ArmadaDashboard() {
                     <li
                       key={j.id}
                       onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
-                      className="flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint"
+                      // dh-bar-left + --dh-bar (D-045) — garis aksen kiri
+                      // menyala HANYA untuk job yang sudah menunggu >=3 hari.
+                      // Sengaja selektif: kalau semua baris diberi aksen,
+                      // tidak ada lagi yang menonjol (pola referensi #3,
+                      // lihat catatan di styles/delivery-dark.css). Di light
+                      // mode kelas ini tidak punya aturan apa pun = no-op.
+                      style={hari >= 3 ? { "--dh-bar": "var(--orange)" } : undefined}
+                      className={cn(
+                        "relative flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint",
+                        hari >= 3 && "dh-bar-left"
+                      )}
                     >
                       <Avatar name={nama} size="sm" />
                       <div className="min-w-0 flex-1">
