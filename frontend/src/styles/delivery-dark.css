@@ -114,15 +114,19 @@
    (layoutId="sidebarActivePill", lihat SidebarLink.jsx), bukan latar
    `.sidebar-link` itu sendiri. Mewarnai link-nya akan menghasilkan DUA
    permukaan menyala yang saling tumpuk saat pill sedang beranimasi pindah. */
+/* `!important` DIPERLUKAN di sini, bukan kebiasaan buruk: tokens.css §sidebar
+   menulis `.nav-pill { background/border/box-shadow: ... !important }` untuk
+   menegakkan aturan "sidebar bersih tanpa border" versi light mode. Tanpa
+   !important tandingan, aturan di bawah kalah walau file ini dimuat setelahnya. */
 [data-theme="dark"] [data-division="armada"] .nav-pill {
-  background-image: linear-gradient(
+  background: linear-gradient(
     100deg,
     rgba(76, 141, 255, 0.30),
     rgba(161, 119, 255, 0.16) 62%,
     rgba(161, 119, 255, 0.04)
-  );
-  border: 1px solid rgba(76, 141, 255, 0.34);
-  box-shadow: 0 8px 24px -12px rgba(76, 141, 255, 0.55);
+  ) !important;
+  border: 1px solid rgba(76, 141, 255, 0.34) !important;
+  box-shadow: 0 8px 24px -12px rgba(76, 141, 255, 0.55) !important;
 }
 
 /* Ikon & label item aktif ikut dicerahkan — di atas pill bergradien, warna
@@ -140,9 +144,16 @@
   letter-spacing: 0.08em;
 }
 
-/* ── 4. TOMBOL PRIMER: gradien, bukan biru rata ───────────────────────────*/
+/* ── 4. TOMBOL PRIMER: gradien, bukan biru rata ───────────────────────────
+   ⚠️ `[class~="bg-accent"]`, BUKAN `[class*="bg-accent"]`. Versi `*=`
+   (substring) ikut menangkap `bg-accentbg` — itu kelas TINT untuk kontrol
+   sekunder yang teksnya berwarna accent, bukan putih. Hasilnya (ketahuan
+   langsung di screenshot pertama): pemilih tanggal "3 Sep 2026" ikut
+   bergradien biru-violet dengan teks biru di atasnya — praktis tidak
+   terbaca. `~=` cuma cocok kalau "bg-accent" berdiri sendiri sebagai satu
+   kelas utuh. */
 [data-theme="dark"] [data-division="armada"] .btn-primary,
-[data-theme="dark"] [data-division="armada"] [class*="bg-accent"]:is(button, a) {
+[data-theme="dark"] [data-division="armada"] [class~="bg-accent"]:is(button, a) {
   background-image: linear-gradient(135deg, #4C8DFF, #7B6BFF 55%, #A177FF);
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 10px 26px -12px rgba(90, 120, 255, 0.85);
