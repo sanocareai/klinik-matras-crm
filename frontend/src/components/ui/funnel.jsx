@@ -1,81 +1,72 @@
 import React from "react";
 import { cn } from "@/lib/utils.js";
 
-// ─── FUNNEL (DS v2.1) ────────────────────────────────────────────────────────
-// Corong trapesium: tiap tahap menyempit, angka di dalam segmen, label di kanan.
+// ─── PIPELINE BARS (DS v2.5, D-097, 5 September 2026) ────────────────────────
+// REDESAIN dari "Funnel" trapesium (clip-path) yang dipakai sejak DS v2.1.
 //
-// PERBAIKAN dari versi pertama — di produksi bentuknya salah:
-//  1. Segmen di-render `width: <persen>%` DI DALAM kolom sempit, jadi
-//     penyempitannya nyaris tidak terlihat (semua terlihat seperti bar).
-//     Sekarang SEMUA segmen selebar kolom, dan yang menyempit adalah BENTUK-nya
-//     lewat clip-path — jadi tepinya benar-benar miring dan menyatu.
-//  2. Label di kanan kena truncate ("Pros...", "Offers/Negosi..."). Kolom label
-//     sekarang punya lebar tetap yang cukup dan tidak lagi ikut menyusut.
+// KENAPA DIGANTI: D-093 sempat mencoba memindahkan kartu ini ke rail sempit
+// (col-span-4 dari 12, ~330px) mengikuti bento layout referensi. Owner lihat
+// hasilnya langsung: trapesium di lebar sesempit itu kehilangan bentuk
+// corongnya TOTAL — clip-path insetnya jadi nyaris tak kelihatan di segmen
+// sesempit itu, hasilnya tampil sebagai deretan badge angka polos, bukan lagi
+// "corong menyempit" yang jadi inti cerita visual Deal Pipeline (D-096,
+// revert). Trapesium horizontal SECARA STRUKTURAL butuh lebar untuk bentuknya
+// kelihatan — bukan sesuatu yang bisa "dites lebih hati-hati", itu batasan
+// bawaan bentuknya sendiri.
 //
-// WARNA: satu keluarga biru, makin ke bawah makin PEKAT — tahap terbawah
-// (Berhasil) paling bernilai, jadi warna terkuat mendarat di tempat terpenting.
+// BAR VERTIKAL tidak punya masalah itu: kolom sempit cuma bikin bar makin
+// ramping (seperti "Statistics" bar chart di referensi Geex/storage dashboard
+// yang didiskusikan) — TIDAK kehilangan makna di lebar berapa pun, sehingga
+// kartu ini aman dipindah ke rail sempit lagi di masa depan kalau perlu.
+// Cerita "tahap makin ke kanan makin sedikit" sekarang disampaikan lewat
+// TINGGI bar (dibanding tahap dengan count TERBESAR), bukan lewat bentuk
+// trapesium — argumen yang sama, media yang lebih robust.
 //
-// REVISI (D-092, 5 September 2026) — owner: dashboard dark mode "gabegitu
-// banyak berubah", dibandingkan ke referensi (crypto dashboard: bar chart
-// SATU hue tapi terang→gelap jelas beda, bukan mepet). RAMP lama mulai dari
-// blue-200→blue-300 — di dark theme keduanya cuma tint TRANSLUCENT alpha
-// 0.24 vs 0.34 (lihat --blue-200/-300 di tokens.css blok dark), bedanya
-// nyaris tak kelihatan berdampingan. Digeser turun satu anak tangga
-// (blue-100 dimulai, lompat ke blue-300 — skip 200) + bluesolid dinaikkan
-// jadi 3 opacity berjenjang (55/80/100) alih-alih 85/100/100 — rentangnya
-// jauh lebih lebar dari ujung ke ujung, TETAP satu hue (taat "aturan satu
-// accent"), cuma levelnya lebih jauh terpisah.
+// WARNA: RAMP SAMA PERSIS dengan versi trapesium (D-092) — satu keluarga
+// biru, makin ke kanan makin PEKAT (blue-100 → blue-300 → bluesolid
+// 55%→100%), tetap taat "aturan satu accent". Cuma dipakai sebagai FILL bar
+// solid, bukan tint segmen.
 const RAMP = [
-  "bg-blue-100 text-blue-900",
-  "bg-blue-300 text-blue-900",
-  "bg-bluesolid/55 text-bluesolidink",
-  "bg-bluesolid/80 text-bluesolidink",
-  "bg-bluesolid text-bluesolidink",
+  "bg-blue-100",
+  "bg-blue-300",
+  "bg-bluesolid/55",
+  "bg-bluesolid",
 ];
 
-// Persentase inset tiap sisi per tahap: 0% (kotak penuh) → menyempit bertahap.
-// Nilai maksimum 18% per sisi supaya tahap terakhir masih cukup lebar untuk
-// menampung angka 4 digit tanpa terpotong.
-function insetPersen(i, total) {
-  if (total <= 1) return [0, 0];
-  const maks = 18;
-  const atas = (maks * i) / (total - 1);
-  const bawah = (maks * (i + 1)) / (total - 1);
-  return [atas, Math.min(bawah, maks)];
-}
+// Tinggi bar minimal 6% supaya tahap dengan count 0 tetap tampil sebagai
+// garis tipis di dasar (ada, cuma kosong) — bukan hilang total tanpa jejak,
+// yang bisa disalahbaca sebagai bar yang belum sempat di-render.
+const MIN_HEIGHT_PCT = 6;
 
 export default function Funnel({ stages = [], className }) {
   const n = stages.length;
   if (n === 0) return null;
 
-  return (
-    <div className={cn("flex flex-col gap-1", className)}>
-      {stages.map((s, i) => {
-        const [insetAtas, insetBawah] = insetPersen(i, n);
-        return (
-          <div key={s.key ?? i} className="flex items-stretch gap-3">
-            {/* Segmen: selalu selebar kolomnya; yang menyempit adalah bentuknya. */}
-            <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  "flex h-12 items-center justify-center text-[17px] font-bold tabular-nums",
-                  RAMP[i] || RAMP[RAMP.length - 1]
-                )}
-                style={{
-                  clipPath: `polygon(${insetAtas}% 0, ${100 - insetAtas}% 0, ${100 - insetBawah}% 100%, ${insetBawah}% 100%)`,
-                }}
-              >
-                {typeof s.count === "number" ? s.count.toLocaleString("id-ID") : s.count}
-              </div>
-            </div>
+  const maxCount = Math.max(1, ...stages.map((s) => s.count || 0));
 
-            {/* Kolom label: lebar TETAP supaya nama tahap tidak pernah terpotong. */}
-            <div className="flex w-[132px] shrink-0 flex-col justify-center">
-              <p className="text-[13px] font-semibold leading-tight text-ink">{s.label}</p>
-              {s.value != null && (
-                <p className="t-secondary mt-0.5 text-[11px] tabular-nums">{s.value}</p>
-              )}
+  return (
+    <div className={cn("flex items-end gap-3", className)}>
+      {stages.map((s, i) => {
+        const raw = Math.round(((s.count || 0) / maxCount) * 100);
+        const pct = Math.max(MIN_HEIGHT_PCT, raw);
+        return (
+          <div key={s.key ?? i} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+            {/* "dh-figure" (dipakai juga di StatCard, D-091) — glow tipis
+                konsisten dengan angka KPI di atasnya, no-op di luar
+                .glass-division. */}
+            <p className="dh-figure text-[15px] font-bold tabular-nums text-ink">
+              {typeof s.count === "number" ? s.count.toLocaleString("id-ID") : s.count}
+            </p>
+            <div className="flex h-32 w-full items-end overflow-hidden rounded-md bg-inset/40">
+              <div
+                className={cn("w-full rounded-t-md transition-[height] duration-500 ease-out", RAMP[i] || RAMP[RAMP.length - 1])}
+                style={{ height: `${pct}%` }}
+              />
             </div>
+            <p className="text-center text-[11px] font-semibold leading-tight text-ink">{s.label}</p>
+            {s.value != null && (
+              <p className="t-secondary text-center text-[10px] leading-tight tabular-nums">{s.value}</p>
+            )}
           </div>
         );
       })}
