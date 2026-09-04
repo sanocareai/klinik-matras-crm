@@ -8,15 +8,13 @@ import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
-import {
-  TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
-} from "@/components/ui/table.jsx";
+import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { rolesOf } from "@/lib/roles.js";
 import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
-import { SalesBadge, EstimasiBadge, JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
+import { JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
@@ -294,115 +292,103 @@ export default function ArmadaJobs() {
                 action={<Button size="sm" onClick={() => gantiView("board")}>Buka Papan</Button>}
               />
             ) : (
-              <>
-                <TableWrap className="hidden md:block">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Job</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH>
-                        <TH>Jadwal</TH><TH>Alamat</TH><TH>Unit</TH>
-                        <TH>Driver</TH><TH>Kendaraan</TH><TH>Status</TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {loading && <TableSkeletonRows rows={6} cols={10} />}
-                      {!loading && jobs?.map((j) => {
-                        // Job RIWAYAT (selesai/gagal sebelum sistem Armada
-                        // dipakai, lihat catatan backfill di JobDetailDrawer)
-                        // TIDAK PUNYA driver/tanggal — itu WAJAR untuk data
-                        // lama, bukan sesuatu yang masih perlu ditindak.
-                        // Warna oranye "Belum" cuma untuk job yang SUNGGUH
-                        // menunggu tindakan (laporan owner 31 Agustus 2026:
-                        // ratusan baris riwayat terlihat seperti backlog
-                        // pending padahal sudah lama tuntas).
-                        const historis = ["COMPLETED", "FAILED"].includes(j.status);
-                        return (
-                        <TR key={j.id} clickable onClick={() => setOpenJobId(j.id)}>
-                          <TD className="font-semibold text-ink">{jobLabelOf(j)}</TD>
-                          <TD className="text-ink2">{orderNumberOf(j) || "—"}</TD>
-                          <TD truncate>
-                            <div className="truncate font-medium text-ink">{customerOf(j) || "—"}</div>
-                            {/* Sales pemilik order (D-043, 2 September 2026) —
-                                baris kedua kecil di bawah nama, bukan kolom
-                                baru sendiri (tabel sudah cukup lebar). */}
-                            <SalesBadge job={j} className="mt-1 max-w-[160px] py-0.5 pl-0.5" />
-                          </TD>
-                          <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
-                          <TD className="whitespace-nowrap">
-                            <div>
-                              {j.scheduledDate
-                                ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                                : historis
-                                  ? <span className="text-ink3">—</span>
-                                  : <span className="text-orange">Belum</span>}
-                            </div>
-                            <EstimasiBadge job={j} className="mt-1" />
-                          </TD>
-                          <TD truncate className="max-w-[180px] text-ink2">
-                            {j.addressText ? (
-                              <span className="inline-flex items-center gap-1">
-                                {mapsUrl(j) && (
-                                  <a
-                                    href={mapsUrl(j)} target="_blank" rel="noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    title="Buka di Google Maps"
-                                    className="shrink-0 text-accent hover:text-accent/80"
-                                  >
-                                    <Navigation size={12} />
-                                  </a>
-                                )}
-                                <span className="truncate">{j.addressText}</span>
-                              </span>
-                            ) : "—"}
-                          </TD>
-                          <TD numeric>{unitCountOf(j)}</TD>
-                          <TD truncate className={cn(!j.driver && !historis && "text-orange")}>
-                            {j.driver?.name || (historis ? "—" : "Belum ada")}
-                          </TD>
-                          <TD className="whitespace-nowrap text-ink2">{j.vehicle?.plateNumber || "—"}</TD>
-                          <TD><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></TD>
-                        </TR>
-                        );
-                      })}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-
-                {/* Mobile: kartu */}
-                <ul className="divide-y divide-line md:hidden">
-                  {!loading && jobs?.map((j) => {
-                    const historis = ["COMPLETED", "FAILED"].includes(j.status);
-                    return (
+              // Daftar kartu avatar-forward (D-052, 4 September 2026) —
+              // MENGGANTIKAN tabel 10-kolom sebelumnya. Laporan owner:
+              // halaman ini masih "tampilan lama" dibanding Dashboard yang
+              // sudah dirapikan (D-050/D-051). Satu markup dipakai untuk
+              // SEMUA lebar layar sekarang (sebelumnya ada tabel desktop +
+              // kartu mobile terpisah yang harus dirawat berdua-dua, gampang
+              // diam-diam beda) — pola & badge-nya sama persis dengan panel
+              // "Perlu Dijadwalkan" di Dashboard, supaya dua halaman yang
+              // sama-sama berisi daftar job terasa satu bahasa visual.
+              //
+              // TIDAK ADA info yang hilang dari tabel lama — cuma disusun
+              // ulang jadi 1 kartu per job, bukan 10 kolom sejajar:
+              // job/order di baris meta (mono), jenis+unit jadi chip di
+              // sebelah nama, jadwal+driver+kendaraan di baris meta,
+              // alamat di baris sendiri (kalau ada), sales+estimasi lewat
+              // JobMetaRow yang sudah ada, status di kanan.
+              <ul className="divide-y divide-line">
+                {loading && Array.from({ length: 6 }).map((_, i) => (
+                  <li key={i} className="px-4 py-3">
+                    <div className="h-14 animate-pulse rounded-btn bg-inset" />
+                  </li>
+                ))}
+                {!loading && jobs?.map((j) => {
+                  // Job RIWAYAT (selesai/gagal sebelum sistem Armada dipakai,
+                  // lihat catatan backfill di JobDetailDrawer) TIDAK PUNYA
+                  // driver/tanggal — itu WAJAR untuk data lama, bukan sesuatu
+                  // yang masih perlu ditindak. Warna oranye "Belum" cuma
+                  // untuk job yang SUNGGUH menunggu tindakan (laporan owner
+                  // 31 Agustus 2026: ratusan baris riwayat terlihat seperti
+                  // backlog pending padahal sudah lama tuntas).
+                  const historis = ["COMPLETED", "FAILED"].includes(j.status);
+                  const nama = customerOf(j) || "Tanpa nama";
+                  const unitCount = unitCountOf(j);
+                  return (
                     <li key={j.id}>
                       <button
                         type="button"
                         onClick={() => setOpenJobId(j.id)}
-                        className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12.5px] font-semibold text-ink">{jobLabelOf(j)}</span>
-                          <span className="text-[11px] text-ink3">{JOB_TYPE_REAL[j.type]?.label}</span>
-                          <span className="ml-auto"><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></span>
+                        <Avatar name={nama} size="sm" gradient className="mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate text-[13px] font-semibold text-ink">{nama}</span>
+                            <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
+                              {JOB_TYPE_REAL[j.type]?.label || j.type}
+                            </span>
+                            {unitCount > 1 && (
+                              <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold text-ink3">
+                                {unitCount} unit
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
+                            <span className="font-mono">{orderNumberOf(j) || jobLabelOf(j)}</span>
+                            <span aria-hidden>·</span>
+                            <span className={cn(!j.scheduledDate && !historis && "font-semibold text-orange")}>
+                              {j.scheduledDate
+                                ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+                                : historis ? "—" : "Belum dijadwalkan"}
+                            </span>
+                            <span aria-hidden>·</span>
+                            <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
+                              {j.driver?.name || (historis ? "—" : "Belum ada driver")}
+                            </span>
+                            {j.vehicle?.plateNumber && (
+                              <>
+                                <span aria-hidden>·</span>
+                                <span>{j.vehicle.plateNumber}</span>
+                              </>
+                            )}
+                          </div>
+                          {j.addressText && (
+                            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-ink3">
+                              {mapsUrl(j) && (
+                                <a
+                                  href={mapsUrl(j)} target="_blank" rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Buka di Google Maps"
+                                  className="shrink-0 text-accent hover:text-accent/80"
+                                >
+                                  <Navigation size={11} />
+                                </a>
+                              )}
+                              <span className="truncate">{j.addressText}</span>
+                            </div>
+                          )}
+                          <JobMetaRow job={j} className="mt-1.5" />
                         </div>
-                        <div className="mt-1 truncate text-[13px] text-ink">{customerOf(j) || "—"}</div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink2">
-                          <span>
-                            {j.scheduledDate
-                              ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                              : historis ? "—" : "Belum dijadwalkan"}
-                          </span>
-                          <span aria-hidden>·</span>
-                          <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
-                            {j.driver?.name || (historis ? "—" : "Belum ada driver")}
-                          </span>
+                        <div className="ml-2 shrink-0">
+                          <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
                         </div>
-                        <JobMetaRow job={j} className="mt-1.5" />
                       </button>
                     </li>
-                    );
-                  })}
-                </ul>
-              </>
+                  );
+                })}
+              </ul>
             )}
           </Card>
       </PageBody>
