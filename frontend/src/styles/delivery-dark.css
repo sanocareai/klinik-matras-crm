@@ -40,7 +40,23 @@
    cuma dashboard-nya "agak gelap", bukan seluruh chrome ikut jadi glass
    premium seperti referensi. Bagian ini menaikkan ground jadi navy (bukan
    nyaris-hitam) dan menambah 4 titik chrome yang tadinya terlewat. */
+/* KOREKSI KEDUA D-049 (masih hari yang sama) — glow blur sungguhan yang baru
+   ditambah TETAP tidak kelihatan di screenshot verifikasi, dan akarnya
+   ketahuan: `.app-content` di bawah masih diberi `background-color:
+   var(--dh-ground)` SOLID/OPAK. Background elemen SENDIRI selalu dilukis
+   duluan, TIDAK PEDULI z-index — jadi walau `.dh-glow` benar ada di
+   belakang (z-index 0), `.app-content` (z-index 1) di depannya menutup
+   total dengan warna solid, glow tidak akan pernah tembus. Solusinya:
+   warna dasar solid `--dh-ground` dipindah ke `.app-shell` itu SENDIRI
+   (elemen paling luar, leluhur dari `.dh-glow` MAUPUN `.app-content`) —
+   background elemen leluhur otomatis ada DI BELAKANG seluruh anaknya,
+   persis pola `body{background:var(--bg)}` + `.glow` + `.app` di artifact
+   aslinya. `.app-content` sekarang HARUS transparan (kecuali tekstur bintik
+   yang jarang) supaya glow di baliknya benar-benar kelihatan di celah
+   antar-kartu, bukan cuma di balik kartu kaca yang backdrop-filter-nya. */
 [data-theme="dark"] [data-division="armada"] {
+  background: var(--dh-ground);
+
   /* Navy gelap (bukan near-black) — SAMA keluarga dengan referensi artifact
      (#0A0D16). Ground near-black sebelumnya (#07070B) terlalu netral, glow
      birunya jadi nyaris tidak kelihatan menyatu dengan dasarnya. */
@@ -80,7 +96,7 @@
 [data-theme="dark"] [data-division="armada"] .app-content {
   position: relative;
   z-index: 1;
-  background-color: var(--dh-ground);
+  background-color: transparent;
   background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
   background-size: 34px 34px;
   background-attachment: fixed;

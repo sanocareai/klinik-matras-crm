@@ -22,7 +22,13 @@
    ternyata versi terang dinilai kurang cocok) tanpa menyentuh yang lain.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* KOREKSI KEDUA D-049 — sama akar masalah dengan delivery-dark.css: ground
+   solid dipindah ke elemen INI SENDIRI (leluhur `.dh-glow`/`.app-content`),
+   bukan lagi jadi background `.app-content` yang menutup glow di
+   belakangnya. Lihat komentar lengkap di delivery-dark.css. */
 html:not([data-theme="dark"]) [data-division="armada"] {
+  background: var(--dh-ground);
+
   /* Ground: BUKAN putih polos — --sanss-canvas (tokens.css) sudah dipakai
      sebagai kanvas SANSS di tempat lain, tint biru pucat yang nyaris tak
      terlihat tapi cukup untuk glow ambient "menempel" ke sesuatu. Putih
@@ -49,7 +55,7 @@ html:not([data-theme="dark"]) [data-division="armada"] {
 html:not([data-theme="dark"]) [data-division="armada"] .app-content {
   position: relative;
   z-index: 1;
-  background-color: var(--dh-ground);
+  background-color: transparent;
   background-image: radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
   background-size: 34px 34px;
   background-attachment: fixed;
