@@ -72,18 +72,29 @@ export default function ArmadaRoutes() {
       const rangeParams = toApiParams(range); // {} untuk "Semua" — tanpa filter tanggal
       const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes] = await Promise.all([
         api.getRoutes(rangeParams),
-        // Panel kiri (D-066, 4 September 2026 — koreksi dari D-063) — SENGAJA
-        // LEPAS TOTAL dari `range`, bukan cuma default "Semua" yang kebetulan
-        // tidak memfilter. Laporan owner: pilih rentang tanggal 4 Sep di atas
-        // membuat panel ini kosong padahal ada job tanggal 2 Sep yang justru
-        // MAU dimasukkan ke rute tanggal 4 — dispatcher perlu bisa
-        // mencampur job dari hari mana pun ke rute hari apa pun (rute yang
-        // dilihat/dikelola BOLEH difilter per tanggal, tapi kolam "job siap
-        // masuk rute" harus selalu lengkap, itu penanda "job ini sudah
-        // ready", bukan "job ini kebetulan setanggal dengan rute"). `take`
-        // dinaikkan eksplisit — daftar ini sekarang selalu global, bukan
-        // dibatasi satu hari, jadi defaultnya (200) lebih gampang terlewati.
-        api.getArmadaJobs({ routeId: "none", take: 500 }),
+        // Panel kiri (D-066, koreksi dari D-063; `date: "any"` ditambah
+        // D-069, 4 September 2026) — SENGAJA LEPAS TOTAL dari `range`, bukan
+        // cuma default "Semua" yang kebetulan tidak memfilter. Laporan owner:
+        // pilih rentang tanggal 4 Sep di atas membuat panel ini kosong
+        // padahal ada job tanggal 2 Sep yang justru MAU dimasukkan ke rute
+        // tanggal 4 — dispatcher perlu bisa mencampur job dari hari mana pun
+        // ke rute hari apa pun.
+        //
+        // ⚠️ BUG NYATA (D-069) yang diperbaiki: `date: "any"` DITAMBAHKAN —
+        // sebelumnya TIDAK ADA parameter tanggal sama sekali di sini, yang
+        // berarti backend mengembalikan job TANPA tanggal (backlog lama,
+        // termasuk job COMPLETED lawas) SEKALIGUS job BERTANGGAL, dua-duanya
+        // ikut memperebutkan jatah `take` yang sama. Diverifikasi langsung ke
+        // production: 512 job routeId=null TANPA tanggal vs cuma 11 job
+        // routeId=null BERTANGGAL — dengan urutan `scheduledDate desc`,
+        // hampir semua job bertanggal (10 dari 11) kepotong dari hasil,
+        // padahal `take` sudah 500. Menaikkan `take` lagi cuma menunda
+        // gejalanya (jumlah job tanpa tanggal terus bertambah seiring
+        // waktu) — perbaikan sesungguhnya di level query (lihat
+        // routes/armada.js): `date=any` memfilter scheduledDate BUKAN null
+        // di DATABASE, jadi job tanpa tanggal tidak lagi ikut bersaing sama
+        // sekali, bukan cuma diberi jatah lebih besar.
+        api.getArmadaJobs({ routeId: "none", date: "any", take: 500 }),
         // Backlog tanpa tanggal — TIDAK bisa langsung diseret ke rute (rute
         // sudah pasti-tanggal, job tanpa tanggal butuh diisi dulu di Jadwal
         // & Penugasan), jadi ini murni pengingat/daftar, bukan drag source.

@@ -357,6 +357,26 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
       // belum dijadwalkan dan belum masuk rute" tapi panel kiri Route
       // Planner selalu kosong.
       scheduledDate = null;
+    } else if (date === "any") {
+      // "any" (D-069, 4 September 2026 — bug NYATA ditemukan owner: panel
+      // "Belum Masuk Rute" cuma menampilkan 1 job padahal seharusnya 11).
+      // Akar masalahnya BUKAN `take` kurang besar (sudah 500) — pemanggil
+      // (Route Planner) sengaja TIDAK mengirim `date` sama sekali supaya
+      // dapat job BERTANGGAL dari hari mana pun, tapi tanpa filter apa pun
+      // di sini `scheduledDate` tetap `undefined` di bawah dan seluruh
+      // kondisi (`date` KOSONG) DIABAIKAN TOTAL — artinya job TANPA
+      // tanggal (ratusan, termasuk backlog lama & job COMPLETED lawas)
+      // ikut lolos dan bersaing memperebutkan jatah `take` yang SAMA
+      // dengan job bertanggal yang sebenarnya dicari. Terverifikasi
+      // langsung: 512 job routeId=null TANPA tanggal vs 11 job routeId=null
+      // BERTANGGAL — dengan take=500 dan urutan `scheduledDate desc`, cuma
+      // 1 dari 11 job bertanggal yang kebagian slot (sisanya kepotong).
+      // `date=any` computer secara eksplisit "scheduledDate BUKAN null" di
+      // level DATABASE, jadi job tanpa tanggal tidak lagi ikut bersaing
+      // jatah `take` — bukan sekadar menaikkan `take` lebih tinggi lagi
+      // (itu cuma menunda gejalanya, jumlah job tanpa tanggal akan terus
+      // bertambah seiring waktu).
+      scheduledDate = { not: null };
     } else if (date) {
       scheduledDate = toDateOnly(date);
     } else if (from || to) {
