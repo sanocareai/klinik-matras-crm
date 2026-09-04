@@ -386,7 +386,13 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         ...jobInclude,
         vehicle: { select: { id: true, plateNumber: true, type: true } },
         route: { select: { id: true, code: true, status: true } },
-        order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+        // deliveryCity (D-058, 4 September 2026) — laporan owner: bantu
+        // dispatcher mengelompokkan job searah di Route Planner ("Belum
+        // Masuk Rute" panel kiri). Job.addressText adalah teks bebas
+        // (snapshot alamat lengkap), tidak cocok dijadikan kunci
+        // pengelompokan — Order.deliveryCity (diisi sales, dropdown kota
+        // tetap) yang dipakai.
+        order: { select: { id: true, orderNumber: true, deliveryCity: true, customer: { select: { id: true, name: true, phone: true } } } },
       },
       orderBy: [{ scheduledDate: "desc" }, { sequence: "asc" }, { createdAt: "desc" }],
       take: Math.min(Number(take) || 200, 500),

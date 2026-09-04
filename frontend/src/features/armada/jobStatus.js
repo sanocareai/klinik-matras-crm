@@ -99,6 +99,15 @@ export function unitCountOf(job) {
   return job?.units?.length || 0;
 }
 
+// Kota tujuan (D-058, 4 September 2026 — laporan owner: bantu dispatcher
+// mengelompokkan job searah di Route Planner). Dari Order.deliveryCity
+// (dropdown kota tetap yang diisi sales) — BUKAN dari Job.addressText, yang
+// teks bebas snapshot alamat lengkap, tidak konsisten dijadikan kunci
+// pengelompokan. Pola fallback SAMA dengan customerOf/orderNumberOf.
+export function cityOf(job) {
+  return job?.order?.deliveryCity || job?.units?.[0]?.unit?.order?.deliveryCity || null;
+}
+
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
 // dispatcher perlu tahu siapa sales-nya buat koordinasi). Pola fallback
 // SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
