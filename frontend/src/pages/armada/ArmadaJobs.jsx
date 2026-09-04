@@ -10,11 +10,12 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { rolesOf } from "@/lib/roles.js";
-import Armada, { todayWibISO } from "@/pages/Armada.jsx";
+import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
+import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
@@ -46,10 +47,16 @@ import {
 // command center"), padahal keduanya SATU workspace yang sama. Sekarang
 // keduanya memakai <DeliveryPageHero> yang SAMA PERSIS (lihat komponen itu
 // untuk detail) — cuma isi `stats`-nya beda (Papan dari board per tipe,
-// Daftar dari daftar job hasil filter yang sedang tampil). Tanggal juga
-// disamakan: default sekarang SELALU hari ini (`todayWibISO()`, diimpor
-// dari Armada.jsx) — sebelumnya default kosong ("Semua tanggal"), beda
-// perilaku dari Papan yang dari awal selalu satu tanggal pasti.
+// Daftar dari daftar job hasil filter yang sedang tampil).
+//
+// DATE RANGE PICKER (D-081, 5 September 2026) — laporan owner: "tanggal
+// buat seperti route planner". `tanggal` (satu hari, default hari ini)
+// diganti `range` (DateRange, lib/dateRange.js) — SATU skema tanggal yang
+// sama dengan Dashboard/Laporan/Orders.jsx/Route Planner. BEDA dari Papan
+// (Armada.jsx): GET /armada/jobs yang dipakai Daftar SUDAH DUKUNG `from`/
+// `to` (bukan cuma `date` tunggal), jadi Daftar bisa langsung memakai
+// rentang APA ADANYA (toApiParams(range)) tanpa perlu jatuh ke satu hari
+// seperti Papan (yang backend board-nya memang cuma dukung satu tanggal).
 //
 // Tampilan Kalender (spesifikasi) BELUM ada — butuh komponen kalender bulanan
 // yang menempatkan job per tanggal; dijadwalkan bersama Route Planner Tahap 3,
@@ -97,12 +104,11 @@ export default function ArmadaJobs() {
   const [tab, setTab] = useState("all");
   const [cari, setCari] = useState("");
   const [debounced, setDebounced] = useState("");
-  // Default hari ini (D-080) — SEBELUMNYA "" ("Semua tanggal"), beda
-  // perilaku dari mode Papan yang dari awal selalu satu tanggal pasti.
-  // DatePicker sendiri tidak punya tombol hapus nilai — dispatcher yang
-  // memang mau lihat semua tanggal tetap bisa lewat tombol "Reset" di
-  // bawah (sudah ada, mengosongkan tanggal bersama filter lain sekaligus).
-  const [tanggal, setTanggal] = useState(todayWibISO());
+  // Default "hari ini" (D-081) — preset DateRange, bukan string tanggal
+  // tunggal lagi. Dispatcher bisa perbesar ke rentang apa pun (7 hari
+  // terakhir, bulan ini, dst) atau "Semua" lewat picker yang sama dengan
+  // Route Planner — tombol "Reset" di bawah mengembalikannya ke preset ini.
+  const [range, setRange] = useState(() => makeRange("today"));
   const [fStatus, setFStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
 
@@ -143,7 +149,11 @@ export default function ArmadaJobs() {
       // hanya memindahkan biayanya ke perangkat dispatcher.
       const params = {
         q: debounced || undefined,
-        date: tanggal || undefined,
+        // toApiParams(range) -> {} untuk preset "Semua" (from/to null), atau
+        // {from,to} — backend GET /armada/jobs sudah dukung keduanya (lihat
+        // catatan D-081 di atas). from===to (satu hari terpilih) otomatis
+        // jadi filter satu hari juga di backend (gte & lte tanggal yang sama).
+        ...toApiParams(range),
         status: fStatus || undefined,
         driverId: fDriver || undefined,
       };
@@ -162,7 +172,7 @@ export default function ArmadaJobs() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, tanggal, fStatus, fDriver, tab]);
+  }, [debounced, range, fStatus, fDriver, tab]);
 
   // Jangan panggil endpoint dispatcher untuk driver — hasilnya pasti 403 dan
   // cuma mengotori konsol (lihat catatan isDriverOnlyUser di atas).
@@ -254,8 +264,8 @@ export default function ArmadaJobs() {
       <div className="mx-auto flex w-full max-w-[1400px] justify-end px-4 pt-4 md:px-8">{toggle}</div>
       <PageContainer>
         <DeliveryPageHero
-          date={tanggal}
-          onDateChange={setTanggal}
+          range={range}
+          onRangeChange={setRange}
           onCreateJob={() => gantiView("board")}
           health={jobs && (
             tanpaDriver > 0
@@ -263,7 +273,7 @@ export default function ArmadaJobs() {
               : { label: "Semua job sudah ada driver", tone: "ok" }
           )}
           stats={jobs ? [
-            { label: labelJenis, value: jobs.length, hint: tanggal },
+            { label: labelJenis, value: jobs.length, hint: formatRangeText(range) },
             { label: "Sudah ada driver", value: jobs.filter((j) => j.driverId).length, hint: `dari ${jobs.length} job` },
             { label: "Selesai", value: jobs.filter((j) => j.status === "COMPLETED").length, hint: "sesuai filter" },
             { label: "Belum ada driver", value: tanpaDriver, hint: "job aktif" },
@@ -324,16 +334,13 @@ export default function ArmadaJobs() {
               icon={User}
               ariaLabel="Filter driver"
             />
-            {/* `tanggal` dibandingkan ke default (hari ini), BUKAN "truthy"
-                (D-080) — sejak defaultnya selalu terisi (todayWibISO(),
-                bukan "" lagi), syarat lama akan membuat tombol ini SELALU
-                tampil dari awal buka halaman, bukan cuma setelah user benar-
-                benar mengubah filter. Reset mengembalikan tanggal ke HARI
-                INI (default baru), bukan ke "" (Semua tanggal) — itu satu-
-                satunya cara mengosongkannya sejak DatePicker sendiri tidak
-                punya tombol hapus nilai. */}
-            {(cari || tanggal !== todayWibISO() || fStatus || fDriver) && (
-              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setTanggal(todayWibISO()); setFStatus(""); setFDriver(""); }}>
+            {/* `range.preset` dibandingkan ke "today" (D-081) — bukan
+                membandingkan from/to mentah, supaya tombol Reset tetap
+                akurat walau user memilih "Hari ini" via preset ATAU lewat
+                kalender manual yang kebetulan jatuh di tanggal yang sama
+                (keduanya preset berbeda: "today" vs "custom"). */}
+            {(cari || range.preset !== "today" || fStatus || fDriver) && (
+              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("today")); setFStatus(""); setFDriver(""); }}>
                 Reset
               </Button>
             )}
@@ -351,7 +358,7 @@ export default function ArmadaJobs() {
                 icon={CalendarDays}
                 title="Belum ada job yang cocok"
                 description={
-                  cari || tanggal || fStatus || fDriver
+                  cari || range.preset !== "today" || fStatus || fDriver
                     ? "Coba longgarkan filter atau kata kuncinya."
                     : "Job dibuat dari mode Papan — pilih unit yang siap lalu tugaskan driver."
                 }

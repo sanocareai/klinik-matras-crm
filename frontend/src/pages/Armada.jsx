@@ -13,6 +13,7 @@ import Avatar from "@/components/Avatar.jsx";
 import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import AssignDropdown from "@/features/armada/components/AssignDropdown.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
+import { makeRange } from "@/lib/dateRange.js";
 import DriverJobs from "./DriverJobs.jsx";
 import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
 
@@ -578,7 +579,15 @@ function DriverGroupSettings() {
 // ── Halaman ───────────────────────────────────────────────────────────────
 export default function Armada() {
   const [type, setType] = useState("PICKUP");
-  const [date, setDate] = useState(todayWibISO());
+  // Date range picker (D-081, 5 September 2026) — laporan owner: "tanggal
+  // buat seperti route planner". Board di bawah TETAP butuh satu tanggal
+  // pasti (GET /armada/board tidak dukung rentang) — `date` diturunkan dari
+  // `range` PERSIS pola `tanggalRuteBaru` di ArmadaRoutes.jsx (D-067): kalau
+  // range sedang SATU hari spesifik, itulah yang dipakai; kalau rentang
+  // beneran/"Semua waktu" dipilih, fallback ke HARI INI (kasus paling umum
+  // dispatcher buka papan ini).
+  const [range, setRange] = useState(() => makeRange("today"));
+  const date = (range.from && range.from === range.to) ? range.from : todayWibISO();
   const [board, setBoard] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -651,8 +660,8 @@ export default function Armada() {
           array kosong -> hero tidak dirender sama sekali (lihat guard di
           DeliveryPageHero). */}
       <DeliveryPageHero
-        date={date}
-        onDateChange={setDate}
+        range={range}
+        onRangeChange={setRange}
         onCreateJob={() => setCreating((v) => !v)}
         health={board && (
           board.available.length > 0

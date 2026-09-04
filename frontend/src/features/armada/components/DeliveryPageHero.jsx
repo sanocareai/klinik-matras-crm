@@ -2,7 +2,7 @@ import React from "react";
 import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 
 // Header + hero SATU KOMPONEN dipakai KEDUA mode tampilan Delivery — Papan
@@ -22,12 +22,22 @@ import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 // kebetulan mengisi 4 kotak yang SAMA BENTUKNYA, BUKAN angka dari sumber
 // yang sama — jangan coba menyamakan label/artinya, itu memang beda.
 //
-// Tanggal SENGAJA satu tanggal pasti (bukan rentang, bukan kosong/"Semua
-// tanggal") di KEDUA mode — Papan sudah begitu sejak awal (board per hari,
-// GET /armada/board cuma dukung satu tanggal, bukan `from`/`to`), Daftar
-// disamakan ke situ (sebelumnya default "Semua tanggal" nullable) supaya
-// perilaku date picker konsisten dipindah-pindah mode, bukan cuma tampilan.
-export default function DeliveryPageHero({ date, onDateChange, onCreateJob, health, stats }) {
+// DATE RANGE PICKER (D-081, 5 September 2026) — laporan owner: "tanggal buat
+// seperti route planner". DatePicker satu-hari (D-080) diganti
+// DateRangePicker (lib/dateRange.js) — SATU skema tanggal yang sama dipakai
+// Dashboard/Laporan/Orders.jsx/Route Planner, bukan komponen tanggal
+// terpisah lagi untuk modul ini. `range`/`onRangeChange` sekarang bentuknya
+// DateRange (lihat lib/dateRange.js), bukan string tanggal tunggal.
+//
+// Papan TETAP butuh SATU tanggal pasti di baliknya (GET /armada/board tidak
+// dukung rentang, beda dari GET /armada/jobs yang Daftar pakai) — pemanggil
+// (Armada.jsx) menurunkannya dari `range` dengan pola PERSIS SAMA seperti
+// `tanggalRuteBaru` di ArmadaRoutes.jsx (D-067): kalau range sedang SATU
+// hari spesifik, itulah yang dipakai; kalau rentang beneran/"Semua waktu",
+// fallback ke HARI INI. Komponen ini SENDIRI tidak tahu/peduli soal itu —
+// cuma merender picker & meneruskan `range` apa adanya, penurunan single-day
+// itu tanggung jawab pemanggil yang butuhnya (Papan), bukan di sini.
+export default function DeliveryPageHero({ range, onRangeChange, onCreateJob, health, stats }) {
   return (
     <>
       <PageHeader
@@ -35,7 +45,7 @@ export default function DeliveryPageHero({ date, onDateChange, onCreateJob, heal
         subtitle="Penjadwalan armada, rute, dan proof of delivery."
         actions={
           <div className="flex items-center gap-2">
-            <DatePicker value={date} onChange={onDateChange} placeholder="Pilih tanggal" />
+            <DateRangePicker value={range} onChange={onRangeChange} />
             <Button onClick={onCreateJob} className="h-10">
               <Plus className="h-4 w-4" /> Buat Job
             </Button>
