@@ -282,9 +282,19 @@ export default function ArmadaRoutes() {
         <div className="min-w-0">
           <RouteMap routes={routes} />
           <div className="mt-3">
+            {/* Grid turun ke bawah (D-060, 4 September 2026) — SEBELUMNYA
+                flex + overflow-x-auto (kartu berjejer ke samping, digulir
+                horizontal). Laporan owner: "kalau banyak rute" mode itu
+                bikin sebagian kartu ketutup/harus digeser terus — pola
+                "Papan" (Jadwal & Penugasan, Armada.jsx) sudah lebih dulu
+                pakai grid yang membungkus ke baris baru begitu penuh, dan
+                itu yang diminta ditiru di sini juga. RouteCard.jsx ikut
+                diubah (w-full menggantikan w-[300px] shrink-0, lihat
+                catatan di sana) supaya lebarnya mengikuti kolom grid, bukan
+                lebar tetap yang cuma masuk akal dalam baris horizontal. */}
             {loading ? (
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {[1, 2].map((i) => <div key={i} className="h-64 w-[300px] shrink-0 animate-pulse rounded-card bg-inset" />)}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {[1, 2].map((i) => <div key={i} className="h-64 animate-pulse rounded-card bg-inset" />)}
               </div>
             ) : routes.length === 0 ? (
               <EmptyState
@@ -293,7 +303,7 @@ export default function ArmadaRoutes() {
                 action={<Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>}
               />
             ) : (
-              <div className="flex gap-3 overflow-x-auto pb-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {routes.map((r) => (
                   <RouteCard
                     key={r.id}

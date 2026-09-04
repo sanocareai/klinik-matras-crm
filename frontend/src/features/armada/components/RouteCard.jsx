@@ -55,8 +55,14 @@ export default function RouteCard({
   }
 
   return (
+    // w-full (D-060, 4 September 2026) — SEBELUMNYA w-[300px] shrink-0,
+    // dibuat untuk baris flex yang digulir horizontal (ArmadaRoutes.jsx
+    // lama). Sekarang parent-nya grid yang membungkus ke baris baru, jadi
+    // kartu ini harus mengisi lebar KOLOM grid (ditentukan grid-cols di
+    // ArmadaRoutes.jsx), bukan memaksa lebar sendiri 300px yang bisa
+    // meleset dari lebar kolom sesungguhnya.
     <div className={cn(
-      "flex w-[300px] shrink-0 flex-col rounded-card border bg-surface",
+      "flex h-full min-h-[280px] w-full flex-col rounded-card border bg-surface",
       route.status === "CANCELLED" ? "border-border opacity-60" : "border-border"
     )}>
       {/* Header */}
