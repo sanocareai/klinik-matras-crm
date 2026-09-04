@@ -32,6 +32,13 @@ export default function ArmadaRoutes() {
   const [tanggal, setTanggal] = useState(todayISO());
   const [routes, setRoutes] = useState(null);
   const [unrouted, setUnrouted] = useState(null);
+  // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
+  // owner: "di Jadwal & Penugasan banyak order yang belum dijadwalkan dan
+  // belum masuk rute", tapi panel "Belum Masuk Rute" selalu kosong). Beda
+  // dari `unrouted` — ini TIDAK terikat `tanggal` yang lagi dibuka sama
+  // sekali (query date=none), jadi tidak ikut berubah tiap ganti tanggal;
+  // dimuat sekali di `load()` yang sama supaya tetap 1 titik pemuatan data.
+  const [undated, setUndated] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [error, setError] = useState("");
@@ -40,17 +47,22 @@ export default function ArmadaRoutes() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [routesRes, jobsRes, driversRes, vehiclesRes] = await Promise.all([
+      const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes] = await Promise.all([
         api.getRoutes({ date: tanggal }),
         // Panel kiri: job pada tanggal ini yang belum masuk rute mana pun DAN
         // belum selesai/gagal — job yang sudah COMPLETED tidak relevan
         // direncanakan ulang.
         api.getArmadaJobs({ date: tanggal, routeId: "none" }),
+        // Backlog tanpa tanggal — TIDAK bisa langsung diseret ke rute (rute
+        // sudah pasti-tanggal, job tanpa tanggal butuh diisi dulu di Jadwal
+        // & Penugasan), jadi ini murni pengingat/daftar, bukan drag source.
+        api.getArmadaJobs({ date: "none", routeId: "none" }),
         api.getDrivers(),
         api.getVehicles(),
       ]);
       setRoutes(routesRes.routes);
       setUnrouted(jobsRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
+      setUndated(undatedRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
       setDrivers(driversRes);
       setVehicles(vehiclesRes.vehicles);
     } catch (e) {
@@ -268,6 +280,7 @@ export default function ArmadaRoutes() {
           <div className="min-h-0 flex-1">
             <UnroutedJobsPanel
               jobs={unrouted || []}
+              undatedJobs={undated || []}
               loading={loading}
               draggingId={draggingJobId}
               onDragStart={(j) => setDraggingJobId(j.id)}

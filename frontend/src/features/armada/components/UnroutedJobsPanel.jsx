@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Package, MapPinned, Plus, X, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Package, MapPinned, Plus, X, Loader2, AlertTriangle, ChevronDown, ArrowUpRight } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
@@ -23,12 +24,14 @@ import { customerOf, unitCountOf, cityOf } from "../jobStatus.js";
 // kota (alamat belum lengkap) tetap tampil di kelompok "Lainnya" di bawah,
 // TIDAK disembunyikan — order itu tetap harus terlihat & terjadwalkan.
 export default function UnroutedJobsPanel({
-  jobs, loading, draggingId, onDragStart, onDragEnd,
+  jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd,
   draftRoutes = [], onBulkAdd,
 }) {
+  const navigate = useNavigate();
   const [selected, setSelected] = useState(() => new Set());
   const [targetRouteId, setTargetRouteId] = useState("");
   const [adding, setAdding] = useState(false);
+  const [showUndated, setShowUndated] = useState(false);
 
   const groups = useMemo(() => {
     const byCity = new Map();
@@ -116,6 +119,48 @@ export default function UnroutedJobsPanel({
         <h3 className="text-[12.5px] font-bold text-ink">Belum Masuk Rute</h3>
         <p className="text-[10.5px] text-ink3">{jobs?.length ?? 0} job — seret ke rute, atau centang lalu tambahkan sekaligus</p>
       </div>
+
+      {/* Backlog TANPA TANGGAL SAMA SEKALI (D-062, 4 September 2026 —
+          laporan owner: "di Jadwal & Penugasan banyak order yang belum
+          dijadwalkan dan belum masuk rute", tapi panel di atas cuma
+          mengecek tanggal yang SEDANG dibuka — job tanpa tanggal apa pun
+          tidak pernah cocok filter tanggal manapun, jadi tidak pernah
+          kelihatan). SENGAJA TIDAK draggable/checkable seperti job di
+          bawah — rute selalu terikat SATU tanggal pasti, jadi job ini
+          wajib dikasih tanggal dulu (di Jadwal & Penugasan) sebelum bisa
+          masuk rute mana pun. Ini murni pengingat + jalan pintas ke
+          sana, bukan drag source kedua. */}
+      {undatedJobs.length > 0 && (
+        <div className="shrink-0 border-b border-line bg-orangebg/40 px-2.5 py-2">
+          <button
+            type="button"
+            onClick={() => setShowUndated((v) => !v)}
+            className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold text-orange"
+          >
+            <AlertTriangle size={13} className="shrink-0" />
+            <span className="flex-1">{undatedJobs.length} job belum ada tanggal sama sekali</span>
+            <ChevronDown size={13} className={cn("shrink-0 transition-transform", showUndated && "rotate-180")} />
+          </button>
+          {showUndated && (
+            <div className="mt-2 space-y-1.5">
+              <ul className="space-y-1">
+                {undatedJobs.map((j) => (
+                  <li key={j.id} className="truncate text-[11px] text-ink2">
+                    {customerOf(j) || "Tanpa nama"} <span className="text-ink3">· {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => navigate("/armada/jobs")}
+                className="flex items-center gap-1 text-[10.5px] font-semibold text-orange hover:underline"
+              >
+                Atur tanggalnya di Jadwal & Penugasan <ArrowUpRight size={11} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bilah aksi massal — cuma muncul kalau ada yang dicentang. */}
       {selected.size > 0 && (

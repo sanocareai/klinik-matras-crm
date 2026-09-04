@@ -346,7 +346,18 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
     // backend jalan di UTC, jadi batas polos menggeser jendela 7 jam dan job
     // pagi hari terhitung di hari sebelumnya (CLAUDE.md §11).
     let scheduledDate;
-    if (date) {
+    if (date === "none") {
+      // "none" (D-062, 4 September 2026) — job yang BELUM PERNAH dikasih
+      // tanggal sama sekali (bukan "tanggal tertentu di masa lalu/depan").
+      // Dibutuhkan Route Planner untuk menunjukkan backlog job yang masih
+      // nyangkut di Jadwal & Penugasan tanpa tanggal — SEBELUM ini backlog
+      // itu tidak pernah kelihatan sama sekali di Route Planner (halaman
+      // itu selalu query per-tanggal spesifik, job tanpa tanggal tidak
+      // cocok filter tanggal APA PUN). Laporan owner: "banyak order yang
+      // belum dijadwalkan dan belum masuk rute" tapi panel kiri Route
+      // Planner selalu kosong.
+      scheduledDate = null;
+    } else if (date) {
       scheduledDate = toDateOnly(date);
     } else if (from || to) {
       scheduledDate = {};

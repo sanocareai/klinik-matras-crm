@@ -1,1 +1,0 @@
-import{j as i}from"./vendor-query-lt1T2TzN.js";import{B as o}from"./badge-C3dWJAPn.js";function d({map:r,value:n,className:e}){const t=r==null?void 0:r[n];return t?i.jsx(o,{variant:t.tone,className:e,title:t.labelId||void 0,children:t.label}):i.jsx(o,{variant:"neutral",className:e,children:n||"—"})}export{d as S};
