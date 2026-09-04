@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
+import Avatar from "@/components/Avatar.jsx";
+import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import DriverJobs from "./DriverJobs.jsx";
 import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
 
@@ -78,6 +80,10 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
     : "";
   const [busy, setBusy] = useState(false);
   const editable = EDITABLE_STATUSES.has(job.status);
+  // ChipPilih butuh {id, name} — vehicles asli cuma punya `plateNumber`
+  // (tidak ada field `name`), jadi dipetakan di sini supaya chip-nya
+  // menampilkan plat nomor, bukan "undefined".
+  const vehicleItems = vehicles.map((v) => ({ id: v.id, name: v.plateNumber }));
 
   async function saveDriver(newDriverId) {
     setDriverId(newDriverId);
@@ -180,31 +186,42 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
 
       {editable ? (
         <>
+          {/* ChipPilih menggantikan <select> polos (D-053, 4 September
+              2026) — komponen ini sudah dibangun sejak D-036 khusus untuk
+              memilih driver/kendaraan (lihat komentarnya sendiri: "dipakai
+              JobDetailDrawer.jsx DAN ArmadaDashboard.jsx — satu komponen"),
+              tapi Papan/JobCard ini justru satu-satunya tempat penugasan
+              driver+kendaraan yang tertinggal masih pakai <select> lama —
+              itulah bagian paling kentara laporan owner "masih tampilan
+              lama" di halaman ini. `size="sm"` karena kartu job di sini
+              lebih sempit (grid 2-3 kolom) daripada panel Dashboard. */}
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
+              <User className="h-3 w-3" /> Driver
+            </p>
+            <ChipPilih
+              items={drivers}
+              selectedId={driverId}
+              disabled={busy}
+              onPick={saveDriver}
+              kosongLabel="Belum ditugaskan"
+              size="sm"
+            />
+          </div>
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
+              <Truck className="h-3 w-3" /> Kendaraan
+            </p>
+            <ChipPilih
+              items={vehicleItems}
+              selectedId={vehicleId}
+              disabled={busy}
+              onPick={saveVehicle}
+              kosongLabel="Belum ada kendaraan"
+              size="sm"
+            />
+          </div>
           <div className="mt-3 flex items-center gap-2">
-            <User className="h-3.5 w-3.5 shrink-0 text-ink3" />
-            <select
-              value={driverId}
-              onChange={(e) => saveDriver(e.target.value)}
-              disabled={busy}
-              className="h-9 flex-1 rounded-lg border border-border bg-surface px-2 text-xs text-ink outline-none focus:border-accent"
-            >
-              <option value="">Belum ditugaskan</option>
-              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Truck className="h-3.5 w-3.5 shrink-0 text-ink3" />
-            <select
-              value={vehicleId}
-              onChange={(e) => saveVehicle(e.target.value)}
-              disabled={busy}
-              className="h-9 flex-1 rounded-lg border border-border bg-surface px-2 text-xs text-ink outline-none focus:border-accent"
-            >
-              <option value="">Belum ada kendaraan</option>
-              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber}</option>)}
-            </select>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-ink3" />
             <input
               value={address}
@@ -299,8 +316,12 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, veh
   return (
     <div className="mb-5">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-          <User className="h-4 w-4 text-ink3" /> {driverName}
+        {/* Avatar gradien (D-053) — konsisten dengan chip driver/helper di
+            ChipPilih/TugaskanDropdown di bawah/atasnya; ikon User polos di
+            sini jadi satu-satunya identitas driver TANPA warna, terasa
+            lepas dari sisa halaman begitu chip-nya sudah bergradien. */}
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <Avatar name={driverName} size="sm" gradient className="h-6 w-6 text-[10px]" /> {driverName}
         </h3>
         {hasRoute && summary && (
           summary.legsError ? (
@@ -573,7 +594,15 @@ export default function Armada() {
       {board && (
         <div className="mb-5">
           <WorkspaceHero
-            tone="emerald"
+            // "blue" (D-053, 4 September 2026) — SEBELUMNYA "emerald",
+            // warisan sebelum Delivery Hub mengunci biru sebagai identitas
+            // divisi (D-045..D-051, lihat styles/delivery-dark.css). Hijau
+            // di sini membuat Papan terasa seperti divisi lain (Bengkel=amber,
+            // Gudang=sky, Kendali=violet — pola warna per-divisi yang
+            // DISENGAJA di seluruh app), padahal ini SATU divisi yang sama
+            // dengan Dashboard. Cuma prop tone yang berubah, komponennya
+            // sendiri tetap dipakai bersama Bengkel/Gudang/Kendali.
+            tone="blue"
             title="Delivery command center"
             subtitle="Pantau jadwal pengambilan & pengiriman hari ini, penugasan driver, dan unit yang belum masuk job."
             health={

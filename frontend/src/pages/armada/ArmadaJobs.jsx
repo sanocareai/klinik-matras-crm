@@ -199,7 +199,17 @@ export default function ArmadaJobs() {
   if (view === "board") {
     return (
       <>
-        <div className="mx-auto w-full max-w-[1400px] px-4 pt-4 md:px-8">{toggle}</div>
+        {/* `justify-end` (D-053, 4 September 2026) — laporan owner: tombol
+            ganti mode "pindah dari kiri ke kanan" waktu ditoggle. Sebabnya:
+            di mode Daftar toggle ini duduk sebagai `actions` PageHeader (rata
+            KANAN, sejajar judul — lihat PageHeader di bawah), tapi di sini ia
+            dulu dirender polos tanpa pengaturan posisi apa pun, jadi jatuh ke
+            rata KIRI bawaan block-level. Disamakan rata kanan di sini supaya
+            posisi X toggle konsisten lintas mode — Y-nya tetap beda (di atas
+            header Armada.jsx sendiri, bukan sejajar judulnya) karena Papan
+            memakai header terpisah (lihat catatan komponen di atas), tapi
+            perpindahan kiri-kanan yang paling mengganggu sudah hilang. */}
+        <div className="mx-auto flex w-full max-w-[1400px] justify-end px-4 pt-4 md:px-8">{toggle}</div>
         <Armada />
         <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
       </>
