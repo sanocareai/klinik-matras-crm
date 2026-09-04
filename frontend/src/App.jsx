@@ -43,6 +43,7 @@ const ProductionQcQueue    = lazy(() => import("./pages/bengkel/ProductionQcQueu
 const ProductionMaterialUsage = lazy(() => import("./pages/bengkel/ProductionMaterialUsage.jsx"));
 const ProductionScopeRevisions = lazy(() => import("./pages/bengkel/ProductionScopeRevisions.jsx"));
 const ProductionLaporan = lazy(() => import("./pages/bengkel/ProductionLaporan.jsx"));
+const ProductionOrders  = lazy(() => import("./pages/bengkel/ProductionOrders.jsx"));
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
@@ -263,6 +264,9 @@ export default function App() {
                 Tampil kosong sampai unit pertama diadopsi ke engine — jujur,
                 bukan bug. */}
             <Route path="/bengkel/reports" element={<ProductionLaporan />} />
+            {/* Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
+                /armada/orders, lihat catatan lengkap di ProductionOrders.jsx. */}
+            <Route path="/bengkel/orders" element={<ProductionOrders />} />
             {/* ── DELIVERY & FULFILLMENT (Tahap 1) ─────────────────────────
                 /armada TETAP HIDUP sebagai redirect — masih dirujuk PORTALS di
                 backend (constants/permissions.js) dan divisionContent.js;

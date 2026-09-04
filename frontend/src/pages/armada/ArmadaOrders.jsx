@@ -13,11 +13,12 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmp
 import Avatar from "@/components/Avatar.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
-  orderStatusVariant, paymentStatusVariant,
+  paymentStatusVariant,
 } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
+import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 
 // Semua Order (D-052, 4 September 2026) — laporan owner: "gue mau yang di
 // delivery semua order yang ada di sales/crm ada juga di semua divisi agar
@@ -161,6 +162,21 @@ export default function ArmadaOrders() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Ubah status dari sini (D-086, 5 September 2026) — laporan owner: "sales
+  // suka lupa ubah status order, semua divisi harus bisa update status di
+  // workspace masing-masing". Backend: PATCH /orders/:id sekarang menerima
+  // DISPATCHER (ORDER_WRITE ditambahkan bareng perubahan ini, lihat
+  // permissions.js) — bukan cuma ADMIN/SALES seperti sebelumnya.
+  async function handleStatusChange(order, newStatus) {
+    if (newStatus === order.status) return;
+    try {
+      await api.updateOrder(order.id, { status: newStatus });
+      load();
+    } catch (err) {
+      alert("Gagal ubah status: " + err.message);
+    }
+  }
+
   const siapKirimCount = perStatus.find((s) => s.status === "READY")?.count || 0;
 
   return (
@@ -268,10 +284,8 @@ export default function ArmadaOrders() {
                       </span>
                     </TD>
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
-                    <TD>
-                      <Badge variant={orderStatusVariant(o.status)}>
-                        {ORDER_STATUS_LABELS[o.status] || o.status}
-                      </Badge>
+                    <TD onClick={(e) => e.stopPropagation()}>
+                      <StatusSelect order={o} onChange={handleStatusChange} />
                     </TD>
                     <TD><ProduksiChip stage={o.productionStage} /></TD>
                     <TD><JobChip label="Ambil" job={o.pickupJob} /></TD>
@@ -308,6 +322,7 @@ export default function ArmadaOrders() {
           onOpenChat={(ord) => { window.location.href = `/customers?id=${ord.customerId || ""}`; }}
           onPaymentRecorded={load}
           canEditLunas={false}
+          canEditStatus
         />
       )}
     </PageContainer>

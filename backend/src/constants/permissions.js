@@ -131,6 +131,13 @@ export const ROLE_PERMISSIONS = {
   PRODUCTION_LEAD: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE, P.UNIT_MATERIAL_WRITE, P.SCOPE_REVISION_PROPOSE,
     P.CUSTOMER_READ, P.ORDER_READ,
+    // ORDER_WRITE (5 September 2026, D-086 — laporan owner: "sales suka
+    // lupa ubah status order, semua divisi harus bisa update status order
+    // di workspace masing-masing"). Ini HANYA membuka jalur OVERRIDE MANUAL
+    // status order (lihat komentar PATCH /orders/:id) — TIDAK memberi akses
+    // ke field harga/pembayaran/dsb (itu tetap dijaga ORDER_PRICE_READ/
+    // PAYMENT_WRITE yang tidak diberikan di sini).
+    P.ORDER_WRITE,
     P.INVENTORY_READ,
     P.DASHBOARD_READ,
   ],
@@ -150,6 +157,12 @@ export const ROLE_PERMISSIONS = {
   DISPATCHER: [
     P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
     P.CUSTOMER_READ, P.CUSTOMER_PII_READ,
+    // ORDER_WRITE (5 September 2026, D-086) — sama alasannya dengan
+    // PRODUCTION_LEAD di atas: buka jalur override status order dari
+    // workspace Delivery, supaya dispatcher tidak perlu menunggu Sales
+    // update status "Pengambilan"/"Terkirim" yang mereka sendiri yang
+    // kerjakan secara fisik.
+    P.ORDER_WRITE,
     P.ORDER_READ, P.UNIT_READ,
   ],
 

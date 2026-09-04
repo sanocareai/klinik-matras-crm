@@ -8,6 +8,7 @@ import {
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
+import { StatusSelect } from "./StatusSelect.jsx";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -737,7 +738,7 @@ const TONE = {
   READY: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false }) {
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus = false }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
@@ -757,6 +758,20 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
       .finally(() => { if (!batal) setLoading(false); });
     return () => { batal = true; };
   }, [order]);
+
+  // Ubah status dari drawer ini (D-086) — dipakai halaman yang lewat
+  // canEditStatus={true} (Delivery/Produksi "Semua Order"). Reuse
+  // onPaymentRecorded sebagai callback refresh generik, pola SAMA dengan
+  // InvoicePanel/WarrantyPanel di atas (satu callback, banyak pemanggil).
+  async function handleStatusChange(ord, newStatus) {
+    if (newStatus === ord.status) return;
+    try {
+      await api.updateOrder(ord.id, { status: newStatus });
+      onPaymentRecorded?.();
+    } catch (err) {
+      alert("Gagal ubah status: " + err.message);
+    }
+  }
 
   // Esc menutup drawer — pola yang sama dengan drawer lain di app.
   useEffect(() => {
@@ -894,6 +909,18 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
           ) : (
           <>
+          {/* Ubah status lintas divisi (D-086, 5 September 2026) — HANYA
+              tampil kalau pemanggil lewat canEditStatus={true} (Delivery/
+              Produksi "Semua Order"). Sales tetap punya jalur override-nya
+              sendiri di OrderSection.jsx (Pelanggan/Inbox) — ini BUKAN
+              menggantikan itu, cuma membuka jalur yang sama untuk divisi
+              lain, supaya tidak perlu menunggu Sales yang update. */}
+          {canEditStatus && (
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl bg-surface p-2.5 shadow-card">
+              <p className="text-[11.5px] font-medium text-ink3">Ubah status</p>
+              <StatusSelect order={o} onChange={handleStatusChange} />
+            </div>
+          )}
           {loading ? (
             <div className="flex flex-col gap-2">
               {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}

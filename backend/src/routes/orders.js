@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { rolesOf } from "../middleware/authorize.js";
+import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -146,7 +146,16 @@ async function guardOrderLocked(req, res, orderId, aksi) {
 // kapan/kenapa lewat statusOverrideNote) — dipakai untuk kasus di luar pola
 // normal (order dibatalkan, dst). Kirim `releaseStatusOverride: true` untuk
 // melepas kunci dan kembali ke hitungan otomatis.
-orderRouter.patch("/:id", async (req, res) => {
+//
+// ⚠️ requirePermission(P.ORDER_WRITE) DITAMBAHKAN 5 September 2026 (D-086) —
+// SEBELUM ini endpoint hanya dijaga requireAuth (siapa pun yang login bisa
+// PATCH order APA PUN, termasuk DRIVER/WAREHOUSE yang jelas tidak seharusnya).
+// Ditemukan saat memberi DISPATCHER & PRODUCTION_LEAD akses override status
+// lintas divisi — celah lama ini ditutup di saat yang sama, bukan dibiarkan
+// menyebar ke role baru. Guard ini HANYA untuk route ini (bukan seluruh
+// orderRouter) — endpoint lain di file ini belum diaudit, jangan asumsikan
+// semuanya sudah aman.
+orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => {
   const { status, statusOverrideNote, releaseStatusOverride, paymentStatus, quantity, notes, orderNumber,
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,

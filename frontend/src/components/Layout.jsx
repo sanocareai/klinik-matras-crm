@@ -149,6 +149,11 @@ const DIVISIONS = {
         section: "PRODUCTION",
         items: [
           { to: "/bengkel",                 label: "Papan Produksi",  Icon: ClipboardList },
+          // Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
+          // "Semua Order" Delivery (lihat catatan D-052 di atas) — laporan
+          // owner: sales suka lupa update status, semua divisi harus bisa
+          // pantau & ubah status order di workspace masing-masing.
+          { to: "/bengkel/orders",          label: "Semua Order",     Icon: ClipboardList },
           { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
           { to: "/bengkel/qc",              label: "QC Inspection",   Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
