@@ -32,8 +32,9 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // difilter ke belakang) TANPA meneruskan itu — jadi warisan default "cuma
 // sampai hari ini" ikut kebawa ke tempat yang salah, tanggal besok/lusa
 // tidak bisa diklik sama sekali. `allowFuture` (default true DI SINI,
-// beda dari default CalendarMonth) membuka itu; ArmadaResources.jsx
-// (Ringkasan Biaya, laporan historis) SENGAJA pasang `allowFuture={false}`.
+// beda dari default CalendarMonth) membuka itu — dipakai eksplisit
+// `allowFuture={false}` di tempat yang murni laporan historis (job/rute
+// tidak pernah punya tanggal masa depan yang relevan ditampilkan di situ).
 const MAKS_TANPA_BATAS = todayWIB().add(2, "year").format("YYYY-MM-DD");
 // Animasi buka SEKALIGUS tutup (31 Agustus 2026, laporan owner: perpindahan
 // "sangat patah"). Popover ini BUKAN Radix (dibangun manual — CalendarMonth

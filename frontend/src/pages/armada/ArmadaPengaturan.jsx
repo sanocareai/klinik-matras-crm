@@ -9,8 +9,6 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import DateRangePicker from "@/components/DateRangePicker.jsx";
-import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
@@ -29,16 +27,34 @@ const VEHICLE_STATUS_TONE = {
 };
 import { formatRupiah } from "@/utils/format.js";
 
-// Driver & Armada — Delivery Tahap 3, diperluas D-035 (22 Agustus 2026).
+// Pengaturan Delivery — Delivery Tahap 3, diperluas D-035 (22 Agustus 2026).
+// SEBELUMNYA halaman "Driver & Armada" (route /armada/resources, di sidebar
+// bagian OPERASIONAL, 3 tab termasuk "Ringkasan Biaya").
+//
+// DIRESTRUKTUR jadi "Pengaturan Delivery" (D-084, 5 September 2026) —
+// laporan owner meninjau ulang: "driver dan armada dibuat di pengaturan
+// khusus delivery?". Alasan: dua tab di sini (Driver, Armada) itu data
+// REFERENSI/manajemen (siapa driver-nya, kendaraan apa saja yang ada,
+// dokumennya kapan habis) — beda kelas dari menu OPERASIONAL harian
+// (Jadwal & Penugasan, Route Planner, dst) yang isinya alur kerja
+// tanggal-demi-tanggal. Sekarang jadi section sidebar sendiri "PENGATURAN
+// DELIVERY", route /armada/pengaturan — pola PERSIS sama dengan
+// "Pengaturan CRM" (/pengaturan-sales) di sidebar Sales, yang sudah lebih
+// dulu memisahkan pengaturan divisi dari operasional hariannya.
+//
+// Tab ke-3 "Ringkasan Biaya" DIPINDAH KELUAR ke ArmadaDeliveryReport.jsx
+// (Laporan Delivery) — itu laporan (angka agregat per rentang tanggal),
+// bukan data manajemen, jadi lebih pas satu tempat dengan laporan lain
+// (lihat catatan D-084 di sana). Cuma 2 tab tersisa di sini sekarang.
 //
 // ⚠️ TAB DRIVER SENGAJA TIPIS — lihat catatan lama di bawah, tidak berubah.
 //
-// D-035 menambah 3 hal ke TAB ARMADA: (1) detail kendaraan lengkap + dokumen
-// (STNK/pajak/KIR/asuransi) lewat modal Detail per baris, (2) pencatatan
-// biaya/servis/insiden di dalam modal yang sama, (3) tab baru "Ringkasan
-// Biaya" yang menjawab "mobil/supir mana lebih hemat" dari data yang sudah
-// masuk. Lihat komentar panjang di backend/prisma/schema.prisma untuk kenapa
-// km/liter (bukan cuma rupiah) yang jadi metrik utamanya.
+// D-035 menambah ke TAB ARMADA: detail kendaraan lengkap + dokumen
+// (STNK/pajak/KIR/asuransi) lewat modal Detail per baris, plus pencatatan
+// biaya/servis/insiden di dalam modal yang sama. Lihat komentar panjang di
+// backend/prisma/schema.prisma untuk kenapa km/liter (bukan cuma rupiah)
+// yang jadi metrik utama efisiensi (sekarang ditampilkan di Laporan
+// Delivery, bukan di sini — logika hitungnya tetap di backend yang sama).
 //
 // FOTO STRUK/BUKTI SENGAJA BELUM ADA di form-form di bawah — upload file
 // butuh komponen terpisah (pola sama dengan foto job driver) dan ditunda
@@ -48,7 +64,6 @@ import { formatRupiah } from "@/utils/format.js";
 const TABS = [
   { key: "driver",  label: "Driver",  Icon: User },
   { key: "armada",  label: "Armada",  Icon: TruckIcon },
-  { key: "biaya",   label: "Ringkasan Biaya", Icon: Wallet },
 ];
 
 const EXPENSE_CATEGORIES = {
@@ -146,7 +161,20 @@ function VehicleFormModal({ open, onOpenChange, onSaved }) {
 
 // ── Sub-tab INFO: identitas + dokumen kendaraan ─────────────────────────
 function InfoTab({ vehicle, drivers, onSaved }) {
+  // Identitas dasar (D-084, 5 September 2026) — laporan owner: "nama mobil
+  // gabisa di edit". BUKAN keterbatasan desain — PATCH /vehicles/:id di
+  // backend SUDAH menerima plateNumber/type/capacitySlots/mileageKm/
+  // nextServiceDate/notes sejak awal, tapi form ini (satu-satunya jalur
+  // edit setelah kendaraan dibuat — VehicleFormModal cuma untuk BUAT baru)
+  // tidak pernah menyertakan field-field itu, jadi diam-diam tidak bisa
+  // diubah lagi setelah "Tambah Kendaraan". Field ini ditambahkan di
+  // BAGIAN PALING ATAS form (bukan dicampur dengan merk/model dst di
+  // bawah) — inilah identitas UTAMA kendaraan (yang tampil di judul modal
+  // & seluruh tabel/dropdown lain di app), sisanya detail pelengkap.
   const [form, setForm] = useState(() => ({
+    plateNumber: vehicle.plateNumber || "", type: vehicle.type || "",
+    capacitySlots: vehicle.capacitySlots ?? "", mileageKm: vehicle.mileageKm ?? "",
+    nextServiceDate: vehicle.nextServiceDate?.slice(0, 10) || "", notes: vehicle.notes || "",
     brand: vehicle.brand || "", model: vehicle.model || "", year: vehicle.year || "",
     color: vehicle.color || "", chassisNumber: vehicle.chassisNumber || "", engineNumber: vehicle.engineNumber || "",
     stnkNumber: vehicle.stnkNumber || "", stnkExpiry: vehicle.stnkExpiry?.slice(0, 10) || "",
@@ -156,19 +184,31 @@ function InfoTab({ vehicle, drivers, onSaved }) {
   }));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit(e) {
     e.preventDefault();
+    if (!form.plateNumber.trim() || !form.type.trim()) {
+      setError("Nomor polisi dan tipe kendaraan wajib diisi");
+      return;
+    }
     setSaving(true);
     setSaved(false);
+    setError("");
     try {
       await api.updateVehicle(vehicle.id, {
         ...form,
+        capacitySlots: form.capacitySlots === "" ? undefined : Number(form.capacitySlots),
+        mileageKm: form.mileageKm === "" ? null : Number(form.mileageKm),
+        nextServiceDate: form.nextServiceDate || null,
+        notes: form.notes || null,
         year: form.year ? Number(form.year) : null,
         picDriverId: form.picDriverId || null,
       });
       setSaved(true);
       onSaved();
+    } catch (err) {
+      setError(err.message);
     } finally {
       setSaving(false);
     }
@@ -179,12 +219,24 @@ function InfoTab({ vehicle, drivers, onSaved }) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Merk"><Input value={form.brand} onChange={set("brand")} placeholder="Mitsubishi" /></Field>
-        <Field label="Model"><Input value={form.model} onChange={set("model")} placeholder="L300" /></Field>
-        <Field label="Tahun"><Input type="number" value={form.year} onChange={set("year")} placeholder="2022" /></Field>
-        <Field label="Warna"><Input value={form.color} onChange={set("color")} /></Field>
-        <Field label="No. Rangka"><Input value={form.chassisNumber} onChange={set("chassisNumber")} /></Field>
-        <Field label="No. Mesin"><Input value={form.engineNumber} onChange={set("engineNumber")} /></Field>
+        <Field label="Nomor Polisi" required><Input value={form.plateNumber} onChange={set("plateNumber")} placeholder="B 1234 XYZ" /></Field>
+        <Field label="Tipe Kendaraan" required><Input value={form.type} onChange={set("type")} placeholder="Box / Pickup / Van" /></Field>
+        <Field label="Kapasitas (slot unit)"><Input type="number" min="1" value={form.capacitySlots} onChange={set("capacitySlots")} /></Field>
+        <Field label="Odometer Sekarang (km)"><Input type="number" min="0" value={form.mileageKm} onChange={set("mileageKm")} /></Field>
+        <Field label="Servis Berikutnya"><input type="date" className={inputCls} value={form.nextServiceDate} onChange={set("nextServiceDate")} /></Field>
+        <Field label="Catatan" className="col-span-2"><Input value={form.notes} onChange={set("notes")} placeholder="Opsional" /></Field>
+      </div>
+
+      <div className="border-t border-line pt-4">
+        <h4 className="mb-3 text-[12.5px] font-bold text-ink">Detail Pelengkap</h4>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Merk"><Input value={form.brand} onChange={set("brand")} placeholder="Mitsubishi" /></Field>
+          <Field label="Model"><Input value={form.model} onChange={set("model")} placeholder="L300" /></Field>
+          <Field label="Tahun"><Input type="number" value={form.year} onChange={set("year")} placeholder="2022" /></Field>
+          <Field label="Warna"><Input value={form.color} onChange={set("color")} /></Field>
+          <Field label="No. Rangka"><Input value={form.chassisNumber} onChange={set("chassisNumber")} /></Field>
+          <Field label="No. Mesin"><Input value={form.engineNumber} onChange={set("engineNumber")} /></Field>
+        </div>
       </div>
 
       <div className="border-t border-line pt-4">
@@ -208,6 +260,7 @@ function InfoTab({ vehicle, drivers, onSaved }) {
         </Field>
       </div>
 
+      {error && <p className="text-[12px] text-red">{error}</p>}
       <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
         {saved && <span className="text-[12px] text-green">Tersimpan</span>}
         <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : "Simpan Perubahan"}</Button>
@@ -806,7 +859,17 @@ function VehicleTab() {
   // membuka modal-nya — supaya benar-benar SATU klik dari luar halaman ini,
   // bukan cuma mendarat di tab yang benar lalu masih harus klik lagi.
   const [formOpen, setFormOpen] = useState(() => new URLSearchParams(window.location.search).get("action") === "tambah");
-  const [detailVehicle, setDetailVehicle] = useState(null);
+  // ID saja, BUKAN objek kendaraan (D-084) — sebelumnya menyimpan objek
+  // snapshot dari baris tabel, jadi setelah Simpan Perubahan di InfoTab
+  // (yang memanggil `load()` lalu mengganti `vehicles`), judul modal &
+  // field-field lain di sini tetap menampilkan data LAMA sampai modal
+  // ditutup-buka ulang — laporan owner "gabisa diedit" sebagian juga
+  // gara-gara ini: field-nya SEBENARNYA berhasil tersimpan (toast
+  // "Tersimpan" muncul), tapi modalnya sendiri tidak kelihatan berubah,
+  // terasa seperti tidak ngefek. Diturunkan dari `vehicles` di bawah —
+  // begitu `vehicles` refresh, modal ikut menunjukkan data terbaru.
+  const [detailVehicleId, setDetailVehicleId] = useState(null);
+  const detailVehicle = vehicles?.find((v) => v.id === detailVehicleId) || null;
 
   const load = useCallback(() => {
     setLoading(true);
@@ -895,7 +958,7 @@ function VehicleTab() {
                         ) : <span className="text-ink3">—</span>}
                       </TD>
                       <TD>
-                        <button type="button" className="text-[11.5px] font-semibold text-accent hover:underline" onClick={() => setDetailVehicle(v)}>
+                        <button type="button" className="text-[11.5px] font-semibold text-accent hover:underline" onClick={() => setDetailVehicleId(v.id)}>
                           Detail
                         </button>
                       </TD>
@@ -909,93 +972,8 @@ function VehicleTab() {
       </Card>
 
       <VehicleFormModal open={formOpen} onOpenChange={setFormOpen} onSaved={load} />
-      <VehicleDetailModal vehicle={detailVehicle} drivers={drivers} onOpenChange={(o) => !o && setDetailVehicle(null)} onSaved={load} />
+      <VehicleDetailModal vehicle={detailVehicle} drivers={drivers} onOpenChange={(o) => !o && setDetailVehicleId(null)} onSaved={load} />
     </>
-  );
-}
-
-// ── Tab RINGKASAN BIAYA — jawaban "mobil/supir mana lebih hemat" ─────────
-function RingkasanBiayaTab() {
-  const [data, setData] = useState(null);
-  // Date range picker (D-082, 5 September 2026) — laporan owner: "dashboard,
-  // laporan, semua yang ada skema tanggal buat tanggalnya sama konsisten".
-  // DUA DatePicker terpisah (Dari/Sampai) diganti SATU DateRangePicker —
-  // skema yang sama dengan Dashboard/Laporan/Route Planner, bukan pasangan
-  // field tanggal manual lagi. Default "Semua" (bukan "today") — laporan
-  // BBM/servis paling wajar dilihat tanpa batas tanggal dulu, sama seperti
-  // perilaku lama (from/to kosong = tanpa filter tanggal ke API).
-  const [range, setRange] = useState(() => makeRange("all_time"));
-
-  const load = useCallback(() => {
-    api.getFleetSummary(toApiParams(range)).then(setData).catch(() => setData({ perKendaraan: [], perSupir: [] }));
-  }, [range]);
-  useEffect(() => { load(); }, [load]);
-
-  const EfisiensiCell = ({ e }) => e.alasanKosong ? (
-    <span className="text-[11px] italic text-ink3" title={e.alasanKosong}>Belum cukup data</span>
-  ) : (
-    <span className="font-semibold text-ink">{e.kmPerLiter} km/L <span className="font-normal text-ink3">· {formatRupiah(e.rupiahPerKm)}/km</span></span>
-  );
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <DateRangePicker value={range} onChange={setRange} />
-      </div>
-
-      <Card className="overflow-hidden">
-        <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Per Kendaraan</h3></div>
-        {!data ? <div className="p-4"><TableSkeletonRows rows={3} cols={5} /></div> : data.perKendaraan.length === 0 ? (
-          <EmptyState icon={TruckIcon} title="Belum ada kendaraan aktif" />
-        ) : (
-          <TableWrap>
-            <Table>
-              <THead><TR><TH>Kendaraan</TH><TH>PIC</TH><TH>Efisiensi</TH><TH>Total Biaya</TH><TH>Servis</TH><TH>Insiden</TH></TR></THead>
-              <TBody>
-                {data.perKendaraan.map((v) => (
-                  <TR key={v.id}>
-                    <TD className="font-semibold text-ink">{v.plateNumber}</TD>
-                    <TD className="text-ink2">{v.picDriver?.name || "—"}</TD>
-                    <TD><EfisiensiCell e={v.efisiensi} /></TD>
-                    <TD numeric>{formatRupiah(v.totalBiaya)}</TD>
-                    <TD numeric className="text-ink2">{formatRupiah(v.biayaServis)}</TD>
-                    <TD numeric className={v.jumlahInsiden > 0 ? "font-semibold text-red" : "text-ink3"}>{v.jumlahInsiden}</TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
-
-      <Card className="overflow-hidden">
-        <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Per Supir</h3></div>
-        {!data ? <div className="p-4"><TableSkeletonRows rows={3} cols={5} /></div> : data.perSupir.length === 0 ? (
-          <EmptyState icon={User} title="Belum ada catatan biaya/insiden per supir" description="Muncul begitu ada biaya atau insiden yang ditautkan ke supir." />
-        ) : (
-          <TableWrap>
-            <Table>
-              <THead><TR><TH>Supir</TH><TH>Efisiensi</TH><TH>Total Biaya</TH><TH>Insiden</TH><TH>Salah Sendiri</TH></TR></THead>
-              <TBody>
-                {data.perSupir.map((s) => (
-                  <TR key={s.driverId}>
-                    <TD className="font-semibold text-ink">{s.name}</TD>
-                    <TD><EfisiensiCell e={s.efisiensi} /></TD>
-                    <TD numeric>{formatRupiah(s.totalBiaya)}</TD>
-                    <TD numeric className={s.jumlahInsiden > 0 ? "font-semibold text-red" : "text-ink3"}>{s.jumlahInsiden}</TD>
-                    <TD numeric className="text-ink3">{s.insidenSalahSendiri}</TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
-
-      <p className="text-[11px] leading-relaxed text-ink3">
-        km/liter dihitung dari selisih odometer tertinggi−terendah dibagi total liter periode ini (minimal 2 pengisian BBM ber-odometer). Rp/km ikut naik-turun mengikuti harga BBM — km/liter yang murni mengukur cara bawa mobil.
-      </p>
-    </div>
   );
 }
 
@@ -1008,12 +986,12 @@ function tabAwalDariUrl() {
   return TABS.some((x) => x.key === t) ? t : "driver";
 }
 
-export default function ArmadaResources() {
+export default function ArmadaPengaturan() {
   const [tab, setTab] = useState(tabAwalDariUrl);
 
   return (
     <PageContainer>
-      <PageHeader title="Driver &amp; Armada" subtitle="Kelola data driver, kendaraan, dan biaya operasional pengiriman." />
+      <PageHeader title="Pengaturan Delivery" subtitle="Kelola data driver &amp; kendaraan — data referensi, bukan alur kerja harian." />
       <PageBody>
         <div role="tablist" aria-label="Pilih tab" className="flex gap-1 border-b border-line pb-2">
           {TABS.map((t) => (
@@ -1031,7 +1009,7 @@ export default function ArmadaResources() {
           ))}
         </div>
 
-        {tab === "driver" ? <DriverTab /> : tab === "armada" ? <VehicleTab /> : <RingkasanBiayaTab />}
+        {tab === "driver" ? <DriverTab /> : <VehicleTab />}
       </PageBody>
     </PageContainer>
   );

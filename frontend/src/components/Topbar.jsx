@@ -39,11 +39,14 @@ const ROUTE_LABELS = {
   "/armada/orders":    ["Delivery", "Semua Order"],
   "/armada/routes":    ["Delivery", "Route Planner"],
   "/armada/tracking":  ["Delivery", "Live Tracking"],
-  "/armada/resources": ["Delivery", "Driver & Armada"],
   "/armada/pod":       ["Delivery", "Proof of Delivery"],
   "/armada/issues":    ["Delivery", "Kendala & Reschedule"],
   "/armada/returns":   ["Delivery", "Retur"],
   "/armada/reports":   ["Delivery", "Laporan"],
+  // /armada/resources → /armada/pengaturan (D-084, 5 September 2026) —
+  // halaman "Driver & Armada" berganti nama & rute jadi "Pengaturan
+  // Delivery". Route lama TIDAK di-redirect (lihat catatan di App.jsx).
+  "/armada/pengaturan": ["Delivery", "Pengaturan"],
   // Notification Center berdiri di atas semua workspace, seperti Main Hub —
   // jadi remahnya tunggal, tidak bersarang di bawah divisi mana pun.
   "/notifications": ["Notifikasi"],

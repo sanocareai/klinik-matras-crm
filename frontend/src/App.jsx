@@ -48,7 +48,7 @@ const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
 const ArmadaOrders      = lazy(() => import("./pages/armada/ArmadaOrders.jsx"));
 const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
-const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"));
+const ArmadaPengaturan  = lazy(() => import("./pages/armada/ArmadaPengaturan.jsx"));
 const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
 const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx"));
 const ArmadaIssues      = lazy(() => import("./pages/armada/ArmadaIssues.jsx"));
@@ -308,9 +308,15 @@ export default function App() {
                 features/armada/data/trackingMock.js. Bukan "belum sempat
                 dibuat nyata": driver belum pernah mengirim GPS sungguhan. */}
             <Route path="/armada/tracking" element={<ArmadaTracking />} />
-            {/* Tab Armada: data nyata. Tab Driver: tipis, lihat catatan
-                di ArmadaResources.jsx soal field yang belum ada di User. */}
-            <Route path="/armada/resources" element={<ArmadaResources />} />
+            {/* Pengaturan Delivery (D-084, 5 September 2026) — sebelumnya
+                "/armada/resources" ("Driver & Armada", OPERASIONAL). Route
+                lama TIDAK di-redirect — halaman ini baru, bukan level
+                penting yang butuh menjaga link lama tetap hidup, dan
+                shortcut "+Tambah Kendaraan" dari Dashboard sudah diperbarui
+                ke path baru (lihat ArmadaDashboard.jsx). Tab Armada: data
+                nyata. Tab Driver: tipis, lihat catatan di
+                ArmadaPengaturan.jsx soal field yang belum ada di User. */}
+            <Route path="/armada/pengaturan" element={<ArmadaPengaturan />} />
             {/* Sisi verifikasi atas foto/tanda tangan yang SUDAH diunggah
                 driver sejak Phase 2 — data nyata, lihat ArmadaPod.jsx. */}
             <Route path="/armada/pod" element={<ArmadaPod />} />

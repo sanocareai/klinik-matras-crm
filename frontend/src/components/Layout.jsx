@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
-  Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
+  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check,
 } from "lucide-react";
@@ -247,12 +247,6 @@ const DIVISIONS = {
         ],
       },
       {
-        section: "ARMADA",
-        items: [
-          { to: "/armada/resources", label: "Driver & Armada",     Icon: Truck },
-        ],
-      },
-      {
         section: "DOKUMEN & KENDALA",
         items: [
           { to: "/armada/pod",       label: "Proof of Delivery",   Icon: ClipboardCheck },
@@ -264,6 +258,23 @@ const DIVISIONS = {
         section: "LAPORAN",
         items: [
           { to: "/armada/reports",   label: "Laporan",             Icon: BarChart3 },
+        ],
+      },
+      // Section "ARMADA" (cuma 1 item, "Driver & Armada") DIGANTI section ini
+      // (D-084, 5 September 2026) — laporan owner meninjau ulang halaman itu:
+      // "driver dan armada dibuat di pengaturan khusus delivery?". Driver &
+      // Armada itu data REFERENSI/manajemen (siapa driver-nya, kendaraan apa
+      // saja), beda kelas dari menu OPERASIONAL harian di atas — dipindah ke
+      // sini, pola PERSIS SAMA dengan "PENGATURAN CRM" (/pengaturan-sales) di
+      // sidebar Growth, section terpisah paling bawah untuk pengaturan
+      // divisi (bukan lintas-divisi seperti /pengaturan Hub). Halaman itu
+      // sendiri berganti nama & rute: ArmadaResources.jsx → ArmadaPengaturan.jsx,
+      // /armada/resources → /armada/pengaturan (route lama TIDAK di-redirect,
+      // lihat catatan di App.jsx).
+      {
+        section: "PENGATURAN DELIVERY",
+        items: [
+          { to: "/armada/pengaturan", label: "Pengaturan",         Icon: Settings },
         ],
       },
     ],

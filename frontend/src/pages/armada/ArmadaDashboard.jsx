@@ -314,10 +314,12 @@ export default function ArmadaDashboard() {
             <DateRangePicker value={range} onChange={setRange} />
             {/* Shortcut ke tab Armada (bukan cuma Jadwal & Penugasan) — dispatcher
                 yang baru sadar kendaraannya belum lengkap (lihat panel "Butuh
-                Perhatian" di bawah) sebelumnya harus buka Driver & Armada lalu
-                klik tab Armada sendiri. ?tab=armada dibaca ArmadaResources.jsx
-                supaya langsung mendarat di tab yang benar. */}
-            <Button size="sm" variant="ghost" onClick={() => navigate("/armada/resources?tab=armada&action=tambah")}>
+                Perhatian" di bawah) sebelumnya harus buka Pengaturan Delivery
+                lalu klik tab Armada sendiri. ?tab=armada dibaca
+                ArmadaPengaturan.jsx supaya langsung mendarat di tab yang
+                benar. Path pindah dari /armada/resources ke /armada/pengaturan
+                (D-084) — halaman ini direstruktur jadi "Pengaturan Delivery". */}
+            <Button size="sm" variant="ghost" onClick={() => navigate("/armada/pengaturan?tab=armada&action=tambah")}>
               <TruckIcon size={14} /> Tambah Kendaraan
             </Button>
             <Button size="sm" onClick={() => navigate("/armada/jobs")}>
