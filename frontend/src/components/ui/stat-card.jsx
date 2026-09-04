@@ -1,6 +1,7 @@
 import React from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import { useCountUp } from "@/hooks/useCountUp.js";
 import InfoTooltip from "./info-tooltip.jsx";
 
 // ─── STAT CARD (DS v2.2) — kartu KPI berisian penuh ──────────────────────────
@@ -24,8 +25,22 @@ const SKIN = {
 export default function StatCard({
   label, value, icon: Icon, depth = 1, delta, deltaSuffix, note, tooltip,
   onClick, className,
+  // "numericValue" + "format" (D-095) — OPSIONAL, murni tambahan: dipakai
+  // untuk animasi hitung-naik (hooks/useCountUp.js, SUDAH dipakai HeroMetric
+  // Card/MetricCard/KpiCard Laporan/Pipeline.jsx — bukan pola baru, cuma
+  // belum pernah disambungkan ke StatCard). `value` (string sudah diformat,
+  // API LAMA) TETAP wajib & tetap dipakai sebagai fallback kalau salah satu
+  // dari dua prop baru ini tidak dikirim — konsumen lain (Kendali.jsx,
+  // ProductionLaporan.jsx) TIDAK mengirim keduanya, jadi perilakunya di sana
+  // 100% tidak berubah. useCountUp WAJIB dipanggil unconditional (Rules of
+  // Hooks) — aman: hook-nya sendiri sudah fallback ke 0 kalau target bukan
+  // angka valid, dan hasil animasinya cuma DIPAKAI kalau numericValue+format
+  // ada (lihat displayValue di bawah).
+  numericValue, format,
 }) {
   const s = SKIN[depth] || SKIN[1];
+  const animated = useCountUp(numericValue);
+  const displayValue = (numericValue != null && format) ? format(animated) : value;
   const adaDelta = delta != null && Number.isFinite(delta);
   const naik = adaDelta && delta >= 0;
   const Arrow = naik ? TrendingUp : TrendingDown;
@@ -70,7 +85,7 @@ export default function StatCard({
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
     >
-      <span className={cn("stat-card-icon inline-flex h-10 w-10 items-center justify-center rounded-chip", s.icon)}>
+      <span className={cn("inline-flex h-10 w-10 items-center justify-center rounded-chip", s.icon)}>
         {Icon && <Icon size={19} strokeWidth={2} />}
       </span>
 
@@ -93,7 +108,7 @@ export default function StatCard({
             delivery-dark.css §9 dan delivery-light.css §9 yang sengaja
             tidak punya aturan untuk kelas ini di mode terang). */}
         <p className={cn("dh-figure mt-1 text-[30px] font-bold leading-none tracking-[-0.02em] tabular-nums", s.value)}>
-          {value}
+          {displayValue}
         </p>
       </div>
 
