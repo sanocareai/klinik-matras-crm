@@ -7,6 +7,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.j
 import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
 import { useNotificationStore, badgeText } from "@/features/notifications/notificationStore.js";
 import Avatar from "./Avatar.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 
 const ROUTE_LABELS = {
   // Tanpa entri ini breadcrumb jatuh ke fallback `pathname.replace("/","")`
@@ -172,6 +173,12 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             per-divisi lewat CSS scoped (lihat styles/delivery-dark.css),
             TANPA mengubah tampilannya di divisi lain. */}
         <span className="topbar-date hidden text-[13px] text-ink3 lg:block">{formatTanggalIndo()}</span>
+
+        {/* Toggle terang/gelap (D-064) — SATU komponen di Topbar (dipakai
+            semua divisi), jadi otomatis muncul di semua workspace tanpa
+            perlu ditambah per halaman. Ditaruh SEBELUM lonceng notifikasi
+            sesuai permintaan owner ("di samping icon notifikasi"). */}
+        <ThemeToggle className="mx-0.5" />
 
         {/* LONCENG — MEMBUKA DRAWER, TIDAK BERNAVIGASI (ketentuan #1/#2).
             Sebelum refactor 2 Agustus 2026 tombol ini `navigate("/inbox")`
