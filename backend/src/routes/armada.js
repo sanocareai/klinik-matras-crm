@@ -28,7 +28,7 @@ import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
-import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS } from "../services/jobStatus.js";
+import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
@@ -384,6 +384,15 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         // atau SCHEDULED sendiri — endpoint ini tidak menebak maksudnya.
         ...(routeId === "none" ? { routeId: null } : routeId ? { routeId } : {}),
         ...(scheduledDate !== undefined && { scheduledDate }),
+        // Job usang (D-064) — order induknya sudah DELIVERED/CANCELLED
+        // lewat jalur lain, job-nya sendiri tidak pernah disentuh sama
+        // sekali. Laporan owner: order "Hotel Discovery" sudah Terkirim di
+        // Sales CRM, tapi tetap nongkrong selamanya di "Perlu Dijadwalkan"
+        // (Dashboard) & "Belum Masuk Rute" (Route Planner). TIDAK
+        // dikondisikan ke `status` yang diminta pemanggil — bahkan yang
+        // eksplisit minta status=UNSCHEDULED (persis kasus Dashboard) tetap
+        // harus menyaring ini, itu SUMBER bug-nya.
+        NOT: STALE_UNSCHEDULED_JOB,
         ...(cari && {
           OR: [
             { addressText: { contains: cari, mode: "insensitive" } },
@@ -1462,6 +1471,13 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
       where: {
         type,
         ...(targetDate ? { OR: [{ scheduledDate: targetDate }, { scheduledDate: null }] } : { scheduledDate: null }),
+        // Job usang (D-064, lihat catatan lengkap di services/jobStatus.js)
+        // — order induknya sudah DELIVERED/CANCELLED lewat jalur lain,
+        // job-nya sendiri tidak pernah disentuh sama sekali (masih
+        // UNSCHEDULED). Laporan owner: order lama seperti "Hotel Discovery"
+        // yang sudah Terkirim di Sales CRM tetap nangkring selamanya di
+        // Papan sebagai "Belum Dijadwalkan"/"Belum ada driver".
+        NOT: STALE_UNSCHEDULED_JOB,
       },
       include: jobInclude,
       orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
