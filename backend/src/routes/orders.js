@@ -324,6 +324,21 @@ orderRouter.patch("/:id", async (req, res) => {
             where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED"] } },
             data: { status: "DELIVERED" },
           });
+          // Job yang belum jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak lagi
+          // punya alasan untuk ada — order ini baru saja ditutup manual lewat
+          // dropdown ini (biasanya servis di tempat/LAYANAN yang tidak lewat
+          // alur unit fisik), bukan lewat Job selesai di Armada. Tanpa baris
+          // ini job "hantu" itu tetap nangkring di board Armada/Route Planner
+          // seolah masih perlu dikerjakan. Temuan nyata 4 September 2026: 13
+          // job berstatus ASSIGNED nempel di rute aktif (driver sungguhan,
+          // tanggal sungguhan) untuk order yang di Sales CRM sudah "Terkirim"
+          // — guard unitEnRoute di atas cuma menjaring EN_ROUTE/ARRIVED, tidak
+          // menjaring ASSIGNED, jadi sales bisa lolos menutup order sementara
+          // job pickup-nya masih tergantung. Reuse fungsi yang sama dengan
+          // cabang CANCELLED di atas — job yang SUDAH berangkat (EN_ROUTE/
+          // ARRIVED) tetap diblokir duluan oleh guard di atas, tidak pernah
+          // sampai ke baris ini.
+          await hapusJobBelumJalan(tx, updated.id);
         }
       }
 
