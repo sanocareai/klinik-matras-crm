@@ -35,6 +35,7 @@ const ROUTE_LABELS = {
   // ke Main Hub ditangani logika `arr.length > 1` di bawah.
   "/armada/dashboard": ["Delivery", "Dashboard"],
   "/armada/jobs":      ["Delivery", "Jadwal & Penugasan"],
+  "/armada/orders":    ["Delivery", "Semua Order"],
   "/armada/routes":    ["Delivery", "Route Planner"],
   "/armada/tracking":  ["Delivery", "Live Tracking"],
   "/armada/resources": ["Delivery", "Driver & Armada"],

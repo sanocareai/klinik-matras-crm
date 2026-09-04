@@ -232,6 +232,15 @@ const DIVISIONS = {
         items: [
           { to: "/armada/dashboard", label: "Dashboard",           Icon: LayoutDashboard },
           { to: "/armada/jobs",      label: "Jadwal & Penugasan",  Icon: CalendarClock },
+          // Semua Order (D-052, 4 September 2026) — laporan owner: dispatcher
+          // perlu bisa pantau SELURUH order Sales CRM, bukan cuma yang sudah
+          // punya Job. `hideForLeaderDriver`: LEADER_DRIVER (D-042) SENGAJA
+          // tidak dapat CUSTOMER_READ/ORDER_READ (lihat backend
+          // constants/permissions.js) — visibilitas CRM lintas-order di luar
+          // lingkup "dari sisi driver" yang diminta untuk peran itu, jadi
+          // menunya disembunyikan di sini juga, bukan cuma dibiarkan
+          // terlihat tapi gagal saat diklik.
+          { to: "/armada/orders",    label: "Semua Order",         Icon: ClipboardList, hideForLeaderDriver: true },
           { to: "/armada/routes",    label: "Route Planner",       Icon: Route },
           { to: "/armada/tracking",  label: "Live Tracking",       Icon: MapPin },
         ],
@@ -420,6 +429,20 @@ export default function Layout({ user, onLogout, children }) {
     // HELPER (D-037) ikut disederhanakan sidebarnya sama seperti DRIVER.
     // LEADER_DRIVER (D-042) — lihat catatan sama di App.jsx.
     const driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
+    // LEADER_DRIVER murni (tanpa ADMIN/DISPATCHER) — dipakai item bertanda
+    // `hideForLeaderDriver` (D-052, lihat "Semua Order" di sections armada
+    // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
+    // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
+    const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    if (divisionKey === "armada" && leaderDriverOnly) {
+      return {
+        ...divisionBase,
+        sections: divisionBase.sections.map((s) => ({
+          ...s,
+          items: s.items.filter((i) => !i.hideForLeaderDriver),
+        })),
+      };
+    }
     if (divisionKey !== "armada" || !driverOnly) return divisionBase;
     return {
       ...divisionBase,

@@ -46,6 +46,7 @@ const ProductionLaporan = lazy(() => import("./pages/bengkel/ProductionLaporan.j
 const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
+const ArmadaOrders      = lazy(() => import("./pages/armada/ArmadaOrders.jsx"));
 const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
 const ArmadaResources   = lazy(() => import("./pages/armada/ArmadaResources.jsx"));
 const ArmadaPod         = lazy(() => import("./pages/armada/ArmadaPod.jsx"));
@@ -290,6 +291,16 @@ export default function App() {
                 dengan backend nyata), mode "Daftar" adalah tabel berfilter
                 yang baru. Menambah cara melihat, bukan mengganti cara kerja. */}
             <Route path="/armada/jobs"      element={<ArmadaJobs />} />
+            {/* Semua Order (D-052, 4 September 2026) — laporan owner: "semua
+                order yang ada di sales/crm ada juga di semua divisi agar
+                semua bisa pantau semua prosesnya". Reuse data GET /orders
+                (endpoint SAMA dengan Sales CRM pages/Orders.jsx) — bukan
+                endpoint baru, satu sumber kebenaran status. Guard permission
+                di sisi backend TIDAK diubah (tetap requireAuth apa adanya)
+                — lihat catatan izin di ArmadaOrders.jsx kenapa menu ini
+                sengaja disembunyikan dari driver-only di Layout.jsx, bukan
+                dikunci ulang di backend. */}
+            <Route path="/armada/orders"    element={<ArmadaOrders />} />
             {/* Tahap 3: Vehicle & Route sudah ada di database (migrasi
                 20260802120000). Data NYATA — tidak ada badge "Contoh". */}
             <Route path="/armada/routes" element={<ArmadaRoutes />} />
