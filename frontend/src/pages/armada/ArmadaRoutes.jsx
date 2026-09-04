@@ -81,7 +81,17 @@ export default function ArmadaRoutes() {
         api.getVehicles(),
       ]);
       setRoutes(routesRes.routes);
-      setUnrouted(jobsRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
+      // KOREKSI (hari yang sama, D-063) — saat range="Semua" (all_time),
+      // rangeParams jadi {} (tanpa filter tanggal SAMA SEKALI ke backend),
+      // yang berarti GET /armada/jobs tanpa `date`/`from`/`to` mengembalikan
+      // job BERTANGGAL *dan* job TANPA TANGGAL sekaligus — dua-duanya lolos
+      // filter status di bawah, jadi job undated ikut nyasar ke daftar
+      // draggable ini (dobel dengan banner "belum ada tanggal" di
+      // UnroutedJobsPanel). Job tanpa scheduledDate WAJIB dikeluarkan dari
+      // sini — itu memang bukan drag source (keputusan: job harus dikasih
+      // tanggal dulu sebelum bisa masuk rute), backlog-nya sudah ditangani
+      // terpisah lewat `undated` di bawah.
+      setUnrouted(jobsRes.jobs.filter((j) => j.scheduledDate != null && !["COMPLETED", "FAILED"].includes(j.status)));
       setUndated(undatedRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
       setDrivers(driversRes);
       setVehicles(vehiclesRes.vehicles);
