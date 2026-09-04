@@ -2072,10 +2072,19 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
 // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
 // signatureUrl OPSIONAL (lihat catatan di schema.prisma) — lapisan tambahan,
 // bukan syarat blocking.
+//
+// SCHEDULED/ASSIGNED ditambahkan ke status yang boleh diselesaikan (D-086,
+// 5 September 2026) — laporan owner: adopsi app driver belum penuh, bukti
+// serah terima banyak yang masih dikirim manual lewat WhatsApp ke admin
+// (bukan lewat app driver, yang seharusnya mengubah status job EN_ROUTE→
+// ARRIVED dulu sebelum bisa selesai). Ini JEMBATAN SEMENTARA selama transisi
+// itu, BUKAN pelonggaran alur normal — driver yang benar-benar pakai app
+// tetap wajar lewat EN_ROUTE→ARRIVED seperti biasa, keduanya tetap ada di
+// daftar. Dipakai PodReviewDrawer.jsx (skema input manual) di frontend.
 armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
-    if (!["ARRIVED", "EN_ROUTE"].includes(job.status)) {
+    if (!["SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"].includes(job.status)) {
       throw new ArmadaError(`Job berstatus ${job.status}, belum bisa diselesaikan`);
     }
     const proofPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
