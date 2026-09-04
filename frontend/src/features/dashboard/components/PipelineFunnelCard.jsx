@@ -31,7 +31,7 @@ const TAHAP = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED"];
 // masing-masing yang independen — pilih tanggal di satu kartu tidak
 // mengubah kartu lain, padahal semuanya menampilkan data yang "sama-sama
 // tentang periode ini" di mata pengguna.
-export default function PipelineFunnelCard({ range }) {
+export default function PipelineFunnelCard({ range, className }) {
   const params = useMemo(() => toApiParams(range), [range]);
 
   const q = useQuery({
@@ -60,7 +60,7 @@ export default function PipelineFunnelCard({ range }) {
   // baik tidak menampilkan angka daripada menampilkan angka yang salah makna
   // — prinsip yang sama dipegang di seluruh sistem atribusi lead.
   return (
-    <SectionCard title="Deal Pipeline">
+    <SectionCard title="Deal Pipeline" className={className}>
       {q.isLoading ? (
         <div className="flex flex-col gap-2">
           {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 rounded-btn" />)}

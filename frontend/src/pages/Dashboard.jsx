@@ -118,49 +118,72 @@ export default function Dashboard({ user }) {
           />
         </section>
 
-        {/* ── Ringkasan penjualan (lebar penuh) ── */}
-        {/* DS v2.4: Sales Overview, Deal Pipeline, Top Performing Reps
-            SATU periode — semuanya menerima `range` yang sama dari date
-            picker di header. Pilih satu tanggal, ketiganya ikut berubah. */}
-        <RevenueOverview
-          range={range}
-          repeatRate={ov?.repeatRate}
-          repeatCustomers={ov?.repeatCustomers}
-          customersWithOrders={ov?.customersWithOrders}
-        />
-
-        {/* ── Dua kolom: corong + leaderboard ── */}
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <PipelineFunnelCard range={range} />
-          <TopRepsCard range={range} />
+        {/* ── Hero + rail (D-093, 5 September 2026) ──────────────────────
+            SEBELUMNYA: Sales Overview lebar-penuh sendirian, lalu baris
+            terpisah "Deal Pipeline | Top Performing Reps" 50/50 — grid
+            seragam yang jadi sumber utama keluhan owner "gabegitu banyak
+            berubah" dibanding referensi (crypto/storage/Aether dashboard):
+            SEMUA referensi itu bento — panel chart besar berdampingan
+            dengan rail SEMPIT, bukan blok-blok sama besar berbaris.
+            Deal Pipeline dipindah jadi rail SEMPIT di samping Sales
+            Overview (BUKAN Top Performing Reps) — diverifikasi dulu: Funnel
+            (lihat components/ui/funnel.jsx) cuma flex+fixed 132px label,
+            aman menyempit; TopRepsCard.jsx PUNYA breakpoint viewport
+            `sm:flex-row` dengan ~280px elemen berlebar tetap (rank+avatar+
+            Rupiah+"% closing" w-24) — dipaksa ke rail 4/12 akan memicu ULANG
+            bug truncate nama yang komentarnya sendiri jelaskan pernah
+            terjadi di MOBILE (breakpoint viewport, bukan container query,
+            jadi tidak tahu kolomnya sudah sempit walau layar tetap desktop).
+            SATU periode dari date picker header — keempatnya (Sales
+            Overview/Deal Pipeline/Top Reps di bawah) tetap ikut `range`
+            yang sama. */}
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <RevenueOverview
+            className="lg:col-span-8"
+            range={range}
+            repeatRate={ov?.repeatRate}
+            repeatCustomers={ov?.repeatCustomers}
+            customersWithOrders={ov?.customersWithOrders}
+          />
+          <PipelineFunnelCard range={range} className="lg:col-span-4" />
         </section>
 
-        {/* ── Dua kolom: antrean tindakan + lead panas ── */}
+        {/* ── Leaderboard + antrean tindakan (50/50, keduanya SUDAH terbukti
+            aman di lebar ini — pola lama, cuma pasangannya diganti karena
+            Deal Pipeline pindah ke atas) ── */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <TopRepsCard range={range} />
           <TaskQueueCard
             items={d.followUps.data?.items}
             loading={d.followUps.isLoading}
             error={d.followUps.isError}
           />
+        </section>
+
+        {/* ── Lead panas + Recent Activity (50/50) — tinggi boleh beda
+            (Recent Activity biasanya lebih panjang listnya daripada Hot
+            Leads yang dibatasi 4 baris), itu WAJAR di bento, bukan rusak. ── */}
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <HotLeadsCard
             items={d.hotLeads.data?.items}
             loading={d.hotLeads.isLoading}
             error={d.hotLeads.isError}
           />
-        </section>
 
-        {/* ── Recent Activity (30 Agustus 2026) — dipindah dari command
-            center /portal/growth (DivisionPage.jsx), yang di sana cuma
-            empty state jujur karena dulu belum ada datanya. Sekarang jadi
-            satu-satunya tempatnya, dengan data nyata (order + lead baru +
-            perpindahan pipeline). Lihat catatan navigasi di Portal.jsx —
-            klik kartu workspace sekarang langsung ke sini, bukan mampir
-            command center dulu. ── */}
-        <RecentActivityCard
-          items={d.recentActivity.data?.items}
-          loading={d.recentActivity.isLoading}
-          error={d.recentActivity.isError}
-        />
+          {/* Recent Activity (30 Agustus 2026) — dipindah dari command
+              center /portal/growth (DivisionPage.jsx), yang di sana cuma
+              empty state jujur karena dulu belum ada datanya. Sekarang jadi
+              satu-satunya tempatnya, dengan data nyata (order + lead baru +
+              perpindahan pipeline). Lihat catatan navigasi di Portal.jsx —
+              klik kartu workspace sekarang langsung ke sini, bukan mampir
+              command center dulu. Dipasangkan 50/50 dengan Hot Leads mulai
+              D-093 (sebelumnya lebar-penuh sendirian di baris terakhir). */}
+          <RecentActivityCard
+            items={d.recentActivity.data?.items}
+            loading={d.recentActivity.isLoading}
+            error={d.recentActivity.isError}
+          />
+        </section>
       </PageBody>
 
       <LeadsDetailModal
