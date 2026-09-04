@@ -223,7 +223,14 @@ html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"],
 html:not([data-theme="dark"]) [data-division="armada"] .settings-card,
 /* .dh-table (D-078, 5 September 2026) — pasangan mode terang dari blok yang
    sama di delivery-dark.css, baca komentar di sana untuk konteks lengkap. */
-html:not([data-theme="dark"]) [data-division="armada"] .dh-table {
+html:not([data-theme="dark"]) [data-division="armada"] .dh-table,
+/* .rounded-xl.bg-surface (D-089, 5 September 2026) — pasangan mode terang,
+   baca komentar lengkap di delivery-dark.css. OrderTimelineDrawer.jsx
+   (dipakai bersama Sales CRM) sudah konsisten pakai `rounded-xl bg-surface
+   shadow-card` untuk semua kartu mininya — kombinasi dua class itu yang
+   dijadikan selector, terisolasi [data-division="armada"] supaya cuma
+   berlaku saat drawer dibuka dari Delivery. */
+html:not([data-theme="dark"]) [data-division="armada"] .rounded-xl.bg-surface {
   position: relative;
   background-color: var(--dh-surface);
   /* blur+saturate dinaikkan (D-065) — 16px terlalu tipis untuk membaurkan
@@ -239,7 +246,8 @@ html:not([data-theme="dark"]) [data-division="armada"] .dh-table {
 
 html:not([data-theme="dark"]) [data-division="armada"] .card::before,
 html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"]::before,
-html:not([data-theme="dark"]) [data-division="armada"] .dh-table::before {
+html:not([data-theme="dark"]) [data-division="armada"] .dh-table::before,
+html:not([data-theme="dark"]) [data-division="armada"] .rounded-xl.bg-surface::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

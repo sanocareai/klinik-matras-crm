@@ -318,7 +318,21 @@
    halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
    kaca lain. Ditambahkan ke SELECTOR YANG SAMA (bukan blok terpisah) supaya
    otomatis ikut kalau resep kaca di atas nanti diubah lagi. */
-[data-theme="dark"] [data-division="armada"] .dh-table {
+[data-theme="dark"] [data-division="armada"] .dh-table,
+/* .rounded-xl.bg-surface (D-089, 5 September 2026) — laporan owner:
+   "kurang suka design ui/ux detail order" (OrderTimelineDrawer.jsx, dibuka
+   dari Semua Order). Komponen ini DIPAKAI BERSAMA Sales CRM (drawer yang
+   sama, dipanggil dari pages/Orders.jsx juga) jadi TIDAK BISA diganti ke
+   `.card`/`rounded-card` begitu saja (itu akan ikut mengubah tampilannya
+   di Sales CRM, yang TIDAK dikeluhkan dan bukan gaya kaca Delivery Hub).
+   Drawer ini justru sudah konsisten pakai `rounded-xl bg-surface
+   shadow-card` untuk SEMUA kartu mininya (KartuTema, ringkasan status,
+   pembayaran, dokumentasi, dst — belasan titik) — kombinasi DUA class
+   Tailwind literal itu yang dijadikan selector di sini, bukan `rounded-
+   card` baru. Terisolasi otomatis oleh [data-division="armada"]: cuma
+   berlaku saat drawer ini dibuka DARI Delivery, sama sekali tidak
+   menyentuh tampilannya di Sales CRM. */
+[data-theme="dark"] [data-division="armada"] .rounded-xl.bg-surface {
   position: relative;
   background-color: var(--dh-surface);
   backdrop-filter: blur(16px) saturate(130%);
@@ -330,7 +344,8 @@
 
 [data-theme="dark"] [data-division="armada"] .card::before,
 [data-theme="dark"] [data-division="armada"] [class*="rounded-card"]::before,
-[data-theme="dark"] [data-division="armada"] .dh-table::before {
+[data-theme="dark"] [data-division="armada"] .dh-table::before,
+[data-theme="dark"] [data-division="armada"] .rounded-xl.bg-surface::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

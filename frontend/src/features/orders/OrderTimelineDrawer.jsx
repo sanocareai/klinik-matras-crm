@@ -14,9 +14,11 @@ import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
+  orderStatusVariant, paymentStatusVariant,
 } from "../../utils/format.js";
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 
 const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
@@ -830,11 +832,23 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          {/* Ringkasan order */}
+          {/* Ringkasan order — Status/Pembayaran jadi <Badge> berwarna
+              (D-089, 5 September 2026) — sebelumnya teks tebal polos,
+              beda bahasa visual dari kolom Status/Pembayaran di tabel
+              Semua Order (ArmadaOrders.jsx) yang sudah pakai Badge sejak
+              D-078. SATU sumber warna (orderStatusVariant/
+              paymentStatusVariant) untuk keduanya — bukan pengulangan
+              hardcode baru. */}
           <div className="grid grid-cols-2 gap-2.5">
+            <div className="rounded-xl bg-surface p-2.5 shadow-card">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Status</p>
+              <Badge variant={orderStatusVariant(o.status)} className="mt-1">{ORDER_STATUS_LABELS[o.status] || o.status}</Badge>
+            </div>
+            <div className="rounded-xl bg-surface p-2.5 shadow-card">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Pembayaran</p>
+              <Badge variant={paymentStatusVariant(o.paymentStatus)} className="mt-1">{PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}</Badge>
+            </div>
             {[
-              { l: "Status", v: ORDER_STATUS_LABELS[o.status] || o.status },
-              { l: "Pembayaran", v: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus },
               { l: "Nilai", v: formatRupiah(o.value || 0) },
               { l: "Lama di status", v: `${o.daysInStatus} hari${o.daysInStatusPerkiraan ? "*" : ""}` },
             ].map((k) => (
