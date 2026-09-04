@@ -9,12 +9,12 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow } from "@/components/ui/table.jsx";
 import Avatar from "@/components/Avatar.jsx";
-import { cn } from "@/lib/utils.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
   orderStatusVariant, paymentStatusVariant,
 } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 
 // Semua Order (D-052, 4 September 2026) — laporan owner: "gue mau yang di
@@ -65,35 +65,42 @@ const KATEGORI_OPTIONS = [
 
 const STATUS_OPTIONS = Object.keys(ORDER_STATUS_LABELS).map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] }));
 
+// D-079 (5 September 2026) — laporan owner: chip Produksi/Pengambilan/
+// Pengiriman "masih pakai UI lama" (pil `bg-inset` polos, beda dari Badge
+// yang dipakai kolom Status/Pembayaran) DAN menampilkan enum job MENTAH
+// ("Ambil: EN_ROUTE", "Ambil: UNSCHEDULED") — tidak terbaca untuk siapa pun
+// yang bukan developer. Diganti <Badge> yang SAMA persis dipakai kolom
+// lain (satu bahasa visual di seluruh tabel), label lewat JOB_STATUS_REAL
+// (SATU sumber kebenaran label+warna job — sudah dipakai Armada.jsx/
+// JobDetailDrawer, bukan peta baru yang bisa drift).
 function JobChip({ label, job }) {
   if (!job) return <span className="text-[11.5px] text-ink3">—</span>;
+  const info = JOB_STATUS_REAL[job.status];
   return (
-    <span
+    <Badge
+      variant={info?.tone || "neutral"}
       title={job.driverName ? `${label} · ${job.driverName}` : label}
-      className="inline-flex items-center gap-1 rounded-full bg-inset px-2 py-0.5 text-[11px] font-semibold text-ink2"
     >
-      {label}: {job.status}
-    </span>
+      {label}: {info?.label || job.status}
+    </Badge>
   );
 }
 
-// Chip Produksi (D-078) — lihat `productionStage` di routes/orders.js untuk
-// aturan agregasinya. `mixed` (beberapa unit di tahap berbeda) dapat title
-// tooltip berisi daftar tahapnya, supaya masih bisa diperiksa tanpa buka
-// drawer — tapi TIDAK menjejalkan semuanya ke chip (bisa panjang sekali
-// untuk order banyak unit).
+// Chip Produksi (D-078, dipindah ke <Badge> D-079) — lihat `productionStage`
+// di routes/orders.js untuk aturan agregasinya. `mixed` (beberapa unit di
+// tahap berbeda) dapat title tooltip berisi daftar tahapnya, supaya masih
+// bisa diperiksa tanpa buka drawer — tapi TIDAK menjejalkan semuanya ke
+// chip (bisa panjang sekali untuk order banyak unit).
 function ProduksiChip({ stage }) {
   if (!stage) return <span className="text-[11.5px] text-ink3">—</span>;
+  const belumMulai = stage.label === "Belum mulai produksi";
   return (
-    <span
+    <Badge
+      variant={belumMulai ? "neutral" : "accent"}
       title={stage.mixed ? stage.detail.join(", ") : undefined}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        stage.label === "Belum mulai produksi" ? "bg-inset text-ink3" : "bg-accentbg text-accent"
-      )}
     >
       {stage.label}{stage.unitCount > 1 && !stage.mixed ? ` (${stage.unitCount} unit)` : ""}
-    </span>
+    </Badge>
   );
 }
 
