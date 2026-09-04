@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
-  TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
+  TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
@@ -473,9 +473,21 @@ export default function ArmadaDashboard() {
           </Card>
         </div>
 
+        {/* Job Hari Ini — daftar kartu avatar-forward (D-070, 4 September
+            2026), MENGGANTIKAN tabel 6-kolom lama. Laporan owner: "masih
+            ada yang menggunakan UI yang lama" — bagian ini terlewat waktu
+            Jadwal & Penugasan diubah dari tabel jadi kartu (D-052); pola
+            di sini SENGAJA disamakan persis (avatar pelanggan + chip jenis
+            di baris pertama, order/driver/kendaraan di baris meta, status
+            di kanan) supaya dua halaman yang sama-sama daftar job tetap
+            satu bahasa visual. */}
         <Card className="overflow-hidden">
           <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Job Hari Ini</h3></div>
-          {loading ? <div className="p-4"><TableSkeletonRows rows={4} cols={6} /></div> : jobs.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
+            </div>
+          ) : jobs.length === 0 ? (
             <EmptyState
               icon={Package}
               title="Belum ada job pada tanggal ini"
@@ -483,34 +495,44 @@ export default function ArmadaDashboard() {
               action={<Button size="sm" onClick={() => navigate("/armada/jobs")}><Plus size={14} /> Buat Job</Button>}
             />
           ) : (
-            <TableWrap>
-              <Table>
-                <THead><TR><TH>Order</TH><TH>Pelanggan</TH><TH>Jenis</TH><TH>Driver</TH><TH>Kendaraan</TH><TH>Status</TH></TR></THead>
-                <TBody>
-                  {jobs.map((j) => {
-                    const cust = customerOf(j);
-                    return (
-                      <TR key={j.id} className="cursor-pointer" onClick={() => navigate("/armada/jobs")}>
-                        <TD className="font-semibold text-ink">{orderNumberOf(j) || "—"}</TD>
-                        <TD className="text-ink2">{cust || "—"}</TD>
-                        <TD className="text-ink2">{JOB_TYPE_REAL[j.type]?.label || j.type}</TD>
-                        <TD className="text-ink2">
-                          {j.driver?.name ? (
-                            <span className="flex items-center gap-1.5">
-                              <Avatar name={j.driver.name} size="sm" gradient className="h-6 w-6 text-[10px]" /> {j.driver.name}
-                            </span>
-                          ) : (
-                            <span className="text-orange">Belum ada</span>
+            <ul className="divide-y divide-line">
+              {jobs.map((j) => {
+                const cust = customerOf(j);
+                return (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/armada/jobs")}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint"
+                    >
+                      <Avatar name={cust || "?"} size="sm" gradient />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate text-[13px] font-semibold text-ink">{cust || "—"}</span>
+                          <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
+                            {JOB_TYPE_REAL[j.type]?.label || j.type}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
+                          <span className="font-mono">{orderNumberOf(j) || "—"}</span>
+                          <span aria-hidden>·</span>
+                          <span className={cn(!j.driver && "font-semibold text-orange")}>
+                            {j.driver?.name || "Belum ada driver"}
+                          </span>
+                          {j.vehicle?.plateNumber && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>{j.vehicle.plateNumber}</span>
+                            </>
                           )}
-                        </TD>
-                        <TD className="text-ink2">{j.vehicle?.plateNumber || "—"}</TD>
-                        <TD><StatusBadge map={JOB_STATUS_REAL} value={j.status} /></TD>
-                      </TR>
-                    );
-                  })}
-                </TBody>
-              </Table>
-            </TableWrap>
+                        </div>
+                      </div>
+                      <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </Card>
 
