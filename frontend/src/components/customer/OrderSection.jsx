@@ -9,7 +9,7 @@ import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
 import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import {
-  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES,
+  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
@@ -701,6 +701,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             atau pengiriman mana pun yang sedang berjalan. */}
         <DeliveryTimeline
           orderStatus={order.status}
+          orderCategory={order.category}
           job={[order.deliveryJob, order.pickupJob].find((j) => j && ["EN_ROUTE", "ARRIVED"].includes(j.status))}
           className="mt-2"
         />
@@ -748,7 +749,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
               <BadgeDropdown
                 value={overrideStatus}
                 onChange={setOverrideStatus}
-                options={ORDER_STATUSES.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+                options={orderStatusesForCategory(order.category).map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
                 getChipStyle={(v) => ORDER_STATUS_BADGE[v] || ORDER_STATUS_BADGE.PENDING}
                 ariaLabel="Pilih status pengganti"
                 triggerClassName="w-full"

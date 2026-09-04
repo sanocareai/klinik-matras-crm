@@ -215,3 +215,46 @@ test("unit yang lahir DI LUAR AWAITING_PICKUP tidak memicu job apa pun", async (
   await createUnitsForOrder(tx, { order: orderDasar, count: 1, statusOverride: "RECEIVED" });
   assert.equal(tx.jobsDibuat.length, 0);
 });
+
+// --- order kategori BARU (D-051, 4 September 2026) -------------------------
+// Laporan owner: order BARU (kasur baru dibuat dari nol) SALAH KAPRAH lahir
+// dengan Job PICKUP ("Pengambilan") — contoh nyata: order NEW-30082026-022
+// (Leo Witarsa) muncul di Delivery Hub sebagai job Pengambilan, padahal tidak
+// ada barang fisik apa pun untuk diambil dari customer. Akar masalahnya:
+// unit BARU sebelumnya ikut lewat unitStatusFromOrderStatus(order.status),
+// dan Order.status order baru SELALU "PENDING" -> AWAITING_PICKUP, terlepas
+// dari kategorinya.
+test("order kategori BARU: unit lahir RECEIVED, BUKAN AWAITING_PICKUP", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "BARU" }, count: 1 });
+  assert.equal(tx.dibuat[0].status, "RECEIVED");
+});
+
+test("order kategori BARU: TIDAK PERNAH dapat Job PICKUP", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "BARU" }, count: 1 });
+  assert.equal(tx.jobsDibuat.length, 0);
+});
+
+test("order kategori LAYANAN/SEWA TETAP AWAITING_PICKUP + Job PICKUP seperti sebelumnya", async () => {
+  // Jaring pengaman regresi — perbaikan BARU tidak boleh ikut mengubah
+  // perilaku dua kategori lain yang MEMANG butuh fase pengambilan barang
+  // lama dari customer.
+  for (const category of ["LAYANAN", "SEWA", undefined]) {
+    const tx = fakeTx();
+    await createUnitsForOrder(tx, { order: { ...orderDasar, category }, count: 1 });
+    assert.equal(tx.dibuat[0].status, "AWAITING_PICKUP", `category=${category}`);
+    assert.equal(tx.jobsDibuat.length, 1, `category=${category}`);
+    assert.equal(tx.jobsDibuat[0].type, "PICKUP", `category=${category}`);
+  }
+});
+
+test("order kategori BARU: statusOverride tetap menang (mis. tambah unit ke order yang sudah PROCESSING)", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, {
+    order: { ...orderDasar, category: "BARU" },
+    count: 1,
+    statusOverride: "IN_PRODUCTION",
+  });
+  assert.equal(tx.dibuat[0].status, "IN_PRODUCTION");
+});

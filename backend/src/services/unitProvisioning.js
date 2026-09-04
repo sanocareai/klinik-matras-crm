@@ -89,7 +89,29 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
   const info = parseOrderNotes(order.notes);
   const merk = cleanString(info.merkKasur);
   const ukuran = cleanString(info.ukuranKasur);
-  const status = statusOverride || unitStatusFromOrderStatus(order.status);
+  // D-051 (4 September 2026) — laporan owner: "layanan baru itu bikin
+  // produk/kasur baru, prosesnya beda dari service/upgrade, jangan status
+  // pengambilan". unitStatusFromOrderStatus() SELALU menghasilkan
+  // AWAITING_PICKUP untuk order yang baru dibuat (Order.status masih
+  // PENDING) — itu benar untuk LAYANAN/SEWA (memang ada barang lama yang
+  // perlu diambil dari customer), tapi SALAH untuk BARU: tidak ada apa pun
+  // untuk "diambil", unit-nya adalah kasur baru yang akan DIBUAT dari nol
+  // di workshop. Skip AWAITING_PICKUP → PICKUP job → RECEIVED sama sekali;
+  // unit BARU lahir langsung RECEIVED (setara "sudah di workshop, siap
+  // mulai tahap produksi pertama"). Efek berantai yang diinginkan:
+  //   1. Baris `if (status === "AWAITING_PICKUP")` di bawah TIDAK terpicu
+  //      → ensurePickupJobForOrder() tidak pernah membuat Job PICKUP.
+  //   2. Unit langsung masuk daftar IN_WORKSHOP (production.js) — tampil
+  //      di Papan Produksi hari itu juga, bukan nyangkut menunggu "diambil"
+  //      dulu oleh driver yang sebenarnya tidak perlu datang.
+  //   3. Begitu seluruh tahap produksi tuntas, unit jadi READY_FOR_DELIVERY
+  //      → suggestDeliveryJob() (unitStageEngine.js) buat Job DELIVERY —
+  //      jalur ini SUDAH kategori-agnostik, tidak perlu disentuh.
+  // Bukan cabang berdasar Order.status (yang tetap PENDING) — SENGAJA
+  // berdasar Order.category, supaya statusOverride pemanggil lain (mis.
+  // menambah unit ke order yang sudah PROCESSING) tetap menang seperti
+  // biasa lewat `statusOverride ||` di bawah.
+  const status = statusOverride || (order.category === "BARU" ? "RECEIVED" : unitStatusFromOrderStatus(order.status));
   const prefix = unitCodePrefix(order);
 
   // Nomor urut terakhir di order ini. Unique constraint @@unique([orderId, seq])

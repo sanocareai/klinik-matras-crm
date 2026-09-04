@@ -167,6 +167,12 @@ const jobInclude = {
   order: {
     select: {
       id: true, orderNumber: true, status: true,
+      // category (D-051, 4 September 2026) — dipakai DeliveryTimeline.jsx
+      // untuk membedakan alur order BARU (3 tahap: Diproses/Siap Kirim/
+      // Terkirim, TANPA Menunggu/Pengambilan — tidak ada barang fisik yang
+      // diambil dari customer, ini kasur/produk baru yang dibuat dari nol)
+      // dari LAYANAN/SEWA (5 tahap penuh, ada fase pengambilan unit lama).
+      category: true,
       deliveryAddress: true, deliveryCity: true,
       customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
     },
@@ -185,6 +191,8 @@ const jobInclude = {
               // (30 Agustus 2026) supaya drawer bisa menampilkan tahap Order
               // (Menunggu/Pengambilan/dst), bukan cuma status Job itu sendiri.
               status: true,
+              // category (D-051) — lihat catatan di order.select di atas.
+              category: true,
               // D-032 — alamat/kota SALES/rencana (D-027), dipakai FE
               // sebagai prefill saat dispatcher pertama kali isi addressText
               // job ini (belum ada alamat verifikasi lapangan). Keputusan

@@ -261,7 +261,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
             {job && !loading && (
               <>
                 {job.order?.status && (
-                  <DeliveryTimeline orderStatus={job.order.status} job={job} className="pb-4" />
+                  <DeliveryTimeline
+                    orderStatus={job.order.status}
+                    orderCategory={job.order.category}
+                    job={job}
+                    className="pb-4"
+                  />
                 )}
 
                 {/* Kartu identitas pelanggan (D-047, 4 September 2026 — "buat

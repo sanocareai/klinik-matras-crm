@@ -188,6 +188,24 @@ export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ v
 
 export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
 
+// Order kategori BARU (D-051, 4 September 2026 — laporan owner: "layanan
+// baru itu bikin produk/kasur baru, prosesnya beda dari service/upgrade,
+// statusnya cuma 3: Diproses/Siap Kirim/Terkirim"). MENGGANTI/PICKUP tidak
+// masuk akal untuk order ini — tidak ada barang fisik lama yang diambil
+// dari customer, unit-nya lahir langsung "diterima" di workshop (lihat
+// backend unitProvisioning.js#createUnitsForOrder). CANCELLED tetap
+// disediakan sebagai jalan keluar (order boleh dibatalkan kapan pun,
+// terlepas kategorinya), bukan bagian dari 3 tahap normal.
+//
+// Dipakai KHUSUS untuk dropdown "Ubah Status" per-order (OrderSection.jsx)
+// — filter GLOBAL di tabel Order (Orders.jsx) TETAP pakai ORDER_STATUSES
+// penuh, karena tabel itu menampilkan order LINTAS kategori sekaligus dan
+// semua 6 nilai tetap valid untuk DICARI (order LAYANAN/SEWA lama masih
+// bisa berstatus PENDING/PICKUP).
+export function orderStatusesForCategory(category) {
+  return category === "BARU" ? ["PROCESSING", "READY", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+}
+
 // ── WARNA STATUS DOMAIN — SATU SUMBER KEBENARAN (Sano Design System v1) ──────
 // Sebelumnya warna badge status di-hardcode tersebar di banyak halaman (rawan
 // drift, mis. label "Penawaran" nyangkut di satu tempat). Sekarang setiap

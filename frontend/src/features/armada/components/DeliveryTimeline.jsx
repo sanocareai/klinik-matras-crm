@@ -16,13 +16,23 @@ import { JOB_STATUS_REAL } from "../jobStatus.js";
 // dilewati".
 const STEPS = ORDER_STATUSES.filter((s) => s !== "CANCELLED");
 
+// Order kategori BARU (D-051, 4 September 2026 — laporan owner: order kasur
+// BARU itu MEMBUAT produk dari nol, bukan menjemput barang lama milik
+// customer — "Menunggu"/"Pengambilan" tidak masuk akal untuk alur ini,
+// prosesnya cuma 3 tahap). Unit BARU sekarang lahir langsung berstatus
+// RECEIVED (lihat backend unitProvisioning.js), jadi Order.status-nya juga
+// TIDAK PERNAH bernilai PENDING/PICKUP untuk kategori ini — timeline visual
+// mengikuti kenyataan itu, bukan cuma memotong tampilan di atas data yang
+// sebenarnya masih 5 tahap.
+const BARU_STEPS = ["PROCESSING", "READY", "DELIVERED"];
+
 // Job aktif (kalau ada) ditumpangkan sebagai baris kecil di bawah timeline —
 // cuma untuk status yang benar-benar berarti "sedang terjadi", bukan
 // UNSCHEDULED/COMPLETED yang sudah terwakili oleh posisi titik Order itu
 // sendiri.
 const JOB_LIVE_STATUSES = new Set(["EN_ROUTE", "ARRIVED"]);
 
-export default function DeliveryTimeline({ orderStatus, job, className }) {
+export default function DeliveryTimeline({ orderStatus, orderCategory, job, className }) {
   if (orderStatus === "CANCELLED") {
     return (
       <div className={cn("rounded-btn bg-redbg px-3 py-2 text-[11.5px] font-semibold text-red", className)}>
@@ -31,13 +41,14 @@ export default function DeliveryTimeline({ orderStatus, job, className }) {
     );
   }
 
-  const activeIndex = STEPS.indexOf(orderStatus);
+  const steps = orderCategory === "BARU" ? BARU_STEPS : STEPS;
+  const activeIndex = steps.indexOf(orderStatus);
   const liveJob = job && JOB_LIVE_STATUSES.has(job.status) ? job : null;
 
   return (
     <div className={className}>
       <div className="flex items-center">
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const done = activeIndex >= 0 && i < activeIndex;
           const current = i === activeIndex;
           return (
