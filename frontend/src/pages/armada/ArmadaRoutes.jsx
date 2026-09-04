@@ -67,15 +67,21 @@ export default function ArmadaRoutes() {
       const rangeParams = toApiParams(range); // {} untuk "Semua" — tanpa filter tanggal
       const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes] = await Promise.all([
         api.getRoutes(rangeParams),
-        // Panel kiri: job dalam rentang ini yang belum masuk rute mana pun
-        // DAN belum selesai/gagal — job yang sudah COMPLETED tidak relevan
-        // direncanakan ulang.
-        api.getArmadaJobs({ ...rangeParams, routeId: "none" }),
+        // Panel kiri (D-066, 4 September 2026 — koreksi dari D-063) — SENGAJA
+        // LEPAS TOTAL dari `range`, bukan cuma default "Semua" yang kebetulan
+        // tidak memfilter. Laporan owner: pilih rentang tanggal 4 Sep di atas
+        // membuat panel ini kosong padahal ada job tanggal 2 Sep yang justru
+        // MAU dimasukkan ke rute tanggal 4 — dispatcher perlu bisa
+        // mencampur job dari hari mana pun ke rute hari apa pun (rute yang
+        // dilihat/dikelola BOLEH difilter per tanggal, tapi kolam "job siap
+        // masuk rute" harus selalu lengkap, itu penanda "job ini sudah
+        // ready", bukan "job ini kebetulan setanggal dengan rute"). `take`
+        // dinaikkan eksplisit — daftar ini sekarang selalu global, bukan
+        // dibatasi satu hari, jadi defaultnya (200) lebih gampang terlewati.
+        api.getArmadaJobs({ routeId: "none", take: 500 }),
         // Backlog tanpa tanggal — TIDAK bisa langsung diseret ke rute (rute
         // sudah pasti-tanggal, job tanpa tanggal butuh diisi dulu di Jadwal
         // & Penugasan), jadi ini murni pengingat/daftar, bukan drag source.
-        // SENGAJA lepas dari `range` — job tanpa tanggal tidak akan pernah
-        // cocok filter tanggal APA PUN, jadi tidak ada gunanya ikut rentang.
         api.getArmadaJobs({ date: "none", routeId: "none" }),
         api.getDrivers(),
         api.getVehicles(),
@@ -308,7 +314,11 @@ export default function ArmadaRoutes() {
               ["Rute diterbitkan", publishedCount],
               ["Total stop terjadwal", totalStopSemuaRute],
               ["Total unit terjadwal", totalUnitSemuaRute],
-              ["Job belum masuk rute", unrouted?.length ?? 0],
+              // (semua tanggal) — beda dari 3 baris di atasnya: baris ini
+              // TIDAK ikut `range` (lihat catatan panjang di load(), D-066),
+              // jadi labelnya ditegaskan supaya tidak terbaca seolah ikut
+              // rentang yang sedang dibuka.
+              ["Job belum masuk rute (semua tanggal)", unrouted?.length ?? 0],
             ].map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-2 text-[11px]">
                 <span className="truncate text-ink3">{label}</span>

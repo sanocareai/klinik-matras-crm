@@ -603,6 +603,11 @@ export default function Layout({ user, onLogout, children }) {
           <span className="dh-glow-1" />
           <span className="dh-glow-2" />
           <span className="dh-glow-3" />
+          {/* dh-glow-4 (D-066) — cuma punya warna di delivery-light.css
+              (bola krem hangat, meniru sapuan wallpaper macOS Tahoe); tidak
+              ada aturan untuk kelas ini di delivery-dark.css, jadi di dark
+              mode span ini render tanpa efek apa pun (no-op), bukan bug. */}
+          <span className="dh-glow-4" />
         </div>
       )}
 
