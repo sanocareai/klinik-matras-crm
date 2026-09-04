@@ -48,10 +48,23 @@ export default function ThemeToggle({ className }) {
         className={cn("absolute right-1.5 text-orange transition-opacity", gelap ? "opacity-0" : "opacity-100")}
         aria-hidden
       />
+      {/* D-071 (4 September 2026) — laporan owner: kenop "bergeser ke kiri
+          sedikit" waktu diklik, bukan meluncur penuh dari satu sisi ke
+          sisi lain. Akar masalahnya: DUA class `translate-x-[...]` sempat
+          bisa nempel BERSAMAAN di sini (`translate-x-[3px]` di string
+          dasar + `translate-x-[26px]` ditambahkan lewat && saat gelap) —
+          keduanya menulis custom property `--tw-translate-x` YANG SAMA,
+          jadi mana yang menang murni tergantung urutan definisi di
+          stylesheet hasil build (bukan urutan di className ini), TIDAK
+          terjamin konsisten. `cn()` (twMerge) SEHARUSNYA membuang salah
+          satu, tapi tidak boleh digantungkan ke situ untuk kelas arbitrary
+          senilai ini — lebih aman: cuma SATU class translate-x yang
+          mungkin ada dalam className kapan pun (ternary, bukan &&),
+          sehingga tidak pernah ada dua kandidat yang perlu di-dedupe. */}
       <span
         className={cn(
-          "z-10 h-[18px] w-[18px] translate-x-[3px] rounded-full bg-white shadow-card transition-transform duration-200",
-          gelap && "translate-x-[26px]"
+          "z-10 h-[18px] w-[18px] rounded-full bg-white shadow-card transition-transform duration-200",
+          gelap ? "translate-x-[26px]" : "translate-x-[3px]"
         )}
       />
     </button>
