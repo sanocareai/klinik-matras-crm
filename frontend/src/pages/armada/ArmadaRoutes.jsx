@@ -236,8 +236,14 @@ export default function ArmadaRoutes() {
           </div>
         </div>
 
-        {/* Kanan — ringkasan */}
-        <aside className="space-y-2 rounded-card border border-border bg-surface p-3 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        {/* Kanan — ringkasan. Angka dibesarkan + `dh-figure` (D-055, 4
+            September 2026) supaya konsisten dengan bahasa KPI Dashboard
+            (DeliveryKpiRow) — sebelumnya baris label/angka rata, tidak ada
+            hierarki visual sama sekali antara panel ini dan Dashboard yang
+            sudah dirapikan lebih dulu. `dh-figure` sendiri no-op di light
+            mode (lihat catatan di styles/delivery-dark.css), jadi aman
+            dipakai di sini tanpa efek di luar pilot dark Delivery. */}
+        <aside className="space-y-3 rounded-card border border-border bg-surface p-3 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
           <h3 className="text-[12.5px] font-bold text-ink">Ringkasan {tanggal}</h3>
           {[
             ["Rute draft", draftCount],
@@ -246,9 +252,9 @@ export default function ArmadaRoutes() {
             ["Total unit terjadwal", totalUnitSemuaRute],
             ["Job belum masuk rute", unrouted?.length ?? 0],
           ].map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between border-b border-line py-1.5 last:border-b-0">
-              <span className="text-[11.5px] text-ink2">{label}</span>
-              <strong className="text-[14px] font-bold tabular-nums text-ink">{value}</strong>
+            <div key={label} className="border-b border-line pb-2 last:border-b-0">
+              <div className="dh-figure text-[22px] font-extrabold leading-none tracking-tight text-ink">{value}</div>
+              <div className="mt-1 text-[11px] text-ink3">{label}</div>
             </div>
           ))}
         </aside>

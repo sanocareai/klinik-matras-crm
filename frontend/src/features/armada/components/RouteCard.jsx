@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Loader2 } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Loader2, User, Truck } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf } from "../jobStatus.js";
@@ -59,31 +61,43 @@ export default function RouteCard({
     )}>
       {/* Header */}
       <div className="shrink-0 space-y-2 border-b border-line p-3">
-        <div className="flex items-center gap-1.5">
+        {/* `flex-wrap` (D-055, 4 September 2026) — jaga-jaga kode rute
+            panjang + badge status tidak pernah dipaksa berdesakan satu
+            baris sampai terpotong. Beda kasus dari baris aksi di bawah
+            (overflow SUNGGUHAN, bukan cuma jaga-jaga) — badge status boleh
+            turun baris kalau memang mepet, tidak masalah secara makna. */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-[12.5px] font-bold text-ink">{route.code}</span>
           <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />
         </div>
 
         {isDraft ? (
+          // FilterDropdown menggantikan <select> polos (D-055) — komponen
+          // ini SUDAH dibangun 31 Agustus 2026 justru untuk kasus persis
+          // ini (lihat komentarnya sendiri: menggantikan native select di
+          // filter bar Delivery), tapi driver/kendaraan di kartu rute ini
+          // terlewat migrasinya. `triggerClassName="w-full max-w-none"`
+          // karena aslinya lebar select mengikuti kartu (300px), bukan
+          // lebar teks terpilih seperti default FilterDropdown filter bar.
           <>
-            <select
+            <FilterDropdown
               value={route.driverId || ""}
-              onChange={(e) => jalankan(() => onAssign(route, { driverId: e.target.value || null }))}
-              aria-label={`Driver untuk ${route.code}`}
-              className="h-8 w-full rounded-btn border border-border bg-surface px-2 text-[11.5px] text-ink outline-none focus:border-accent"
-            >
-              <option value="">Pilih driver…</option>
-              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-            <select
+              onChange={(id) => jalankan(() => onAssign(route, { driverId: id || null }))}
+              options={drivers.map((d) => ({ value: d.id, label: d.name }))}
+              placeholder="Pilih driver…"
+              icon={User}
+              ariaLabel={`Driver untuk ${route.code}`}
+              triggerClassName="w-full max-w-none"
+            />
+            <FilterDropdown
               value={route.vehicleId || ""}
-              onChange={(e) => jalankan(() => onAssign(route, { vehicleId: e.target.value || null }))}
-              aria-label={`Kendaraan untuk ${route.code}`}
-              className="h-8 w-full rounded-btn border border-border bg-surface px-2 text-[11.5px] text-ink outline-none focus:border-accent"
-            >
-              <option value="">Pilih kendaraan…</option>
-              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber} · {v.capacitySlots} slot</option>)}
-            </select>
+              onChange={(id) => jalankan(() => onAssign(route, { vehicleId: id || null }))}
+              options={vehicles.map((v) => ({ value: v.id, label: `${v.plateNumber} · ${v.capacitySlots} slot` }))}
+              placeholder="Pilih kendaraan…"
+              icon={Truck}
+              ariaLabel={`Kendaraan untuk ${route.code}`}
+              triggerClassName="w-full max-w-none"
+            />
           </>
         ) : (
           <div className="text-[11.5px] text-ink2">
@@ -129,6 +143,11 @@ export default function RouteCard({
               >
                 {isDraft && <GripVertical size={12} className="mt-0.5 shrink-0 text-ink3" aria-hidden />}
                 <span className="mt-0.5 shrink-0 text-[10px] font-bold text-ink3">{idx + 1}.</span>
+                {/* Avatar gradien (D-055) — konsisten dengan pola
+                    avatar-forward di seluruh Delivery Hub (Dashboard,
+                    Papan); sebelumnya stop di sini cuma teks polos tanpa
+                    identitas visual sama sekali. */}
+                <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-5 w-5 shrink-0 text-[8px]" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <div className="truncate text-[10px] text-ink2">{j.addressText || "—"}</div>
@@ -149,7 +168,14 @@ export default function RouteCard({
         )}
       </div>
 
-      {/* Aksi */}
+      {/* Aksi — dirombak (D-055, 4 September 2026): 3 tombol icon+teks
+          berdampingan ("Urutkan"+"Batal"+"Terbitkan") tidak muat dalam kartu
+          300px (284px setelah padding) — laporan owner: tombol "Terbitkan"
+          kepotong jadi "Ter" di layar. Urutkan & Batal SEKARANG ikon-saja
+          (title tetap ada untuk tooltip + aria-label untuk screen reader),
+          menyisakan ruang penuh untuk Terbitkan sebagai CTA utama —
+          satu-satunya aksi di sini yang benar-benar tidak boleh gagal
+          terbaca (itu yang mengirim rute ke driver). */}
       {isDraft && (
         <div className="flex shrink-0 items-center gap-1.5 border-t border-line p-2">
           <button
@@ -157,26 +183,29 @@ export default function RouteCard({
             onClick={() => jalankan(() => onOptimize(route))}
             disabled={jobs.length < 2 || busy}
             title="Urutkan stop berdasarkan jam, lalu jarak terdekat (kalau semua stop sudah punya koordinat) — kalau belum, diurutkan berdasarkan alamat"
-            className="flex h-7 items-center gap-1 rounded-chip px-2 text-[10.5px] font-semibold text-ink2 transition-colors hover:bg-hovertint disabled:opacity-40"
+            aria-label="Urutkan stop"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-chip text-ink2 transition-colors hover:bg-hovertint disabled:opacity-40"
           >
-            <ArrowUpDown size={11} /> Urutkan
+            <ArrowUpDown size={13} />
           </button>
           <button
             type="button"
             onClick={() => jalankan(() => onCancel(route))}
             disabled={busy}
-            className="flex h-7 items-center gap-1 rounded-chip px-2 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-redbg hover:text-red"
+            title="Batalkan rute"
+            aria-label="Batalkan rute"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-redbg hover:text-red disabled:opacity-40"
           >
-            <Ban size={11} /> Batal
+            <Ban size={13} />
           </button>
           <button
             type="button"
             onClick={() => jalankan(() => onPublish(route))}
             disabled={busy || jobs.length === 0 || !route.driverId}
             title={!route.driverId ? "Pilih driver dulu" : jobs.length === 0 ? "Tambahkan job dulu" : "Terbitkan ke driver"}
-            className="ml-auto flex h-7 items-center gap-1 rounded-chip bg-accent px-2.5 text-[10.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="ml-auto flex h-8 flex-1 max-w-[160px] items-center justify-center gap-1.5 rounded-btn bg-accent text-[12px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            {busy ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Terbitkan
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Terbitkan
           </button>
         </div>
       )}
