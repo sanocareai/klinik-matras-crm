@@ -1,12 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Check, XCircle, Loader2, User, Package, Camera, PenLine, ClipboardPaste, UploadCloud } from "lucide-react";
+import { X, Check, XCircle, Loader2, User, Package, Camera, PenLine, ClipboardPaste, UploadCloud, Clock } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import Avatar from "@/components/Avatar.jsx";
+import AssignDropdown from "./AssignDropdown.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { POD_STATUS } from "../podStatus.js";
 import { customerOf, orderNumberOf, unitCountOf, jobLabelOf } from "../jobStatus.js";
+
+// "YYYY-MM-DDTHH:mm" dalam jam LOKAL perangkat (kontrak <input type=
+// "datetime-local"> — TIDAK boleh dipakai untuk kolom DATE murni, cuma
+// untuk field jam-menit seperti ini). Admin yang mengoperasikan ini
+// diasumsikan di WIB (sama seperti seluruh operasional Klinik Matras) —
+// beda dari skema tanggal-only di lib/dateRange.js yang eksplisit
+// dikonversi lewat toWIB(), field jam seperti ini bergantung timezone
+// PERANGKAT karena itu memang kontrak bawaan <input type="datetime-local">.
+function toDatetimeLocal(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 // Drawer review Proof of Delivery — Approve / Reject atas foto & tanda
 // tangan yang SUDAH diunggah driver. Tidak ada "checklist penyelesaian" di
@@ -35,27 +48,61 @@ import { customerOf, orderNumberOf, unitCountOf, jobLabelOf } from "../jobStatus
 //    kedua yang bisa drift dari data driver asli. Backend (routes/armada.js)
 //    diperluas menerima status SCHEDULED/ASSIGNED juga di /complete (dulu
 //    cuma ARRIVED/EN_ROUTE) — jembatan sementara, lihat catatan di sana.
+//
+// WAKTU SELESAI + DRIVER/HELPER BISA DIEDIT (D-087, 5 September 2026) —
+// laporan owner: "waktu selesai bisa di update manual, tambahkan detail
+// driver, helper yang bertanggung jawab". Bukti WA biasanya diterima admin
+// LAMA setelah job benar-benar selesai (bukan "sekarang") — kalau
+// completedAt selalu dipaksa "saat submit", riwayatnya jadi bohong. Driver/
+// helper juga sering belum tercatat sama sekali di job (dibuat otomatis
+// dari order, belum sempat ditugaskan lewat Papan) padahal admin SUDAH
+// tahu siapa yang sebenarnya mengerjakan dari laporan WA — AssignDropdown
+// yang sama dipakai Papan/JobCard, bukan komponen baru.
+//
+// TTD PENERIMA SENGAJA DI-HOLD (permintaan owner eksplisit) — rencana
+// jangka panjangnya: tab khusus PER KENDARAAN (baca jalur, mapping Google
+// Maps, dokumentasi sampai TTD digital), dan owner sendiri ragu TTD bisa
+// diandalkan di HP Android lama driver. TIDAK dibangun jalur upload TTD
+// manual di sini — bagian "Tanda Tangan Penerima" di bawah TETAP tampil
+// (baca job.signatureUrl apa adanya, kalau suatu saat terisi dari jalur
+// lain), cuma tidak ada cara MENGISINYA dari drawer ini.
 export default function PodReviewDrawer({ job, onClose, onChanged }) {
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Daftar driver/helper untuk AssignDropdown — diambil SEKALI (bukan per
+  // job dibuka), sama pola dengan komponen lain yang memakai dropdown ini.
+  const [drivers, setDrivers] = useState([]);
+  const [helpers, setHelpers] = useState([]);
+  useEffect(() => {
+    api.getDrivers().then(setDrivers).catch(() => {});
+    api.getHelpers().then(setHelpers).catch(() => {});
+  }, []);
+
   // Input manual — direset tiap job berganti (lihat useEffect di bawah),
-  // supaya foto job SEBELUMNYA yang belum sempat disubmit tidak nyasar
-  // ke job BERIKUTNYA kalau dispatcher pindah baris tanpa menutup drawer.
+  // supaya foto/detail job SEBELUMNYA yang belum sempat disubmit tidak
+  // nyasar ke job BERIKUTNYA kalau dispatcher pindah baris tanpa menutup
+  // drawer. Driver/helper diprefill dari job (kalau sudah ada), waktu
+  // selesai diprefill "sekarang" — keduanya TETAP bisa diubah admin
+  // sebelum submit, ini cuma titik awal yang masuk akal.
   const [proofFiles, setProofFiles] = useState([]);
-  const [signatureFiles, setSignatureFiles] = useState([]);
+  const [manualCompletedAt, setManualCompletedAt] = useState("");
+  const [manualDriverId, setManualDriverId] = useState("");
+  const [manualHelperId, setManualHelperId] = useState("");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     setProofFiles([]);
-    setSignatureFiles([]);
     setUploadError("");
     setRejecting(false);
     setNote("");
     setError("");
+    setManualCompletedAt(toDatetimeLocal(new Date()));
+    setManualDriverId(job?.driverId || "");
+    setManualHelperId(job?.helperId || "");
   }, [job?.id]);
 
   if (!job) return null;
@@ -98,6 +145,7 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
 
   async function selesaikanManual() {
     if (proofFiles.length === 0) { setUploadError("Minimal 1 foto bukti wajib diunggah"); return; }
+    if (!manualCompletedAt) { setUploadError("Waktu selesai wajib diisi"); return; }
     setUploadBusy(true);
     setUploadError("");
     try {
@@ -105,15 +153,12 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
       proofFiles.forEach(({ file }) => fd.append("photos", file));
       const { urls } = await api.uploadJobPhotos(job.id, fd);
 
-      let signatureUrl;
-      if (signatureFiles.length > 0) {
-        const fd2 = new FormData();
-        fd2.append("photos", signatureFiles[0].file);
-        const res2 = await api.uploadJobPhotos(job.id, fd2);
-        signatureUrl = res2.urls[0];
-      }
-
-      await api.completeArmadaJob(job.id, { proofPhotoUrls: urls, signatureUrl });
+      await api.completeArmadaJob(job.id, {
+        proofPhotoUrls: urls,
+        completedAt: new Date(manualCompletedAt).toISOString(),
+        driverId: manualDriverId || null,
+        helperId: manualHelperId || null,
+      });
       onChanged();
       onClose();
     } catch (e) {
@@ -178,30 +223,54 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
               )}
             </div>
 
-            {/* Input Manual (D-086) — HANYA muncul kalau job belum pernah
-                diselesaikan lewat sistem sama sekali. Begitu tersimpan,
-                job.status jadi COMPLETED dan bagian ini otomatis hilang di
-                render berikutnya (data yang sama, tinggal buka lagi lewat
-                job.proofPhotoUrls seperti biasa). */}
+            {/* Input Manual (D-086/D-087) — HANYA muncul kalau job belum
+                pernah diselesaikan lewat sistem sama sekali. Begitu
+                tersimpan, job.status jadi COMPLETED dan bagian ini otomatis
+                hilang di render berikutnya (data yang sama, tinggal buka
+                lagi lewat job.proofPhotoUrls seperti biasa). TTD SENGAJA
+                tidak ada di sini (di-hold, lihat catatan header komponen). */}
             {belumSelesaiSistem && (
               <div className="mt-3 rounded-btn border border-dashed border-accent/40 bg-accentbg/30 p-3">
                 <p className="mb-2.5 text-[11.5px] leading-relaxed text-ink2">
-                  Job ini belum pernah ditandai selesai lewat sistem — kalau bukti sudah diterima manual (mis. lewat WhatsApp), unggah di sini untuk menandai selesai.
+                  Job ini belum pernah ditandai selesai lewat sistem — kalau bukti sudah diterima manual (mis. lewat WhatsApp), lengkapi detailnya lalu unggah di sini.
                 </p>
+
+                <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
+                      <Clock size={11} aria-hidden /> Waktu Selesai
+                    </p>
+                    <input
+                      type="datetime-local"
+                      value={manualCompletedAt}
+                      onChange={(e) => setManualCompletedAt(e.target.value)}
+                      className="h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
+                      <User size={11} aria-hidden /> Driver &amp; Helper
+                    </p>
+                    <AssignDropdown
+                      drivers={drivers}
+                      helpers={helpers}
+                      currentDriverId={manualDriverId}
+                      currentHelperId={manualHelperId}
+                      onPick={(driverId, helperId) => {
+                        setManualDriverId(driverId || "");
+                        if (helperId !== undefined) setManualHelperId(helperId || "");
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <PasteUploadZone
                   files={proofFiles}
                   onFilesChange={setProofFiles}
                   multiple
                   label="Foto bukti (wajib, minimal 1)"
                 />
-                <div className="mt-3">
-                  <PasteUploadZone
-                    files={signatureFiles}
-                    onFilesChange={setSignatureFiles}
-                    multiple={false}
-                    label="Tanda tangan penerima (opsional)"
-                  />
-                </div>
+
                 {uploadError && <p className="mt-2 text-[12px] text-red">{uploadError}</p>}
                 <button
                   type="button"

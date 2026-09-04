@@ -2068,7 +2068,8 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
   }
 });
 
-// POST /api/armada/jobs/:id/complete { proofPhotoUrls, signatureUrl?, note? }
+// POST /api/armada/jobs/:id/complete
+// { proofPhotoUrls, signatureUrl?, completedAt?, driverId?, helperId?, note? }
 // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
 // signatureUrl OPSIONAL (lihat catatan di schema.prisma) — lapisan tambahan,
 // bukan syarat blocking.
@@ -2081,6 +2082,16 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
 // itu, BUKAN pelonggaran alur normal — driver yang benar-benar pakai app
 // tetap wajar lewat EN_ROUTE→ARRIVED seperti biasa, keduanya tetap ada di
 // daftar. Dipakai PodReviewDrawer.jsx (skema input manual) di frontend.
+//
+// completedAt/driverId/helperId OPSIONAL (D-087, 5 September 2026) —
+// laporan owner: "waktu selesai bisa di update manual, tambahkan detail
+// driver, helper yang bertanggung jawab". Ketiganya TIDAK dikirim app
+// driver (yang jalur normalnya: completedAt = saat itu juga, driver/helper
+// = job.driverId/helperId yang sudah ada) — kalau tidak dikirim, PERILAKU
+// LAMA berlaku (completedAt = sekarang, driverId/helperId job TIDAK
+// disentuh). Cuma dipakai skema input manual, ketika admin tahu job ini
+// SEBENARNYA selesai kapan & siapa yang mengerjakannya (dari laporan WA),
+// bukan "sekarang, entah siapa".
 armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
@@ -2091,13 +2102,24 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     if (proofPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum menyelesaikan job");
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
-    const { signatureUrl } = req.body;
+    const { signatureUrl, completedAt, driverId, helperId } = req.body;
     if (signatureUrl != null && !isValidUrl(signatureUrl)) throw new ArmadaError("URL tanda tangan tidak valid");
+
+    let waktuSelesai = new Date();
+    if (completedAt !== undefined) {
+      const parsed = new Date(completedAt);
+      if (Number.isNaN(parsed.getTime())) throw new ArmadaError("Waktu selesai tidak valid");
+      waktuSelesai = parsed;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
-        data: { status: "COMPLETED", completedAt: new Date(), proofPhotoUrls, signatureUrl: signatureUrl || null },
+        data: {
+          status: "COMPLETED", completedAt: waktuSelesai, proofPhotoUrls, signatureUrl: signatureUrl || null,
+          ...(driverId !== undefined && { driverId: driverId || null }),
+          ...(helperId !== undefined && { helperId: helperId || null }),
+        },
       });
       const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
       // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke
