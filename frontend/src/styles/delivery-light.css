@@ -22,23 +22,31 @@
    ternyata versi terang dinilai kurang cocok) tanpa menyentuh yang lain.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* KOREKSI KEDUA D-049 — sama akar masalah dengan delivery-dark.css: ground
-   solid dipindah ke elemen INI SENDIRI (leluhur `.dh-glow`/`.app-content`),
-   bukan lagi jadi background `.app-content` yang menutup glow di
-   belakangnya. Lihat komentar lengkap di delivery-dark.css. */
+/* KOREKSI D-065 (4 September 2026) — laporan owner: "sempurnakan tampilan
+   light mode ala Apple liquid glass, blur effect, blue gradient" (referensi:
+   Control Center/macOS Tahoe — kaca tembus pandang di ATAS gradien biru yang
+   SUNGGUH terlihat, bukan kaca di atas putih nyaris polos). Root cause versi
+   D-049 kurang "kaca": ground sebelumnya #F3F6FC (nyaris putih) + 3 titik
+   blur kecil opacity rendah — translucency SECARA FISIK butuh sesuatu yang
+   kontras di baliknya supaya kelihatan tembus pandang; kaca di atas warna
+   yang nyaris sama dengan kacanya sendiri ya kelihatan cuma "putih datar".
+   Ground sekarang gradien biru multi-titik yang jelas terlihat (bukan cuma
+   tint), muncul di elemen INI SENDIRI (leluhur `.dh-glow`/`.app-content`,
+   pola sama dengan koreksi D-049 sebelumnya — background elemen leluhur
+   otomatis di BELAKANG seluruh anaknya). */
 html:not([data-theme="dark"]) [data-division="armada"] {
-  background: var(--dh-ground);
+  background:
+    radial-gradient(1100px 720px at 8% -12%, #DCE8FF 0%, rgba(220, 232, 255, 0) 62%),
+    radial-gradient(900px 620px at 96% 18%, #E4EDFF 0%, rgba(228, 237, 255, 0) 58%),
+    radial-gradient(1000px 700px at 40% 115%, #E9F1FF 0%, rgba(233, 241, 255, 0) 55%),
+    var(--dh-ground);
 
-  /* Ground: BUKAN putih polos — --sanss-canvas (tokens.css) sudah dipakai
-     sebagai kanvas SANSS di tempat lain, tint biru pucat yang nyaris tak
-     terlihat tapi cukup untuk glow ambient "menempel" ke sesuatu. Putih
-     murni akan membuat glow biru nyaris tidak kelihatan sama sekali. */
-  --dh-ground: #F3F6FC;
-  --dh-surface: rgba(255, 255, 255, 0.62);
+  --dh-ground: #F5F8FF;
+  --dh-surface: rgba(255, 255, 255, 0.52);
   --dh-surface-solid: #FFFFFF;
-  --dh-elevated: rgba(255, 255, 255, 0.78);
+  --dh-elevated: rgba(255, 255, 255, 0.72);
   --dh-hairline: rgba(20, 87, 217, 0.10);
-  --dh-hairline-strong: rgba(20, 87, 217, 0.16);
+  --dh-hairline-strong: rgba(20, 87, 217, 0.18);
 
   /* SAMA PERSIS dengan delivery-dark.css — satu hue biru, dua mode. */
   --dh-accent: #4C8DFF;
@@ -56,7 +64,7 @@ html:not([data-theme="dark"]) [data-division="armada"] .app-content {
   position: relative;
   z-index: 1;
   background-color: transparent;
-  background-image: radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.07) 1px, transparent 0);
   background-size: 34px 34px;
   background-attachment: fixed;
 }
@@ -73,17 +81,22 @@ html:not([data-theme="dark"]) [data-division="armada"] .dh-glow span {
   border-radius: 50%;
   filter: blur(90px);
 }
+/* Bola blur DINAIKKAN opacity-nya (D-065) — versi D-049 terlalu redup untuk
+   dijadikan "sesuatu yang tembus di balik kaca"; kartu/topbar/sidebar kaca
+   sudah dikembalikan lebih tembus pandang (lihat --dh-surface baru di atas)
+   supaya glow ini benar-benar ikut terlihat MENEMBUS permukaan, bukan cuma
+   warna dasar halaman yang kosong. */
 html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-1 {
-  width: 520px; height: 520px; top: -160px; left: 120px;
-  background: radial-gradient(circle, rgba(76, 141, 255, 0.22), transparent 70%);
+  width: 560px; height: 560px; top: -170px; left: 100px;
+  background: radial-gradient(circle, rgba(76, 141, 255, 0.34), transparent 70%);
 }
 html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-2 {
-  width: 460px; height: 460px; top: 280px; right: -120px;
-  background: radial-gradient(circle, rgba(96, 165, 250, 0.16), transparent 70%);
+  width: 500px; height: 500px; top: 260px; right: -140px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.26), transparent 70%);
 }
 html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-3 {
-  width: 600px; height: 600px; bottom: -220px; left: 35%;
-  background: radial-gradient(circle, rgba(29, 78, 216, 0.14), transparent 70%);
+  width: 640px; height: 640px; bottom: -240px; left: 32%;
+  background: radial-gradient(circle, rgba(29, 78, 216, 0.22), transparent 70%);
 }
 
 /* Sidebar: putih kaca, BUKAN putih solid — supaya glow di belakangnya masih
@@ -92,17 +105,22 @@ html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-3 {
 html:not([data-theme="dark"]) [data-division="armada"] .sidebar {
   position: relative;
   z-index: 1;
-  background-color: rgba(255, 255, 255, 0.86);
-  background-image: radial-gradient(420px 300px at 50% -12%, rgba(76, 141, 255, 0.10), transparent 72%);
+  background-color: rgba(255, 255, 255, 0.74);
+  background-image: radial-gradient(460px 340px at 50% -12%, rgba(76, 141, 255, 0.16), transparent 72%);
   border-right: 1px solid var(--dh-hairline);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.6);
 }
 
-/* Topbar kaca — inti "glass effect", sama alasan dengan dark mode. */
+/* Topbar kaca — inti "glass effect", sama alasan dengan dark mode. Opacity
+   diturunkan + saturate dinaikkan (D-065) supaya gradien biru di balik
+   panel ikut "terbawa" ke dalam blur-nya — persis efek liquid glass Apple,
+   bukan sekadar panel putih transparan. */
 html:not([data-theme="dark"]) [data-division="armada"] .app-content > header {
-  background-color: rgba(255, 255, 255, 0.66) !important;
-  backdrop-filter: blur(20px) saturate(140%);
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(26px) saturate(160%);
   border-bottom: 1px solid var(--dh-hairline);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* ── 1b/1c. CHROME SIDEBAR & TOPBAR (D-047, koreksi kedua hari yang sama) ──
@@ -159,10 +177,14 @@ html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"],
 html:not([data-theme="dark"]) [data-division="armada"] .settings-card {
   position: relative;
   background-color: var(--dh-surface);
-  backdrop-filter: blur(16px) saturate(160%);
+  /* blur+saturate dinaikkan (D-065) — 16px terlalu tipis untuk membaurkan
+     gradien biru ground yang sekarang jauh lebih terlihat; 24px membuat
+     warna di baliknya benar-benar "meleleh" masuk ke kartu, bukan cuma
+     redup sedikit — itu yang membedakan "kaca" dari "putih semi-transparan". */
+  backdrop-filter: blur(24px) saturate(170%);
   border: 1px solid var(--dh-hairline);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
     0 12px 32px -20px rgba(20, 87, 217, 0.18);
 }
 
@@ -211,9 +233,25 @@ html:not([data-theme="dark"]) [data-division="armada"] .sidebar-section-label {
    sebelumnya interpretasi saya, bukan nilai asli artifact (2-stop rata). */
 html:not([data-theme="dark"]) [data-division="armada"] .btn-primary,
 html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a) {
+  position: relative;
   background-image: linear-gradient(135deg, #3B82F6, #1D4ED8);
   border: none;
   box-shadow: 0 6px 18px -6px rgba(29, 78, 216, 0.45);
+  /* Highlight kaca di tepi atas — pantulan tipis, bukan gradien penuh —
+     supaya tombol solid ikut kebagian kesan "liquid glass" (D-065), tanpa
+     mengorbankan kontras teks putih di atasnya (highlight cuma di ATAS,
+     bukan menutupi seluruh permukaan tombol). */
+  overflow: hidden;
+}
+html:not([data-theme="dark"]) [data-division="armada"] .btn-primary::before,
+html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 44%;
+  border-radius: inherit;
+  background: linear-gradient(rgba(255, 255, 255, 0.35), transparent);
+  pointer-events: none;
 }
 html:not([data-theme="dark"]) [data-division="armada"] .btn-primary:hover,
 html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a):hover {
@@ -252,7 +290,7 @@ html:not([data-theme="dark"]) [data-division="armada"] [class*="shadow-popover"]
 /* ── 4c. CHIP PICKER: kaca tipis di state non-aktif (D-048) ────────────── */
 html:not([data-theme="dark"]) [data-division="armada"] .chip:not(.chip-active) {
   background-color: rgba(20, 87, 217, 0.025);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px);
 }
 html:not([data-theme="dark"]) [data-division="armada"] .chip.chip-empty {
   background-color: transparent;
