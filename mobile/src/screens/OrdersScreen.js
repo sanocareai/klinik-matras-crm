@@ -28,18 +28,40 @@ import OrderFormModal from "../components/OrderFormModal";
 import SalesFilterModal from "../components/SalesFilterModal";
 import {
   formatRupiah, formatRupiahShort,
-  ORDER_STATUS_LABELS, ORDER_STATUSES,
+  ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
 } from "../utils/format";
 
 const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 20;
 // Ambang "mandek" — SAMA PERSIS dengan web (pages/Orders.jsx MANDEK_HARI)
 // supaya sales yang kerja dari HP dan dari CRM web melihat definisi yang
-// konsisten, bukan dua standar berbeda.
+// konsisten, bukan dua standar berbeda. SEWA_DIKIRIM/SEWA_DIAMBIL (4 Sep
+// 2026) ikut dikecualikan — bertahan lama di SEWA_DIKIRIM MEMANG normal
+// (itulah tujuan sewa), bukan tanda tertahan.
 const MANDEK_HARI = 7;
-const isMandek = (o) => !["DELIVERED", "CANCELLED"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
+const isMandek = (o) =>
+  !["DELIVERED", "CANCELLED", "SEWA_DIKIRIM", "SEWA_DIAMBIL"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
 
-const STATUS_TABS = [{ key: "", label: "Semua" }, ...ORDER_STATUSES.map((s) => ({ key: s, label: ORDER_STATUS_LABELS[s] || s }))];
+// Tab status ringkas (4 Sep 2026, paritas dgn web pages/Orders.jsx) — bucket
+// utk LAYANAN/BARU (Diproses/Siap Kirim/Terkirim), + 2 status SEWA aslinya
+// sbg tab terpisah (layar ini tidak punya filter Kategori tersendiri, jadi
+// SEWA tetap harus bisa dicari lewat tab). "PROCESSING" dipakai SENTINEL
+// bucket — lihat statusQueryParam().
+const STATUS_TABS = [
+  { key: "", label: "Semua" },
+  { key: "PROCESSING", label: ORDER_STATUS_BUCKET_LABELS.PROCESSING },
+  { key: "READY", label: ORDER_STATUS_BUCKET_LABELS.READY },
+  { key: "DELIVERED", label: ORDER_STATUS_BUCKET_LABELS.DELIVERED },
+  { key: "SEWA_DIKIRIM", label: ORDER_STATUS_LABELS.SEWA_DIKIRIM },
+  { key: "SEWA_DIAMBIL", label: ORDER_STATUS_LABELS.SEWA_DIAMBIL },
+  { key: "CANCELLED", label: ORDER_STATUS_BUCKET_LABELS.CANCELLED },
+];
+// Terjemahan filter status → query param backend — sama pola dgn web
+// statusQueryParam(). Bucket "PROCESSING" TIDAK dikirim, disaring ulang
+// client-side dari superset yang sudah dimuat (lihat load()).
+function statusQueryParam(statusFilter) {
+  return (statusFilter && statusFilter !== "PROCESSING") ? statusFilter : undefined;
+}
 
 function SkeletonRow({ tokens, styles }) {
   return (
@@ -145,20 +167,28 @@ export default function OrdersScreen() {
       // dan tampilkan peringatan yang sama kalau tetap masih terpotong.
       const params = { limit: 500 };
       if (search) params.search = search;
-      if (statusFilter) params.status = statusFilter;
+      const statusParam = statusQueryParam(statusFilter);
+      if (statusParam) params.status = statusParam;
       // Tab "Semua" (statusFilter kosong) sekarang berarti "semua yang masih
       // aktif" (26 Agustus 2026) -- 267 dari 344 order production sudah
       // DELIVERED/CANCELLED, tidak perlu ikut ditrack. Klik tab "Delivered"/
       // "Cancelled" eksplisit tetap menampilkannya seperti biasa (lihat
-      // catatan `hideFinished` di routes/orders.js).
-      else params.hideFinished = "true";
+      // catatan `hideFinished` di routes/orders.js). Tab bucket "Diproses"
+      // (statusFilter==="PROCESSING" tanpa statusParam) JUGA tidak boleh ikut
+      // hideFinished — itu sendiri sudah eksplisit memilih status tertentu.
+      else if (!statusFilter) params.hideFinished = "true";
       if (salesFilter) params.salesId = salesFilter.id;
       const data = await api.getOrders(params);
-      setOrders(data.items || []);
+      // Bucket "Diproses" tidak dikirim ke backend (lihat statusQueryParam) —
+      // disaring di sini, dari superset yang sudah dimuat.
+      const items = statusFilter === "PROCESSING"
+        ? (data.items || []).filter((o) => orderStatusBucket(o.status) === "PROCESSING")
+        : (data.items || []);
+      setOrders(items);
       setTruncated(!!data.truncated);
       setSummary({
-        total: (data.items || []).length,
-        value: (data.items || []).reduce((s, o) => s + (o.value || 0), 0),
+        total: items.length,
+        value: items.reduce((s, o) => s + (o.value || 0), 0),
       });
       setVisibleCount(PAGE_SIZE);
     } catch (err) {

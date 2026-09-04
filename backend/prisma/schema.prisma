@@ -105,6 +105,14 @@ enum OrderStatus {
   READY // siap kirim
   DELIVERED // sudah terkirim/selesai
   CANCELLED
+  // Ditambah 4 Sep 2026 — status KHUSUS kategori SEWA, lepas total dari
+  // auto-compute Unit/Bengkel (lihat guard category==="SEWA" di
+  // services/orderStatusSync.js). Order SEWA hanya pernah berada di salah
+  // satu dari 2 status ini (+ CANCELLED), diset manual, TIDAK PERNAH
+  // otomatis dari status Unit — sewa bukan alur produksi, tapi
+  // kirim-pakai-ambil.
+  SEWA_DIKIRIM // kasur sewa sudah dikirim & sedang dipakai customer
+  SEWA_DIAMBIL // durasi sewa selesai, kasur sudah diambil kembali
 }
 
 enum PaymentStatus {
@@ -151,12 +159,21 @@ enum PriceItemKind {
 }
 
 enum ProductType {
-  // Kasur
+  // Kasur — untuk kategori LAYANAN (service/upgrade kasur existing customer,
+  // istilah konstruksi yang memang perlu diketahui sales)
   KASUR_SPRING
   KASUR_BUSA
   MULTIBED
   KASUR_2IN1_ATAS
   KASUR_2IN1_BAWAH
+  // Kasur — untuk kategori BARU (beli kasur baru). Daftar TERPISAH dari yang
+  // di atas (4 Sep 2026, permintaan owner) — MULTIBED dipakai bersama karena
+  // sudah relevan di kedua konteks. Lihat jenisProdukOptions() di
+  // frontend/src/utils/format.js (dan salinan mobile) untuk pemilihan daftar
+  // berdasarkan kategori.
+  KASUR_SEHAT
+  KASUR_2IN1
+  KASUR_LAINNYA // free-text tambahan disimpan di Order.notes (jenisKasurLainnya), lihat OrderSection.jsx
   // Sofa
   SOFABED
   SOFA_L

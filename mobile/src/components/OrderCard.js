@@ -18,19 +18,30 @@ import { useTokens } from "../constants/theme";
 import { navigateToOrderTimeline } from "../lib/navigationRef";
 import {
   formatRupiah, shortDate,
-  ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, ORDER_STATUSES,
+  ORDER_STATUS_LABELS, ORDER_STATUS_BADGE, orderStatusesForCategory,
+  ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE,
-  CATEGORY_LABELS, CATEGORY_BADGE, PRODUCT_LINE_LABELS,
+  CATEGORY_LABELS, CATEGORY_BADGE, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
 } from "../utils/format";
 
 function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
-    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "" };
+    return {
+      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "",
+      jenisKasurLainnya: p.jenisKasurLainnya || "",
+    };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
+}
+
+// Label status TAMPILAN ringkas (4 Sep 2026, paritas dgn web
+// OrderSection.jsx#statusBadgeLabel) — bucket utk LAYANAN/BARU, label asli
+// utk SEWA (cuma 2 tahap, tidak perlu dibucket lagi).
+function statusBadgeLabel(status) {
+  return ORDER_STATUS_BUCKET_LABELS[orderStatusBucket(status)] || ORDER_STATUS_LABELS[status] || status;
 }
 
 // Chip row kecil — dipakai quick status change tanpa masuk form edit penuh,
@@ -158,7 +169,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
           </View>
           <Text style={styles.orderValue}>{formatRupiah(order.value)}</Text>
         </View>
-        <Text style={[styles.statusBadge, statusBadge]}>{ORDER_STATUS_LABELS[order.status] || order.status}</Text>
+        <Text style={[styles.statusBadge, statusBadge]}>{statusBadgeLabel(order.status)}</Text>
         {expanded ? <ChevronUp size={16} color={tokens.color.textMuted} /> : <ChevronDown size={16} color={tokens.color.textMuted} />}
       </TouchableOpacity>
 
@@ -208,13 +219,15 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
           {/* Status + Pembayaran (read-only) + quick status change */}
           <Text style={styles.metaLabel}>Status</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
-            <Text style={[styles.pillBadge, ORDER_STATUS_BADGE[order.status]]}>{ORDER_STATUS_LABELS[order.status] || order.status}</Text>
+            <Text style={[styles.pillBadge, ORDER_STATUS_BADGE[order.status]]}>{statusBadgeLabel(order.status)}</Text>
             <Text style={[styles.pillBadge, PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"]]}>
               {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
             </Text>
           </View>
           <View style={{ marginBottom: 8 }}>
-            <ChipPicker options={ORDER_STATUSES} labels={ORDER_STATUS_LABELS} value={order.status} onChange={handleQuickStatusChange} />
+            {/* Opsi dibatasi per kategori (4 Sep 2026) — BARU 3 tahap +
+                Dibatalkan, SEWA cuma Pengiriman/Pengambilan + Dibatalkan. */}
+            <ChipPicker options={orderStatusesForCategory(order.category)} labels={ORDER_STATUS_LABELS} value={order.status} onChange={handleQuickStatusChange} />
           </View>
 
           {/* ID Order */}
@@ -229,6 +242,8 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
               <Text style={styles.categoryHint}>
                 {" "}· {PRODUCT_LINE_LABELS[order.productLine] || "Kasur"}
                 {order.category && order.category !== "LAYANAN" ? ` ${CATEGORY_LABELS[order.category]}` : ""}
+                {order.productType ? ` — ${PRODUCT_TYPE_LABELS[order.productType] || order.productType}` : ""}
+                {order.productType === "KASUR_LAINNYA" && info.jenisKasurLainnya ? ` (${info.jenisKasurLainnya})` : ""}
               </Text>
             )}
           </View>

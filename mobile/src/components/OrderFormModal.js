@@ -40,8 +40,9 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
 import {
-  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
-  PRODUCT_LINE_LABELS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS, resolveVariantKey,
+  formatRupiah, ORDER_STATUS_LABELS, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
+  jenisProdukOptions, resolveVariantKey,
 } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import DateField from "./DateField";
@@ -141,16 +142,22 @@ function SectionHead({ icon: Icon, title, tokens, styles }) {
     </View>
   );
 }
-function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer }) {
-  return JSON.stringify({ merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "" });
+function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer, jenisKasurLainnya }) {
+  return JSON.stringify({
+    merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "",
+    jenisKasurLainnya: jenisKasurLainnya || "",
+  });
 }
 function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
-    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "" };
+    return {
+      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "",
+      jenisKasurLainnya: p.jenisKasurLainnya || "",
+    };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 
@@ -247,6 +254,7 @@ export default function OrderFormModal({
   // catatan disable di render).
   const [productLine, setProductLine] = useState("");
   const [productType, setProductType] = useState("");
+  const [jenisKasurLainnya, setJenisKasurLainnya] = useState("");
   const [showJenisPicker, setShowJenisPicker] = useState(false);
   const isKasur = productLine === "KASUR";
   // usesUkuranDropdown (29 Agustus 2026, bug ditemukan & diperbaiki saat
@@ -358,6 +366,7 @@ export default function OrderFormModal({
       // default skema Order.productLine di backend.
       setProductLine(order.productLine || "KASUR");
       setProductType(order.productType || "");
+      setJenisKasurLainnya(info.jenisKasurLainnya || "");
       setStatus(order.status || "PENDING");
       setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
       setPipelineStage(order.pipelineStage ?? null);
@@ -390,6 +399,7 @@ export default function OrderFormModal({
       setCategory("LAYANAN");
       setProductLine("");
       setProductType("");
+      setJenisKasurLainnya("");
       setCatalog([]);
       setStatus("PENDING");
       setPaymentStatus("BELUM_BAYAR");
@@ -485,7 +495,10 @@ export default function OrderFormModal({
       category,
       productLine,
       productType: productType || undefined,
-      notes: buildNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      notes: buildNotes({
+        merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan,
+        jenisKasurLainnya: productType === "KASUR_LAINNYA" ? jenisKasurLainnya : "",
+      }),
       promoId: promoId || undefined,
       deliveryCity: deliveryCity || undefined,
       deliveryAddress: deliveryAddress || undefined,
@@ -542,7 +555,7 @@ export default function OrderFormModal({
     await api.updateOrder(order.id, {
       status,
       paymentStatus,
-      notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+      notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan, jenisKasurLainnya }),
       promoId: promoId || null,
       deliveryCity: deliveryCity || null,
       deliveryAddress: deliveryAddress || null,
@@ -713,7 +726,9 @@ export default function OrderFormModal({
               <>
                 <Text style={styles.label}>Status</Text>
                 <View style={styles.statusRow}>
-                  {ORDER_STATUSES.map((s) => {
+                  {/* Opsi dibatasi per kategori (4 Sep 2026) — BARU 3 tahap +
+                      Dibatalkan, SEWA cuma Pengiriman/Pengambilan + Dibatalkan. */}
+                  {orderStatusesForCategory(category).map((s) => {
                     const active = status === s;
                     return (
                       <TouchableOpacity
@@ -850,6 +865,18 @@ export default function OrderFormModal({
                 >
                   <Text style={styles.selectBoxText}>{PRODUCT_TYPE_LABELS[productType] || "— Pilih Jenis —"}</Text>
                 </TouchableOpacity>
+                {/* Jenis Kasur "Lainnya" (kategori BARU, 4 Sep 2026) —
+                    free-text pelengkap, disimpan di Order.notes
+                    (jenisKasurLainnya), paritas dgn web. */}
+                {productType === "KASUR_LAINNYA" && (
+                  <TextInput
+                    style={styles.input}
+                    value={jenisKasurLainnya}
+                    onChangeText={setJenisKasurLainnya}
+                    placeholder="Sebutkan jenis kasurnya (mis. Kasur Lipat)"
+                    editable={!isEdit}
+                  />
+                )}
               </>
             )}
 
@@ -1317,7 +1344,7 @@ export default function OrderFormModal({
       <PickerSheet
         visible={showJenisPicker}
         title="Pilih Jenis Produk"
-        options={PRODUCT_TYPES_BY_LINE[productLine] || []}
+        options={jenisProdukOptions(productLine, category)}
         getKey={(v) => v}
         getLabel={(v) => PRODUCT_TYPE_LABELS[v] || v}
         onSelect={setProductType}
@@ -1344,10 +1371,16 @@ export default function OrderFormModal({
         onSelect={setDeliveryCity}
         onClose={() => setShowKotaPicker(false)}
       />
+      {/* BUG DIPERBAIKI (4 Sep 2026, laporan owner — screenshot "Baru" tapi
+          opsi yang tampil Upgrade/Full Service/Ganti Kain): options
+          SEBELUMNYA selalu orderOptions.jenisLayanan (daftar statis
+          LAYANAN-only dari GET /master-data/order-options, TIDAK terfilter
+          kategori). `catalog` di sini SUDAH benar terfilter category lewat
+          api.getPriceList() (lihat useEffect di atas). */}
       <PickerSheet
         visible={!!layananPickerTarget}
         title="Pilih Jenis Layanan"
-        options={orderOptions.jenisLayanan}
+        options={catalog.map((c) => c.name)}
         onSelect={(v) => layananPickerTarget && setItemField(layananPickerTarget, "layananName", v)}
         onClose={() => setLayananPickerTarget(null)}
       />

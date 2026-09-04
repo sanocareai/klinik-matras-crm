@@ -52,6 +52,10 @@ export const ORDER_STATUS_LABELS = {
   READY: "Siap Kirim",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
+  // Status KHUSUS kategori SEWA (4 Sep 2026, paritas dgn web) — lihat
+  // orderStatusesForCategory & ORDER_STATUS_BUCKET di bawah.
+  SEWA_DIKIRIM: "Pengiriman",
+  SEWA_DIAMBIL: "Pengambilan",
 };
 export const ORDER_STATUS_BADGE = {
   PENDING:    { backgroundColor: "#fef3c7", color: "#92400e" },
@@ -60,8 +64,38 @@ export const ORDER_STATUS_BADGE = {
   READY:      { backgroundColor: "#ccfbf1", color: "#065f46" },
   DELIVERED:  { backgroundColor: "#dcfce7", color: "#166534" },
   CANCELLED:  { backgroundColor: "#fee2e2", color: "#991b1b" },
+  SEWA_DIKIRIM: { backgroundColor: "#dbeafe", color: "#1e40af" },
+  SEWA_DIAMBIL: { backgroundColor: "#dcfce7", color: "#166534" },
 };
 export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+
+// SEWA (4 Sep 2026) TIDAK ikut sistem status Unit/Bengkel sama sekali (lihat
+// guard category==="SEWA" di backend/src/services/orderStatusSync.js) — cuma
+// 2 status manual. Cek DULUAN, sebelum cabang BARU.
+export function orderStatusesForCategory(category) {
+  if (category === "SEWA") return ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
+  return category === "BARU" ? ["PROCESSING", "READY", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+}
+
+// Bucket tampilan ringkas (4 Sep 2026, paritas dgn frontend/src/utils/format.js)
+// — status ASLI Order.status TIDAK berubah, ini cuma utk badge/kartu ringkas.
+export const ORDER_STATUS_BUCKET = {
+  PENDING: "PROCESSING",
+  PICKUP: "PROCESSING",
+  PROCESSING: "PROCESSING",
+  READY: "READY",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+};
+export const ORDER_STATUS_BUCKET_LABELS = {
+  PROCESSING: "Diproses",
+  READY: "Siap Kirim",
+  DELIVERED: "Terkirim",
+  CANCELLED: "Dibatalkan",
+};
+export function orderStatusBucket(status) {
+  return ORDER_STATUS_BUCKET[status] || status;
+}
 
 export const PAYMENT_STATUS_LABELS = { BELUM_BAYAR: "Belum Bayar", DP: "DP", LUNAS: "Lunas" };
 export const PAYMENT_STATUS_BADGE = {
@@ -103,8 +137,24 @@ export const PRODUCT_TYPE_LABELS = {
   SOFA_1_SEATER:    "Sofa 1 Seater",
   SOFA_2_SEATER:    "Sofa 2 Seater",
   SOFA_3_SEATER:    "Sofa 3 Seater",
-  DIVAN_SANDARAN:   "Divan - Sandaran",
+  // "Sandaran" saja (dikoreksi 4 Sep 2026 — sinkron dgn fix web 3 Sep 2026,
+  // sempat luput di sini): kolom export Excel web "Lini Produk" sudah bilang
+  // "Divan" sendiri, jadi "Jenis Produk" tidak perlu mengulang.
+  DIVAN_SANDARAN:   "Sandaran",
+  // Jenis Kasur khusus kategori BARU (4 Sep 2026) — lihat jenisProdukOptions().
+  KASUR_SEHAT:      "Kasur Sehat",
+  KASUR_2IN1:       "Kasur 2in1",
+  KASUR_LAINNYA:    "Lainnya",
 };
+
+// Jenis Kasur untuk kategori BARU (4 Sep 2026, paritas dgn web) — lihat
+// jenisProdukOptions() di frontend/src/utils/format.js untuk alasan lengkap.
+export function jenisProdukOptions(productLine, category) {
+  if (productLine === "KASUR" && category === "BARU") {
+    return ["KASUR_SEHAT", "MULTIBED", "KASUR_2IN1", "KASUR_LAINNYA"];
+  }
+  return PRODUCT_TYPES_BY_LINE[productLine] || [];
+}
 
 // Kategori baris katalog harga (PriceItem.kind / OrderItem.kind snapshot) —
 // SATU sumber label dgn form input & export web.
@@ -195,16 +245,17 @@ export const HEALTH_COMPLAINT_LABELS = {
 // SUDAH punya salinan lokal identik (parseNotes()); tempat baru manapun
 // yang butuh ini sebaiknya pakai yang di sini, bukan menambah salinan ketiga.
 export function parseOrderNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
     return {
       merkKasur:       p.merkKasur || "",
       ukuranKasur:     p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
+      jenisKasurLainnya: p.jenisKasurLainnya || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 

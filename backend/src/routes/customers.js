@@ -702,7 +702,17 @@ customerRouter.post("/:id/orders", async (req, res) => {
       const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
       if (jumlahUnit > 0) {
         await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
-        await syncOrderStatus(tx, created.id);
+        // SEWA (4 Sep 2026) tidak ikut auto-compute dari Unit — Unit tetap
+        // dibuat (Armada masih butuh utk job antar/ambil), tapi Order.status
+        // dikunci manual ke SEWA_DIKIRIM sejak lahir (bukan hasil sync).
+        // syncOrderStatus() sendiri sudah menjaga ini juga (early-return utk
+        // category SEWA) — dua lapis sengaja, supaya order baru langsung
+        // tampil status yang benar tanpa menunggu unit pertama mulai stage.
+        if (cat === "SEWA") {
+          await tx.order.update({ where: { id: created.id }, data: { status: "SEWA_DIKIRIM", statusLocked: true } });
+        } else {
+          await syncOrderStatus(tx, created.id);
+        }
       }
 
       // Draft invoice lahir BERSAMA order-nya, di transaksi yang SAMA (31

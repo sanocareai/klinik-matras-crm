@@ -8,7 +8,7 @@ import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
 import {
   formatRupiah, formatRupiahShort,
-  ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
@@ -64,7 +64,32 @@ const STATUS_TONE = {
   READY:      { chip: "bg-accentbg text-accent", dot: "bg-accent" },
   DELIVERED:  { chip: "bg-greenbg text-green",   dot: "bg-green" },
   CANCELLED:  { chip: "bg-redbg text-red",       dot: "bg-red" },
+  SEWA_DIKIRIM: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  SEWA_DIAMBIL: { chip: "bg-greenbg text-green",   dot: "bg-green" },
 };
+
+// Kanban ringkas (4 Sep 2026, laporan owner — lihat ORDER_STATUS_BUCKET di
+// utils/format.js). LAYANAN/BARU dikelompokkan 3+1 bucket (bukan 5+1 status
+// asli); SEWA (view difilter kategori SEWA) pakai 2 status aslinya langsung
+// (sudah cuma 2 tahap, tidak perlu dibucket lagi).
+const KANBAN_BUCKETS = ["PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+const SEWA_KANBAN_STATUSES = ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
+// Kanban CAMPURAN (kategori tidak difilter ke SEWA saja) sengaja
+// menyederhanakan order SEWA yang ikut tampil ke bucket "Terkirim" —
+// SEWA_DIKIRIM (kasur sedang dipakai, analog "sudah terkirim") atau
+// SEWA_DIAMBIL (transaksi selesai). Ini KEPUTUSAN tampilan, bukan bug —
+// lihat CLAUDE.md/plan D-051 lanjutan.
+function kanbanBucket(status) {
+  const b = orderStatusBucket(status);
+  return KANBAN_BUCKETS.includes(b) ? b : "DELIVERED";
+}
+// Terjemahan filter status → query param backend. "PROCESSING" dipakai
+// SENTINEL bucket "Diproses" (PENDING+PICKUP+PROCESSING) — backend cuma
+// bisa cocokkan SATU nilai literal, jadi bucket ini SENGAJA tidak dikirim,
+// disaring ulang client-side (lihat `items` useMemo & handleExport).
+function statusQueryParam(fStatus) {
+  return (fStatus && fStatus !== "PROCESSING") ? fStatus : undefined;
+}
 
 const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
 
@@ -149,9 +174,14 @@ function SalesGroupSettings() {
 
 // Ambang "mandek": order yang tertahan di satu status kerja terlalu lama.
 // DELIVERED/CANCELLED dikecualikan — itu status AKHIR, lama di sana normal.
+// SEWA_DIKIRIM (4 Sep 2026) IKUT dikecualikan — beda dari order LAYANAN/BARU,
+// bertahan lama di status ini MEMANG normal (itulah tujuan sewa: kasur
+// dipakai customer selama durasi sewa, bisa berminggu-minggu/berbulan-bulan),
+// bukan tanda tertahan/terlantar. SEWA_DIAMBIL juga status akhir sperti
+// DELIVERED.
 const MANDEK_HARI = 7;
 const isMandek = (o) =>
-  !["DELIVERED", "CANCELLED"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
+  !["DELIVERED", "CANCELLED", "SEWA_DIKIRIM", "SEWA_DIAMBIL"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
 
 // Dropdown status berwarna sesuai STATUS_TONE — dipakai di board (OrderCard)
 // & tabel, supaya status BISA diubah langsung di halaman Order, tanpa harus
@@ -169,7 +199,11 @@ function StatusSelect({ order, onChange, className }) {
     <BadgeDropdown
       value={order.status}
       onChange={(v) => onChange(order, v)}
-      options={SEMUA_STATUS.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+      // Opsi override dibatasi per KATEGORI (4 Sep 2026) — BARU sudah 3
+      // tahap + Dibatalkan, SEWA cuma Pengiriman/Pengambilan + Dibatalkan
+      // (lihat orderStatusesForCategory di utils/format.js). Sebelumnya
+      // dropdown ini SELALU menawarkan 6 status lama tanpa peduli kategori.
+      options={orderStatusesForCategory(order.category).map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
       getChipClass={(v) => (STATUS_TONE[v] || { chip: "bg-inset text-ink2" }).chip}
       locked={!!order.statusLocked}
       lockedTitle="Status di-override manual — ikut hitungan otomatis lagi lewat drawer profil pelanggan"
@@ -412,7 +446,7 @@ export default function Orders() {
     try {
       const res = await api.getOrders({
         search: debounced || undefined,
-        status: fStatus || undefined,
+        status: statusQueryParam(fStatus),
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
         salesId: fSales || undefined,
@@ -469,6 +503,9 @@ export default function Orders() {
 
   const items = useMemo(() => {
     let list = data?.items || [];
+    // Bucket "Diproses" TIDAK dikirim ke backend (lihat statusQueryParam) —
+    // disaring di sini, dari superset yang sudah dimuat.
+    if (fStatus === "PROCESSING") list = list.filter((o) => orderStatusBucket(o.status) === "PROCESSING");
     if (hanyaMandek) list = list.filter(isMandek);
     if (sortKey && SORT_GETTERS[sortKey]) {
       const get = SORT_GETTERS[sortKey];
@@ -480,7 +517,7 @@ export default function Orders() {
       });
     }
     return list;
-  }, [data, hanyaMandek, sortKey, sortDir]);
+  }, [data, fStatus, hanyaMandek, sortKey, sortDir]);
 
   const perStatus = useMemo(() => {
     const map = {};
@@ -640,7 +677,7 @@ export default function Orders() {
     try {
       const res = await api.getOrders({
         search: debounced || undefined,
-        status: fStatus || undefined,
+        status: statusQueryParam(fStatus),
         category: fKategori || undefined,
         paymentStatus: fBayar || undefined,
         salesId: fSales || undefined,
@@ -660,7 +697,10 @@ export default function Orders() {
           `Persempit rentang tanggal atau tambah filter dulu sebelum export.`
         );
       }
-      semuaOrder = res.items;
+      // Bucket "Diproses" (lihat statusQueryParam) tidak dikirim ke backend,
+      // jadi disaring ulang di sini SEBELUM dipakai export — sama seperti
+      // `items` di layar.
+      semuaOrder = fStatus === "PROCESSING" ? res.items.filter((o) => orderStatusBucket(o.status) === "PROCESSING") : res.items;
     } catch (e) {
       alert("Gagal memuat data untuk export: " + e.message);
       setExporting(false);
@@ -844,7 +884,12 @@ export default function Orders() {
             <FilterDropdown
               icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
               value={fStatus} onChange={setFStatus}
-              options={SEMUA_STATUS.map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] || s }))}
+              // Opsi status DISEDERHANAKAN jadi bucket (4 Sep 2026) — kecuali
+              // filter Kategori sedang dikunci ke SEWA, yang statusnya sendiri
+              // sudah cuma 2 tahap (lihat KANBAN_BUCKETS/SEWA_KANBAN_STATUSES).
+              options={(fKategori === "SEWA" ? SEWA_KANBAN_STATUSES : KANBAN_BUCKETS).map((s) => ({
+                value: s, label: (fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS)[s] || s,
+              }))}
               placeholder="Semua Status"
               ariaLabel="Filter status order"
             />
@@ -996,15 +1041,28 @@ export default function Orders() {
           // vertikal sendiri (pelajaran dari Pipeline: satu kolom panjang tidak
           // boleh menentukan panjang halaman).
           <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-            {SEMUA_STATUS.filter((s) => s !== "CANCELLED" || perStatus[s].count > 0).map((status) => {
-              const kolom = items.filter((o) => o.status === status);
+            {(() => {
+              // Kanban ringkas (4 Sep 2026): SEWA-only view pakai 2 status
+              // aslinya, view lain (semua/LAYANAN/BARU campur) pakai 3 bucket
+              // (Diproses/Siap Kirim/Terkirim) — lihat KANBAN_BUCKETS &
+              // kanbanBucket() di atas.
+              const kolomKategori = fKategori === "SEWA" ? SEWA_KANBAN_STATUSES : KANBAN_BUCKETS;
+              const groupFn = fKategori === "SEWA"
+                ? (o) => o.status
+                : (o) => kanbanBucket(o.status);
+              return kolomKategori
+                .map((status) => ({ status, kolom: items.filter((o) => groupFn(o) === status) }))
+                .filter(({ status, kolom }) => status !== "CANCELLED" || kolom.length > 0);
+            })().map(({ status, kolom }) => {
               const mandekKolom = kolom.filter(isMandek).length;
+              const labelMap = fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS;
+              const nilaiKolom = kolom.reduce((s, o) => s + (o.value || 0), 0);
               return (
                 <div key={status} className="flex w-[272px] shrink-0 flex-col rounded-2xl bg-inset/80 p-2.5">
                   <div className="flex items-center gap-2 px-0.5">
                     <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATUS_TONE[status]?.dot || "bg-ink3")} />
                     <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">
-                      {ORDER_STATUS_LABELS[status] || status}
+                      {labelMap[status] || status}
                     </span>
                     <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink2">
                       {kolom.length}
@@ -1012,7 +1070,7 @@ export default function Orders() {
                   </div>
                   <div className="mb-2 mt-1 flex items-baseline justify-between gap-2 px-0.5">
                     <span className="text-[13px] font-bold tabular-nums text-ink">
-                      {formatRupiahShort(perStatus[status].value)}
+                      {formatRupiahShort(nilaiKolom)}
                     </span>
                     {mandekKolom > 0 && (
                       <span className="shrink-0 text-[10px] font-semibold text-orange">

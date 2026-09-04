@@ -64,9 +64,15 @@ export function computeOrderStatus(units) {
 export async function syncOrderStatus(tx, orderId) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { status: true, statusLocked: true },
+    select: { status: true, statusLocked: true, category: true },
   });
   if (!order || order.statusLocked) return;
+  // SEWA (4 Sep 2026) punya status sendiri (SEWA_DIKIRIM/SEWA_DIAMBIL,
+  // diset manual lewat override statusLocked di titik create/edit) — lepas
+  // total dari perhitungan Unit/Bengkel, yang memang dibangun untuk alur
+  // produksi LAYANAN/BARU. Jangan biarkan Unit sewa (dibuat utk keperluan
+  // Armada antar/ambil) diam-diam menimpa status SEWA.
+  if (order.category === "SEWA") return;
 
   const units = await tx.unit.findMany({ where: { orderId }, select: { status: true, currentStageId: true } });
   const computed = computeOrderStatus(units);

@@ -138,6 +138,11 @@ export const ORDER_STATUS_LABELS = {
   READY: "Siap Kirim",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
+  // Status KHUSUS kategori SEWA (4 Sep 2026) — lihat orderStatusesForCategory
+  // & ORDER_STATUS_BUCKET di bawah. Order SEWA tidak pernah memakai 5 status
+  // di atas.
+  SEWA_DIKIRIM: "Pengiriman",
+  SEWA_DIAMBIL: "Pengambilan",
 };
 
 // ⚠️ "Meta Ads" TANPA embel-embel "(FB/IG)". Facebook & Instagram dipisah
@@ -202,7 +207,12 @@ export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELI
 // penuh, karena tabel itu menampilkan order LINTAS kategori sekaligus dan
 // semua 6 nilai tetap valid untuk DICARI (order LAYANAN/SEWA lama masih
 // bisa berstatus PENDING/PICKUP).
+// SEWA (4 Sep 2026) TIDAK ikut sistem status Unit/Bengkel sama sekali (lihat
+// guard category==="SEWA" di backend/src/services/orderStatusSync.js) — cuma
+// 2 status manual: kasur sedang dipakai customer (Pengiriman), atau sudah
+// diambil kembali (Pengambilan). Dicek DULUAN, sebelum cabang BARU.
 export function orderStatusesForCategory(category) {
+  if (category === "SEWA") return ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
   return category === "BARU" ? ["PROCESSING", "READY", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
 }
 
@@ -253,7 +263,41 @@ export const ORDER_STATUS_VARIANT = {
   READY:     "info",
   DELIVERED: "success",
   CANCELLED: "neutral",
+  SEWA_DIKIRIM: "info",
+  SEWA_DIAMBIL: "success",
 };
+
+// Bucket tampilan ringkas (4 Sep 2026) — laporan owner: 5 status LAYANAN/BARU
+// (Menunggu/Pengambilan/Diproses/Siap Kirim/Terkirim) terlalu granular untuk
+// dilihat sales sehari-hari, mau disederhanakan jadi 3 tahap. Status ASLI di
+// Order.status TIDAK berubah/disederhanakan (tetap dihitung otomatis dari
+// Unit lewat orderStatusSync.js, tetap dipakai di riwayat/OrderTimelineDrawer)
+// — bucket ini CUMA untuk badge & Kanban ringkas. Dropdown override manual
+// (orderStatusesForCategory) juga TIDAK ikut berubah — sales yang perlu
+// override paksa tetap melihat status granular aslinya.
+// SEWA sengaja TIDAK dipetakan di sini — statusnya sendiri (SEWA_DIKIRIM/
+// SEWA_DIAMBIL) sudah cuma 2 tahap, tidak perlu dibucket lagi; tampilkan
+// label aslinya langsung.
+export const ORDER_STATUS_BUCKET = {
+  PENDING: "PROCESSING",
+  PICKUP: "PROCESSING",
+  PROCESSING: "PROCESSING",
+  READY: "READY",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+};
+export const ORDER_STATUS_BUCKET_LABELS = {
+  PROCESSING: "Diproses",
+  READY: "Siap Kirim",
+  DELIVERED: "Terkirim",
+  CANCELLED: "Dibatalkan",
+};
+// Kembalikan status ASLI kalau tidak ada di peta bucket (mis. SEWA_DIKIRIM/
+// SEWA_DIAMBIL) — pemanggil lalu jatuh ke ORDER_STATUS_LABELS untuk label,
+// bukan blank/undefined.
+export function orderStatusBucket(status) {
+  return ORDER_STATUS_BUCKET[status] || status;
+}
 
 export const PAYMENT_STATUS_VARIANT = {
   BELUM_BAYAR: "danger",
@@ -422,7 +466,25 @@ export const PRODUCT_TYPE_LABELS = {
   // menulis "Divan - Sandaran" kelihatan seperti 1 nilai gabungan padahal
   // dua kolom itu memang harus terpisah bersih.
   DIVAN_SANDARAN:   "Sandaran",
+  // Jenis Kasur khusus kategori BARU (4 Sep 2026) — lihat jenisProdukOptions().
+  KASUR_SEHAT:      "Kasur Sehat",
+  KASUR_2IN1:       "Kasur 2in1",
+  KASUR_LAINNYA:    "Lainnya",
 };
+
+// Jenis Kasur untuk kategori BARU (D-051 lanjutan, 4 Sep 2026 — laporan
+// owner: daftar konstruksi Kasur Spring/Busa/2in1 Atas/Bawah relevan untuk
+// SERVICE kasur existing customer, bukan untuk BELI kasur baru dari nol).
+// Cuma berlaku utk KASUR x BARU; kombinasi lain (KASUR x LAYANAN, atau lini
+// SOFA/DIVAN apapun kategorinya) tetap pakai PRODUCT_TYPES_BY_LINE seperti
+// biasa. KASUR_LAINNYA membuka input teks bebas (lihat OrderSection.jsx,
+// disimpan sbg field `jenisKasurLainnya` di Order.notes).
+export function jenisProdukOptions(productLine, category) {
+  if (productLine === "KASUR" && category === "BARU") {
+    return ["KASUR_SEHAT", "MULTIBED", "KASUR_2IN1", "KASUR_LAINNYA"];
+  }
+  return PRODUCT_TYPES_BY_LINE[productLine] || [];
+}
 
 // Kategori baris katalog harga (PriceItem.kind / OrderItem.kind snapshot,
 // 29 Agustus 2026). Dipindah ke sini (sebelumnya lokal di OrderSection.jsx)
@@ -441,16 +503,18 @@ export const PRICE_ITEM_KIND_LABELS = {
 // saat itu). Dipindah ke sini dari OrderSection.jsx (sebelumnya lokal, tidak
 // bisa dipakai export Excel di Orders.jsx).
 export function parseOrderNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
     return {
       merkKasur:       p.merkKasur || "",
       ukuranKasur:     p.ukuranKasur || "",
       keluhanCustomer: p.keluhanCustomer || "",
+      // Jenis Kasur "Lainnya" (4 Sep 2026, kategori BARU) — lihat OrderSection.jsx.
+      jenisKasurLainnya: p.jenisKasurLainnya || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes };
+    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 export function buildOrderNotes(info) {
@@ -458,6 +522,7 @@ export function buildOrderNotes(info) {
     merkKasur:       info.merkKasur || "",
     ukuranKasur:     info.ukuranKasur || "",
     keluhanCustomer: info.keluhanCustomer || "",
+    jenisKasurLainnya: info.jenisKasurLainnya || "",
   });
 }
 

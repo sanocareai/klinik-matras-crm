@@ -10,11 +10,12 @@ import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
+  ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
-  resolveVariantKey, UKURAN_VARIANT_KEY,
+  jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
@@ -117,7 +118,18 @@ const ORDER_STATUS_BADGE = {
   READY:      { bg: "#ccfbf1", color: "#065f46" },
   DELIVERED:  { bg: "#dcfce7", color: "#166534" },
   CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
+  SEWA_DIKIRIM: { bg: "#dbeafe", color: "#1e40af" },
+  SEWA_DIAMBIL: { bg: "#dcfce7", color: "#166534" },
 };
+
+// Label status TAMPILAN ringkas (4 Sep 2026) — bucket utk LAYANAN/BARU
+// (Diproses/Siap Kirim/Terkirim/Dibatalkan), label asli utk SEWA (yang
+// memang cuma 2 tahap, tidak perlu dibucket lagi). Dipakai HANYA untuk
+// badge ringkas — dropdown override (BadgeDropdown di bawah) tetap pakai
+// ORDER_STATUS_LABELS granular apa adanya.
+function statusBadgeLabel(status) {
+  return ORDER_STATUS_BUCKET_LABELS[orderStatusBucket(status)] || ORDER_STATUS_LABELS[status] || status;
+}
 
 function formatTanggal(d) {
   if (!d) return "—";
@@ -374,7 +386,10 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
       await api.updateOrder(order.id, {
         paymentStatus,
-        notes: buildOrderNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        // jenisKasurLainnya (4 Sep 2026) TIDAK punya UI edit di sini —
+        // diteruskan apa adanya dari notes lama supaya tidak diam-diam
+        // terhapus tiap kali order disimpan lewat form ini.
+        notes: buildOrderNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan, jenisKasurLainnya: info.jenisKasurLainnya }),
         promoId: promoId || null,
         deliveryCity: deliveryCity || null,
         deliveryAddress: deliveryAddress || null,
@@ -652,7 +667,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         <span style={metaLabel}>Status</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
-            {ORDER_STATUS_LABELS[order.status] || order.status}
+            {statusBadgeLabel(order.status)}
           </span>
           {editing ? (
             <BadgeDropdown
@@ -788,6 +803,10 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-muted)" }}>
             · {PRODUCT_LINE_LABELS[order.productLine] || "Kasur"}
             {order.category && order.category !== "LAYANAN" ? ` ${CATEGORY_LABELS[order.category]}` : ""}
+            {order.productType ? ` — ${PRODUCT_TYPE_LABELS[order.productType] || order.productType}` : ""}
+            {/* Jenis Kasur "Lainnya" (4 Sep 2026) — free-text pelengkap, cuma
+                relevan kalau productType KASUR_LAINNYA & memang terisi. */}
+            {order.productType === "KASUR_LAINNYA" && info.jenisKasurLainnya ? ` (${info.jenisKasurLainnya})` : ""}
           </span>
         )}
       </div>
@@ -1222,6 +1241,10 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // free-text (variant-nya dari Jenis Produk, bukan lebar).
   const [productLine, setProductLine] = useState("");
   const [productType, setProductType] = useState("");
+  // Jenis Kasur "Lainnya" (kategori BARU, 4 Sep 2026) — free-text pelengkap
+  // saat productType === "KASUR_LAINNYA", disimpan di Order.notes (bukan
+  // kolom Prisma baru), pola sama dgn field custom lain di form ini.
+  const [jenisKasurLainnya, setJenisKasurLainnya] = useState("");
   const isKasur = productLine === "KASUR";
   const usesUkuranDropdown = productLine === "KASUR" || productLine === "DIVAN";
   const [merkKasur, setMerk]          = useState("");
@@ -1341,7 +1364,10 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         productType: productType || undefined,
         // Merk cuma relevan utk LAYANAN (upgrade kasur existing customer,
         // merknya bisa apa saja) — BARU/SEWA selalu produk Sano sendiri.
-        notes: buildOrderNotes({ merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan }),
+        notes: buildOrderNotes({
+          merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan,
+          jenisKasurLainnya: productType === "KASUR_LAINNYA" ? jenisKasurLainnya : "",
+        }),
         promoId: promoId || undefined,
         deliveryCity: deliveryCity || undefined,
         deliveryAddress: deliveryAddress || undefined,
@@ -1488,7 +1514,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // ── Step 2: Pilih Jenis Produk (29 Agustus 2026 — BARU, hanya Kasur/Sofa) ──
   if (step === 2) {
     const lineOpt = PRODUCT_LINE_OPTIONS.find((o) => o.value === productLine);
-    const jenisList = PRODUCT_TYPES_BY_LINE[productLine] || [];
+    const jenisList = jenisProdukOptions(productLine, category);
     return (
       <div style={formBox}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
@@ -1506,7 +1532,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             <button
               key={val}
               type="button"
-              onClick={() => { setProductType(val); setStep(3); }}
+              onClick={() => { setProductType(val); if (val !== "KASUR_LAINNYA") setStep(3); }}
               style={{
                 textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
                 border: productType === val ? "2px solid var(--primary)" : "1px solid var(--border)",
@@ -1518,6 +1544,25 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             </button>
           ))}
         </div>
+        {productType === "KASUR_LAINNYA" && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Sebutkan jenis kasurnya
+            </label>
+            <input
+              type="text" value={jenisKasurLainnya} onChange={(e) => setJenisKasurLainnya(e.target.value)}
+              placeholder="mis. Kasur Lipat, Kasur Angin, dst"
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13, marginBottom: 10 }}
+            />
+            <button
+              type="button" className="btn btn-primary" disabled={!jenisKasurLainnya.trim()}
+              onClick={() => setStep(3)}
+              style={{ width: "100%" }}
+            >
+              Lanjut
+            </button>
+          </div>
+        )}
         <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
       </div>
     );
@@ -1923,8 +1968,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           </div>
         );
       })}
+      {/* Sumber saran datalist DIPERBAIKI 4 Sep 2026 — sebelumnya selalu
+          orderOptions.jenisLayanan (daftar statis LAYANAN-only dari
+          GET /master-data/order-options, TIDAK terfilter kategori). `catalog`
+          di sini SUDAH benar terfilter category lewat api.getPriceList()
+          (lihat useEffect di atas) — order BARU sekarang menyarankan nama
+          produk (Kasur Sehat 2in1, Topper, dst), bukan Upgrade/Full Service. */}
       <datalist id="new-layanan-suggestions">
-        {orderOptions.jenisLayanan.map((j) => <option key={j} value={j} />)}
+        {catalog.map((c) => <option key={c.id || c.name} value={c.name} />)}
       </datalist>
       <button type="button" onClick={addItem}
         style={{ fontSize: 12, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "2px 0", marginBottom: 10 }}>
@@ -2074,7 +2125,7 @@ export default function OrderSection({ customer, onUpdate }) {
                       <td style={{ padding: "10px 12px", fontWeight: 700 }}>{formatRupiah(o.value)}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, ...badge }}>
-                          {ORDER_STATUS_LABELS[o.status] || o.status}
+                          {statusBadgeLabel(o.status)}
                         </span>
                       </td>
                       <td style={{ padding: "10px 8px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
