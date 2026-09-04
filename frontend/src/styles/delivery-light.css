@@ -175,11 +175,55 @@ html:not([data-theme="dark"]) [data-division="armada"] .sidebar-section-label {
    Sengaja identik (bukan sekadar "senada") — tombol utama adalah elemen
    yang paling sering terlihat berdampingan saat toggle tema dicoba, jadi
    inkonsistensi di situ paling mudah ketahuan. */
+/* KOREKSI D-048 — sama alasan dengan delivery-dark.css: gradien 3-stop
+   sebelumnya interpretasi saya, bukan nilai asli artifact (2-stop rata). */
 html:not([data-theme="dark"]) [data-division="armada"] .btn-primary,
 html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a) {
-  background-image: linear-gradient(135deg, #60A5FA, #3B82F6 55%, #1D4ED8);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 10px 24px -12px rgba(59, 130, 246, 0.5);
+  background-image: linear-gradient(135deg, #3B82F6, #1D4ED8);
+  border: none;
+  box-shadow: 0 6px 18px -6px rgba(29, 78, 216, 0.45);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .btn-primary:hover,
+html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a):hover {
+  filter: brightness(1.05);
+  box-shadow: 0 8px 22px -6px rgba(29, 78, 216, 0.55);
+}
+
+/* ── 4b. TOMBOL TUGASKAN + DROPDOWN/POPOVER: kaca putih pekat (D-048) ─────
+   Pasangan mode terang untuk blok yang sama di delivery-dark.css. */
+html:not([data-theme="dark"]) [data-division="armada"] .btn-tugaskan {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline) !important;
+  backdrop-filter: blur(14px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .btn-tugaskan:hover {
+  border-color: var(--dh-hairline-strong) !important;
+}
+html:not([data-theme="dark"]) [data-division="armada"] .btn-tugaskan[data-state="open"] {
+  background-color: rgba(76, 141, 255, 0.12) !important;
+  border-color: rgba(76, 141, 255, 0.3) !important;
+  color: var(--dh-accent-2) !important;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] [class*="shadow-popover"] {
+  background-color: rgba(255, 255, 255, 0.88) !important;
+  border-color: var(--dh-hairline) !important;
+  backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 24px 50px -18px rgba(20, 87, 217, 0.25);
+}
+html:not([data-theme="dark"]) [data-division="armada"] [class*="shadow-popover"] [data-highlighted] {
+  background-color: rgba(76, 141, 255, 0.1) !important;
+}
+
+/* ── 4c. CHIP PICKER: kaca tipis di state non-aktif (D-048) ────────────── */
+html:not([data-theme="dark"]) [data-division="armada"] .chip:not(.chip-active) {
+  background-color: rgba(20, 87, 217, 0.025);
+  backdrop-filter: blur(10px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .chip.chip-empty {
+  background-color: transparent;
 }
 
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ──────────────── */

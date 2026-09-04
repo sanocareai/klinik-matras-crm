@@ -24,7 +24,7 @@ export default function ChipPilih({ items, selectedId, disabled, onPick, kosongL
         disabled={disabled}
         onClick={() => onPick(null)}
         className={cn(
-          "flex items-center gap-1.5 rounded-full border-2 px-2.5 font-medium transition-colors disabled:opacity-50", h,
+          "chip chip-empty flex items-center gap-1.5 rounded-full border-[1.5px] border-dashed px-2.5 font-medium transition-colors disabled:opacity-50", h,
           !selectedId ? "border-ink3 bg-inset text-ink2" : "border-border text-ink3 hover:border-ink3"
         )}
       >
@@ -39,8 +39,8 @@ export default function ChipPilih({ items, selectedId, disabled, onPick, kosongL
             disabled={disabled}
             onClick={() => onPick(it.id)}
             className={cn(
-              "flex items-center gap-1.5 rounded-full border-2 pl-1 pr-2.5 font-semibold transition-colors disabled:opacity-50", h,
-              active ? "border-accent bg-accent text-white shadow-card" : "border-border text-ink2 hover:border-ink3"
+              "chip flex items-center gap-1.5 rounded-full border-[1.5px] pl-1 pr-2.5 font-semibold transition-colors disabled:opacity-50", h,
+              active ? "chip-active border-accent bg-accent text-white shadow-card" : "border-border text-ink2 hover:border-ink3"
             )}
           >
             <Avatar name={it.name} size="sm" className={size === "sm" ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"} />

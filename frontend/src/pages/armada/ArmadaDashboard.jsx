@@ -49,7 +49,7 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
         <button
           type="button"
           disabled={busy}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50"
+          className="btn-tugaskan flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50"
           onClick={(e) => e.stopPropagation()}
         >
           <UserPlus size={12} /> Tugaskan <ChevronDown size={11} className="text-ink3" />
