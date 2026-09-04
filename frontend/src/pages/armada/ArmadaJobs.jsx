@@ -104,11 +104,14 @@ export default function ArmadaJobs() {
   const [tab, setTab] = useState("all");
   const [cari, setCari] = useState("");
   const [debounced, setDebounced] = useState("");
-  // Default "hari ini" (D-081) — preset DateRange, bukan string tanggal
-  // tunggal lagi. Dispatcher bisa perbesar ke rentang apa pun (7 hari
-  // terakhir, bulan ini, dst) atau "Semua" lewat picker yang sama dengan
-  // Route Planner — tombol "Reset" di bawah mengembalikannya ke preset ini.
-  const [range, setRange] = useState(() => makeRange("today"));
+  // Default "Semua" (D-083, 5 September 2026 — laporan owner: "default
+  // tanggal pilih semua hari dulu") — preset DateRange, bukan string
+  // tanggal tunggal. SAMA pola dengan Route Planner (ArmadaRoutes.jsx)
+  // yang juga default "Semua": dispatcher paling sering perlu lihat SEMUA
+  // job aktif dulu (lintas tanggal), baru persempit ke hari/rentang
+  // tertentu kalau memang perlu — bukan sebaliknya. Tombol "Reset" di
+  // bawah mengembalikannya ke preset ini.
+  const [range, setRange] = useState(() => makeRange("all_time"));
   const [fStatus, setFStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
 
@@ -334,13 +337,13 @@ export default function ArmadaJobs() {
               icon={User}
               ariaLabel="Filter driver"
             />
-            {/* `range.preset` dibandingkan ke "today" (D-081) — bukan
+            {/* `range.preset` dibandingkan ke "all_time" (D-083) — bukan
                 membandingkan from/to mentah, supaya tombol Reset tetap
-                akurat walau user memilih "Hari ini" via preset ATAU lewat
-                kalender manual yang kebetulan jatuh di tanggal yang sama
-                (keduanya preset berbeda: "today" vs "custom"). */}
-            {(cari || range.preset !== "today" || fStatus || fDriver) && (
-              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("today")); setFStatus(""); setFDriver(""); }}>
+                akurat walau user memilih "Semua" via preset ATAU lewat
+                kalender manual yang kebetulan menghasilkan from/to kosong
+                juga (preset beda: "all_time" vs "custom"). */}
+            {(cari || range.preset !== "all_time" || fStatus || fDriver) && (
+              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("all_time")); setFStatus(""); setFDriver(""); }}>
                 Reset
               </Button>
             )}
@@ -358,7 +361,7 @@ export default function ArmadaJobs() {
                 icon={CalendarDays}
                 title="Belum ada job yang cocok"
                 description={
-                  cari || range.preset !== "today" || fStatus || fDriver
+                  cari || range.preset !== "all_time" || fStatus || fDriver
                     ? "Coba longgarkan filter atau kata kuncinya."
                     : "Job dibuat dari mode Papan — pilih unit yang siap lalu tugaskan driver."
                 }

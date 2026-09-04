@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
-import { makeRange } from "@/lib/dateRange.js";
+import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   TableSkeletonRows,
 } from "@/components/ui/table.jsx";
@@ -130,9 +130,9 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
 // akan kosong atau butuh mengarang data. Lebih jujur tidak menampilkannya
 // sampai memang ada sumbernya.
 //
-// KPI di sini menghitung dari job HARI YANG DIPILIH SAJA (bukan agregat
-// keseluruhan) — konsisten dengan filter tanggal di header, sama seperti
-// perilaku lama sebelum data nyata disambungkan.
+// KPI di sini menghitung dari job sesuai RENTANG YANG DIPILIH di header
+// (D-083, default "Semua" — bukan cuma hari ini lagi), bukan agregat
+// keseluruhan tanpa filter sama sekali.
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -156,20 +156,26 @@ function dokumenBermasalah(vehicles) {
 
 export default function ArmadaDashboard() {
   const navigate = useNavigate();
-  // Date range picker (D-082, 5 September 2026) — laporan owner: "dashboard,
-  // laporan, semua yang ada skema tanggal buat tanggalnya sama konsisten".
-  // DatePicker satu-hari diganti DateRangePicker (SATU skema tanggal yang
-  // sama dengan Dashboard/Laporan/Route Planner lintas divisi). `tanggal`
-  // (satu hari pasti) tetap ada, diturunkan dari `range` — dashboard ini
-  // BUTUH satu tanggal pasti untuk DUA hal: (1) filter "job hari yang
-  // dipilih", (2) `scheduledDate` yang ditulis saat quick-assign driver di
-  // panel "Perlu Dijadwalkan" (lihat tugaskanCepat di bawah — TIDAK masuk
-  // akal menjadwalkan job ke "rentang tanggal"). Pola penurunannya PERSIS
-  // sama dengan `tanggalRuteBaru` di ArmadaRoutes.jsx (D-067) & `date` di
-  // Armada.jsx (D-081): range satu hari -> pakai itu; rentang beneran/
-  // "Semua waktu" -> fallback HARI INI.
-  const [range, setRange] = useState(() => makeRange("today"));
-  const tanggal = (range.from && range.from === range.to) ? range.from : todayISO();
+  // Date range picker (D-082/D-083, 5 September 2026) — laporan owner:
+  // "dashboard, laporan, semua yang ada skema tanggal buat tanggalnya sama
+  // konsisten", lalu "default tanggal pilih semua hari dulu". DatePicker
+  // satu-hari diganti DateRangePicker, default "Semua" (SATU skema tanggal
+  // yang sama dengan Dashboard/Laporan/Route Planner — yang juga default
+  // "Semua"), dipakai APA ADANYA untuk memfilter daftar job (GET
+  // /armada/jobs sudah dukung `from`/`to`, TIDAK perlu jatuh ke satu hari
+  // seperti board Armada.jsx yang backend-nya memang cuma dukung satu
+  // tanggal).
+  //
+  // scheduledDate saat quick-assign (tugaskanCepat di bawah) SENGAJA
+  // TIDAK ikut mengambang bareng `range` — itu selalu HARI INI pasti
+  // (todayISO() langsung, bukan diturunkan dari filter tampilan), sesuai
+  // maksud aslinya di komentar tugaskanCepat: "job punya jadwal HARI INI".
+  // Menampilkan rentang 30 hari lalu di layar tidak boleh diam-diam
+  // menjadwalkan job baru ke 30 hari lalu juga — dua hal yang beda,
+  // sekarang benar-benar dipisah (sebelumnya SALAH digabung lewat variabel
+  // `tanggal` yang sama, gara-gara meniru pola `tanggalRuteBaru` Route
+  // Planner yang sebenarnya tidak cocok di sini).
+  const [range, setRange] = useState(() => makeRange("all_time"));
   const [jobs, setJobs] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   // Job BELUM TERJADWAL (scheduledDate null) — SENGAJA query terpisah dari
@@ -191,7 +197,7 @@ export default function ArmadaDashboard() {
     setLoading(true);
     try {
       const [jobsRes, vehiclesRes, unscheduledRes, driversRes, helpersRes] = await Promise.all([
-        api.getArmadaJobs({ date: tanggal, take: 200 }),
+        api.getArmadaJobs({ ...toApiParams(range), take: 200 }),
         api.getVehicles(),
         api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
         api.getDrivers(),
@@ -211,7 +217,7 @@ export default function ArmadaDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [range]);
 
   // Assign 1-tap langsung dari panel "Perlu Dijadwalkan" (D-036) — dispatcher
   // tidak perlu buka drawer sama sekali untuk kasus paling umum: ketuk
@@ -228,7 +234,9 @@ export default function ArmadaDashboard() {
     if (!driverId) return;
     setAssigningId(jobId);
     try {
-      const patch = { driverId, scheduledDate: tanggal };
+      // scheduledDate SELALU hari ini (lihat catatan D-083 di deklarasi
+      // `range` di atas) — TIDAK ikut filter tampilan yang sedang dipilih.
+      const patch = { driverId, scheduledDate: todayISO() };
       // helperId OPSIONAL (D-037) — cuma disertakan kalau memang dipilih
       // lewat submenu "+ Helper" di TugaskanDropdown, supaya klik nama
       // driver polos tidak diam-diam menghapus helper yang sudah ada.
@@ -444,9 +452,9 @@ export default function ArmadaDashboard() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
           <Card className="p-4">
             <h3 className="mb-1 text-[13px] font-bold text-ink">Job per Status</h3>
-            <p className="mb-4 text-[12px] text-ink3">Sebaran job pada {new Date(tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}.</p>
+            <p className="mb-4 text-[12px] text-ink3">Sebaran job pada {formatRangeText(range)}.</p>
             {loading ? <TableSkeletonRows rows={4} cols={1} /> : statusChart.every((s) => s.value === 0) ? (
-              <EmptyState icon={Package} title="Belum ada job pada tanggal ini" />
+              <EmptyState icon={Package} title="Belum ada job pada rentang ini" />
             ) : (
               <div className="flex flex-col gap-2">
                 {statusChart.filter((s) => s.value > 0).map((s) => (
@@ -504,8 +512,8 @@ export default function ArmadaDashboard() {
           ) : jobs.length === 0 ? (
             <EmptyState
               icon={Package}
-              title="Belum ada job pada tanggal ini"
-              description="Buat job baru atau ubah tanggal pada filter di atas."
+              title="Belum ada job pada rentang ini"
+              description="Buat job baru atau ubah rentang tanggal pada filter di atas."
               action={<Button size="sm" onClick={() => navigate("/armada/jobs")}><Plus size={14} /> Buat Job</Button>}
             />
           ) : (
