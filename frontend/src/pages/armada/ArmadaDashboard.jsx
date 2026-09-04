@@ -9,7 +9,8 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { makeRange } from "@/lib/dateRange.js";
 import {
   TableSkeletonRows,
 } from "@/components/ui/table.jsx";
@@ -155,7 +156,20 @@ function dokumenBermasalah(vehicles) {
 
 export default function ArmadaDashboard() {
   const navigate = useNavigate();
-  const [tanggal, setTanggal] = useState(todayISO());
+  // Date range picker (D-082, 5 September 2026) — laporan owner: "dashboard,
+  // laporan, semua yang ada skema tanggal buat tanggalnya sama konsisten".
+  // DatePicker satu-hari diganti DateRangePicker (SATU skema tanggal yang
+  // sama dengan Dashboard/Laporan/Route Planner lintas divisi). `tanggal`
+  // (satu hari pasti) tetap ada, diturunkan dari `range` — dashboard ini
+  // BUTUH satu tanggal pasti untuk DUA hal: (1) filter "job hari yang
+  // dipilih", (2) `scheduledDate` yang ditulis saat quick-assign driver di
+  // panel "Perlu Dijadwalkan" (lihat tugaskanCepat di bawah — TIDAK masuk
+  // akal menjadwalkan job ke "rentang tanggal"). Pola penurunannya PERSIS
+  // sama dengan `tanggalRuteBaru` di ArmadaRoutes.jsx (D-067) & `date` di
+  // Armada.jsx (D-081): range satu hari -> pakai itu; rentang beneran/
+  // "Semua waktu" -> fallback HARI INI.
+  const [range, setRange] = useState(() => makeRange("today"));
+  const tanggal = (range.from && range.from === range.to) ? range.from : todayISO();
   const [jobs, setJobs] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   // Job BELUM TERJADWAL (scheduledDate null) — SENGAJA query terpisah dari
@@ -289,7 +303,7 @@ export default function ArmadaDashboard() {
         actionsBelow
         actions={
           <>
-            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Pilih tanggal" />
+            <DateRangePicker value={range} onChange={setRange} />
             {/* Shortcut ke tab Armada (bukan cuma Jadwal & Penugasan) — dispatcher
                 yang baru sadar kendaraannya belum lengkap (lihat panel "Butuh
                 Perhatian" di bawah) sebelumnya harus buka Driver & Armada lalu

@@ -9,12 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD,
 } from "@/components/ui/table.jsx";
-import { hariIniWIB } from "@/utils/formatDate.js";
-
-function defaultFrom() {
-  const d = new Date(Date.now() - 30 * 86_400_000);
-  return d.toISOString().slice(0, 10);
-}
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { makeRange, toApiParams } from "@/lib/dateRange.js";
 
 // Laporan Produksi — Production Tahap 6 (terakhir dari 6 fase rebuild
 // Bengkel). Throughput, durasi per tahap, tingkat kelulusan QC — SEMUA
@@ -24,8 +20,14 @@ function defaultFrom() {
 // diadopsi ke engine (lihat unitStatus.js) — laporan ini akan tampil kosong
 // untuk sementara, itu bukan bug.
 export default function ProductionLaporan() {
-  const [from, setFrom] = useState(defaultFrom());
-  const [to, setTo] = useState(hariIniWIB());
+  // Date range picker (D-082, 5 September 2026) — laporan owner: "dashboard,
+  // laporan, semua yang ada skema tanggal buat tanggalnya sama konsisten".
+  // Sepasang <input type="date"> NATIVE (gaya browser mm/dd/yyyy, beda dari
+  // SELURUH halaman Laporan lain di app ini) diganti DateRangePicker — SATU
+  // skema tanggal yang sama dengan Dashboard/Laporan Sales/Delivery/Gudang.
+  // Default "30 hari terakhir" DIPERTAHANKAN (preset `last_30_days` = PERSIS
+  // rentang lama: hari ini mundur 30 hari), bukan perilaku baru.
+  const [range, setRange] = useState(() => makeRange("last_30_days"));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -33,11 +35,11 @@ export default function ProductionLaporan() {
   const load = useCallback(() => {
     setLoading(true);
     setError("");
-    api.getProductionReport({ from, to })
+    api.getProductionReport(toApiParams(range))
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [from, to]);
+  }, [range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -57,11 +59,7 @@ export default function ProductionLaporan() {
 
       <PageBody>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-            className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent" />
-          <span className="text-[12px] text-ink3">s/d</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-            className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent" />
+          <DateRangePicker value={range} onChange={setRange} />
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}

@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
@@ -916,12 +917,18 @@ function VehicleTab() {
 // ── Tab RINGKASAN BIAYA — jawaban "mobil/supir mana lebih hemat" ─────────
 function RingkasanBiayaTab() {
   const [data, setData] = useState(null);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  // Date range picker (D-082, 5 September 2026) — laporan owner: "dashboard,
+  // laporan, semua yang ada skema tanggal buat tanggalnya sama konsisten".
+  // DUA DatePicker terpisah (Dari/Sampai) diganti SATU DateRangePicker —
+  // skema yang sama dengan Dashboard/Laporan/Route Planner, bukan pasangan
+  // field tanggal manual lagi. Default "Semua" (bukan "today") — laporan
+  // BBM/servis paling wajar dilihat tanpa batas tanggal dulu, sama seperti
+  // perilaku lama (from/to kosong = tanpa filter tanggal ke API).
+  const [range, setRange] = useState(() => makeRange("all_time"));
 
   const load = useCallback(() => {
-    api.getFleetSummary({ from: from || undefined, to: to || undefined }).then(setData).catch(() => setData({ perKendaraan: [], perSupir: [] }));
-  }, [from, to]);
+    api.getFleetSummary(toApiParams(range)).then(setData).catch(() => setData({ perKendaraan: [], perSupir: [] }));
+  }, [range]);
   useEffect(() => { load(); }, [load]);
 
   const EfisiensiCell = ({ e }) => e.alasanKosong ? (
@@ -933,12 +940,7 @@ function RingkasanBiayaTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        {/* Ringkasan biaya = laporan MASA LALU (BBM/servis yang sudah
-            terjadi) — beda dari DatePicker lain di Delivery yang justru
-            butuh tanggal masa depan untuk menjadwalkan. allowFuture={false}
-            eksplisit di sini, lihat catatan lengkap di date-picker.jsx. */}
-        <Field label="Dari"><DatePicker value={from} onChange={setFrom} placeholder="Semua tanggal" allowFuture={false} /></Field>
-        <Field label="Sampai"><DatePicker value={to} onChange={setTo} placeholder="Semua tanggal" allowFuture={false} /></Field>
+        <DateRangePicker value={range} onChange={setRange} />
       </div>
 
       <Card className="overflow-hidden">
