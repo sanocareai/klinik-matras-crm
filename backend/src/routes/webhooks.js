@@ -707,10 +707,26 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     orderBy: { lastMessageAt: "desc" },
   });
   if (!conversation) {
+    // Revisi 3 Sep 2026 (permintaan owner) — SEBELUMNYA: customer yang
+    // chat lagi setelah conversation-nya ditandai Selesai (RESOLVED) selalu
+    // dapat conversation BARU (nyambung dari alur "customer yang percakapannya
+    // sudah Selesai/RESOLVED harus tetap bisa dapat Conversation BARU"),
+    // hasilnya 1 customer bisa punya banyak thread terpisah di Inbox —
+    // membingungkan sales (kelihatan seperti 2 "orang" beda) DAN riwayat
+    // chat lama (garansi/keluhan/harga yang pernah dibahas) tidak kelihatan
+    // lagi begitu customer REPEAT ORDER. Sekarang: kalau ada conversation
+    // RESOLVED sebelumnya, DIBUKA LAGI (reopen) — SATU thread per customer
+    // seumur hidup, apa pun status Selesai/Buka-nya. Customer yang BENAR-
+    // BENAR baru (belum pernah ada conversation sama sekali) tetap dapat
+    // conversation baru seperti biasa.
+    const resolvedLama = await prisma.conversation.findFirst({
+      where: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
+      orderBy: { lastMessageAt: "desc" },
+    });
     try {
-      conversation = await prisma.conversation.create({
-        data: { customerId: customer.id, channel: "WHATSAPP" },
-      });
+      conversation = resolvedLama
+        ? await prisma.conversation.update({ where: { id: resolvedLama.id }, data: { status: "OPEN" } })
+        : await prisma.conversation.create({ data: { customerId: customer.id, channel: "WHATSAPP" } });
     } catch (e) {
       if (e.code !== "P2002") throw e;
       conversation = await prisma.conversation.findFirst({
@@ -718,7 +734,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         orderBy: { lastMessageAt: "desc" },
       });
       if (!conversation) throw e;
-      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat request lain:", conversation.id);
+      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat/dibuka request lain:", conversation.id);
     }
   }
 
@@ -876,11 +892,18 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
     orderBy: { lastMessageAt: "desc" },
   });
   if (!conversation) {
-    if (!allowCreateCustomer) return "dropped-no-customer"; // perilaku lama: skip kalau conversation belum ada juga
+    // Revisi 3 Sep 2026 — sama pola dengan handleInboundMessage: reopen
+    // conversation RESOLVED lama alih-alih bikin thread baru, lihat catatan
+    // panjang di sana.
+    const resolvedLama = await prisma.conversation.findFirst({
+      where: { customerId: customer.id, channel: "WHATSAPP", status: "RESOLVED" },
+      orderBy: { lastMessageAt: "desc" },
+    });
+    if (!resolvedLama && !allowCreateCustomer) return "dropped-no-customer"; // perilaku lama: skip kalau conversation belum ada juga
     try {
-      conversation = await prisma.conversation.create({
-        data: { customerId: customer.id, channel: "WHATSAPP" },
-      });
+      conversation = resolvedLama
+        ? await prisma.conversation.update({ where: { id: resolvedLama.id }, data: { status: "OPEN" } })
+        : await prisma.conversation.create({ data: { customerId: customer.id, channel: "WHATSAPP" } });
     } catch (e) {
       if (e.code !== "P2002") throw e;
       conversation = await prisma.conversation.findFirst({
@@ -888,7 +911,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
         orderBy: { lastMessageAt: "desc" },
       });
       if (!conversation) throw e;
-      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat request lain:", conversation.id);
+      console.log("[webhook] Race condition tertangkap — pakai Conversation yang sudah dibuat/dibuka request lain:", conversation.id);
     }
   }
 

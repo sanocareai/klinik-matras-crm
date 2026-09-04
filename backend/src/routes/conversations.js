@@ -353,13 +353,22 @@ conversationRouter.post("/mulai-chat", async (req, res) => {
         where: { customerId: existing.id, channel: "WHATSAPP", status: { not: "RESOLVED" } },
         orderBy: { lastMessageAt: "desc" },
       });
-      // Pelanggan lama yang semua percakapannya sudah RESOLVED — buka
-      // percakapan baru, jangan menghidupkan kembali yang sudah ditutup
-      // (statusnya punya arti bagi sales).
+      // Revisi 3 Sep 2026 (permintaan owner, konsisten dengan webhooks.js
+      // handleInboundMessage) — SEBELUMNYA: pelanggan lama yang semua
+      // percakapannya sudah RESOLVED selalu dapat percakapan baru di sini.
+      // Sekarang: DIBUKA LAGI (reopen) percakapan RESOLVED terakhirnya kalau
+      // ada — SATU thread per customer seumur hidup, supaya riwayat lama
+      // (garansi/keluhan/harga) tetap kelihatan saat sales follow-up/repeat
+      // order, bukan mulai dari thread kosong. Cuma bikin baru kalau
+      // customer ini BENAR-BENAR belum pernah punya percakapan sama sekali.
       if (!conv) {
-        conv = await prisma.conversation.create({
-          data: { customerId: existing.id, channel: "WHATSAPP", sessionId: session },
+        const resolvedLama = await prisma.conversation.findFirst({
+          where: { customerId: existing.id, channel: "WHATSAPP", status: "RESOLVED" },
+          orderBy: { lastMessageAt: "desc" },
         });
+        conv = resolvedLama
+          ? await prisma.conversation.update({ where: { id: resolvedLama.id }, data: { status: "OPEN", sessionId: session } })
+          : await prisma.conversation.create({ data: { customerId: existing.id, channel: "WHATSAPP", sessionId: session } });
       }
       return res.json({
         conversationId: conv.id,

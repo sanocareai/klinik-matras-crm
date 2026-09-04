@@ -49,6 +49,14 @@ async function mergeGroup(label, convs) {
 
   const latestMessageAt = convs.reduce((max, c) => (c.lastMessageAt > max ? c.lastMessageAt : max), survivor.lastMessageAt);
   const totalUnreadCount = convs.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  // Status & preview akhir WAJIB ikut conversation yang PALING BARU pesannya
+  // (revisi 3 Sep 2026, dipakai jg utk konsolidasi thread lama akibat
+  // kebijakan reopen baru — lihat webhooks.js #handleInboundMessage) — BUKAN
+  // survivor pilihan lama (basisnya "paling banyak pesan"). Tanpa ini, thread
+  // RESOLVED lama yang kebetulan menang jadi survivor (krn lebih banyak
+  // pesan) akan tetap tampil "Selesai" dengan preview basi padahal baru saja
+  // dapat pesan baru dari customer.
+  const convTerbaru = convs.reduce((terbaru, c) => (c.lastMessageAt > terbaru.lastMessageAt ? c : terbaru), convs[0]);
 
   if (!DRY_RUN) {
     let movedMessages = 0, droppedDuplicateMessages = 0;
@@ -72,11 +80,16 @@ async function mergeGroup(label, convs) {
     }
     await prisma.conversation.update({
       where: { id: survivor.id },
-      data: { lastMessageAt: latestMessageAt, unreadCount: totalUnreadCount },
+      data: {
+        lastMessageAt: latestMessageAt,
+        unreadCount: totalUnreadCount,
+        status: convTerbaru.status,
+        lastMessagePreview: convTerbaru.lastMessagePreview,
+      },
     });
-    console.log(`    ✓ DI-MERGE — ${duplicates.length} duplikat dihapus, ${movedMessages} message dipindah, ${droppedDuplicateMessages} message duplikat dibuang, unreadCount digabung jadi ${totalUnreadCount}.\n`);
+    console.log(`    ✓ DI-MERGE — ${duplicates.length} duplikat dihapus, ${movedMessages} message dipindah, ${droppedDuplicateMessages} message duplikat dibuang, unreadCount digabung jadi ${totalUnreadCount}, status akhir: ${convTerbaru.status}.\n`);
   } else {
-    console.log(`    [DRY-RUN] Akan merge ${duplicates.map((d) => d.id).join(", ")} → ${survivor.id}, unreadCount gabungan: ${totalUnreadCount}, lastMessageAt: ${latestMessageAt.toISOString()}.\n`);
+    console.log(`    [DRY-RUN] Akan merge ${duplicates.map((d) => d.id).join(", ")} → ${survivor.id}, unreadCount gabungan: ${totalUnreadCount}, lastMessageAt: ${latestMessageAt.toISOString()}, status akhir: ${convTerbaru.status}.\n`);
   }
 }
 
