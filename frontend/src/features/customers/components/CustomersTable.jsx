@@ -42,7 +42,12 @@ export default function CustomersTable({
   }
 
   return (
-    <TableWrap className="hidden md:block">
+    // "dh-table" (D-098) — TableWrap default (`rounded-2xl bg-surface`)
+    // TIDAK cocok pola seleksi kaca otomatis ([class*="rounded-card"]/.card),
+    // sama akar masalahnya dengan ArmadaOrders.jsx "Semua Order" (D-078) —
+    // baca komentar lengkap di sana / delivery-dark.css §2. Kelas ini yang
+    // menyamakannya, no-op di luar .glass-division (di luar pilot /customers).
+    <TableWrap className="hidden md:block dh-table">
       <Table>
         <THead>
           <TR>

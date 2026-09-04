@@ -545,6 +545,24 @@
   border-left: 1px solid var(--dh-hairline-strong);
 }
 
+/* .drawer-panel/.drawer-overlay (D-098, 5 September 2026) — CustomerDrawer.jsx
+   (drawer Customer 360 di halaman Pelanggan) TIDAK pakai [role="dialog"]
+   seperti drawer lain — dia overlay+panel custom lama dari index.css
+   (SATU-SATUNYA konsumen kedua class ini, diverifikasi grep sebelum
+   ditambah). Tanpa ini, drawer akan tetap flat solid saat halaman Pelanggan
+   di sekitarnya sudah kaca. Overlay TIDAK diberi backdrop-filter (dia cuma
+   lapisan gelap penuh layar di belakang panel, bukan permukaan kaca
+   sendiri) — cukup sedikit lebih pekat dari default supaya kontennya
+   kelihatan "mengambang" konsisten dengan panel kaca di baliknya. */
+[data-theme="dark"] .glass-division .drawer-overlay {
+  background-color: rgba(6, 8, 14, 0.72) !important;
+}
+[data-theme="dark"] .glass-division .drawer-panel {
+  background-color: rgba(14, 14, 20, 0.92) !important;
+  backdrop-filter: blur(24px) saturate(140%);
+  border-left: 1px solid var(--dh-hairline-strong);
+}
+
 /* ── 8. AKSEN GRADIEN SELEKTIF (pola referensi #3) ────────────────────────
    Kelas OPT-IN, dipasang manual di komponen untuk SATU hal terpenting di
    layar — sengaja BUKAN aturan otomatis: begitu semua kartu menyala,

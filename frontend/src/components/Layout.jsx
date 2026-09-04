@@ -432,21 +432,39 @@ export default function Layout({ user, onLogout, children }) {
   const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
   const divisionBase = DIVISIONS[divisionKey || "growth"];
 
-  // Pilot kaca Sales CRM (D-090, 5 September 2026) — owner: "redesign sales
-  // crm dari dashboard, style sama aja seperti delivery". BEDA dengan pilot
-  // Delivery (armada) yang scoped per-DIVISI: "growth" itu SATU divisi yang
-  // menaungi Dashboard/Pelanggan/Pipeline/Inbox/Order/Laporan sekaligus —
-  // menyalakan kaca untuk divisionKey==="growth" akan langsung mengubah
-  // SEMUA halaman itu serentak, padahal owner minta mulai dari Dashboard
-  // dulu (sama seperti Delivery sendiri dulu dipilot satu area dulu sebelum
-  // dipercaya lebih jauh — lihat kepala styles/delivery-dark.css). Jadi
-  // di sini scoping-nya per-HALAMAN (path persis "/dashboard"), bukan per-
-  // divisi. `.glass-division` (class, bukan attribute baru) dipasang di
-  // app-shell kalau salah satu true — CSS-nya cukup satu selector yang
-  // sama untuk armada MAUPUN pilot dashboard ini, lihat komentar di
-  // styles/delivery-dark.css/-light.css.
-  const dashboardGlassPilot = divisionKey === "growth" && location.pathname === "/dashboard";
-  const glassOn = divisionKey === "armada" || dashboardGlassPilot;
+  // Pilot kaca Sales CRM (D-090, diperluas D-098, 5 September 2026) — owner:
+  // "redesign sales crm dari dashboard, style sama aja seperti delivery".
+  // BEDA dengan pilot Delivery (armada) yang scoped per-DIVISI: "growth"
+  // itu SATU divisi yang menaungi Dashboard/Pelanggan/Pipeline/Inbox/Order/
+  // Laporan sekaligus — menyalakan kaca untuk divisionKey==="growth" akan
+  // langsung mengubah SEMUA halaman itu serentak, padahal owner minta
+  // bertahap per halaman (sama seperti Delivery sendiri dulu dipilot satu
+  // area dulu sebelum dipercaya lebih jauh — lihat kepala styles/delivery-
+  // dark.css). Jadi di sini scoping-nya per-HALAMAN (daftar path persis),
+  // bukan per-divisi — tambah path baru ke daftar ini kalau halaman lain
+  // sudah diverifikasi aman (cek dulu: class name yang bentrok dengan CSS
+  // lama — lihat bug nyata D-090→D-094 soal ".stat-card" — dan komponen
+  // yang PUNYA warna sendiri di luar token tema, yang bisa ke-timpa diam-
+  // diam oleh override kaca generik). `.glass-division` (class, bukan
+  // attribute baru) dipasang di app-shell kalau salah satu true — CSS-nya
+  // cukup satu selector yang sama untuk armada MAUPUN pilot per-halaman
+  // ini, lihat komentar di styles/delivery-dark.css/-light.css.
+  //
+  // D-098 — "/customers" (Pelanggan) ditambahkan setelah diverifikasi:
+  // CustomersTable.jsx/CustomerFilters.jsx/Pagination.jsx/BulkActionBar.jsx/
+  // NewCustomerModal.jsx semua pakai token tema (bg-surface/bg-inset/dst)
+  // atau komponen bersama yang sudah kaca (Menu.jsx via shadow-popover) —
+  // NOL kelas warna hardcode ala StatCard lama. CustomerDrawer.jsx (drawer
+  // Customer 360) satu-satunya pengecualian: dia pakai `.drawer-panel`/
+  // `.drawer-overlay` sendiri (BUKAN [role=dialog] seperti drawer lain),
+  // jadi ditambahkan eksplisit ke selector kaca (lihat delivery-dark.css/
+  // -light.css) — SATU-SATUNYA konsumen kedua class itu, diverifikasi grep.
+  // Isi DALAM drawer (panel Profil/Order/Catatan/Timeline di folder
+  // components/customer360/) SENGAJA BELUM disentuh sesi ini — cakupan
+  // pilot kali ini baru shell halaman + drawer terluarnya saja.
+  const GLASS_PILOT_PATHS = ["/dashboard", "/customers"];
+  const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
+  const glassOn = divisionKey === "armada" || pageGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
