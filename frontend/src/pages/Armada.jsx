@@ -12,6 +12,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
+import AssignDropdown from "@/features/armada/components/AssignDropdown.jsx";
 import DriverJobs from "./DriverJobs.jsx";
 import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
 
@@ -64,8 +65,9 @@ function formatDuration(s) {
 // route: opsional — { index, isFirst, isLast, onMoveUp, onMoveDown, busy,
 // legToNext } — hanya diisi kalau job ini bagian dari grup driver+tanggal
 // yang punya >1 stop (FR-L-03: kontrol urutan rute manual).
-function JobCard({ job, drivers, vehicles, onChanged, route }) {
+function JobCard({ job, drivers, vehicles, helpers, onChanged, route }) {
   const [driverId, setDriverId] = useState(job.driverId || "");
+  const [helperId, setHelperId] = useState(job.helperId || "");
   const [vehicleId, setVehicleId] = useState(job.vehicleId || "");
   const [address, setAddress] = useState(job.addressText || "");
   // D-032 — alamat SALES/rencana (Order.deliveryAddress/deliveryCity,
@@ -86,11 +88,18 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
   // menampilkan plat nomor, bukan "undefined".
   const vehicleItems = vehicles.map((v) => ({ id: v.id, name: v.plateNumber }));
 
-  async function saveDriver(newDriverId) {
+  // Kontrak SAMA dengan tugaskanCepat di ArmadaDashboard.jsx (D-036/D-054):
+  // `newHelperId` HANYA dikirim ke API kalau memang eksplisit dipilih lewat
+  // AssignDropdown (bukan `undefined`) — klik nama driver polos TIDAK
+  // diam-diam menghapus helper yang sudah ada di job ini.
+  async function saveAssignment(newDriverId, newHelperId) {
     setDriverId(newDriverId);
+    if (newHelperId !== undefined) setHelperId(newHelperId);
     setBusy(true);
     try {
-      await api.updateArmadaJob(job.id, { driverId: newDriverId || null });
+      const patch = { driverId: newDriverId || null };
+      if (newHelperId !== undefined) patch.helperId = newHelperId || null;
+      await api.updateArmadaJob(job.id, patch);
       onChanged();
     } finally {
       setBusy(false);
@@ -187,26 +196,27 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
 
       {editable ? (
         <>
-          {/* ChipPilih menggantikan <select> polos (D-053, 4 September
-              2026) — komponen ini sudah dibangun sejak D-036 khusus untuk
-              memilih driver/kendaraan (lihat komentarnya sendiri: "dipakai
-              JobDetailDrawer.jsx DAN ArmadaDashboard.jsx — satu komponen"),
-              tapi Papan/JobCard ini justru satu-satunya tempat penugasan
-              driver+kendaraan yang tertinggal masih pakai <select> lama —
-              itulah bagian paling kentara laporan owner "masih tampilan
-              lama" di halaman ini. `size="sm"` karena kartu job di sini
-              lebih sempit (grid 2-3 kolom) daripada panel Dashboard. */}
+          {/* AssignDropdown menggantikan ChipPilih untuk driver+helper
+              (D-054, 4 September 2026) — laporan owner: 9 driver + helper
+              yang SELALU tampil sebagai chip di SETIAP kartu (D-053, sehari
+              sebelumnya) "numpuk" di grid 3 kolom. Satu tombol ringkas
+              menampilkan nama yang sedang aktif, daftarnya baru muncul saat
+              diketuk — pola yang sama dengan TugaskanDropdown Dashboard,
+              diekstrak jadi komponen bersama (AssignDropdown.jsx) supaya
+              tidak ada 2 salinan logic yang bisa diam-diam beda. Ini
+              SEKALIGUS menambah kemampuan yang belum ada di kartu ini:
+              menugaskan HELPER — sebelumnya cuma bisa lewat JobDetailDrawer. */}
           <div className="mt-3">
             <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
-              <User className="h-3 w-3" /> Driver
+              <User className="h-3 w-3" /> Driver &amp; Helper
             </p>
-            <ChipPilih
-              items={drivers}
-              selectedId={driverId}
-              disabled={busy}
-              onPick={saveDriver}
-              kosongLabel="Belum ditugaskan"
-              size="sm"
+            <AssignDropdown
+              drivers={drivers}
+              helpers={helpers}
+              currentDriverId={driverId}
+              currentHelperId={helperId}
+              busy={busy}
+              onPick={saveAssignment}
             />
           </div>
           <div className="mt-3">
@@ -286,7 +296,7 @@ function JobCard({ job, drivers, vehicles, onChanged, route }) {
 // ── Grup job per driver — urutan rute manual (FR-L-03) ───────────────────
 // Kontrol urutan+jarak/durasi HANYA muncul kalau driver ini punya >1 job
 // aktif di tanggal itu (satu job saja tidak ada "rute" untuk diurutkan).
-function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, vehicles, onChanged }) {
+function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, vehicles, helpers, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState(null);
   const hasRoute = jobs.length > 1;
@@ -337,7 +347,7 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, veh
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {jobs.map((job, i) => (
           <JobCard
-            key={job.id} job={job} drivers={drivers} vehicles={vehicles} onChanged={onChanged}
+            key={job.id} job={job} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={onChanged}
             route={hasRoute ? {
               index: i, isFirst: i === 0, isLast: i === jobs.length - 1,
               onMoveUp: () => move(i, -1), onMoveDown: () => move(i, 1), busy,
@@ -514,6 +524,7 @@ export default function Armada() {
   const [board, setBoard] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [helpers, setHelpers] = useState([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -528,10 +539,11 @@ export default function Armada() {
 
   const load = useCallback(async () => {
     try {
-      const [b, d, v] = await Promise.all([api.getArmadaBoard(type, date), api.getDrivers(), api.getVehicles()]);
+      const [b, d, v, h] = await Promise.all([api.getArmadaBoard(type, date), api.getDrivers(), api.getVehicles(), api.getHelpers()]);
       setBoard(b);
       setDrivers(d);
       setVehicles((v.vehicles || []).filter((x) => x.active));
+      setHelpers(h || []);
     } catch (e) {
       setError(e.message);
     }
@@ -696,7 +708,7 @@ export default function Armada() {
                   {Object.entries(grouped).map(([driverId, jobs]) => (
                     <DriverRouteGroup
                       key={driverId} driverId={driverId} driverName={jobs[0].driver?.name || "Driver"}
-                      jobs={jobs} date={date} type={type} drivers={drivers} vehicles={vehicles} onChanged={load}
+                      jobs={jobs} date={date} type={type} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={load}
                     />
                   ))}
                   {unassigned.length > 0 && (
@@ -706,7 +718,7 @@ export default function Armada() {
                       )}
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                         {unassigned.map((job) => (
-                          <JobCard key={job.id} job={job} drivers={drivers} vehicles={vehicles} onChanged={load} />
+                          <JobCard key={job.id} job={job} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={load} />
                         ))}
                       </div>
                     </div>
