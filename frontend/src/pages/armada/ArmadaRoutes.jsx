@@ -187,9 +187,21 @@ export default function ArmadaRoutes() {
 
       {error && <div className="mb-3 rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[240px_minmax(0,1fr)_240px]">
+      {/* `xl:` (1280px), BUKAN `lg:` (1024px) — D-056, 4 September 2026.
+          Laporan owner: 3 panel (240px + tengah + 240px) tampil sejajar
+          sempit di potrait/tablet. Akar masalahnya: `lg:1024px` PERSIS
+          lebar iPad portrait (semua model, termasuk iPad Pro) — breakpoint
+          klasik yang gampang terlewat karena 1024 "terasa" seperti lebar
+          desktop, padahal itu tablet portrait paling umum. Dengan 3 kolom
+          fixed 240px di kedua sisi, sisa ruang tengah untuk peta+kartu rute
+          jadi SANGAT sempit tepat di lebar itu — persis gejala yang
+          dilaporkan. Naik ke `xl` memastikan HANYA layar benar-benar lebar
+          (laptop/desktop) yang dapat 3 kolom sejajar; tablet potrait &
+          ponsel manapun jatuh ke grid-cols-1 (tumpuk vertikal, kiri->tengah
+          ->kanan), yang lebih nyaman dibaca di layar sempit. */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[240px_minmax(0,1fr)_240px]">
         {/* Kiri */}
-        <div className="lg:h-[calc(100vh-220px)]">
+        <div className="xl:h-[calc(100vh-220px)]">
           <UnroutedJobsPanel
             jobs={unrouted || []}
             loading={loading}
@@ -243,7 +255,7 @@ export default function ArmadaRoutes() {
             sudah dirapikan lebih dulu. `dh-figure` sendiri no-op di light
             mode (lihat catatan di styles/delivery-dark.css), jadi aman
             dipakai di sini tanpa efek di luar pilot dark Delivery. */}
-        <aside className="space-y-3 rounded-card border border-border bg-surface p-3 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        <aside className="space-y-3 rounded-card border border-border bg-surface p-3 xl:h-[calc(100vh-220px)] xl:overflow-y-auto">
           <h3 className="text-[12.5px] font-bold text-ink">Ringkasan {tanggal}</h3>
           {[
             ["Rute draft", draftCount],
