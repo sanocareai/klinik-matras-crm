@@ -79,7 +79,7 @@ export default function Dashboard({ user }) {
   return (
     <PageContainer>
       <PageHeader
-        title={`Halo, ${userName} 👋`}
+        title={`Halo, ${userName}`}
         subtitle={`Ringkasan bisnis Anda · ${formatTanggalIndo()}`}
         actions={<DateRangePicker value={range} onChange={setRange} />}
       />

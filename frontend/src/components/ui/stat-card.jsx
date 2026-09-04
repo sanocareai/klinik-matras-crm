@@ -53,7 +53,7 @@ export default function StatCard({
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
     >
-      <span className={cn("inline-flex h-10 w-10 items-center justify-center rounded-chip", s.icon)}>
+      <span className={cn("stat-card-icon inline-flex h-10 w-10 items-center justify-center rounded-chip", s.icon)}>
         {Icon && <Icon size={19} strokeWidth={2} />}
       </span>
 
@@ -67,7 +67,15 @@ export default function StatCard({
             />
           )}
         </span>
-        <p className={cn("mt-1 text-[30px] font-bold leading-none tracking-[-0.02em] tabular-nums", s.value)}>
+        {/* "dh-figure" (D-091) — kelas SUDAH ADA, dipakai angka besar Delivery
+            Hub (text-shadow tipis, "menyala" di atas kaca gelap). Dipakai
+            ULANG di sini, BUKAN warna baru — tetap satu keluarga biru,
+            cuma menambah glow supaya angka KPI terasa hidup di halaman
+            Dashboard yang sekarang kaca (D-090). No-op di tempat lain:
+            kelasnya cuma bereaksi di dalam `.glass-division` (lihat
+            delivery-dark.css §9 dan delivery-light.css §9 yang sengaja
+            tidak punya aturan untuk kelas ini di mode terang). */}
+        <p className={cn("dh-figure mt-1 text-[30px] font-bold leading-none tracking-[-0.02em] tabular-nums", s.value)}>
           {value}
         </p>
       </div>
