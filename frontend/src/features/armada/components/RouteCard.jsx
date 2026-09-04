@@ -7,6 +7,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf } from "../jobStatus.js";
 import { JobMetaRow } from "./JobBadges.jsx";
+import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
 // ATAU dari kolom rute lain, plus drag-reorder stop di dalamnya.
@@ -76,6 +77,12 @@ export default function RouteCard({
           <span className="truncate text-[12.5px] font-bold text-ink">{route.code}</span>
           <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />
         </div>
+        {/* Tanggal rute (D-063, 4 September 2026) — Route Planner sekarang
+            defaultnya menampilkan SEMUA tanggal sekaligus (bukan terkunci
+            satu hari), jadi kartu-kartu ini bisa bercampur dari hari
+            berbeda — tanpa baris ini, satu-satunya petunjuk tanggal cuma
+            tersirat di dalam kode rute (mis. "RTE-040926-01"). */}
+        {route.date && <p className="text-[10.5px] text-ink3">{formatTanggal(route.date)}</p>}
 
         {isDraft ? (
           // FilterDropdown menggantikan <select> polos (D-055) — komponen

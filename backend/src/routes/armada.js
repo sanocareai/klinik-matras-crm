@@ -1016,12 +1016,28 @@ const routeInclude = {
   },
 };
 
+// `from`/`to` (D-063, 4 September 2026) — laporan owner: tampilan awal Route
+// Planner sebaiknya BUKAN satu hari terkunci, tapi rentang (gaya date-range
+// picker CRM di Dashboard/Laporan — lib/dateRange.js), baru di-custom ke
+// satu hari/rentang tertentu kalau memang perlu. `date` (exact match) TETAP
+// dipertahankan apa adanya untuk kompatibilitas pemanggil lama.
 armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { date, status } = req.query;
+    const { date, from, to, status } = req.query;
+    let dateWhere;
+    if (date) {
+      dateWhere = toDateOnly(date);
+    } else if (from || to) {
+      dateWhere = {};
+      if (from) dateWhere.gte = toDateOnly(from);
+      // Batas EKSKLUSIF via `lte` pada kolom DATE — sama pola dengan GET
+      // /armada/jobs (CLAUDE.md §11), bukan `lt` awal hari berikutnya
+      // (kolom ini @db.Date, bukan datetime, jadi lte apa adanya sudah benar).
+      if (to) dateWhere.lte = toDateOnly(to);
+    }
     const routes = await prisma.route.findMany({
       where: {
-        ...(date && { date: toDateOnly(date) }),
+        ...(dateWhere !== undefined && { date: dateWhere }),
         ...(status && { status }),
       },
       include: routeInclude,

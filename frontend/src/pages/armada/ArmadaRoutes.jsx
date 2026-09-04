@@ -5,6 +5,8 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
@@ -29,7 +31,22 @@ import { unitCountOf } from "@/features/armada/jobStatus.js";
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export default function ArmadaRoutes() {
-  const [tanggal, setTanggal] = useState(todayISO());
+  // Rentang tampilan (D-063, 4 September 2026) — SEBELUMNYA satu tanggal
+  // terkunci (DatePicker biasa), laporan owner: "tampilan awal rute planner
+  // buat semua tanggal, baru kalo mau di-customize tanggal bisa, buat
+  // skemanya seperti tanggal CRM" (DateRangePicker yang sama dipakai
+  // Dashboard/Laporan/Orders.jsx — lib/dateRange.js, SATU sumber kebenaran
+  // skema tanggal lintas app, bukan komponen tanggal baru). Default
+  // "all_time" ("Semua") — toApiParams() mengembalikan {} untuk preset ini,
+  // yang berarti TANPA filter tanggal ke backend, persis "tampilkan semua".
+  //
+  // `tanggal` (satu hari) TETAP ADA terpisah — route SELALU dan HANYA
+  // pernah menempel ke SATU tanggal (Route.date, kolom tunggal), rentang di
+  // atas cuma soal APA YANG DITAMPILKAN, bukan tanggal rute baru yang mau
+  // dibuat. Dipisah supaya dua konsep ("saya mau LIHAT rentang mana" vs
+  // "rute baru ini untuk tanggal apa") tidak menimpa satu sama lain.
+  const [range, setRange] = useState(() => makeRange("all_time"));
+  const [tanggalRuteBaru, setTanggalRuteBaru] = useState(todayISO());
   const [routes, setRoutes] = useState(null);
   const [unrouted, setUnrouted] = useState(null);
   // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
@@ -47,15 +64,18 @@ export default function ArmadaRoutes() {
   const load = useCallback(async () => {
     setError("");
     try {
+      const rangeParams = toApiParams(range); // {} untuk "Semua" — tanpa filter tanggal
       const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes] = await Promise.all([
-        api.getRoutes({ date: tanggal }),
-        // Panel kiri: job pada tanggal ini yang belum masuk rute mana pun DAN
-        // belum selesai/gagal — job yang sudah COMPLETED tidak relevan
+        api.getRoutes(rangeParams),
+        // Panel kiri: job dalam rentang ini yang belum masuk rute mana pun
+        // DAN belum selesai/gagal — job yang sudah COMPLETED tidak relevan
         // direncanakan ulang.
-        api.getArmadaJobs({ date: tanggal, routeId: "none" }),
+        api.getArmadaJobs({ ...rangeParams, routeId: "none" }),
         // Backlog tanpa tanggal — TIDAK bisa langsung diseret ke rute (rute
         // sudah pasti-tanggal, job tanpa tanggal butuh diisi dulu di Jadwal
         // & Penugasan), jadi ini murni pengingat/daftar, bukan drag source.
+        // SENGAJA lepas dari `range` — job tanpa tanggal tidak akan pernah
+        // cocok filter tanggal APA PUN, jadi tidak ada gunanya ikut rentang.
         api.getArmadaJobs({ date: "none", routeId: "none" }),
         api.getDrivers(),
         api.getVehicles(),
@@ -68,13 +88,13 @@ export default function ArmadaRoutes() {
     } catch (e) {
       setError(e.message);
     }
-  }, [tanggal]);
+  }, [range]);
 
   useEffect(() => { load(); }, [load]);
 
   async function buatRute() {
     try {
-      await api.createRoute({ date: tanggal });
+      await api.createRoute({ date: tanggalRuteBaru });
       load();
     } catch (e) {
       alert("Gagal membuat rute: " + e.message);
@@ -220,7 +240,16 @@ export default function ArmadaRoutes() {
         subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
         actions={
           <>
-            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Pilih tanggal" />
+            {/* Rentang TAMPILAN (lihat catatan panjang di state `range` di
+                atas) — default "Semua", bisa di-custom ke satu
+                hari/rentang tertentu lewat picker yang sama dengan
+                Dashboard/Laporan. */}
+            <DateRangePicker value={range} onChange={setRange} />
+            {/* Tanggal RUTE BARU — terpisah dari rentang tampilan, karena
+                satu rute cuma pernah menempel ke SATU tanggal pasti.
+                Ukuran diperkecil (`w-[140px]`) supaya jelas ini bukan
+                kontrol utama halaman, cuma pelengkap tombol Buat Rute. */}
+            <DatePicker value={tanggalRuteBaru} onChange={setTanggalRuteBaru} placeholder="Tanggal rute baru" className="w-[140px]" />
             <Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>
           </>
         }
@@ -263,7 +292,7 @@ export default function ArmadaRoutes() {
               supaya total tingginya ~seperlima dari sebelumnya dan pantas
               duduk di atas panel job tanpa mendominasi kolom sempit 240px. */}
           <div className="shrink-0 space-y-1 rounded-card border border-border bg-surface p-2.5">
-            <h3 className="text-[11px] font-bold text-ink">Ringkasan {tanggal}</h3>
+            <h3 className="text-[11px] font-bold text-ink">Ringkasan {formatRangeText(range)}</h3>
             {[
               ["Rute draft", draftCount],
               ["Rute diterbitkan", publishedCount],
@@ -311,7 +340,7 @@ export default function ArmadaRoutes() {
               </div>
             ) : routes.length === 0 ? (
               <EmptyState
-                title="Belum ada rute pada tanggal ini"
+                title="Belum ada rute pada rentang ini"
                 description="Buat rute lalu seret job dari panel kiri ke dalamnya."
                 action={<Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>}
               />

@@ -6,6 +6,7 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf } from "../jobStatus.js";
+import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Panel kiri Route Planner: job pada tanggal terpilih yang BELUM masuk rute
 // mana pun (routeId=null). Diseret SATU-SATU ke salah satu RouteCard di
@@ -104,6 +105,17 @@ export default function UnroutedJobsPanel({
           <div className="truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
           <div className="mt-0.5 truncate text-[10.5px] text-ink2">{j.addressText || "Alamat belum diisi"}</div>
           <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink3">
+            {/* Tanggal ikut ditampilkan (D-063, 4 September 2026) — sejak
+                panel ini bisa menampilkan RENTANG tanggal (bukan cuma satu
+                hari terkunci), job dari hari berbeda tercampur dalam satu
+                daftar; tanpa ini tidak ada cara tahu job mana untuk hari
+                apa hanya dari kartunya sendiri. */}
+            {j.scheduledDate && (
+              <>
+                <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <span>{j.timeWindow || "Tanpa jam"}</span>
             <span aria-hidden>·</span>
             <span>{unitCountOf(j)} unit</span>
@@ -202,7 +214,7 @@ export default function UnroutedJobsPanel({
           <EmptyState
             icon={Package}
             title="Semua job sudah masuk rute"
-            description="Atau belum ada job terjadwal pada tanggal ini."
+            description="Atau belum ada job terjadwal pada rentang tanggal ini."
           />
         ) : (
           <div className="space-y-3">
