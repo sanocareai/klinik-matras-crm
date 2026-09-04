@@ -7,9 +7,23 @@
    hasilnya sebelum menyeret Sales CRM/Produksi/Gudang ikut berubah.
 
    PAGAR (dua lapis, dua-duanya WAJIB):
-     [data-theme="dark"]        → light mode TIDAK PERNAH tersentuh
-     [data-division="armada"]   → modul lain TIDAK PERNAH tersentuh
-   Atribut kedua dipasang di <div class="app-shell"> (components/Layout.jsx).
+     [data-theme="dark"]  → light mode TIDAK PERNAH tersentuh
+     .glass-division      → modul/halaman lain TIDAK PERNAH tersentuh
+   Kelas kedua dipasang di <div class="app-shell"> (components/Layout.jsx).
+
+   KELAS, BUKAN ATRIBUT DIVISI (D-090, 5 September 2026) — SEMUA selector di
+   file ini SEBELUMNYA memakai `[data-division="armada"]` literal (armada =
+   satu-satunya konsumen). Diganti ke `.glass-division` (kelas terpisah,
+   di-compute di Layout.jsx dari `divisionKey==="armada" || dashboardGlassPilot`)
+   supaya file INI SENDIRI tidak perlu disentuh lagi saat kaca dinyalakan di
+   tempat kedua: owner minta "redesign sales crm dari dashboard, style sama
+   aja seperti delivery" — Sales CRM adalah SATU divisi ("growth") yang
+   menaungi banyak halaman (Dashboard/Pelanggan/Pipeline/Inbox/dst), jadi
+   dipilot per-HALAMAN (cuma path "/dashboard") dulu, bukan per-divisi
+   seperti armada — lihat komentar `dashboardGlassPilot` di Layout.jsx.
+   Efeknya di file ini NOL secara visual untuk armada (selector lama vs baru
+   cocok ke elemen yang PERSIS sama); yang berubah cuma SIAPA yang bisa
+   memicu class-nya menyala.
 
    ⚠️ JANGAN memindahkan aturan file ini ke tokens.css sebelum diputuskan
    jadi standar global — token di sana dipakai lintas modul, dan seluruh
@@ -54,7 +68,7 @@
    aslinya. `.app-content` sekarang HARUS transparan (kecuali tekstur bintik
    yang jarang) supaya glow di baliknya benar-benar kelihatan di celah
    antar-kartu, bukan cuma di balik kartu kaca yang backdrop-filter-nya. */
-[data-theme="dark"] [data-division="armada"] {
+[data-theme="dark"] .glass-division {
   background: var(--dh-ground);
 
   /* Navy gelap (bukan near-black) — SAMA keluarga dengan referensi artifact
@@ -93,7 +107,7 @@
    TIDAK opak penuh di bagian yang seharusnya kelihatan glow-nya (makanya
    kartu/`.sidebar` pakai rgba tembus pandang + backdrop-filter, bukan
    warna solid). */
-[data-theme="dark"] [data-division="armada"] .app-content {
+[data-theme="dark"] .glass-division .app-content {
   position: relative;
   z-index: 1;
   background-color: transparent;
@@ -106,27 +120,27 @@
    konten), fixed supaya tidak ikut scroll. z-index:0 SENGAJA di bawah
    `.app-content`/`.sidebar` (keduanya diberi z-index:1 di sini) supaya
    urutan tumpuknya persis artifact: glow → shell → kartu kaca di atasnya. */
-[data-theme="dark"] [data-division="armada"] .dh-glow {
+[data-theme="dark"] .glass-division .dh-glow {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
 }
-[data-theme="dark"] [data-division="armada"] .dh-glow span {
+[data-theme="dark"] .glass-division .dh-glow span {
   position: absolute;
   border-radius: 50%;
   filter: blur(90px);
 }
-[data-theme="dark"] [data-division="armada"] .dh-glow-1 {
+[data-theme="dark"] .glass-division .dh-glow-1 {
   width: 520px; height: 520px; top: -160px; left: 120px;
   background: radial-gradient(circle, rgba(76, 141, 255, 0.4), transparent 70%);
 }
-[data-theme="dark"] [data-division="armada"] .dh-glow-2 {
+[data-theme="dark"] .glass-division .dh-glow-2 {
   width: 460px; height: 460px; top: 280px; right: -120px;
   background: radial-gradient(circle, rgba(96, 165, 250, 0.28), transparent 70%);
 }
-[data-theme="dark"] [data-division="armada"] .dh-glow-3 {
+[data-theme="dark"] .glass-division .dh-glow-3 {
   width: 600px; height: 600px; bottom: -220px; left: 35%;
   background: radial-gradient(circle, rgba(29, 78, 216, 0.32), transparent 70%);
 }
@@ -135,7 +149,7 @@
    sidebar-nya tembus pandang ke glow di baliknya (rgba(10,13,22,.55) +
    blur), sebelumnya di sini 0.92 nyaris opak jadi kelihatan seperti kolom
    solid biasa berdampingan dengan konten yang berkaca. */
-[data-theme="dark"] [data-division="armada"] .sidebar {
+[data-theme="dark"] .glass-division .sidebar {
   position: relative;
   z-index: 1;
   background-color: rgba(10, 13, 22, 0.6);
@@ -150,17 +164,17 @@
    flat, ikon abu2). Referensi artifact: logo mark kotak gradien biru
    ber-glow, pemilih workspace jadi pil kaca dengan ikon accent, footer
    profil juga kaca — bukan cuma dashboard-nya yang di-upgrade. */
-[data-theme="dark"] [data-division="armada"] .sidebar-brand-icon {
+[data-theme="dark"] .glass-division .sidebar-brand-icon {
   background: linear-gradient(135deg, var(--dh-accent-glow), var(--dh-accent-2)) !important;
   box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45) !important;
 }
 
-[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger {
+[data-theme="dark"] .glass-division .workspace-switcher-trigger {
   background-color: var(--dh-surface) !important;
   border: 1px solid var(--dh-hairline) !important;
   backdrop-filter: blur(16px);
 }
-[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger:hover {
+[data-theme="dark"] .glass-division .workspace-switcher-trigger:hover {
   background-color: var(--dh-elevated) !important;
   border-color: var(--dh-hairline-strong) !important;
 }
@@ -168,7 +182,7 @@
    di WorkspaceSwitcher.jsx dibuat untuk light mode, kontrasnya salah total
    di atas kaca gelap (kotak pucat nyaris putih). Ganti ke tint accent gelap
    yang konsisten dengan seluruh badge ikon lain di Delivery Hub. */
-[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger span:first-child {
+[data-theme="dark"] .glass-division .workspace-switcher-trigger span:first-child {
   background-color: rgba(76, 141, 255, 0.16) !important;
   color: var(--dh-accent-glow) !important;
 }
@@ -180,23 +194,23 @@
    di-upgrade (D-047). Sama pola dengan `.workspace-switcher-trigger` di
    atas: `!important` WAJIB karena komponennya sendiri toggle bg-inset/
    bg-accentbg lewat Tailwind (state `open`) yang harus dikalahkan di sini. */
-[data-theme="dark"] [data-division="armada"] .date-range-picker-trigger {
+[data-theme="dark"] .glass-division .date-range-picker-trigger {
   background-color: var(--dh-surface) !important;
   border: 1px solid var(--dh-hairline) !important;
   backdrop-filter: blur(16px);
 }
-[data-theme="dark"] [data-division="armada"] .date-range-picker-trigger:hover {
+[data-theme="dark"] .glass-division .date-range-picker-trigger:hover {
   background-color: var(--dh-elevated) !important;
   border-color: var(--dh-hairline-strong) !important;
 }
-[data-theme="dark"] [data-division="armada"] button[aria-label="Periode sebelumnya"],
-[data-theme="dark"] [data-division="armada"] button[aria-label="Periode berikutnya"] {
+[data-theme="dark"] .glass-division button[aria-label="Periode sebelumnya"],
+[data-theme="dark"] .glass-division button[aria-label="Periode berikutnya"] {
   background-color: var(--dh-surface) !important;
   border: 1px solid var(--dh-hairline) !important;
   backdrop-filter: blur(16px);
 }
-[data-theme="dark"] [data-division="armada"] button[aria-label="Periode sebelumnya"]:hover,
-[data-theme="dark"] [data-division="armada"] button[aria-label="Periode berikutnya"]:hover {
+[data-theme="dark"] .glass-division button[aria-label="Periode sebelumnya"]:hover,
+[data-theme="dark"] .glass-division button[aria-label="Periode berikutnya"]:hover {
   background-color: var(--dh-elevated) !important;
   border-color: var(--dh-hairline-strong) !important;
 }
@@ -206,10 +220,10 @@
    juga supaya menang: importance menentukan duluan sebelum spesifisitas
    dibandingkan, dan tanpa !important longhand kalah lawan shorthand
    `border: none !important` biarpun selector kami lebih spesifik. */
-[data-theme="dark"] [data-division="armada"] .sidebar-profile {
+[data-theme="dark"] .glass-division .sidebar-profile {
   border-top: 1px solid var(--dh-hairline) !important;
 }
-[data-theme="dark"] [data-division="armada"] .sidebar-profile:hover {
+[data-theme="dark"] .glass-division .sidebar-profile:hover {
   background-color: var(--dh-surface) !important;
 }
 
@@ -218,7 +232,7 @@
    yang menempel di atas konten yang bergerak.
    Selektor `> header` (bukan `.topbar`) — Topbar.jsx memakai kelas Tailwind
    inline, tidak punya kelas semantik sendiri. */
-[data-theme="dark"] [data-division="armada"] .app-content > header {
+[data-theme="dark"] .glass-division .app-content > header {
   background-color: rgba(10, 10, 16, 0.66) !important;
   backdrop-filter: blur(20px) saturate(140%);
   border-bottom: 1px solid var(--dh-hairline);
@@ -230,24 +244,24 @@
    semantik sendiri untuk digaet, jadi disasar lewat struktur (tag + atribut
    aria-label/title yang sudah ada untuk aksesibilitas — bukan kelas baru
    yang perlu ditambah di komponennya). */
-[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"] {
+[data-theme="dark"] .glass-division .app-content > header button[aria-label^="Cari"] {
   background-color: var(--dh-surface);
   border: 1px solid var(--dh-hairline);
   backdrop-filter: blur(14px);
 }
-[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"]:hover,
-[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"]:focus-visible {
+[data-theme="dark"] .glass-division .app-content > header button[aria-label^="Cari"]:hover,
+[data-theme="dark"] .glass-division .app-content > header button[aria-label^="Cari"]:focus-visible {
   background-color: var(--dh-elevated);
   border-color: var(--dh-hairline-strong);
 }
-[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label*="otifikasi"],
-[data-theme="dark"] [data-division="armada"] .app-content > header button[title="Menu akun"] {
+[data-theme="dark"] .glass-division .app-content > header button[aria-label*="otifikasi"],
+[data-theme="dark"] .glass-division .app-content > header button[title="Menu akun"] {
   background-color: var(--dh-surface);
   border: 1px solid var(--dh-hairline);
   backdrop-filter: blur(14px);
 }
-[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label*="otifikasi"]:hover,
-[data-theme="dark"] [data-division="armada"] .app-content > header button[title="Menu akun"]:hover {
+[data-theme="dark"] .glass-division .app-content > header button[aria-label*="otifikasi"]:hover,
+[data-theme="dark"] .glass-division .app-content > header button[title="Menu akun"]:hover {
   background-color: var(--dh-elevated);
   border-color: var(--dh-hairline-strong);
 }
@@ -264,7 +278,7 @@
 
 /* Tanggal — subjudul dashboard Delivery sudah menyebut hitungan job hari
    ini (lihat D-050), jadi info temporal tidak hilang, cuma pindah tempat. */
-[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-date {
+[data-theme="dark"] .glass-division .app-content > header .topbar-date {
   display: none;
 }
 
@@ -278,13 +292,13 @@
    eksplisit owner (mengikuti tampilan artifact apa adanya) — kalau nanti ada
    laporan "sidebar Delivery tidak bisa dibuka di HP", INI PENYEBABNYA.
    Dispatcher Delivery Hub sejauh ini memang selalu di desktop, bukan HP. */
-[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-hamburger-btn {
+[data-theme="dark"] .glass-division .app-content > header .topbar-hamburger-btn {
   display: none !important;
 }
 
 /* Panah dropdown menu akun — menu tetap terbuka dengan klik di area yang
    sama, cuma indikator panahnya yang dihapus visualnya. */
-[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-account-chevron {
+[data-theme="dark"] .glass-division .app-content > header .topbar-account-chevron {
   display: none;
 }
 
@@ -296,7 +310,7 @@
    Ring putih dihapus (dirancang untuk permukaan terang, di ground navy
    malah jadi cincin putih mencolok) — diganti garis tipis warna ground
    sendiri, supaya titiknya terlihat menempel di badan lonceng kaca. */
-[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-notif-badge {
+[data-theme="dark"] .glass-division .app-content > header .topbar-notif-badge {
   height: 8px;
   min-width: 8px;
   width: 8px;
@@ -310,15 +324,15 @@
    `::before` menggambar garis cahaya tipis di tepi ATAS kartu (pola yang
    dipakai hampir semua dashboard gelap modern) — memberi kesan permukaan
    memantulkan cahaya dari atas, bukan kotak datar berwarna beda. */
-[data-theme="dark"] [data-division="armada"] .card,
-[data-theme="dark"] [data-division="armada"] [class*="rounded-card"],
-[data-theme="dark"] [data-division="armada"] .settings-card,
+[data-theme="dark"] .glass-division .card,
+[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.stat-card),
+[data-theme="dark"] .glass-division .settings-card,
 /* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
    BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
    halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
    kaca lain. Ditambahkan ke SELECTOR YANG SAMA (bukan blok terpisah) supaya
    otomatis ikut kalau resep kaca di atas nanti diubah lagi. */
-[data-theme="dark"] [data-division="armada"] .dh-table,
+[data-theme="dark"] .glass-division .dh-table,
 /* .rounded-xl.bg-surface (D-089, 5 September 2026) — laporan owner:
    "kurang suka design ui/ux detail order" (OrderTimelineDrawer.jsx, dibuka
    dari Semua Order). Komponen ini DIPAKAI BERSAMA Sales CRM (drawer yang
@@ -329,10 +343,10 @@
    shadow-card` untuk SEMUA kartu mininya (KartuTema, ringkasan status,
    pembayaran, dokumentasi, dst — belasan titik) — kombinasi DUA class
    Tailwind literal itu yang dijadikan selector di sini, bukan `rounded-
-   card` baru. Terisolasi otomatis oleh [data-division="armada"]: cuma
+   card` baru. Terisolasi otomatis oleh .glass-division: cuma
    berlaku saat drawer ini dibuka DARI Delivery, sama sekali tidak
    menyentuh tampilannya di Sales CRM. */
-[data-theme="dark"] [data-division="armada"] .rounded-xl.bg-surface {
+[data-theme="dark"] .glass-division .rounded-xl.bg-surface {
   position: relative;
   background-color: var(--dh-surface);
   backdrop-filter: blur(16px) saturate(130%);
@@ -342,10 +356,10 @@
     0 18px 40px -24px rgba(0, 0, 0, 0.9);
 }
 
-[data-theme="dark"] [data-division="armada"] .card::before,
-[data-theme="dark"] [data-division="armada"] [class*="rounded-card"]::before,
-[data-theme="dark"] [data-division="armada"] .dh-table::before,
-[data-theme="dark"] [data-division="armada"] .rounded-xl.bg-surface::before {
+[data-theme="dark"] .glass-division .card::before,
+[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.stat-card)::before,
+[data-theme="dark"] .glass-division .dh-table::before,
+[data-theme="dark"] .glass-division .rounded-xl.bg-surface::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -371,7 +385,7 @@
    menulis `.nav-pill { background/border/box-shadow: ... !important }` untuk
    menegakkan aturan "sidebar bersih tanpa border" versi light mode. Tanpa
    !important tandingan, aturan di bawah kalah walau file ini dimuat setelahnya. */
-[data-theme="dark"] [data-division="armada"] .nav-pill {
+[data-theme="dark"] .glass-division .nav-pill {
   background: linear-gradient(
     100deg,
     rgba(76, 141, 255, 0.30),
@@ -384,15 +398,15 @@
 
 /* Ikon & label item aktif ikut dicerahkan — di atas pill bergradien, warna
    teks default (abu 60%) jadi kurang kontras. */
-[data-theme="dark"] [data-division="armada"] .sidebar-link.active .nav-label,
-[data-theme="dark"] [data-division="armada"] .sidebar-link.active .nav-icon {
+[data-theme="dark"] .glass-division .sidebar-link.active .nav-label,
+[data-theme="dark"] .glass-division .sidebar-link.active .nav-icon {
   color: #EAF1FF;
 }
 
 /* Label kelompok sidebar (OPERASIONAL/ARMADA/dst) dibuat lebih redup + rapat
    — di light mode kontrasnya pas, di atas near-black jadi terlalu menonjol
    dan bersaing dengan item menu yang sesungguhnya. */
-[data-theme="dark"] [data-division="armada"] .sidebar-section-label {
+[data-theme="dark"] .glass-division .sidebar-section-label {
   color: rgba(245, 245, 247, 0.34);
   letter-spacing: 0.08em;
 }
@@ -410,14 +424,14 @@
    sini adalah interpretasi saya sebelumnya, BUKAN nilai asli artifact —
    artifact-nya cuma 2-stop rata (`--accent` → `--accent-deep`), tanpa border
    putih. Diganti persis ke nilai itu. */
-[data-theme="dark"] [data-division="armada"] .btn-primary,
-[data-theme="dark"] [data-division="armada"] [class~="bg-accent"]:is(button, a) {
+[data-theme="dark"] .glass-division .btn-primary,
+[data-theme="dark"] .glass-division [class~="bg-accent"]:is(button, a) {
   background-image: linear-gradient(135deg, #3B82F6, #1D4ED8);
   border: none;
   box-shadow: 0 6px 20px -6px rgba(59, 130, 246, 0.65);
 }
-[data-theme="dark"] [data-division="armada"] .btn-primary:hover,
-[data-theme="dark"] [data-division="armada"] [class~="bg-accent"]:is(button, a):hover {
+[data-theme="dark"] .glass-division .btn-primary:hover,
+[data-theme="dark"] .glass-division [class~="bg-accent"]:is(button, a):hover {
   filter: brightness(1.08);
   box-shadow: 0 8px 24px -6px rgba(59, 130, 246, 0.8);
 }
@@ -433,21 +447,21 @@
    tanpa Radix). Popover LAIN (Menu akun, kalender DatePicker) ikut disasar
    lewat kelas `shadow-popover` yang sudah dipakai lintas app — supaya
    seluruh dropdown Delivery Hub konsisten kaca, bukan cuma satu. */
-[data-theme="dark"] [data-division="armada"] .btn-tugaskan {
+[data-theme="dark"] .glass-division .btn-tugaskan {
   background-color: var(--dh-elevated) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(14px);
 }
-[data-theme="dark"] [data-division="armada"] .btn-tugaskan:hover {
+[data-theme="dark"] .glass-division .btn-tugaskan:hover {
   border-color: var(--dh-hairline-strong) !important;
 }
-[data-theme="dark"] [data-division="armada"] .btn-tugaskan[data-state="open"] {
+[data-theme="dark"] .glass-division .btn-tugaskan[data-state="open"] {
   background-color: rgba(76, 141, 255, 0.16) !important;
   border-color: rgba(76, 141, 255, 0.35) !important;
   color: var(--dh-accent-glow) !important;
 }
 
-[data-theme="dark"] [data-division="armada"] [class*="shadow-popover"] {
+[data-theme="dark"] .glass-division [class*="shadow-popover"] {
   background-color: rgba(26, 33, 64, 0.82) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);
@@ -456,18 +470,18 @@
     0 24px 60px -14px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(59, 130, 246, 0.08);
 }
-[data-theme="dark"] [data-division="armada"] [class*="shadow-popover"] [data-highlighted] {
+[data-theme="dark"] .glass-division [class*="shadow-popover"] [data-highlighted] {
   background-color: rgba(59, 130, 246, 0.1) !important;
 }
 
 /* ── 4c. CHIP PICKER (ChipPilih.jsx): kaca tipis di state non-aktif (D-048) ─
    Nilai persis artifact `.chip` — chip aktif SUDAH solid accent (D-047),
    ini melengkapi chip yang BELUM dipilih supaya ikut kaca, bukan flat. */
-[data-theme="dark"] [data-division="armada"] .chip:not(.chip-active) {
+[data-theme="dark"] .glass-division .chip:not(.chip-active) {
   background-color: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(10px);
 }
-[data-theme="dark"] [data-division="armada"] .chip.chip-empty {
+[data-theme="dark"] .glass-division .chip.chip-empty {
   background-color: transparent;
 }
 
@@ -480,13 +494,13 @@
    per layar jauh lebih sedikit): translucent + hairline SAJA sudah cukup
    untuk terasa "berlapis", karena kartu induknya SENDIRI sudah blur —
    lapisan kedua ini otomatis ikut membaur tanpa bayar biaya blur lagi. */
-[data-theme="dark"] [data-division="armada"] .dh-stop-card,
-[data-theme="dark"] [data-division="armada"] .dh-job-card {
+[data-theme="dark"] .glass-division .dh-stop-card,
+[data-theme="dark"] .glass-division .dh-job-card {
   background-color: var(--dh-elevated);
   border-color: var(--dh-hairline);
 }
-[data-theme="dark"] [data-division="armada"] .dh-stop-card:hover,
-[data-theme="dark"] [data-division="armada"] .dh-job-card:hover {
+[data-theme="dark"] .glass-division .dh-stop-card:hover,
+[data-theme="dark"] .glass-division .dh-job-card:hover {
   background-color: rgba(76, 141, 255, 0.10);
   border-color: rgba(76, 141, 255, 0.35);
 }
@@ -494,38 +508,38 @@
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────
    TIDAK memakai backdrop-filter di level baris (bisa ratusan baris — mahal).
    Cukup latar semi-transparan + hairline. */
-[data-theme="dark"] [data-division="armada"] thead th {
+[data-theme="dark"] .glass-division thead th {
   background-color: rgba(18, 18, 24, 0.82);
   border-bottom: 1px solid var(--dh-hairline-strong);
   color: rgba(245, 245, 247, 0.52);
 }
 
-[data-theme="dark"] [data-division="armada"] tbody tr {
+[data-theme="dark"] .glass-division tbody tr {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   transition: background-color 140ms ease;
 }
 
-[data-theme="dark"] [data-division="armada"] tbody tr:hover {
+[data-theme="dark"] .glass-division tbody tr:hover {
   background-color: rgba(76, 141, 255, 0.07);
 }
 
 /* ── 6. INPUT & KONTROL: permukaan cekung, bukan kotak berbingkai ─────────*/
-[data-theme="dark"] [data-division="armada"] input,
-[data-theme="dark"] [data-division="armada"] select,
-[data-theme="dark"] [data-division="armada"] textarea {
+[data-theme="dark"] .glass-division input,
+[data-theme="dark"] .glass-division select,
+[data-theme="dark"] .glass-division textarea {
   background-color: rgba(255, 255, 255, 0.045);
   border-color: var(--dh-hairline);
 }
 
-[data-theme="dark"] [data-division="armada"] input:focus,
-[data-theme="dark"] [data-division="armada"] select:focus,
-[data-theme="dark"] [data-division="armada"] textarea:focus {
+[data-theme="dark"] .glass-division input:focus,
+[data-theme="dark"] .glass-division select:focus,
+[data-theme="dark"] .glass-division textarea:focus {
   border-color: rgba(76, 141, 255, 0.55);
   box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.14);
 }
 
 /* ── 7. DRAWER / MODAL: kaca pekat + glow tepi ────────────────────────────*/
-[data-theme="dark"] [data-division="armada"] [role="dialog"] {
+[data-theme="dark"] .glass-division [role="dialog"] {
   background-color: rgba(14, 14, 20, 0.92) !important;
   backdrop-filter: blur(24px) saturate(140%);
   border-left: 1px solid var(--dh-hairline-strong);
@@ -535,7 +549,7 @@
    Kelas OPT-IN, dipasang manual di komponen untuk SATU hal terpenting di
    layar — sengaja BUKAN aturan otomatis: begitu semua kartu menyala,
    tidak ada lagi yang menonjol dan hierarkinya hilang. */
-[data-theme="dark"] [data-division="armada"] .dh-highlight {
+[data-theme="dark"] .glass-division .dh-highlight {
   position: relative;
   background-image:
     linear-gradient(135deg, rgba(255, 138, 76, 0.16), rgba(76, 141, 255, 0.18) 60%, transparent),
@@ -547,7 +561,7 @@
 /* Garis aksen kiri per kartu (pola kartu koin Quantix). Warnanya diambil
    dari variabel yang diset inline oleh komponen (--dh-bar), jadi satu
    aturan CSS melayani semua warna status/divisi tanpa kelas per-warna. */
-[data-theme="dark"] [data-division="armada"] .dh-bar-left::after {
+[data-theme="dark"] .glass-division .dh-bar-left::after {
   content: "";
   position: absolute;
   left: 0;
@@ -566,14 +580,14 @@
    sana (base app-wide, bukan urusan pilot ini). Cukup dinaikkan di sini,
    scoped, supaya h1 di Delivery Hub terasa sama tebal/rapat dengan
    referensi tanpa menyeret halaman lain ikut berubah. */
-[data-theme="dark"] [data-division="armada"] h1 {
+[data-theme="dark"] .glass-division h1 {
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.3px;
 }
 
 /* ── 9. ANGKA BESAR: sedikit cahaya supaya KPI terbaca "hidup" ────────────*/
-[data-theme="dark"] [data-division="armada"] .dh-figure {
+[data-theme="dark"] .glass-division .dh-figure {
   text-shadow: 0 0 28px rgba(255, 255, 255, 0.18);
   letter-spacing: -0.02em;
 }
@@ -584,7 +598,7 @@
    --dh-surface) SENGAJA — badge ini mengambang di atas tile peta gelap
    yang variatif kontrasnya, translucent bisa jadi susah dibaca tergantung
    di atas warna tile apa dia jatuh. */
-[data-theme="dark"] [data-division="armada"] .dh-route-eta-badge {
+[data-theme="dark"] .glass-division .dh-route-eta-badge {
   background: var(--dh-surface-solid, #171B2E) !important;
   color: #F5F5F7 !important;
   border: 1px solid var(--dh-hairline-strong) !important;
@@ -595,7 +609,7 @@
   box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.6) !important;
   opacity: 1 !important;
 }
-[data-theme="dark"] [data-division="armada"] .dh-route-eta-badge::before {
+[data-theme="dark"] .glass-division .dh-route-eta-badge::before {
   display: none !important;
 }
 
@@ -603,7 +617,7 @@
    backdrop-filter dimatikan total kalau user minta gerak/efek dikurangi —
    sekaligus jalur aman untuk perangkat yang berat merender blur. */
 @media (prefers-reduced-motion: reduce) {
-  [data-theme="dark"] [data-division="armada"] * {
+  [data-theme="dark"] .glass-division * {
     backdrop-filter: none !important;
   }
 }

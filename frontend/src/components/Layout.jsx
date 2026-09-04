@@ -432,6 +432,22 @@ export default function Layout({ user, onLogout, children }) {
   const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
   const divisionBase = DIVISIONS[divisionKey || "growth"];
 
+  // Pilot kaca Sales CRM (D-090, 5 September 2026) — owner: "redesign sales
+  // crm dari dashboard, style sama aja seperti delivery". BEDA dengan pilot
+  // Delivery (armada) yang scoped per-DIVISI: "growth" itu SATU divisi yang
+  // menaungi Dashboard/Pelanggan/Pipeline/Inbox/Order/Laporan sekaligus —
+  // menyalakan kaca untuk divisionKey==="growth" akan langsung mengubah
+  // SEMUA halaman itu serentak, padahal owner minta mulai dari Dashboard
+  // dulu (sama seperti Delivery sendiri dulu dipilot satu area dulu sebelum
+  // dipercaya lebih jauh — lihat kepala styles/delivery-dark.css). Jadi
+  // di sini scoping-nya per-HALAMAN (path persis "/dashboard"), bukan per-
+  // divisi. `.glass-division` (class, bukan attribute baru) dipasang di
+  // app-shell kalau salah satu true — CSS-nya cukup satu selector yang
+  // sama untuk armada MAUPUN pilot dashboard ini, lihat komentar di
+  // styles/delivery-dark.css/-light.css.
+  const dashboardGlassPilot = divisionKey === "growth" && location.pathname === "/dashboard";
+  const glassOn = divisionKey === "armada" || dashboardGlassPilot;
+
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
   // POD, Kendala, Retur, Laporan) butuh JOB_READ/ROUTE_WRITE dan akan gagal
@@ -602,19 +618,25 @@ export default function Layout({ user, onLogout, children }) {
     // Sales CRM/Produksi/Gudang ikut berubah tanpa sempat dinilai. Atribut
     // ini membuat CSS-nya bisa dikunci ke `[data-theme="dark"]
     // [data-division="armada"]` saja — lihat styles/delivery-dark.css.
-    <div className={cn("app-shell", collapsed && "sidebar-collapsed")} data-division={divisionKey || "hub"}>
+    //
+    // `.glass-division` (D-090) — kelas TERPISAH dari data-division, dipakai
+    // seluruh selector kaca di delivery-dark.css/-light.css (sudah dipindah
+    // dari `[data-division="armada"]` literal ke kelas ini). Bernilai true
+    // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
+    // halaman saja) — lihat definisi glassOn di atas.
+    <div className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division")} data-division={divisionKey || "hub"}>
       {/* Glow ambient (D-049, 4 September 2026) — laporan owner: "background
           berubah, tapi yang lain masih sama" setelah D-047/D-048 cuma
           menggambar glow lewat CSS radial-gradient di .app-content (falloff
           matematis, tajam). Artifact aslinya pakai 3 <span> BENAR-BENAR
           di-blur (`filter:blur(90px)`), bukan gradient — itu yang bikin
           terasa "menyala" bukan cuma "agak biru". Ganti ke teknik yang sama
-          persis. HANYA dirender di Delivery Hub (bukan div lain) — CSS-nya
-          sendiri sudah dikunci ganda [data-theme=dark][data-division=armada]
-          di styles/delivery-dark.css/-light.css, elemen ini pun cuma
-          dimunculkan kalau divisionKey==="armada" supaya modul lain tidak
-          ikut menaruh 3 node kosong tanpa guna di DOM. */}
-      {divisionKey === "armada" && (
+          persis. HANYA dirender saat glassOn true (Delivery Hub ATAU pilot
+          Dashboard Sales CRM, D-090) — CSS-nya sendiri sudah dikunci
+          [data-theme=dark].glass-division di styles/delivery-dark.css/
+          -light.css, elemen ini pun cuma dimunculkan saat perlu supaya
+          halaman lain tidak ikut menaruh 3 node kosong tanpa guna di DOM. */}
+      {glassOn && (
         <div className="dh-glow" aria-hidden="true">
           <span className="dh-glow-1" />
           <span className="dh-glow-2" />

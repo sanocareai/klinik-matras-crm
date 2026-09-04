@@ -36,7 +36,14 @@ export default function StatCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-card p-5 shadow-card transition-shadow",
+        // "stat-card" (D-090) — penanda murni CSS, bukan style baru: dipakai
+        // styles/delivery-dark.css/-light.css untuk MENGECUALIKAN kartu ini
+        // dari override kaca generik (`[class*="rounded-card"]`). Kartu ini
+        // punya warna sendiri per depth (bg-blue-100/200/bluesolid + teks
+        // GELAP yang didesain untuk latar TERANG, lihat SKIN di atas) — kalau
+        // ikut ditimpa jadi satu warna kaca navy, teks depth 1-2 nyaris tak
+        // terbaca (teks tetap gelap, cuma latarnya yang berubah gelap juga).
+        "stat-card flex flex-col gap-3 rounded-card p-5 shadow-card transition-shadow",
         s.box,
         onClick && "cursor-pointer hover:shadow-popover",
         className
