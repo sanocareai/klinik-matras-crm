@@ -433,6 +433,32 @@ html:not([data-theme="dark"]) [data-division="armada"] h1 {
    punya aturan sama sekali = tidak berefek" — itu benar untuk KEDUA file,
    bukan cuma tokens.css. */
 
+/* ── 9b. PETA (Route Planner & Live Tracking) — D-075, 4 September 2026 ──
+   Laporan owner: peta "masih jauh dari harapan seperti Google Maps", minta
+   lebih simple/minimalist/detail (referensi: kartu rute logistik putih-
+   minimalis dengan badge waktu tempuh). Badge ini menggantikan tooltip
+   Leaflet default (kotak putih + panah lancip) dengan pil mengambang
+   bersih — dipakai RouteMap.jsx (Route Planner, badge menit kumulatif per
+   stop) & ArmadaTracking.jsx (Live Tracking, badge "±N menit lagi" di pin
+   tujuan). Kedua file MEMBERI KELAS ini via prop `className` react-leaflet
+   <Tooltip>, TIDAK ada CSS module/dependency baru. */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-route-eta-badge {
+  background: #fff !important;
+  color: #1D1D1F !important;
+  border: 1px solid var(--dh-hairline-strong) !important;
+  border-radius: 999px !important;
+  padding: 2px 10px !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.35) !important;
+  opacity: 1 !important;
+}
+/* Panah lancip bawaan Leaflet dibuang — pil mengambang tanpa ekor terlihat
+   lebih bersih/minimalis, konsisten dengan gaya referensi owner. */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-route-eta-badge::before {
+  display: none !important;
+}
+
 /* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────*/
 @media (prefers-reduced-motion: reduce) {
   html:not([data-theme="dark"]) [data-division="armada"] * {

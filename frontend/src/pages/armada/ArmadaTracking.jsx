@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Truck, MapPinned, Navigation } from "lucide-react";
@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/card.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import { avatarColor, getInitials } from "@/utils/format.js";
+import { useTheme } from "@/lib/ThemeProvider.jsx";
+import { getRoadRoute } from "@/services/osrm.js";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 
@@ -19,10 +21,11 @@ import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 // mismatch tipe uuid/text di raw query GET /armada/tracking). Yang palsu
 // SELALU cuma halaman ini, bukan datanya — sekarang disambungkan.
 //
-// Peta pakai Leaflet + tile OpenStreetMap — GRATIS, TANPA API key/billing.
-// Google Maps TIDAK dipakai di sini SENGAJA: billing project Google Cloud
-// masih REQUEST_DENIED (dites langsung 30 Agustus 2026). Pin driver SELALU
-// akurat (koordinat GPS asli dari HP, bukan hasil geocode).
+// Peta pakai Leaflet + tile CARTO (D-075, lihat di bawah) — GRATIS, TANPA
+// API key/billing. Google Maps TIDAK dipakai di sini SENGAJA: billing
+// project Google Cloud masih REQUEST_DENIED (dites langsung 30 Agustus
+// 2026). Pin driver SELALU akurat (koordinat GPS asli dari HP, bukan hasil
+// geocode).
 //
 // FASE 2 (30 Agustus 2026) — pin TUJUAN (alamat customer) sekarang ikut
 // ditampilkan kalau job-nya sudah punya koordinat (destinationLat/Lng dari
@@ -30,8 +33,33 @@ import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 // Nominatim (lihat services/maps.js). Kalau job BELUM punya koordinat sama
 // sekali, tidak ada pin dipaksakan — alamat tetap tampil sebagai teks di
 // panel kanan, supaya tidak berpura-pura akurat padahal datanya tidak ada.
+//
+// REDESIGN VISUAL + GARIS JALAN ASLI (D-075, 4 September 2026) — laporan
+// owner: peta "masih jauh dari harapan seperti Google Maps", garis lurus
+// antar titik, minta lebih simple/minimalist/detail. Sama seperti
+// RouteMap.jsx: tile OSM raster → CARTO Positron/Dark Matter (menyatu
+// dengan tema Delivery Hub), dan garis driver→tujuan sekarang minta
+// geometri jalan asli ke OSRM (services/osrm.js) — fallback senyap ke garis
+// lurus kalau OSRM gagal/timeout (server demo publik, bukan SLA
+// production). Badge "±N menit lagi" di pin tujuan dari durasi OSRM.
+//
+// Pengambilan rute OSRM disentralkan di komponen ini (state `jalurByJob`,
+// BUKAN dipecah jadi komponen anak per driver) — supaya hasilnya gampang
+// ditempel ke marker tujuan yang SUDAH ada (satu marker, Popup+Tooltip
+// sekaligus) tanpa perlu marker bayangan kedua di titik yang sama.
 const JAKARTA_CENTER = [-6.2088, 106.8456];
 const POLL_MS = 15000;
+
+const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const TILE_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// Warna SATU aksen (D-075) — konsisten dengan aturan "satu accent" Delivery
+// Hub (lihat components/ui/card.jsx): garis ini elemen FUNGSIONAL (jalur
+// tempuh nyata), bukan hiasan, jadi tetap satu hue biru brand, sama dengan
+// --dh-accent di delivery-light.css/delivery-dark.css.
+const WARNA_JALUR = "#4C8DFF";
 
 function driverIcon(name) {
   const { bg, text } = avatarColor(name || "?");
@@ -62,11 +90,25 @@ function waktuLalu(iso) {
   return `${Math.floor(menit / 60)} jam lalu`;
 }
 
+function formatMenit(detik) {
+  const menit = Math.round(detik / 60);
+  if (menit < 1) return "<1 mnt lagi";
+  if (menit < 60) return `${menit} mnt lagi`;
+  const jam = Math.floor(menit / 60);
+  const sisaMenit = menit % 60;
+  return sisaMenit > 0 ? `${jam} j ${sisaMenit} mnt lagi` : `${jam} jam lagi`;
+}
+
 export default function ArmadaTracking() {
+  const { resolved } = useTheme();
   const [items, setItems] = useState(null);
   const [error, setError] = useState("");
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [openJobId, setOpenJobId] = useState(null);
+  // Hasil OSRM per job — { [jobId]: { coords, legDurations } | undefined }.
+  // `undefined` (belum ada key) = belum selesai diminta ATAU gagal; kedua
+  // kasus itu fallback ke garis lurus di render, TIDAK dibedakan di sini.
+  const [jalurByJob, setJalurByJob] = useState({});
 
   const load = useCallback(() => {
     api.getArmadaTracking().then(setItems).catch((e) => setError(e.message));
@@ -79,6 +121,30 @@ export default function ArmadaTracking() {
   }, [load]);
 
   const withPosition = useMemo(() => (items || []).filter((j) => j.lastPosition), [items]);
+  const withDestination = useMemo(
+    () => withPosition.filter((j) => j.destinationLat != null && j.destinationLng != null),
+    [withPosition]
+  );
+
+  // Sinyal perubahan posisi yang RINGKAS (dibulatkan 5 desimal ~1m, sama
+  // dengan cache di services/osrm.js) — dipakai sebagai dependency effect
+  // supaya tidak minta ulang OSRM tiap poll 15 detik kalau driver belum
+  // benar-benar bergerak jauh (posisi GPS yang dibulatkan tetap sama).
+  const sinyalJalur = withDestination
+    .map((j) => `${j.jobId}:${j.lastPosition.lat.toFixed(5)},${j.lastPosition.lng.toFixed(5)}:${j.destinationLat.toFixed(5)},${j.destinationLng.toFixed(5)}`)
+    .join("|");
+
+  useEffect(() => {
+    let batal = false;
+    for (const j of withDestination) {
+      getRoadRoute([[j.lastPosition.lat, j.lastPosition.lng], [j.destinationLat, j.destinationLng]]).then((hasil) => {
+        if (!batal && hasil) setJalurByJob((prev) => ({ ...prev, [j.jobId]: hasil }));
+      });
+    }
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinyalJalur]);
+
   const center = withPosition.length > 0
     ? [withPosition[0].lastPosition.lat, withPosition[0].lastPosition.lng]
     : JAKARTA_CENTER;
@@ -106,10 +172,18 @@ export default function ArmadaTracking() {
                 (fallback) selamanya walau driver asli sudah kelihatan
                 posisinya di GET /armada/tracking. */}
             <MapContainer key={withPosition.length > 0 ? "ada-posisi" : "kosong"} center={center} zoom={12} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
+              <TileLayer attribution={TILE_ATTRIBUTION} url={resolved === "dark" ? TILE_DARK : TILE_LIGHT} />
+              {withDestination.map((j) => {
+                const jalanAsli = jalurByJob[j.jobId];
+                const garisLurus = [[j.lastPosition.lat, j.lastPosition.lng], [j.destinationLat, j.destinationLng]];
+                return (
+                  <Polyline
+                    key={`jalur-${j.jobId}`}
+                    positions={jalanAsli?.coords || garisLurus}
+                    pathOptions={{ color: WARNA_JALUR, weight: 4, opacity: 0.8, lineCap: "round", lineJoin: "round" }}
+                  />
+                );
+              })}
               {withPosition.map((j) => (
                 <Marker
                   key={j.jobId}
@@ -132,14 +206,19 @@ export default function ArmadaTracking() {
                   </Popup>
                 </Marker>
               ))}
-              {withPosition
-                .filter((j) => j.destinationLat != null && j.destinationLng != null)
-                .map((j) => (
+              {withDestination.map((j) => {
+                const estimasiDetik = jalurByJob[j.jobId]?.legDurations?.[0];
+                return (
                   <Marker
                     key={`tujuan-${j.jobId}`}
                     position={[j.destinationLat, j.destinationLng]}
                     icon={destinationIcon}
                   >
+                    {estimasiDetik != null && (
+                      <Tooltip permanent direction="top" offset={[0, -20]} className="dh-route-eta-badge" opacity={1}>
+                        {formatMenit(estimasiDetik)}
+                      </Tooltip>
+                    )}
                     <Popup>
                       <div className="text-xs">
                         <p className="font-semibold">Tujuan — {j.customerName}</p>
@@ -147,7 +226,8 @@ export default function ArmadaTracking() {
                       </div>
                     </Popup>
                   </Marker>
-                ))}
+                );
+              })}
             </MapContainer>
           </div>
         </Card>
