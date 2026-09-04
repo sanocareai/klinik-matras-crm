@@ -39,6 +39,11 @@ import "./styles/tokens.css";
 // [data-theme="dark"] + [data-division="armada"], jadi light mode & modul
 // lain tidak tersentuh sama sekali. Lihat catatan lengkap di file itu.
 import "./styles/delivery-dark.css";
+// Pasangan MODE TERANG (D-046, 4 September 2026) — pagar sama (division
+// armada saja), tapi gerbang temanya `html:not([data-theme="dark"])` (mutually
+// exclusive dengan file di atas, jadi tidak pernah baku-timpa). Lihat
+// styles/delivery-light.css.
+import "./styles/delivery-light.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <QueryClientProvider client={queryClient}>

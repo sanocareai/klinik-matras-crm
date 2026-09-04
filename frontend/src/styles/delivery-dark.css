@@ -20,6 +20,15 @@
    permukaan besar yang jumlahnya sedikit per layar (kartu panel, drawer,
    topbar), BUKAN pada elemen berulang (baris tabel, chip, badge) yang bisa
    ratusan sekaligus.
+
+   KOREKSI 4 September 2026 (D-046) — versi pertama file ini memakai UNGU
+   (#A177FF) sebagai warna kedua gradien accent (nav-pill, tombol primer,
+   glow ambient). Laporan owner: "gradient ungu ganti jadi blue color
+   pallete" — SEMUA titik ungu di file ini diganti biru lebih pekat
+   (--dh-accent-2 sekarang #1D4ED8, bukan #A177FF), jadi gradiennya
+   terang→gelap dalam SATU hue, bukan lompat ke hue lain. Lihat juga
+   styles/delivery-light.css — pasangan mode terang untuk pagar yang sama,
+   ditambahkan hari yang sama (sebelumnya cuma dark mode yang digarap).
    ═══════════════════════════════════════════════════════════════════════ */
 
 [data-theme="dark"] [data-division="armada"] {
@@ -33,13 +42,15 @@
   --dh-hairline: rgba(255, 255, 255, 0.08);
   --dh-hairline-strong: rgba(255, 255, 255, 0.14);
 
-  /* Aksen: biru SANSS dipertahankan sebagai identitas, ungu/violet dipakai
-     sebagai warna kedua untuk gradien — bukan palet baru dari nol, tapi
-     perpanjangan dari --accent yang sudah ada. */
+  /* Aksen: SATU hue biru saja (4 September 2026, koreksi D-046 — laporan
+     owner: "gradient ungu ganti jadi blue color pallete"). Warna kedua
+     gradien SEBELUMNYA violet (#A177FF) — sekarang biru lebih pekat
+     (blue-800 tangga tokens.css), jadi gradiennya terang→gelap dalam SATU
+     keluarga warna, bukan lompat hue. */
   --dh-accent: #4C8DFF;
-  --dh-accent-2: #A177FF;
+  --dh-accent-2: #1D4ED8;
   --dh-glow-accent: rgba(76, 141, 255, 0.28);
-  --dh-glow-violet: rgba(161, 119, 255, 0.22);
+  --dh-glow-accent-2: rgba(29, 78, 216, 0.24);
 }
 
 /* ── 1. LATAR: near-black + dua glow ambient + tekstur bintik halus ────────
@@ -49,7 +60,7 @@
   background-color: var(--dh-ground);
   background-image:
     radial-gradient(900px 520px at 12% -8%, var(--dh-glow-accent), transparent 68%),
-    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-violet), transparent 70%),
+    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-accent-2), transparent 70%),
     radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
   background-size: auto, auto, 34px 34px;
   background-attachment: fixed, fixed, fixed;
@@ -122,8 +133,8 @@
   background: linear-gradient(
     100deg,
     rgba(76, 141, 255, 0.30),
-    rgba(161, 119, 255, 0.16) 62%,
-    rgba(161, 119, 255, 0.04)
+    rgba(29, 78, 216, 0.18) 62%,
+    rgba(29, 78, 216, 0.05)
   ) !important;
   border: 1px solid rgba(76, 141, 255, 0.34) !important;
   box-shadow: 0 8px 24px -12px rgba(76, 141, 255, 0.55) !important;
@@ -154,9 +165,9 @@
    kelas utuh. */
 [data-theme="dark"] [data-division="armada"] .btn-primary,
 [data-theme="dark"] [data-division="armada"] [class~="bg-accent"]:is(button, a) {
-  background-image: linear-gradient(135deg, #4C8DFF, #7B6BFF 55%, #A177FF);
+  background-image: linear-gradient(135deg, #60A5FA, #3B82F6 55%, #1D4ED8);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 10px 26px -12px rgba(90, 120, 255, 0.85);
+  box-shadow: 0 10px 26px -12px rgba(59, 130, 246, 0.85);
 }
 
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────
@@ -206,7 +217,7 @@
 [data-theme="dark"] [data-division="armada"] .dh-highlight {
   position: relative;
   background-image:
-    linear-gradient(135deg, rgba(255, 138, 76, 0.16), rgba(161, 119, 255, 0.16) 60%, transparent),
+    linear-gradient(135deg, rgba(255, 138, 76, 0.16), rgba(76, 141, 255, 0.18) 60%, transparent),
     linear-gradient(rgba(23, 23, 30, 0.72), rgba(23, 23, 30, 0.72));
   border-color: rgba(255, 138, 76, 0.3);
   box-shadow: 0 12px 40px -20px rgba(255, 138, 76, 0.55);

@@ -1,0 +1,215 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DELIVERY HUB — LIGHT MODE "PREMIUM" (D-046, 4 September 2026)
+
+   Pasangan MODE TERANG untuk styles/delivery-dark.css — file itu sebelumnya
+   cuma menggarap dark mode; laporan owner: "jangan lupa light mode-nya juga,
+   buat stylenya sama ada gradient-gradient biru yang estetik". SATU hue biru
+   yang SAMA dipakai di dua mode (--dh-accent/--dh-accent-2 di bawah PERSIS
+   sama nilainya dengan delivery-dark.css) — bedanya cuma bagaimana kaca/glow
+   itu duduk di atas dasar TERANG vs GELAP, bukan warna aksennya.
+
+   PAGAR (dua lapis, dua-duanya WAJIB, SAMA pola dengan delivery-dark.css):
+     html:not([data-theme="dark"])  → dark mode TIDAK PERNAH tersentuh (mutually
+                                       exclusive dengan pagar delivery-dark.css,
+                                       jadi tidak ada baku-timpa spesifisitas)
+     [data-division="armada"]       → modul lain TIDAK PERNAH tersentuh
+
+   Kenapa file TERPISAH, bukan digabung ke delivery-dark.css: file itu sendiri
+   menulis "JANGAN dipindah ke tokens.css sebelum jadi standar global" — sudah
+   cukup "berani" sebagai satu file dark-only. Menambah 10 section light-mode
+   di dalamnya akan menggandakan panjangnya jadi satu file yang mengerjakan 2
+   hal sekaligus. Dipisah = tetap gampang di-nonaktifkan salah satu (mis. kalau
+   ternyata versi terang dinilai kurang cocok) tanpa menyentuh yang lain.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+html:not([data-theme="dark"]) [data-division="armada"] {
+  /* Ground: BUKAN putih polos — --sanss-canvas (tokens.css) sudah dipakai
+     sebagai kanvas SANSS di tempat lain, tint biru pucat yang nyaris tak
+     terlihat tapi cukup untuk glow ambient "menempel" ke sesuatu. Putih
+     murni akan membuat glow biru nyaris tidak kelihatan sama sekali. */
+  --dh-ground: #F3F6FC;
+  --dh-surface: rgba(255, 255, 255, 0.62);
+  --dh-surface-solid: #FFFFFF;
+  --dh-elevated: rgba(255, 255, 255, 0.78);
+  --dh-hairline: rgba(20, 87, 217, 0.10);
+  --dh-hairline-strong: rgba(20, 87, 217, 0.16);
+
+  /* SAMA PERSIS dengan delivery-dark.css — satu hue biru, dua mode. */
+  --dh-accent: #4C8DFF;
+  --dh-accent-2: #1D4ED8;
+  --dh-glow-accent: rgba(76, 141, 255, 0.16);
+  --dh-glow-accent-2: rgba(29, 78, 216, 0.12);
+}
+
+/* ── 1. LATAR: kanvas biru pucat + dua glow ambient + tekstur bintik halus ─
+   Opacity glow JAUH lebih rendah dari dark mode (0.16/0.12 vs 0.28/0.24 di
+   sana) — di atas dasar terang, warna jenuh langsung terasa "kotor"/norak
+   kalau dipakai sekuat versi gelap. */
+html:not([data-theme="dark"]) [data-division="armada"] .app-content {
+  background-color: var(--dh-ground);
+  background-image:
+    radial-gradient(900px 520px at 12% -8%, var(--dh-glow-accent), transparent 68%),
+    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-accent-2), transparent 70%),
+    radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
+  background-size: auto, auto, 34px 34px;
+  background-attachment: fixed, fixed, fixed;
+}
+
+/* Sidebar: putih kaca, BUKAN putih solid — supaya glow di belakangnya masih
+   sedikit menembus di tepi, konsisten dengan versi gelap yang juga tidak
+   memakai warna dasar solid untuk sidebarnya. */
+html:not([data-theme="dark"]) [data-division="armada"] .sidebar {
+  background-color: rgba(255, 255, 255, 0.86);
+  background-image: radial-gradient(420px 300px at 50% -12%, rgba(76, 141, 255, 0.10), transparent 72%);
+  border-right: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(18px);
+}
+
+/* Topbar kaca — inti "glass effect", sama alasan dengan dark mode. */
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header {
+  background-color: rgba(255, 255, 255, 0.66) !important;
+  backdrop-filter: blur(20px) saturate(140%);
+  border-bottom: 1px solid var(--dh-hairline);
+}
+
+/* ── 2. KARTU: kaca + hairline + highlight tepi atas ──────────────────────
+   Highlight tepi atas di sini pakai PUTIH LEBIH PEKAT (bukan transparan
+   tipis seperti dark mode) — di dasar terang, garis cahaya "dari atas"
+   perlu kontras lebih untuk kelihatan sama sekali. */
+html:not([data-theme="dark"]) [data-division="armada"] .card,
+html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"],
+html:not([data-theme="dark"]) [data-division="armada"] .settings-card {
+  position: relative;
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--dh-hairline);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 12px 32px -20px rgba(20, 87, 217, 0.18);
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] .card::before,
+html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(20, 87, 217, 0.16) 18%,
+    rgba(20, 87, 217, 0.16) 82%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* ── 3. SIDEBAR: pill aktif jadi bergradien + glow ──────────────────────── */
+html:not([data-theme="dark"]) [data-division="armada"] .nav-pill {
+  background: linear-gradient(
+    100deg,
+    rgba(76, 141, 255, 0.20),
+    rgba(29, 78, 216, 0.11) 62%,
+    rgba(29, 78, 216, 0.03)
+  ) !important;
+  border: 1px solid rgba(20, 87, 217, 0.22) !important;
+  box-shadow: 0 8px 20px -12px rgba(20, 87, 217, 0.35) !important;
+}
+
+/* Teks/ikon item aktif TIDAK perlu diputihkan seperti dark mode — accent
+   biru DS v2 (`--sidebar-accent-strong`) sudah cukup kontras di atas pill
+   tint terang ini, tokens.css yang sudah menegakkannya. */
+
+html:not([data-theme="dark"]) [data-division="armada"] .sidebar-section-label {
+  color: rgba(20, 87, 217, 0.45);
+  letter-spacing: 0.08em;
+}
+
+/* ── 4. TOMBOL PRIMER: gradien biru, SAMA PERSIS dengan dark mode ─────────
+   Sengaja identik (bukan sekadar "senada") — tombol utama adalah elemen
+   yang paling sering terlihat berdampingan saat toggle tema dicoba, jadi
+   inkonsistensi di situ paling mudah ketahuan. */
+html:not([data-theme="dark"]) [data-division="armada"] .btn-primary,
+html:not([data-theme="dark"]) [data-division="armada"] [class~="bg-accent"]:is(button, a) {
+  background-image: linear-gradient(135deg, #60A5FA, #3B82F6 55%, #1D4ED8);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 10px 24px -12px rgba(59, 130, 246, 0.5);
+}
+
+/* ── 5. TABEL: baris kaca, header lengket semi-transparan ──────────────── */
+html:not([data-theme="dark"]) [data-division="armada"] thead th {
+  background-color: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid var(--dh-hairline-strong);
+  color: rgba(16, 33, 61, 0.55);
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] tbody tr {
+  border-bottom: 1px solid rgba(20, 87, 217, 0.07);
+  transition: background-color 140ms ease;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] tbody tr:hover {
+  background-color: rgba(76, 141, 255, 0.055);
+}
+
+/* ── 6. INPUT & KONTROL: permukaan cekung biru pucat, bukan abu netral ──── */
+html:not([data-theme="dark"]) [data-division="armada"] input,
+html:not([data-theme="dark"]) [data-division="armada"] select,
+html:not([data-theme="dark"]) [data-division="armada"] textarea {
+  background-color: rgba(20, 87, 217, 0.035);
+  border-color: var(--dh-hairline);
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] input:focus,
+html:not([data-theme="dark"]) [data-division="armada"] select:focus,
+html:not([data-theme="dark"]) [data-division="armada"] textarea:focus {
+  border-color: rgba(20, 87, 217, 0.45);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.14);
+}
+
+/* ── 7. DRAWER / MODAL: kaca putih pekat + glow tepi ──────────────────────*/
+html:not([data-theme="dark"]) [data-division="armada"] [role="dialog"] {
+  background-color: rgba(255, 255, 255, 0.90) !important;
+  backdrop-filter: blur(24px) saturate(150%);
+  border-left: 1px solid var(--dh-hairline-strong);
+}
+
+/* ── 8. AKSEN GRADIEN SELEKTIF (opt-in, dipasang manual di komponen) ────── */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-highlight {
+  position: relative;
+  background-image:
+    linear-gradient(135deg, rgba(255, 138, 76, 0.12), rgba(76, 141, 255, 0.14) 60%, transparent),
+    linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72));
+  border-color: rgba(255, 138, 76, 0.28);
+  box-shadow: 0 10px 30px -20px rgba(255, 138, 76, 0.4);
+}
+
+/* Garis aksen kiri per kartu — variable --dh-bar di-set inline oleh
+   komponen, aturan ini sama untuk kedua mode (cukup didefinisikan sekali di
+   sini karena dark mode punya rule-nya sendiri, tidak saling timpa). */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-bar-left::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--dh-bar, var(--dh-accent-2));
+  opacity: 0.85;
+}
+
+/* ── 9. ANGKA BESAR: TIDAK diberi text-shadow bercahaya ───────────────────
+   Cahaya putih (dark mode) meniru "angka menyala di layar gelap" — di atas
+   dasar terang efek itu tidak masuk akal (dan justru mengaburkan teks gelap
+   di atas latar terang). dh-figure sengaja dibiarkan TANPA aturan di sini,
+   sama seperti komentar DeliveryKpiRow.jsx: "di light mode kelas ini tidak
+   punya aturan sama sekali = tidak berefek" — itu benar untuk KEDUA file,
+   bukan cuma tokens.css. */
+
+/* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────*/
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-theme="dark"]) [data-division="armada"] * {
+    backdrop-filter: none !important;
+  }
+}
