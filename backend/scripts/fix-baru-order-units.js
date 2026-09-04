@@ -45,6 +45,10 @@
 //
 // DEFAULT DRY-RUN — tidak mengubah apa pun sampai dijalankan dengan --apply.
 // Pola sama dengan scripts/fix-lid-customers.js / backfill-missing-units.js.
+// Script ini 2 FASE (lihat komentar fixOrderStatusFase2() di bawah untuk
+// alasan fase 2 ditambahkan belakangan): fase 1 Unit.status + job pickup
+// palsu, fase 2 Order.status yang ketinggalan karena syncOrderStatus()
+// no-op sebelum currentStageId terisi. Keduanya jalan dalam satu run.
 //
 //   docker compose exec backend node scripts/fix-baru-order-units.js
 //   docker compose exec backend node scripts/fix-baru-order-units.js --apply
@@ -161,7 +165,78 @@ async function main() {
   console.log(`Selesai. Unit diperbaiki: ${berhasil}, gagal: ${gagal}, dilewati (perlu tinjauan manual): ${perluTinjauan.length}`);
 }
 
+// ─── FASE 2 (ditambahkan sama hari, ditemukan lewat halaman baru "Semua
+// Order"): koreksi Order.status ──────────────────────────────────────────
+//
+// FASE 1 di atas (main()) memperbaiki Unit.status, dan MEMANGGIL
+// syncOrderStatus() supaya Order.status ikut ter-hitung ulang. Tapi
+// syncOrderStatus() (orderStatusSync.js#computeOrderStatus) SENGAJA no-op
+// selama TIDAK ADA unit order itu yang currentStageId-nya terisi —
+// currentStageId baru diisi startStage(), yaitu begitu Produksi BENAR-BENAR
+// menekan "Mulai Tahap". Untuk 10 order yang baru saja diperbaiki di FASE 1,
+// unit-nya memang belum pernah mulai tahap produksi apa pun (wajar — mereka
+// baru saja "dibebaskan" dari AWAITING_PICKUP palsu) — jadi FASE 1 SELESAI
+// TANPA benar-benar mengubah Order.status, dan order-order itu TETAP
+// tampil "Pengambilan"/"Menunggu" di Sales CRM & halaman Semua Order,
+// walau Unit.status-nya sudah benar RECEIVED.
+//
+// unitProvisioning.js#createUnitsForOrder SUDAH diperbaiki (lihat koreksi
+// D-051 lanjutan di sana) supaya order BARU BARU LAHIR langsung dapat
+// Order.status=PROCESSING — fase ini HANYA membereskan order LAMA yang
+// terlanjur diperbaiki FASE 1 sebelum perbaikan itu ada.
+//
+// LINGKUP: Order.category=BARU, TIDAK statusLocked, status masih
+// PENDING/PICKUP, TAPI semua unit hidupnya SUDAH lewat AWAITING_PICKUP/
+// IN_TRANSIT_IN (tidak ada lagi yang benar-benar "menunggu diambil") —
+// tanda pasti order ini salah satu korban FASE 1 (atau kejadian serupa).
+async function fixOrderStatusFase2() {
+  const orders = await prisma.order.findMany({
+    where: {
+      category: "BARU",
+      statusLocked: false,
+      status: { in: ["PENDING", "PICKUP"] },
+      units: {
+        none: { status: { in: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] } },
+        some: { status: { not: "CANCELLED" } },
+      },
+    },
+    select: { id: true, orderNumber: true, status: true, customer: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (orders.length === 0) {
+    console.log("[Fase 2] Tidak ada Order.status BARU yang perlu dikoreksi.");
+    return;
+  }
+
+  console.log(`[Fase 2] Order.status akan dikoreksi ke PROCESSING: ${orders.length}`);
+  for (const o of orders) {
+    console.log(`  ${o.orderNumber || o.id}  ${o.customer?.name || "?"}  ${o.status} -> PROCESSING`);
+  }
+  console.log("");
+
+  if (!APPLY) return;
+
+  let berhasil = 0, gagal = 0;
+  for (const o of orders) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({ where: { id: o.id }, data: { status: "PROCESSING" } });
+        await tx.orderStatusTransition.create({
+          data: { orderId: o.id, fromStatus: o.status, toStatus: "PROCESSING", changedById: null },
+        });
+      });
+      berhasil += 1;
+    } catch (err) {
+      gagal += 1;
+      console.error(`  GAGAL ${o.orderNumber || o.id}: ${err.message}`);
+    }
+  }
+  console.log(`[Fase 2] Selesai. Order diperbaiki: ${berhasil}, gagal: ${gagal}`);
+}
+
 main()
+  .then(() => fixOrderStatusFase2())
   .catch((err) => {
     console.error("Error:", err);
     process.exit(1);

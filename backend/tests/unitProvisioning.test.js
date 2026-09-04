@@ -26,9 +26,23 @@ import {
 function fakeTx({ seqTertinggi = null } = {}) {
   const dibuat = [];
   const jobsDibuat = [];
+  const orderUpdates = [];
+  const transitions = [];
   return {
     dibuat,
     jobsDibuat,
+    orderUpdates,
+    transitions,
+    // order.update/orderStatusTransition.create (D-051 lanjutan) — dipakai
+    // cabang BARU yang men-set Order.status langsung ke PROCESSING begitu
+    // unit-nya RECEIVED, tanpa menunggu syncOrderStatus (yang sengaja no-op
+    // sebelum currentStageId terisi, lihat komentar di unitProvisioning.js).
+    order: {
+      update: async ({ data }) => { orderUpdates.push(data); return data; },
+    },
+    orderStatusTransition: {
+      create: async ({ data }) => { transitions.push(data); return data; },
+    },
     unit: {
       findFirst: async () => (seqTertinggi === null ? null : { seq: seqTertinggi }),
       createMany: async ({ data }) => { dibuat.push(...data); return { count: data.length }; },
@@ -257,4 +271,46 @@ test("order kategori BARU: statusOverride tetap menang (mis. tambah unit ke orde
     statusOverride: "IN_PRODUCTION",
   });
   assert.equal(tx.dibuat[0].status, "IN_PRODUCTION");
+});
+
+// --- koreksi Order.status untuk order BARU (lanjutan D-051, ditemukan lewat
+// halaman "Semua Order" — unit sudah RECEIVED tapi Order.status masih
+// "PICKUP"/"PENDING" karena syncOrderStatus() menunggu currentStageId,
+// yang baru terisi begitu Produksi menekan "Mulai Tahap") ------------------
+test("order kategori BARU: Order.status langsung PROCESSING, tidak menunggu syncOrderStatus", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "BARU", status: "PENDING" }, count: 1 });
+  assert.deepEqual(tx.orderUpdates, [{ status: "PROCESSING" }]);
+  assert.equal(tx.transitions.length, 1);
+  assert.equal(tx.transitions[0].fromStatus, "PENDING");
+  assert.equal(tx.transitions[0].toStatus, "PROCESSING");
+});
+
+test("order kategori BARU: Order.status TIDAK dimundurkan kalau sudah lebih maju (mis. tambah unit ke order yang sudah READY)", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, {
+    order: { ...orderDasar, category: "BARU", status: "READY" },
+    count: 1,
+    statusOverride: "RECEIVED",
+  });
+  assert.deepEqual(tx.orderUpdates, [], "Order.status READY tidak boleh mundur ke PROCESSING");
+});
+
+test("order kategori BARU: Order.status TIDAK disentuh kalau statusLocked (override manual menang mutlak)", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, {
+    order: { ...orderDasar, category: "BARU", status: "PENDING", statusLocked: true },
+    count: 1,
+  });
+  assert.deepEqual(tx.orderUpdates, []);
+});
+
+test("order kategori LAYANAN/SEWA: Order.status TIDAK ikut dipaksa (jalur ini murni untuk BARU)", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, {
+    order: { ...orderDasar, category: "LAYANAN", status: "PENDING" },
+    count: 1,
+    statusOverride: "RECEIVED",
+  });
+  assert.deepEqual(tx.orderUpdates, []);
 });

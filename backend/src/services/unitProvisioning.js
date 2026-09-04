@@ -147,6 +147,26 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
     await ensurePickupJobForOrder(tx, order);
   }
 
+  // KOREKSI D-051 lanjutan (4 September 2026) — ditemukan lewat halaman
+  // "Semua Order" yang baru dibuat: order BARU yang unit-nya baru saja
+  // dipaksa RECEIVED di atas TETAP tampil "Pengambilan" di Sales CRM/
+  // Delivery, karena Order.status TIDAK ikut berubah. syncOrderStatus()
+  // (orderStatusSync.js) SENGAJA no-op selama belum ada unit yang
+  // currentStageId-nya terisi (baru diisi startStage(), begitu Produksi
+  // benar-benar menekan "Mulai Tahap") — jaring pengaman itu dirancang
+  // untuk backfill lama, BUKAN untuk kasus ini: di sini kita SUDAH TAHU
+  // PASTI unit sedang di workshop siap produksi (kita yang barusan
+  // menetapkannya RECEIVED), tidak ada alasan menunggu.
+  // Set LANGSUNG (bukan lewat syncOrderStatus) — hormati statusLocked (D-006:
+  // override manual menang mutlak) dan JANGAN mundurkan order yang kebetulan
+  // sudah lebih maju (mis. menambah unit ke-2 ke order BARU yang sudah READY).
+  if (order.category === "BARU" && status === "RECEIVED" && !order.statusLocked && ["PENDING", "PICKUP"].includes(order.status)) {
+    await tx.order.update({ where: { id: order.id }, data: { status: "PROCESSING" } });
+    await tx.orderStatusTransition.create({
+      data: { orderId: order.id, fromStatus: order.status, toStatus: "PROCESSING", changedById: null },
+    });
+  }
+
   return tx.unit.findMany({
     where: { orderId: order.id, seq: { gte: mulai } },
     orderBy: { seq: "asc" },
