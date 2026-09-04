@@ -2,28 +2,32 @@
 // SUDAH DELIVERED/CANCELLED, tapi Job-nya sendiri belum pernah ditandai
 // selesai (COMPLETED/FAILED).
 //
-// Root cause: dropdown status manual di Sales CRM (PATCH /orders/:id)
-// membiarkan admin/sales menutup order "Terkirim" selama tidak ada unit
-// yang job-nya EN_ROUTE/ARRIVED (lihat guard di routes/orders.js) — tapi
-// guard itu TIDAK menjaring job berstatus UNSCHEDULED/SCHEDULED/ASSIGNED,
-// jadi job-job itu tertinggal aktif di board Armada/Route Planner seolah
-// masih perlu dikerjakan, padahal order-nya sendiri sudah ditutup lewat
-// jalur lain. Ditemukan 4 September 2026 lewat laporan owner: Willy Liu
-// order Terkirim/Siap Kirim tapi masih tampak "Tiba di Lokasi"/"Menuju
-// Lokasi" di halaman Job. Fix di kode: routes/orders.js sekarang memanggil
-// hapusJobBelumJalan() juga di cabang DELIVERED (sebelumnya cuma CANCELLED)
-// — script ini membersihkan data LAMA yang sudah kejadian sebelum fix itu.
+// Root cause: dropdown status manual di Sales CRM (PATCH /orders/:id, cabang
+// DELIVERED) cuma memblokir kalau ada unit yang job-nya EN_ROUTE/ARRIVED —
+// job yang masih UNSCHEDULED/SCHEDULED/ASSIGNED (atau, untuk data lama,
+// ARRIVED) lolos tanpa disinkronkan, jadi nangkring aktif di board Armada/
+// Route Planner seolah masih perlu dikerjakan padahal order induknya sudah
+// ditutup lewat jalur lain. Ditemukan 4 September 2026 lewat laporan owner:
+// order Willy Liu sudah Terkirim/Siap Kirim di Sales CRM, tapi job
+// pengambilannya masih tampil "Tiba di Lokasi"/"Menuju Lokasi" di Delivery
+// Hub. Audit produksi menemukan 27 order DELIVERED/CANCELLED dengan job
+// belum final.
 //
-// SENGAJA hapus (bukan mark COMPLETED) — konsisten dengan hapusJobBelumJalan
-// di orders.js: job yang belum sungguh-sungguh jalan (bukan EN_ROUTE/ARRIVED)
-// tidak punya nilai historis untuk disimpan sebagai "selesai".
+// ⚠️ KOREKSI (4 September 2026, setelah diskusi dengan owner): versi
+// PERTAMA script ini MENGHAPUS job-job itu — SALAH PENDEKATAN. Data
+// Order/Unit di Sales CRM SEMUANYA benar (owner tegaskan langsung), tidak
+// ada yang perlu dihapus di sisi Delivery. Yang perlu cuma STATUS Job-nya
+// disinkronkan supaya cocok dengan kenyataan (order sudah Terkirim), bukan
+// riwayatnya dibuang. Makanya sekarang: UPDATE status jadi COMPLETED
+// (+ completedAt), BUKAN deleteMany. Konsisten dengan fungsi
+// selesaikanJobBelumJalan() yang baru ditambahkan di routes/orders.js untuk
+// mencegah kejadian yang sama ke depan.
 //
-// Job yang SUDAH EN_ROUTE/ARRIVED TETAP ikut dibersihkan di sini (beda dari
-// guard di kode yang mencegah kasus BARU ke depan) — karena order induknya
-// SUDAH DELIVERED/CANCELLED, kondisi lapangan itu sendiri sudah menyalip apa
-// pun status job-nya; nge-block sekarang cuma bikin data lama tidak pernah
-// bisa dibersihkan. Verifikasi manual dulu lewat daftar dry-run di bawah
-// sebelum --apply.
+// SENGAJA TIDAK mengisi proofPhotoUrls — memang tidak ada bukti foto untuk
+// pekerjaan yang selesai di luar Armada (servis di tempat/WA manual,
+// terutama utk order sebelum akun Driver ada, 19-29 Agustus 2026). Job ini
+// akan tetap tampil jujur sebagai "Belum Lengkap" di verifikasi POD, bukan
+// berpura-pura terdokumentasi penuh — itu keputusan sadar, bukan bug.
 //
 // Jalankan:
 //   node scripts/fix-stale-jobs-order-closed.js            (dry-run, default)
@@ -55,11 +59,11 @@ async function main() {
     for (const j of o.jobs) {
       totalJobs += 1;
       console.log(
-        `    job ${j.id} type=${j.type} status=${j.status} tanggal=${j.scheduledDate ? j.scheduledDate.toISOString().slice(0, 10) : "-"} driver=${j.driver?.name || "-"} routeId=${j.routeId || "-"}`
+        `    job ${j.id} type=${j.type} status=${j.status} -> COMPLETED | tanggal=${j.scheduledDate ? j.scheduledDate.toISOString().slice(0, 10) : "-"} driver=${j.driver?.name || "-"} routeId=${j.routeId || "-"}`
       );
     }
   }
-  console.log(`Total job yang akan dihapus: ${totalJobs}`);
+  console.log(`Total job yang akan disinkron jadi COMPLETED: ${totalJobs}`);
 
   if (!APPLY) {
     console.log("\nDRY-RUN — tidak ada yang diubah. Jalankan ulang dengan --apply untuk menerapkan.");
@@ -67,8 +71,11 @@ async function main() {
   }
 
   const jobIds = orders.flatMap((o) => o.jobs.map((j) => j.id));
-  const result = await prisma.job.deleteMany({ where: { id: { in: jobIds } } });
-  console.log(`\nDIHAPUS: ${result.count} job (JobUnit ikut terhapus lewat cascade).`);
+  const result = await prisma.job.updateMany({
+    where: { id: { in: jobIds } },
+    data: { status: "COMPLETED", completedAt: new Date() },
+  });
+  console.log(`\nDISINKRON: ${result.count} job -> COMPLETED (Order/Unit tidak disentuh sama sekali).`);
 }
 
 main()

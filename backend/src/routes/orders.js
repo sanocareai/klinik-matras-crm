@@ -324,21 +324,25 @@ orderRouter.patch("/:id", async (req, res) => {
             where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED"] } },
             data: { status: "DELIVERED" },
           });
-          // Job yang belum jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak lagi
-          // punya alasan untuk ada — order ini baru saja ditutup manual lewat
+          // Job yang belum jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) di-SINKRON
+          // jadi COMPLETED, BUKAN dihapus (koreksi 4 September 2026 — data
+          // order/unit di sini sudah benar, statusnya saja yang belum
+          // nyambung ke Armada). Order ini baru saja ditutup manual lewat
           // dropdown ini (biasanya servis di tempat/LAYANAN yang tidak lewat
-          // alur unit fisik), bukan lewat Job selesai di Armada. Tanpa baris
+          // alur unit fisik), bukan lewat Job selesai di Armada — tanpa baris
           // ini job "hantu" itu tetap nangkring di board Armada/Route Planner
           // seolah masih perlu dikerjakan. Temuan nyata 4 September 2026: 13
           // job berstatus ASSIGNED nempel di rute aktif (driver sungguhan,
           // tanggal sungguhan) untuk order yang di Sales CRM sudah "Terkirim"
           // — guard unitEnRoute di atas cuma menjaring EN_ROUTE/ARRIVED, tidak
           // menjaring ASSIGNED, jadi sales bisa lolos menutup order sementara
-          // job pickup-nya masih tergantung. Reuse fungsi yang sama dengan
-          // cabang CANCELLED di atas — job yang SUDAH berangkat (EN_ROUTE/
-          // ARRIVED) tetap diblokir duluan oleh guard di atas, tidak pernah
-          // sampai ke baris ini.
-          await hapusJobBelumJalan(tx, updated.id);
+          // job pickup-nya masih tergantung. Job yang SUDAH berangkat
+          // (EN_ROUTE/ARRIVED) tetap diblokir duluan oleh guard di atas,
+          // tidak pernah sampai ke baris ini. TANPA proofPhotoUrls (memang
+          // tidak ada bukti foto — pekerjaan ini selesai di luar Armada) —
+          // ini SENGAJA, supaya tetap tampil jujur sebagai "Belum Lengkap"
+          // di verifikasi POD, bukan berpura-pura terdokumentasi penuh.
+          await selesaikanJobBelumJalan(tx, updated.id);
         }
       }
 
@@ -1391,6 +1395,20 @@ async function checkCancelBlockers(orderId) {
 async function hapusJobBelumJalan(tx, orderId) {
   await tx.job.deleteMany({
     where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
+  });
+}
+
+// Kebalikan dari hapusJobBelumJalan di atas, dipakai saat order ditutup
+// "Terkirim" (bukan dibatalkan) — job yang belum jalan (UNSCHEDULED/
+// SCHEDULED/ASSIGNED) DI-SINKRON jadi COMPLETED, BUKAN dihapus (keputusan
+// 4 September 2026: order/unit-nya sendiri sudah benar, cuma status Job di
+// Armada yang belum nyambung — datanya tetap berharga untuk riwayat, jadi
+// jangan dibuang). Job EN_ROUTE/ARRIVED tidak akan pernah sampai sini —
+// guard unitEnRoute di pemanggil sudah menolak lebih dulu.
+async function selesaikanJobBelumJalan(tx, orderId) {
+  await tx.job.updateMany({
+    where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
+    data: { status: "COMPLETED", completedAt: new Date() },
   });
 }
 
