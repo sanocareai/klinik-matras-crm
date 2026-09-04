@@ -397,7 +397,13 @@ export const PRODUCT_TYPE_LABELS = {
   SOFA_1_SEATER:    "Sofa 1 Seater",
   SOFA_2_SEATER:    "Sofa 2 Seater",
   SOFA_3_SEATER:    "Sofa 3 Seater",
-  DIVAN_SANDARAN:   "Divan - Sandaran",
+  // "Sandaran" saja (3 Sep 2026, dulu "Divan - Sandaran") — konsisten dgn
+  // entri lain di map ini yang tidak mengulang nama Lini Produk-nya sendiri
+  // ("Kasur Spring" bukan "Kasur - Spring", dst). Bug nyata: kolom export
+  // Excel "Lini Produk" sudah bilang "Divan", jadi "Jenis Produk" ikut
+  // menulis "Divan - Sandaran" kelihatan seperti 1 nilai gabungan padahal
+  // dua kolom itu memang harus terpisah bersih.
+  DIVAN_SANDARAN:   "Sandaran",
 };
 
 // Kategori baris katalog harga (PriceItem.kind / OrderItem.kind snapshot,
