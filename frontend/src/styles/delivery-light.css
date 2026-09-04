@@ -163,6 +163,31 @@ html:not([data-theme="dark"]) [data-division="armada"] .workspace-switcher-trigg
   background-color: var(--dh-elevated) !important;
   border-color: var(--dh-hairline-strong) !important;
 }
+
+/* Date Range Picker (D-067, 4 September 2026) — pasangan mode terang untuk
+   blok yang sama di delivery-dark.css. Laporan owner: kontrol tanggal
+   "Semua waktu" di Route Planner masih pil abu-abu flat DS v2, satu-
+   satunya kontrol topbar/header yang belum kebagian kaca. */
+html:not([data-theme="dark"]) [data-division="armada"] .date-range-picker-trigger {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .date-range-picker-trigger:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
+html:not([data-theme="dark"]) [data-division="armada"] button[aria-label="Periode sebelumnya"],
+html:not([data-theme="dark"]) [data-division="armada"] button[aria-label="Periode berikutnya"] {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] button[aria-label="Periode sebelumnya"]:hover,
+html:not([data-theme="dark"]) [data-division="armada"] button[aria-label="Periode berikutnya"]:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
 html:not([data-theme="dark"]) [data-division="armada"] .workspace-switcher-trigger span:first-child {
   background-color: rgba(76, 141, 255, 0.14) !important;
   color: var(--dh-accent-2) !important;

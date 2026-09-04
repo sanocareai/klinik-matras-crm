@@ -173,6 +173,34 @@
   color: var(--dh-accent-glow) !important;
 }
 
+/* Date Range Picker (D-067, 4 September 2026) — laporan owner: kontrol
+   tanggal "Semua waktu" di Route Planner masih pil abu-abu flat DS v2,
+   satu-satunya kontrol topbar/header yang belum kebagian kaca — semua
+   tetangganya (cari/lonceng/menu akun/workspace switcher) sudah lama
+   di-upgrade (D-047). Sama pola dengan `.workspace-switcher-trigger` di
+   atas: `!important` WAJIB karena komponennya sendiri toggle bg-inset/
+   bg-accentbg lewat Tailwind (state `open`) yang harus dikalahkan di sini. */
+[data-theme="dark"] [data-division="armada"] .date-range-picker-trigger {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+[data-theme="dark"] [data-division="armada"] .date-range-picker-trigger:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
+[data-theme="dark"] [data-division="armada"] button[aria-label="Periode sebelumnya"],
+[data-theme="dark"] [data-division="armada"] button[aria-label="Periode berikutnya"] {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+[data-theme="dark"] [data-division="armada"] button[aria-label="Periode sebelumnya"]:hover,
+[data-theme="dark"] [data-division="armada"] button[aria-label="Periode berikutnya"]:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
+
 /* tokens.css menulis `.sidebar-profile { border: none !important }` (aturan
    "sidebar bersih tanpa border" DS v2) — border-top di sini WAJIB !important
    juga supaya menang: importance menentukan duluan sebelum spesifisitas

@@ -4,7 +4,6 @@ import { api } from "@/api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
@@ -40,13 +39,19 @@ export default function ArmadaRoutes() {
   // "all_time" ("Semua") — toApiParams() mengembalikan {} untuk preset ini,
   // yang berarti TANPA filter tanggal ke backend, persis "tampilkan semua".
   //
-  // `tanggal` (satu hari) TETAP ADA terpisah — route SELALU dan HANYA
-  // pernah menempel ke SATU tanggal (Route.date, kolom tunggal), rentang di
-  // atas cuma soal APA YANG DITAMPILKAN, bukan tanggal rute baru yang mau
-  // dibuat. Dipisah supaya dua konsep ("saya mau LIHAT rentang mana" vs
-  // "rute baru ini untuk tanggal apa") tidak menimpa satu sama lain.
+  // Tanggal rute baru (D-067, 4 September 2026 — koreksi dari D-063) — laporan
+  // owner: dua kontrol tanggal berdampingan di header ("Semua waktu" DAN
+  // "4 Sep 2026") terlihat dobel/membingungkan, padahal cuma satu yang
+  // dipakai orang tiap hari. DatePicker terpisah untuk "tanggal rute baru"
+  // DIHAPUS — bukan berarti konsepnya salah (route memang selalu menempel ke
+  // SATU tanggal pasti), cuma tidak perlu kontrol sendiri yang selalu
+  // terlihat untuk kasus yang jarang: kalau `range` sedang menampilkan
+  // SATU hari spesifik, itulah yang dipakai untuk rute baru (paling masuk
+  // akal — dispatcher yang sedang melihat tanggal tertentu paling mungkin
+  // mau bikin rute untuk tanggal itu); selain itu (rentang/"Semua waktu")
+  // default ke HARI INI, kasus paling umum dispatcher buka halaman ini.
   const [range, setRange] = useState(() => makeRange("all_time"));
-  const [tanggalRuteBaru, setTanggalRuteBaru] = useState(todayISO());
+  const tanggalRuteBaru = (range.from && range.from === range.to) ? range.from : todayISO();
   const [routes, setRoutes] = useState(null);
   const [unrouted, setUnrouted] = useState(null);
   // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
@@ -261,11 +266,10 @@ export default function ArmadaRoutes() {
                 hari/rentang tertentu lewat picker yang sama dengan
                 Dashboard/Laporan. */}
             <DateRangePicker value={range} onChange={setRange} />
-            {/* Tanggal RUTE BARU — terpisah dari rentang tampilan, karena
-                satu rute cuma pernah menempel ke SATU tanggal pasti.
-                Ukuran diperkecil (`w-[140px]`) supaya jelas ini bukan
-                kontrol utama halaman, cuma pelengkap tombol Buat Rute. */}
-            <DatePicker value={tanggalRuteBaru} onChange={setTanggalRuteBaru} placeholder="Tanggal rute baru" className="w-[140px]" />
+            {/* Tombol "Buat Rute" memakai `tanggalRuteBaru` (turunan dari
+                `range`, lihat catatan di state-nya) — TANPA kontrol tanggal
+                kedua yang selalu terlihat (D-067, dihapus karena dobel
+                dengan picker di atas). */}
             <Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>
           </>
         }

@@ -137,7 +137,11 @@ export default function DateRangePicker({ value, onChange }) {
         className={cn(
           // DS v2: pemicu tanpa border — permukaan terisi (bg-inset), dan
           // saat panel terbuka ditandai tint accent, bukan garis biru.
-          "flex h-9 items-center gap-2 rounded-btn px-3 text-left transition-colors duration-150",
+          // `date-range-picker-trigger` (D-067) — penanda supaya Delivery
+          // Hub bisa memberi kaca/blur di sini (lihat delivery-dark.css/
+          // delivery-light.css), TANPA mengubah tampilannya di halaman lain
+          // yang juga memakai komponen ini (Dashboard/Laporan/Orders.jsx).
+          "date-range-picker-trigger flex h-9 items-center gap-2 rounded-btn px-3 text-left transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           open ? "bg-accentbg" : "bg-inset hover:bg-hovertint"
         )}
