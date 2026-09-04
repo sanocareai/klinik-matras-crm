@@ -41,25 +41,51 @@ html:not([data-theme="dark"]) [data-division="armada"] {
   --dh-glow-accent-2: rgba(29, 78, 216, 0.12);
 }
 
-/* ── 1. LATAR: kanvas biru pucat + dua glow ambient + tekstur bintik halus ─
-   Opacity glow JAUH lebih rendah dari dark mode (0.16/0.12 vs 0.28/0.24 di
-   sana) — di atas dasar terang, warna jenuh langsung terasa "kotor"/norak
-   kalau dipakai sekuat versi gelap. */
+/* ── 1. LATAR: kanvas biru pucat + tekstur bintik halus ───────────────────
+   KOREKSI D-049 — sama alasan dengan delivery-dark.css: glow gradient DATAR
+   diganti bola blur sungguhan (`.dh-glow`, dirender Layout.jsx). Opacity di
+   sini JAUH lebih rendah dari dark mode — di atas dasar terang, warna
+   jenuh langsung terasa "kotor"/norak kalau dipakai sekuat versi gelap. */
 html:not([data-theme="dark"]) [data-division="armada"] .app-content {
+  position: relative;
+  z-index: 1;
   background-color: var(--dh-ground);
-  background-image:
-    radial-gradient(760px 560px at 8% -10%, var(--dh-glow-accent), transparent 70%),
-    radial-gradient(680px 520px at 96% 6%, var(--dh-glow-accent-2), transparent 72%),
-    radial-gradient(820px 560px at 38% 118%, rgba(29, 78, 216, 0.10), transparent 72%),
-    radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
-  background-size: auto, auto, auto, 34px 34px;
-  background-attachment: fixed, fixed, fixed, fixed;
+  background-image: radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
+  background-size: 34px 34px;
+  background-attachment: fixed;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] .dh-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+html:not([data-theme="dark"]) [data-division="armada"] .dh-glow span {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-1 {
+  width: 520px; height: 520px; top: -160px; left: 120px;
+  background: radial-gradient(circle, rgba(76, 141, 255, 0.22), transparent 70%);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-2 {
+  width: 460px; height: 460px; top: 280px; right: -120px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.16), transparent 70%);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .dh-glow-3 {
+  width: 600px; height: 600px; bottom: -220px; left: 35%;
+  background: radial-gradient(circle, rgba(29, 78, 216, 0.14), transparent 70%);
 }
 
 /* Sidebar: putih kaca, BUKAN putih solid — supaya glow di belakangnya masih
    sedikit menembus di tepi, konsisten dengan versi gelap yang juga tidak
    memakai warna dasar solid untuk sidebarnya. */
 html:not([data-theme="dark"]) [data-division="armada"] .sidebar {
+  position: relative;
+  z-index: 1;
   background-color: rgba(255, 255, 255, 0.86);
   background-image: radial-gradient(420px 300px at 50% -12%, rgba(76, 141, 255, 0.10), transparent 72%);
   border-right: 1px solid var(--dh-hairline);
@@ -287,6 +313,13 @@ html:not([data-theme="dark"]) [data-division="armada"] .dh-bar-left::after {
   border-radius: 0 3px 3px 0;
   background: var(--dh-bar, var(--dh-accent-2));
   opacity: 0.85;
+}
+
+/* ── 8b. JUDUL HALAMAN: pasangan mode terang untuk blok yang sama (D-049) ─ */
+html:not([data-theme="dark"]) [data-division="armada"] h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
 }
 
 /* ── 9. ANGKA BESAR: TIDAK diberi text-shadow bercahaya ───────────────────

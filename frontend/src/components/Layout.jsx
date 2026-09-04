@@ -550,6 +550,25 @@ export default function Layout({ user, onLogout, children }) {
     // ini membuat CSS-nya bisa dikunci ke `[data-theme="dark"]
     // [data-division="armada"]` saja — lihat styles/delivery-dark.css.
     <div className={cn("app-shell", collapsed && "sidebar-collapsed")} data-division={divisionKey || "hub"}>
+      {/* Glow ambient (D-049, 4 September 2026) — laporan owner: "background
+          berubah, tapi yang lain masih sama" setelah D-047/D-048 cuma
+          menggambar glow lewat CSS radial-gradient di .app-content (falloff
+          matematis, tajam). Artifact aslinya pakai 3 <span> BENAR-BENAR
+          di-blur (`filter:blur(90px)`), bukan gradient — itu yang bikin
+          terasa "menyala" bukan cuma "agak biru". Ganti ke teknik yang sama
+          persis. HANYA dirender di Delivery Hub (bukan div lain) — CSS-nya
+          sendiri sudah dikunci ganda [data-theme=dark][data-division=armada]
+          di styles/delivery-dark.css/-light.css, elemen ini pun cuma
+          dimunculkan kalau divisionKey==="armada" supaya modul lain tidak
+          ikut menaruh 3 node kosong tanpa guna di DOM. */}
+      {divisionKey === "armada" && (
+        <div className="dh-glow" aria-hidden="true">
+          <span className="dh-glow-1" />
+          <span className="dh-glow-2" />
+          <span className="dh-glow-3" />
+        </div>
+      )}
+
       {/* Toast notifikasi pesan masuk */}
       <ToastNotif toast={toast} onClose={() => setToast(null)} />
 

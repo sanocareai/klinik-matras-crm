@@ -63,20 +63,56 @@
   --dh-glow-accent-2: rgba(29, 78, 216, 0.30);
 }
 
-/* ── 1. LATAR: navy gelap + tiga glow ambient (bukan dua) + tekstur bintik ──
-   Tiga lapis di satu elemen (radial, radial, dot-grid) — bukan tiga div
-   bertumpuk, supaya tidak menambah node DOM di setiap halaman. Titik ketiga
-   (D-047) ditambahkan di kiri-bawah supaya glow tidak cuma nempel di pojok
-   atas — referensi artifact punya 3 titik cahaya, bukan 2. */
+/* ── 1. LATAR: navy gelap + tekstur bintik halus ──────────────────────────
+   KOREKSI D-049 (4 September 2026, hari yang sama) — laporan owner setelah
+   lihat hasil D-047/D-048 langsung: "background berubah, tapi yang lain
+   masih sama". Akar masalahnya: glow di sini digambar lewat
+   `radial-gradient` DATAR (falloff matematis, tajam) yang dilukis langsung
+   sebagai background-image satu elemen — bukan cahaya BENAR-BENAR di-blur
+   seperti artifact aslinya (`filter:blur(90px)` di 3 <span> terpisah).
+   Hasilnya kelihatan "agak biru", bukan "menyala". Glow-nya sekarang
+   dipindah jadi elemen sungguhan (`.dh-glow`, dirender di Layout.jsx,
+   position:fixed di BELAKANG seluruh shell) — persis teknik artifact.
+   `.app-content` di sini TINGGAL dasar solid + tekstur bintik; dia harus
+   TIDAK opak penuh di bagian yang seharusnya kelihatan glow-nya (makanya
+   kartu/`.sidebar` pakai rgba tembus pandang + backdrop-filter, bukan
+   warna solid). */
 [data-theme="dark"] [data-division="armada"] .app-content {
+  position: relative;
+  z-index: 1;
   background-color: var(--dh-ground);
-  background-image:
-    radial-gradient(760px 560px at 8% -10%, var(--dh-glow-accent), transparent 70%),
-    radial-gradient(680px 520px at 96% 6%, var(--dh-glow-accent-2), transparent 72%),
-    radial-gradient(820px 560px at 38% 118%, rgba(29, 78, 216, 0.22), transparent 72%),
-    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
-  background-size: auto, auto, auto, 34px 34px;
-  background-attachment: fixed, fixed, fixed, fixed;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
+  background-size: 34px 34px;
+  background-attachment: fixed;
+}
+
+/* Glow ambient sungguhan — 3 bola blur di belakang seluruh shell (sidebar +
+   konten), fixed supaya tidak ikut scroll. z-index:0 SENGAJA di bawah
+   `.app-content`/`.sidebar` (keduanya diberi z-index:1 di sini) supaya
+   urutan tumpuknya persis artifact: glow → shell → kartu kaca di atasnya. */
+[data-theme="dark"] [data-division="armada"] .dh-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+[data-theme="dark"] [data-division="armada"] .dh-glow span {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+}
+[data-theme="dark"] [data-division="armada"] .dh-glow-1 {
+  width: 520px; height: 520px; top: -160px; left: 120px;
+  background: radial-gradient(circle, rgba(76, 141, 255, 0.4), transparent 70%);
+}
+[data-theme="dark"] [data-division="armada"] .dh-glow-2 {
+  width: 460px; height: 460px; top: 280px; right: -120px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.28), transparent 70%);
+}
+[data-theme="dark"] [data-division="armada"] .dh-glow-3 {
+  width: 600px; height: 600px; bottom: -220px; left: 35%;
+  background: radial-gradient(circle, rgba(29, 78, 216, 0.32), transparent 70%);
 }
 
 /* Sidebar jadi KACA (bukan gelap solid 92% opaque) — referensi artifact
@@ -84,6 +120,8 @@
    blur), sebelumnya di sini 0.92 nyaris opak jadi kelihatan seperti kolom
    solid biasa berdampingan dengan konten yang berkaca. */
 [data-theme="dark"] [data-division="armada"] .sidebar {
+  position: relative;
+  z-index: 1;
   background-color: rgba(10, 13, 22, 0.6);
   background-image: radial-gradient(480px 340px at 50% -14%, rgba(76, 141, 255, 0.22), transparent 72%);
   border-right: 1px solid var(--dh-hairline);
@@ -380,6 +418,18 @@
   background: var(--dh-bar, var(--dh-accent));
   box-shadow: 0 0 16px 0 var(--dh-bar, var(--dh-accent));
   opacity: 0.9;
+}
+
+/* ── 8b. JUDUL HALAMAN: lebih tebal & rapat, sesuai nilai artifact (D-049) ─
+   `.page-title` artifact: 24px/800/-.3px. `PageHeader` (components/ui/
+   page.jsx) dipakai LINTAS APLIKASI (22px/700/-.01em) — jangan ubah di
+   sana (base app-wide, bukan urusan pilot ini). Cukup dinaikkan di sini,
+   scoped, supaya h1 di Delivery Hub terasa sama tebal/rapat dengan
+   referensi tanpa menyeret halaman lain ikut berubah. */
+[data-theme="dark"] [data-division="armada"] h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
 }
 
 /* ── 9. ANGKA BESAR: sedikit cahaya supaya KPI terbaca "hidup" ────────────*/
