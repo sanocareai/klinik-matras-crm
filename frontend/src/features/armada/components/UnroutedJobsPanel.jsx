@@ -30,6 +30,70 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 // satu-satu ke rute yang sama). Kota dengan 1 job atau tanpa kota (alamat
 // belum lengkap) tetap tampil di kelompok "Lainnya" di bawah, TIDAK
 // disembunyikan — order itu tetap harus terlihat & terjadwalkan.
+// Kartu SATU job di panel ini (D-074, 4 September 2026) — DIPINDAH ke luar
+// UnroutedJobsPanel, jadi komponen level-atas sendiri, bukan lagi
+// didefinisikan DI DALAM body UnroutedJobsPanel seperti sebelumnya.
+//
+// ⚠️ BUG NYATA yang diperbaiki: fungsi komponen yang didefinisikan DI DALAM
+// body komponen lain dibuat ULANG (referensi fungsi baru) setiap parent-nya
+// re-render — React mengidentifikasi tipe komponen dari REFERENSI fungsi,
+// bukan namanya, jadi "komponen baru" berarti React MEMBONGKAR elemen DOM
+// lama dan MEMASANG yang baru dari nol, bukan sekadar update props ke DOM
+// yang sama. Laporan owner: job di panel ini butuh diklik SATU KALI dulu
+// (warna sempat berubah) baru bisa benar-benar diseret — persis gejala drag
+// native yang gagal karena target `mousedown`-nya (elemen DOM lama) sudah
+// diganti elemen baru SEBELUM ambang jarak drag browser tercapai, dan
+// gestur browser jadi "putus" di tengah jalan pada percobaan pertama.
+// Percobaan KEDUA berhasil karena parent sudah berhenti re-render saat itu,
+// DOM-nya stabil sepanjang gestur. Kartu stop di RouteCard.jsx TIDAK kena
+// masalah ini karena ditulis inline (bukan komponen bersarang terpisah).
+function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
+  return (
+    <li
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/job-id", j.id); onDragStart(j); }}
+      onDragEnd={onDragEnd}
+      className={cn(
+        // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
+        // atas panel yang sudah kaca, MENGGANTIKAN `bg-surface` polos
+        // yang laporan owner nilai "kurang cocok dengan style yang sudah
+        // dibangun" (lihat delivery-dark.css/delivery-light.css untuk
+        // definisi visualnya). `transition-all` (bukan cuma
+        // transition-opacity) + `scale` saat digeser — bahasa gerak yang
+        // SAMA dengan stop card di RouteCard.jsx (D-072 juga di sana).
+        // `select-none` (D-073) — mencegah gestur drag "dimakan" seleksi
+        // teks bawaan browser (perbaikan valid, tapi TERNYATA bukan akar
+        // masalah utama laporan "klik dulu baru bisa pindahkan" — itu
+        // bug remount di atas).
+        "dh-job-card flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+        draggingId === j.id && "scale-[0.97] opacity-40"
+      )}
+    >
+      <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
+        <div className="mt-0.5 truncate text-[10.5px] text-ink2">{j.addressText || "Alamat belum diisi"}</div>
+        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink3">
+          {/* Tanggal ikut ditampilkan (D-063, 4 September 2026) — sejak
+              panel ini bisa menampilkan RENTANG tanggal (bukan cuma satu
+              hari terkunci), job dari hari berbeda tercampur dalam satu
+              daftar; tanpa ini tidak ada cara tahu job mana untuk hari
+              apa hanya dari kartunya sendiri. */}
+          {j.scheduledDate && (
+            <>
+              <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
+              <span aria-hidden>·</span>
+            </>
+          )}
+          <span>{j.timeWindow || "Tanpa jam"}</span>
+          <span aria-hidden>·</span>
+          <span>{unitCountOf(j)} unit</span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export default function UnroutedJobsPanel({
   jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd,
 }) {
@@ -53,54 +117,6 @@ export default function UnroutedJobsPanel({
     kandidat.sort((a, b) => b.list.length - a.list.length);
     return { kandidat, lainnya };
   }, [jobs]);
-
-  function JobRow({ j }) {
-    return (
-      <li
-        draggable
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/job-id", j.id); onDragStart(j); }}
-        onDragEnd={onDragEnd}
-        className={cn(
-          // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
-          // atas panel yang sudah kaca, MENGGANTIKAN `bg-surface` polos
-          // yang laporan owner nilai "kurang cocok dengan style yang sudah
-          // dibangun" (lihat delivery-dark.css/delivery-light.css untuk
-          // definisi visualnya). `transition-all` (bukan cuma
-          // transition-opacity) + `scale` saat digeser — bahasa gerak yang
-          // SAMA dengan stop card di RouteCard.jsx (D-072 juga di sana).
-          // `select-none` (D-073) — sama alasan dengan RouteCard.jsx: tanpa
-          // ini, gestur drag PERTAMA di atas teks nama/alamat sering
-          // "dimakan" seleksi teks bawaan browser, baru percobaan KEDUA
-          // yang benar-benar jalan sebagai drag ("klik dulu, baru bisa
-          // pindahkan" — laporan owner).
-          "dh-job-card flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
-          draggingId === j.id && "scale-[0.97] opacity-40"
-        )}
-      >
-        <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
-          <div className="mt-0.5 truncate text-[10.5px] text-ink2">{j.addressText || "Alamat belum diisi"}</div>
-          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink3">
-            {/* Tanggal ikut ditampilkan (D-063, 4 September 2026) — sejak
-                panel ini bisa menampilkan RENTANG tanggal (bukan cuma satu
-                hari terkunci), job dari hari berbeda tercampur dalam satu
-                daftar; tanpa ini tidak ada cara tahu job mana untuk hari
-                apa hanya dari kartunya sendiri. */}
-            {j.scheduledDate && (
-              <>
-                <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
-                <span aria-hidden>·</span>
-              </>
-            )}
-            <span>{j.timeWindow || "Tanpa jam"}</span>
-            <span aria-hidden>·</span>
-            <span>{unitCountOf(j)} unit</span>
-          </div>
-        </div>
-      </li>
-    );
-  }
 
   return (
     <div className="flex h-full flex-col rounded-card border border-border bg-surface">
@@ -170,7 +186,7 @@ export default function UnroutedJobsPanel({
                   <MapPinned size={11} /> {kota} · kandidat 1 rute
                 </span>
                 <ul className="space-y-1.5">
-                  {list.map((j) => <JobRow key={j.id} j={j} />)}
+                  {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
                 </ul>
               </div>
             ))}
@@ -181,7 +197,7 @@ export default function UnroutedJobsPanel({
                   <p className="mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-ink3">Lainnya</p>
                 )}
                 <ul className="space-y-1.5">
-                  {groups.lainnya.map((j) => <JobRow key={j.id} j={j} />)}
+                  {groups.lainnya.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
                 </ul>
               </div>
             )}
