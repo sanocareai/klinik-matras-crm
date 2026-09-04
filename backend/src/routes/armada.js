@@ -1428,19 +1428,43 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
   }
 });
 
+// GET /armada/pod?status=&from=&to= — `from`/`to` (D-085, 5 September 2026,
+// laporan owner: "tambahkan tanggal seperti yang lain") memfilter
+// `scheduledDate`, BUKAN `completedAt` — sengaja, supaya SEMUA status POD
+// (termasuk "Belum Lengkap", yang sering kali job-nya belum sempat
+// completedAt sama sekali) tetap konsisten kena filter yang sama. Kalau
+// dipakai `completedAt`, tab "Belum Lengkap" akan selalu kosong begitu
+// rentang tanggal dipersempit (job yang belum selesai jelas tidak punya
+// completedAt), padahal itu justru status yang paling perlu ditindak.
 armadaRouter.get("/pod", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { status } = req.query; // INCOMPLETE | PENDING_REVIEW | VERIFIED | REJECTED
+    const { status, from, to } = req.query; // status: INCOMPLETE | PENDING_REVIEW | VERIFIED | REJECTED
     // Basis query: hanya job yang PERNAH menyelesaikan kunjungan (COMPLETED)
     // ATAU sedang berjalan tapi relevan dipantau — spesifikasi tab "Semua"
     // termasuk "Belum Lengkap", jadi basisnya tidak dibatasi ke COMPLETED
     // saja. Batasnya: job yang statusnya UNSCHEDULED murni (belum berangkat
     // sama sekali) tidak relevan untuk halaman bukti serah terima.
+    // Digabung jadi SATU objek scheduledDate (bukan dua spread terpisah) —
+    // dua `...(cond && { scheduledDate: {...} })` yang sama-sama menulis
+    // key "scheduledDate" akan SALING MENIMPA kalau from & to dua-duanya
+    // dikirim (yang satu hilang diam-diam), persis kesalahan yang sudah
+    // pernah dibetulkan di GET /orders (routes/orders.js, `customerWhere`).
+    const scheduledDateFilter = {
+      ...(from && { gte: toDateOnly(from) }),
+      // Batas EKSKLUSIF (bukan `lte` mentah) — kolom DATE, `lte` bisa
+      // membuang seluruh hari terakhir tergantung representasi jam
+      // penyimpanannya. Pola yang sama dipakai di seluruh app (lihat
+      // catatan di GET /armada/jobs & routes/analytics.js).
+      ...(to && { lt: new Date(toDateOnly(to).getTime() + 86_400_000) }),
+    };
     const jobs = await prisma.job.findMany({
-      where: { status: { notIn: ["UNSCHEDULED"] } },
+      where: {
+        status: { notIn: ["UNSCHEDULED"] },
+        ...(Object.keys(scheduledDateFilter).length > 0 && { scheduledDate: scheduledDateFilter }),
+      },
       include: PIC_INCLUDE_FOR_POD,
       orderBy: [{ completedAt: "desc" }, { scheduledDate: "desc" }],
-      take: 300,
+      take: 500,
     });
     const withDerived = jobs.map((j) => ({ ...j, derivedPodStatus: derivePodStatus(j) }));
     const filtered = status ? withDerived.filter((j) => j.derivedPodStatus === status) : withDerived;

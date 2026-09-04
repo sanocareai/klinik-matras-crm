@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow } from "@/components/ui/table.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import {
@@ -109,6 +111,16 @@ export default function ArmadaOrders() {
   const [debounced, setDebounced] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // Date range picker (D-085, 5 September 2026) — laporan owner: "di tab
+  // 'semua order' bisa tambahkan tanggal juga yang di set default 'semua
+  // tanggal'". Default "all_time" PERSIS diminta ("semua tanggal" dulu,
+  // bukan 30 hari terakhir seperti kebanyakan Laporan lain) — order lama
+  // yang MASIH nyangkut di produksi (belum Terkirim) tidak boleh hilang
+  // dari pandangan cuma karena tanggal `createdAt`-nya sudah lewat jendela
+  // waktu, sama semangatnya dengan `hideFinished` di bawah (yang menyaring
+  // berdasarkan STATUS, bukan tanggal). GET /orders SUDAH dukung `from`/
+  // `to` (filter createdAt) — cuma belum pernah dipakai halaman ini.
+  const [range, setRange] = useState(() => makeRange("all_time"));
   const [orders, setOrders] = useState(null);
   const [summary, setSummary] = useState(null);
   const [perStatus, setPerStatus] = useState([]);
@@ -134,6 +146,7 @@ export default function ArmadaOrders() {
         // yang MASIH berjalan, bukan riwayat yang sudah tuntas. Sama pola
         // dengan pages/Orders.jsx.
         hideFinished: fStatus ? undefined : "true",
+        ...toApiParams(range), // {} untuk preset "Semua" — tanpa filter tanggal
         limit: 300,
       });
       setOrders(res.items || []);
@@ -144,7 +157,7 @@ export default function ArmadaOrders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fStatus]);
+  }, [debounced, fKategori, fStatus, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -156,9 +169,12 @@ export default function ArmadaOrders() {
         title="Semua Order"
         subtitle="Pantau seluruh order Sales CRM lintas divisi — Sales, Produksi, Pengambilan/Pengiriman, dan Pembayaran, dalam satu layar."
         actions={
-          <Button size="sm" variant="neutral" onClick={load} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
-          </Button>
+          <div className="flex items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} />
+            <Button size="sm" variant="neutral" onClick={load} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
+            </Button>
+          </div>
         }
       />
 

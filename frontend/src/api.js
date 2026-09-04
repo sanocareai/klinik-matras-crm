@@ -210,7 +210,11 @@ export const api = {
   deleteRoute: (id) => request(`/armada/routes/${id}`, { method: "DELETE" }),
 
   // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)
-  getPodJobs: (status) => request(`/armada/pod${status ? `?status=${status}` : ""}`),
+  // D-085 — sebelumnya cuma terima `status` (string tunggal). Sekarang
+  // objek params supaya `from`/`to` (rentang tanggal) bisa ikut, pola SAMA
+  // dengan getOrders/getFleetSummary di atas (buildQuery, bukan template
+  // string manual).
+  getPodJobs: (params = {}) => request(`/armada/pod${buildQuery(params)}`),
   verifyPod: (jobId) => request(`/armada/pod/${jobId}/verify`, { method: "PATCH" }),
   rejectPod: (jobId, note) => request(`/armada/pod/${jobId}/reject`, { method: "PATCH", body: JSON.stringify({ note }) }),
 
