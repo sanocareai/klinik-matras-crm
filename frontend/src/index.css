@@ -133,7 +133,12 @@ body {
   align-items: center;
   gap: 11px;
   padding: 18px 16px 14px;
-  border-bottom: 1px solid #EAEEF4;
+  /* `border-bottom` DIHAPUS (D-063, 4 September 2026) — laporan owner:
+     garis tipis di sini terlihat seperti sambungan patah, bukan transisi
+     mulus, ke WorkspaceSwitcher tepat di bawahnya (dua elemen itu satu
+     blok identitas, bukan dua section berbeda). Jarak visual cukup
+     dipegang oleh padding-bottom di atas + margin WorkspaceSwitcher
+     sendiri, tanpa perlu garis pemisah. */
 }
 /* Tile brand ber-ring gradient AI — identitas Sano lebih kuat. */
 .sidebar-brand-icon {
@@ -142,6 +147,12 @@ body {
   box-shadow: 0 4px 12px -3px rgba(124,58,237,0.42);
   display: flex;
 }
+/* SELALU putih, terang maupun gelap (D-063) — laporan owner: mark logo
+   (biru/teal) nyaris tidak kelihatan di dark mode saat kotak ini ikut
+   gelap (sebelumnya `background: var(--bg-inset)` di dark = #2C2C2E,
+   kontras terlalu lemah lawan warna mark yang juga medium-gelap). Putih
+   solid menjamin kontras maksimal di kedua tema — logo brand SENGAJA
+   tidak ikut invert warna seperti elemen UI lain, ini identitas tetap. */
 .sidebar-brand-inner {
   flex: 1; border-radius: 9px; background: #fff;
   display: flex; align-items: center; justify-content: center;
@@ -262,8 +273,10 @@ body {
   border-right-color: var(--hairline);
   box-shadow: 1px 0 0 rgba(0,0,0,0.4), 4px 0 24px -18px rgba(0,0,0,0.6);
 }
-[data-theme="dark"] .sidebar-brand { border-bottom-color: var(--hairline); }
-[data-theme="dark"] .sidebar-brand-inner { background: var(--bg-inset); }
+/* Override border-bottom & background-inset dark utk .sidebar-brand(-inner)
+   DIHAPUS (D-063) — dua-duanya sudah tidak ada lagi di rule dasarnya
+   (lihat komentar di deklarasi masing-masing), jadi tidak ada lagi yang
+   perlu di-override khusus dark mode di sini. */
 [data-theme="dark"] .sidebar-section-label { color: var(--text-tertiary); }
 [data-theme="dark"] .sidebar-link:hover { background: var(--bg-hover); }
 [data-theme="dark"] .nav-pill {
