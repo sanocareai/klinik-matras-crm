@@ -203,9 +203,10 @@ export const api = {
   setRouteJobs: (id, jobIds) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
-  // Hapus permanen — HANYA untuk rute DRAFT (D-059). Beda dari cancelRoute
-  // (soft, riwayatnya tetap ada) — ini benar-benar menghapus baris Route-nya,
-  // dipakai untuk rute draft yang salah pilih/dibuat coba-coba.
+  // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
+  // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini
+  // benar-benar menghapus baris Route-nya. PUBLISHED/COMPLETED ditolak
+  // backend — batalkan dulu baru bisa dihapus.
   deleteRoute: (id) => request(`/armada/routes/${id}`, { method: "DELETE" }),
 
   // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)

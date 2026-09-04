@@ -230,6 +230,25 @@ export default function RouteCard({
           </button>
         </div>
       )}
+
+      {/* Hapus untuk rute yang SUDAH dibatalkan (D-061, 4 September 2026 —
+          laporan owner: "tadi gue coba batalkan, buatkan skema yang
+          dibatalkan juga bisa dihapus"). Urutkan/Terbitkan tidak relevan
+          lagi di sini (rute ini tidak akan pernah jalan) — cuma Hapus,
+          sengaja SATU tombol saja supaya tidak ambigu dengan aksi rute
+          aktif di atas. */}
+      {route.status === "CANCELLED" && (
+        <div className="flex shrink-0 items-center justify-end border-t border-line p-2">
+          <button
+            type="button"
+            onClick={() => jalankan(() => onDelete(route))}
+            disabled={busy}
+            className="flex h-7 items-center gap-1.5 rounded-chip px-2.5 text-[11.5px] font-semibold text-ink3 transition-colors hover:bg-redbg hover:text-red disabled:opacity-40"
+          >
+            <Trash2 size={13} /> Hapus rute ini
+          </button>
+        </div>
+      )}
     </div>
   );
 }

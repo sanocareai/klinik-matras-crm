@@ -1199,16 +1199,21 @@ armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async
   }
 });
 
-// HAPUS PERMANEN rute (D-059, 4 September 2026) — laporan owner: rute DRAFT
-// yang salah pilih/salah tanggal/dibuat coba-coba selama ini cuma bisa
-// "Batalkan" (CANCELLED, tetap tersimpan selamanya sebagai riwayat) —
-// papan Route Planner lama-lama penuh bangkai rute draft yang sebenarnya
-// tidak pernah dipakai sama sekali dan tidak bermakna sebagai riwayat.
+// HAPUS PERMANEN rute (D-059, 4 September 2026, DIPERLUAS D-061 hari yang
+// sama) — laporan owner: rute DRAFT yang salah pilih/salah tanggal/dibuat
+// coba-coba selama ini cuma bisa "Batalkan" (CANCELLED, tetap tersimpan
+// selamanya sebagai riwayat) — papan Route Planner lama-lama penuh bangkai
+// rute yang sebenarnya tidak pernah dipakai sama sekali dan tidak bermakna
+// sebagai riwayat. D-061: owner mencoba Batalkan lalu MINTA rute yang
+// SUDAH dibatalkan itu juga bisa dihapus — CANCELLED ditambahkan ke daftar
+// yang boleh, konsisten dengan alasan yang sama (rute batal = tidak pernah
+// benar-benar berjalan, tidak ada apa pun yang hilang kalau dihapus).
 //
-// SENGAJA cuma untuk DRAFT — rute yang SUDAH PUBLISHED/COMPLETED/CANCELLED
-// WAJIB tetap "Batalkan" (soft, di atas), bukan dihapus: begitu diterbitkan,
-// itu sudah jadi komitmen nyata ke driver (dan mungkin sudah dikerjakan
-// sebagian), menghapusnya akan membuang jejak yang harus tetap ada.
+// TETAP menolak PUBLISHED/COMPLETED — begitu diterbitkan, itu sudah jadi
+// komitmen nyata ke driver (dan mungkin sudah dikerjakan sebagian);
+// menghapusnya akan membuang jejak yang harus tetap ada. Rute PUBLISHED
+// yang mau dihapus HARUS dibatalkan dulu (jadi CANCELLED) — dua langkah
+// sengaja, bukan longgar sekaligus.
 //
 // Job di dalamnya TIDAK ikut terhapus — Job.routeId onDelete:SetNull
 // (schema.prisma) otomatis melepaskannya balik ke "Belum Masuk Rute" begitu
@@ -1221,8 +1226,8 @@ armadaRouter.delete("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req,
       include: { expenses: { select: { id: true } } },
     });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
-    if (route.status !== "DRAFT") {
-      throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa dihapus permanen — pakai "Batalkan" (riwayatnya wajib tetap ada begitu sudah diterbitkan)`);
+    if (!["DRAFT", "CANCELLED"].includes(route.status)) {
+      throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa dihapus permanen — batalkan dulu, baru bisa dihapus`);
     }
     if (route.expenses.length > 0) {
       // Draft normal tidak akan pernah sampai sini (biaya kendaraan dicatat
