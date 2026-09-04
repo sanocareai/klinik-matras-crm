@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Loader2, User, Truck } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Truck } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
@@ -18,7 +18,7 @@ import { JobMetaRow } from "./JobBadges.jsx";
 // slot ini masih perkiraan kasar) — sistem menandai, manusia memutuskan.
 export default function RouteCard({
   route, drivers, vehicles, draggingJobId,
-  onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onOptimize,
+  onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize,
 }) {
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -192,11 +192,26 @@ export default function RouteCard({
             type="button"
             onClick={() => jalankan(() => onCancel(route))}
             disabled={busy}
-            title="Batalkan rute"
+            title="Batalkan rute (riwayatnya tetap tersimpan)"
             aria-label="Batalkan rute"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-redbg hover:text-red disabled:opacity-40"
           >
             <Ban size={13} />
+          </button>
+          {/* Hapus permanen (D-059) — TERPISAH dari Batalkan: draft yang
+              salah pilih/coba-coba dibuang total, bukan disimpan sebagai
+              riwayat. Cuma tampil untuk DRAFT (halaman ini memang cuma
+              merender aksi ini di dalam `{isDraft && (...)}`), backend
+              menegakkan ulang aturan yang sama. */}
+          <button
+            type="button"
+            onClick={() => jalankan(() => onDelete(route))}
+            disabled={busy}
+            title="Hapus rute permanen"
+            aria-label="Hapus rute permanen"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-chip text-ink3 transition-colors hover:bg-redbg hover:text-red disabled:opacity-40"
+          >
+            <Trash2 size={13} />
           </button>
           <button
             type="button"

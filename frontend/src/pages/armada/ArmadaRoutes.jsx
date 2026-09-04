@@ -129,6 +129,21 @@ export default function ArmadaRoutes() {
     await load();
   }
 
+  // Hapus permanen (D-059, 4 September 2026) — laporan owner: rute draft
+  // salah pilih/coba-coba selama ini cuma bisa "Batalkan" (tetap tersimpan
+  // selamanya sebagai riwayat) — tidak ada cara membuangnya benar-benar.
+  // HANYA untuk DRAFT (ditegakkan juga di backend) — job di dalamnya
+  // otomatis balik ke "Belum Masuk Rute", TIDAK ikut terhapus.
+  async function hapusRute(route) {
+    if (!confirm(`Hapus rute ${route.code} secara PERMANEN? ${route.jobs?.length ? `${route.jobs.length} job di dalamnya akan kembali ke "Belum Masuk Rute", tidak ikut terhapus.` : "Tindakan ini tidak bisa dibatalkan."}`)) return;
+    try {
+      await api.deleteRoute(route.id);
+      await load();
+    } catch (e) {
+      alert("Gagal menghapus rute: " + e.message);
+    }
+  }
+
   // Jarak garis lurus (haversine, km) — cukup untuk MEMBANDINGKAN urutan,
   // bukan angka jarak jalan sungguhan (Google Maps belum aktif, lihat
   // services/maps.js Fase 2). Salinan sengaja di frontend, bukan panggil
@@ -292,6 +307,7 @@ export default function ArmadaRoutes() {
                     onAssign={ubahPenugasan}
                     onPublish={terbitkan}
                     onCancel={batalkan}
+                    onDelete={hapusRute}
                     onOptimize={urutkanOtomatis}
                   />
                 ))}
