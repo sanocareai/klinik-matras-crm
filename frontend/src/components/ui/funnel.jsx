@@ -14,11 +14,22 @@ import { cn } from "@/lib/utils.js";
 //
 // WARNA: satu keluarga biru, makin ke bawah makin PEKAT — tahap terbawah
 // (Berhasil) paling bernilai, jadi warna terkuat mendarat di tempat terpenting.
+//
+// REVISI (D-092, 5 September 2026) — owner: dashboard dark mode "gabegitu
+// banyak berubah", dibandingkan ke referensi (crypto dashboard: bar chart
+// SATU hue tapi terang→gelap jelas beda, bukan mepet). RAMP lama mulai dari
+// blue-200→blue-300 — di dark theme keduanya cuma tint TRANSLUCENT alpha
+// 0.24 vs 0.34 (lihat --blue-200/-300 di tokens.css blok dark), bedanya
+// nyaris tak kelihatan berdampingan. Digeser turun satu anak tangga
+// (blue-100 dimulai, lompat ke blue-300 — skip 200) + bluesolid dinaikkan
+// jadi 3 opacity berjenjang (55/80/100) alih-alih 85/100/100 — rentangnya
+// jauh lebih lebar dari ujung ke ujung, TETAP satu hue (taat "aturan satu
+// accent"), cuma levelnya lebih jauh terpisah.
 const RAMP = [
-  "bg-blue-200 text-blue-900",
+  "bg-blue-100 text-blue-900",
   "bg-blue-300 text-blue-900",
-  "bg-bluesolid/85 text-bluesolidink",
-  "bg-bluesolid text-bluesolidink",
+  "bg-bluesolid/55 text-bluesolidink",
+  "bg-bluesolid/80 text-bluesolidink",
   "bg-bluesolid text-bluesolidink",
 ];
 

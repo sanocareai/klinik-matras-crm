@@ -17,7 +17,17 @@ export default function SectionCard({
   title, action, footer, children, className, bodyClassName, ...props
 }) {
   return (
-    <Card className={cn("flex flex-col p-0", className)} {...props}>
+    // "dh-bar-left" (D-092) — garis aksen kiri BERCAHAYA, pola yang SUDAH ADA
+    // dari Delivery Hub (ArmadaDashboard.jsx), belum pernah dipakai di Sales
+    // CRM. Owner: dashboard "gabegitu banyak berubah" — akar masalahnya SEMUA
+    // panel di bawah baris KPI (Sales Overview/Deal Pipeline/dst, SATU-
+    // SATUNYA konsumen SectionCard, lihat komentar di card.jsx) flat tanpa
+    // aksen sama sekali. `--dh-bar` SENGAJA tidak di-set inline di sini →
+    // `.dh-bar-left::after` jatuh ke fallback-nya (var(--dh-accent), SATU biru
+    // yang sama, bukan warna baru) — tetap taat "aturan satu accent".
+    // No-op TOTAL di luar .glass-division (di luar pilot Dashboard, kelas
+    // dh-bar-left tidak py aturan CSS apa pun, murni penanda tanpa efek).
+    <Card className={cn("dh-bar-left flex flex-col p-0", className)} {...props}>
       {(title || action) && (
         <div className="flex items-center justify-between gap-3 px-5 pb-4 pt-5">
           {title && <h3 className="t-card-title">{title}</h3>}

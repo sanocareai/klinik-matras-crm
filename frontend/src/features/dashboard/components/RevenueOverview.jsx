@@ -3,9 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, LineChart } from "lucide-react";
 import SectionCard from "@/components/ui/section-card.jsx";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
+import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { api } from "@/api.js";
 import { formatRupiah, formatRupiahShort } from "@/utils/format.js";
 import { toApiParams, formatRangeText, formatBucketTick } from "@/lib/dateRange.js";
@@ -120,9 +121,21 @@ export default function RevenueOverview({ range, className, repeatRate, repeatCu
           </div>
 
           {total === 0 ? (
-            <p className="t-secondary py-16 text-center">
-              Belum ada order pada periode ini.
-            </p>
+            // EmptyState (D-092) — sebelumnya teks polos di tengah panel
+            // terbesar di Dashboard, jadi ruang kosong paling mencolok saat
+            // rentang tanggal memang tidak punya order (BUKAN dianggap
+            // "kurang menarik" — datanya sungguh nol, chart di bawah TIDAK
+            // dipaksa render garis palsu). Dipindah ke primitif EmptyState
+            // yang sudah ada di project ini (components/ui/empty-state.jsx,
+            // prinsip "jujur & mengajarkan langkah berikutnya") — ikon +
+            // judul + saran konkret (coba rentang lebih lebar), bukan cuma
+            // satu baris teks mengambang di tengah kotak kosong.
+            <EmptyState
+              icon={LineChart}
+              className="py-16"
+              title="Belum ada order pada periode ini"
+              description={`Grafik penjualan muncul otomatis begitu ada order — coba perlebar rentang tanggal (mis. "30 hari") kalau "${formatRangeText(range)}" memang belum ada transaksi.`}
+            />
           ) : (
             <div className="mt-5 -ml-1">
               <ResponsiveContainer width="100%" height={230}>

@@ -16,7 +16,13 @@ import { cn } from "@/lib/utils.js";
 //                 valid — hasilnya kini identik dengan default.
 //   ai-insight  → permukaan + tint accent tipis; gradient violet dihapus
 //                 (aturan satu accent).
-const cardVariants = cva("rounded-card bg-surface p-6", {
+// "relative" (D-092) — murni positioning, TANPA efek visual sendiri. Dibutuhkan
+// supaya `.dh-bar-left::after`/`.card::before` (delivery-dark.css/-light.css,
+// keduanya position:absolute) punya containing block yang benar (tepi Card
+// itu sendiri), bukan leluhur lain yang kebetulan positioned. Aman ditambah
+// global — tidak menggeser apa pun selama TIDAK ADA descendant absolute yang
+// belum sengaja dipasang.
+const cardVariants = cva("relative rounded-card bg-surface p-6", {
   variants: {
     variant: {
       default:      "shadow-card",
