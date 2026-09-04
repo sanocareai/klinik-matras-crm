@@ -6,14 +6,15 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
   Wrench, Truck, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine, Award,
+  Boxes, ScanLine, Award, ArrowUpDown, Check,
 } from "lucide-react";
 import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
 import { api } from "../api.js";
+import SidebarNavSection from "./SidebarNavSection.jsx";
+import { applyCustomOrder, getSectionOrder, saveSectionOrder } from "@/lib/sidebarOrder.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import ToastNotif from "./ToastNotif.jsx";
-import SidebarLink from "./SidebarLink.jsx";
 import WorkspaceSwitcher from "./WorkspaceSwitcher.jsx";
 import NotificationDrawer from "@/features/notifications/NotificationDrawer.jsx";
 import Avatar from "./Avatar.jsx";
@@ -469,6 +470,19 @@ export default function Layout({ user, onLogout, children }) {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("sidebar-collapsed") === "true"
   );
+
+  // Susun ulang menu sidebar (D-060, 4 September 2026) — lihat
+  // lib/sidebarOrder.js untuk penyimpanan & SidebarNavSection.jsx untuk
+  // interaksi drag. `orderVersion` SENGAJA ada — urutan tersimpan dibaca
+  // ulang dari localStorage langsung di render (bukan disalin ke state),
+  // jadi butuh sinyal re-render setelah tiap drop; bump angka ini di situ.
+  const [customizingNav, setCustomizingNav] = useState(false);
+  const [orderVersion, setOrderVersion] = useState(0);
+  // Keluar dari mode susun kalau pindah workspace ATAU sidebar disempitkan
+  // (SidebarNavSection sengaja tidak mendukung mode compact 72px — tanpa
+  // label, tidak ada cara membedakan item mana yang sedang digeser).
+  useEffect(() => { setCustomizingNav(false); }, [divisionKey, onHub, collapsed]);
+
   const prevUnread    = useRef(null); // null = belum ada data awal
   const lastSeenAt    = useRef(new Date().toISOString()); // timestamp polling terakhir
   const fetchUnreadRef = useRef(null); // ref ke fetchUnread terbaru untuk SSE callback
@@ -670,6 +684,24 @@ export default function Layout({ user, onLogout, children }) {
           onNavigate={closeMobileMenu}
         />
 
+        {/* Susun ulang menu (D-060) — laporan owner: "sidebar bisa digeser-
+            geser, misal Semua Order taruh bawah, Route Planner paling atas".
+            HANYA muncul di sidebar divisi (bukan Main Hub) dan HANYA saat
+            tidak menyempit — lihat catatan di SidebarNavSection.jsx. */}
+        {!onHub && !collapsed && (
+          <button
+            type="button"
+            onClick={() => setCustomizingNav((v) => !v)}
+            className={
+              "mb-1 flex items-center gap-1.5 rounded-btn px-3 py-1.5 text-[11.5px] font-semibold transition-colors " +
+              (customizingNav ? "bg-accent text-white" : "text-ink3 hover:bg-hovertint hover:text-ink2")
+            }
+          >
+            {customizingNav ? <Check size={13} /> : <ArrowUpDown size={13} />}
+            {customizingNav ? "Selesai" : "Susun ulang menu"}
+          </button>
+        )}
+
         {/* Navigation — menu DI DALAM workspace yang sedang dibuka. Di Main Hub
             dirender dari HUB_SECTIONS (lintas-divisi: Pengaturan, Pengguna &
             Peran, Notifikasi) — BUKAN kosong seperti sebelumnya, dan bukan
@@ -677,32 +709,33 @@ export default function Layout({ user, onLogout, children }) {
         <nav className="sidebar-nav">
           {/* LayoutGroup: pill aktif geser mulus antar item (layoutId). Data nav,
               role gating, dan kondisi badge unread TIDAK berubah — cuma sumbernya
-              sekarang `division.sections` (atau HUB_SECTIONS di Main Hub). */}
+              sekarang `division.sections` (atau HUB_SECTIONS di Main Hub).
+              `orderVersion` di dependency array bawah TIDAK ADA secara eksplisit
+              (ini bukan useMemo) — sengaja dibaca langsung tiap render supaya
+              urutan tersimpan selalu segar setelah drop, tanpa memikirkan
+              dependency array yang gampang lupa disinkronkan (lihat komentar
+              di deklarasi state-nya). */}
           <LayoutGroup>
           {(onHub ? HUB_SECTIONS : division.sections).map(({ section, adminOnly, items }) => {
             if (adminOnly && !isAdmin) return null;
+            const itemsTampil = items.filter((i) => !i.adminOnly || isAdmin);
+            const itemsUrut = onHub
+              ? itemsTampil
+              : applyCustomOrder(itemsTampil, getSectionOrder(divisionKey, section));
             return (
               <div key={section} className="nav-section">
                 <div className="sidebar-section-label">{section}</div>
-                {items.map(({ to, label, Icon, badge, adminOnly: itemAdmin }) => {
-                  if (itemAdmin && !isAdmin) return null;
-                  // Affordance AI HALUS untuk "Tanya Sano" (ikon violet + dot).
-                  const isAI = to === "/copilot";
-                  const showBadge = !!(badge && unreadCount > 0);
-                  return (
-                    <SidebarLink
-                      key={to}
-                      to={to}
-                      label={label}
-                      Icon={Icon}
-                      isAI={isAI}
-                      showBadge={showBadge}
-                      badgeCount={unreadCount}
-                      collapsed={collapsed}
-                      onNavigate={closeMobileMenu}
-                    />
-                  );
-                })}
+                <SidebarNavSection
+                  items={itemsUrut}
+                  customizing={!onHub && customizingNav}
+                  onReorder={(orderedTos) => {
+                    saveSectionOrder(divisionKey, section, orderedTos);
+                    setOrderVersion((v) => v + 1);
+                  }}
+                  badgeCount={unreadCount}
+                  collapsed={collapsed}
+                  onNavigate={closeMobileMenu}
+                />
               </div>
             );
           })}
