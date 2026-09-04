@@ -54,10 +54,19 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
           // identik semua, tanpa ini tidak ada penanda visual baris mana yang
           // sedang dibuka: menu melayang di dekat kursor sementara semua
           // tombol tetap terlihat sama, dan salah-baris jadi mudah terjadi.
-          className="btn-tugaskan flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50 data-[state=open]:border-accent data-[state=open]:bg-accent data-[state=open]:text-white"
+          className="btn-tugaskan group flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50 data-[state=open]:border-accent data-[state=open]:bg-accent data-[state=open]:text-white"
           onClick={(e) => e.stopPropagation()}
         >
-          <UserPlus size={12} /> Tugaskan <ChevronDown size={11} className="text-ink3" />
+          <UserPlus size={12} /> Tugaskan
+          {/* Ikut berputar 180° saat dropdown terbuka (D-050 lanjutan) —
+              detail kecil di mockup: panah yang membalik jadi penanda kedua
+              (selain warna tombol) bahwa menu ini SEDANG terbuka, bukan
+              cuma dekorasi statis. `data-[state]` ada di TOMBOL (Radix
+              menaruhnya di trigger asChild ini), bukan di ikon sendiri —
+              makanya lewat `group-data-[state=open]:`, bukan
+              `data-[state=open]:` langsung di ikon (yang tidak akan pernah
+              cocok karena ikon ini bukan pemilik atribut itu). */}
+          <ChevronDown size={11} className="text-ink3 transition-transform group-data-[state=open]:rotate-180 group-data-[state=open]:text-white/80" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
