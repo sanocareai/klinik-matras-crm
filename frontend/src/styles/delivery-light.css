@@ -226,7 +226,7 @@ html:not([data-theme="dark"]) .glass-division .app-content > header button[title
    tipis seperti dark mode) — di dasar terang, garis cahaya "dari atas"
    perlu kontras lebih untuk kelihatan sama sekali. */
 html:not([data-theme="dark"]) .glass-division .card,
-html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.stat-card),
+html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.kpi-glass-guard),
 html:not([data-theme="dark"]) .glass-division .settings-card,
 /* .dh-table (D-078, 5 September 2026) — pasangan mode terang dari blok yang
    sama di delivery-dark.css, baca komentar di sana untuk konteks lengkap. */
@@ -252,7 +252,7 @@ html:not([data-theme="dark"]) .glass-division .rounded-xl.bg-surface {
 }
 
 html:not([data-theme="dark"]) .glass-division .card::before,
-html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.stat-card)::before,
+html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.kpi-glass-guard)::before,
 html:not([data-theme="dark"]) .glass-division .dh-table::before,
 html:not([data-theme="dark"]) .glass-division .rounded-xl.bg-surface::before {
   content: "";

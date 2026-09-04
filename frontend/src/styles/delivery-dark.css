@@ -325,7 +325,7 @@
    dipakai hampir semua dashboard gelap modern) — memberi kesan permukaan
    memantulkan cahaya dari atas, bukan kotak datar berwarna beda. */
 [data-theme="dark"] .glass-division .card,
-[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.stat-card),
+[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.kpi-glass-guard),
 [data-theme="dark"] .glass-division .settings-card,
 /* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
    BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
@@ -357,7 +357,7 @@
 }
 
 [data-theme="dark"] .glass-division .card::before,
-[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.stat-card)::before,
+[data-theme="dark"] .glass-division [class*="rounded-card"]:not(.kpi-glass-guard)::before,
 [data-theme="dark"] .glass-division .dh-table::before,
 [data-theme="dark"] .glass-division .rounded-xl.bg-surface::before {
   content: "";

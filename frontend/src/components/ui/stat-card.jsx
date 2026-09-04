@@ -36,14 +36,31 @@ export default function StatCard({
   return (
     <div
       className={cn(
-        // "stat-card" (D-090) — penanda murni CSS, bukan style baru: dipakai
-        // styles/delivery-dark.css/-light.css untuk MENGECUALIKAN kartu ini
-        // dari override kaca generik (`[class*="rounded-card"]`). Kartu ini
-        // punya warna sendiri per depth (bg-blue-100/200/bluesolid + teks
-        // GELAP yang didesain untuk latar TERANG, lihat SKIN di atas) — kalau
-        // ikut ditimpa jadi satu warna kaca navy, teks depth 1-2 nyaris tak
+        // "kpi-glass-guard" (D-090, RENAMED D-094 — bug nyata, lihat bawah)
+        // — penanda murni CSS, bukan style baru: dipakai styles/delivery-
+        // dark.css/-light.css untuk MENGECUALIKAN kartu ini dari override
+        // kaca generik (`[class*="rounded-card"]`). Kartu ini punya warna
+        // sendiri per depth (bg-blue-100/200/bluesolid + teks GELAP yang
+        // didesain untuk latar TERANG, lihat SKIN di atas) — kalau ikut
+        // ditimpa jadi satu warna kaca navy, teks depth 1-2 nyaris tak
         // terbaca (teks tetap gelap, cuma latarnya yang berubah gelap juga).
-        "stat-card flex flex-col gap-3 rounded-card p-5 shadow-card transition-shadow",
+        //
+        // ⚠️ BUG NYATA D-090→D-094: nama sebelumnya "stat-card" TERNYATA
+        // BENTROK dengan class GLOBAL lama dari sebelum Tailwind (index.css
+        // baris ~1483, `.stat-card{background:#fff;...}`) + satu rule massal
+        // di tokens.css (`.card,.chart-card,.stat-card,...{background-color:
+        // var(--bg-surface);border:none!important}`). tokens.css dimuat
+        // SETELAH tailwind.css (lihat main.jsx) jadi menang atas utility
+        // `bg-bluesolid` (spesifisitas SAMA, urutan lebih akhir) — background
+        // asli kartu ke-timpa jadi var(--bg-surface) TANPA disadari. Di dark
+        // mode kebetulan tidak kentara (--bg-surface gelap + teks blue-800/
+        // 900 dark theme SUDAH terang, masih kebaca) tapi di LIGHT mode
+        // --bg-surface nyaris putih + depth 3-4 pakai text-white → teks DAN
+        // ikon lenyap total (putih di atas putih), laporan owner: kartu
+        // Revenue/Conversion kelihatan KOSONG BLANK. Diverifikasi byte-exact
+        // di CSS produksi sebelum diperbaiki (bukan tebakan). Nama baru
+        // sengaja diverifikasi dulu (grep) nol-tabrakan di seluruh project.
+        "kpi-glass-guard flex flex-col gap-3 rounded-card p-5 shadow-card transition-shadow",
         s.box,
         onClick && "cursor-pointer hover:shadow-popover",
         className
