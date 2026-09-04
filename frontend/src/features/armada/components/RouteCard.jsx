@@ -22,6 +22,13 @@ export default function RouteCard({
   onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize,
 }) {
   const [dragOverIdx, setDragOverIdx] = useState(null);
+  // Stop yang SEDANG diseret (D-072, 4 September 2026) — SEBELUMNYA tidak
+  // ada tanda visual apa pun pada item sumbernya sendiri saat digeser
+  // (cuma target drop yang dapat ring), beda dari UnroutedJobsPanel yang
+  // sudah memudarkan item sumber. Ditambahkan supaya drag terasa satu
+  // bahasa gerak yang sama di kedua tempat — laporan owner: "animasi
+  // drag & drop-nya ga smooth".
+  const [draggingStopId, setDraggingStopId] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const jobs = route.jobs || [];
@@ -127,11 +134,17 @@ export default function RouteCard({
         )}
       </div>
 
-      {/* Daftar stop — drop target */}
+      {/* Daftar stop — drop target. `transition-colors` (D-072) — tint
+          drop-zone SEBELUMNYA muncul/hilang seketika, terasa "kedip"
+          dibanding transisi halus yang sudah jadi standar di tempat lain
+          (kartu, popover). */}
       <div
         onDragOver={(e) => { if (isDraft) { e.preventDefault(); setDragOverIdx(jobs.length); } }}
         onDrop={handleDropOnCard}
-        className={cn("min-h-[80px] flex-1 space-y-1.5 p-2", dragOverIdx !== null && isDraft && "bg-accentbg/40")}
+        className={cn(
+          "min-h-[80px] flex-1 space-y-1.5 p-2 transition-colors duration-150",
+          dragOverIdx !== null && isDraft && "bg-accentbg/40"
+        )}
       >
         {jobs.length === 0 ? (
           <p className="px-2 py-6 text-center text-[11px] text-ink3">
@@ -145,13 +158,27 @@ export default function RouteCard({
               <div
                 key={j.id}
                 draggable={isDraft}
-                onDragStart={(e) => e.dataTransfer.setData("text/job-id", j.id)}
+                onDragStart={(e) => { e.dataTransfer.setData("text/job-id", j.id); setDraggingStopId(j.id); }}
                 onDragOver={(e) => { if (isDraft) { e.preventDefault(); e.stopPropagation(); setDragOverIdx(idx); } }}
                 onDrop={(e) => handleDropAtIndex(e, idx)}
+                onDragEnd={() => { setDraggingStopId(null); setDragOverIdx(null); }}
                 className={cn(
-                  "flex items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5",
+                  // `dh-stop-card` (D-072) — kaca bertingkat di atas kartu
+                  // rute yang sudah kaca, MENGGANTIKAN `bg-inset` polos yang
+                  // laporan owner nilai "kurang cocok dengan style yang
+                  // sudah dibangun" (lihat delivery-dark.css/delivery-light.css
+                  // untuk definisi visualnya). `transition-all` (bukan cuma
+                  // transition-colors) supaya ring, opacity, DAN transform
+                  // (drag state di bawah) semua ikut halus, bukan cuma
+                  // sebagian.
+                  "dh-stop-card flex items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
                   isDraft && "cursor-grab active:cursor-grabbing",
-                  dragOverIdx === idx && "ring-2 ring-accent"
+                  dragOverIdx === idx && "ring-2 ring-accent",
+                  // Item yang sedang digeser memudar + sedikit mengecil —
+                  // penanda visual yang SEBELUMNYA tidak ada sama sekali di
+                  // sini (beda dari UnroutedJobsPanel yang sudah punya ini),
+                  // sekarang bahasa gerak drag konsisten di kedua tempat.
+                  draggingStopId === j.id && "scale-[0.97] opacity-40"
                 )}
               >
                 {isDraft && <GripVertical size={12} className="mt-0.5 shrink-0 text-ink3" aria-hidden />}

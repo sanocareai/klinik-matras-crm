@@ -449,6 +449,26 @@
   background-color: transparent;
 }
 
+/* ── 4d. KARTU JOB BERSARANG (RouteCard/UnroutedJobsPanel, D-072) ─────────
+   Laporan owner: kartu customer (stop rute + job "Belum Masuk Rute")
+   "kurang cocok dengan style yang sudah dibangun" — sebelumnya `bg-inset`/
+   `bg-surface` POLOS, padahal induknya (RouteCard/panel) sudah kaca sejak
+   D-046+. TANPA backdrop-filter lagi di sini (elemen ini BISA berulang
+   puluhan sekaligus per layar — bedanya dengan `.chip` di atas yang jumlah
+   per layar jauh lebih sedikit): translucent + hairline SAJA sudah cukup
+   untuk terasa "berlapis", karena kartu induknya SENDIRI sudah blur —
+   lapisan kedua ini otomatis ikut membaur tanpa bayar biaya blur lagi. */
+[data-theme="dark"] [data-division="armada"] .dh-stop-card,
+[data-theme="dark"] [data-division="armada"] .dh-job-card {
+  background-color: var(--dh-elevated);
+  border-color: var(--dh-hairline);
+}
+[data-theme="dark"] [data-division="armada"] .dh-stop-card:hover,
+[data-theme="dark"] [data-division="armada"] .dh-job-card:hover {
+  background-color: rgba(76, 141, 255, 0.10);
+  border-color: rgba(76, 141, 255, 0.35);
+}
+
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────
    TIDAK memakai backdrop-filter di level baris (bisa ratusan baris — mahal).
    Cukup latar semi-transparan + hairline. */

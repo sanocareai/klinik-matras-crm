@@ -342,6 +342,19 @@ html:not([data-theme="dark"]) [data-division="armada"] .chip.chip-empty {
   background-color: transparent;
 }
 
+/* ── 4d. KARTU JOB BERSARANG (RouteCard/UnroutedJobsPanel, D-072) —
+   pasangan mode terang untuk blok yang sama di delivery-dark.css. */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-stop-card,
+html:not([data-theme="dark"]) [data-division="armada"] .dh-job-card {
+  background-color: var(--dh-elevated);
+  border-color: var(--dh-hairline);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .dh-stop-card:hover,
+html:not([data-theme="dark"]) [data-division="armada"] .dh-job-card:hover {
+  background-color: rgba(76, 141, 255, 0.08);
+  border-color: rgba(76, 141, 255, 0.3);
+}
+
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ──────────────── */
 html:not([data-theme="dark"]) [data-division="armada"] thead th {
   background-color: rgba(255, 255, 255, 0.82);

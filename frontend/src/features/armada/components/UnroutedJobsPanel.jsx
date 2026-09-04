@@ -61,8 +61,15 @@ export default function UnroutedJobsPanel({
         onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/job-id", j.id); onDragStart(j); }}
         onDragEnd={onDragEnd}
         className={cn(
-          "flex cursor-grab items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-opacity active:cursor-grabbing",
-          draggingId === j.id && "opacity-40"
+          // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
+          // atas panel yang sudah kaca, MENGGANTIKAN `bg-surface` polos
+          // yang laporan owner nilai "kurang cocok dengan style yang sudah
+          // dibangun" (lihat delivery-dark.css/delivery-light.css untuk
+          // definisi visualnya). `transition-all` (bukan cuma
+          // transition-opacity) + `scale` saat digeser — bahasa gerak yang
+          // SAMA dengan stop card di RouteCard.jsx (D-072 juga di sana).
+          "dh-job-card flex cursor-grab items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+          draggingId === j.id && "scale-[0.97] opacity-40"
         )}
       >
         <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
