@@ -15,7 +15,17 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
+import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
+
+// Warna chip status kendaraan (D-047, 4 September 2026) — dari tone yang
+// SUDAH ada di VEHICLE_STATUS_REAL, dipetakan ke kelas Tailwind DS v2.
+const VEHICLE_STATUS_TONE = {
+  green:   "bg-greenbg text-green",
+  accent:  "bg-accentbg text-accent",
+  orange:  "bg-orangebg text-orange",
+  neutral: "bg-inset text-ink2",
+};
 import { formatRupiah } from "@/utils/format.js";
 
 // Driver & Armada — Delivery Tahap 3, diperluas D-035 (22 Agustus 2026).
@@ -868,16 +878,13 @@ function VehicleTab() {
                       <TD className="text-ink2">{v.picDriver?.name || "—"}</TD>
                       <TD numeric>{v.capacitySlots} slot</TD>
                       <TD>
-                        <select
+                        <BadgeDropdown
                           value={v.status}
-                          onChange={(e) => ubahStatus(v, e.target.value)}
-                          aria-label={`Ubah status ${v.plateNumber}`}
-                          className="h-7 rounded-chip border border-border bg-surface px-1.5 text-[11px] text-ink outline-none focus:border-accent"
-                        >
-                          {Object.entries(VEHICLE_STATUS_REAL).map(([k, s]) => (
-                            <option key={k} value={k}>{s.label}</option>
-                          ))}
-                        </select>
+                          onChange={(status) => ubahStatus(v, status)}
+                          options={Object.entries(VEHICLE_STATUS_REAL).map(([k, s]) => ({ value: k, label: s.label }))}
+                          getChipClass={(val) => VEHICLE_STATUS_TONE[VEHICLE_STATUS_REAL[val]?.tone] || VEHICLE_STATUS_TONE.neutral}
+                          ariaLabel={`Ubah status ${v.plateNumber}`}
+                        />
                       </TD>
                       <TD>
                         {dok ? (

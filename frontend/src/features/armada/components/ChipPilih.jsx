@@ -9,6 +9,12 @@ import Avatar from "@/components/Avatar.jsx";
 // daripada buka dropdown native, terutama di layar sentuh. Dipakai
 // JobDetailDrawer.jsx DAN ArmadaDashboard.jsx (panel "Perlu Dijadwalkan")
 // — satu komponen, supaya pola assign-nya identik di dua tempat.
+//
+// Chip aktif SOLID accent + teks putih (D-047, 4 September 2026 — "buat
+// seperti artifacts", showcase #3) — sebelumnya tint pucat + teks gelap,
+// terasa lemah dibanding chip status lain yang sudah solid/tegas di
+// halaman ini. Border sedikit lebih tebal (2px) supaya kelihatan
+// "dipilih", bukan cuma warna beda tipis.
 export default function ChipPilih({ items, selectedId, disabled, onPick, kosongLabel, size = "default" }) {
   const h = size === "sm" ? "h-7 text-[11px]" : "h-9 text-[12px]";
   return (
@@ -34,12 +40,12 @@ export default function ChipPilih({ items, selectedId, disabled, onPick, kosongL
             onClick={() => onPick(it.id)}
             className={cn(
               "flex items-center gap-1.5 rounded-full border-2 pl-1 pr-2.5 font-semibold transition-colors disabled:opacity-50", h,
-              active ? "border-brand-500 bg-brand-50 text-brand-700" : "border-border text-ink2 hover:border-ink3"
+              active ? "border-accent bg-accent text-white shadow-card" : "border-border text-ink2 hover:border-ink3"
             )}
           >
             <Avatar name={it.name} size="sm" className={size === "sm" ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"} />
             {it.name}
-            {active && <Check size={size === "sm" ? 11 : 13} className="text-brand-500" />}
+            {active && <Check size={size === "sm" ? 11 : 13} className="text-white" />}
           </button>
         );
       })}

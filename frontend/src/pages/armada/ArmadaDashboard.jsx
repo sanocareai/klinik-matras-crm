@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock, Search, UserPlus, ChevronDown,
+  Clock, Navigation, MapPin, CheckCircle2, XCircle,
 } from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -48,7 +49,7 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
         <button
           type="button"
           disabled={busy}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-brand-500 hover:text-brand-700 disabled:opacity-50"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50"
           onClick={(e) => e.stopPropagation()}
         >
           <UserPlus size={12} /> Tugaskan <ChevronDown size={11} className="text-ink3" />
@@ -59,11 +60,14 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
           align="end" sideOffset={6} onClick={(e) => e.stopPropagation()}
           className="z-50 min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
         >
+          <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
+            Driver
+          </p>
           {drivers.map((d) => (
             <DropdownMenu.Sub key={d.id}>
               <DropdownMenu.SubTrigger
                 onClick={() => onPick(d.id)}
-                className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint data-[state=open]:bg-hovertint"
+                className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-accentbg data-[state=open]:bg-accentbg"
               >
                 <Avatar name={d.name} size="sm" className="h-6 w-6 text-[10px]" />
                 <span className="flex-1">{d.name}</span>
@@ -216,12 +220,12 @@ export default function ArmadaDashboard() {
     if (!jobs) return [];
     const hitung = (pred) => jobs.filter(pred).length;
     return [
-      { key: "UNSCHEDULED", label: "Belum Dijadwalkan", value: hitung((j) => j.status === "UNSCHEDULED"), tone: "neutral" },
-      { key: "ASSIGNED",    label: "Driver Ditugaskan",  value: hitung((j) => j.status === "ASSIGNED"),    tone: "accent" },
-      { key: "EN_ROUTE",    label: "Menuju Lokasi",      value: hitung((j) => j.status === "EN_ROUTE"),    tone: "accent" },
-      { key: "ARRIVED",     label: "Tiba di Lokasi",     value: hitung((j) => j.status === "ARRIVED"),     tone: "accent" },
-      { key: "COMPLETED",   label: "Selesai",            value: hitung((j) => j.status === "COMPLETED"),   tone: "green" },
-      { key: "FAILED",      label: "Gagal",              value: hitung((j) => j.status === "FAILED"),      tone: "red" },
+      { key: "UNSCHEDULED", label: "Belum Dijadwalkan", value: hitung((j) => j.status === "UNSCHEDULED"), tone: "neutral", icon: Clock },
+      { key: "ASSIGNED",    label: "Driver Ditugaskan",  value: hitung((j) => j.status === "ASSIGNED"),    tone: "accent",  icon: TruckIcon },
+      { key: "EN_ROUTE",    label: "Menuju Lokasi",      value: hitung((j) => j.status === "EN_ROUTE"),    tone: "accent",  icon: Navigation },
+      { key: "ARRIVED",     label: "Tiba di Lokasi",     value: hitung((j) => j.status === "ARRIVED"),     tone: "accent",  icon: MapPin },
+      { key: "COMPLETED",   label: "Selesai",            value: hitung((j) => j.status === "COMPLETED"),   tone: "green",   icon: CheckCircle2 },
+      { key: "FAILED",      label: "Gagal",              value: hitung((j) => j.status === "FAILED"),      tone: "red",     icon: XCircle },
     ];
   }, [jobs]);
 

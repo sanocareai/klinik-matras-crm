@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, MapPin, Phone, Package, Truck, User, Clock, Camera, Loader2, Navigation } from "lucide-react";
+import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -9,10 +9,10 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
-import { SalesBadge } from "./JobBadges.jsx";
+import { CustomerProfileCard } from "./JobBadges.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
-  salesPersonOf, estimasiDurasiLabel, ESTIMASI_DURASI_PRESET,
+  estimasiDurasiLabel, ESTIMASI_DURASI_PRESET,
 } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
@@ -264,20 +264,13 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   <DeliveryTimeline orderStatus={job.order.status} job={job} className="pb-4" />
                 )}
 
+                {/* Kartu identitas pelanggan (D-047, 4 September 2026 — "buat
+                    seperti artifacts") — GANTI dua baris terpisah "Sales
+                    Person"/"Kontak" yang lama, lihat komentar CustomerProfileCard
+                    di JobBadges.jsx untuk alasannya. */}
+                <CustomerProfileCard job={job} className="mb-3" />
+
                 <div className="divide-y divide-line">
-                  {/* Sales pemilik order (D-043, 2 September 2026) — laporan
-                      owner: dispatcher perlu tahu siapa sales-nya buat
-                      koordinasi/tanya-jawab kalau ada kendala di lapangan. */}
-                  <Baris icon={User} label="Sales Person">
-                    {salesPersonOf(job) && <SalesBadge job={job} />}
-                  </Baris>
-                  <Baris icon={Phone} label="Kontak">
-                    {job.order?.customer?.phone && (
-                      <a href={`tel:${job.order.customer.phone}`} className="text-accent hover:underline">
-                        {job.order.customer.phone}
-                      </a>
-                    )}
-                  </Baris>
                   {/* Navigasi (D-040, 31 Agustus 2026) — dulu cuma ada di HP
                       driver (DriverJobs.jsx), sekarang tersedia juga di
                       drawer dispatcher supaya bisa langsung cek lokasi di

@@ -64,6 +64,18 @@ export function customerOf(job) {
   );
 }
 
+// Nomor HP customer — pola fallback SAMA dengan customerOf (job.order
+// langsung dulu, jatuh ke jalur berlapis units[].unit.order kalau job.order
+// belum ke-load). Dipakai CustomerProfileCard (JobBadges.jsx) untuk tombol
+// telepon langsung di kartu identitas pelanggan.
+export function customerPhoneOf(job) {
+  return (
+    job?.order?.customer?.phone ||
+    job?.units?.[0]?.unit?.order?.customer?.phone ||
+    null
+  );
+}
+
 export function orderNumberOf(job) {
   return job?.order?.orderNumber || job?.units?.[0]?.unit?.order?.orderNumber || null;
 }

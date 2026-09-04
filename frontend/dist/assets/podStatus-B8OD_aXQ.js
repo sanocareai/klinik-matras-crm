@@ -1,0 +1,1 @@
+const e={INCOMPLETE:{label:"Belum Lengkap",tone:"neutral"},PENDING_REVIEW:{label:"Menunggu Verifikasi",tone:"orange"},VERIFIED:{label:"Terverifikasi",tone:"green"},REJECTED:{label:"Ditolak",tone:"red"}};export{e as P};
