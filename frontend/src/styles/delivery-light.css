@@ -220,7 +220,10 @@ html:not([data-theme="dark"]) [data-division="armada"] .app-content > header but
    perlu kontras lebih untuk kelihatan sama sekali. */
 html:not([data-theme="dark"]) [data-division="armada"] .card,
 html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"],
-html:not([data-theme="dark"]) [data-division="armada"] .settings-card {
+html:not([data-theme="dark"]) [data-division="armada"] .settings-card,
+/* .dh-table (D-078, 5 September 2026) — pasangan mode terang dari blok yang
+   sama di delivery-dark.css, baca komentar di sana untuk konteks lengkap. */
+html:not([data-theme="dark"]) [data-division="armada"] .dh-table {
   position: relative;
   background-color: var(--dh-surface);
   /* blur+saturate dinaikkan (D-065) — 16px terlalu tipis untuk membaurkan
@@ -235,7 +238,8 @@ html:not([data-theme="dark"]) [data-division="armada"] .settings-card {
 }
 
 html:not([data-theme="dark"]) [data-division="armada"] .card::before,
-html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"]::before {
+html:not([data-theme="dark"]) [data-division="armada"] [class*="rounded-card"]::before,
+html:not([data-theme="dark"]) [data-division="armada"] .dh-table::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

@@ -582,13 +582,32 @@ orderRouter.get("/", async (req, res) => {
         // routes/customers.js GET /:id: badge "Invoice Terkirim" di
         // OrderSection.jsx supaya konsisten tampil di kedua sumber data.
         invoice: { select: { invoiceNumber: true, lifecycleStatus: true, sentAt: true, combinedIntoId: true } },
+        // units (D-078, 5 September 2026) — laporan owner: "Semua Order"
+        // baru menghubungkan Sales (status/pipelineStage) & Delivery
+        // (pickup/deliveryJob), TAPI Produksi (tahap unit di Bengkel) masih
+        // tidak kelihatan sama sekali dari sini — dispatcher/siapa pun yang
+        // buka halaman ini harus pindah ke Bengkel untuk tahu "order ini
+        // sekarang di tahap apa PERSISNYA" (Order.status cuma bucket kasar
+        // PENDING/PICKUP/PROCESSING/READY/DELIVERED, lihat
+        // services/orderStatusSync.js — bucket itu SUDAH agregat weakest-
+        // link dari unit, tapi tidak bilang NAMA tahapnya). CANCELLED unit
+        // dikecualikan (sama pola dengan `jobs` di atas — bukan hal yang
+        // relevan ditampilkan, sudah gagal). Field DIPILIH SEMINIMAL
+        // mungkin (bukan seluruh Unit) karena baris ini bisa ratusan.
+        units: {
+          where: { status: { not: "CANCELLED" } },
+          select: {
+            id: true, status: true,
+            currentStage: { select: { labelId: true } },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: limit,
     });
 
     const now = Date.now();
-    const items = orders.map(({ customer, statusTransitions, jobs, ...o }) => {
+    const items = orders.map(({ customer, statusTransitions, jobs, units, ...o }) => {
       const trans = statusTransitions[0] || null;
       const sejak = trans?.createdAt || o.updatedAt;
       // orderBy createdAt desc di atas -> job PERTAMA per tipe = yang
@@ -601,8 +620,31 @@ orderRouter.get("/", async (req, res) => {
         status: j.status, scheduledDate: j.scheduledDate,
         driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
       };
+      // Ringkasan tahap Produksi (D-078) — lihat komentar panjang di include
+      // `units` di atas. SEWA lepas total dari Unit/Bengkel (sama alasan
+      // dengan orderStatusSync.js), jadi tidak pernah punya productionStage.
+      // Unit yang SUDAH DELIVERED dikeluarkan dari perhitungan — itu bukan
+      // lagi "sedang di produksi", weakest-link Order.status TIDAK akan
+      // pernah menunjuknya juga. Kalau SEMUA unit hidup belum menyentuh
+      // stage engine sama sekali (currentStage null — backfill lama, lihat
+      // catatan "KENYATAAN DATA" di unitStatus.js), tandai eksplisit
+      // "Belum mulai produksi" — BUKAN null (null = "tidak relevan
+      // ditampilkan", beda makna dari "relevan tapi belum mulai").
+      let productionStage = null;
+      if (o.category !== "SEWA") {
+        const hidup = units.filter((u) => u.status !== "DELIVERED");
+        if (hidup.length > 0) {
+          const labelSet = [...new Set(hidup.map((u) => u.currentStage?.labelId).filter(Boolean))];
+          productionStage = labelSet.length === 0
+            ? { label: "Belum mulai produksi", mixed: false, unitCount: hidup.length }
+            : labelSet.length === 1
+              ? { label: labelSet[0], mixed: false, unitCount: hidup.length }
+              : { label: `${labelSet.length} tahap berbeda`, mixed: true, detail: labelSet, unitCount: hidup.length };
+        }
+      }
       return {
         ...o,
+        productionStage,
         customerId:   customer?.id || null,
         customerName: customer?.name || null,
         customerPhone: customer?.phone || null,

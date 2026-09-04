@@ -312,7 +312,13 @@
    memantulkan cahaya dari atas, bukan kotak datar berwarna beda. */
 [data-theme="dark"] [data-division="armada"] .card,
 [data-theme="dark"] [data-division="armada"] [class*="rounded-card"],
-[data-theme="dark"] [data-division="armada"] .settings-card {
+[data-theme="dark"] [data-division="armada"] .settings-card,
+/* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
+   BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
+   halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
+   kaca lain. Ditambahkan ke SELECTOR YANG SAMA (bukan blok terpisah) supaya
+   otomatis ikut kalau resep kaca di atas nanti diubah lagi. */
+[data-theme="dark"] [data-division="armada"] .dh-table {
   position: relative;
   background-color: var(--dh-surface);
   backdrop-filter: blur(16px) saturate(130%);
@@ -323,7 +329,8 @@
 }
 
 [data-theme="dark"] [data-division="armada"] .card::before,
-[data-theme="dark"] [data-division="armada"] [class*="rounded-card"]::before {
+[data-theme="dark"] [data-division="armada"] [class*="rounded-card"]::before,
+[data-theme="dark"] [data-division="armada"] .dh-table::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

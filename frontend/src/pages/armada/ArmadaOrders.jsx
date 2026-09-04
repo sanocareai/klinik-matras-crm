@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Search, Package, Tag, RefreshCw } from "lucide-react";
+import { Search, Package, Tag, RefreshCw, Factory, CreditCard } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow } from "@/components/ui/table.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { formatRupiah, ORDER_STATUS_LABELS } from "@/utils/format.js";
+import {
+  formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  orderStatusVariant, paymentStatusVariant,
+} from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 
@@ -20,25 +25,37 @@ import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 // sekali tidak kelihatan di Delivery, dispatcher harus pindah ke Sales CRM
 // kalau mau tahu "order X sekarang sampai mana".
 //
-// Halaman ini MENAMBAH cara memantau, bukan mengganti — "Jadwal &
+// Halaman ini MENAMBA cara memantau, bukan mengganti — "Jadwal &
 // Penugasan" (job-sentris, buat menugaskan driver) tetap tempatnya sendiri.
 // Di sini SATU BARIS = SATU ORDER, dari sudut pandang lintas-divisi: status
-// order (Sales/Produksi), plus ringkasan job pickup/delivery kalau ada.
+// order (Sales/Produksi), plus ringkasan job pengambilan/pengiriman kalau ada.
 //
 // Endpoint dipakai APA ADANYA (GET /api/orders, sama persis dengan
 // pages/Orders.jsx Sales CRM) — SATU sumber data untuk dua divisi, supaya
 // "order X" tidak pernah punya dua definisi status yang bisa diam-diam beda.
-// TIDAK menambah endpoint baru di sisi backend.
+//
+// REDESIGN + LINTAS DIVISI PENUH (D-078, 5 September 2026) — laporan owner:
+// "redesign dan sempurnakan ui semua order yang terkoneksi dengan semua
+// divisi". Sebelumnya halaman ini baru menyambungkan 2 dari 4 divisi
+// operasional (Sales via order.status/pipelineStage, Delivery via
+// pickup/deliveryJob) — Produksi (tahap unit di Bengkel) dan Finance
+// (paymentStatus) SUDAH ADA di data API tapi TIDAK PERNAH ditampilkan di
+// tabel ini sama sekali. Tiga perubahan:
+// 1. Kolom baru "Produksi" (tahap unit PERSIS, bukan cuma bucket kasar
+//    order.status — lihat `productionStage` dari GET /orders, dihitung di
+//    routes/orders.js dari Unit.currentStage) dan "Pembayaran" (badge
+//    BELUM_BAYAR/DP/LUNAS, sebelumnya ada di data tapi tidak ditampilkan).
+// 2. KPI strip (WorkspaceHero, pola yang sama dengan Papan/Dashboard
+//    Armada) dari `summary`/`perStatus` yang backend SUDAH hitung tapi
+//    sebelumnya dibuang begitu saja oleh halaman ini (`res.items` doang
+//    yang dipakai) — total order aktif, nilai aktif, belum lunas (Finance),
+//    siap kirim (Delivery/Produksi).
+// 3. Badge status pindah dari warna hardcode (STATUS_TONE lama) ke
+//    <Badge variant={orderStatusVariant(...)}> — SATU sumber kebenaran
+//    warna status yang sama dipakai Orders.jsx Sales CRM, otomatis ikut
+//    tema kaca terang/gelap Delivery Hub (dh-table, lihat delivery-dark/
+//    light.css) alih-alih tabel polos sebelumnya.
 const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
-
-const STATUS_TONE = {
-  PENDING:    "bg-orangebg text-orange",
-  PICKUP:     "bg-accentbg text-accent",
-  PROCESSING: "bg-accentbg text-accent",
-  READY:      "bg-accentbg text-accent",
-  DELIVERED:  "bg-greenbg text-green",
-  CANCELLED:  "bg-redbg text-red",
-};
 
 const KATEGORI_OPTIONS = [
   { value: "LAYANAN", label: "Layanan" },
@@ -60,12 +77,34 @@ function JobChip({ label, job }) {
   );
 }
 
+// Chip Produksi (D-078) — lihat `productionStage` di routes/orders.js untuk
+// aturan agregasinya. `mixed` (beberapa unit di tahap berbeda) dapat title
+// tooltip berisi daftar tahapnya, supaya masih bisa diperiksa tanpa buka
+// drawer — tapi TIDAK menjejalkan semuanya ke chip (bisa panjang sekali
+// untuk order banyak unit).
+function ProduksiChip({ stage }) {
+  if (!stage) return <span className="text-[11.5px] text-ink3">—</span>;
+  return (
+    <span
+      title={stage.mixed ? stage.detail.join(", ") : undefined}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        stage.label === "Belum mulai produksi" ? "bg-inset text-ink3" : "bg-accentbg text-accent"
+      )}
+    >
+      {stage.label}{stage.unitCount > 1 && !stage.mixed ? ` (${stage.unitCount} unit)` : ""}
+    </span>
+  );
+}
+
 export default function ArmadaOrders() {
   const [cari, setCari] = useState("");
   const [debounced, setDebounced] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [orders, setOrders] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [perStatus, setPerStatus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [openOrder, setOpenOrder] = useState(null);
@@ -91,6 +130,8 @@ export default function ArmadaOrders() {
         limit: 300,
       });
       setOrders(res.items || []);
+      setSummary(res.summary || null);
+      setPerStatus(res.perStatus || []);
     } catch (e) {
       setError(e.message || "Gagal memuat daftar order");
     } finally {
@@ -100,11 +141,13 @@ export default function ArmadaOrders() {
 
   useEffect(() => { load(); }, [load]);
 
+  const siapKirimCount = perStatus.find((s) => s.status === "READY")?.count || 0;
+
   return (
     <PageContainer>
       <PageHeader
         title="Semua Order"
-        subtitle="Pantau seluruh order Sales CRM dari sisi Delivery — tahap sekarang & job pengambilan/pengiriman, kalau ada."
+        subtitle="Pantau seluruh order Sales CRM lintas divisi — Sales, Produksi, Pengambilan/Pengiriman, dan Pembayaran, dalam satu layar."
         actions={
           <Button size="sm" variant="neutral" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
@@ -113,6 +156,29 @@ export default function ArmadaOrders() {
       />
 
       <PageBody>
+        {/* KPI lintas divisi (D-078) — angka NYATA dari `summary`/`perStatus`
+            (GET /orders sudah menghitungnya, sebelumnya dibuang oleh halaman
+            ini). `belumLunas` mewakili Finance, `siapKirimCount` mewakili
+            titik temu Produksi→Delivery (unit selesai, tinggal dijadwalkan). */}
+        {summary && (
+          <WorkspaceHero
+            tone="blue"
+            title="Ringkasan lintas divisi"
+            subtitle="Dihitung dari filter yang sedang aktif — bukan cuma 300 baris pertama di tabel."
+            health={
+              summary.belumLunas > 0
+                ? { label: `${formatRupiah(summary.belumLunas)} belum lunas`, tone: "warn" }
+                : { label: "Semua lunas", tone: "ok" }
+            }
+            stats={[
+              { label: "Order aktif", value: summary.totalOrderAktif, hint: "sesuai filter" },
+              { label: "Nilai order aktif", value: formatRupiah(summary.nilaiOrderAktif) },
+              { label: "Siap kirim", value: siapKirimCount, hint: "unit selesai produksi" },
+              { label: "Belum lunas", value: formatRupiah(summary.belumLunas), hint: "Finance" },
+            ]}
+          />
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" />
@@ -143,7 +209,13 @@ export default function ArmadaOrders() {
           <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>
         )}
 
-        <TableWrap>
+        {/* dh-table (D-078) — TableWrap default (`rounded-2xl bg-surface`)
+            TIDAK cocok pola seleksi kaca otomatis Delivery Hub
+            ([class*="rounded-card"]/.card, lihat delivery-dark.css §4d),
+            jadi tabel ini tetap tampil polos walau sudah dikelilingi panel
+            kaca lain — sama akar masalahnya dengan job/stop card sebelum
+            dikasih .dh-job-card/.dh-stop-card. Kelas ini yang menyamakannya. */}
+        <TableWrap className="dh-table">
           <Table>
             <THead>
               <TR>
@@ -151,15 +223,17 @@ export default function ArmadaOrders() {
                 <TH>Pelanggan</TH>
                 <TH>Kategori</TH>
                 <TH>Status</TH>
+                <TH>Produksi</TH>
                 <TH>Pengambilan</TH>
                 <TH>Pengiriman</TH>
+                <TH>Pembayaran</TH>
                 <TH numeric>Nilai</TH>
                 <TH>Tanggal</TH>
               </TR>
             </THead>
             <TBody>
               {loading ? (
-                <TableSkeletonRows rows={8} cols={8} />
+                <TableSkeletonRows rows={8} cols={10} />
               ) : orders && orders.length > 0 ? (
                 orders.map((o) => (
                   <TR key={o.id} clickable onClick={() => setOpenOrder(o)}>
@@ -172,18 +246,24 @@ export default function ArmadaOrders() {
                     </TD>
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
                     <TD>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS_TONE[o.status])}>
+                      <Badge variant={orderStatusVariant(o.status)}>
                         {ORDER_STATUS_LABELS[o.status] || o.status}
-                      </span>
+                      </Badge>
                     </TD>
+                    <TD><ProduksiChip stage={o.productionStage} /></TD>
                     <TD><JobChip label="Ambil" job={o.pickupJob} /></TD>
                     <TD><JobChip label="Kirim" job={o.deliveryJob} /></TD>
+                    <TD>
+                      <Badge variant={paymentStatusVariant(o.paymentStatus)}>
+                        {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
+                      </Badge>
+                    </TD>
                     <TD numeric>{formatRupiah(o.value || 0)}</TD>
                     <TD>{formatTanggalPendek(o.createdAt)}</TD>
                   </TR>
                 ))
               ) : (
-                <TableEmptyRow colSpan={8}>
+                <TableEmptyRow colSpan={10}>
                   <EmptyState
                     icon={Package}
                     title="Tidak ada order yang cocok"
