@@ -8,6 +8,7 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
@@ -577,10 +578,14 @@ export default function Armada() {
         subtitle="Penjadwalan armada, rute, dan proof of delivery."
         actions={
           <div className="flex items-center gap-2">
-            <input
-              type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="h-10 rounded-lg border border-border px-3 text-sm text-ink outline-none focus:border-accent"
-            />
+            {/* DatePicker menggantikan native <input type="date"> (D-053,
+                4 September 2026) — komponen ini dibangun 31 Agustus 2026
+                justru untuk kasus persis ini (lihat komentarnya sendiri:
+                "gaya browser mm/dd/yyyy... jelek banget") dan sudah dipakai
+                filter tanggal ArmadaJobs/ArmadaDashboard, tapi header Papan
+                ini terlewat migrasinya. `allowFuture` default true di
+                komponennya sudah cocok (job dijadwalkan ke depan). */}
+            <DatePicker value={date} onChange={setDate} placeholder="Pilih tanggal" />
             <Button onClick={() => setCreating((v) => !v)} className="h-10">
               <Plus className="h-4 w-4" /> Buat Job
             </Button>
