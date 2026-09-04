@@ -199,16 +199,52 @@ export default function ArmadaRoutes() {
           (laptop/desktop) yang dapat 3 kolom sejajar; tablet potrait &
           ponsel manapun jatuh ke grid-cols-1 (tumpuk vertikal, kiri->tengah
           ->kanan), yang lebih nyaman dibaca di layar sempit. */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[240px_minmax(0,1fr)_240px]">
-        {/* Kiri */}
-        <div className="xl:h-[calc(100vh-220px)]">
-          <UnroutedJobsPanel
-            jobs={unrouted || []}
-            loading={loading}
-            draggingId={draggingJobId}
-            onDragStart={(j) => setDraggingJobId(j.id)}
-            onDragEnd={() => setDraggingJobId(null)}
-          />
+      {/* 2 kolom (D-057, 4 September 2026) — SEBELUMNYA 3 kolom (kiri 240px
+          + tengah + kanan 240px "Ringkasan"). Laporan owner setelah melihat
+          "Ringkasan" jadi kartu KPI besar (D-055): terlalu makan tempat
+          untuk info yang sebenarnya cukup ringkas, dan lebih masuk akal
+          bergabung dengan panel "Belum Masuk Rute" (satu-satunya panel di
+          kolom kiri) daripada berdiri sendiri sebagai kolom ke-3. Sengaja
+          TIDAK dipindah ke Dashboard — metrik di sini (rute draft/
+          diterbitkan, stop, unit) mengukur KELENGKAPAN PERENCANAAN RUTE pada
+          tanggal yang sedang dibuka, beda dari KPI Dashboard yang mengukur
+          status JOB (bukan rute) lintas hari ini; menaruhnya di Dashboard
+          justru mencampur dua ukuran yang berbeda. */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[240px_minmax(0,1fr)]">
+        {/* Kiri — Ringkasan (kecil) + Belum Masuk Rute, ditumpuk dalam SATU
+            kolom yang tingginya dikunci (xl:h-[calc(100vh-220px)]);
+            Ringkasan `shrink-0` (tinggi tetap secukupnya), panel job
+            `flex-1 min-h-0` mengambil SISA tinggi supaya scroll internalnya
+            (sudah ada di UnroutedJobsPanel) tetap berfungsi seperti semula. */}
+        <div className="flex flex-col gap-3 xl:h-[calc(100vh-220px)]">
+          {/* Ringkasan — dikecilkan drastis (D-057): baris label+angka
+              SATU BARIS (bukan kartu KPI terpisah per angka seperti D-055),
+              supaya total tingginya ~seperlima dari sebelumnya dan pantas
+              duduk di atas panel job tanpa mendominasi kolom sempit 240px. */}
+          <div className="shrink-0 space-y-1 rounded-card border border-border bg-surface p-2.5">
+            <h3 className="text-[11px] font-bold text-ink">Ringkasan {tanggal}</h3>
+            {[
+              ["Rute draft", draftCount],
+              ["Rute diterbitkan", publishedCount],
+              ["Total stop terjadwal", totalStopSemuaRute],
+              ["Total unit terjadwal", totalUnitSemuaRute],
+              ["Job belum masuk rute", unrouted?.length ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="truncate text-ink3">{label}</span>
+                <strong className="shrink-0 tabular-nums text-ink">{value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1">
+            <UnroutedJobsPanel
+              jobs={unrouted || []}
+              loading={loading}
+              draggingId={draggingJobId}
+              onDragStart={(j) => setDraggingJobId(j.id)}
+              onDragEnd={() => setDraggingJobId(null)}
+            />
+          </div>
         </div>
 
         {/* Tengah — papan rute */}
@@ -247,29 +283,6 @@ export default function ArmadaRoutes() {
             )}
           </div>
         </div>
-
-        {/* Kanan — ringkasan. Angka dibesarkan + `dh-figure` (D-055, 4
-            September 2026) supaya konsisten dengan bahasa KPI Dashboard
-            (DeliveryKpiRow) — sebelumnya baris label/angka rata, tidak ada
-            hierarki visual sama sekali antara panel ini dan Dashboard yang
-            sudah dirapikan lebih dulu. `dh-figure` sendiri no-op di light
-            mode (lihat catatan di styles/delivery-dark.css), jadi aman
-            dipakai di sini tanpa efek di luar pilot dark Delivery. */}
-        <aside className="space-y-3 rounded-card border border-border bg-surface p-3 xl:h-[calc(100vh-220px)] xl:overflow-y-auto">
-          <h3 className="text-[12.5px] font-bold text-ink">Ringkasan {tanggal}</h3>
-          {[
-            ["Rute draft", draftCount],
-            ["Rute diterbitkan", publishedCount],
-            ["Total stop terjadwal", totalStopSemuaRute],
-            ["Total unit terjadwal", totalUnitSemuaRute],
-            ["Job belum masuk rute", unrouted?.length ?? 0],
-          ].map(([label, value]) => (
-            <div key={label} className="border-b border-line pb-2 last:border-b-0">
-              <div className="dh-figure text-[22px] font-extrabold leading-none tracking-tight text-ink">{value}</div>
-              <div className="mt-1 text-[11px] text-ink3">{label}</div>
-            </div>
-          ))}
-        </aside>
       </div>
     </PageContainer>
   );
