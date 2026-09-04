@@ -224,6 +224,60 @@
   border-color: var(--dh-hairline-strong);
 }
 
+/* ── 1d. TOPBAR: elemen yang TIDAK ADA di mockup (D-051, 4 September 2026) ─
+   Laporan owner: bandingkan langsung ke artifact — hamburger, tanggal, dan
+   panah dropdown menu akun tidak pernah muncul di sana; badge notifikasi di
+   sana juga cuma titik polos, bukan angka. Keempatnya disembunyikan lewat
+   CSS scoped (class penanda ditambah di Topbar.jsx: topbar-date,
+   topbar-hamburger-btn [sudah ada], topbar-account-chevron,
+   topbar-notif-badge) — Topbar.jsx tetap SATU komponen dipakai semua
+   divisi, jadi tampilannya di Sales CRM/Produksi/Gudang/dll TIDAK berubah
+   sama sekali; ini murni override tampilan, bukan pengubahan komponen. */
+
+/* Tanggal — subjudul dashboard Delivery sudah menyebut hitungan job hari
+   ini (lihat D-050), jadi info temporal tidak hilang, cuma pindah tempat. */
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-date {
+  display: none;
+}
+
+/* Hamburger — DIPAKSA sembunyi di SEMUA lebar layar di Delivery Hub, bukan
+   cuma ≥768px seperti default index.css (`@media(min-width:768px)`).
+   ⚠️ KESADARAN YANG HARUS DIPEGANG: di lebar <768px sidebar Delivery jadi
+   drawer off-canvas (lihat `.sidebar` mobile di Layout.jsx/index.css) yang
+   SATU-SATUNYA cara membukanya adalah tombol ini — menyembunyikannya berarti
+   TIDAK ADA cara membuka sidebar Delivery dari HP/tablet sempit sampai ada
+   affordance pengganti (mis. swipe-edge). Diterapkan sesuai keputusan
+   eksplisit owner (mengikuti tampilan artifact apa adanya) — kalau nanti ada
+   laporan "sidebar Delivery tidak bisa dibuka di HP", INI PENYEBABNYA.
+   Dispatcher Delivery Hub sejauh ini memang selalu di desktop, bukan HP. */
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-hamburger-btn {
+  display: none !important;
+}
+
+/* Panah dropdown menu akun — menu tetap terbuka dengan klik di area yang
+   sama, cuma indikator panahnya yang dihapus visualnya. */
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-account-chevron {
+  display: none;
+}
+
+/* Badge notifikasi jadi TITIK polos, bukan angka — sesuai mockup. Angka
+   TETAP ada di DOM (screen reader tetap membacanya lewat aria-label tombol
+   lonceng, "X notifikasi belum dibaca") — `font-size:0` menyembunyikan
+   visual saja, bukan `display:none`/`visibility:hidden` yang akan ikut
+   membuang teksnya dari accessibility tree.
+   Ring putih dihapus (dirancang untuk permukaan terang, di ground navy
+   malah jadi cincin putih mencolok) — diganti garis tipis warna ground
+   sendiri, supaya titiknya terlihat menempel di badan lonceng kaca. */
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-notif-badge {
+  height: 8px;
+  min-width: 8px;
+  width: 8px;
+  padding: 0;
+  font-size: 0;
+  box-shadow: none;
+  border: 1.5px solid var(--dh-surface-solid);
+}
+
 /* ── 2. KARTU: kaca + hairline + highlight tepi atas ──────────────────────
    `::before` menggambar garis cahaya tipis di tepi ATAS kartu (pola yang
    dipakai hampir semua dashboard gelap modern) — memberi kesan permukaan

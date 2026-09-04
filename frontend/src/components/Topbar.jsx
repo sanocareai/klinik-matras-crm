@@ -167,7 +167,10 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
 
       {/* Kanan: tanggal + notif + profil */}
       <div className="ml-auto flex items-center gap-1.5">
-        <span className="hidden text-[13px] text-ink3 lg:block">{formatTanggalIndo()}</span>
+        {/* `topbar-date` (D-051) — penanda supaya bisa disembunyikan
+            per-divisi lewat CSS scoped (lihat styles/delivery-dark.css),
+            TANPA mengubah tampilannya di divisi lain. */}
+        <span className="topbar-date hidden text-[13px] text-ink3 lg:block">{formatTanggalIndo()}</span>
 
         {/* LONCENG — MEMBUKA DRAWER, TIDAK BERNAVIGASI (ketentuan #1/#2).
             Sebelum refactor 2 Agustus 2026 tombol ini `navigate("/inbox")`
@@ -186,9 +189,14 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
           className="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink2 transition-transform hover:bg-hovertint active:scale-95"
         >
           <Bell size={17} />
-          {/* Aturan #23: null saat 0 → badge tidak dirender sama sekali */}
+          {/* Aturan #23: null saat 0 → badge tidak dirender sama sekali.
+              `topbar-notif-badge` (D-051) — dipakai delivery-dark.css untuk
+              mengecilkan badge ini jadi titik polos di Delivery Hub (mockup
+              tidak menampilkan angka). Angkanya TETAP ada di DOM (dan di
+              aria-label tombol ini) — cuma disembunyikan visual, supaya
+              screen reader tetap dapat info lengkap. */}
           {notifBadge && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold text-white ring-2 ring-white">
+            <span className="topbar-notif-badge absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold text-white ring-2 ring-white">
               {notifBadge}
             </span>
           )}
@@ -208,7 +216,11 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
                   <span className="hidden max-w-[120px] truncate text-[13px] font-semibold text-ink md:block">
                     {user.name?.split(" ")[0]}
                   </span>
-                  <ChevronDown size={14} className="hidden text-ink3 md:block" />
+                  {/* `topbar-account-chevron` (D-051) — mockup Delivery cuma
+                      avatar+nama, tanpa panah dropdown. Disembunyikan lewat
+                      CSS scoped; menu tetap bisa dibuka (klik area yang sama),
+                      cuma indikator visualnya yang hilang di Delivery Hub. */}
+                  <ChevronDown size={14} className="topbar-account-chevron hidden text-ink3 md:block" />
                 </button>
               }
             >
