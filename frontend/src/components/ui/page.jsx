@@ -39,7 +39,33 @@ export function PageContainer({ className, children, ...props }) {
 //     pernah pecah jadi satu-huruf-per-baris.
 //  3. Blok aksi sendiri tetap `flex-wrap` (kontrol di dalamnya boleh
 //     membungkus ke baris ke-2/ke-3 kalau memang tidak muat satu baris).
-export function PageHeader({ title, subtitle, actions, className, children }) {
+//
+// `actionsBelow` (D-050, 4 September 2026) — OPSIONAL, default `false` supaya
+// seluruh halaman lain tetap persis seperti sekarang. Kalau true, blok aksi
+// turun ke baris sendiri di bawah judul dan rata KIRI, mengikuti mockup
+// Delivery Hub: di sana date picker + "Tambah Kendaraan" + "Buat Job" dibaca
+// sebagai satu toolbar pembuka halaman, bukan tempelan di pojok kanan yang
+// jaraknya jauh dari judul yang menerangkannya.
+export function PageHeader({ title, subtitle, actions, actionsBelow = false, className, children }) {
+  const blokAksi = actions && (
+    <div className="flex flex-wrap items-center gap-2">{actions}</div>
+  );
+
+  if (actionsBelow) {
+    return (
+      <div className={cn("mb-6", className)}>
+        {title && (
+          <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-ink">
+            {title}
+          </h1>
+        )}
+        {subtitle && <p className="mt-1 max-w-[640px] text-[13px] text-ink2">{subtitle}</p>}
+        {children}
+        {blokAksi && <div className="mt-4">{blokAksi}</div>}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -56,9 +82,7 @@ export function PageHeader({ title, subtitle, actions, className, children }) {
         {subtitle && <p className="mt-1 text-[13px] text-ink2">{subtitle}</p>}
         {children}
       </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
-      )}
+      {blokAksi}
     </div>
   );
 }

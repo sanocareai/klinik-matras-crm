@@ -25,7 +25,7 @@ export function SalesBadge({ job, className }) {
         className
       )}
     >
-      <Avatar name={nama} size="sm" className="h-4 w-4 text-[8px]" />
+      <Avatar name={nama} size="sm" gradient className="h-4 w-4 text-[8px]" />
       <span className="truncate">{nama}</span>
     </span>
   );
@@ -90,6 +90,7 @@ export function CustomerProfileCard({ job, className }) {
     >
       <Avatar
         name={nama}
+        gradient
         size="lg"
         className="shadow-[0_0_0_3px_var(--accent-bg)]"
       />

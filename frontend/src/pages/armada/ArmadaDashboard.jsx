@@ -49,7 +49,12 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
         <button
           type="button"
           disabled={busy}
-          className="btn-tugaskan flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50"
+          // data-[state=open] (D-050) — saat dropdown-nya terbuka tombol jadi
+          // BIRU SOLID, bukan tetap ghost. Di daftar 8+ baris yang tombolnya
+          // identik semua, tanpa ini tidak ada penanda visual baris mana yang
+          // sedang dibuka: menu melayang di dekat kursor sementara semua
+          // tombol tetap terlihat sama, dan salah-baris jadi mudah terjadi.
+          className="btn-tugaskan flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-inset px-3 text-[11.5px] font-semibold text-ink2 transition-colors hover:border-accent hover:bg-accentbg hover:text-accent disabled:opacity-50 data-[state=open]:border-accent data-[state=open]:bg-accent data-[state=open]:text-white"
           onClick={(e) => e.stopPropagation()}
         >
           <UserPlus size={12} /> Tugaskan <ChevronDown size={11} className="text-ink3" />
@@ -69,7 +74,7 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
                 onClick={() => onPick(d.id)}
                 className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-accentbg data-[state=open]:bg-accentbg"
               >
-                <Avatar name={d.name} size="sm" className="h-6 w-6 text-[10px]" />
+                <Avatar name={d.name} size="sm" gradient className="h-6 w-6 text-[10px]" />
                 <span className="flex-1">{d.name}</span>
                 <ChevronDown size={11} className="-rotate-90 text-ink3" />
               </DropdownMenu.SubTrigger>
@@ -87,7 +92,7 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
                       onSelect={() => onPick(d.id, h.id)}
                       className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-hovertint"
                     >
-                      <Avatar name={h.name} size="sm" className="h-6 w-6 text-[10px]" />
+                      <Avatar name={h.name} size="sm" gradient className="h-6 w-6 text-[10px]" />
                       {h.name}
                     </DropdownMenu.Item>
                   ))}
@@ -259,7 +264,20 @@ export default function ArmadaDashboard() {
     <PageContainer>
       <PageHeader
         title="Delivery &amp; Fulfillment"
-        subtitle="Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman."
+        // Subjudul menyebut ANGKA antrean, bukan kalimat statis (D-050,
+        // mengikuti mockup). Kalimat generik "kelola jadwal, penugasan…"
+        // sama isinya tiap hari dan berhenti dibaca setelah hari pertama;
+        // yang benar-benar berubah tiap pagi adalah berapa order yang
+        // menumpuk. Menunggu `unscheduled` selesai load dulu supaya tidak
+        // sempat berkedip "0 job" sebelum datanya masuk.
+        subtitle={
+          unscheduled?.length
+            ? `Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman — ${unscheduled.length} job menunggu dijadwalkan hari ini.`
+            : "Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman."
+        }
+        // Toolbar turun ke baris sendiri di bawah judul, rata kiri — lihat
+        // catatan `actionsBelow` di components/ui/page.jsx.
+        actionsBelow
         actions={
           <>
             <DatePicker value={tanggal} onChange={setTanggal} placeholder="Pilih tanggal" />
@@ -279,10 +297,24 @@ export default function ArmadaDashboard() {
       />
 
       <PageBody>
-        {/* Panel utama — lihat catatan di state `unscheduled` di atas. Ini
-            SENGAJA ditaruh paling atas, sebelum KPI harian, karena inilah
-            antrean kerja dispatcher yang sesungguhnya: order dari Sales CRM
-            yang sudah butuh diambil/dikirim tapi belum ada driver+tanggal. */}
+        {/* KPI harian DULU, baru antrean (D-050, 4 September 2026).
+            ⚠️ Ini MEMBALIK urutan D-036, yang sengaja menaruh "Perlu
+            Dijadwalkan" paling atas. Keputusan owner setelah membandingkan
+            dengan mockup: urutan mockup yang dipakai. Antrean tidak hilang
+            penekanannya — kartunya tetap satu-satunya yang berborder aksen
+            dan membawa hitungan besar, dan angka antrean itu sekarang juga
+            ikut disebut di subjudul halaman (kelihatan tanpa scroll). */}
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[86px] animate-pulse rounded-card bg-inset" />)}
+          </div>
+        ) : (
+          <DeliveryKpiRow items={kpi} />
+        )}
+
+        {/* Antrean kerja dispatcher yang sesungguhnya: order dari Sales CRM
+            yang sudah butuh diambil/dikirim tapi belum ada driver+tanggal —
+            lihat catatan di state `unscheduled` di atas. */}
         <Card className="overflow-hidden border-2 border-accent/30">
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
@@ -327,18 +359,27 @@ export default function ArmadaDashboard() {
                       key={j.id}
                       onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
                       // dh-bar-left + --dh-bar (D-045) — garis aksen kiri
-                      // menyala HANYA untuk job yang sudah menunggu >=3 hari.
+                      // menyala HANYA untuk job yang benar-benar mengendap.
                       // Sengaja selektif: kalau semua baris diberi aksen,
                       // tidak ada lagi yang menonjol (pola referensi #3,
                       // lihat catatan di styles/delivery-dark.css). Di light
                       // mode kelas ini tidak punya aturan apa pun = no-op.
-                      style={hari >= 3 ? { "--dh-bar": "var(--orange)" } : undefined}
+                      //
+                      // AMBANG DINAIKKAN 3 → 7 hari (D-050, 4 September 2026).
+                      // Ambang 3 hari terdengar masuk akal saat ditulis, tapi
+                      // di production SELURUH backlog memang berumur 4 hari,
+                      // jadi 100% baris menyala oranye — persis kegagalan yang
+                      // diperingatkan komentar di atas, cuma butuh data nyata
+                      // untuk kelihatan. Satu minggu penuh tanpa dijadwalkan
+                      // adalah kondisi yang benar-benar ganjil, bukan sekadar
+                      // "backlog normal hari Senin".
+                      style={hari >= 7 ? { "--dh-bar": "var(--orange)" } : undefined}
                       className={cn(
                         "relative flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint",
-                        hari >= 3 && "dh-bar-left"
+                        hari >= 7 && "dh-bar-left"
                       )}
                     >
-                      <Avatar name={nama} size="sm" />
+                      <Avatar name={nama} size="sm" gradient />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-[12.5px] font-semibold text-ink">{nama}</span>
@@ -349,7 +390,7 @@ export default function ArmadaDashboard() {
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink3">
                           <span className="font-mono">{orderNumberOf(j) || "—"}</span>
                           <span aria-hidden>·</span>
-                          <span className={hari >= 3 ? "font-semibold text-orange" : ""}>
+                          <span className={hari >= 7 ? "font-semibold text-orange" : ""}>
                             {hari === 0 ? "Baru masuk hari ini" : `Menunggu ${hari} hari`}
                           </span>
                         </div>
@@ -376,14 +417,6 @@ export default function ArmadaDashboard() {
             </>
           )}
         </Card>
-
-        {loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[86px] animate-pulse rounded-card bg-inset" />)}
-          </div>
-        ) : (
-          <DeliveryKpiRow items={kpi} />
-        )}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
           <Card className="p-4">
@@ -455,7 +488,7 @@ export default function ArmadaDashboard() {
                         <TD className="text-ink2">
                           {j.driver?.name ? (
                             <span className="flex items-center gap-1.5">
-                              <Avatar name={j.driver.name} size="sm" className="h-6 w-6 text-[10px]" /> {j.driver.name}
+                              <Avatar name={j.driver.name} size="sm" gradient className="h-6 w-6 text-[10px]" /> {j.driver.name}
                             </span>
                           ) : (
                             <span className="text-orange">Belum ada</span>

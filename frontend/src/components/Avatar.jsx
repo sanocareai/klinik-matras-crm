@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { getInitials, avatarColor } from "../utils/format.js";
+import { getInitials, avatarColor, avatarGradient } from "../utils/format.js";
 import { cn } from "../lib/utils.js";
 
 // Avatar inisial berwarna (fallback foto profil WA — lihat CLAUDE.md §7D poin 3:
@@ -16,10 +16,17 @@ const SIZE = {
   xl: "h-16 w-16 text-[22px]", // 64px — panel profil
 };
 
-export default function Avatar({ name, src, size = "sm", className }) {
+// `gradient` (D-050, 4 September 2026) — varian PEKAT bergradien + inisial
+// putih, dipakai KHUSUS di Delivery Hub supaya avatar terbaca sebagai
+// identitas orang di atas kartu kaca gelap. Pastel default (bg terang +
+// teks gelap) dirancang untuk permukaan putih; di ground navy Delivery ia
+// justru jadi bercak paling terang di layar dan menarik mata lebih kuat
+// daripada angka KPI. Prop OPSIONAL, jadi 13 pemanggil lain tidak berubah.
+export default function Avatar({ name, src, size = "sm", gradient = false, className }) {
   const [imgError, setImgError] = useState(false);
   const initials     = getInitials(name);
   const { bg, text } = avatarColor(name || "?");
+  const grad         = avatarGradient(name || "?");
 
   const base = cn(
     "shrink-0 select-none rounded-full object-cover",
@@ -46,7 +53,11 @@ export default function Avatar({ name, src, size = "sm", className }) {
     // statis yang ke-scan Tailwind.
     <div
       className={cn(base, "flex items-center justify-center font-bold leading-none")}
-      style={{ background: bg, color: text }}
+      style={
+        gradient
+          ? { backgroundImage: `linear-gradient(135deg, ${grad.from}, ${grad.to})`, color: "#fff" }
+          : { background: bg, color: text }
+      }
       aria-hidden="true"
     >
       {initials}

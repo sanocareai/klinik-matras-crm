@@ -43,7 +43,7 @@ export default function ChipPilih({ items, selectedId, disabled, onPick, kosongL
               active ? "chip-active border-accent bg-accent text-white shadow-card" : "border-border text-ink2 hover:border-ink3"
             )}
           >
-            <Avatar name={it.name} size="sm" className={size === "sm" ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"} />
+            <Avatar name={it.name} size="sm" gradient className={size === "sm" ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]"} />
             {it.name}
             {active && <Check size={size === "sm" ? 11 : 13} className="text-white" />}
           </button>

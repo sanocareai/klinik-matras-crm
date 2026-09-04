@@ -16,12 +16,18 @@ import { cn } from "@/lib/utils.js";
 // seperti artifacts", mockup redesain punya ikon dibungkus lingkaran tint
 // per-tone, bukan cuma titik kecil) — dot lama DIGANTI, bukan ditambah:
 // dua penanda warna untuk satu angka jadi berlebihan begitu badge ikon ada.
+// KOREKSI D-050 (4 September 2026) — angka SEKARANG selalu `text-ink` (netral),
+// warna tinggal di badge ikon saja. Sebelumnya badge DAN angka dua-duanya
+// diwarnai per-tone: itu justru melanggar aturan yang ditulis di komentar tepat
+// di atas ini (satu penanda warna per nilai, bukan dua), dan bikin 4 dari 6
+// kartu jadi biru semua sehingga hilang kontras antara "sedang berjalan" dan
+// "butuh dilihat" (hijau/merah). Di mockup artifact semua angka memang putih.
 const TONE = {
-  neutral: { badge: "bg-inset text-ink3",     value: "text-ink" },
-  accent:  { badge: "bg-accentbg text-accent", value: "text-accent" },
-  green:   { badge: "bg-greenbg text-green",   value: "text-green" },
-  orange:  { badge: "bg-orangebg text-orange", value: "text-orange" },
-  red:     { badge: "bg-redbg text-red",       value: "text-red" },
+  neutral: { badge: "bg-inset text-ink3" },
+  accent:  { badge: "bg-accentbg text-accent" },
+  green:   { badge: "bg-greenbg text-green" },
+  orange:  { badge: "bg-orangebg text-orange" },
+  red:     { badge: "bg-redbg text-red" },
 };
 
 export default function DeliveryKpiRow({ items }) {
@@ -29,7 +35,14 @@ export default function DeliveryKpiRow({ items }) {
 
   return (
     // 2 kolom di mobile → 3 di tablet → 6 di desktop, sesuai ketentuan responsif.
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    //
+    // `lg:` (1024px), BUKAN `xl:` (1280px) — D-050. Breakpoint Tailwind diukur
+    // dari lebar VIEWPORT, sementara baris ini hidup di kolom konten yang sudah
+    // dipotong sidebar ~260px + padding halaman. Dengan `xl:`, jendela
+    // 1280–1400px (laptop paling umum di tim ini) tidak pernah dapat 6 kolom
+    // dan KPI-nya patah jadi 3x2 — persis yang terlihat di screenshot
+    // produksi, padahal mockup-nya satu baris penuh.
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {items.map((k) => {
         const tone = TONE[k.tone] || TONE.neutral;
         return (
@@ -53,10 +66,15 @@ export default function DeliveryKpiRow({ items }) {
               {/* dh-figure (D-045) — cahaya halus di angka besar, HANYA aktif di
                   dark mode Delivery (lihat styles/delivery-dark.css); di light
                   mode kelas ini tidak punya aturan sama sekali = tidak berefek. */}
-              <strong className={cn("dh-figure block text-[26px] font-extrabold leading-none tracking-tight", tone.value)}>
+              <strong className="dh-figure block text-[26px] font-extrabold leading-none tracking-tight text-ink">
                 {k.value}
               </strong>
-              <span className="mt-1 block truncate text-[11px] font-semibold text-ink2">{k.label}</span>
+              {/* TANPA `truncate` (D-050) — di 6 kolom, "Belum Dijadwalkan" dan
+                  "Driver Ditugaskan" lebih lebar dari kartunya dan terpotong
+                  jadi "Belum Dijadwal…". Label KPI yang tidak terbaca utuh
+                  meniadakan gunanya. Dibiarkan membungkus 2 baris; tinggi kartu
+                  tetap rata karena item grid otomatis stretch. */}
+              <span className="mt-1 block text-[11px] font-semibold leading-snug text-ink2">{k.label}</span>
             </span>
           </button>
         );

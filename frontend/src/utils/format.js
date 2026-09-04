@@ -470,3 +470,53 @@ export function getDatePreset(preset) {
   const { from, to } = makeRange(id);
   return { from, to };
 }
+
+// ─── Avatar gradien + nama TERIAK (D-050, 4 September 2026) ─────────────────
+// Dua helper kecil untuk menutup gap terakhir antara Delivery Hub dan mockup
+// artifact-nya (laporan owner: "sudah hampir mirip tapi belum sempurna").
+
+// Versi PEKAT dari AVATAR_COLORS di atas, urutan hue-nya SENGAJA sama persis
+// (purple, blue, green, pink, orange) supaya satu orang dapat hue yang sama
+// baik dirender datar (pastel, dipakai lintas app) maupun bergradien (dipakai
+// di Delivery Hub) — kalau urutannya beda, Risel bisa jadi ungu di tabel
+// Pelanggan tapi oranye di Delivery, dan avatar berhenti berfungsi sebagai
+// penanda identitas yang bisa dihafal.
+const AVATAR_GRADIENTS = [
+  { from: "#8B5CF6", to: "#6D28D9" }, // purple
+  { from: "#3B82F6", to: "#1D4ED8" }, // blue
+  { from: "#22C55E", to: "#15803D" }, // green
+  { from: "#EC4899", to: "#BE185D" }, // pink
+  { from: "#F97316", to: "#C2410C" }, // orange
+];
+
+export function avatarGradient(seed) {
+  if (!seed) return AVATAR_GRADIENTS[0];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}
+
+// Nama pelanggan yang diketik ALL-CAPS oleh sales ("HOTEL DISCOVERY ANCOL")
+// dirapikan jadi Title Case untuk TAMPILAN saja — data di database tidak
+// disentuh.
+//
+// Syaratnya SENGAJA ketat: hanya kalau string itu tidak punya SATU PUN huruf
+// kecil. Nama yang sudah campur ditinggalkan apa adanya, karena huruf besar
+// di tengah nama biasanya memang disengaja dan title-case buta akan merusaknya
+// — mis. "Esty Bagus [Cs vina/BDG]" (kode cabang BDG) atau "PT XYZ".
+// Singkatan yang TETAP kapital penuh — badan usaha & institusi yang memang
+// selalu ditulis begitu. Tanpa daftar ini "PT XYZ" jadi "Pt Xyz", yang salah
+// dan justru terlihat seperti kesalahan sistem, bukan perbaikan.
+const NAMA_TETAP_KAPITAL = new Set([
+  "PT", "CV", "UD", "PD", "TB", "RS", "RSU", "RSUD", "TK", "SD", "SMP", "SMA", "SMK", "PAUD",
+]);
+
+export function titleCaseNama(nama) {
+  if (!nama || /[a-z]/.test(nama)) return nama;
+  // Tanda hubung SENGAJA di luar pola kata (bukan bagian dari [\p{L}'’]),
+  // jadi ia dihitung sebagai batas kata: "AL-FATIH" -> "Al-Fatih", bukan
+  // "Al-fatih" — nama majemuk berhubung itu umum di sini.
+  return nama.replace(/\p{L}[\p{L}'’]*/gu, (kata) =>
+    NAMA_TETAP_KAPITAL.has(kata) ? kata : kata[0] + kata.slice(1).toLowerCase()
+  );
+}

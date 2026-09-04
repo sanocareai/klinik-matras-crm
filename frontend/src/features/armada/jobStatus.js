@@ -1,3 +1,5 @@
+import { titleCaseNama } from "@/utils/format.js";
+
 // Peta status & tipe job NYATA — dari enum backend (prisma/schema.prisma),
 // BUKAN dari data contoh.
 //
@@ -55,9 +57,22 @@ export const EDITABLE_JOB_STATUSES = new Set(["UNSCHEDULED", "SCHEDULED", "ASSIG
  */
 export const FIELDS_NOT_IN_BACKEND = ["area", "priority", "slaStatus"];
 
-/** Nama customer sebuah job — ada di dua tempat, tergantung endpoint. */
+/** Nama customer sebuah job — ada di dua tempat, tergantung endpoint.
+ *
+ * Dirapikan lewat titleCaseNama() (D-050, 4 September 2026) — sebagian sales
+ * mengetik nama pelanggan ALL-CAPS ("HOTEL DISCOVERY ANCOL") sehingga di
+ * daftar job ia berteriak lebih keras daripada nama lain di sekitarnya dan
+ * merusak ritme baca kolom. Normalisasi ditaruh DI SINI, bukan di tiap
+ * pemanggil, karena fungsi ini satu-satunya sumber nama pelanggan untuk
+ * seluruh Delivery Hub (dashboard, drawer, JobBadges, RouteCard) — kalau
+ * dipasang per-tempat, cepat atau lambat ada layar yang terlewat.
+ *
+ * TAMPILAN SAJA: nilai di database tidak disentuh, dan helper-nya hanya
+ * bertindak pada string yang benar-benar tanpa huruf kecil (lihat catatan di
+ * utils/format.js) supaya "Esty Bagus [Cs vina/BDG]" tidak ikut diubah.
+ */
 export function customerOf(job) {
-  return (
+  return titleCaseNama(
     job?.order?.customer?.name ||
     job?.units?.[0]?.unit?.order?.customer?.name ||
     null
