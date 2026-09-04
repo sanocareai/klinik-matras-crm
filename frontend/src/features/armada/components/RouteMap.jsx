@@ -27,8 +27,26 @@ import { getRoadRoute } from "@/services/osrm.js";
 //    "±N menit" di tiap stop (dari legDurations OSRM) meniru bubble waktu
 //    tempuh di referensi — HANYA muncul kalau OSRM berhasil, tidak dipaksa
 //    dari estimasi kasar.
+//
+// SEMUA RUTE MULAI & BERAKHIR DI KLINIK (D-076, 4 September 2026) — laporan
+// owner: "buat semua jalur mulai dan berakhir di lokasi klinik matras".
+// DEPOT (koordinat sama dengan backend/src/services/maps.js — SATU sumber
+// kebenaran, jangan diketik ulang beda di sini) ditempel sebagai titik
+// PERTAMA & TERAKHIR sebelum diminta ke OSRM, jadi garis rute yang tampil
+// benar-benar bulat-balik dari/ke klinik, bukan cuma stop pertama sampai
+// terakhir. Marker depot SATU untuk seluruh peta (bukan per-rute — semua
+// rute berbagi titik awal yang sama), bentuknya SENGAJA beda dari nomor
+// stop (rumah, bukan lingkaran bernomor) supaya jelas ini titik pangkalan,
+// bukan stop pelanggan.
 const JAKARTA_CENTER = [-6.2088, 106.8456];
 const PALET_RUTE = ["#2563eb", "#dc2626", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2"];
+
+// Lokasi Klinik Matras by SANO CARE — SAMA PERSIS dengan DEPOT di
+// backend/src/services/maps.js (lihat komentar D-076 di sana untuk sumber
+// koordinatnya). Duplikasi angka ini TIDAK BISA dihindari (frontend tidak
+// bisa import langsung dari backend), tapi keduanya WAJIB diubah bersamaan
+// kalau lokasi klinik pernah pindah.
+const DEPOT = { lat: -6.38784855, lng: 106.8177975, label: "Klinik Matras" };
 
 // CARTO basemap gratis tanpa API key — dipilih sesuai tema aktif supaya
 // menyatu dengan kaca terang/gelap Delivery Hub (bukan tile OSM warna-warni
@@ -47,6 +65,19 @@ function stopIcon(warna, nomor) {
   });
 }
 
+// Marker depot — kotak dengan sudut membulat + ikon rumah sederhana (bukan
+// lingkaran bernomor seperti stop) supaya sekilas mata langsung beda dari
+// stop pelanggan. Warna netral gelap (bukan salah satu warna PALET_RUTE) —
+// depot itu MILIK BERSAMA semua rute, tidak boleh terlihat "punya" satu
+// rute tertentu.
+const depotIcon = L.divIcon({
+  className: "",
+  html: `<div style="background:#1D1D1F;color:white;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 28],
+  popupAnchor: [0, -26],
+});
+
 function formatMenit(detik) {
   const menit = Math.round(detik / 60);
   if (menit < 1) return "<1 mnt";
@@ -60,34 +91,37 @@ function formatMenit(detik) {
 // jangan didefinisikan di dalam body RouteMap, supaya identitasnya stabil
 // lintas render). Minta geometri jalan asli ke OSRM begitu daftar stop-nya
 // berubah; sementara menunggu/gagal, tampil garis lurus dulu (TIDAK pernah
-// kosong sama sekali) supaya dispatcher tetap lihat urutan rute.
+// kosong sama sekali) supaya dispatcher tetap lihat urutan rute. Titik yang
+// diminta ke OSRM SELALU [DEPOT, ...stops, DEPOT] (D-076) — garis & badge
+// waktu tempuh jadi bulat-balik dari/ke klinik, bukan cuma antar stop.
 function RouteLine({ route, warna, stops }) {
   const [jalanAsli, setJalanAsli] = useState(null); // { coords, legDurations } | null
 
   useEffect(() => {
     setJalanAsli(null);
-    if (stops.length < 2) return;
+    if (stops.length === 0) return;
     let batal = false;
-    getRoadRoute(stops.map((s) => [s.lat, s.lng])).then((hasil) => {
+    const titik = [[DEPOT.lat, DEPOT.lng], ...stops.map((s) => [s.lat, s.lng]), [DEPOT.lat, DEPOT.lng]];
+    getRoadRoute(titik).then((hasil) => {
       if (!batal && hasil) setJalanAsli(hasil);
     });
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stops.map((s) => `${s.id}:${s.lat}:${s.lng}`).join(",")]);
 
-  const garisLurus = stops.map((s) => [s.lat, s.lng]);
+  const garisLurus = [[DEPOT.lat, DEPOT.lng], ...stops.map((s) => [s.lat, s.lng]), [DEPOT.lat, DEPOT.lng]];
   const posisiGaris = jalanAsli?.coords || garisLurus;
 
   return (
     <>
-      {stops.length > 1 && (
-        <Polyline positions={posisiGaris} pathOptions={{ color: warna, weight: 4, opacity: 0.75, lineCap: "round", lineJoin: "round" }} />
-      )}
+      <Polyline positions={posisiGaris} pathOptions={{ color: warna, weight: 4, opacity: 0.75, lineCap: "round", lineJoin: "round" }} />
       {stops.map((s, i) => {
-        // Waktu tempuh KUMULATIF dari stop pertama sampai stop ini — cuma
-        // ada kalau OSRM berhasil (legDurations[0] = durasi stop0→stop1, dst).
-        const menitKumulatif = jalanAsli?.legDurations && i > 0
-          ? jalanAsli.legDurations.slice(0, i).reduce((a, b) => a + b, 0)
+        // Waktu tempuh KUMULATIF dari KLINIK sampai stop ini — legDurations[0]
+        // = klinik→stop pertama (karena titik yang diminta ke OSRM diawali
+        // DEPOT), jadi stop PERTAMA pun sekarang dapat badge (sebelum D-076
+        // cuma stop ke-2 dst yang punya badge, dihitung dari stop pertama).
+        const menitKumulatif = jalanAsli?.legDurations
+          ? jalanAsli.legDurations.slice(0, i + 1).reduce((a, b) => a + b, 0)
           : null;
         return (
           <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(warna, i + 1)}>
@@ -148,6 +182,14 @@ export default function RouteMap({ routes }) {
         {dataRute.map(({ route, warna, stops }) => (
           <RouteLine key={route.id} route={route} warna={warna} stops={stops} />
         ))}
+        <Marker position={[DEPOT.lat, DEPOT.lng]} icon={depotIcon}>
+          <Popup>
+            <div className="text-xs">
+              <p className="font-semibold">{DEPOT.label}</p>
+              <p>Titik awal &amp; akhir semua rute</p>
+            </div>
+          </Popup>
+        </Marker>
       </MapContainer>
     </div>
   );

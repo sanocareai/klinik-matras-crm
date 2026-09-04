@@ -338,8 +338,12 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, veh
           summary.legsError ? (
             <span className="text-[11px] text-orange">{summary.legsError}</span>
           ) : (
+            // D-076 (4 September 2026): total ini sekarang PULANG-PERGI dari/ke
+            // Klinik Matras (bukan cuma stop pertama sampai terakhir) — lihat
+            // DEPOT di backend/src/services/maps.js. Label eksplisit menyebut
+            // itu supaya dispatcher tidak salah kira ini cuma jarak antar-job.
             <span className="flex items-center gap-1 text-[11px] text-ink2">
-              <Route className="h-3 w-3" /> {formatDistance(summary.totalDistanceMeters)} · {formatDuration(summary.totalDurationSeconds)} total
+              <Route className="h-3 w-3" /> {formatDistance(summary.totalDistanceMeters)} · {formatDuration(summary.totalDurationSeconds)} (dari &amp; ke klinik)
             </span>
           )
         )}

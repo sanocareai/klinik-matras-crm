@@ -29,7 +29,7 @@ import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../ser
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, routeLegs } from "../services/maps.js";
+import { geocodeAddress, routeLegs, DEPOT } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -1193,13 +1193,22 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
 
     // Estimasi jarak/durasi — best-effort, SAMA pola dengan GET /route/summary:
     // gagal geocode TIDAK BOLEH menggagalkan publish, cuma legsError terisi.
+    //
+    // BULAT-BALIK DARI/KE KLINIK (D-076, 4 September 2026) — laporan owner:
+    // "buat semua jalur mulai dan berakhir di lokasi klinik matras". DEPOT
+    // ditempel sebagai titik PERTAMA dan TERAKHIR sebelum dihitung, jadi
+    // plannedDistanceKm/plannedDurationMin sekarang mencerminkan perjalanan
+    // BENERAN driver (klinik→stop1→...→stopN→klinik), bukan cuma stop
+    // pertama sampai stop terakhir. `route.jobs.length >= 2` DILONGGARKAN
+    // jadi `>= 1` — DULU rute 1-stop tidak dapat estimasi sama sekali
+    // (routeLegs butuh minimal 2 titik), sekarang selalu ada minimal 1 leg
+    // (klinik↔stop) karena depot SELALU punya koordinat (konstanta tetap).
     let plannedDistanceKm = null, plannedDurationMin = null;
     const geocoded = route.jobs.filter((j) => j.lat != null && j.lng != null);
-    if (geocoded.length === route.jobs.length && route.jobs.length >= 2) {
+    if (geocoded.length === route.jobs.length && route.jobs.length >= 1) {
       try {
-        const legs = await routeLegs(
-          [...route.jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => ({ lat: j.lat, lng: j.lng }))
-        );
+        const stopsRuteSaja = [...route.jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => ({ lat: j.lat, lng: j.lng }));
+        const legs = await routeLegs([DEPOT, ...stopsRuteSaja, DEPOT]);
         let meters = 0, seconds = 0;
         for (const leg of legs) { if (leg) { meters += leg.distanceMeters; seconds += leg.durationSeconds; } }
         plannedDistanceKm = meters > 0 ? Math.round((meters / 1000) * 100) / 100 : null;
@@ -1580,21 +1589,34 @@ armadaRouter.get("/route/summary", requirePermission(P.JOB_READ), async (req, re
       orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
     });
 
+    // BULAT-BALIK DARI/KE KLINIK (D-076, 4 September 2026) — laporan owner:
+    // "buat semua jalur mulai dan berakhir di lokasi klinik matras". SATU
+    // panggilan routeLegs untuk [DEPOT, ...stop, DEPOT] sekaligus — leg
+    // pertama & terakhir (klinik↔stop) dipakai HANYA untuk total jarak/
+    // durasi, BUKAN masuk ke `legs` yang dikembalikan ke frontend: array
+    // `legs` di sini dipakai Armada.jsx sebagai `legToNext` berindeks per
+    // JOB (legs[i] = job[i]→job[i+1]) — kalau depot ikut disisipkan di
+    // situ, indeksnya akan geser dan salah tempel ke job yang salah.
+    // `jobs.length >= 1` (bukan >= 2 seperti sebelumnya) — depot SELALU
+    // punya koordinat, jadi rute 1 stop pun sekarang dapat estimasi
+    // (klinik→stop→klinik), yang sebelumnya sama sekali tidak dihitung
+    // karena routeLegs butuh minimal 2 titik.
     const geocoded = jobs.filter((j) => j.lat != null && j.lng != null);
     let legs = [];
     let totalDistanceMeters = 0;
     let totalDurationSeconds = 0;
     let legsError = null;
-    if (geocoded.length === jobs.length && jobs.length >= 2) {
+    if (geocoded.length === jobs.length && jobs.length >= 1) {
       try {
-        legs = await routeLegs(jobs.map((j) => ({ lat: j.lat, lng: j.lng })));
-        for (const leg of legs) {
+        const semuaLeg = await routeLegs([DEPOT, ...jobs.map((j) => ({ lat: j.lat, lng: j.lng })), DEPOT]);
+        legs = semuaLeg.slice(1, -1); // buang leg depot di depan & belakang, sisakan job→job asli
+        for (const leg of semuaLeg) {
           if (leg) { totalDistanceMeters += leg.distanceMeters; totalDurationSeconds += leg.durationSeconds; }
         }
       } catch (err) {
         legsError = err.message;
       }
-    } else if (jobs.length >= 2) {
+    } else if (jobs.length >= 1) {
       legsError = "Ada stop yang belum punya koordinat (geocode gagal atau alamat kosong) — jarak tidak bisa dihitung";
     }
 
