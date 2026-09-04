@@ -68,7 +68,12 @@ export default function UnroutedJobsPanel({
           // definisi visualnya). `transition-all` (bukan cuma
           // transition-opacity) + `scale` saat digeser — bahasa gerak yang
           // SAMA dengan stop card di RouteCard.jsx (D-072 juga di sana).
-          "dh-job-card flex cursor-grab items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+          // `select-none` (D-073) — sama alasan dengan RouteCard.jsx: tanpa
+          // ini, gestur drag PERTAMA di atas teks nama/alamat sering
+          // "dimakan" seleksi teks bawaan browser, baru percobaan KEDUA
+          // yang benar-benar jalan sebagai drag ("klik dulu, baru bisa
+          // pindahkan" — laporan owner).
+          "dh-job-card flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
           draggingId === j.id && "scale-[0.97] opacity-40"
         )}
       >

@@ -171,7 +171,17 @@ export default function RouteCard({
                   // transition-colors) supaya ring, opacity, DAN transform
                   // (drag state di bawah) semua ikut halus, bukan cuma
                   // sebagian.
-                  "dh-stop-card flex items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
+                  // `select-none` (D-073, 4 September 2026) — laporan
+                  // owner: "skema saat ini klik dulu, baru bisa pindahkan".
+                  // Akar masalahnya: TANPA ini, gestur drag PERTAMA di atas
+                  // teks nama/alamat sering "dimakan" oleh seleksi teks
+                  // bawaan browser (bukan native drag), bukan cuma di sini
+                  // — perilaku browser umum untuk elemen draggable berisi
+                  // teks. Baru di percobaan KEDUA (setelah seleksi
+                  // ke-clear oleh klik) drag benar-benar jalan. Menonaktifkan
+                  // seleksi teks di sini memastikan gestur drag PERTAMA
+                  // langsung terbaca sebagai drag, bukan seleksi.
+                  "dh-stop-card flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
                   isDraft && "cursor-grab active:cursor-grabbing",
                   dragOverIdx === idx && "ring-2 ring-accent",
                   // Item yang sedang digeser memudar + sedikit mengecil —
