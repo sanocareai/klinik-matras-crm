@@ -63,6 +63,11 @@ export default function ArmadaRoutes() {
   const [undated, setUndated] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  // helpers (D-077, 4 September 2026) — Route sekarang punya helperId
+  // sendiri (dulu cuma driver+kendaraan di sini, helper wajib diisi
+  // manual per-job di Penjadwalan). Lihat komentar panjang di
+  // schema.prisma (Route.helperId) untuk alasan penyatuan skema ini.
+  const [helpers, setHelpers] = useState([]);
   const [error, setError] = useState("");
   const [draggingJobId, setDraggingJobId] = useState(null);
 
@@ -70,7 +75,7 @@ export default function ArmadaRoutes() {
     setError("");
     try {
       const rangeParams = toApiParams(range); // {} untuk "Semua" — tanpa filter tanggal
-      const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes] = await Promise.all([
+      const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes, helpersRes] = await Promise.all([
         api.getRoutes(rangeParams),
         // Panel kiri (D-066, koreksi dari D-063; `date: "any"` ditambah
         // D-069, 4 September 2026) — SENGAJA LEPAS TOTAL dari `range`, bukan
@@ -101,6 +106,7 @@ export default function ArmadaRoutes() {
         api.getArmadaJobs({ date: "none", routeId: "none" }),
         api.getDrivers(),
         api.getVehicles(),
+        api.getHelpers(),
       ]);
       setRoutes(routesRes.routes);
       // KOREKSI (hari yang sama, D-063) — saat range="Semua" (all_time),
@@ -117,6 +123,7 @@ export default function ArmadaRoutes() {
       setUndated(undatedRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
       setDrivers(driversRes);
       setVehicles(vehiclesRes.vehicles);
+      setHelpers(helpersRes || []);
     } catch (e) {
       setError(e.message);
     }
@@ -378,6 +385,7 @@ export default function ArmadaRoutes() {
                     route={r}
                     drivers={drivers}
                     vehicles={vehicles}
+                    helpers={helpers}
                     draggingJobId={draggingJobId}
                     onDrop={tambahKeRute}
                     onReorder={urutkanUlang}

@@ -338,6 +338,7 @@ model User {
   paymentsVerified          PaymentVerification[]    @relation("PaymentVerifier")
   stockMovements            StockMovement[]          @relation("StockMovementActor")
   routesAsDriver            Route[]                  @relation("RouteDriver")
+  routesAsHelper            Route[]                  @relation("RouteHelper")
   podVerified               Job[]                    @relation("PodVerifier")
   jobsRescheduled           Job[]                    @relation("JobRescheduler")
   unitRevisionsCreated      UnitRevision[]           @relation("UnitRevisionCreator")
@@ -1960,6 +1961,19 @@ model Route {
 
   driverId String? @map("driver_id")
   driver   User?   @relation("RouteDriver", fields: [driverId], references: [id], onDelete: SetNull)
+
+  // Helper (D-077, 4 September 2026) — laporan owner: driver+helper+kendaraan
+  // dulu ditugaskan 2 SKEMA TERPISAH (langsung per-job di Penjadwalan, ATAU
+  // per-rute di sini) yang bisa saling menimpa diam-diam saat rute
+  // diterbitkan (lihat POST /routes/:id/publish: dulu cuma driverId/vehicleId
+  // yang disalin ke job, helperId TIDAK PERNAH — jadi helper WAJIB tetap
+  // diisi manual satu-satu di Penjadwalan walau seluruh rute sudah lengkap
+  // driver+kendaraannya di sini). Field ini menyatukan JADI SATU skema:
+  // Route sekarang otoritas PENUH (driver+helper+kendaraan) begitu job masuk
+  // rute — Penjadwalan mengunci ketiga field itu untuk job ber-routeId
+  // (lihat middleware/authorize.js guard di PATCH /jobs/:id).
+  helperId String? @map("helper_id")
+  helper   User?   @relation("RouteHelper", fields: [helperId], references: [id], onDelete: SetNull)
 
   vehicleId String?  @map("vehicle_id") @db.Uuid
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)

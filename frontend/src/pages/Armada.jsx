@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle, Loader2, Package, Plus, Truck, User, X, MapPin, Trash2,
-  ArrowUp, ArrowDown, Navigation, Route,
+  ArrowUp, ArrowDown, Navigation, Route, Lock,
 } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
@@ -82,7 +83,15 @@ function JobCard({ job, drivers, vehicles, helpers, onChanged, route }) {
     ? [orderForJob.deliveryAddress, orderForJob.deliveryCity].filter(Boolean).join(", ")
     : "";
   const [busy, setBusy] = useState(false);
-  const editable = EDITABLE_STATUSES.has(job.status);
+  // SATU SKEMA PENUGASAN (D-077, 4 September 2026) — laporan owner: driver+
+  // helper+kendaraan dulu bisa diisi 2 JALUR (langsung di sini, ATAU di
+  // Route Planner) yang saling menimpa diam-diam saat rute diterbitkan.
+  // `!job.routeId` ditambahkan ke syarat `editable`: begitu job masuk rute,
+  // kartu ini turun ke tampilan read-only yang sama seperti status
+  // EN_ROUTE/COMPLETED (lihat cabang `else` di bawah) — backend (PATCH
+  // /armada/jobs/:id) MENOLAK juga perubahan field ini untuk job ber-
+  // routeId, jadi penguncian UI ini bukan cuma kosmetik.
+  const editable = EDITABLE_STATUSES.has(job.status) && !job.routeId;
   // ChipPilih butuh {id, name} — vehicles asli cuma punya `plateNumber`
   // (tidak ada field `name`), jadi dipetakan di sini supaya chip-nya
   // menampilkan plat nomor, bukan "undefined".
@@ -268,6 +277,20 @@ function JobCard({ job, drivers, vehicles, helpers, onChanged, route }) {
         </>
       ) : (
         <div className="mt-3 space-y-1 text-xs text-ink2">
+          {/* Job sudah masuk rute (D-077) — driver/helper/kendaraan dikunci
+              ke apa yang diatur di Route Planner, BUKAN sekadar status job
+              yang sudah lanjut (EN_ROUTE/COMPLETED, dua kasus itu tetap
+              lewat cabang ini juga tapi tanpa badge ini). Tautan langsung
+              ke Route Planner supaya dispatcher tidak perlu mencari rute
+              mana secara manual kalau memang mau ubah penugasannya. */}
+          {job.routeId && EDITABLE_STATUSES.has(job.status) && (
+            <Link
+              to="/armada/routes"
+              className="flex items-center gap-1.5 text-accent hover:underline"
+            >
+              <Lock className="h-3 w-3" /> Diatur di rute {job.route?.code || "—"}
+            </Link>
+          )}
           {job.driver && <p className="flex items-center gap-1.5"><User className="h-3 w-3" /> {job.driver.name}</p>}
           {/* Helper (D-037, 31 Agustus 2026) — read-only di kartu papan ini,
               sengaja TIDAK dibuat editable di sini. Penugasan helper
@@ -299,8 +322,20 @@ function JobCard({ job, drivers, vehicles, helpers, onChanged, route }) {
 function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, vehicles, helpers, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState(null);
-  const hasRoute = jobs.length > 1;
-  const jobIdsKey = jobs.map((j) => j.id).join(",");
+
+  // SATU SKEMA PENUGASAN (D-077, 4 September 2026) — laporan owner: urutan
+  // stop dulu bisa diatur 2 JALUR (panah atas/bawah di sini, ATAU drag-drop
+  // di Route Planner) yang menulis kolom `sequence` yang SAMA tanpa saling
+  // tahu — bisa saling menimpa. Job yang SUDAH masuk Route (job.routeId
+  // terisi) sekarang cuma diurutkan lewat Route Planner; grup ini hanya
+  // mengurutkan+meringkas jarak untuk job yang BELUM masuk rute manapun
+  // (backend PATCH /route/reorder & GET /route/summary sudah menegakkan
+  // batasan yang sama lewat filter `routeId: null`, jadi ini bukan cuma
+  // kosmetik — mengirim job routed ke situ akan ditolak backend).
+  const jobsUnrouted = jobs.filter((j) => !j.routeId);
+  const jobsRouted = jobs.filter((j) => j.routeId);
+  const hasRoute = jobsUnrouted.length > 1;
+  const jobIdsKey = jobsUnrouted.map((j) => j.id).join(",");
 
   useEffect(() => {
     if (!hasRoute) { setSummary(null); return; }
@@ -311,7 +346,7 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, veh
   }, [driverId, date, type, jobIdsKey]);
 
   async function move(index, dir) {
-    const next = jobs.map((j) => j.id);
+    const next = jobsUnrouted.map((j) => j.id);
     const swapWith = index + dir;
     if (swapWith < 0 || swapWith >= next.length) return;
     [next[index], next[swapWith]] = [next[swapWith], next[index]];
@@ -348,18 +383,34 @@ function DriverRouteGroup({ driverId, driverName, jobs, date, type, drivers, veh
           )
         )}
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {jobs.map((job, i) => (
-          <JobCard
-            key={job.id} job={job} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={onChanged}
-            route={hasRoute ? {
-              index: i, isFirst: i === 0, isLast: i === jobs.length - 1,
-              onMoveUp: () => move(i, -1), onMoveDown: () => move(i, 1), busy,
-              legToNext: summary?.legs?.[i] || null,
-            } : null}
-          />
-        ))}
-      </div>
+      {jobsUnrouted.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {jobsUnrouted.map((job, i) => (
+            <JobCard
+              key={job.id} job={job} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={onChanged}
+              route={hasRoute ? {
+                index: i, isFirst: i === 0, isLast: i === jobsUnrouted.length - 1,
+                onMoveUp: () => move(i, -1), onMoveDown: () => move(i, 1), busy,
+                legToNext: summary?.legs?.[i] || null,
+              } : null}
+            />
+          ))}
+        </div>
+      )}
+      {/* Job yang SUDAH masuk Route (D-077) — ditampilkan TERPISAH, tanpa
+          panah urutan (diurutkan di Route Planner, bukan di sini). JobCard
+          sendiri yang mengunci field driver/helper/kendaraan-nya jadi
+          read-only + tautan ke rutenya (lihat `editable` di JobCard). */}
+      {jobsRouted.length > 0 && (
+        <div className={jobsUnrouted.length > 0 ? "mt-3" : ""}>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink3">Sudah masuk rute</p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {jobsRouted.map((job) => (
+              <JobCard key={job.id} job={job} drivers={drivers} vehicles={vehicles} helpers={helpers} onChanged={onChanged} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -154,6 +154,10 @@ const jobInclude = {
   driver: { select: { id: true, name: true } },
   helper: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true } },
+  // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
+  // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
+  // ke GET /routes/:id cuma untuk kode & status rutenya.
+  route: { select: { id: true, code: true, status: true } },
   // BUG DITEMUKAN 31 Agustus 2026 (laporan owner: JobDetailDrawer terasa
   // "kosong" — Kontak & Timeline status Order tidak pernah muncul). Job
   // punya relasi LANGSUNG ke Order (job.orderId, lihat schema.prisma), TAPI
@@ -1038,6 +1042,9 @@ function generateRouteCode(date) {
 
 const routeInclude = {
   driver: { select: { id: true, name: true } },
+  // helper (D-077) — pasangan driver, lihat catatan panjang di schema.prisma
+  // pada field Route.helperId untuk kenapa field ini ditambahkan.
+  helper: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
   jobs: {
     include: jobInclude,
@@ -1090,7 +1097,7 @@ armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), async (req, res) 
 
 armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
-    const { date, driverId, vehicleId, notes } = req.body;
+    const { date, driverId, helperId, vehicleId, notes } = req.body;
     if (!date) throw new ArmadaError("Tanggal wajib diisi");
     const targetDate = toDateOnly(date);
 
@@ -1106,6 +1113,7 @@ armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) 
         code,
         date: targetDate,
         driverId: driverId || null,
+        helperId: helperId || null,
         vehicleId: vehicleId || null,
         notes: notes?.trim() || null,
         createdById: req.user.id,
@@ -1126,11 +1134,12 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       throw new ArmadaError("Rute yang sudah diterbitkan tidak bisa diedit langsung — batalkan lalu buat rute baru");
     }
 
-    const { driverId, vehicleId, notes } = req.body;
+    const { driverId, helperId, vehicleId, notes } = req.body;
     const updated = await prisma.route.update({
       where: { id: req.params.id },
       data: {
         ...(driverId !== undefined && { driverId: driverId || null }),
+        ...(helperId !== undefined && { helperId: helperId || null }),
         ...(vehicleId !== undefined && { vehicleId: vehicleId || null }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
       },
@@ -1230,7 +1239,12 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       // dijadwalkan manual sebelum masuk rute) status-nya TIDAK dimundurkan.
       prisma.job.updateMany({
         where: { routeId: route.id },
-        data: { driverId: route.driverId, vehicleId: route.vehicleId },
+        // helperId ikut disalin (D-077) — DULU cuma driverId/vehicleId,
+        // helper WAJIB diisi manual satu-satu di Penjadwalan walau rutenya
+        // sendiri sudah lengkap. Sekarang Route otoritas PENUH begitu
+        // diterbitkan, konsisten dengan guard PATCH /jobs/:id yang menolak
+        // job ber-routeId diubah driver/helper/vehicle-nya lewat Penjadwalan.
+        data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
       }),
       prisma.job.updateMany({
         where: { routeId: route.id, status: "UNSCHEDULED" },
@@ -1553,8 +1567,13 @@ armadaRouter.patch("/route/reorder", requirePermission(P.JOB_WRITE), async (req,
     if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
     if (!Array.isArray(jobIds) || jobIds.length === 0) throw new ArmadaError("jobIds wajib diisi");
 
+    // `routeId: null` (D-077) — job yang sudah masuk Route diurutkan LEWAT
+    // Route Planner (PATCH /routes/:id/jobs, menulis `sequence` yang sama),
+    // BUKAN lewat sini. Tanpa filter ini, drag-drop di Penjadwalan bisa
+    // menimpa urutan yang baru saja disusun dispatcher di Route Planner —
+    // dua fitur menulis kolom `sequence` yang sama tanpa saling tahu.
     const group = await prisma.job.findMany({
-      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES } },
+      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES }, routeId: null },
       select: { id: true },
     });
     const groupIds = new Set(group.map((j) => j.id));
@@ -1583,8 +1602,14 @@ armadaRouter.get("/route/summary", requirePermission(P.JOB_READ), async (req, re
     if (!date) throw new ArmadaError("date wajib diisi");
     if (!["PICKUP", "DELIVERY"].includes(type)) throw new ArmadaError("type wajib PICKUP atau DELIVERY");
 
+    // `routeId: null` (D-077) — endpoint ini dipakai DriverRouteGroup di
+    // Penjadwalan, yang sejak D-077 cuma menampilkan+mengurutkan job yang
+    // BELUM masuk Route (job yang sudah dirutekan punya jarak/durasi
+    // sendiri dari Route.plannedDistanceKm/plannedDurationMin, dihitung
+    // saat diterbitkan — lihat POST /routes/:id/publish). Tanpa filter ini,
+    // job routed & non-routed tercampur satu ringkasan yang membingungkan.
     const jobs = await prisma.job.findMany({
-      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES } },
+      where: { driverId, type, scheduledDate: toDateOnly(date), status: { in: ACTIVE_JOB_STATUSES }, routeId: null },
       include: jobInclude,
       orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
     });
@@ -1766,6 +1791,24 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
     const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes, estimatedDurationMinutes } = req.body;
+
+    // SATU SKEMA PENUGASAN (D-077, 4 September 2026) — laporan owner:
+    // driver+helper+kendaraan dulu bisa diisi 2 JALUR berbeda (langsung di
+    // sini, ATAU di level Route lalu diterbitkan) yang saling menimpa diam-
+    // diam saat publish. Sekarang: begitu job punya routeId, Route jadi
+    // SATU-SATUNYA otoritas untuk ketiga field itu — endpoint ini MENOLAK
+    // (bukan cuma UI yang menyembunyikan tombol) perubahan driverId/
+    // helperId/vehicleId untuk job yang sudah masuk rute. Job TANPA
+    // routeId (belum masuk rute manapun) tetap bebas diubah langsung di
+    // sini seperti sebelumnya — jalur cepat untuk kasus 1 stop sederhana
+    // TIDAK dihilangkan, cuma tidak lagi bisa tabrakan dengan Route Planner.
+    if (existing.routeId && (driverId !== undefined || helperId !== undefined || vehicleId !== undefined)) {
+      const route = await prisma.route.findUnique({ where: { id: existing.routeId }, select: { code: true } });
+      throw new ArmadaError(
+        `Job ini sudah masuk rute ${route?.code || "?"} — driver/helper/kendaraan diatur di Route Planner, bukan di sini.`
+      );
+    }
+
     const data = {};
     if (scheduledDate !== undefined) data.scheduledDate = toDateOnly(scheduledDate);
     if (driverId !== undefined) data.driverId = driverId || null;

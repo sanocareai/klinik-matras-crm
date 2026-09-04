@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Truck } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
@@ -18,7 +18,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // konteks nyata (satu kasur king vs single beda ruang sebenarnya, kapasitas
 // slot ini masih perkiraan kasar) — sistem menandai, manusia memutuskan.
 export default function RouteCard({
-  route, drivers, vehicles, draggingJobId,
+  route, drivers, vehicles, helpers = [], draggingJobId,
   onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize,
 }) {
   const [dragOverIdx, setDragOverIdx] = useState(null);
@@ -109,6 +109,21 @@ export default function RouteCard({
               ariaLabel={`Driver untuk ${route.code}`}
               triggerClassName="w-full max-w-none"
             />
+            {/* Helper (D-077, 4 September 2026) — DULU cuma driver+kendaraan
+                di sini, helper wajib diisi manual per-job di Penjadwalan
+                setelah rute diterbitkan (2 skema penugasan terpisah,
+                laporan owner). Sekarang satu tempat, satu skema: driver,
+                helper, kendaraan semua diatur DI SINI, ikut disalin ke
+                setiap job saat "Terbitkan" (lihat POST /routes/:id/publish). */}
+            <FilterDropdown
+              value={route.helperId || ""}
+              onChange={(id) => jalankan(() => onAssign(route, { helperId: id || null }))}
+              options={helpers.map((h) => ({ value: h.id, label: h.name }))}
+              placeholder="Pilih helper (opsional)…"
+              icon={Users}
+              ariaLabel={`Helper untuk ${route.code}`}
+              triggerClassName="w-full max-w-none"
+            />
             <FilterDropdown
               value={route.vehicleId || ""}
               onChange={(id) => jalankan(() => onAssign(route, { vehicleId: id || null }))}
@@ -121,7 +136,8 @@ export default function RouteCard({
           </>
         ) : (
           <div className="text-[11.5px] text-ink2">
-            {route.driver?.name || "Tanpa driver"} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
+            {route.driver?.name || "Tanpa driver"}
+            {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
           </div>
         )}
 
