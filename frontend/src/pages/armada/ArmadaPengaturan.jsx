@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2 } from "lucide-react";
+import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2, Trash2 } from "lucide-react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
+import Avatar from "@/components/Avatar.jsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
@@ -60,6 +63,24 @@ import { formatRupiah } from "@/utils/format.js";
 // butuh komponen terpisah (pola sama dengan foto job driver) dan ditunda
 // supaya pencatatan dasarnya bisa langsung dipakai hari ini. receiptUrl/
 // photoUrls tetap ada di skema, tinggal disambungkan nanti.
+//
+// REDESIGN + HAPUS KENDARAAN (D-088, 5 September 2026) — laporan owner:
+// "ui masih yang lama, redesign semua", "bisa delete armada atau mobil
+// yang udah ditambah/didaftarkan".
+// 1. SEMUA <input type="date"> NATIVE (gaya browser mm/dd/yyyy — sumber
+//    utama kesan "UI lama", satu-satunya halaman Delivery yang masih
+//    begini setelah D-081/D-082 menyapu bersih yang lain) diganti
+//    DatePicker (components/ui/date-picker.jsx) — komponen yang SAMA
+//    dipakai Route Planner/Dashboard/dst.
+// 2. Avatar-forward untuk Driver (konsisten dengan pola avatar-forward di
+//    Semua Order/Jadwal & Penugasan) & Badge status yang sama dipakai
+//    kolom Status di Semua Order — bukan warna hardcode lokal lagi.
+// 3. Tombol Hapus per kendaraan (DELETE /armada/vehicles/:id, BARU) —
+//    backend menolak dengan pesan jelas kalau kendaraan sudah punya
+//    riwayat (job/rute/biaya/servis/insiden), menyarankan ubah status ke
+//    "Nonaktif" saja (opsi yang SUDAH ADA di dropdown status, bukan fitur
+//    baru) alih-alih memaksa hapus permanen yang akan menghilangkan
+//    riwayat finansial/insiden.
 
 const TABS = [
   { key: "driver",  label: "Driver",  Icon: User },
@@ -223,7 +244,7 @@ function InfoTab({ vehicle, drivers, onSaved }) {
         <Field label="Tipe Kendaraan" required><Input value={form.type} onChange={set("type")} placeholder="Box / Pickup / Van" /></Field>
         <Field label="Kapasitas (slot unit)"><Input type="number" min="1" value={form.capacitySlots} onChange={set("capacitySlots")} /></Field>
         <Field label="Odometer Sekarang (km)"><Input type="number" min="0" value={form.mileageKm} onChange={set("mileageKm")} /></Field>
-        <Field label="Servis Berikutnya"><input type="date" className={inputCls} value={form.nextServiceDate} onChange={set("nextServiceDate")} /></Field>
+        <Field label="Servis Berikutnya"><DatePicker value={form.nextServiceDate} onChange={(v) => setForm((f) => ({ ...f, nextServiceDate: v }))} placeholder="Belum dijadwalkan" /></Field>
         <Field label="Catatan" className="col-span-2"><Input value={form.notes} onChange={set("notes")} placeholder="Opsional" /></Field>
       </div>
 
@@ -243,11 +264,11 @@ function InfoTab({ vehicle, drivers, onSaved }) {
         <h4 className="mb-3 text-[12.5px] font-bold text-ink">Dokumen &amp; Masa Berlaku</h4>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Nomor STNK"><Input value={form.stnkNumber} onChange={set("stnkNumber")} /></Field>
-          <Field label="STNK berlaku s/d"><input type="date" className={inputCls} value={form.stnkExpiry} onChange={set("stnkExpiry")} /></Field>
-          <Field label="Pajak tahunan s/d"><input type="date" className={inputCls} value={form.taxExpiry} onChange={set("taxExpiry")} /></Field>
-          <Field label="KIR s/d"><input type="date" className={inputCls} value={form.kirExpiry} onChange={set("kirExpiry")} /></Field>
+          <Field label="STNK berlaku s/d"><DatePicker value={form.stnkExpiry} onChange={(v) => setForm((f) => ({ ...f, stnkExpiry: v }))} placeholder="Belum diisi" /></Field>
+          <Field label="Pajak tahunan s/d"><DatePicker value={form.taxExpiry} onChange={(v) => setForm((f) => ({ ...f, taxExpiry: v }))} placeholder="Belum diisi" /></Field>
+          <Field label="KIR s/d"><DatePicker value={form.kirExpiry} onChange={(v) => setForm((f) => ({ ...f, kirExpiry: v }))} placeholder="Belum diisi" /></Field>
           <Field label="No. Polis Asuransi"><Input value={form.insurancePolicy} onChange={set("insurancePolicy")} /></Field>
-          <Field label="Asuransi s/d"><input type="date" className={inputCls} value={form.insuranceExpiry} onChange={set("insuranceExpiry")} /></Field>
+          <Field label="Asuransi s/d"><DatePicker value={form.insuranceExpiry} onChange={(v) => setForm((f) => ({ ...f, insuranceExpiry: v }))} placeholder="Belum diisi" /></Field>
         </div>
       </div>
 
@@ -388,7 +409,11 @@ function BiayaTab({ vehicle, drivers }) {
             <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
           </div>
         )}
-        <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+        {/* allowFuture={false} — biaya adalah pengeluaran yang SUDAH terjadi,
+            tidak masuk akal dicatat untuk tanggal masa depan (beda dari
+            "Servis Berikutnya"/dokumen di InfoTab yang justru butuh
+            tanggal ke depan). */}
+        <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} placeholder="Pilih tanggal" allowFuture={false} /></Field>
         <Field label="Kategori">
           <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
             {Object.entries(EXPENSE_CATEGORIES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -513,7 +538,7 @@ function ServisTab({ vehicle }) {
             <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
           </div>
         )}
-        <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+        <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} placeholder="Pilih tanggal" allowFuture={false} /></Field>
         <Field label="Jenis">
           <select className={inputCls} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
             {Object.entries(SERVICE_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -523,7 +548,7 @@ function ServisTab({ vehicle }) {
         <Field label="Biaya (Rp)" required><Input type="number" min="0" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
         <Field label="Bengkel"><Input value={form.workshop} onChange={(e) => setForm((f) => ({ ...f, workshop: e.target.value }))} /></Field>
         <Field label="Servis berikutnya (km)"><Input type="number" value={form.nextServiceKm} onChange={(e) => setForm((f) => ({ ...f, nextServiceKm: e.target.value }))} /></Field>
-        <Field label="Servis berikutnya (tanggal)"><input type="date" className={inputCls} value={form.nextServiceDate} onChange={(e) => setForm((f) => ({ ...f, nextServiceDate: e.target.value }))} /></Field>
+        <Field label="Servis berikutnya (tanggal)"><DatePicker value={form.nextServiceDate} onChange={(v) => setForm((f) => ({ ...f, nextServiceDate: v }))} placeholder="Opsional" /></Field>
         <Field label="Dokumentasi" className="col-span-3">
           <ReceiptPicker url={form.receiptUrl} onChange={(url) => setForm((f) => ({ ...f, receiptUrl: url || "" }))} />
         </Field>
@@ -676,7 +701,7 @@ function InsidenTab({ vehicle, drivers }) {
             <Pencil size={12} /> Mengedit insiden — <button type="button" onClick={batalEdit} className="underline">batal</button>
           </div>
         )}
-        <Field label="Tanggal" required><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+        <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} placeholder="Pilih tanggal" allowFuture={false} /></Field>
         <Field label="Supir">
           <select className={inputCls} value={form.driverId} onChange={(e) => setForm((f) => ({ ...f, driverId: e.target.value }))}>
             <option value="">— Pilih —</option>
@@ -771,6 +796,16 @@ function VehicleDetailModal({ vehicle, drivers, onOpenChange, onSaved }) {
     >
       {vehicle && (
         <Tabs defaultValue="info">
+          {/* Strip ringkasan (D-088) — sebelumnya modal langsung lompat ke
+              form tanpa gambaran cepat kondisi kendaraan sekarang, harus
+              baca satu-satu field di tab Info untuk tahu status/kapasitas/
+              PIC-nya. */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-ink2">
+            <StatusBadge map={VEHICLE_STATUS_REAL} value={vehicle.status} />
+            <span>{vehicle.capacitySlots} slot</span>
+            {vehicle.picDriver?.name && <span>PIC: {vehicle.picDriver.name}</span>}
+            {vehicle.mileageKm != null && <span>{vehicle.mileageKm.toLocaleString("id-ID")} km</span>}
+          </div>
           <TabsList>
             <TabsTrigger value="info"><Info size={13} /> Info &amp; Dokumen</TabsTrigger>
             <TabsTrigger value="biaya"><Wallet size={13} /> Biaya</TabsTrigger>
@@ -816,7 +851,11 @@ function DriverTab() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+        <h3 className="text-[13px] font-bold text-ink">Daftar Driver</h3>
+        {drivers && <span className="ml-auto text-[11.5px] text-ink3">{drivers.length} driver</span>}
+      </div>
       {loading ? (
         <div className="p-4"><TableSkeletonRows rows={4} cols={3} /></div>
       ) : drivers.length === 0 ? (
@@ -829,13 +868,22 @@ function DriverTab() {
         <TableWrap>
           <Table>
             <THead>
-              <TR><TH>Nama</TH><TH>Job Terkait</TH></TR>
+              <TR><TH>Nama</TH><TH numeric>Job Terkait</TH></TR>
             </THead>
             <TBody>
               {drivers.map((d) => (
                 <TR key={d.id}>
-                  <TD className="font-semibold text-ink">{d.name}</TD>
-                  <TD numeric>{jobCounts[d.id] || 0}</TD>
+                  <TD className="font-semibold text-ink">
+                    <span className="flex items-center gap-2">
+                      <Avatar name={d.name} size="sm" gradient className="h-7 w-7 shrink-0 text-[10px]" />
+                      {d.name}
+                    </span>
+                  </TD>
+                  <TD numeric>
+                    {jobCounts[d.id] > 0
+                      ? <Badge variant="accent">{jobCounts[d.id]} job</Badge>
+                      : <span className="text-ink3">—</span>}
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -892,6 +940,27 @@ function VehicleTab() {
     }
   }
 
+  // Hapus PERMANEN (D-088) — backend menolak sendiri (pesan jelas, lihat
+  // routes/armada.js) kalau kendaraan sudah punya riwayat job/rute/biaya/
+  // servis/insiden. Tombolnya SELALU ada (bukan disembunyikan berdasar
+  // tebakan frontend "kendaraan ini kelihatannya sudah dipakai atau
+  // belum") — backend yang tahu pasti, pesan errornya sendiri sudah
+  // menjelaskan alternatifnya (ubah status ke Nonaktif).
+  const [deletingId, setDeletingId] = useState(null);
+  async function hapusKendaraan(vehicle) {
+    if (!confirm(`Hapus kendaraan ${vehicle.plateNumber} secara PERMANEN? Tindakan ini tidak bisa dibatalkan.`)) return;
+    setDeletingId(vehicle.id);
+    try {
+      await api.deleteVehicle(vehicle.id);
+      if (detailVehicleId === vehicle.id) setDetailVehicleId(null);
+      load();
+    } catch (err) {
+      alert("Gagal menghapus: " + err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   // Dokumen mana yang paling mendesak per kendaraan — dipakai badge di tabel.
   function dokumenTerdekat(v) {
     const cek = [
@@ -937,7 +1006,14 @@ function VehicleTab() {
                   const dok = dokumenTerdekat(v);
                   return (
                     <TR key={v.id}>
-                      <TD className="font-semibold text-ink">{v.plateNumber}</TD>
+                      <TD className="font-semibold text-ink">
+                        <span className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accentbg text-accent">
+                            <TruckIcon size={13} />
+                          </span>
+                          {v.plateNumber}
+                        </span>
+                      </TD>
                       <TD className="text-ink2">{[v.brand, v.model].filter(Boolean).join(" ") || v.type}</TD>
                       <TD className="text-ink2">{v.picDriver?.name || "—"}</TD>
                       <TD numeric>{v.capacitySlots} slot</TD>
@@ -958,9 +1034,21 @@ function VehicleTab() {
                         ) : <span className="text-ink3">—</span>}
                       </TD>
                       <TD>
-                        <button type="button" className="text-[11.5px] font-semibold text-accent hover:underline" onClick={() => setDetailVehicleId(v.id)}>
-                          Detail
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button type="button" className="text-[11.5px] font-semibold text-accent hover:underline" onClick={() => setDetailVehicleId(v.id)}>
+                            Detail
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => hapusKendaraan(v)}
+                            disabled={deletingId === v.id}
+                            aria-label={`Hapus ${v.plateNumber}`}
+                            title="Hapus kendaraan"
+                            className="text-ink3 transition-colors hover:text-red disabled:opacity-40"
+                          >
+                            {deletingId === v.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                          </button>
+                        </div>
                       </TD>
                     </TR>
                   );

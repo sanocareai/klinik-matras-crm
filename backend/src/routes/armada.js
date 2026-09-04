@@ -553,6 +553,52 @@ armadaRouter.patch("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req
   }
 });
 
+// DELETE /armada/vehicles/:id (D-088, 5 September 2026) — laporan owner:
+// "bisa delete armada atau mobil yang udah ditambah/didaftarkan". BELUM ADA
+// jalur menghapus kendaraan sama sekali sebelum ini (cuma create+update) —
+// kendaraan uji coba/salah input menumpuk selamanya di daftar.
+//
+// HAPUS PERMANEN hanya kalau kendaraan ini BENAR-BENAR belum pernah dipakai
+// (nol job/rute/biaya/servis/insiden) — VehicleExpense/Service/Incident
+// SENGAJA `onDelete: Restrict` di schema (lihat komentar di sana: riwayat
+// finansial/insiden tidak boleh hilang diam-diam kalau kendaraannya
+// dihapus), jadi Prisma akan menolak sendiri kalau salah satu itu masih
+// ada — DICEK EKSPLISIT di sini dulu supaya pesannya jelas ("kendaraan ini
+// punya riwayat, nonaktifkan saja") alih-alih error Prisma mentah yang
+// membingungkan dispatcher. Job/Route pakai `SetNull` (boleh dihapus,
+// referensinya cuma dikosongkan) — TETAP ikut dihitung di sini karena
+// kehilangan "kendaraan mana yang dulu mengerjakan job ini" adalah
+// kehilangan jejak riwayat juga, walau secara teknis DB mengizinkannya.
+armadaRouter.delete("/vehicles/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+    if (!vehicle) return res.status(404).json({ error: "Kendaraan tidak ditemukan" });
+
+    const [jobCount, routeCount, expenseCount, serviceCount, incidentCount] = await Promise.all([
+      prisma.job.count({ where: { vehicleId: vehicle.id } }),
+      prisma.route.count({ where: { vehicleId: vehicle.id } }),
+      prisma.vehicleExpense.count({ where: { vehicleId: vehicle.id } }),
+      prisma.vehicleService.count({ where: { vehicleId: vehicle.id } }),
+      prisma.vehicleIncident.count({ where: { vehicleId: vehicle.id } }),
+    ]);
+    const totalRiwayat = jobCount + routeCount + expenseCount + serviceCount + incidentCount;
+    if (totalRiwayat > 0) {
+      throw new ArmadaError(
+        `Kendaraan ${vehicle.plateNumber} sudah punya riwayat (${[
+          jobCount && `${jobCount} job`, routeCount && `${routeCount} rute`,
+          expenseCount && `${expenseCount} biaya`, serviceCount && `${serviceCount} servis`,
+          incidentCount && `${incidentCount} insiden`,
+        ].filter(Boolean).join(", ")}) — tidak bisa dihapus permanen. Ubah statusnya ke "Nonaktif" saja lewat dropdown status, riwayatnya tetap tersimpan.`
+      );
+    }
+
+    await prisma.vehicle.delete({ where: { id: vehicle.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // ═══ D-035: BIAYA, SERVIS, INSIDEN KENDARAAN ═══════════════════════════════
 //
 // PERMISSION: mencatat butuh ROUTE_WRITE (dispatcher/admin), membaca butuh

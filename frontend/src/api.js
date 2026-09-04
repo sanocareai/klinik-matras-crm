@@ -172,6 +172,9 @@ export const api = {
   getVehicles: (status) => request(`/armada/vehicles${status ? `?status=${status}` : ""}`),
   createVehicle: (data) => request("/armada/vehicles", { method: "POST", body: JSON.stringify(data) }),
   updateVehicle: (id, data) => request(`/armada/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // D-088 — hapus PERMANEN, backend menolak (pesan jelas) kalau kendaraan
+  // sudah punya riwayat job/rute/biaya/servis/insiden.
+  deleteVehicle: (id) => request(`/armada/vehicles/${id}`, { method: "DELETE" }),
 
   // Biaya/servis/insiden kendaraan (D-035)
   getVehicleExpenses: (params = {}) => request(`/armada/expenses${buildQuery(params)}`),
