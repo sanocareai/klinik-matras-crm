@@ -1047,8 +1047,18 @@ export default function Orders() {
               // (Diproses/Siap Kirim/Terkirim) — lihat KANBAN_BUCKETS &
               // kanbanBucket() di atas.
               const kolomKategori = fKategori === "SEWA" ? SEWA_KANBAN_STATUSES : KANBAN_BUCKETS;
+              // Order SEWA LAMA (dibuat sebelum 4 Sep 2026, sebelum status
+              // SEWA_DIKIRIM/SEWA_DIAMBIL ada) masih menyimpan status GRANULAR
+              // lama (PENDING/PICKUP/PROCESSING/READY/DELIVERED) — TIDAK
+              // dibackfill (tidak ada cara tahu pasti "masih dipakai" vs
+              // "sudah diambil" tanpa menebak). Supaya order lama ini TIDAK
+              // hilang dari papan, "DELIVERED lama" (barang sudah sampai ke
+              // customer — definisinya sama persis dgn "Pengiriman") masuk
+              // kolom SEWA_DIKIRIM; sisanya (belum sempat terkirim) juga
+              // masuk situ, cuma CANCELLED yang tetap kolomnya sendiri.
+              const legacySewaBucket = (status) => (status === "CANCELLED" ? "CANCELLED" : "SEWA_DIKIRIM");
               const groupFn = fKategori === "SEWA"
-                ? (o) => o.status
+                ? (o) => (SEWA_KANBAN_STATUSES.includes(o.status) ? o.status : legacySewaBucket(o.status))
                 : (o) => kanbanBucket(o.status);
               return kolomKategori
                 .map((status) => ({ status, kolom: items.filter((o) => groupFn(o) === status) }))
