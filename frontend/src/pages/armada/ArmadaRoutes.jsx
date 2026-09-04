@@ -136,19 +136,12 @@ export default function ArmadaRoutes() {
     await terapkanUrutan(route, idsBaru);
   }
 
-  // Bulk add (D-058, 4 September 2026) — laporan owner: hari ramai, drag
-  // job satu-satu ke rute terasa lambat. Dispatcher centang beberapa job di
-  // panel kiri (UnroutedJobsPanel), pilih SATU rute tujuan, satu tombol
-  // menambahkan semuanya sekaligus. Reuse terapkanUrutan (PATCH set-jobs
-  // yang sama dipakai drag manual) — bukan endpoint baru, cuma dipanggil
-  // dengan daftar id yang lebih panjang dalam satu request.
-  async function tambahBanyakKeRute(routeId, jobIds) {
-    const route = (routes || []).find((r) => r.id === routeId);
-    if (!route) return;
-    const idsSaatIni = (route.jobs || []).slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => j.id);
-    const idsBaru = [...idsSaatIni, ...jobIds.filter((id) => !idsSaatIni.includes(id))];
-    await terapkanUrutan(route, idsBaru);
-  }
+  // Bulk add (D-058) DIHAPUS (D-068, 4 September 2026) — laporan owner:
+  // drag-and-drop saja sudah cukup, jalur checkbox+dropdown+tombol
+  // "Tambahkan" cuma nambah langkah untuk hal yang bisa langsung diseret.
+  // Setiap job sekarang HANYA draggable ke RouteCard mana pun yang masih
+  // DRAFT (guard `isDraft` di RouteCard.jsx sendiri) — lihat
+  // UnroutedJobsPanel.jsx untuk detailnya.
 
   async function urutkanUlang(route, jobId, indexBaru) {
     const idsSaatIni = (route.jobs || []).slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => j.id);
@@ -338,8 +331,6 @@ export default function ArmadaRoutes() {
               draggingId={draggingJobId}
               onDragStart={(j) => setDraggingJobId(j.id)}
               onDragEnd={() => setDraggingJobId(null)}
-              draftRoutes={(routes || []).filter((r) => r.status === "DRAFT")}
-              onBulkAdd={tambahBanyakKeRute}
             />
           </div>
         </div>
