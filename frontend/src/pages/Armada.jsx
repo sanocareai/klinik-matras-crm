@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, Loader2, Package, Plus, Truck, User, X, MapPin, Trash2,
+  AlertTriangle, Loader2, Package, Truck, User, X, MapPin, Trash2,
   ArrowUp, ArrowDown, Navigation, Route, Lock,
 } from "lucide-react";
 import { api } from "../api.js";
@@ -9,11 +9,10 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
-import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import AssignDropdown from "@/features/armada/components/AssignDropdown.jsx";
+import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import DriverJobs from "./DriverJobs.jsx";
 import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
 
@@ -25,7 +24,11 @@ import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
 // mengirim — setiap hari ada jalur PENGAMBILAN juga (workflow Gilang,
 // 31 Juli 2026), jadi dua tab terpisah, bukan satu daftar campur.
 
-function todayWibISO() {
+// Diekspor (D-080, 5 September 2026) — ArmadaJobs.jsx (mode Daftar) ikut
+// memakainya supaya default tanggal SAMA dengan mode Papan ("satu tanggal
+// pasti, hari ini", bukan "Semua tanggal" nullable seperti sebelumnya).
+// Lihat DeliveryPageHero.jsx untuk konteks penyatuan header kedua mode.
+export function todayWibISO() {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
@@ -640,73 +643,45 @@ export default function Armada() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Delivery & Fulfillment"
-        subtitle="Penjadwalan armada, rute, dan proof of delivery."
-        actions={
-          <div className="flex items-center gap-2">
-            {/* DatePicker menggantikan native <input type="date"> (D-053,
-                4 September 2026) — komponen ini dibangun 31 Agustus 2026
-                justru untuk kasus persis ini (lihat komentarnya sendiri:
-                "gaya browser mm/dd/yyyy... jelek banget") dan sudah dipakai
-                filter tanggal ArmadaJobs/ArmadaDashboard, tapi header Papan
-                ini terlewat migrasinya. `allowFuture` default true di
-                komponennya sudah cocok (job dijadwalkan ke depan). */}
-            <DatePicker value={date} onChange={setDate} placeholder="Pilih tanggal" />
-            <Button onClick={() => setCreating((v) => !v)} className="h-10">
-              <Plus className="h-4 w-4" /> Buat Job
-            </Button>
-          </div>
-        }
+      {/* Header+hero SATU KOMPONEN dipakai mode Daftar juga (D-080) — lihat
+          DeliveryPageHero.jsx untuk konteks lengkap penyatuan. Angka `stats`
+          di bawah TETAP dihitung dari board yang sedang tampil (data nyata
+          endpoint /armada/board) — komponen cuma membungkus tampilan,
+          bukan mengubah sumber datanya. Kalau board belum termuat, `stats`
+          array kosong -> hero tidak dirender sama sekali (lihat guard di
+          DeliveryPageHero). */}
+      <DeliveryPageHero
+        date={date}
+        onDateChange={setDate}
+        onCreateJob={() => setCreating((v) => !v)}
+        health={board && (
+          board.available.length > 0
+            ? { label: `${board.available.length} unit belum dijadwalkan`, tone: "warn" }
+            : { label: "Semua unit terjadwal", tone: "ok" }
+        )}
+        stats={board ? [
+          {
+            label: type === "PICKUP" ? "Job pengambilan" : "Job pengiriman",
+            value: board.jobs.length,
+            hint: date,
+          },
+          {
+            label: "Sudah ada driver",
+            value: board.jobs.filter((j) => j.driverId).length,
+            hint: `dari ${board.jobs.length} job`,
+          },
+          {
+            label: "Selesai",
+            value: board.jobs.filter((j) => j.status === "COMPLETED").length,
+            hint: "hari ini",
+          },
+          {
+            label: "Menunggu jadwal",
+            value: board.available.length,
+            hint: type === "PICKUP" ? "unit siap diambil" : "unit siap dikirim",
+          },
+        ] : []}
       />
-
-      {/* Command center — SEMUA angka dihitung dari board yang sedang tampil
-          (data nyata endpoint /armada/board), bukan contoh. Kalau board belum
-          termuat, komponen ini tidak dirender sama sekali. */}
-      {board && (
-        <div className="mb-5">
-          <WorkspaceHero
-            // "blue" (D-053, 4 September 2026) — SEBELUMNYA "emerald",
-            // warisan sebelum Delivery Hub mengunci biru sebagai identitas
-            // divisi (D-045..D-051, lihat styles/delivery-dark.css). Hijau
-            // di sini membuat Papan terasa seperti divisi lain (Bengkel=amber,
-            // Gudang=sky, Kendali=violet — pola warna per-divisi yang
-            // DISENGAJA di seluruh app), padahal ini SATU divisi yang sama
-            // dengan Dashboard. Cuma prop tone yang berubah, komponennya
-            // sendiri tetap dipakai bersama Bengkel/Gudang/Kendali.
-            tone="blue"
-            title="Delivery command center"
-            subtitle="Pantau jadwal pengambilan & pengiriman hari ini, penugasan driver, dan unit yang belum masuk job."
-            health={
-              board.available.length > 0
-                ? { label: `${board.available.length} unit belum dijadwalkan`, tone: "warn" }
-                : { label: "Semua unit terjadwal", tone: "ok" }
-            }
-            stats={[
-              {
-                label: type === "PICKUP" ? "Job pengambilan" : "Job pengiriman",
-                value: board.jobs.length,
-                hint: date,
-              },
-              {
-                label: "Sudah ada driver",
-                value: board.jobs.filter((j) => j.driverId).length,
-                hint: `dari ${board.jobs.length} job`,
-              },
-              {
-                label: "Selesai",
-                value: board.jobs.filter((j) => j.status === "COMPLETED").length,
-                hint: "hari ini",
-              },
-              {
-                label: "Menunggu jadwal",
-                value: board.available.length,
-                hint: type === "PICKUP" ? "unit siap diambil" : "unit siap dikirim",
-              },
-            ]}
-          />
-        </div>
-      )}
 
       {roles.includes("ADMIN") && <DriverGroupSettings />}
 

@@ -2,17 +2,17 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation } from "lucide-react";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { PageContainer, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
-import DatePicker from "@/components/ui/date-picker.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { rolesOf } from "@/lib/roles.js";
-import Armada from "@/pages/Armada.jsx";
+import Armada, { todayWibISO } from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
+import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
 import {
@@ -37,6 +37,19 @@ import {
 // dengan backend nyata. Menggantinya dengan tabel baru berarti membuang alur
 // kerja yang sudah jalan demi tampilan. Tabel MENAMBAH cara melihat, bukan
 // mengganti cara bekerja.
+//
+// KONSISTENSI PAPAN/DAFTAR (D-080, 5 September 2026) — laporan owner: "buat
+// mode papan dan list sama-sama seperti ini konsisten [screenshot Papan],
+// cuman tinggal ubah tanggal agar selaras dengan yang lain". Sebelum ini
+// mode Daftar me-render PageHeader-nya SENDIRI ("Jadwal & Penugasan", tanpa
+// hero) — beda TOTAL dari Papan ("Delivery & Fulfillment" + hero "Delivery
+// command center"), padahal keduanya SATU workspace yang sama. Sekarang
+// keduanya memakai <DeliveryPageHero> yang SAMA PERSIS (lihat komponen itu
+// untuk detail) — cuma isi `stats`-nya beda (Papan dari board per tipe,
+// Daftar dari daftar job hasil filter yang sedang tampil). Tanggal juga
+// disamakan: default sekarang SELALU hari ini (`todayWibISO()`, diimpor
+// dari Armada.jsx) — sebelumnya default kosong ("Semua tanggal"), beda
+// perilaku dari Papan yang dari awal selalu satu tanggal pasti.
 //
 // Tampilan Kalender (spesifikasi) BELUM ada — butuh komponen kalender bulanan
 // yang menempatkan job per tanggal; dijadwalkan bersama Route Planner Tahap 3,
@@ -84,7 +97,12 @@ export default function ArmadaJobs() {
   const [tab, setTab] = useState("all");
   const [cari, setCari] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [tanggal, setTanggal] = useState("");
+  // Default hari ini (D-080) — SEBELUMNYA "" ("Semua tanggal"), beda
+  // perilaku dari mode Papan yang dari awal selalu satu tanggal pasti.
+  // DatePicker sendiri tidak punya tombol hapus nilai — dispatcher yang
+  // memang mau lihat semua tanggal tetap bisa lewat tombol "Reset" di
+  // bawah (sudah ada, mengosongkan tanggal bersama filter lain sekaligus).
+  const [tanggal, setTanggal] = useState(todayWibISO());
   const [fStatus, setFStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
 
@@ -187,11 +205,12 @@ export default function ArmadaJobs() {
     </div>
   );
 
-  // Mode PAPAN: <Armada /> merender PageContainer + PageHeader-NYA SENDIRI.
-  // Membungkusnya lagi di PageContainer milik halaman ini akan menghasilkan
-  // padding dan max-width GANDA (konten menyempit dua kali). Jadi di mode ini
-  // halaman ini hanya menyisipkan pemilih tampilan di atasnya, lalu
-  // menyerahkan seluruh sisanya ke Armada apa adanya.
+  // Mode PAPAN: <Armada /> merender PageContainer + header-NYA SENDIRI
+  // (DeliveryPageHero, sama komponen dengan yang dipakai mode Daftar di
+  // bawah — lihat D-080). Membungkusnya lagi di PageContainer milik halaman
+  // ini akan menghasilkan padding dan max-width GANDA (konten menyempit dua
+  // kali). Jadi di mode ini halaman ini hanya menyisipkan pemilih tampilan
+  // di atasnya, lalu menyerahkan seluruh sisanya ke Armada apa adanya.
   // Driver: langsung ke layar kerjanya sendiri ("Job Saya" + <DriverJobs />
   // di dalam Armada.jsx), tanpa pemilih tampilan dispatcher.
   if (driverOnly) return <Armada />;
@@ -216,13 +235,40 @@ export default function ArmadaJobs() {
     );
   }
 
+  // Stats hero mode Daftar (D-080) — angka NYATA dari `jobs` hasil filter
+  // yang SEDANG tampil (bukan sumber yang sama dengan board Papan — lihat
+  // catatan panjang di DeliveryPageHero.jsx soal ini SENGAJA beda sumber,
+  // cuma sama bentuk). `jobsAktif` mengecualikan riwayat (COMPLETED/FAILED)
+  // supaya "belum ada driver" tidak ikut menghitung job lama yang memang
+  // tidak akan pernah dapat driver lagi (riwayat backfill, lihat catatan
+  // `historis` di render kartu di bawah).
+  const jobsAktif = (jobs || []).filter((j) => !["COMPLETED", "FAILED"].includes(j.status));
+  const tanpaDriver = jobsAktif.filter((j) => !j.driverId).length;
+  const labelJenis = tab === "PICKUP" ? "Job pengambilan" : tab === "DELIVERY" ? "Job pengiriman" : "Job ditampilkan";
+
   return (
-    <PageContainer>
-      <PageHeader
-        title="Jadwal &amp; Penugasan"
-        subtitle="Seluruh job pengambilan dan pengiriman, beserta driver dan armadanya."
-        actions={toggle}
-      />
+    <>
+      {/* Sama posisi (X & Y) dengan toggle di mode Papan — lihat komentar
+          D-053 di atas untuk kenapa ini penting, sekarang ditegakkan di
+          KEDUA mode, bukan cuma salah satu. */}
+      <div className="mx-auto flex w-full max-w-[1400px] justify-end px-4 pt-4 md:px-8">{toggle}</div>
+      <PageContainer>
+        <DeliveryPageHero
+          date={tanggal}
+          onDateChange={setTanggal}
+          onCreateJob={() => gantiView("board")}
+          health={jobs && (
+            tanpaDriver > 0
+              ? { label: `${tanpaDriver} job belum ada driver`, tone: "warn" }
+              : { label: "Semua job sudah ada driver", tone: "ok" }
+          )}
+          stats={jobs ? [
+            { label: labelJenis, value: jobs.length, hint: tanggal },
+            { label: "Sudah ada driver", value: jobs.filter((j) => j.driverId).length, hint: `dari ${jobs.length} job` },
+            { label: "Selesai", value: jobs.filter((j) => j.status === "COMPLETED").length, hint: "sesuai filter" },
+            { label: "Belum ada driver", value: tanpaDriver, hint: "job aktif" },
+          ] : []}
+        />
 
       <PageBody>
           {/* Tab */}
@@ -256,7 +302,9 @@ export default function ArmadaJobs() {
               aria-label="Cari job"
               className="h-9 min-w-[200px] flex-1 rounded-btn border border-border bg-surface px-3 text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink3 focus:border-accent"
             />
-            <DatePicker value={tanggal} onChange={setTanggal} placeholder="Semua tanggal" />
+            {/* DatePicker tanggal DIHAPUS dari sini (D-080) — sudah dipindah
+                ke DeliveryPageHero di atas (satu kontrol tanggal per
+                halaman, bukan dua yang mengatur state yang sama). */}
             <FilterDropdown
               value={fStatus}
               onChange={setFStatus}
@@ -276,8 +324,16 @@ export default function ArmadaJobs() {
               icon={User}
               ariaLabel="Filter driver"
             />
-            {(cari || tanggal || fStatus || fDriver) && (
-              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setTanggal(""); setFStatus(""); setFDriver(""); }}>
+            {/* `tanggal` dibandingkan ke default (hari ini), BUKAN "truthy"
+                (D-080) — sejak defaultnya selalu terisi (todayWibISO(),
+                bukan "" lagi), syarat lama akan membuat tombol ini SELALU
+                tampil dari awal buka halaman, bukan cuma setelah user benar-
+                benar mengubah filter. Reset mengembalikan tanggal ke HARI
+                INI (default baru), bukan ke "" (Semua tanggal) — itu satu-
+                satunya cara mengosongkannya sejak DatePicker sendiri tidak
+                punya tombol hapus nilai. */}
+            {(cari || tanggal !== todayWibISO() || fStatus || fDriver) && (
+              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setTanggal(todayWibISO()); setFStatus(""); setFDriver(""); }}>
                 Reset
               </Button>
             )}
@@ -403,7 +459,8 @@ export default function ArmadaJobs() {
           </Card>
       </PageBody>
 
-      <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
-    </PageContainer>
+        <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
+      </PageContainer>
+    </>
   );
 }
