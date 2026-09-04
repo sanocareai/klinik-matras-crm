@@ -48,11 +48,12 @@ html:not([data-theme="dark"]) [data-division="armada"] {
 html:not([data-theme="dark"]) [data-division="armada"] .app-content {
   background-color: var(--dh-ground);
   background-image:
-    radial-gradient(900px 520px at 12% -8%, var(--dh-glow-accent), transparent 68%),
-    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-accent-2), transparent 70%),
+    radial-gradient(760px 560px at 8% -10%, var(--dh-glow-accent), transparent 70%),
+    radial-gradient(680px 520px at 96% 6%, var(--dh-glow-accent-2), transparent 72%),
+    radial-gradient(820px 560px at 38% 118%, rgba(29, 78, 216, 0.10), transparent 72%),
     radial-gradient(circle at 1px 1px, rgba(20, 87, 217, 0.05) 1px, transparent 0);
-  background-size: auto, auto, 34px 34px;
-  background-attachment: fixed, fixed, fixed;
+  background-size: auto, auto, auto, 34px 34px;
+  background-attachment: fixed, fixed, fixed, fixed;
 }
 
 /* Sidebar: putih kaca, BUKAN putih solid — supaya glow di belakangnya masih
@@ -70,6 +71,51 @@ html:not([data-theme="dark"]) [data-division="armada"] .app-content > header {
   background-color: rgba(255, 255, 255, 0.66) !important;
   backdrop-filter: blur(20px) saturate(140%);
   border-bottom: 1px solid var(--dh-hairline);
+}
+
+/* ── 1b/1c. CHROME SIDEBAR & TOPBAR (D-047, koreksi kedua hari yang sama) ──
+   Pasangan mode terang untuk blok yang sama di delivery-dark.css — laporan
+   owner "masih beda jauh, buat seperti artifacts" berlaku untuk KEDUA mode,
+   bukan cuma dark. Logo, pemilih workspace, footer profil, dan 3 kontrol
+   topbar (cari/lonceng/menu akun) SEBELUMNYA cuma di-skin di dark mode. */
+html:not([data-theme="dark"]) [data-division="armada"] .sidebar-brand-icon {
+  background: linear-gradient(135deg, #7CA9FF, var(--dh-accent-2)) !important;
+  box-shadow: 0 4px 14px rgba(29, 78, 216, 0.28) !important;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] .workspace-switcher-trigger {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .workspace-switcher-trigger:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
+html:not([data-theme="dark"]) [data-division="armada"] .workspace-switcher-trigger span:first-child {
+  background-color: rgba(76, 141, 255, 0.14) !important;
+  color: var(--dh-accent-2) !important;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] .sidebar-profile {
+  border-top: 1px solid var(--dh-hairline) !important;
+}
+html:not([data-theme="dark"]) [data-division="armada"] .sidebar-profile:hover {
+  background-color: var(--dh-surface) !important;
+}
+
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[aria-label^="Cari"],
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[aria-label*="otifikasi"],
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[title="Menu akun"] {
+  background-color: var(--dh-surface);
+  border: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(14px);
+}
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[aria-label^="Cari"]:hover,
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[aria-label*="otifikasi"]:hover,
+html:not([data-theme="dark"]) [data-division="armada"] .app-content > header button[title="Menu akun"]:hover {
+  background-color: var(--dh-elevated);
+  border-color: var(--dh-hairline-strong);
 }
 
 /* ── 2. KARTU: kaca + hairline + highlight tepi atas ──────────────────────

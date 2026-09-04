@@ -29,18 +29,27 @@
    terang→gelap dalam SATU hue, bukan lompat ke hue lain. Lihat juga
    styles/delivery-light.css — pasangan mode terang untuk pagar yang sama,
    ditambahkan hari yang sama (sebelumnya cuma dark mode yang digarap).
-   ═══════════════════════════════════════════════════════════════════════ */
 
+   KOREKSI KEDUA, HARI YANG SAMA (D-047) — laporan owner setelah melihat
+   hasil D-046 langsung di production: "masih beda jauh, buat seperti
+   artifacts". Penyebabnya BUKAN warna (sudah biru), tapi INTENSITAS: ground
+   `#07070B` nyaris hitam murni menenggelamkan glow-nya sendiri, dan kartu
+   `.card`/rounded-card sudah kaca tapi SHELL DI SEKITARNYA (logo sidebar,
+   pemilih workspace, footer profil, kontrol topbar) masih memakai style
+   Tailwind polos DS v2 lama (kotak flat, tanpa kaca) — jadi yang terlihat
+   cuma dashboard-nya "agak gelap", bukan seluruh chrome ikut jadi glass
+   premium seperti referensi. Bagian ini menaikkan ground jadi navy (bukan
+   nyaris-hitam) dan menambah 4 titik chrome yang tadinya terlewat. */
 [data-theme="dark"] [data-division="armada"] {
-  /* Ground SEDIKIT diangkat dari #000 murni. Hitam absolut membuat kartu
-     gelap "menempel" ke latar dan hilang kedalamannya — semua referensi
-     memakai near-black, bukan #000. */
-  --dh-ground: #07070B;
-  --dh-surface: rgba(23, 23, 30, 0.72);
-  --dh-surface-solid: #16161C;
-  --dh-elevated: rgba(32, 32, 42, 0.78);
-  --dh-hairline: rgba(255, 255, 255, 0.08);
-  --dh-hairline-strong: rgba(255, 255, 255, 0.14);
+  /* Navy gelap (bukan near-black) — SAMA keluarga dengan referensi artifact
+     (#0A0D16). Ground near-black sebelumnya (#07070B) terlalu netral, glow
+     birunya jadi nyaris tidak kelihatan menyatu dengan dasarnya. */
+  --dh-ground: #0A0D16;
+  --dh-surface: rgba(22, 28, 48, 0.58);
+  --dh-surface-solid: #171B2E;
+  --dh-elevated: rgba(30, 38, 64, 0.64);
+  --dh-hairline: rgba(255, 255, 255, 0.09);
+  --dh-hairline-strong: rgba(255, 255, 255, 0.16);
 
   /* Aksen: SATU hue biru saja (4 September 2026, koreksi D-046 — laporan
      owner: "gradient ungu ganti jadi blue color pallete"). Warna kedua
@@ -49,30 +58,77 @@
      keluarga warna, bukan lompat hue. */
   --dh-accent: #4C8DFF;
   --dh-accent-2: #1D4ED8;
-  --dh-glow-accent: rgba(76, 141, 255, 0.28);
-  --dh-glow-accent-2: rgba(29, 78, 216, 0.24);
+  --dh-accent-glow: #60A5FA;
+  --dh-glow-accent: rgba(76, 141, 255, 0.35);
+  --dh-glow-accent-2: rgba(29, 78, 216, 0.30);
 }
 
-/* ── 1. LATAR: near-black + dua glow ambient + tekstur bintik halus ────────
+/* ── 1. LATAR: navy gelap + tiga glow ambient (bukan dua) + tekstur bintik ──
    Tiga lapis di satu elemen (radial, radial, dot-grid) — bukan tiga div
-   bertumpuk, supaya tidak menambah node DOM di setiap halaman. */
+   bertumpuk, supaya tidak menambah node DOM di setiap halaman. Titik ketiga
+   (D-047) ditambahkan di kiri-bawah supaya glow tidak cuma nempel di pojok
+   atas — referensi artifact punya 3 titik cahaya, bukan 2. */
 [data-theme="dark"] [data-division="armada"] .app-content {
   background-color: var(--dh-ground);
   background-image:
-    radial-gradient(900px 520px at 12% -8%, var(--dh-glow-accent), transparent 68%),
-    radial-gradient(760px 460px at 92% 4%, var(--dh-glow-accent-2), transparent 70%),
+    radial-gradient(760px 560px at 8% -10%, var(--dh-glow-accent), transparent 70%),
+    radial-gradient(680px 520px at 96% 6%, var(--dh-glow-accent-2), transparent 72%),
+    radial-gradient(820px 560px at 38% 118%, rgba(29, 78, 216, 0.22), transparent 72%),
     radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
-  background-size: auto, auto, 34px 34px;
-  background-attachment: fixed, fixed, fixed;
+  background-size: auto, auto, auto, 34px 34px;
+  background-attachment: fixed, fixed, fixed, fixed;
 }
 
-/* Sidebar ikut near-black + glow lembut di puncaknya, supaya tidak terlihat
-   sebagai kolom hitam mati di sebelah konten yang bercahaya. */
+/* Sidebar jadi KACA (bukan gelap solid 92% opaque) — referensi artifact
+   sidebar-nya tembus pandang ke glow di baliknya (rgba(10,13,22,.55) +
+   blur), sebelumnya di sini 0.92 nyaris opak jadi kelihatan seperti kolom
+   solid biasa berdampingan dengan konten yang berkaca. */
 [data-theme="dark"] [data-division="armada"] .sidebar {
-  background-color: rgba(9, 9, 14, 0.92);
-  background-image: radial-gradient(420px 300px at 50% -12%, rgba(76, 141, 255, 0.18), transparent 72%);
+  background-color: rgba(10, 13, 22, 0.6);
+  background-image: radial-gradient(480px 340px at 50% -14%, rgba(76, 141, 255, 0.22), transparent 72%);
   border-right: 1px solid var(--dh-hairline);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* ── 1b. CHROME SIDEBAR: logo, pemilih workspace, footer profil (D-047) ───
+   Ketiganya SEBELUMNYA terlewat — cuma dashboard/kartu yang jadi kaca,
+   sementara "bingkai" sidebar di sekitarnya masih style DS v2 polos (kotak
+   flat, ikon abu2). Referensi artifact: logo mark kotak gradien biru
+   ber-glow, pemilih workspace jadi pil kaca dengan ikon accent, footer
+   profil juga kaca — bukan cuma dashboard-nya yang di-upgrade. */
+[data-theme="dark"] [data-division="armada"] .sidebar-brand-icon {
+  background: linear-gradient(135deg, var(--dh-accent-glow), var(--dh-accent-2)) !important;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45) !important;
+}
+
+[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger {
+  background-color: var(--dh-surface) !important;
+  border: 1px solid var(--dh-hairline) !important;
+  backdrop-filter: blur(16px);
+}
+[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger:hover {
+  background-color: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline-strong) !important;
+}
+/* Ikon di dalam pil workspace — Tailwind `bg-blue-50 text-blue-700` inline
+   di WorkspaceSwitcher.jsx dibuat untuk light mode, kontrasnya salah total
+   di atas kaca gelap (kotak pucat nyaris putih). Ganti ke tint accent gelap
+   yang konsisten dengan seluruh badge ikon lain di Delivery Hub. */
+[data-theme="dark"] [data-division="armada"] .workspace-switcher-trigger span:first-child {
+  background-color: rgba(76, 141, 255, 0.16) !important;
+  color: var(--dh-accent-glow) !important;
+}
+
+/* tokens.css menulis `.sidebar-profile { border: none !important }` (aturan
+   "sidebar bersih tanpa border" DS v2) — border-top di sini WAJIB !important
+   juga supaya menang: importance menentukan duluan sebelum spesifisitas
+   dibandingkan, dan tanpa !important longhand kalah lawan shorthand
+   `border: none !important` biarpun selector kami lebih spesifik. */
+[data-theme="dark"] [data-division="armada"] .sidebar-profile {
+  border-top: 1px solid var(--dh-hairline) !important;
+}
+[data-theme="dark"] [data-division="armada"] .sidebar-profile:hover {
+  background-color: var(--dh-surface) !important;
 }
 
 /* Topbar jadi kaca: konten di belakangnya terlihat samar saat di-scroll —
@@ -84,6 +140,34 @@
   background-color: rgba(10, 10, 16, 0.66) !important;
   backdrop-filter: blur(20px) saturate(140%);
   border-bottom: 1px solid var(--dh-hairline);
+}
+
+/* ── 1c. CHROME TOPBAR: cari, lonceng, menu akun (D-047) ──────────────────
+   Sama alasan dengan 1b — ketiga kontrol ini di Topbar.jsx cuma memakai
+   utility Tailwind polos (bg-inset/hover:bg-hovertint), tidak ada kelas
+   semantik sendiri untuk digaet, jadi disasar lewat struktur (tag + atribut
+   aria-label/title yang sudah ada untuk aksesibilitas — bukan kelas baru
+   yang perlu ditambah di komponennya). */
+[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"] {
+  background-color: var(--dh-surface);
+  border: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(14px);
+}
+[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"]:hover,
+[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label^="Cari"]:focus-visible {
+  background-color: var(--dh-elevated);
+  border-color: var(--dh-hairline-strong);
+}
+[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label*="otifikasi"],
+[data-theme="dark"] [data-division="armada"] .app-content > header button[title="Menu akun"] {
+  background-color: var(--dh-surface);
+  border: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(14px);
+}
+[data-theme="dark"] [data-division="armada"] .app-content > header button[aria-label*="otifikasi"]:hover,
+[data-theme="dark"] [data-division="armada"] .app-content > header button[title="Menu akun"]:hover {
+  background-color: var(--dh-elevated);
+  border-color: var(--dh-hairline-strong);
 }
 
 /* ── 2. KARTU: kaca + hairline + highlight tepi atas ──────────────────────
