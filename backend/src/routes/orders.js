@@ -188,6 +188,45 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
     }
   }
 
+  // D-087 (5 September 2026, permintaan owner) — menertibkan sales supaya
+  // SELALU isi tanggal pasti sebelum order dianggap maju ke tahap
+  // berikutnya. Cuma menjaring PERPINDAHAN MANUAL lewat dropdown ini
+  // (override, statusLocked=true) — SENGAJA TIDAK menyentuh perhitungan
+  // otomatis dari Unit/Bengkel (services/orderStatusSync.js) supaya alur
+  // produksi fisik tidak ikut terhenti gara-gara tanggal belum diisi sales;
+  // dua jalur itu memang independen sejak D-006.
+  //   1. LAYANAN → Diproses WAJIB tanggal pickup pasti (order ini berarti
+  //      kasur LAMA customer sudah/akan diambil dulu sebelum dikerjakan —
+  //      BARU tidak kena, unit-nya lahir langsung RECEIVED tanpa pickup
+  //      sama sekali, lihat unitProvisioning.js).
+  //   2. Status apa pun → Terkirim WAJIB tanggal kirim pasti (SEWA tidak
+  //      relevan, statusnya sendiri SEWA_DIKIRIM/SEWA_DIAMBIL, tidak
+  //      pernah DELIVERED — lihat orderStatusesForCategory di frontend).
+  // Tanggal boleh SUDAH ada di order (diisi sebelumnya) ATAU dikirim
+  // BERSAMAAN di request PATCH yang sama (form OrderSection.jsx yang
+  // sering kirim semua field sekaligus) — dua-duanya dihitung sebagai
+  // "sudah terisi".
+  if (status === "PROCESSING" || status === "DELIVERED") {
+    const current = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      select: { category: true, pickupConfirmedDate: true, deliveryConfirmedDate: true },
+    });
+    if (current) {
+      const finalPickup = pickupConfirmedDate !== undefined ? pickupConfirmedDate : current.pickupConfirmedDate;
+      const finalDelivery = deliveryConfirmedDate !== undefined ? deliveryConfirmedDate : current.deliveryConfirmedDate;
+      if (status === "PROCESSING" && current.category === "LAYANAN" && !finalPickup) {
+        return res.status(400).json({
+          error: "Order Layanan/Service tidak bisa diubah ke status Diproses sebelum Tanggal Pick Up Pasti diisi.",
+        });
+      }
+      if (status === "DELIVERED" && !finalDelivery) {
+        return res.status(400).json({
+          error: "Order tidak bisa diubah ke status Terkirim sebelum Tanggal Kirim Pasti diisi.",
+        });
+      }
+    }
+  }
+
   try {
     // Update + catat riwayat status dalam SATU transaksi, supaya tidak pernah
     // ada baris riwayat tanpa perubahan order yang berhasil (dan sebaliknya).
