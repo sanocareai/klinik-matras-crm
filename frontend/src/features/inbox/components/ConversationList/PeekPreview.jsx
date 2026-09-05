@@ -36,7 +36,7 @@ function PeekMessageRow({ message }) {
   );
 }
 
-export default function PeekPreview({ conversation, x, y, onClose, onOpenChat }) {
+export default function PeekPreview({ conversation, x, y, onClose, onOpenChat, onMouseEnter, onMouseLeave }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -87,7 +87,13 @@ export default function PeekPreview({ conversation, x, y, onClose, onOpenChat })
   return (
     <>
       <div className="conv-context-backdrop" onClick={onClose} />
-      <div className="peek-popup" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="peek-popup"
+        style={{ left, top }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
         <div className="peek-header">
           <span className="peek-header-name">{name}</span>
         </div>

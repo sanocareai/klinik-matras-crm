@@ -40,6 +40,7 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   const longPressTimerRef = useRef(null);
   const longPressAt = useRef(0);
   const peekTimerRef = useRef(null);
+  const peekCloseTimerRef = useRef(null);
   const isAdmin = isCurrentUserAdmin();
 
   if (!c) return null;
@@ -125,10 +126,29 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
     if (selectionMode) return;
     const x = e.clientX, y = e.clientY;
     clearTimeout(peekTimerRef.current);
+    clearTimeout(peekCloseTimerRef.current);
     peekTimerRef.current = setTimeout(() => setPeek({ x, y }), PEEK_HOVER_DELAY_MS);
   }
+  // BUG NYATA (dilaporkan owner, 5 September 2026): dulu di sini CUMA
+  // `clearTimeout(peekTimerRef.current)` — itu cuma membatalkan timer YANG
+  // BELUM SEMPAT jalan (peek yang belum terbuka). Begitu peek SUDAH terbuka
+  // (mouse diam >450ms di baris ini), pindah kursor pergi TIDAK menutupnya
+  // sama sekali — popup (dan `.conv-context-backdrop` fixed inset:0 z-index
+  // 998 miliknya, lihat PeekPreview.jsx) tetap ada TAK TERLIHAT di layar,
+  // menelan SETIAP klik berikutnya di baris manapun (klik jatuh ke backdrop
+  // yang cuma menutup popup lamanya, bukan ke tombol baris di baliknya).
+  // Gejala persis: "gabisa diklik, pas diklik cuma warna row berubah abu"
+  // (:hover row memang abu, .conversation-item.unread { background:
+  // var(--bg-subtle) } juga abu — user MENGIRA itu efek klik, padahal klik
+  // sungguhan tidak pernah sampai ke tombolnya). Ditutup lewat jeda pendek
+  // (bukan langsung setPeek(null)) supaya kursor sempat pindah dari baris
+  // ke popup-nya sendiri (klik "Buka Chat"/"Ambil Percakapan") tanpa keburu
+  // hilang — dibatalkan lagi kalau popup itu sendiri yang di-hover
+  // (onMouseEnter di PeekPreview, lihat props di bawah).
   function handleMouseLeave() {
     clearTimeout(peekTimerRef.current);
+    clearTimeout(peekCloseTimerRef.current);
+    peekCloseTimerRef.current = setTimeout(() => setPeek(null), 250);
   }
 
   return (
@@ -248,6 +268,8 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
           y={peek.y}
           onClose={() => setPeek(null)}
           onOpenChat={() => { setPeek(null); selectConversation(); }}
+          onMouseEnter={() => clearTimeout(peekCloseTimerRef.current)}
+          onMouseLeave={() => setPeek(null)}
         />
       )}
 
