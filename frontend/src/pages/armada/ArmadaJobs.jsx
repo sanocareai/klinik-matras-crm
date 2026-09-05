@@ -14,12 +14,12 @@ import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
-import { JobMetaRow } from "@/features/armada/components/JobBadges.jsx";
+import { JobMetaRow, JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
-  JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
+  JOB_STATUS_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
-  isJobOverdue, overdueDays,
+  isJobOverdue, overdueDays, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder,
 } from "@/features/armada/jobStatus.js";
 
 // Jadwal & Penugasan — Delivery Tahap 2.
@@ -423,15 +423,22 @@ export default function ArmadaJobs() {
                       <button
                         type="button"
                         onClick={() => setOpenJobId(j.id)}
-                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                        // Gradasi background per tipe + garis aksen Sewa
+                        // (lanjutan redesain Sep 2026 — laporan owner: "di
+                        // Jadwal & Penugasan bisa terapkan yang sama?" seperti
+                        // Route Planner). Lihat jobStatus.js#jobTypeCardStyle.
+                        style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
+                        className={cn(
+                          "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
+                          isRentalOrder(j) && "dh-bar-left"
+                        )}
                       >
                         <Avatar name={nama} size="sm" gradient className="mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="truncate text-[13px] font-semibold text-ink">{nama}</span>
-                            <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
-                              {JOB_TYPE_REAL[j.type]?.label || j.type}
-                            </span>
+                            <JobTypeBadge job={j} />
+                            <RentalBadge job={j} />
                             {unitCount > 1 && (
                               <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold text-ink3">
                                 {unitCount} unit
@@ -457,6 +464,7 @@ export default function ArmadaJobs() {
                               </>
                             )}
                           </div>
+                          <ServiceLabel job={j} className="mt-0.5" />
                           {j.addressText && (
                             <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-ink3">
                               {mapsUrl(j) && (
@@ -472,6 +480,9 @@ export default function ArmadaJobs() {
                               <span className="truncate">{j.addressText}</span>
                             </div>
                           )}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <ConfirmedTimeBadge job={j} />
+                          </div>
                           <JobMetaRow job={j} className="mt-1.5" />
                           {overdue && (
                             <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
