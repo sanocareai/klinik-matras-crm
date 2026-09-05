@@ -44,7 +44,6 @@ const ProductionMaterialUsage = lazy(() => import("./pages/bengkel/ProductionMat
 const ProductionScopeRevisions = lazy(() => import("./pages/bengkel/ProductionScopeRevisions.jsx"));
 const ProductionLaporan = lazy(() => import("./pages/bengkel/ProductionLaporan.jsx"));
 const ProductionOrders  = lazy(() => import("./pages/bengkel/ProductionOrders.jsx"));
-const Armada        = lazy(() => import("./pages/Armada.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
 const ArmadaOrders      = lazy(() => import("./pages/armada/ArmadaOrders.jsx"));
@@ -55,7 +54,6 @@ const ArmadaTracking    = lazy(() => import("./pages/armada/ArmadaTracking.jsx")
 const ArmadaIssues      = lazy(() => import("./pages/armada/ArmadaIssues.jsx"));
 const ArmadaReturns     = lazy(() => import("./pages/armada/ArmadaReturns.jsx"));
 const ArmadaDeliveryReport = lazy(() => import("./pages/armada/ArmadaDeliveryReport.jsx"));
-const ArmadaPlaceholder = lazy(() => import("./pages/armada/ArmadaPlaceholder.jsx"));
 const Kendali        = lazy(() => import("./pages/Kendali.jsx"));
 const Gudang         = lazy(() => import("./pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("./pages/warehouse/WarehouseDashboard.jsx"));
@@ -308,9 +306,12 @@ export default function App() {
             {/* Tahap 3: Vehicle & Route sudah ada di database (migrasi
                 20260802120000). Data NYATA — tidak ada badge "Contoh". */}
             <Route path="/armada/routes" element={<ArmadaRoutes />} />
-            {/* SIMULASI, ditegaskan ketentuan — lihat catatan panjang di
-                features/armada/data/trackingMock.js. Bukan "belum sempat
-                dibuat nyata": driver belum pernah mengirim GPS sungguhan. */}
+            {/* GPS NYATA sejak D-034/D-036 (22 & 30 Agustus 2026) — driver
+                mengirim ping lewat useDriverTracking.js ke
+                POST /armada/jobs/:id/positions, disimpan ke JobPositionPing.
+                Komentar lama di sini menyebut ini "simulasi" (era
+                trackingMock.js, sudah dihapus) — itu sudah tidak akurat,
+                diperbaiki saat redesain Sep 2026 (docs/ARMADA-REDESIGN-2026.md). */}
             <Route path="/armada/tracking" element={<ArmadaTracking />} />
             {/* Pengaturan Delivery (D-084, 5 September 2026) — sebelumnya
                 "/armada/resources" ("Driver & Armada", OPERASIONAL). Route

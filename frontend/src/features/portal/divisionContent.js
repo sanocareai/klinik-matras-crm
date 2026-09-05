@@ -94,10 +94,19 @@ export const DIVISION_CONTENT = {
     heroLine: "Workspace operasional untuk memantau jadwal pengiriman dan status armada.",
     modules: [
       { title: "Jadwal & Job",          description: "Atur jadwal pengiriman berdasarkan area dan prioritas.", icon: ClipboardList, path: "/armada" },
-      { title: "Route Planner",         description: "Optimalkan rute, armada, dan urutan drop-off.", icon: Route, path: null },
+      // Route Planner & Proof of Delivery sudah jadi halaman nyata sejak
+      // Delivery Tahap 3 — kartu ini dulu null (belum dibangun), sekarang
+      // diperbarui ke path aslinya (redesain Sep 2026, lihat
+      // docs/ARMADA-REDESIGN-2026.md §3). Jangan null-kan lagi tanpa
+      // menghapus halamannya juga.
+      { title: "Route Planner",         description: "Optimalkan rute, armada, dan urutan drop-off.", icon: Route, path: "/armada/routes" },
       { title: "Installation Checklist",description: "Checklist penempatan, instalasi, dan edukasi pelanggan.", icon: ScanLine, path: null },
-      { title: "Proof of Delivery",     description: "Foto, tanda tangan, waktu tiba, dan status penerimaan.", icon: Package, path: null },
-      { title: "Driver App",            description: "Akses tugas, navigasi, kontak pelanggan, dan update status.", icon: Route, path: null },
+      { title: "Proof of Delivery",     description: "Foto, tanda tangan, waktu tiba, dan status penerimaan.", icon: Package, path: "/armada/pod" },
+      // Driver App bukan halaman terpisah — driver mendarat otomatis di
+      // /armada/jobs (tampilan "Job Saya", lihat isDriverOnlyUser di
+      // ArmadaJobs.jsx). Path ini membawa dispatcher/admin yang klik kartu
+      // ini ke tempat yang sama, bukan ke destinasi baru.
+      { title: "Driver App",            description: "Akses tugas, navigasi, kontak pelanggan, dan update status.", icon: Route, path: "/armada/jobs" },
       { title: "SLA Monitor",           description: "Pantau keterlambatan dan risiko pelanggaran SLA.", icon: Gauge, path: null },
     ],
   },

@@ -19,6 +19,7 @@ import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
+  isJobOverdue, overdueDays,
 } from "@/features/armada/jobStatus.js";
 
 // Jadwal & Penugasan — Delivery Tahap 2.
@@ -257,6 +258,7 @@ export default function ArmadaJobs() {
   // `historis` di render kartu di bawah).
   const jobsAktif = (jobs || []).filter((j) => !["COMPLETED", "FAILED"].includes(j.status));
   const tanpaDriver = jobsAktif.filter((j) => !j.driverId).length;
+  const terlambat = jobsAktif.filter(isJobOverdue).length;
   const labelJenis = tab === "PICKUP" ? "Job pengambilan" : tab === "DELIVERY" ? "Job pengiriman" : "Job ditampilkan";
 
   return (
@@ -271,15 +273,24 @@ export default function ArmadaJobs() {
           onRangeChange={setRange}
           onCreateJob={() => gantiView("board")}
           health={jobs && (
-            tanpaDriver > 0
-              ? { label: `${tanpaDriver} job belum ada driver`, tone: "warn" }
-              : { label: "Semua job sudah ada driver", tone: "ok" }
+            terlambat > 0
+              ? { label: `${terlambat} job terlambat dari jadwal`, tone: "warn" }
+              : tanpaDriver > 0
+                ? { label: `${tanpaDriver} job belum ada driver`, tone: "warn" }
+                : { label: "Semua job sudah ada driver", tone: "ok" }
           )}
           stats={jobs ? [
             { label: labelJenis, value: jobs.length, hint: formatRangeText(range) },
             { label: "Sudah ada driver", value: jobs.filter((j) => j.driverId).length, hint: `dari ${jobs.length} job` },
             { label: "Selesai", value: jobs.filter((j) => j.status === "COMPLETED").length, hint: "sesuai filter" },
             { label: "Belum ada driver", value: tanpaDriver, hint: "job aktif" },
+            // Kotak ke-5 (redesain Sep 2026) — grid WorkspaceHero (4 kolom di
+            // desktop) menampung ini di baris baru, bukan menggeser 4 kotak
+            // lama. Sengaja TIDAK menggantikan salah satu kotak di atas:
+            // "terlambat" (janji tanggal terlewat) dan "belum ada driver"
+            // (belum sempat ditugaskan) adalah dua masalah berbeda, dispatcher
+            // perlu lihat dua-duanya sekaligus.
+            { label: "Terlambat", value: terlambat, hint: "lewat tanggal terjadwal" },
           ] : []}
         />
 
@@ -401,6 +412,12 @@ export default function ArmadaJobs() {
                   const historis = ["COMPLETED", "FAILED"].includes(j.status);
                   const nama = customerOf(j) || "Tanpa nama";
                   const unitCount = unitCountOf(j);
+                  // SLA — job yang tanggal terjadwalnya SUDAH LEWAT tapi belum
+                  // selesai (redesain Sep 2026). Beda dari "Belum dijadwalkan"
+                  // (oranye, di atas) — ini job yang SUDAH dijanjikan ke
+                  // tanggal tertentu tapi janjinya terlewat. Lihat catatan
+                  // lengkap di jobStatus.js#isJobOverdue.
+                  const overdue = isJobOverdue(j);
                   return (
                     <li key={j.id}>
                       <button
@@ -456,6 +473,11 @@ export default function ArmadaJobs() {
                             </div>
                           )}
                           <JobMetaRow job={j} className="mt-1.5" />
+                          {overdue && (
+                            <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
+                              <CalendarDays size={11} /> Terlambat {overdueDays(j)} hari dari jadwal
+                            </p>
+                          )}
                         </div>
                         <div className="ml-2 shrink-0">
                           <StatusBadge map={JOB_STATUS_REAL} value={j.status} />

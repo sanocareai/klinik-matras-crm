@@ -1,4 +1,5 @@
 import { titleCaseNama } from "@/utils/format.js";
+import { hariSejak } from "@/utils/formatDate.js";
 
 // Peta status & tipe job NYATA — dari enum backend (prisma/schema.prisma),
 // BUKAN dari data contoh.
@@ -170,4 +171,31 @@ export function jobLabelOf(job) {
   if (!orderNumber) return job?.id ? job.id.slice(0, 8) : "—"; // fallback data lawas tanpa orderNumber
   const urut = orderNumber.split("-").pop(); // segmen terakhir "NNN" dari PREFIX-DDMMYYYY-NNN
   return `${urut}-${jenis}`;
+}
+
+// ─── SLA — job terlambat (redesain Sep 2026, docs/ARMADA-REDESIGN-2026.md) ──
+//
+// BEDA dari panel "Perlu Dijadwalkan" Dashboard (hariMenunggu, ambang 7 hari,
+// D-050): itu menandai job yang BELUM PERNAH punya scheduledDate sama sekali
+// — backlog penjadwalan. Ini menandai job yang SUDAH dapat scheduledDate,
+// hari itu SUDAH LEWAT, tapi statusnya masih aktif (bukan COMPLETED/FAILED/
+// RESCHEDULED) — janji yang sudah dibuat ke tanggal tertentu tapi tidak
+// pernah dituntaskan. Dua sinyal berbeda, jangan digabung jadi satu.
+//
+// SENGAJA cuma level HARI (scheduledDate, DATE column), bukan intraday
+// terhadap timeWindow — timeWindow adalah teks bebas ("pagi", "10-12"),
+// tidak ada kolom jam target terstruktur untuk dibandingkan (catatan sama
+// dengan disclaimer "Ketepatan waktu" di ArmadaDeliveryReport.jsx). Memaksa
+// presisi jam dari field yang tidak presisi akan mengarang data, bukan
+// mengukurnya.
+export function isJobOverdue(job) {
+  if (!job?.scheduledDate || !job?.status) return false;
+  if (!ACTIVE_STATUSES.includes(job.status)) return false;
+  return hariSejak(job.scheduledDate) > 0;
+}
+
+// Jumlah hari sejak scheduledDate — cuma valid dipanggil kalau isJobOverdue()
+// sudah true (tidak divalidasi ulang di sini, biar tidak dihitung dua kali).
+export function overdueDays(job) {
+  return hariSejak(job.scheduledDate);
 }

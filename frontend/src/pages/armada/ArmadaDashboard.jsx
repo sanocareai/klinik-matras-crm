@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils.js";
 import Avatar from "@/components/Avatar.jsx";
 import DeliveryKpiRow from "@/features/armada/components/DeliveryKpiRow.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
-import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf } from "@/features/armada/jobStatus.js";
+import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf, isJobOverdue, overdueDays } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
 
 const TAMPIL_AWAL = 8;
@@ -285,6 +285,14 @@ export default function ArmadaDashboard() {
   const perluDijadwalkanTampil = tampilSemua ? perluDijadwalkanUrut : perluDijadwalkanUrut.slice(0, TAMPIL_AWAL);
 
   const dokIssues = useMemo(() => dokumenBermasalah(vehicles.filter((v) => v.active)), [vehicles]);
+  // Job yang tanggal terjadwalnya SUDAH LEWAT tapi belum selesai (redesain
+  // Sep 2026, docs/ARMADA-REDESIGN-2026.md — Gap "SLA monitoring"). Beda dari
+  // panel "Perlu Dijadwalkan" di atas (job yang BELUM PERNAH dapat tanggal
+  // sama sekali) — ini job yang SUDAH dijanjikan ke tanggal tertentu tapi
+  // janjinya terlewat. Ditaruh di kartu "Butuh Perhatian" yang sudah ada
+  // (bukan kartu baru) karena maknanya sama: sesuatu yang butuh tindakan
+  // dispatcher SEKARANG, sama seperti dokumen kendaraan kadaluarsa.
+  const overdueJobs = useMemo(() => (jobs || []).filter(isJobOverdue).sort((a, b) => overdueDays(b) - overdueDays(a)), [jobs]);
   const fleetByStatus = useMemo(() => {
     const out = {};
     for (const v of vehicles) if (v.active) out[v.status] = (out[v.status] || 0) + 1;
@@ -479,11 +487,28 @@ export default function ArmadaDashboard() {
             <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
               <AlertTriangle size={14} className="text-orange" /> Butuh Perhatian
             </h3>
-            {loading ? <TableSkeletonRows rows={3} cols={1} /> : dokIssues.length === 0 ? (
-              <p className="text-[12px] text-ink3">Tidak ada dokumen kendaraan yang mau kadaluarsa dalam 30 hari.</p>
+            {loading ? <TableSkeletonRows rows={3} cols={1} /> : (dokIssues.length === 0 && overdueJobs.length === 0) ? (
+              <p className="text-[12px] text-ink3">Tidak ada dokumen kadaluarsa atau job terlambat saat ini.</p>
             ) : (
               <div className="flex flex-col gap-2.5">
-                {dokIssues.slice(0, 6).map((d, i) => (
+                {/* Job terlambat DULUAN (D-lain, redesain Sep 2026) — job
+                    yang janjinya sudah terlewat lebih mendesak daripada
+                    dokumen yang baru mau habis dalam 30 hari ke depan. */}
+                {overdueJobs.slice(0, 6).map((j) => (
+                  <button
+                    key={j.id}
+                    type="button"
+                    onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
+                    className="flex items-start gap-2 border-b border-line pb-2.5 text-left last:border-0 last:pb-0 hover:bg-hovertint"
+                  >
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"} · {orderNumberOf(j) || "—"}</p>
+                      <p className="text-[11px] text-red">Terlambat {overdueDays(j)} hari dari jadwal</p>
+                    </div>
+                  </button>
+                ))}
+                {dokIssues.slice(0, Math.max(0, 6 - overdueJobs.length)).map((d, i) => (
                   <div key={i} className="flex items-start gap-2 border-b border-line pb-2.5 last:border-0 last:pb-0">
                     <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${d.lewat ? "bg-red" : "bg-orange"}`} />
                     <div className="min-w-0 flex-1">
