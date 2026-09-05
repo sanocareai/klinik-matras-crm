@@ -237,6 +237,11 @@ const DIVISIONS = {
         section: "OPERASIONAL",
         items: [
           { to: "/armada/dashboard", label: "Dashboard",           Icon: LayoutDashboard },
+          // Ringkasan Operasional (redesain Sep 2026) — "apa yang butuh
+          // perhatian sekarang" lintas job/driver/armada, beda dari Dashboard
+          // di atas yang fokus jadwal & penugasan harian. Lihat
+          // docs/ARMADA-REDESIGN-2026.md §6.
+          { to: "/armada/ringkasan", label: "Ringkasan Operasional",Icon: Gauge },
           { to: "/armada/jobs",      label: "Jadwal & Penugasan",  Icon: CalendarClock },
           // Semua Order (D-052, 4 September 2026) — laporan owner: dispatcher
           // perlu bisa pantau SELURUH order Sales CRM, bukan cuma yang sudah

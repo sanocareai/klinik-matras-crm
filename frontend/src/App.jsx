@@ -45,6 +45,7 @@ const ProductionScopeRevisions = lazy(() => import("./pages/bengkel/ProductionSc
 const ProductionLaporan = lazy(() => import("./pages/bengkel/ProductionLaporan.jsx"));
 const ProductionOrders  = lazy(() => import("./pages/bengkel/ProductionOrders.jsx"));
 const ArmadaDashboard   = lazy(() => import("./pages/armada/ArmadaDashboard.jsx"));
+const ArmadaRingkasan   = lazy(() => import("./pages/armada/ArmadaRingkasan.jsx"));
 const ArmadaJobs        = lazy(() => import("./pages/armada/ArmadaJobs.jsx"));
 const ArmadaOrders      = lazy(() => import("./pages/armada/ArmadaOrders.jsx"));
 const ArmadaRoutes      = lazy(() => import("./pages/armada/ArmadaRoutes.jsx"));
@@ -287,6 +288,11 @@ export default function App() {
                 saat uji kesiapan divisi memakai akun driver sungguhan. */}
             <Route path="/armada"           element={<ArmadaLanding />} />
             <Route path="/armada/dashboard" element={<ArmadaDashboard />} />
+            {/* Ringkasan Operasional (redesain Sep 2026, "Delivery Command"
+                scoped ke armada saja — docs/ARMADA-REDESIGN-2026.md §6).
+                Data seluruhnya diturunkan dari endpoint yang sudah ada, tidak
+                ada endpoint backend baru. */}
+            <Route path="/armada/ringkasan" element={<ArmadaRingkasan />} />
             {/* Tahap 2: halaman Jadwal & Penugasan membungkus <Armada /> —
                 mode "Papan" di dalamnya merender halaman lama APA ADANYA
                 (tempat job dibuat & driver ditugaskan, semuanya sudah jalan

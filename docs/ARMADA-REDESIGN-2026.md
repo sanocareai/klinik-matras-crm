@@ -110,24 +110,30 @@ This directly respects the reason the flag was turned off (§ CLAUDE.md, Aug 31:
 
 ## 6. Gap 3 — Command-style cross-cutting visibility ("Ringkasan Operasional")
 
-A single new screen, reusing existing `ui/stat-card`, `section-card`, and `page` components already used across the mature Sales CRM pages for visual consistency. Content (all derivable from existing data, no new backend beyond query aggregation):
+**Status: shipped.** New page `frontend/src/pages/armada/ArmadaRingkasan.jsx`, route `/armada/ringkasan`, sidebar entry in the OPERASIONAL section (right below Dashboard) and a Portal landing card. All data comes from endpoints that already existed — no new backend routes or migrations.
 
-- **Jobs at risk today** — unscheduled jobs whose order is close to its promised date, and any current SLA breaches (§4).
-- **Driver workload right now** — active route per driver, jobs remaining, using existing `Route`/`Job` associations.
-- **Fleet status** — vehicles `IN_USE`/`MAINTENANCE`/`AVAILABLE`, reusing `getFleetSummary` already built for `ArmadaDeliveryReport.jsx`.
-- **Exception feed** — today's failed visits/incidents, feeding into Gap 4.
-- **On-time delivery rate** (rolling 7/30 day) — the PRD metric this workspace has never actually computed.
+**Correction from the original proposal:** it said to reuse `ui/stat-card` — that component is the Sales-CRM-side "DS v2.2" blue-block KPI style. Per the owner's explicit instruction not to change the existing look, this page instead reuses armada's *own* established visual pattern — the same tile shape `DeliveryKpiRow`/`ArmadaDashboard.jsx` already use (icon badge + `dh-figure` big number + label), `SectionCard`-equivalent `Card` panels, and `EmptyState`. A generic `Tile` sub-component was added locally to this one page rather than modifying the shared `DeliveryKpiRow` (whose click behavior assumes a real `JobStatus` value, which "overdue"/"backlog" aren't).
 
-This is scoped as "Delivery Command," not the full PRD §1.4 cross-portal Command concept (which would also need Workshop/production and Finance data) — that stays a future, separate initiative if the org wants it.
+**Implemented sections:**
+- **Top stat row** — Job Terlambat (reuses Gap 1's `isJobOverdue`), Backlog Lama (jobs unscheduled ≥7 days, same threshold as the Dashboard's "Perlu Dijadwalkan" panel — not duplicated logic, just read from the same `unscheduled` job list), Kendala Terbuka (`GET /armada/issues?status=OPEN`), Ketepatan Waktu (see below).
+- **"Perlu Perhatian Sekarang"** — merges overdue jobs, open issues, and recent vehicle incidents into one clickable feed, each row routing to where it can actually be acted on (job detail, Issues page, Fleet settings).
+- **"Beban Kerja Driver — Hari Ini"** — today's `GET /armada/jobs?date=<today>` grouped by driver, plus an "unassigned" row.
+- **"Status Armada"** — `GET /armada/reports/summary` → `byVehicleStatus` (verified field name directly against `backend/src/routes/armada.js:2513` before shipping, not assumed).
+- **On-time delivery rate** — the PRD metric (§7.7 FR-C-04) this workspace never computed: among the last 300 `COMPLETED` jobs that have both `scheduledDate` and `completedAt`, the % where `completedAt`'s WIB calendar day is on or before `scheduledDate`. Day-granularity only, same discipline as Gap 1 — `timeWindow` still can't support an hour-level "on time."
+
+**Not built (deliberately smaller than the original proposal):** driver workload does not fetch a per-driver route summary (`getArmadaRouteSummary`) — that would mean one API call per driver on every page load, which doesn't scale and wasn't necessary for a job-count view. If per-driver distance/duration ever matters here, add it as a drill-down on click, not an eager fetch.
+
+This stays scoped as this workspace's own "Delivery Command," not the full PRD §1.4 cross-portal Command concept (which would also need Workshop/production and Finance data) — that remains a future, separate initiative if the org wants it.
 
 ---
 
 ## 7. Gap 4 — Exception & field-coordination handling
 
-Today, a failed visit or incident is recorded (`Job.failureReason`/`failurePhotoUrls[]`, `VehicleIncident`) and shows up later in `ArmadaIssues.jsx`/`ArmadaReturns.jsx` — but nothing tells a dispatcher *the moment* it happens. Proposed addition:
+**Status: partially shipped as part of Gap 3.** Today, a failed visit or incident is recorded (`Job.failureReason`/`failurePhotoUrls[]`, `VehicleIncident`) and shows up later in `ArmadaIssues.jsx`/`ArmadaReturns.jsx` — but nothing told a dispatcher *the moment* it happens. `ArmadaRingkasan.jsx`'s "Perlu Perhatian Sekarang" feed (§6) now surfaces failed jobs and recent incidents in one place, each row clickable through to where it gets resolved.
 
-- A **live "needs attention now" list** as a section of the Delivery Command overview (§6), populated by jobs that just transitioned to `FAILED` or a vehicle that just logged an incident, using the same polling pattern `ArmadaTracking.jsx` already uses (15s interval) rather than introducing a new real-time transport (no new WebSocket layer needed given the existing polling approach already works at this scale).
-- A **one-click path from that alert into the existing reschedule flow** (`POST /armada/issues/:jobId/reschedule`, already built) — the goal is shrinking time-to-reaction, not building a new reschedule mechanism.
+**Still open:**
+- **Live refresh.** The feed loads once on mount, same as every other data fetch on this page — it does not poll. `ArmadaTracking.jsx` already has a proven 15-second polling pattern; wiring the same interval onto this page's `load()` is the natural next step if dispatchers need it to update without a manual refresh, rather than introducing a new real-time transport.
+- **Inline one-click reschedule.** Clicking an overdue/failed-job row currently navigates to the Jobs list or Issues page rather than opening the reschedule flow (`POST /armada/issues/:jobId/reschedule`) directly in place. Worth doing once it's clear from real usage that the extra click is actually a friction point, not preemptively.
 
 ---
 
@@ -138,9 +144,9 @@ Sequenced, each phase independently shippable — consistent with the existing P
 | Phase | Scope | Depends on |
 |---|---|---|
 | **A — Cleanup** ✅ done | Deleted orphaned `ArmadaPlaceholder.jsx` + dead `trackingMock.js`, removed their unused imports from `App.jsx`, fixed the stale `App.jsx` tracking comment, pointed `divisionContent.js`'s Route Planner/Proof of Delivery/Driver App cards at their real, already-shipped routes | Nothing — done first, unblocks clean iteration |
-| **B — SLA monitoring** ✅ v1 shipped (visibility only) | `isJobOverdue`/`overdueDays` in `jobStatus.js`, overdue badges + hero stat on `ArmadaJobs.jsx`, "Butuh Perhatian" surfacing on `ArmadaDashboard.jsx`. **Remaining, blocked on §9 sign-off:** outbound WA/push alerting, on-time delivery rate metric | Phase A |
-| **C — Delivery Command overview** | New "Ringkasan Operasional" screen, all sections in §6 | Phase B (needs the breach feed) |
-| **D — Exception/field-coordination live surface** | "Needs attention now" section + one-click reschedule from it | Phase C (lives inside the same screen) |
+| **B — SLA monitoring** ✅ v1 shipped (visibility only) | `isJobOverdue`/`overdueDays` in `jobStatus.js`, overdue badges + hero stat on `ArmadaJobs.jsx`, "Butuh Perhatian" surfacing on `ArmadaDashboard.jsx`. **Remaining, blocked on §9 sign-off:** outbound WA/push alerting | Phase A |
+| **C — Delivery Command overview** ✅ shipped | New `/armada/ringkasan` screen — stat row, "Perlu Perhatian Sekarang" feed, driver workload, fleet status, on-time delivery rate (all sections in §6) | Phase B |
+| **D — Exception/field-coordination live surface** 🟡 partial | Feed shipped as part of Phase C. **Remaining:** live polling refresh, inline one-click reschedule (§7) | Phase C (lives inside the same screen) |
 | **E — Customer comms re-activation** | Shadow mode → limited rollout → full, per §5 | Independent of B–D, but sequenced last because it's the most owner-sensitive and benefits from the trust-building the other phases create |
 
 ---

@@ -93,6 +93,7 @@ export const DIVISION_CONTENT = {
     subtitle: "Penjadwalan armada, rute, instalasi, proof of delivery, dan SLA.",
     heroLine: "Workspace operasional untuk memantau jadwal pengiriman dan status armada.",
     modules: [
+      { title: "Ringkasan Operasional", description: "Job terlambat, beban driver, status armada, dan ketepatan waktu dalam satu layar.", icon: Gauge, path: "/armada/ringkasan" },
       { title: "Jadwal & Job",          description: "Atur jadwal pengiriman berdasarkan area dan prioritas.", icon: ClipboardList, path: "/armada" },
       // Route Planner & Proof of Delivery sudah jadi halaman nyata sejak
       // Delivery Tahap 3 — kartu ini dulu null (belum dibangun), sekarang
