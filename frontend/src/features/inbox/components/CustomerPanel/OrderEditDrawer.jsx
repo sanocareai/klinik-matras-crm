@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { api } from "@/api.js";
 import OrderSection from "@/components/customer/OrderSection.jsx";
 
 // Wave 9 (redesign Inbox, plan starry-humming-knuth) — shell TIPIS yang
@@ -28,8 +29,34 @@ import OrderSection from "@/components/customer/OrderSection.jsx";
 // ChatBaruDialog.jsx) supaya juga tidak terjebak transform milik leluhur
 // manapun (mis. bottom-sheet mobile Customer Panel, yang beranimasi lewat
 // transform sendiri).
-export default function OrderEditDrawer({ order, customer, onClose, onUpdate }) {
-  const isOpen = !!order;
+//
+// Wave 13 (redesign Inbox) — dipakai dari DUA tempat sekarang, masing-
+// masing dengan bentuk data berbeda:
+//   1. CustomerPanel (Overview/Order tab) — `customer` SUDAH di-load penuh
+//      di sana (termasuk .orders), dioper langsung, TANPA fetch baru di
+//      sini. `order` diisi → mode edit (initialOrderId).
+//   2. Composer "+" → "Buat Order" (ChatWindow) — cuma punya `customerId`,
+//      TIDAK ada customer yang sudah di-load (Composer tidak butuh data
+//      customer sama sekali di luar ini). `order` KOSONG → mode buat baru
+//      (initialShowForm). Drawer fetch sendiri lewat `customerId`, pola
+//      YANG SAMA dengan CustomerPanel/index.jsx sendiri (satu komponen,
+//      satu sumber fetch — bukan cache kedua yang bisa basi).
+// `open` eksplisit (bukan cuma "order ada isinya") karena mode "buat baru"
+// TIDAK PERNAH punya `order` sama sekali, jadi presence order saja tidak
+// cukup jadi sinyal buka/tutup.
+export default function OrderEditDrawer({ open, order, customer, customerId, onClose, onUpdate }) {
+  const [fetchedCustomer, setFetchedCustomer] = useState(null);
+
+  useEffect(() => {
+    if (!open || customer) { setFetchedCustomer(null); return; } // customer sudah dioper siap pakai — tidak perlu fetch
+    if (!customerId) return;
+    let alive = true;
+    api.getCustomer(customerId).then((c) => { if (alive) setFetchedCustomer(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, [open, customer, customerId]);
+
+  const resolvedCustomer = customer || fetchedCustomer;
+  const isOpen = !!open && !!resolvedCustomer;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -39,11 +66,13 @@ export default function OrderEditDrawer({ order, customer, onClose, onUpdate }) 
   }, [isOpen, onClose]);
 
   // Snapshot supaya konten tidak hilang mendadak saat animasi KELUAR
-  // (order/customer prop sudah null tapi drawer masih di layar, sedang
-  // slide out) — pola sama dengan OrderTimelineDrawer.jsx#frozen.
-  const [frozen, setFrozen] = useState({ order, customer });
-  if (order && order !== frozen.order) setFrozen({ order, customer });
-  const f = isOpen ? { order, customer } : frozen;
+  // (props sudah berubah tapi drawer masih di layar, sedang slide out) —
+  // pola sama dengan OrderTimelineDrawer.jsx#frozen.
+  const [frozen, setFrozen] = useState({ order, customer: resolvedCustomer });
+  if (isOpen && (order !== frozen.order || resolvedCustomer !== frozen.customer)) {
+    setFrozen({ order, customer: resolvedCustomer });
+  }
+  const f = isOpen ? { order, customer: resolvedCustomer } : frozen;
 
   return createPortal(
     <AnimatePresence>
@@ -66,7 +95,9 @@ export default function OrderEditDrawer({ order, customer, onClose, onUpdate }) 
             className="z-[511] flex h-full flex-col bg-base shadow-popover"
           >
             <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
-              <p className="text-sm font-bold text-ink">Order — {f.customer?.name || "Pelanggan"}</p>
+              <p className="text-sm font-bold text-ink">
+                {f.order ? "Order" : "Buat Order Baru"} — {f.customer?.name || "Pelanggan"}
+              </p>
               <button
                 type="button" onClick={onClose} aria-label="Tutup"
                 className="shrink-0 rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
@@ -75,7 +106,12 @@ export default function OrderEditDrawer({ order, customer, onClose, onUpdate }) 
               </button>
             </header>
             <div className="flex-1 overflow-y-auto p-4">
-              <OrderSection customer={f.customer} onUpdate={onUpdate} initialOrderId={f.order?.id} />
+              <OrderSection
+                customer={f.customer}
+                onUpdate={onUpdate}
+                initialOrderId={f.order?.id}
+                initialShowForm={!f.order}
+              />
             </div>
           </motion.aside>
         </>

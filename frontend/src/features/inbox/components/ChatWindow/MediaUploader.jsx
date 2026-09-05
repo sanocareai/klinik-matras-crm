@@ -1,5 +1,5 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles, MapPin, User, Navigation } from "lucide-react";
+import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles, MapPin, User, Navigation, ShoppingCart } from "lucide-react";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { api } from "../../../../api.js";
 
@@ -205,7 +205,7 @@ function uploadWithProgress(conversationId, formData, onProgress) {
 // Tombol attach + sheet pilihan + modal preview grid sebelum kirim.
 // Drag-drop & paste-clipboard di area chat memanggil addFiles() lewat ref
 // (dipasang dari ChatWindow/index.jsx yang menguasai area drop-nya).
-const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpenProduct }, ref) {
+const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpenProduct, onCreateOrder }, ref) {
   const [showSheet, setShowSheet] = useState(false);
   const [items, setItems]         = useState([]); // { uid, file, previewUrl, mediaType, caption, error }
   const [hd, setHd]               = useState(false); // false = Standar (default, dikompresi)
@@ -323,6 +323,14 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
                 <button className="attach-item" onClick={() => { onOpenProduct(); setShowSheet(false); }}>
                   <div className="attach-item-icon" style={{ background: "#7c3aed26" }}><Package size={24} style={{ color: "#7c3aed" }} /></div>
                   <span className="attach-item-label">Produk</span>
+                </button>
+              )}
+              {/* Wave 13 (redesign Inbox) — "Buat Order", buka OrderEditDrawer
+                  dalam mode buat-baru (lihat Composer.jsx). */}
+              {onCreateOrder && (
+                <button className="attach-item" onClick={() => { onCreateOrder(); setShowSheet(false); }}>
+                  <div className="attach-item-icon" style={{ background: "#0ea5e926" }}><ShoppingCart size={24} style={{ color: "#0ea5e9" }} /></div>
+                  <span className="attach-item-label">Buat Order</span>
                 </button>
               )}
               <button className="attach-item" onClick={() => { setShowLocation(true); setShowSheet(false); }}>

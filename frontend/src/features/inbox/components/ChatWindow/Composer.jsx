@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
+import OrderEditDrawer from "../CustomerPanel/OrderEditDrawer.jsx";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useDraft, useReplyTarget, useEditingMessage, useComposerStore } from "../../stores/composerStore.js";
@@ -146,6 +147,7 @@ function EmojiMartPopup({ onSelect, onClose }) {
 // ── Composer utama (Fase D) ───────────────────────────────────────────────
 export default function Composer({ conversation, mediaUploaderRef }) {
   const conversationId = conversation.id;
+  const isGroup         = conversation.type === "GROUP";
   const sendMutation   = useSendMessage(conversationId);
   const draft          = useDraft(conversationId);
   const replyTarget    = useReplyTarget();
@@ -154,6 +156,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEmoji, setShowEmoji]         = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
+  // Wave 13 (redesign Inbox) — "Buat Order" di menu lampiran. Order milik
+  // Customer, jadi tidak relevan untuk percakapan grup (isGroup).
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const textareaRef = useRef(null);
@@ -162,6 +167,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     setShowTemplates(false);
     setShowEmoji(false);
     setShowProductPicker(false);
+    setShowCreateOrder(false);
   }, [conversationId]);
 
   useEffect(() => {
@@ -294,6 +300,21 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().upsertMessage(conversationId, m)); setShowProductPicker(false); }} />
       )}
 
+      {/* Wave 13 (redesign Inbox) — "Buat Order" dari menu lampiran. Instance
+          drawer TERSENDIRI (bukan berbagi dengan CustomerPanel, yang berada
+          di cabang komponen SIBLING, bukan leluhur/turunan Composer ini) —
+          cuma perlu customerId, drawer fetch data customer-nya sendiri
+          (lihat OrderEditDrawer.jsx). `onUpdate` tidak perlu berbuat apa-apa
+          di sini: Composer tidak menyimpan state customer sendiri untuk
+          disegarkan (beda dari CustomerPanel, yang memang menyimpannya). */}
+      <OrderEditDrawer
+        open={showCreateOrder}
+        order={null}
+        customerId={conversation.customer?.id}
+        onClose={() => setShowCreateOrder(false)}
+        onUpdate={() => {}}
+      />
+
       {editingMessage ? (
         // Mode edit menggantikan reply-strip total — tidak masuk akal
         // reply+edit bersamaan di composer yang sama.
@@ -323,7 +344,12 @@ export default function Composer({ conversation, mediaUploaderRef }) {
         </button>
 
         <Suspense fallback={<ActionBtnFallback icon={Paperclip} />}>
-          <MediaUploader ref={mediaUploaderRef} conversationId={conversationId} onOpenProduct={() => setShowProductPicker(true)} />
+          <MediaUploader
+            ref={mediaUploaderRef}
+            conversationId={conversationId}
+            onOpenProduct={() => setShowProductPicker(true)}
+            onCreateOrder={!isGroup && conversation.customer?.id ? () => setShowCreateOrder(true) : undefined}
+          />
         </Suspense>
 
         <div style={{ position: "relative" }}>

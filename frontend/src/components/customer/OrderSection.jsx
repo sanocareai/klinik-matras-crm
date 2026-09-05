@@ -2008,11 +2008,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 // Kalau diisi, order itu langsung terbuka (expanded) begitu komponen mount —
 // dipakai OrderEditDrawer.jsx (Inbox) supaya klik "Buka Order" di
 // ActiveOrderCard langsung menuju order yang relevan, bukan tabel kosong
-// yang harus diklik lagi. CustomerDrawer.jsx (pemanggil lain) TIDAK
-// mengirim prop ini — default null, nol perubahan perilaku di sana.
-export default function OrderSection({ customer, onUpdate, initialOrderId = null }) {
+// yang harus diklik lagi. `initialShowForm` (Wave 13, redesign Inbox) —
+// SAMA POLA, langsung buka form "+Order" begitu mount (dipakai tombol
+// "Buat Order" di menu lampiran Composer.jsx, lewat OrderEditDrawer dalam
+// mode "order=null"). CustomerDrawer.jsx (pemanggil lain) TIDAK mengirim
+// prop mana pun di sini — default false/null, nol perubahan perilaku di sana.
+export default function OrderSection({ customer, onUpdate, initialOrderId = null, initialShowForm = false }) {
   const navigate = useNavigate();
-  const [showForm, setShowForm]     = useState(false);
+  const [showForm, setShowForm]     = useState(initialShowForm);
   const [expandedId, setExpandedId] = useState(() => initialOrderId);
   // D-030 (20 Agustus 2026) — rincian pesanan lengkap (riwayat status, foto
   // dokumentasi penjemputan/produksi/pengiriman + tanda tangan penerima,

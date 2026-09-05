@@ -152,6 +152,7 @@ export default function CustomerPanel({ conversation, onClose }) {
       </div>
 
       <OrderEditDrawer
+        open={!!orderDrawerOrder}
         order={orderDrawerOrder}
         customer={customer}
         onClose={() => setOrderDrawerOrder(null)}
