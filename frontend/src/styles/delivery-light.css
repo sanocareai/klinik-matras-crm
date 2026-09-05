@@ -374,6 +374,22 @@ html:not([data-theme="dark"]) .glass-division .dh-job-card:hover {
   border-color: rgba(76, 141, 255, 0.3);
 }
 
+/* ── 4e. KARTU KANBAN PIPELINE — kaca + glow PER STAGE (D-101) — pasangan
+   mode terang, baca komentar lengkap di delivery-dark.css. */
+html:not([data-theme="dark"]) .glass-division .dh-kanban-card {
+  background-color: var(--dh-elevated);
+  border: 1px solid color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 28%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 8px 20px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 40%, transparent);
+}
+html:not([data-theme="dark"]) .glass-division .dh-kanban-card:hover {
+  border-color: color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 48%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 12px 26px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 50%, transparent);
+}
+
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ──────────────── */
 html:not([data-theme="dark"]) .glass-division thead th {
   background-color: rgba(255, 255, 255, 0.82);

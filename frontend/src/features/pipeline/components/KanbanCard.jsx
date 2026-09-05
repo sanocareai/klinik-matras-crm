@@ -33,6 +33,23 @@ export const STAGE_DOT = {
   SPAM:        "bg-inset",
 };
 
+// Glow kaca per stage (D-101, 5 September 2026) — owner: kartu Kanban abu-
+// abu/gelap "kurang match sama biru kita" di halaman Pipeline yang sudah
+// jadi kaca (D-099), minta glass effect + glow warna per stage (New=oranye,
+// Prospek=biru, dst). BUKAN warna baru — SATU-SATUNYA sumber, dipetakan
+// PERSIS dari STAGE_DOT di atas (var CSS yang SUDAH ada: --orange/--accent/
+// --green), cuma diperluas dari "titik kecil" jadi glow di tepi kartu.
+// Dipakai sebagai custom property `--kb-accent` inline per kartu (pola sama
+// dengan --dh-bar di Delivery Hub) — CSS aktualnya di delivery-dark.css/
+// -light.css §.dh-kanban-card, no-op di luar .glass-division.
+const STAGE_GLOW = {
+  NEW:         "var(--orange)",
+  PROSPECT:    "var(--accent)",
+  TRANSACTION: "var(--green)",
+  REVIEWED:    "var(--green)",
+  SPAM:        "var(--ink3)",
+};
+
 // Ambang "stale" — deal yang tidak disentuh selama ini dianggap mandek.
 // 14 hari dipilih supaya tidak berisik: siklus jual kasur di sini berhari-hari
 // (lihat laporan Kecepatan Pipeline), jadi 7 hari akan menandai deal normal.
@@ -86,8 +103,11 @@ export default function KanbanCard({
       role={onOpenChat ? "button" : undefined}
       tabIndex={onOpenChat ? 0 : undefined}
       aria-label={onOpenChat ? `Buka chat ${nama}` : undefined}
+      // --kb-accent (D-101) — dibaca CSS .dh-kanban-card (delivery-dark.css/
+      // -light.css), no-op di luar .glass-division/mode lama.
+      style={{ "--kb-accent": STAGE_GLOW[stage] || STAGE_GLOW.SPAM }}
       className={cn(
-        "group relative rounded-xl  bg-surface p-2.5 shadow-card",
+        "dh-kanban-card group relative rounded-xl  bg-surface p-2.5 shadow-card",
         // Lift saat digeser: shadow-popover + scale ~1.02 dalam 150ms, dan slot asal
         // diredam (opacity) — sano-animation-guidelines.md §3.6.
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",
