@@ -462,7 +462,18 @@ export default function Layout({ user, onLogout, children }) {
   // Isi DALAM drawer (panel Profil/Order/Catatan/Timeline di folder
   // components/customer360/) SENGAJA BELUM disentuh sesi ini — cakupan
   // pilot kali ini baru shell halaman + drawer terluarnya saja.
-  const GLASS_PILOT_PATHS = ["/dashboard", "/customers"];
+  // D-099 — "/pipeline" ditambahkan setelah diaudit: KanbanCard.jsx (kartu
+  // deal per pelanggan, BISA berjumlah ratusan per kolom) SENGAJA pakai
+  // `rounded-xl bg-surface` BUKAN `rounded-card` — jadi TIDAK cocok seleksi
+  // wildcard kaca ([class*="rounded-card"]), sama seperti .dh-stop-card/
+  // .dh-job-card di Armada — mencegah backdrop-filter (mahal) terpasang di
+  // elemen berulang. "Kolom" tray (bg-inset) juga sengaja TIDAK diglass-kan
+  // sesi ini (bukan .card, tidak ada preseden pola "sunken tray" kaca di
+  // Armada untuk ditiru). Mode Tabel dapat class "dh-table" sama seperti
+  // Pelanggan/Semua Order. Toolbar (search/filter/tombol) semua pakai token
+  // tema (bg-surface/bg-inset) atau Menu.jsx bersama (BadgeDropdown/
+  // FilterDropdown) — NOL kelas warna hardcode.
+  const GLASS_PILOT_PATHS = ["/dashboard", "/customers", "/pipeline"];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   const glassOn = divisionKey === "armada" || pageGlassPilot;
 

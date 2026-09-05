@@ -76,7 +76,11 @@ function PipelineTableView({ rows, sortKey, sortDir, onSort, onOpenRow, onMoveTo
 
   return (
     <>
-      <TableWrap>
+      {/* "dh-table" (D-099) — sama pola dengan CustomersTable.jsx (D-098) /
+          ArmadaOrders.jsx (D-078): TableWrap default (rounded-2xl) tidak
+          cocok seleksi wildcard kaca (rounded-card), no-op di luar
+          .glass-division. */}
+      <TableWrap className="dh-table">
         <Table>
           <THead>
             <TR>
