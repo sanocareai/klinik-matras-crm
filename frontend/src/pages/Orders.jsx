@@ -1119,6 +1119,15 @@ export default function Orders() {
                   <TH sortable sortDir={sortKey === "orderNumber" ? sortDir : null} onSort={() => toggleSort("orderNumber")}>ID Order</TH>
                   <TH sortable sortDir={sortKey === "customerName" ? sortDir : null} onSort={() => toggleSort("customerName")}>Pelanggan</TH>
                   <TH sortable sortDir={sortKey === "category" ? sortDir : null} onSort={() => toggleSort("category")}>Kategori</TH>
+                  {/* Layanan/Produk + Ukuran (5 Sep 2026, permintaan owner) —
+                      supaya isi order kelihatan LANGSUNG dari tabel, tidak
+                      perlu klik baris dulu untuk buka drawer. Sumbernya SAMA
+                      persis dengan export Excel (o.items/parseOrderNotes di
+                      atas) — bukan sumber ketiga yang bisa drift. Tidak
+                      sortable — isinya teks gabungan, urutan alfabetis tidak
+                      berguna. */}
+                  <TH>Layanan/Produk</TH>
+                  <TH>Ukuran</TH>
                   <TH sortable sortDir={sortKey === "status" ? sortDir : null} onSort={() => toggleSort("status")}>Status</TH>
                   <TH>Kesiapan</TH>
                   <TH sortable sortDir={sortKey === "pipelineStage" ? sortDir : null} onSort={() => toggleSort("pipelineStage")}>Pipeline</TH>
@@ -1134,6 +1143,12 @@ export default function Orders() {
               <tbody>
                 {items.map((o) => {
                   const mandek = isMandek(o);
+                  // SAMA sumber dgn export Excel di atas (handleExport) —
+                  // satu cara baca layanan/ukuran, tidak ada versi kedua yg
+                  // bisa beda hasil.
+                  const info = parseOrderNotes(o.notes);
+                  const layananProduk = (o.items || []).map((it) => it.layananName).filter(Boolean).join(", ")
+                    || PRODUCT_TYPE_LABELS[o.productType] || "";
                   return (
                     <tr
                       key={o.id}
@@ -1156,6 +1171,15 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-ink2">
                         {KATEGORI_LABELS[o.category] || o.category}
+                      </td>
+                      <td className="max-w-52 px-3 py-2.5">
+                        {layananProduk ? (
+                          <span className="block truncate text-[12.5px] text-ink2" title={layananProduk}>{layananProduk}</span>
+                        ) : <span className="text-ink3">—</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink2">
+                        {info.ukuranKasur || <span className="text-ink3">—</span>}
+                        {info.merkKasur && <span className="text-ink3"> · {info.merkKasur}</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
