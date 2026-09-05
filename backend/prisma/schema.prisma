@@ -368,6 +368,7 @@ model User {
   replenishmentsRequested   ReplenishmentRequest[]   @relation("ReplenishmentRequester")
   replenishmentsApproved    ReplenishmentRequest[]   @relation("ReplenishmentApprover")
   routesCreated             Route[]                  @relation("RouteCreator")
+  routesLastEdited          Route[]                  @relation("RouteLastEditor")
   scopeRevisionsMade        ScopeRevision[]          @relation("ScopeRevisionProposer")
   scopeRevisionsDecided     ScopeRevision[]          @relation("ScopeRevisionDecider")
   productsCreated           Product[]                @relation("ProductCreator")
@@ -1997,6 +1998,21 @@ model Route {
 
   createdById String? @map("created_by")
   createdBy   User?   @relation("RouteCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  // Edit setelah diterbitkan (redesain Route Planner, Sep 2026,
+  // docs/ARMADA-REDESIGN-2026.md) — rute PUBLISHED tetap terkunci secara
+  // DEFAULT (immutability = komitmen ke driver, lihat guard PATCH
+  // /routes/:id), tapi dispatcher kadang perlu ubah rute mendadak
+  // (perubahan jadwal customer di menit akhir, dll). Field ini SATU-
+  // SATUNYA jejak "siapa mengedit apa terakhir kali, kapan, kenapa" —
+  // kolom biasa (bukan tabel ledger append-only), PENYIMPANGAN SADAR yang
+  // SAMA dengan Job.podStatus: cukup untuk v1 (cuma edit TERAKHIR yang
+  // tersimpan, bukan riwayat penuh tiap edit). Naikkan jadi tabel
+  // RouteEditLog terpisah kalau nanti perlu riwayat lengkap.
+  lastEditReason String?   @map("last_edit_reason")
+  lastEditedAt   DateTime? @map("last_edited_at")
+  lastEditedById String?   @map("last_edited_by")
+  lastEditedBy   User?     @relation("RouteLastEditor", fields: [lastEditedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

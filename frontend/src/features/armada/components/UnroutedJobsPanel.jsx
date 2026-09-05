@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf } from "../jobStatus.js";
+import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
@@ -71,7 +72,12 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
     >
       <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
+        <div className="flex flex-wrap items-center gap-1">
+          <JobTypeBadge job={j} />
+          <RentalBadge job={j} />
+        </div>
+        <div className="mt-1 truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
+        <ServiceLabel job={j} />
         <div className="mt-0.5 truncate text-[10.5px] text-ink2">{j.addressText || "Alamat belum diisi"}</div>
         <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink3">
           {/* Tanggal ikut ditampilkan (D-063, 4 September 2026) — sejak
@@ -89,6 +95,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
           <span aria-hidden>·</span>
           <span>{unitCountOf(j)} unit</span>
         </div>
+        <div className="mt-1"><ConfirmedTimeBadge job={j} /></div>
       </div>
     </li>
   );

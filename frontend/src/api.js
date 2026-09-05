@@ -203,7 +203,10 @@ export const api = {
   getRoute: (id) => request(`/armada/routes/${id}`),
   createRoute: (data) => request("/armada/routes", { method: "POST", body: JSON.stringify(data) }),
   updateRoute: (id, data) => request(`/armada/routes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  setRouteJobs: (id, jobIds) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds }) }),
+  // reason (redesain Sep 2026) — WAJIB diisi kalau rute-nya PUBLISHED, lihat
+  // guard di backend armada.js PATCH /routes/:id/jobs. undefined/kosong
+  // untuk rute DRAFT (tidak diminta, tidak dikirim juga aman).
+  setRouteJobs: (id, jobIds, reason) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds, ...(reason && { reason }) }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas

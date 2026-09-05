@@ -176,7 +176,22 @@ const jobInclude = {
       // Terkirim, TANPA Menunggu/Pengambilan — tidak ada barang fisik yang
       // diambil dari customer, ini kasur/produk baru yang dibuat dari nol)
       // dari LAYANAN/SEWA (5 tahap penuh, ada fase pengambilan unit lama).
+      // Dipakai LAGI di Route Planner (redesain Sep 2026) untuk badge "Sewa"
+      // di kartu stop — kategori SEWA (prefix ID "SWS") beda alur retur/
+      // pengambilan-lagi dari LAYANAN/BARU biasa, dispatcher perlu tahu
+      // sekilas tanpa buka drawer.
       category: true,
+      // items (redesain Sep 2026) — label layanan/produk ringkas per kartu
+      // Route Planner ("apa yang dikerjakan di order ini"), sebelumnya cuma
+      // ada di halaman Order. Cukup 1 baris teratas (sortOrder asc) — kartu
+      // ini ruang sempit, bukan rincian lengkap add-on.
+      items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+      // pickupConfirmedDate/deliveryConfirmedDate (redesain Sep 2026) —
+      // tanggal PASTI (bukan estimasi teks bebas pickupEstimate/
+      // deliveryEstimate) untuk badge "Pasti: <tanggal>" di kartu Route
+      // Planner, supaya dispatcher tidak perlu buka drawer detail cuma untuk
+      // konfirmasi tanggal yang sudah disepakati ke customer.
+      pickupConfirmedDate: true, deliveryConfirmedDate: true,
       deliveryAddress: true, deliveryCity: true,
       customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
     },
@@ -197,6 +212,11 @@ const jobInclude = {
               status: true,
               // category (D-051) — lihat catatan di order.select di atas.
               category: true,
+              // items/pickupConfirmedDate/deliveryConfirmedDate (redesain
+              // Sep 2026) — sama alasan dengan order.select di atas, jalur
+              // fallback ini dipakai job yang cuma py order lewat units[].
+              items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+              pickupConfirmedDate: true, deliveryConfirmedDate: true,
               // D-032 — alamat/kota SALES/rencana (D-027), dipakai FE
               // sebagai prefill saat dispatcher pertama kali isi addressText
               // job ini (belum ada alamat verifikasi lapangan). Keputusan
@@ -436,7 +456,19 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         // (snapshot alamat lengkap), tidak cocok dijadikan kunci
         // pengelompokan — Order.deliveryCity (diisi sales, dropdown kota
         // tetap) yang dipakai.
-        order: { select: { id: true, orderNumber: true, deliveryCity: true, customer: { select: { id: true, name: true, phone: true } } } },
+        // category/items/pickupConfirmedDate/deliveryConfirmedDate
+        // (redesain Route Planner, Sep 2026) — panel "Belum Masuk Rute"
+        // memakai endpoint INI (bukan jobInclude di atas), jadi field yang
+        // sama perlu ditambahkan di sini juga supaya badge Sewa/label
+        // layanan/tanggal pasti konsisten di kedua panel Route Planner.
+        order: {
+          select: {
+            id: true, orderNumber: true, deliveryCity: true, category: true,
+            items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+            pickupConfirmedDate: true, deliveryConfirmedDate: true,
+            customer: { select: { id: true, name: true, phone: true } },
+          },
+        },
       },
       orderBy: [{ scheduledDate: "desc" }, { sequence: "asc" }, { createdAt: "desc" }],
       take: Math.min(Number(take) || 200, 500),
@@ -1092,6 +1124,11 @@ const routeInclude = {
   // pada field Route.helperId untuk kenapa field ini ditambahkan.
   helper: { select: { id: true, name: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
+  // lastEditedBy (redesain Sep 2026) — siapa terakhir mengedit rute PUBLISHED
+  // ini, dipasangkan dengan Route.lastEditReason/lastEditedAt (kolom biasa,
+  // lihat catatan panjang di schema.prisma) supaya UI bisa menampilkan
+  // "diedit oleh X, <alasan>" pada rute yang sudah diterbitkan tapi diubah.
+  lastEditedBy: { select: { id: true, name: true } },
   jobs: {
     include: jobInclude,
     orderBy: { sequence: "asc" },
@@ -1172,24 +1209,58 @@ armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) 
   }
 });
 
+// Edit rute setelah diterbitkan (redesain Route Planner, Sep 2026,
+// docs/ARMADA-REDESIGN-2026.md) — DRAFT tetap bebas diedit seperti biasa.
+// PUBLISHED BOLEH diedit juga sekarang, TAPI wajib `reason` (alasan
+// singkat) — bukan membuka kunci tanpa syarat: immutability rute yang
+// sudah diterbitkan tetap jadi default (komitmen ke driver), `reason`
+// adalah jalur darurat yang tercatat (Route.lastEditReason/lastEditedAt/
+// lastEditedById), bukan penghapusan aturan itu. IN_PROGRESS/COMPLETED/
+// CANCELLED TETAP terkunci — rute yang sedang/sudah dijalankan atau
+// dibatalkan bukan kasus "rencana berubah", beda persoalan.
 armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id } });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
-    if (route.status !== "DRAFT") {
-      throw new ArmadaError("Rute yang sudah diterbitkan tidak bisa diedit langsung — batalkan lalu buat rute baru");
+
+    const { driverId, helperId, vehicleId, notes, reason } = req.body;
+    const editingPublished = route.status === "PUBLISHED";
+    if (editingPublished && !reason?.trim()) {
+      throw new ArmadaError("Rute sudah diterbitkan — wajib isi alasan untuk mengeditnya");
+    }
+    if (!editingPublished && route.status !== "DRAFT") {
+      throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa diedit`);
     }
 
-    const { driverId, helperId, vehicleId, notes } = req.body;
-    const updated = await prisma.route.update({
-      where: { id: req.params.id },
-      data: {
-        ...(driverId !== undefined && { driverId: driverId || null }),
-        ...(helperId !== undefined && { helperId: helperId || null }),
-        ...(vehicleId !== undefined && { vehicleId: vehicleId || null }),
-        ...(notes !== undefined && { notes: notes?.trim() || null }),
-      },
-      include: routeInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const r = await tx.route.update({
+        where: { id: req.params.id },
+        data: {
+          ...(driverId !== undefined && { driverId: driverId || null }),
+          ...(helperId !== undefined && { helperId: helperId || null }),
+          ...(vehicleId !== undefined && { vehicleId: vehicleId || null }),
+          ...(notes !== undefined && { notes: notes?.trim() || null }),
+          ...(editingPublished && {
+            lastEditReason: reason.trim(),
+            lastEditedAt: new Date(),
+            lastEditedById: req.user.id,
+          }),
+        },
+        include: routeInclude,
+      });
+      // Rute PUBLISHED sudah menyalin driver/helper/vehicle-nya ke SETIAP
+      // job anggota saat diterbitkan (lihat POST /routes/:id/publish) — job
+      // itulah yang benar-benar dibaca driver app, BUKAN Route.driverId.
+      // Kalau field ini diedit di sini tanpa re-cascade, Route dan Job-nya
+      // diam-diam beda ("desync") — dispatcher lihat driver baru di kartu
+      // rute, tapi driver app/JobDetailDrawer masih tampilkan driver lama.
+      if (editingPublished && (driverId !== undefined || helperId !== undefined || vehicleId !== undefined)) {
+        await tx.job.updateMany({
+          where: { routeId: r.id },
+          data: { driverId: r.driverId, helperId: r.helperId, vehicleId: r.vehicleId },
+        });
+      }
+      return r;
     });
     res.json(updated);
   } catch (err) {
@@ -1203,11 +1274,21 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
 // frontend mengirim urutan LENGKAP hasil akhirnya, bukan delta per langkah.
 // Job yang TIDAK ada di jobIds baru tapi sebelumnya milik rute ini DILEPAS
 // (routeId & sequence di-null-kan) — itu cara "keluarkan dari rute" di UI.
+// Sama syarat "reason wajib untuk PUBLISHED" dengan PATCH /routes/:id di
+// atas — lihat catatan panjang di sana.
 armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id } });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
-    if (route.status !== "DRAFT") throw new ArmadaError("Rute yang sudah diterbitkan tidak bisa diubah anggotanya");
+
+    const { reason } = req.body;
+    const editingPublished = route.status === "PUBLISHED";
+    if (editingPublished && !reason?.trim()) {
+      throw new ArmadaError("Rute sudah diterbitkan — wajib isi alasan untuk mengubah anggotanya");
+    }
+    if (!editingPublished && route.status !== "DRAFT") {
+      throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa diubah anggotanya`);
+    }
 
     const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
 
@@ -1223,6 +1304,27 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
         await tx.job.update({
           where: { id: jobIds[i] },
           data: { routeId: route.id, sequence: i + 1 },
+        });
+      }
+      // Rute PUBLISHED — stop yang BARU ditambahkan lewat edit darurat ini
+      // perlu ikut disalinkan driver/helper/vehicle rutenya juga (persis
+      // yang dilakukan POST /routes/:id/publish saat rute pertama kali
+      // diterbitkan), supaya tidak ada job "menempel ke rute tapi tidak
+      // pernah kebagian driver". Stop LAMA yang tetap di rute ini tidak
+      // rugi diulang (data-nya sama), jadi disamaratakan saja tanpa
+      // membedakan mana yang baru vs lama — lebih sederhana dan pasti benar.
+      if (editingPublished) {
+        await tx.job.updateMany({
+          where: { routeId: route.id },
+          data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
+        });
+        await tx.job.updateMany({
+          where: { routeId: route.id, status: "UNSCHEDULED" },
+          data: { status: "ASSIGNED" },
+        });
+        await tx.route.update({
+          where: { id: route.id },
+          data: { lastEditReason: reason.trim(), lastEditedAt: new Date(), lastEditedById: req.user.id },
         });
       }
     });

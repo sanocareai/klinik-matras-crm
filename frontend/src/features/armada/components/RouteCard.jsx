@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf } from "../jobStatus.js";
-import { JobMetaRow } from "./JobBadges.jsx";
+import { JobMetaRow, JobTypeBadge, RentalBadge, ConfirmedTimeBadge, ServiceLabel } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -30,36 +30,57 @@ export default function RouteCard({
   // drag & drop-nya ga smooth".
   const [draggingStopId, setDraggingStopId] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Edit rute setelah diterbitkan (redesain Route Planner, Sep 2026) — null
+  // = terkunci seperti biasa. String = SEDANG diedit darurat, isinya alasan
+  // yang diminta sekali di awal (window.prompt, pola sama dengan confirm()
+  // yang sudah dipakai Batalkan/Hapus di ArmadaRoutes.jsx — bukan modal
+  // baru untuk satu field teks) dan dikirim ke SETIAP mutasi selama sesi
+  // edit ini (backend PATCH /routes/:id & /routes/:id/jobs mewajibkannya
+  // untuk rute PUBLISHED, lihat armada.js). Tidak ada tombol "Simpan"
+  // terpisah — tiap aksi (drag, ganti driver, dst) sudah menyimpan LANGSUNG
+  // persis seperti mode Draft, "Selesai" di bawah cuma menutup mode edit.
+  const [editingReason, setEditingReason] = useState(null);
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
   const kapasitas = route.vehicle?.capacitySlots;
   const overCapacity = kapasitas != null && totalUnits > kapasitas;
   const isDraft = route.status === "DRAFT";
+  const canEmergencyEdit = route.status === "PUBLISHED";
+  // Kontrol interaktif (drag/drop, dropdown driver, tombol keluarkan) tampil
+  // untuk DRAFT seperti biasa ATAU rute PUBLISHED yang SEDANG dalam sesi
+  // edit darurat — dua kondisi beda tapi bentuk UI-nya sama persis.
+  const isEditable = isDraft || editingReason != null;
 
   async function jalankan(fn) {
     setBusy(true);
     try { await fn(); } finally { setBusy(false); }
   }
 
+  function mulaiEditDarurat() {
+    const alasan = window.prompt("Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang:");
+    if (!alasan?.trim()) return; // batal kalau kosong/Cancel
+    setEditingReason(alasan.trim());
+  }
+
   function handleDropOnCard(e) {
     e.preventDefault();
     setDragOverIdx(null);
-    if (!isDraft) return;
+    if (!isEditable) return;
     const jobId = e.dataTransfer.getData("text/job-id") || draggingJobId;
-    if (jobId) jalankan(() => onDrop(route, jobId, jobs.length));
+    if (jobId) jalankan(() => onDrop(route, jobId, jobs.length, editingReason));
   }
 
   function handleDropAtIndex(e, idx) {
     e.preventDefault();
     e.stopPropagation();
     setDragOverIdx(null);
-    if (!isDraft) return;
+    if (!isEditable) return;
     const jobId = e.dataTransfer.getData("text/job-id") || draggingJobId;
     if (!jobId) return;
     const sudahDiRuteIni = jobs.some((j) => j.id === jobId);
-    if (sudahDiRuteIni) jalankan(() => onReorder(route, jobId, idx));
-    else jalankan(() => onDrop(route, jobId, idx));
+    if (sudahDiRuteIni) jalankan(() => onReorder(route, jobId, idx, editingReason));
+    else jalankan(() => onDrop(route, jobId, idx, editingReason));
   }
 
   return (
@@ -91,7 +112,7 @@ export default function RouteCard({
             tersirat di dalam kode rute (mis. "RTE-040926-01"). */}
         {route.date && <p className="text-[10.5px] text-ink3">{formatTanggal(route.date)}</p>}
 
-        {isDraft ? (
+        {isEditable ? (
           // FilterDropdown menggantikan <select> polos (D-055) — komponen
           // ini SUDAH dibangun 31 Agustus 2026 justru untuk kasus persis
           // ini (lihat komentarnya sendiri: menggantikan native select di
@@ -102,7 +123,7 @@ export default function RouteCard({
           <>
             <FilterDropdown
               value={route.driverId || ""}
-              onChange={(id) => jalankan(() => onAssign(route, { driverId: id || null }))}
+              onChange={(id) => jalankan(() => onAssign(route, { driverId: id || null }, editingReason))}
               options={drivers.map((d) => ({ value: d.id, label: d.name }))}
               placeholder="Pilih driver…"
               icon={User}
@@ -117,7 +138,7 @@ export default function RouteCard({
                 setiap job saat "Terbitkan" (lihat POST /routes/:id/publish). */}
             <FilterDropdown
               value={route.helperId || ""}
-              onChange={(id) => jalankan(() => onAssign(route, { helperId: id || null }))}
+              onChange={(id) => jalankan(() => onAssign(route, { helperId: id || null }, editingReason))}
               options={helpers.map((h) => ({ value: h.id, label: h.name }))}
               placeholder="Pilih helper (opsional)…"
               icon={Users}
@@ -126,19 +147,59 @@ export default function RouteCard({
             />
             <FilterDropdown
               value={route.vehicleId || ""}
-              onChange={(id) => jalankan(() => onAssign(route, { vehicleId: id || null }))}
+              onChange={(id) => jalankan(() => onAssign(route, { vehicleId: id || null }, editingReason))}
               options={vehicles.map((v) => ({ value: v.id, label: `${v.plateNumber} · ${v.capacitySlots} slot` }))}
               placeholder="Pilih kendaraan…"
               icon={Truck}
               ariaLabel={`Kendaraan untuk ${route.code}`}
               triggerClassName="w-full max-w-none"
             />
+            {/* Cuma tampil saat SEDANG edit darurat (bukan Draft biasa) —
+                Draft tidak butuh tombol "selesai", tidak pernah masuk mode
+                ini. */}
+            {editingReason != null && (
+              <button
+                type="button"
+                onClick={() => setEditingReason(null)}
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-btn bg-greenbg text-[11.5px] font-bold text-green transition-opacity hover:opacity-80"
+              >
+                <Check size={13} /> Selesai Edit
+              </button>
+            )}
           </>
         ) : (
-          <div className="text-[11.5px] text-ink2">
-            {route.driver?.name || "Tanpa driver"}
-            {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 text-[11.5px] text-ink2">
+              {route.driver?.name || "Tanpa driver"}
+              {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
+            </div>
+            {/* Edit darurat (redesain Sep 2026) — HANYA untuk PUBLISHED.
+                IN_PROGRESS/COMPLETED/CANCELLED tetap terkunci total (lihat
+                canEmergencyEdit) — rute yang sedang/sudah dijalankan atau
+                dibatalkan bukan kasus "rencana berubah mendadak". */}
+            {canEmergencyEdit && (
+              <button
+                type="button"
+                onClick={mulaiEditDarurat}
+                title="Rute sudah diterbitkan — edit tetap bisa, wajib isi alasan (tercatat)"
+                className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-hovertint hover:text-accent"
+              >
+                <Pencil size={11} /> Edit
+              </button>
+            )}
           </div>
+        )}
+        {/* Jejak edit darurat terakhir (Route.lastEditReason, kolom biasa
+            bukan ledger — lihat catatan panjang di schema.prisma) — tampil
+            terus walau sesi edit sudah selesai, supaya dispatcher lain yang
+            buka Route Planner tahu rute ini pernah diubah setelah
+            diterbitkan, bukan cuma orang yang mengedit yang tahu. */}
+        {route.status !== "DRAFT" && route.lastEditReason && (
+          <p className="rounded-btn bg-orangebg px-2 py-1 text-[10px] text-orange">
+            Diedit {route.lastEditedBy?.name ? `oleh ${route.lastEditedBy.name} ` : ""}
+            {route.lastEditedAt ? `(${formatTanggal(route.lastEditedAt)}) ` : ""}
+            — {route.lastEditReason}
+          </p>
         )}
 
         <div className={cn("flex items-center justify-between text-[10.5px]", overCapacity ? "font-semibold text-red" : "text-ink3")}>
@@ -155,16 +216,16 @@ export default function RouteCard({
           dibanding transisi halus yang sudah jadi standar di tempat lain
           (kartu, popover). */}
       <div
-        onDragOver={(e) => { if (isDraft) { e.preventDefault(); setDragOverIdx(jobs.length); } }}
+        onDragOver={(e) => { if (isEditable) { e.preventDefault(); setDragOverIdx(jobs.length); } }}
         onDrop={handleDropOnCard}
         className={cn(
           "min-h-[80px] flex-1 space-y-1.5 p-2 transition-colors duration-150",
-          dragOverIdx !== null && isDraft && "bg-accentbg/40"
+          dragOverIdx !== null && isEditable && "bg-accentbg/40"
         )}
       >
         {jobs.length === 0 ? (
           <p className="px-2 py-6 text-center text-[11px] text-ink3">
-            {isDraft ? "Seret job ke sini" : "Tidak ada stop"}
+            {isEditable ? "Seret job ke sini" : "Tidak ada stop"}
           </p>
         ) : (
           jobs
@@ -173,9 +234,9 @@ export default function RouteCard({
             .map((j, idx) => (
               <div
                 key={j.id}
-                draggable={isDraft}
+                draggable={isEditable}
                 onDragStart={(e) => { e.dataTransfer.setData("text/job-id", j.id); setDraggingStopId(j.id); }}
-                onDragOver={(e) => { if (isDraft) { e.preventDefault(); e.stopPropagation(); setDragOverIdx(idx); } }}
+                onDragOver={(e) => { if (isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverIdx(idx); } }}
                 onDrop={(e) => handleDropAtIndex(e, idx)}
                 onDragEnd={() => { setDraggingStopId(null); setDragOverIdx(null); }}
                 className={cn(
@@ -198,7 +259,7 @@ export default function RouteCard({
                   // seleksi teks di sini memastikan gestur drag PERTAMA
                   // langsung terbaca sebagai drag, bukan seleksi.
                   "dh-stop-card flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
-                  isDraft && "cursor-grab active:cursor-grabbing",
+                  isEditable && "cursor-grab active:cursor-grabbing",
                   dragOverIdx === idx && "ring-2 ring-accent",
                   // Item yang sedang digeser memudar + sedikit mengecil —
                   // penanda visual yang SEBELUMNYA tidak ada sama sekali di
@@ -207,7 +268,7 @@ export default function RouteCard({
                   draggingStopId === j.id && "scale-[0.97] opacity-40"
                 )}
               >
-                {isDraft && <GripVertical size={12} className="mt-0.5 shrink-0 text-ink3" aria-hidden />}
+                {isEditable && <GripVertical size={12} className="mt-0.5 shrink-0 text-ink3" aria-hidden />}
                 <span className="mt-0.5 shrink-0 text-[10px] font-bold text-ink3">{idx + 1}.</span>
                 {/* Avatar gradien (D-055) — konsisten dengan pola
                     avatar-forward di seluruh Delivery Hub (Dashboard,
@@ -215,14 +276,22 @@ export default function RouteCard({
                     identitas visual sama sekali. */}
                 <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-5 w-5 shrink-0 text-[8px]" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <JobTypeBadge job={j} />
+                    <RentalBadge job={j} />
+                  </div>
+                  <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
+                  <ServiceLabel job={j} />
                   <div className="truncate text-[10px] text-ink2">{j.addressText || "—"}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <ConfirmedTimeBadge job={j} />
+                  </div>
                   <JobMetaRow job={j} className="mt-1" />
                 </div>
-                {isDraft && (
+                {isEditable && (
                   <button
                     type="button"
-                    onClick={() => jalankan(() => onRemoveJob(route, j.id))}
+                    onClick={() => jalankan(() => onRemoveJob(route, j.id, editingReason))}
                     aria-label={`Keluarkan job dari ${route.code}`}
                     className="mt-0.5 shrink-0 text-ink3 transition-colors hover:text-red"
                   >

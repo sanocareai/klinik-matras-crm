@@ -1,7 +1,7 @@
 # Armada (Delivery & Fulfillment) — Redesign & Maximization
 ### Design & Roadmap Document
 **Owner:** Sano · **Company:** Klinik Matras by SANO Care · **Date:** September 2026
-**Status:** Proposal — awaiting Gilang/ops sign-off on Open Questions (§9) before Phase B onward
+**Status:** Phases A-D shipped. Phase E deliberately not built (owner decision, §5). Route Planner card-identification + emergency-edit follow-up shipped (§10, outside the original 4-gap scope, requested directly on top of it after Phase D).
 
 ---
 
@@ -164,7 +164,21 @@ Sequenced, each phase independently shippable — consistent with the existing P
 
 ---
 
-## 10. What this document deliberately does not do
+## 10. Route Planner — card identification & emergency edit (follow-up, shipped)
+
+Requested directly against the live Route Planner after Phase D, not part of the original 4-gap scope — kept here for continuity rather than a separate document.
+
+**1-2-3. Card identification.** `frontend/src/features/armada/components/JobBadges.jsx` gained `JobTypeBadge` (PICKUP filled-accent vs DELIVERY outline chip, plus a distinct icon each — never color alone, per this codebase's own `StatusBadge.jsx` accessibility rule), `RentalBadge` ("Sewa", `Order.category === "SEWA"`), `ServiceLabel` (first `OrderItem.layananName`), and `ConfirmedTimeBadge` (`Order.pickupConfirmedDate`/`deliveryConfirmedDate` — the real confirmed date, not the free-text estimate field). Wired into both `RouteCard.jsx` stops and `UnroutedJobsPanel.jsx` cards.
+
+**Why no new color was added for these:** checked `tokens.css` directly and found `--color-chart-violet`/`--color-ai-violet` are both literally aliased to `var(--accent)` in production — this app has already, deliberately, collapsed every decorative hue down to one accent blue. Adding a genuinely new hue would break with that enforced pattern, not just a style guideline. Distinction is carried by icon + label + fill-vs-outline instead.
+
+**4. Emergency edit of published routes.** Per your decision: routes stay locked by default after publishing (unchanged — "immutability = commitment to the driver"), but a dispatcher can now click "Edit" on a `PUBLISHED` route, is prompted for a mandatory reason (`window.prompt`, matching the existing `confirm()` pattern already used for Cancel/Delete rather than introducing a new modal for one text field), and the route unlocks exactly like Draft until "Selesai Edit." The reason is recorded on `Route.lastEditReason`/`lastEditedAt`/`lastEditedById` (new columns, migration `20260905180000_route_edit_after_publish`) and shown on the card so other dispatchers see a route was edited after publishing, not just the person who did it. Backend guards in `PATCH /routes/:id` and `PATCH /routes/:id/jobs` require the reason for `PUBLISHED` and re-cascade driver/helper/vehicle to member jobs on every edit (mirroring what `POST /routes/:id/publish` already does), so Route and Job assignment can't silently desync. `IN_PROGRESS`/`COMPLETED`/`CANCELLED` routes remain fully locked — this is for "plans changed," not for routes already underway or finished.
+
+**5. Confirmed pickup/delivery time** — see point 1-2-3 above, `ConfirmedTimeBadge`.
+
+---
+
+## 11. What this document deliberately does not do
 
 - It does not change any visual style, component library, or color system — per explicit instruction, this is IA and capability work only.
 - It does not touch the Expo `mobile/` app — that's a separate Sales/CRM product with no armada surface today; extending it is a distinct decision, not assumed here.

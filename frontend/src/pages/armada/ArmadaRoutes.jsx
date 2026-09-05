@@ -142,16 +142,20 @@ export default function ArmadaRoutes() {
 
   // Susun ulang anggota SATU rute lalu kirim daftar LENGKAP hasil akhirnya —
   // pola yang sama dengan PATCH /route/reorder yang sudah ada di Papan.
-  async function terapkanUrutan(route, jobIdsBaru) {
-    await api.setRouteJobs(route.id, jobIdsBaru);
+  // `reason` (redesain Sep 2026) — cuma terisi kalau RouteCard SEDANG dalam
+  // sesi edit darurat rute PUBLISHED (lihat editingReason di sana);
+  // undefined untuk rute DRAFT biasa, backend PATCH /routes/:id/jobs
+  // mengabaikannya kalau tidak PUBLISHED.
+  async function terapkanUrutan(route, jobIdsBaru, reason) {
+    await api.setRouteJobs(route.id, jobIdsBaru, reason);
     await load();
   }
 
-  async function tambahKeRute(route, jobId, index) {
+  async function tambahKeRute(route, jobId, index, reason) {
     const idsSaatIni = (route.jobs || []).slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => j.id);
     const idsBaru = [...idsSaatIni];
     idsBaru.splice(index, 0, jobId);
-    await terapkanUrutan(route, idsBaru);
+    await terapkanUrutan(route, idsBaru, reason);
   }
 
   // Bulk add (D-058) DIHAPUS (D-068, 4 September 2026) — laporan owner:
@@ -161,20 +165,20 @@ export default function ArmadaRoutes() {
   // DRAFT (guard `isDraft` di RouteCard.jsx sendiri) — lihat
   // UnroutedJobsPanel.jsx untuk detailnya.
 
-  async function urutkanUlang(route, jobId, indexBaru) {
+  async function urutkanUlang(route, jobId, indexBaru, reason) {
     const idsSaatIni = (route.jobs || []).slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => j.id);
     const tanpaJobIni = idsSaatIni.filter((id) => id !== jobId);
     tanpaJobIni.splice(indexBaru, 0, jobId);
-    await terapkanUrutan(route, tanpaJobIni);
+    await terapkanUrutan(route, tanpaJobIni, reason);
   }
 
-  async function keluarkanDariRute(route, jobId) {
+  async function keluarkanDariRute(route, jobId, reason) {
     const idsBaru = (route.jobs || []).filter((j) => j.id !== jobId).sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => j.id);
-    await terapkanUrutan(route, idsBaru);
+    await terapkanUrutan(route, idsBaru, reason);
   }
 
-  async function ubahPenugasan(route, patch) {
-    await api.updateRoute(route.id, patch);
+  async function ubahPenugasan(route, patch, reason) {
+    await api.updateRoute(route.id, reason ? { ...patch, reason } : patch);
     await load();
   }
 

@@ -1,8 +1,12 @@
 import React from "react";
-import { Clock, Phone } from "lucide-react";
+import { Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2 } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf } from "../jobStatus.js";
+import {
+  salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
+  isRentalOrder, serviceLabelOf, confirmedDateOf,
+} from "../jobStatus.js";
+import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // ─── Badge Sales Person & Estimasi Durasi (D-043, 2 September 2026) ──────────
 // Laporan owner: dispatcher perlu tahu SIAPA sales pemilik order (buat
@@ -49,6 +53,80 @@ export function EstimasiBadge({ job, className }) {
       {label}
     </span>
   );
+}
+
+// ─── Identifikasi kartu Route Planner (redesain Sep 2026) ───────────────────
+// Palet dibatasi (docs/design-system/sano-color-system.md — hanya
+// accent/red/orange/green, dekoratif lain SENGAJA dilebur ke accent, lihat
+// --color-chart-violet/-ai-violet di tokens.css yang keduanya = var(--accent)
+// bukan warna violet sungguhan). Jadi pembeda visual di sini TIDAK menambah
+// hue baru — Pengambilan pakai chip TERISI (accent), Pengiriman pakai chip
+// GARIS (outline, netral); ikon + label beda juga, bukan warna doang
+// (aturan "jangan andalkan warna sendirian" — lihat StatusBadge.jsx).
+export function JobTypeBadge({ job, className }) {
+  const pickup = job?.type === "PICKUP";
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+        pickup ? "bg-accentbg text-accent" : "border border-border text-ink2",
+        className
+      )}
+    >
+      {pickup ? <PackageOpen size={11} className="shrink-0" /> : <Truck size={11} className="shrink-0" />}
+      {pickup ? "Pengambilan" : "Pengiriman"}
+    </span>
+  );
+}
+
+// Order kategori SEWA — orange (bukan warna baru, tone yang sudah ada),
+// dipakai TERBATAS di sini karena SEWA memang jarang dibanding LAYANAN/BARU,
+// jadi kecil risiko ketuker dengan badge status RESCHEDULED (juga orange)
+// di kartu yang sama — bentuknya beda (pil bertitik ikon RotateCcw + teks
+// "Sewa" pendek) dan posisinya berdampingan dengan JobTypeBadge, bukan di
+// tempat status job.
+export function RentalBadge({ job, className }) {
+  if (!isRentalOrder(job)) return null;
+  return (
+    <span
+      title="Order kategori Sewa — alur retur/pengambilan ulang beda dari order biasa"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange",
+        className
+      )}
+    >
+      <RotateCcw size={11} className="shrink-0" /> Sewa
+    </span>
+  );
+}
+
+// Tanggal PASTI (Order.pickupConfirmedDate/deliveryConfirmedDate) — hijau,
+// beda dari EstimasiBadge (oranye = perkiraan): ini FAKTA yang sudah
+// disepakati ke customer, bukan angka perkiraan. null (belum dikonfirmasi)
+// = tidak render apa-apa, bukan tempelan "Belum pasti" di setiap kartu.
+export function ConfirmedTimeBadge({ job, className }) {
+  const tanggal = confirmedDateOf(job);
+  if (!tanggal) return null;
+  return (
+    <span
+      title={`Tanggal ${job?.type === "PICKUP" ? "pengambilan" : "pengiriman"} PASTI, sudah dikonfirmasi ke pelanggan`}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] font-semibold text-green",
+        className
+      )}
+    >
+      <CalendarCheck2 size={11} className="shrink-0" /> Pasti: {formatTanggalPendek(tanggal)}
+    </span>
+  );
+}
+
+// Label layanan/produk ringkas — teks biasa (BUKAN badge/pil), sengaja
+// dipisah dari baris badge di atas: ini konteks ("apa yang dikerjakan"),
+// bukan status/penanda yang perlu menonjol dengan warna.
+export function ServiceLabel({ job, className }) {
+  const label = serviceLabelOf(job);
+  if (!label) return null;
+  return <p className={cn("truncate text-[10.5px] text-ink3", className)}>{label}</p>;
 }
 
 // Baris gabungan dua badge di atas, dipakai kalau keduanya wajar tampil

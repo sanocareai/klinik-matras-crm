@@ -109,6 +109,38 @@ export function cityOf(job) {
   return job?.order?.deliveryCity || job?.units?.[0]?.unit?.order?.deliveryCity || null;
 }
 
+// ─── Route Planner card identification (redesain Sep 2026) ─────────────────
+// Pola fallback SAMA dengan cityOf/customerOf di atas — job.order langsung
+// dulu, jatuh ke jalur berlapis units[].unit.order kalau job.order belum
+// ke-load (backend jobInclude/GET-jobs order.select ditambahkan field yang
+// sama di kedua jalur, lihat armada.js).
+
+// Order kategori SEWA (kasur sewa, prefix ID "SWS") — alur retur/pengambilan
+// beda dari LAYANAN/BARU biasa, dispatcher perlu tahu sekilas dari kartu
+// tanpa buka drawer. Lihat CLAUDE.md §7D untuk arti kategori ini.
+export function isRentalOrder(job) {
+  return (job?.order?.category || job?.units?.[0]?.unit?.order?.category) === "SEWA";
+}
+
+// Label layanan/produk ringkas ("apa yang dikerjakan di order ini") — dari
+// OrderItem pertama (sortOrder asc), bukan rincian lengkap add-on (kartu
+// Route Planner ruang sempit, cukup satu baris untuk konteks cepat).
+export function serviceLabelOf(job) {
+  return job?.order?.items?.[0]?.layananName || job?.units?.[0]?.unit?.order?.items?.[0]?.layananName || null;
+}
+
+// Tanggal PASTI pengambilan/pengiriman — dari Order.pickupConfirmedDate/
+// deliveryConfirmedDate (DateTime asli, diisi BELAKANGAN setelah dispatcher
+// konfirmasi ke customer), BUKAN dari pickupEstimate/deliveryEstimate (teks
+// bebas, "Agustus 2026" dsb — tidak bisa dijadikan tanggal presisi, sama
+// disiplin dengan isJobOverdue soal timeWindow). null = belum dikonfirmasi,
+// pemanggil yang putuskan mau tampil apa (bukan dipaksa tampil tanggal kosong).
+export function confirmedDateOf(job) {
+  const order = job?.order || job?.units?.[0]?.unit?.order;
+  if (!order) return null;
+  return job?.type === "PICKUP" ? (order.pickupConfirmedDate || null) : (order.deliveryConfirmedDate || null);
+}
+
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
 // dispatcher perlu tahu siapa sales-nya buat koordinasi). Pola fallback
 // SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
