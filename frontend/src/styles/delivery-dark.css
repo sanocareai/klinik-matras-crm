@@ -383,6 +383,23 @@
 [data-theme="dark"] .glass-division .card,
 [data-theme="dark"] .glass-division [class*="rounded-card"]:not(.kpi-glass-guard),
 [data-theme="dark"] .glass-division .settings-card,
+/* .chart-card/.workflow-card/.product-editor (D-109, 5 September 2026) —
+   pilot kaca diperluas ke Galeri Produk/Broadcast/Otomasi. Ketiganya class
+   CSS LEGACY dari sebelum migrasi Tailwind (index.css), SUDAH lama dinormal-
+   kan lintas tema oleh tokens.css (`background-color: var(--bg-surface)`,
+   di dalam @layer base — makanya AMAN ditimpa rule kaca ini yang unlayered,
+   layer manapun otomatis kalah lawan unlayered, dibuktikan lewat .dh-table/
+   .rounded-xl.bg-surface di atas yang sudah jalan). Ditambahkan LANGSUNG ke
+   selector wildcard ini (bukan blok terpisah, sama pola dengan .dh-table)
+   supaya otomatis ikut kalau resep kaca berubah lagi. `.estimate-card`
+   (Broadcast.jsx) SENGAJA TIDAK diikutkan — index.css punya catatan
+   eksplisit "sengaja belum disentuh, ini gelombang migrasi terpisah,
+   BUKAN lupa" untuk badge/alert semantik berwarna termasuk kelas itu;
+   menimpanya di sini akan melangkahi keputusan yang sudah didokumentasikan
+   sengaja ditunda. */
+[data-theme="dark"] .glass-division .chart-card,
+[data-theme="dark"] .glass-division .workflow-card,
+[data-theme="dark"] .glass-division .product-editor,
 /* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
    BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
    halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
@@ -414,6 +431,9 @@
 
 [data-theme="dark"] .glass-division .card::before,
 [data-theme="dark"] .glass-division [class*="rounded-card"]:not(.kpi-glass-guard)::before,
+[data-theme="dark"] .glass-division .chart-card::before,
+[data-theme="dark"] .glass-division .workflow-card::before,
+[data-theme="dark"] .glass-division .product-editor::before,
 [data-theme="dark"] .glass-division .dh-table::before,
 [data-theme="dark"] .glass-division .rounded-xl.bg-surface::before {
   content: "";

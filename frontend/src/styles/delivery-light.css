@@ -243,6 +243,12 @@ html:not([data-theme="dark"]) .glass-division .app-content > header button[title
 html:not([data-theme="dark"]) .glass-division .card,
 html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.kpi-glass-guard),
 html:not([data-theme="dark"]) .glass-division .settings-card,
+/* .chart-card/.workflow-card/.product-editor (D-109) — pasangan mode
+   terang, baca komentar lengkap (termasuk kenapa .estimate-card SENGAJA
+   dikecualikan) di delivery-dark.css. */
+html:not([data-theme="dark"]) .glass-division .chart-card,
+html:not([data-theme="dark"]) .glass-division .workflow-card,
+html:not([data-theme="dark"]) .glass-division .product-editor,
 /* .dh-table (D-078, 5 September 2026) — pasangan mode terang dari blok yang
    sama di delivery-dark.css, baca komentar di sana untuk konteks lengkap. */
 html:not([data-theme="dark"]) .glass-division .dh-table,
@@ -268,6 +274,9 @@ html:not([data-theme="dark"]) .glass-division .rounded-xl.bg-surface {
 
 html:not([data-theme="dark"]) .glass-division .card::before,
 html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.kpi-glass-guard)::before,
+html:not([data-theme="dark"]) .glass-division .chart-card::before,
+html:not([data-theme="dark"]) .glass-division .workflow-card::before,
+html:not([data-theme="dark"]) .glass-division .product-editor::before,
 html:not([data-theme="dark"]) .glass-division .dh-table::before,
 html:not([data-theme="dark"]) .glass-division .rounded-xl.bg-surface::before {
   content: "";

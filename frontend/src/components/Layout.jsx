@@ -484,7 +484,26 @@ export default function Layout({ user, onLogout, children }) {
   // sebelumnya yang pakai komponen <Card> langsung (bukan div bg-surface
   // manual) — otomatis dapat glass penuh (blur+hairline) tanpa perlu class
   // tambahan, itu memang perilaku wildcard yang diinginkan.
-  const GLASS_PILOT_PATHS = ["/dashboard", "/customers", "/pipeline", "/orders"];
+  // D-109, 5 September 2026 — 7 halaman sekaligus (owner: "redesign...
+  // galeri produk, broadcast & campaign, link pelacakan, sales performance
+  // intelligence, tanya sano, otomasi, dan pengaturan"). Diaudit dulu satu
+  // per satu (lihat delivery-dark.css §2 D-109 untuk detail class legacy
+  // yang ditemukan & kenapa masing-masing aman/dikecualikan):
+  //  - "/products" (Galeri Produk), "/broadcast" (Broadcast & Campaign),
+  //    "/automation" (Otomasi): PUNYA class CSS legacy (.product-editor,
+  //    .chart-card/.estimate-card, .workflow-card) — sebagian ditambahkan ke
+  //    wildcard kaca, `.estimate-card` SENGAJA DIKECUALIKAN (index.css sudah
+  //    menulis eksplisit itu "gelombang migrasi terpisah", bukan lupa).
+  //  - "/tracking" (Link Pelacakan): pakai `.card` polos, SUDAH cocok
+  //    wildcard yang ada, nol perubahan CSS perlu.
+  //  - "/sales-intelligence", "/copilot", "/pengaturan-sales": NOL kelas
+  //    legacy/hardcode warna (diverifikasi grep) — paling aman dari
+  //    ketujuhnya, murni Tailwind + token tema.
+  const GLASS_PILOT_PATHS = [
+    "/dashboard", "/customers", "/pipeline", "/orders",
+    "/products", "/broadcast", "/tracking", "/sales-intelligence",
+    "/copilot", "/automation", "/pengaturan-sales",
+  ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   const glassOn = divisionKey === "armada" || pageGlassPilot;
 
