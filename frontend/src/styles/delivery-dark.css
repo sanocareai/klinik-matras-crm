@@ -412,6 +412,27 @@
 [data-theme="dark"] .glass-division .wizard-sidebar,
 [data-theme="dark"] .glass-division .automation-sidebar,
 [data-theme="dark"] .glass-division .products-sidebar,
+/* .conversation-list/.customer-panel/.chat-header/.chat-input/.chat-
+   input-area (D-114, 5 September 2026) — 3 panel utama Inbox (owner:
+   "redesign yang massive... just do it"). SAMA pola persis dengan sidebar
+   D-110: literal "background: white" di index.css tapi SUDAH dinormalkan
+   dark-mode lewat sweep besar (`[data-theme="dark"] .conversation-list,
+   .customer-panel, .chat-header, .chat-input, .chat-input-area {
+   background: var(--bg-surface) }`), tinggal ditambahkan ke wildcard ini
+   supaya ikut kaca. `.bubble-poll-option`/`.media-gallery-doc-item`
+   (item NESTED di dalam bubble/galeri) SENGAJA TIDAK diikutkan — tokens.
+   css sudah punya aturan sendiri "tone saja, tanpa shadow" untuk item
+   DALAM kartu (sama pola dengan .product-image-item), dan CLAUDE.md
+   mencatat eksplisit bubble.out/.bubble-quote/.ack-tick "sengaja dirancang
+   gelap/berwarna di KEDUA tema" — TIDAK disentuh sama sekali sesi ini,
+   bukan bagian dari pilot kaca (redesain warna/bentuk bubble pesan itu
+   sendiri, kalau diminta, adalah pekerjaan TERPISAH dari pilot kaca panel
+   generik ini). */
+[data-theme="dark"] .glass-division .conversation-list,
+[data-theme="dark"] .glass-division .customer-panel,
+[data-theme="dark"] .glass-division .chat-header,
+[data-theme="dark"] .glass-division .chat-input,
+[data-theme="dark"] .glass-division .chat-input-area,
 /* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
    BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
    halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
@@ -449,6 +470,13 @@
 [data-theme="dark"] .glass-division .wizard-sidebar::before,
 [data-theme="dark"] .glass-division .automation-sidebar::before,
 [data-theme="dark"] .glass-division .products-sidebar::before,
+/* .conversation-list/.customer-panel/.chat-header/.chat-input/.chat-
+   input-area SENGAJA TIDAK diikutkan di sini (::before top-highlight) —
+   kelimanya panel EDGE-DOCKED/tinggi-penuh (persis seperti `.sidebar`
+   utama, yang JUGA tidak diberi ::before di aturan atas), bukan kartu
+   mengambang dengan tepi atas yang kelihatan. Garis cahaya "dari atas"
+   masuk akal untuk kartu (ada jarak/margin di sekitarnya), tidak untuk
+   panel yang menempel rata ke topbar/tepi layar. */
 [data-theme="dark"] .glass-division .dh-table::before,
 [data-theme="dark"] .glass-division .rounded-xl.bg-surface::before {
   content: "";
@@ -552,7 +580,23 @@
   color: var(--dh-accent-glow) !important;
 }
 
-[data-theme="dark"] .glass-division [class*="shadow-popover"] {
+[data-theme="dark"] .glass-division [class*="shadow-popover"],
+/* .chat-dots-dropdown/.attach-sheet/.template-picker-popup/.emoji-picker-
+   popup/.conv-context-menu (D-114) — 5 popover/menu legacy Inbox, TIDAK
+   pakai shadow-popover/role=dialog (custom lama dari index.css), sudah
+   theme-aware (sweep dark-mode) tapi belum kaca. Sama treatment dengan
+   popover modern (blur pekat) — kecuali .attach-sheet (bottom sheet
+   mobile, TANPA border di CSS aslinya, jadi cuma dapat background+blur
+   di sini, bukan garis tepi baru). `.transfer-picker-row` SENGAJA TIDAK
+   diikutkan — itu BUKAN popover, tapi satu ROW/tombol per sales DI DALAM
+   popover `.conv-context-menu.transfer-picker-menu` (compound class, shell
+   luarnya SUDAH `.conv-context-menu` yang ada di daftar ini) — nested item,
+   sama pola dengan .product-image-item: tone saja, tanpa blur sendiri. */
+[data-theme="dark"] .glass-division .chat-dots-dropdown,
+[data-theme="dark"] .glass-division .attach-sheet,
+[data-theme="dark"] .glass-division .template-picker-popup,
+[data-theme="dark"] .glass-division .emoji-picker-popup,
+[data-theme="dark"] .glass-division .conv-context-menu {
   background-color: rgba(26, 33, 64, 0.82) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);

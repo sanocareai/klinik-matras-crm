@@ -524,6 +524,7 @@ export default function Layout({ user, onLogout, children }) {
     "/dashboard", "/customers", "/pipeline", "/orders",
     "/products", "/broadcast", "/tracking", "/sales-intelligence",
     "/copilot", "/automation", "/pengaturan-sales", "/laporan",
+    "/inbox",
   ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   const glassOn = divisionKey === "armada" || pageGlassPilot;
