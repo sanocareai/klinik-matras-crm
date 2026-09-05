@@ -8,6 +8,15 @@ import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
 import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+// D-118 (redesign input order, laporan owner: "tanggalnya pun juga") —
+// native <input type="date"> memunculkan kalender BAWAAN BROWSER (chrome
+// OS-level, di luar DOM/CSSOM — TIDAK BISA di-restyle CSS apa pun, batasan
+// platform web, bukan kurang usaha). DatePicker ini komponen React murni
+// (dipakai juga di filter Delivery/Fulfillment & JobDetailDrawer) — popover-
+// nya sudah otomatis kebagian kaca lewat wildcard [class*="shadow-popover"]
+// yang sudah ada (className-nya sendiri sudah "...shadow-popover", lihat
+// date-picker.jsx), jadi tidak perlu CSS baru sama sekali di sini.
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
   ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
@@ -1022,8 +1031,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         <div>
           <FieldLabel tone="pickup" small>Tanggal Pick Up Pasti</FieldLabel>
           {editing ? (
-            <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
-              disabled={locked} style={selStyleFull} />
+            locked ? (
+              <div style={{ fontSize: 13 }}>{pickupConfirmedDate ? formatTanggal(pickupConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+            ) : (
+              <DatePicker value={pickupConfirmedDate} onChange={setPickupConfirmedDate} placeholder="Pilih tanggal" className="w-full" />
+            )
           ) : (
             <div style={{ fontSize: 13 }}>{order.pickupConfirmedDate ? formatTanggal(order.pickupConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
           )}
@@ -1045,8 +1057,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         <div>
           <FieldLabel tone="delivery" small>Tanggal Kirim Pasti</FieldLabel>
           {editing ? (
-            <input type="date" value={deliveryConfirmedDate} onChange={(e) => setDeliveryConfirmedDate(e.target.value)}
-              disabled={locked} style={selStyleFull} />
+            locked ? (
+              <div style={{ fontSize: 13 }}>{deliveryConfirmedDate ? formatTanggal(deliveryConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+            ) : (
+              <DatePicker value={deliveryConfirmedDate} onChange={setDeliveryConfirmedDate} placeholder="Pilih tanggal" className="w-full" />
+            )
           ) : (
             <div style={{ fontSize: 13 }}>{order.deliveryConfirmedDate ? formatTanggal(order.deliveryConfirmedDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
           )}
@@ -1773,8 +1788,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           </div>
           <div>
             <FieldLabel tone="pickup">Tanggal Pick Up Pasti</FieldLabel>
-            <input type="date" value={pickupConfirmedDate} onChange={(e) => setPickupConfirmedDate(e.target.value)}
-              style={formSelect} />
+            <DatePicker value={pickupConfirmedDate} onChange={setPickupConfirmedDate} placeholder="Pilih tanggal" className="w-full" />
           </div>
         </div>
         {/* D-033: pasangan pengiriman — diisi begitu produksi hampir/sudah selesai. */}
@@ -1786,8 +1800,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           </div>
           <div>
             <FieldLabel tone="delivery">Tanggal Kirim Pasti</FieldLabel>
-            <input type="date" value={deliveryConfirmedDate} onChange={(e) => setDeliveryConfirmedDate(e.target.value)}
-              style={formSelect} />
+            <DatePicker value={deliveryConfirmedDate} onChange={setDeliveryConfirmedDate} placeholder="Pilih tanggal" className="w-full" />
           </div>
         </div>
         <div style={{ marginBottom: 14 }}>
