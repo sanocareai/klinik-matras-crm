@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
-  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
+  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck, Pencil,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
@@ -82,7 +82,70 @@ function BarisMini({ label, children }) {
   );
 }
 
-function DetailPesananSection({ order }) {
+// Edit inline Tanggal Pick Up/Kirim PASTI (5 September 2026, permintaan
+// owner) — sebelumnya kedua field ini CUMA teks baca-saja di sini, jadi
+// satu-satunya jalur edit adalah Inbox > chat > profil pelanggan > edit
+// order (banyak langkah). Sekarang bisa diubah LANGSUNG dari drawer
+// "Rincian" yang sudah dibuka sales 1 klik dari halaman Order — momen yang
+// sama persis dengan tempat aturan D-087 (wajib tanggal pasti sebelum
+// status Diproses/Terkirim) bakal menolak perubahan status kalau field
+// ini kosong, jadi perbaikannya ada tepat di tempat masalahnya muncul.
+function TanggalPastiField({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(value ? value.slice(0, 10) : "");
+  const [saving, setSaving]   = useState(false);
+  const [err, setErr]         = useState(null);
+
+  function mulaiEdit() {
+    setDraft(value ? value.slice(0, 10) : "");
+    setErr(null);
+    setEditing(true);
+  }
+
+  async function simpan() {
+    setSaving(true);
+    setErr(null);
+    try {
+      await onSave(draft || "");
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          type="date" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
+          className="rounded-lg border border-line bg-base px-2 py-1 text-[12.5px] text-ink outline-none focus:ring-2 focus:ring-accent/30"
+        />
+        <button type="button" onClick={simpan} disabled={saving}
+          className="rounded-lg bg-accent px-2 py-1 text-[11.5px] font-semibold text-white disabled:opacity-60">
+          {saving ? "..." : "Simpan"}
+        </button>
+        <button type="button" onClick={() => setEditing(false)} disabled={saving}
+          className="rounded-lg px-2 py-1 text-[11.5px] font-semibold text-ink3 hover:text-ink2">
+          Batal
+        </button>
+        {err && <span className="text-[11px] text-red">{err}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={mulaiEdit} className="group flex items-center gap-1.5 text-left">
+      <span className={value ? "font-semibold text-ink" : "text-ink3"}>
+        {value ? formatTanggal(value) : "Belum diisi"}
+      </span>
+      <Pencil size={11} className="shrink-0 text-ink3 opacity-0 transition-opacity group-hover:opacity-100" />
+    </button>
+  );
+}
+
+function DetailPesananSection({ order, onChanged }) {
   const info = parseOrderNotes(order.notes);
   const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
   const items = order.items || [];
@@ -92,10 +155,26 @@ function DetailPesananSection({ order }) {
   const lineLabel = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
   const spesifikasi = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, info.ukuranKasur].filter(Boolean);
 
-  const adaPengiriman = order.deliveryAddress || order.deliveryCity || order.locationUrl
-    || order.pickupEstimate || order.pickupConfirmedDate
-    || order.deliveryEstimate || order.deliveryConfirmedDate
-    || order.ongkir || order.ongkirKlaimGaransi;
+  // Override lokal SETELAH simpan (5 September 2026) — `order` di sini
+  // adalah prop dari drawer induk yang TIDAK otomatis ter-refresh begitu
+  // tanggal diedit di sini (lihat catatan panjang di OrderTimelineDrawer
+  // soal `o = order || frozen` & onPaymentRecorded yang cuma me-refresh
+  // LIST di halaman induk, bukan snapshot `order` yang sedang dibuka).
+  // Tanpa ini, field yang barusan disimpan akan balik ke nilai LAMA begitu
+  // drawer re-render dari state induk manapun sebelum tab ini ditutup.
+  const [pickupOverride, setPickupOverride] = useState(undefined);
+  const [deliveryOverride, setDeliveryOverride] = useState(undefined);
+  useEffect(() => { setPickupOverride(undefined); setDeliveryOverride(undefined); }, [order.id]);
+  const pickupConfirmedDate = pickupOverride !== undefined ? pickupOverride : order.pickupConfirmedDate;
+  const deliveryConfirmedDate = deliveryOverride !== undefined ? deliveryOverride : order.deliveryConfirmedDate;
+
+  async function simpanTanggal(field, value) {
+    const updated = await api.updateOrder(order.id, { [field]: value });
+    if (field === "pickupConfirmedDate") setPickupOverride(updated.pickupConfirmedDate);
+    else setDeliveryOverride(updated.deliveryConfirmedDate);
+    onChanged?.();
+  }
+
   const adaKondisi = info.keluhanCustomer || berat || order.healthStatus || order.promo;
 
   return (
@@ -137,8 +216,13 @@ function DetailPesananSection({ order }) {
           kartu (dulu tersebar sebagai baris-baris terpisah bercampur
           dengan info produk & kondisi, padahal semuanya soal "kapan &
           ke mana barang ini pergi"). */}
-      {adaPengiriman && (
-        <KartuTema icon={Truck} hex="#ea580c" title="Pengiriman">
+      {/* Kartu ini SEKARANG SELALU tampil (5 September 2026 — sebelumnya
+          disembunyikan total kalau belum ada data pengiriman sama sekali,
+          `adaPengiriman`). Jadwal Pick Up/Kirim WAJIB selalu kelihatan &
+          bisa diklik supaya sales tahu HARUS isi ini sebelum status bisa
+          diubah ke Diproses/Terkirim (D-087) — field yang cuma muncul
+          setelah ada isinya tidak bisa dipakai sebagai TEMPAT mengisi. */}
+      <KartuTema icon={Truck} hex="#ea580c" title="Pengiriman">
           {(order.deliveryAddress || order.deliveryCity) && (
             <BarisMini label="Alamat">
               {order.deliveryAddress || ""}
@@ -152,34 +236,39 @@ function DetailPesananSection({ order }) {
               </a>
             </BarisMini>
           )}
-          {(order.pickupEstimate || order.pickupConfirmedDate) && (
+          {/* Jadwal Pick Up cuma relevan utk LAYANAN (kasur LAMA customer
+              diambil dulu sebelum dikerjakan) — BARU/SEWA tidak pernah
+              lewat tahap ini sama sekali (lihat D-087/unitProvisioning.js),
+              jangan minta sales isi field yang memang tidak berlaku. */}
+          {order.category === "LAYANAN" && (
             <BarisMini label="Jadwal Pick Up">
               {order.pickupEstimate && <p>{order.pickupEstimate}</p>}
-              {order.pickupConfirmedDate && (
-                <p className={cn(order.pickupEstimate && "mt-0.5 text-ink2")}>
-                  Pasti: {formatTanggal(order.pickupConfirmedDate)}
-                </p>
-              )}
+              <div className={cn("flex items-center gap-1", order.pickupEstimate && "mt-0.5")}>
+                <span className="text-ink3">Pasti:</span>
+                <TanggalPastiField
+                  value={pickupConfirmedDate}
+                  onSave={(v) => simpanTanggal("pickupConfirmedDate", v)}
+                />
+              </div>
             </BarisMini>
           )}
-          {(order.deliveryEstimate || order.deliveryConfirmedDate) && (
-            <BarisMini label="Jadwal Kirim">
-              {order.deliveryEstimate && <p>{order.deliveryEstimate}</p>}
-              {order.deliveryConfirmedDate && (
-                <p className={cn(order.deliveryEstimate && "mt-0.5 text-ink2")}>
-                  Pasti: {formatTanggal(order.deliveryConfirmedDate)}
-                </p>
-              )}
-            </BarisMini>
-          )}
+          <BarisMini label="Jadwal Kirim">
+            {order.deliveryEstimate && <p>{order.deliveryEstimate}</p>}
+            <div className={cn("flex items-center gap-1", order.deliveryEstimate && "mt-0.5")}>
+              <span className="text-ink3">Pasti:</span>
+              <TanggalPastiField
+                value={deliveryConfirmedDate}
+                onSave={(v) => simpanTanggal("deliveryConfirmedDate", v)}
+              />
+            </div>
+          </BarisMini>
           {(order.ongkir || order.ongkirKlaimGaransi) && (
             <BarisMini label="Ongkir">
               {order.ongkir ? formatRupiah(order.ongkir) : "Rp0"}
               {order.ongkirKlaimGaransi ? ` · Klaim Garansi: ${formatRupiah(order.ongkirKlaimGaransi)}` : ""}
             </BarisMini>
           )}
-        </KartuTema>
-      )}
+      </KartuTema>
 
       {/* Kondisi & Catatan — keluhan, berat badan, kesehatan, promo. */}
       {adaKondisi && (
@@ -864,7 +953,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           </div>
 
           <div className="mt-3">
-            <DetailPesananSection order={o} />
+            <DetailPesananSection order={o} onChanged={onPaymentRecorded} />
           </div>
 
           {o.conversationId && (
