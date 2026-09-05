@@ -190,7 +190,19 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
       })()}
 
       {/* ── 1. UANG ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* xl:grid-cols-4 (D-113), BUKAN lg:grid-cols-4 — bug nyata, laporan
+          owner (screenshot): angka Rupiah kepotong ("Rp53.250.00", "Rp2.420.
+          455") di window ~1060px. AKAR MASALAH: lg (1024px) menganggap 4
+          kolom "muat" murni dari breakpoint viewport, TANPA memperhitungkan
+          KpiCard sendiri py `overflow-hidden` (untuk tint hero) + angka
+          26px font-extrabold — di lebar segitu tiap kolom cuma ~150px
+          konten, kurang untuk Rupiah 12 digit, jadi angkanya betul-betul
+          KEPOTONG (bukan cuma "kurang rapi" - risiko salah baca nominal di
+          tool bisnis). Dashboard.jsx SUDAH lebih dulu memakai `xl:` untuk
+          KPI row 4-kolom yang SAMA persis alasannya (breakpoint lebih
+          lebar sebelum pecah 4 kolom) - Laporan ketinggalan menyamakan
+          pola itu sampai sekarang. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           index={0} hero
           label="Nilai Penjualan"

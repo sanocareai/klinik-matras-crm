@@ -240,7 +240,10 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
       {/* ── KPI ── */}
       {/* 3 kolom (bukan 4) supaya 6 kartu jadi 2 baris rapi: baris 1 = volume
           lead, baris 2 = kecepatan & kualitas. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* xl:, bukan lg: (D-113) — sama fix dengan RingkasanTab, disamakan
+          preventif di breakpoint yang sama walau angka di tab ini
+          umumnya lebih pendek (jumlah lead, bukan Rupiah). */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           index={0} hero label="Total Lead Masuk"
           numericValue={traffic.totalLeads || 0}

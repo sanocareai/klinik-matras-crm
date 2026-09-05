@@ -5,7 +5,10 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 // row 4-up + 2 chart card) supaya tidak ada layout shift saat data datang.
 export function KpiRowSkeleton({ count = 4 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    /* xl:, bukan lg: (D-113) — samakan dengan grid KPI sungguhan di
+       RingkasanTab/PerformaTimTab, supaya skeleton loading TIDAK
+       menyebabkan layout shift saat data asli masuk. */
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton key={i} className="h-[152px]" />
       ))}

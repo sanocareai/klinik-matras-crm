@@ -56,7 +56,19 @@ export default function KpiCard({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <p className="text-[26px] font-extrabold leading-none tabular-nums text-ink">
+        {/* min-w-0 (D-113) — jaring pengaman SETELAH bug nyata angka Rupiah
+            kepotong (laporan owner, window ~1024-1280px, root cause utama
+            sudah diperbaiki di breakpoint grid pemanggil xl:grid-cols-4).
+            TANPA ini: `<p>` sebagai flex item default `min-width:auto`,
+            menolak menyusut di bawah lebar intrinsik teksnya sendiri —
+            begitu kartu lebih sempit dari angka, teks TIDAK wrap (flex-wrap
+            di baris ini cuma memindah ITEM ke baris baru, bukan bikin teks
+            DALAM satu item wrap), dia overflow lurus lalu ke-clip diam-diam
+            oleh `overflow-hidden` induk. Dengan min-w-0, `<p>` (white-space
+            normal bawaan, tidak di-override) bisa menyusut & wrap ke baris
+            kedua kalau kartu genuinely sempit di lebar manapun di masa
+            depan — angka Rupiah tidak boleh pernah lenyap diam-diam. */}
+        <p className="min-w-0 text-[26px] font-extrabold leading-tight tabular-nums text-ink">
           {displayValue}
         </p>
         {hasGrowth && (

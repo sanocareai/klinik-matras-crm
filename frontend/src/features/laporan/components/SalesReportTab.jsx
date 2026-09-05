@@ -147,7 +147,11 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       </div>
 
       {/* ── Ringkasan tim ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* xl:, bukan lg: (D-113) — sama fix dengan RingkasanTab (3 kolom
+          lebih longgar dari 4, tapi angka Rupiah di sini juga bisa
+          panjang — lebih aman disamakan daripada menunggu laporan sama
+          muncul lagi di breakpoint ini). */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <KpiCard
           index={0} hero label="Nilai Penjualan Tim"
           numericValue={teamGrossAll}

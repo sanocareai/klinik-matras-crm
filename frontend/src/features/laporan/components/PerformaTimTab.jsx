@@ -135,7 +135,12 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* xl:, bukan lg: (D-113) — sama fix dengan RingkasanTab: angka
+          Rupiah/besar KpiCard kepotong di window ~1024-1280px kalau
+          dipaksa 4 kolom di situ (overflow-hidden + font 26px, konten
+          tiap kolom < 150px). Samakan pola dengan Dashboard.jsx yang
+          sudah lebih dulu pakai xl: untuk alasan yang sama. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           index={0} label="Total Percakapan" numericValue={perf?.totalConversations || 0}
           growth={perf?.growthTotalConversations} compareLabel={cmp}
