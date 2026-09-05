@@ -1,0 +1,6 @@
+import{j as a}from"./vendor-query-lt1T2TzN.js";import{P as n,a as m}from"./page-Cn8FB9U4.js";import{C as d}from"./card-DzpBfx3h.js";import{c,E as l,a0 as r}from"./index-B-PGh1Ic.js";import{a as p}from"./vendor-react-Dgb-DAHh.js";import"./vendor-socket-dm1FmSOd.js";import"./vendor-motion-DBB1ix_F.js";import"./vendor-charts-BzSD6hKe.js";/**
+ * @license lucide-react v1.22.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const h=[["path",{d:"m15 12-9.373 9.373a1 1 0 0 1-3.001-3L12 9",key:"1hayfq"}],["path",{d:"m18 15 4-4",key:"16gjal"}],["path",{d:"m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172v-.344a2 2 0 0 0-.586-1.414l-1.657-1.657A6 6 0 0 0 12.516 3H9l1.243 1.243A6 6 0 0 1 12 8.485V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5",key:"15ts47"}]],j=c("hammer",h);function C({title:s,subtitle:t,stage:i,description:o}){const e=p();return a.jsxs(n,{children:[a.jsx(m,{title:s,subtitle:t}),a.jsx(d,{children:a.jsx(l,{icon:j,title:`Dibangun di Tahap ${i}`,description:o,action:a.jsxs("div",{className:"flex flex-wrap justify-center gap-2",children:[a.jsx(r,{variant:"secondary",size:"sm",onClick:()=>e("/armada/dashboard"),children:"Kembali ke Dashboard"}),a.jsx(r,{variant:"ghost",size:"sm",onClick:()=>e("/armada/jobs"),children:"Buka Jadwal & Penugasan"})]})})})]})}export{C as default};

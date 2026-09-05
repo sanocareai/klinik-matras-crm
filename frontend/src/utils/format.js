@@ -278,15 +278,29 @@ export const ORDER_STATUS_VARIANT = {
 // SEWA sengaja TIDAK dipetakan di sini — statusnya sendiri (SEWA_DIKIRIM/
 // SEWA_DIAMBIL) sudah cuma 2 tahap, tidak perlu dibucket lagi; tampilkan
 // label aslinya langsung.
+//
+// ⚠️ KOREKSI (5 September 2026) — PICKUP DIKEMBALIKAN jadi bucket sendiri.
+// Penyederhanaan di atas SEMPAT menggabungnya ke "Diproses", tapi laporan
+// owner: "status pengambilan hanya untuk layanan service/upgrade" — status
+// ini bukan cuma noise granular, dia menandai TAHAP FISIK berbeda (kasur
+// lama masih di rumah customer, belum sampai bengkel) yang penting dipantau
+// terpisah. Aman dikembalikan tanpa bocor ke kategori lain: order BARU
+// TIDAK PERNAH bisa berstatus PICKUP (lihat unitProvisioning.js +
+// orderStatusesForCategory di bawah, keduanya sudah mengecualikannya sejak
+// D-051), dan SEWA pakai enum status sendiri (SEWA_DIKIRIM/SEWA_DIAMBIL,
+// bukan PICKUP) — jadi bucket "Pengambilan" ini SECARA STRUKTURAL cuma
+// pernah terisi order kategori LAYANAN, tanpa perlu guard kategori manual.
+// PENDING TETAP digabung ke "Diproses" (bukan itu yang dilaporkan hilang).
 export const ORDER_STATUS_BUCKET = {
   PENDING: "PROCESSING",
-  PICKUP: "PROCESSING",
+  PICKUP: "PICKUP",
   PROCESSING: "PROCESSING",
   READY: "READY",
   DELIVERED: "DELIVERED",
   CANCELLED: "CANCELLED",
 };
 export const ORDER_STATUS_BUCKET_LABELS = {
+  PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
   DELIVERED: "Terkirim",

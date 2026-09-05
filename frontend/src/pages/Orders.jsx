@@ -69,10 +69,16 @@ const STATUS_TONE = {
 };
 
 // Kanban ringkas (4 Sep 2026, laporan owner — lihat ORDER_STATUS_BUCKET di
-// utils/format.js). LAYANAN/BARU dikelompokkan 3+1 bucket (bukan 5+1 status
-// asli); SEWA (view difilter kategori SEWA) pakai 2 status aslinya langsung
+// utils/format.js). LAYANAN/BARU dikelompokkan bucket (bukan status asli
+// penuh); SEWA (view difilter kategori SEWA) pakai 2 status aslinya langsung
 // (sudah cuma 2 tahap, tidak perlu dibucket lagi).
-const KANBAN_BUCKETS = ["PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+//
+// PICKUP dikembalikan jadi bucket sendiri (5 September 2026, koreksi) —
+// lihat catatan panjang di ORDER_STATUS_BUCKET (utils/format.js). Kolom ini
+// otomatis kosong untuk order BARU (tidak pernah berstatus PICKUP) dan tidak
+// pernah terisi order SEWA (statusnya sendiri, bukan enum ini) — jadi
+// "Pengambilan" di sini SECARA STRUKTURAL cuma pernah berisi order LAYANAN.
+const KANBAN_BUCKETS = ["PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
 const SEWA_KANBAN_STATUSES = ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
 // Kanban CAMPURAN (kategori tidak difilter ke SEWA saja) sengaja
 // menyederhanakan order SEWA yang ikut tampil ke bucket "Terkirim" —
