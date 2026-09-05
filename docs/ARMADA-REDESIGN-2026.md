@@ -98,7 +98,9 @@ While implementing this, two things sharpened the scope from what was originally
 
 ## 5. Gap 2 — Customer communication re-activation
 
-The infrastructure already exists and matches the PRD's "four triggers only" discipline (§7.8) — this is a re-activation and trust-building problem, not a build problem. Proposed staged approach, explicitly framed as a proposal requiring the same kind of sign-off that turned it off:
+**Status: decided — stays manual, not being built for now (owner decision, September 2026).** Confirmed directly: sales keeps handling delivery-status WhatsApp messages by hand. `DELIVERY_NOTIF_AKTIF` stays `false`; the three disabled triggers in `customerNotifications.js` are not being re-enabled as part of this redesign.
+
+The staged rollout below is kept in this document as the plan to use *if and when* that decision changes — no code should be written against it until then.
 
 1. **Shadow mode first.** Turn the 3 disabled triggers (job start, pickup complete, delivered) on in a mode that logs what *would* have been sent (recipient, template, timestamp) without actually sending, surfaced as a small panel in `ArmadaJobs.jsx` or the job detail view. Let ops eyeball a week of "would-have-sent" messages against what actually happened operationally.
 2. **Limited rollout.** Enable real sending for one trigger at a time, starting with the lowest-risk one (arguably "pickup complete" — informational, no promise being made), for a subset of jobs (e.g. one driver or one day of the week) before going wide.
@@ -148,16 +150,17 @@ Sequenced, each phase independently shippable — consistent with the existing P
 | **B — SLA monitoring** ✅ v1 shipped (visibility only) | `isJobOverdue`/`overdueDays` in `jobStatus.js`, overdue badges + hero stat on `ArmadaJobs.jsx`, "Butuh Perhatian" surfacing on `ArmadaDashboard.jsx`. **Remaining, blocked on §9 sign-off:** outbound WA/push alerting | Phase A |
 | **C — Delivery Command overview** ✅ shipped | New `/armada/ringkasan` screen — stat row, "Perlu Perhatian Sekarang" feed, driver workload, fleet status, on-time delivery rate (all sections in §6) | Phase B |
 | **D — Exception/field-coordination live surface** ✅ done | 15s polling on `ArmadaRingkasan.jsx`, inline reschedule via reused `IssueRescheduleDrawer` (§7) | Phase C |
-| **E — Customer comms re-activation** ⏳ not started, needs sign-off first | Shadow mode → limited rollout → full, per §5 | Independent of B–D, but sequenced last because it's the most owner-sensitive and benefits from the trust-building the other phases create |
+| **E — Customer comms re-activation** ❌ decided against, for now (Sep 2026) | Stays manual — sales keeps sending delivery-status WhatsApp messages by hand. §5's staged rollout is kept as the plan to use if this decision is revisited later, not as active scope | — |
 
 ---
 
-## 9. Open questions — answer before Phase B
+## 9. Open questions — answer before extending Gap 1 to outbound alerting
 
 1. **SLA thresholds.** How much buffer before `scheduledDate` counts as "at risk" vs. "breached"? Is the tolerance the same for pickup and delivery jobs?
 2. **Who receives SLA breach alerts?** Dispatcher role only, or also Owner/Admin (Juri, Kemal)?
-3. **Customer-comms re-activation approval.** Who signs off on moving from shadow mode to real sending — Gilang directly, or can ops (Juri/Kemal) approve once shadow-mode logs look clean?
-4. **Capacity-slot conversion table.** `Vehicle.capacitySlots` exists but nothing maps mattress size → slot count. This blocks making `onOptimize`/route capacity-checking real (called out as a known gap, not in the user's top-4 but adjacent to Gap 3's fleet-status section). Needs the actual conversion table from whoever runs logistics.
+3. **Capacity-slot conversion table.** `Vehicle.capacitySlots` exists but nothing maps mattress size → slot count. This blocks making `onOptimize`/route capacity-checking real (called out as a known gap, not in the user's top-4 but adjacent to Gap 3's fleet-status section). Needs the actual conversion table from whoever runs logistics.
+
+~~Customer-comms re-activation approval~~ — resolved (§5): stays manual, sales keeps sending delivery-status WhatsApp by hand. Not an open question anymore.
 
 ---
 
