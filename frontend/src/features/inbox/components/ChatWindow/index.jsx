@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
-  Forward, Search, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Download, Trash2, Megaphone,
+  Forward, Search, ChevronLeft, ChevronRight, Download, Trash2, Megaphone,
   Maximize2, Minimize2, RotateCcw,
 } from "lucide-react";
 import { api } from "../../../../api.js";
@@ -368,7 +368,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
             title="Tampilkan daftar percakapan"
             aria-label="Tampilkan daftar percakapan"
           >
-            <PanelLeftOpen size={18} />
+            <ChevronRight size={18} />
           </button>
         )}
         <MessageSquare size={40} className="chat-empty-icon" />
@@ -400,14 +400,18 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
       {/* ── Header ── */}
       <div className="chat-header">
         <button className="chat-back-btn" onClick={onBack} title="Kembali ke daftar"><ArrowLeft size={18} /></button>
-        {/* Mirror dari tombol panel kanan di bawah (PanelRightClose/Open) —
-            cuma tampil di desktop (onToggleList tidak dioper di mobile,
-            lihat Inbox.jsx: daftar & chat mobile tidak pernah mount
-            bersamaan jadi "sembunyikan daftar" tidak relevan di sana). */}
+        {/* D-121 (redesign ikon, laporan owner: "lebih minimalist, lebih
+            sesuai style kita") — ikon PanelLeftClose/Open lucide (kotak +
+            sekat + panel terisi) diganti Chevron polos, satu bahasa garis
+            tipis dengan ikon lain di header/composer (Search/Smile/Mic/
+            Send/Sparkles), bukan ikon "kotak" yang lebih ramai sendirian.
+            Arah panah = arah tepi panel akan bergerak saat diklik: panel
+            KIRI ini collapse ke kiri (ChevronLeft) / expand ke kanan
+            (ChevronRight) — mirror dari toggle panel kanan di bawah. */}
         {onToggleList && (
           <button className="chat-action-btn chat-toggle-list-btn" onClick={onToggleList}
             title={listCollapsed ? "Tampilkan daftar percakapan" : "Sembunyikan daftar percakapan"}>
-            {listCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            {listCollapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
           </button>
         )}
         {isGroup ? (
@@ -472,10 +476,12 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
             menu "More" di bawah, satu komponen yang sama dipakai desktop
             MAUPUN mobile (lihat komentar .chat-dots-container di index.css). */}
         <div className="chat-header-desktop-actions">
+          {/* D-121 — mirror arah dari toggle daftar di atas: panel KANAN ini
+              collapse ke kanan (ChevronRight) / expand ke kiri (ChevronLeft). */}
           {onTogglePanel && (
             <button className="chat-action-btn" onClick={onTogglePanel}
               title={panelCollapsed ? "Tampilkan panel pelanggan" : "Sembunyikan panel pelanggan"}>
-              {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+              {panelCollapsed ? <ChevronLeft size={17} /> : <ChevronRight size={17} />}
             </button>
           )}
           {/* Focus Mode DIPINDAH ke menu "More" (D-115, laporan owner:

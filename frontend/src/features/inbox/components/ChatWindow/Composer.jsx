@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough, Sparkles } from "lucide-react";
+import { Send, LayoutTemplate, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough, Sparkles } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 import OrderEditDrawer from "../CustomerPanel/OrderEditDrawer.jsx";
@@ -433,8 +433,12 @@ export default function Composer({ conversation, mediaUploaderRef }) {
       )}
 
       <form className="chat-input" onSubmit={handleSend}>
+        {/* D-121 (redesign ikon) — dulu MessageSquare (bubble chat polos),
+            gampang tertukar sekilas dengan ikon bubble lain di sekitarnya
+            (compose baru, dots menu). LayoutTemplate lebih literal
+            menggambarkan "pilih template". */}
         <button type="button" onClick={() => setShowTemplates((v) => !v)} className={`chat-action-btn ${showTemplates ? "active" : ""}`} title="Pilih template">
-          <MessageSquare size={15} />
+          <LayoutTemplate size={15} />
         </button>
 
         <Suspense fallback={<ActionBtnFallback icon={Paperclip} />}>
