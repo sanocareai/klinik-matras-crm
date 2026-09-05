@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
 import { MessageSquarePlus, PanelLeftClose, X, Pin, PinOff, Check, Circle } from "lucide-react";
 import FilterTabs from "./FilterTabs.jsx";
+import FilterPopover from "./FilterPopover.jsx";
 import SearchBar from "./SearchBar.jsx";
 import ChatBaruDialog from "./ChatBaruDialog.jsx";
 import ConversationItem from "./ConversationItem.jsx";
@@ -187,7 +188,14 @@ export default function ConversationList({ userId, onCollapse }) {
           )}
         </div>
       )}
-      <FilterTabs />
+      {/* Wave 11 (redesign Inbox) — FilterPopover di sebelah FilterTabs,
+          BUKAN di dalam baris tab yang scroll (supaya tombolnya tetap
+          terlihat & bisa diklik kapan pun, tidak ikut ter-scroll keluar
+          layar di HP/tab sempit). */}
+      <div className="conv-tabs-row">
+        <FilterTabs />
+        <FilterPopover />
+      </div>
       <div className="conv-virtuoso-wrap">
         {isLoading && visibleIds.length === 0 && (
           <ConversationListSkeleton count={8} />
