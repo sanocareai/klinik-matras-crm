@@ -174,9 +174,25 @@
    opak KHUSUS <768px — desktop (>768px) TIDAK tersentuh, tetap 0.6 seperti
    semula. backdrop-filter dasar di atas dibiarkan (bonus kalau perangkat
    mendukungnya), bukan lagi satu-satunya yang menjamin kontras. */
+/* ⚠️ BUG KEDUA yang ditemukan bareng D-107 (5 September 2026): opacity saja
+   TIDAK CUKUP. Aturan `[data-theme="dark"] .glass-division .sidebar` di atas
+   (di luar media query) menulis `z-index: 1` — dua kelas + atribut, lebih
+   spesifik dari `.sidebar { z-index: 400 }` polos di index.css (media query
+   TIDAK menambah spesifisitas apa pun), jadi z-index:1 itu MENANG di semua
+   lebar layar, termasuk mobile, walau index.css sudah punya aturan khusus
+   mobile. `.app-content` di glass mode JUGA z-index:1 (baris di atas) dan
+   posisinya SETELAH `<aside class="sidebar">` di DOM (Layout.jsx) — dua
+   elemen z-index sama, yang belakangan di DOM menang tumpuk. Hasilnya:
+   drawer sidebar mobile ketutup KONTEN DASHBOARD di baliknya — klik pun
+   jatuh ke kartu dashboard, bukan ke link sidebar. z-index dikembalikan ke
+   400 KHUSUS <768px di sini, sejajar aturan drawer mobile index.css, supaya
+   sidebar kaca kembali di lapisan paling atas saat jadi overlay penuh
+   layar. Desktop tidak tersentuh (z-index:1 tetap berlaku, sidebar situ
+   memang kolom permanen sejajar konten, bukan overlay). */
 @media (max-width: 768px) {
   [data-theme="dark"] .glass-division .sidebar {
     background-color: rgba(14, 17, 30, 0.97);
+    z-index: 400;
   }
 }
 
