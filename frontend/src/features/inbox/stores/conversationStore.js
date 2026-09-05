@@ -28,10 +28,19 @@ export const useConversationStore = create((set) => ({
   searchQuery: "",
   conversationsById: {},
   conversationOrder: [], // array of ids, sudah terurut
+  // Wave 12 (redesign Inbox) — snapshot id yang SEDANG TAMPIL di layar
+  // (sudah difilter+dicari, dihitung ConversationList/index.jsx yang tetap
+  // jadi satu-satunya sumber logic filter/search — lihat matches() di
+  // sana). Dipublish ke sini SEMATA supaya useInboxHotkeys.js (dipasang di
+  // Inbox.jsx, di luar pohon ConversationList) bisa navigasi J/K lewat
+  // daftar yang SAMA PERSIS dengan yang user lihat, tanpa duplikasi logic
+  // filter di tempat kedua.
+  visibleIds: [],
 
   setActive: (id) => set((state) => ({ activeConversationId: id, activeSelectionSeq: state.activeSelectionSeq + 1 })),
   setFilter: (filter) => set({ filter }),
   setSearch: (searchQuery) => set({ searchQuery }),
+  setVisibleIds: (visibleIds) => set({ visibleIds }),
 
   // Insert/update 1 percakapan (dari fetch detail, event socket, dll) + re-sort.
   upsertConversation: (conv) => set((state) => {
@@ -84,6 +93,7 @@ export const useActiveId     = () => useConversationStore((s) => s.activeConvers
 export const useActiveSelectionSeq = () => useConversationStore((s) => s.activeSelectionSeq);
 export const useConversation = (id) => useConversationStore((s) => (id ? s.conversationsById[id] : undefined));
 export const useOrderedIds   = () => useConversationStore((s) => s.conversationOrder);
+export const useVisibleIds   = () => useConversationStore((s) => s.visibleIds);
 export const useFilter       = () => useConversationStore((s) => s.filter);
 export const useConvSearchQuery = () => useConversationStore((s) => s.searchQuery);
 

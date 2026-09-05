@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
 import { MessageSquarePlus, PanelLeftClose, X, Pin, PinOff, Check, Circle } from "lucide-react";
@@ -140,6 +140,14 @@ export default function ConversationList({ userId, onCollapse }) {
     const q = search.trim().toLowerCase();
     return orderedIds.filter((id) => matches(conversationsById[id], filter, userId, q, searchMatchedIds));
   }, [orderedIds, conversationsById, filter, userId, search, searchMatchedIds]);
+
+  // Wave 12 (redesign Inbox) — publish daftar yang SEDANG TAMPIL ke store,
+  // supaya useInboxHotkeys.js (J/K navigasi, dipasang di Inbox.jsx) bisa
+  // pindah baris lewat urutan yang SAMA PERSIS dengan yang user lihat,
+  // tanpa menduplikasi logic matches()/filter di atas ke tempat kedua.
+  useEffect(() => {
+    useConversationStore.getState().setVisibleIds(visibleIds);
+  }, [visibleIds]);
 
   function handleEndReached() {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();

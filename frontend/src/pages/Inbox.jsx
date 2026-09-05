@@ -10,6 +10,7 @@ import ResizeHandle from "../features/inbox/components/ResizeHandle.jsx";
 import { useSocketEvents } from "../features/inbox/hooks/useSocketEvents.js";
 import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
 import { useIsMobile } from "../features/inbox/hooks/useIsMobile.js";
+import { useInboxHotkeys } from "../features/inbox/hooks/useInboxHotkeys.js";
 import { useActiveId, useActiveSelectionSeq, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
@@ -151,6 +152,15 @@ export default function Inbox({ user }) {
   // message:ack, conversation:update) — hook ini join/leave room otomatis
   // mengikuti activeId (lihat useSocketEvents.js).
   useSocketEvents();
+
+  // Wave 12 (redesign Inbox) — J/K navigasi, E selesai, A ambil/ambil alih,
+  // F Focus Mode, I toggle panel pelanggan. Dipasang SEKALI di sini (bukan
+  // di ChatWindow/ConversationList) supaya cuma ada satu listener window.
+  // Focus Mode & toggle panel butuh callback dari sini karena state-nya
+  // memang cuma ada di komponen ini (lihat toggleFocusMode/setPanelCollapsed
+  // di atas) — sisanya (navigasi, resolve, takeover) hook ini kerjakan
+  // sendiri langsung lewat store/api, tidak butuh apa pun dari komponen ini.
+  useInboxHotkeys({ onToggleFocusMode: toggleFocusMode, onTogglePanel: () => setPanelCollapsed((v) => !v) });
 
   // Realtime SSE tetap dipertahankan berjalan paralel sebagai fallback kalau
   // koneksi Socket.IO putus (keduanya idempotent — appendMessage/upsertConversation
