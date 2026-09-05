@@ -69,12 +69,13 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
           // .sidebar-profile di tokens.css) supaya benar-benar transparan
           // + hover jalan, bukan cuma "kelihatan seperti transparan tapi
           // sebenarnya diam-diam masih terisi".
-          // D-125 (6 September 2026) — `mt-1` ditambah supaya batas dengan
-          // logo di atasnya (.sidebar-brand-icon) selalu jelas, tidak cuma
-          // andalkan padding-bottom brand yang bisa "ketutup" glow biru-nya
-          // (laporan owner: dua kotak kelihatan menyatu, kepencet salah).
+          // D-125 KOREKSI (6 September 2026, laporan owner: "masih menyatu"
+          // setelah `mt-1` 4px + blur diperkecil — TERNYATA belum cukup).
+          // Dinaikkan ke `mt-3` (12px, 3x lipat) supaya jarak ke logo di
+          // atasnya jelas TANPA AMBIGU, tidak cuma andalkan padding brand
+          // yang gampang "ketutup" glow biru-nya.
           className={cn(
-            "workspace-switcher-trigger mx-3 mt-1 mb-2 flex items-center gap-2.5 rounded-btn px-2.5 py-2 text-left transition-colors",
+            "workspace-switcher-trigger mx-3 mt-3 mb-2 flex items-center gap-2.5 rounded-btn px-2.5 py-2 text-left transition-colors",
             collapsed && "mx-2 justify-center px-0"
           )}
         >

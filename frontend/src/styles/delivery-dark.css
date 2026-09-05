@@ -217,12 +217,15 @@
    WorkspaceSwitcher tepat di bawahnya (cuma dipisah padding-bottom
    .sidebar-brand). Dua kotak jadi kelihatan menyatu jadi SATU bentuk,
    pemakai salah kira sedang mengklik switcher padahal masih di area logo.
-   Blur/offset diperkecil (bleed ~10px) + WorkspaceSwitcher diberi
-   margin-top eksplisit (lihat WorkspaceSwitcher.jsx) supaya batas kedua
-   kotak jelas, bukan cuma andalkan padding yang gampang ketutup glow. */
+   KOREKSI (masih hari yang sama) — percobaan pertama (blur 8px + mt-1
+   4px) laporan owner "masih menyatu". Blur/offset dipangkas jauh lebih
+   agresif di sini (bleed ~5px, dari ~20px) + margin-top WorkspaceSwitcher
+   dinaikkan ke 12px (lihat WorkspaceSwitcher.jsx) — dua perubahan
+   digabung supaya jaraknya benar-benar tidak ambigu, bukan sekadar
+   dikurangi tanggung. */
 [data-theme="dark"] .glass-division .sidebar-brand-icon {
   background: linear-gradient(135deg, var(--dh-accent-glow), var(--dh-accent-2)) !important;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 1px 4px rgba(59, 130, 246, 0.35) !important;
 }
 
 [data-theme="dark"] .glass-division .workspace-switcher-trigger {

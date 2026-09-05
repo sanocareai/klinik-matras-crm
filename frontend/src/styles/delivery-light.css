@@ -175,10 +175,11 @@ html:not([data-theme="dark"]) .glass-division .app-content > header {
    owner "masih beda jauh, buat seperti artifacts" berlaku untuk KEDUA mode,
    bukan cuma dark. Logo, pemilih workspace, footer profil, dan 3 kontrol
    topbar (cari/lonceng/menu akun) SEBELUMNYA cuma di-skin di dark mode. */
-/* D-125 — pasangan mode terang, baca alasan lengkap di delivery-dark.css. */
+/* D-125 (+koreksi) — pasangan mode terang, baca alasan lengkap di
+   delivery-dark.css. */
 html:not([data-theme="dark"]) .glass-division .sidebar-brand-icon {
   background: linear-gradient(135deg, #7CA9FF, var(--dh-accent-2)) !important;
-  box-shadow: 0 2px 7px rgba(29, 78, 216, 0.24) !important;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.2) !important;
 }
 
 html:not([data-theme="dark"]) .glass-division .workspace-switcher-trigger {
