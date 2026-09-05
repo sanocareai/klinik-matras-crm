@@ -1,6 +1,6 @@
 import React, { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { X } from "lucide-react";
+import { X, ArrowDown } from "lucide-react";
 import "yet-another-react-lightbox/styles.css";
 
 // Fase G: lightbox cuma di-load saat foto pertama kali diklik, bukan ikut
@@ -22,22 +22,54 @@ const PAGE_SIZE = 50;
 // balik lagi" mengembalikan posisi scroll, bukan selalu lompat ke bawah.
 const scrollStateByConvId = new Map();
 
+// Wave 7 (redesign Inbox, plan starry-humming-knuth) — pengelompokan pesan
+// beruntun dari pengirim yang sama. "Sama pengirim" untuk OUTBOUND/INBOUND
+// di chat individual cukup `direction` (tidak ada identitas sales-per-pesan
+// di data ini — grep dikonfirmasi, jadi tidak ada info yang HILANG dengan
+// menggabungkan visual antar sales berbeda yang sama-sama membalas). Untuk
+// pesan MASUK di grup, pakai `senderName` (field yang SUDAH ada, dipakai
+// label nama pengirim) supaya 2 anggota grup berbeda tidak ikut tergabung.
+// Jeda >5 menit MEMUTUS grup walau pengirimnya sama (gaya WA/Slack) — dua
+// pesan yang kebetulan searah tapi terpisah jauh waktunya tidak masuk akal
+// dianggap "satu giliran ngomong".
+const GROUP_GAP_MS = 5 * 60 * 1000;
+
+function messageGroupKey(m, isGroup) {
+  if (isGroup && m.direction === "INBOUND") return `in:${m.senderName || m.id}`;
+  return m.direction;
+}
+
 // Susun array flat [divider, message, message, divider, message, ...] dari
 // window pesan yang sedang ditampilkan.
-function buildItems(messages) {
+function buildItems(messages, isGroup) {
   const items = [];
   let lastDateKey = null;
+  let prevMsg = null;
   for (const m of messages) {
     const dateKey = dayjs(m.createdAt).format("YYYY-MM-DD");
     if (dateKey !== lastDateKey) {
       items.push({ type: "divider", key: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
       lastDateKey = dateKey;
+      prevMsg = null; // divider SELALU memutus grup, apa pun isi pesannya
     }
+    const isFirstInGroup = !prevMsg
+      || messageGroupKey(prevMsg, isGroup) !== messageGroupKey(m, isGroup)
+      || (new Date(m.createdAt).getTime() - new Date(prevMsg.createdAt).getTime()) > GROUP_GAP_MS;
     // key: pakai _key stabil (lihat messageStore.js#ensureKey), BUKAN m.id
     // langsung — id berubah saat entry optimistic (temp-...) direkonsiliasi
     // jadi id asli DB, kalau computeItemKey ikut berubah Virtuoso melihatnya
     // sebagai cell baru (remove+insert) alih-alih update in place.
-    items.push({ type: "message", key: m._key || m.id, message: m });
+    items.push({ type: "message", key: m._key || m.id, message: m, isFirstInGroup });
+    prevMsg = m;
+  }
+  // Pass kedua: isLastInGroup butuh lihat item BERIKUTNYA (belum ada saat
+  // item ini pertama kali di-push di loop atas), jadi baru bisa dihitung
+  // setelah array-nya lengkap. Item TERAKHIR sebelum divider berikutnya
+  // (atau akhir array) otomatis jadi penutup grup.
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type !== "message") continue;
+    const next = items[i + 1];
+    items[i].isLastInGroup = !next || next.type === "divider" || next.isFirstInGroup;
   }
   return items;
 }
@@ -81,12 +113,23 @@ const MessageList = forwardRef(function MessageList(
   const rangeChangeTimerRef = useRef(null);
 
   const windowed = useMemo(() => allMessages.slice(-visibleCount), [allMessages, visibleCount]);
-  const items = useMemo(() => buildItems(windowed), [windowed]);
+  const items = useMemo(() => buildItems(windowed, isGroup), [windowed, isGroup]);
+
+  // Wave 7 — "N pesan baru ↓" menggantikan lompatan senyap saat user sedang
+  // baca riwayat lama (scroll ke atas) lalu pesan baru masuk. followOutput
+  // (di bawah) SUDAH benar menangani kasus "user memang di bawah" (auto-
+  // scroll smooth) — dua mekanisme ini SENGAJA tidak saling override:
+  // pill cuma nambah kalau `!isAtBottom` PAS pesan baru masuk.
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const prevMessageCountRef = useRef(0);
 
   // Reset window setiap ganti percakapan
   useEffect(() => {
     isNewConvRef.current = true;
     setVisibleCount(PAGE_SIZE);
+    setIsAtBottom(true);
+    setNewMessageCount(0);
     // Batalkan snapshot rangeChanged yang masih tertunda dari conversation
     // SEBELUMNYA — kalau dibiarkan jalan, closure-nya membawa conversationId
     // lama tapi virtuosoRef.current sudah menunjuk instance Virtuoso conv
@@ -94,6 +137,30 @@ const MessageList = forwardRef(function MessageList(
     // ini), jadi snapshot conv baru bisa salah tersimpan di slot conv lama.
     return () => clearTimeout(rangeChangeTimerRef.current);
   }, [conversationId]);
+
+  // Hitung pesan baru yang masuk SEMENTARA user tidak di bawah. `isAtBottom`
+  // sengaja jadi dependency (bukan cuma dibaca lewat ref) — begitu user
+  // scroll balik ke bawah sendiri, effect ini ikut jalan ulang tapi
+  // `newCount > prevCount` sudah pasti false (panjang tidak berubah), jadi
+  // aman no-op, cuma handleAtBottomStateChange di bawah yang mereset counter.
+  useEffect(() => {
+    const prevCount = prevMessageCountRef.current;
+    const newCount = allMessages.length;
+    if (newCount > prevCount && !isAtBottom) {
+      setNewMessageCount((c) => c + (newCount - prevCount));
+    }
+    prevMessageCountRef.current = newCount;
+  }, [allMessages.length, isAtBottom]);
+
+  function handleAtBottomStateChange(atBottom) {
+    setIsAtBottom(atBottom);
+    if (atBottom) setNewMessageCount(0);
+  }
+
+  function scrollToBottom() {
+    virtuosoRef.current?.scrollToIndex({ index: items.length - 1, align: "end", behavior: "smooth" });
+    setNewMessageCount(0);
+  }
 
   // Jaga posisi scroll: firstItemIndex cuma di-mundurkan saat window
   // BENAR-BENAR diperlebar dari atas (prependingRef=true) — pesan baru yang
@@ -205,7 +272,8 @@ const MessageList = forwardRef(function MessageList(
             }, 200);
           }}
           startReached={handleStartReached}
-          followOutput={(isAtBottom) => (isAtBottom ? "smooth" : false)}
+          followOutput={(atBottom) => (atBottom ? "smooth" : false)}
+          atBottomStateChange={handleAtBottomStateChange}
           computeItemKey={(_, item) => item.key}
           itemContent={(_, item) => {
             if (item.type === "divider") {
@@ -221,6 +289,8 @@ const MessageList = forwardRef(function MessageList(
                 message={m}
                 conversationId={conversationId}
                 isGroup={isGroup}
+                isFirstInGroup={item.isFirstInGroup}
+                isLastInGroup={item.isLastInGroup}
                 mentionMap={mentionMap}
                 onReply={onReply}
                 onForward={onForward}
@@ -239,6 +309,16 @@ const MessageList = forwardRef(function MessageList(
             );
           }}
         />
+      )}
+
+      {/* Wave 7 — muncul HANYA saat ada pesan baru masuk sementara user
+          scroll ke atas baca riwayat lama (isAtBottom false). Kalau user
+          memang di bawah, followOutput di atas sudah auto-scroll smooth,
+          pill ini tidak pernah tampil (tidak ada gunanya). */}
+      {newMessageCount > 0 && (
+        <button type="button" className="new-messages-pill" onClick={scrollToBottom}>
+          <ArrowDown size={14} /> {newMessageCount} pesan baru
+        </button>
       )}
 
       {/* Lightbox foto — mount (dan download chunk-nya) cuma saat benar-benar dibuka */}

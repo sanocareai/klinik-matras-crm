@@ -916,7 +916,9 @@ body {
      line-height 1.45→1.5) untuk keterbacaan gaya chat app modern
      (iMessage/Telegram), padding disesuaikan supaya proporsinya tetap pas
      dengan radius baru. */
-  max-width: 65%; padding: 9px 14px;
+  /* Wave 7 (redesign Inbox) — 72%/620px (dulu 65% flat, tanpa batas
+     absolut — di layar sangat lebar bubble bisa jadi terlalu panjang). */
+  max-width: min(72%, 620px); padding: 9px 14px;
   border-radius: 19px; font-size: 14.5px; line-height: 1.5;
   position: relative;
   transition: background 0.4s ease;
@@ -1063,6 +1065,24 @@ body {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--text-muted); margin-bottom: 8px; display: block;
 }
+
+/* AssignmentSection (Wave 6, redesign Inbox) — dua baris identitas polos,
+   BUKAN pil berwarna (sudah cukup banyak warna di panel ini) — cuma
+   avatar+nama, dibedakan lewat label kecil di kiri. */
+.assignment-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 0;
+}
+.assignment-row-label {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text-muted); flex-shrink: 0;
+}
+.assignment-row-value {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--text-main);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.assignment-row-empty { font-weight: 400; color: var(--text-muted); }
 
 /* Inline city field */
 .inline-field { display: flex; gap: 6px; }
@@ -1615,23 +1635,24 @@ body {
 }
 .chat-meta-desktop { display: contents; } /* semua child tampil di desktop */
 
-/* Dots menu (3 titik) — hidden di desktop, tampil di mobile */
-.chat-dots-container { position: relative; display: none; }
+/* Menu "More" (dulu "dots menu 3 titik", Wave 8 redesign Inbox) — SEBELUMNYA
+   hidden di desktop (search/sync/takeover/status jadi tombol individual di
+   .chat-header-desktop-actions di sana), tampil HANYA di mobile (dropdown
+   .chat-dots-dropdown hand-rolled + backdrop manual). Sekarang SATU trigger
+   yang sama dipakai di KEDUA lebar layar (class dipertahankan sama biar CSS
+   posisi/breakpoint lain tidak perlu disentuh) — desktop cluster jadi lebih
+   ringkas (list-toggle/panel-toggle/focus-mode/Resolve saja, sisanya masuk
+   sini), dan .chat-dots-dropdown/.chat-dots-backdrop TIDAK DIPAKAI LAGI
+   di JSX (diganti Menu/MenuItem Radix, components/ui/menu.jsx) — sudah
+   dihapus dari sini (masih ada 2-3 sisa selector di sweep dark-mode &
+   delivery-dark.css yang SENGAJA dibiarkan, orphan tapi inert, bukan
+   worth menyentuh file glass lagi cuma untuk beres-beres kosmetik).
+   Backdrop hand-rolled fixed inset:0 tanpa auto-dismiss itu justru POLA
+   PERSIS bug "klik tidak sampai" yang pernah terjadi di baris percakapan
+   (PeekPreview) — Radix Menu punya dismiss-on-outside-click bawaan, jadi
+   Wave 8 ini pengurangan risiko, bukan cuma reskin. */
+.chat-dots-container { position: relative; }
 .chat-dots-btn { flex-shrink: 0; }
-.chat-dots-backdrop { position: fixed; inset: 0; z-index: 498; }
-.chat-dots-dropdown {
-  position: absolute; top: calc(100% + 4px); right: 0;
-  background: white; border: 1px solid var(--border);
-  border-radius: 10px; box-shadow: var(--shadow-md);
-  min-width: 190px; z-index: 499; overflow: hidden;
-}
-.chat-dots-dropdown button {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 11px 16px; font-size: 13.5px; background: none; border: none;
-  cursor: pointer; text-align: left; color: var(--text-main);
-  transition: background 0.1s;
-}
-.chat-dots-dropdown button:hover { background: #f8fafc; }
 
 /* ─── ATTACH BOTTOM SHEET (gaya WhatsApp grid) ──────────── */
 .attach-sheet-overlay {
@@ -2386,7 +2407,36 @@ body {
 .message-list-wrap { flex: 1; min-height: 0; overflow: hidden; position: relative; background: var(--bg-base); }
 .message-virtuoso { height: 100%; }
 .message-list-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+/* 4px dalam satu grup (default) — Wave 7 (redesign Inbox) menambah jarak
+   LEBIH LEBAR (14px) di baris PERTAMA tiap grup baru (.msg-row-group-start,
+   dari isFirstInGroup di MessageList.jsx#buildItems), supaya pergantian
+   pengirim kelihatan jelas tanpa elemen visual baru (garis/avatar) — cuma
+   jarak. Baris pertama keseluruhan juga isFirstInGroup=true (wajar, sedikit
+   jarak ekstra di bawah divider tanggal paling atas, tidak masalah). */
 .msg-row { padding: 4px 20px; }
+.msg-row.msg-row-group-start { padding-top: 14px; }
+
+/* Timestamp cuma tampil di baris TERAKHIR tiap grup, atau saat baris
+   di-hover (Wave 7) — status kirim/centang tetap SELALU tampil (informasi
+   fungsional, bukan dekoratif), cuma .bubble-time yang disembunyikan.
+   opacity-only (bukan width:0) supaya tidak ada reflow/jitter ke ack-tick
+   di sebelahnya saat hover masuk/keluar. */
+.bubble-time.bubble-time-grouped { opacity: 0; transition: opacity 0.1s ease; }
+.msg-row:hover .bubble-time.bubble-time-grouped { opacity: 0.65; }
+
+/* "N pesan baru" (Wave 7) — cuma muncul saat pesan masuk ketika user
+   sedang scroll ke atas baca riwayat lama (lihat handleAtBottomStateChange
+   di MessageList.jsx). Warna accent (bukan abu netral divider tanggal) —
+   ini actionable (klik utk lompat ke bawah), bukan info pasif. */
+.new-messages-pill {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border: none; border-radius: 99px; cursor: pointer;
+  background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.35);
+  z-index: 5; animation: fadeIn 0.15s ease;
+}
+.new-messages-pill:hover { background: var(--accent-hover); }
 
 /* Divider tanggal (inline, lihat catatan di MessageList.jsx soal sticky) */
 .date-divider-row { display: flex; justify-content: center; padding: 10px 0 6px; }

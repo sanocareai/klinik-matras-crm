@@ -10,6 +10,7 @@ import MediaGallery from "./MediaGallery.jsx";
 import NotesSection from "./NotesSection.jsx";
 import GroupPanel from "./GroupPanel.jsx";
 import NextBestActionCard from "./NextBestActionCard.jsx";
+import AssignmentSection from "./AssignmentSection.jsx";
 import { CustomerPanelSkeleton } from "../Skeletons.jsx";
 
 // Panel kanan Inbox (Fase E). type=GROUP → GroupPanel (tanpa pipeline/order/
@@ -78,6 +79,12 @@ export default function CustomerPanel({ conversation, onClose }) {
         </div>
 
         <div className="panel-body">
+          {/* Wave 6 (redesign Inbox) — siapa pegang chat vs siapa pemilik
+              lead, dua konsep yang sering tertukar (CLAUDE.md §20). Paling
+              atas, sebelum Next Best Action, karena ini identitas dasar
+              ("siapa yang bertanggung jawab"), bukan rekomendasi. */}
+          <AssignmentSection conversation={conversation} customer={customer} />
+
           {/* Wave 2 (redesign Inbox) — Next Best Action, di atas Pipeline
               supaya jadi hal PERTAMA yang dilihat sales saat buka panel:
               "apa yang harus saya lakukan sekarang untuk pelanggan ini",

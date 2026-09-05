@@ -219,7 +219,7 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 menit — sama dengan backend (conv
 const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 2 hari 12 jam — SAMA dengan backend, cuma gating tampilan
 
 function MessageBubbleBase({
-  message: m, conversationId, isGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
+  message: m, conversationId, isGroup, isFirstInGroup, isLastInGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   // Revisi 28 Jul 2026 — GANTI POLA INTERAKSI: dulu aksi pesan (Balas/
@@ -371,7 +371,7 @@ function MessageBubbleBase({
   return (
     <div
       ref={rowRef}
-      className="msg-row"
+      className={`msg-row${isFirstInGroup ? " msg-row-group-start" : ""}`}
       style={{ display: "flex", flexDirection: "row", alignItems: "center", width: "100%", gap: 8 }}
       onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
@@ -428,7 +428,10 @@ function MessageBubbleBase({
       )}
 
       <div className={`bubble ${isOut ? "out" : "in"}${highlighted ? " bubble-flash" : ""}${isSending ? " bubble-sending" : ""}${isFailed ? " bubble-failed" : ""}`}>
-        {!isOut && isGroup && m.senderName && (
+        {/* Wave 7 (redesign Inbox) — nama pengirim cuma di baris PERTAMA
+            grup (isFirstInGroup), bukan diulang di tiap pesan beruntun dari
+            orang yang sama. */}
+        {!isOut && isGroup && m.senderName && isFirstInGroup && (
           <div className="msg-sender-name">{m.senderName}</div>
         )}
 
@@ -515,7 +518,11 @@ function MessageBubbleBase({
         <span className="bubble-meta">
           {isSending && <Clock size={11} className="bubble-status-icon" />}
           {!!m.editedAt && !isRevoked && <span className="bubble-edited-label">diedit</span>}
-          <span className="bubble-time">{formatWaktu(m.createdAt)}</span>
+          {/* Wave 7 (redesign Inbox) — timestamp cuma tampil di baris
+              terakhir grup atau saat baris di-hover (lihat .bubble-time-
+              grouped di index.css). Status kirim/centang di atas & bawah
+              TIDAK ikut disembunyikan — itu informasi fungsional. */}
+          <span className={`bubble-time${!isLastInGroup ? " bubble-time-grouped" : ""}`}>{formatWaktu(m.createdAt)}</span>
           {isOut && !isSending && !isFailed && <AckTicks ack={m.ack} />}
         </span>
 

@@ -5,11 +5,12 @@ import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
   Forward, Search, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Download, Trash2, Megaphone,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, RotateCcw,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
 import { formatPhoneDisplay, STAGE_LABELS, stageVariant } from "../../../../utils/format.js";
 import { buatPetaMention } from "../../../../utils/mention.js";
 import CustomerPanel from "../CustomerPanel/index.jsx";
@@ -23,12 +24,6 @@ import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.j
 import { isAdminUser } from "@/lib/roles.js";
 import { useConversationStore } from "../../stores/conversationStore.js";
 import { useComposerStore } from "../../stores/composerStore.js";
-
-const STATUS_OPTIONS = [
-  { value: "OPEN",     label: "Terbuka" },
-  { value: "PENDING",  label: "Pending" },
-  { value: "RESOLVED", label: "Selesai" },
-];
 
 // ── Forward Modal ────────────────────────────────────────────────────────
 // messagesToForward: array opsional — dipakai forward BULK dari mode pilih
@@ -146,7 +141,6 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [showSearch, setShowSearch]     = useState(false);
   const [takingOver, setTakingOver]     = useState(false);
   const [resolving, setResolving]       = useState(false);
-  const [showDotMenu, setShowDotMenu]   = useState(false);
   const [forwardMsg, setForwardMsg]     = useState(null);
   const [forwardBulk, setForwardBulk]   = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [dragOver, setDragOver]         = useState(false);
@@ -178,7 +172,6 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
 
   useEffect(() => {
     setShowSearch(false);
-    setShowDotMenu(false);
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, [conversationId]);
@@ -435,8 +428,8 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
                   </a>
                 )}
                 {/* Wave 4 (redesign Inbox) — pipeline CRM (STAGE_LABELS) itu
-                    KONSEP LAIN dari status percakapan (STATUS_OPTIONS di
-                    bawah, select "Terbuka/Pending/Selesai"). Sebelumnya
+                    KONSEP LAIN dari status percakapan (OPEN/PENDING/RESOLVED,
+                    diubah lewat menu "More", lihat Wave 8). Sebelumnya
                     pipeline TIDAK ditampilkan sama sekali di ChatWindow —
                     sales harus buka Customer Panel dulu untuk tahu tahap
                     pipeline pelanggan. Ditaruh di baris meta (dekat identitas
@@ -471,10 +464,14 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
           <Info size={18} />
         </button>
 
+        {/* Wave 8 (redesign Inbox) — cluster ini dulu berisi 6 kontrol
+            (search/panel-toggle/focus-mode/sync-history/takeover/status-
+            select) sebelum "Selesaikan". Sekarang cuma kontrol LAYOUT
+            (panel-toggle, focus-mode) + Resolve (aksi primer) — sisanya
+            (search, tarik riwayat, ganti status, ambil alih) pindah ke
+            menu "More" di bawah, satu komponen yang sama dipakai desktop
+            MAUPUN mobile (lihat komentar .chat-dots-container di index.css). */}
         <div className="chat-header-desktop-actions">
-          <button className="chat-action-btn" onClick={() => setShowSearch((v) => !v)} title="Cari dalam percakapan">
-            <Search size={17} />
-          </button>
           {onTogglePanel && (
             <button className="chat-action-btn" onClick={onTogglePanel}
               title={panelCollapsed ? "Tampilkan panel pelanggan" : "Sembunyikan panel pelanggan"}>
@@ -492,32 +489,6 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
               {focusMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             </button>
           )}
-          {!isGroup && isAdminUser(user) && (
-            <button className="chat-action-btn" onClick={handleSyncHistory} disabled={syncingHistory}
-              title={syncingHistory ? "Sedang sinkronisasi..." : "Tarik ulang riwayat chat ini dari WAHA (recovery pesan hilang/bubble kosong)"}>
-              <Download size={17} />
-            </button>
-          )}
-          {!isGroup && !isMine && (
-            !assignedTo ? (
-              <button className="btn btn-secondary btn-sm" onClick={handleTakeover} disabled={takingOver} style={{ flexShrink: 0 }}>
-                <UserCheck size={13} /> {takingOver ? "..." : "Ambil Percakapan"}
-              </button>
-            ) : canTakeover ? (
-              <button className="btn btn-secondary btn-sm" onClick={handleTakeover} disabled={takingOver} style={{ flexShrink: 0 }}>
-                <UserCheck size={13} /> {takingOver ? "..." : "Ambil Alih (belum dibalas 1j+)"}
-              </button>
-            ) : (
-              <button className="btn btn-ghost btn-sm" disabled style={{ flexShrink: 0, opacity: 0.5, cursor: "not-allowed" }}>
-                <UserCheck size={13} /> {assignedTo.name}
-              </button>
-            )
-          )}
-          {!isGroup && (
-            <select value={conversation.status} onChange={(e) => handleStatusChange(e.target.value)} className="status-select" style={{ flexShrink: 0 }}>
-              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
           {!isGroup && conversation.status !== "RESOLVED" && (
             <button className="btn btn-primary btn-sm" onClick={handleResolve} disabled={resolving} style={{ gap: 4, display: "flex", alignItems: "center", flexShrink: 0 }}>
               <CheckCircle size={13} /> <span className="resolve-label">{resolving ? "..." : "Selesaikan"}</span>
@@ -526,28 +497,46 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         </div>
 
         <div className="chat-dots-container">
-          <button className="chat-action-btn chat-dots-btn" onClick={() => setShowDotMenu((v) => !v)} title="Menu"><MoreVertical size={18} /></button>
-          {showDotMenu && (
-            <>
-              <div className="chat-dots-backdrop" onClick={() => setShowDotMenu(false)} />
-              <div className="chat-dots-dropdown">
-                <button onClick={() => { setShowSearch(true); setShowDotMenu(false); }}><Search size={14} /> Cari Pesan</button>
-                <button onClick={() => { openCustomerDetail(); setShowDotMenu(false); }}><Info size={14} /> Info Pelanggan</button>
-                {!isGroup && conversation.status !== "RESOLVED" && (
-                  <button onClick={() => { handleResolve(); setShowDotMenu(false); }}><CheckCircle size={14} /> Tandai Selesai</button>
+          <Menu
+            trigger={<button className="chat-action-btn chat-dots-btn" title="Menu"><MoreVertical size={18} /></button>}
+          >
+            <MenuItem icon={Search} onSelect={() => setShowSearch(true)}>Cari Pesan</MenuItem>
+            <MenuItem icon={Info} onSelect={openCustomerDetail}>Info Pelanggan</MenuItem>
+            {!isGroup && isAdminUser(user) && (
+              <MenuItem icon={Download} onSelect={handleSyncHistory} disabled={syncingHistory}>
+                {syncingHistory ? "Sedang sinkronisasi..." : "Tarik Riwayat dari WAHA"}
+              </MenuItem>
+            )}
+            {!isGroup && (
+              <>
+                <MenuSeparator />
+                {/* Ketiga status TETAP bisa dipilih eksplisit (dulu lewat
+                    <select>, sekarang per-item) — status SEKARANG disembunyikan
+                    dari daftar (tidak ada gunanya "ubah ke status yang sama"). */}
+                {conversation.status !== "OPEN" && (
+                  <MenuItem icon={RotateCcw} onSelect={() => handleStatusChange("OPEN")}>Tandai Terbuka</MenuItem>
                 )}
-                {!isGroup && (
-                  <button onClick={() => { handleStatusChange("PENDING"); setShowDotMenu(false); }}><MessageSquare size={14} /> Tandai Pending</button>
+                {conversation.status !== "PENDING" && (
+                  <MenuItem icon={MessageSquare} onSelect={() => handleStatusChange("PENDING")}>Tandai Pending</MenuItem>
                 )}
-                {!isGroup && !isMine && !assignedTo && (
-                  <button onClick={() => { handleTakeover(); setShowDotMenu(false); }}><UserCheck size={14} /> Ambil Percakapan</button>
+                {conversation.status !== "RESOLVED" && (
+                  <MenuItem icon={CheckCircle} onSelect={handleResolve} disabled={resolving}>Tandai Selesai</MenuItem>
                 )}
-                {!isGroup && !isMine && assignedTo && canTakeover && (
-                  <button onClick={() => { handleTakeover(); setShowDotMenu(false); }}><UserCheck size={14} /> Ambil Alih (belum dibalas 1j+)</button>
+              </>
+            )}
+            {!isGroup && !isMine && (
+              <>
+                <MenuSeparator />
+                {!assignedTo ? (
+                  <MenuItem icon={UserCheck} onSelect={handleTakeover} disabled={takingOver}>Ambil Percakapan</MenuItem>
+                ) : canTakeover ? (
+                  <MenuItem icon={UserCheck} onSelect={handleTakeover} disabled={takingOver}>Ambil Alih (belum dibalas 1j+)</MenuItem>
+                ) : (
+                  <MenuItem icon={UserCheck} disabled>Dipegang {assignedTo.name}</MenuItem>
                 )}
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </Menu>
         </div>
       </div>
 
