@@ -211,9 +211,18 @@
    flat, ikon abu2). Referensi artifact: logo mark kotak gradien biru
    ber-glow, pemilih workspace jadi pil kaca dengan ikon accent, footer
    profil juga kaca — bukan cuma dashboard-nya yang di-upgrade. */
+/* D-125 (6 September 2026, laporan owner: "icon geser [workspace
+   switcher] menyatu dengan logo, jadi kepencet malah ke main hub") — glow
+   0 4px 16px SEBELUMNYA bleed ~20px ke bawah ikon, hampir menyentuh kotak
+   WorkspaceSwitcher tepat di bawahnya (cuma dipisah padding-bottom
+   .sidebar-brand). Dua kotak jadi kelihatan menyatu jadi SATU bentuk,
+   pemakai salah kira sedang mengklik switcher padahal masih di area logo.
+   Blur/offset diperkecil (bleed ~10px) + WorkspaceSwitcher diberi
+   margin-top eksplisit (lihat WorkspaceSwitcher.jsx) supaya batas kedua
+   kotak jelas, bukan cuma andalkan padding yang gampang ketutup glow. */
 [data-theme="dark"] .glass-division .sidebar-brand-icon {
   background: linear-gradient(135deg, var(--dh-accent-glow), var(--dh-accent-2)) !important;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45) !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4) !important;
 }
 
 [data-theme="dark"] .glass-division .workspace-switcher-trigger {
