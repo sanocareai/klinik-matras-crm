@@ -129,11 +129,12 @@ This stays scoped as this workspace's own "Delivery Command," not the full PRD �
 
 ## 7. Gap 4 — Exception & field-coordination handling
 
-**Status: partially shipped as part of Gap 3.** Today, a failed visit or incident is recorded (`Job.failureReason`/`failurePhotoUrls[]`, `VehicleIncident`) and shows up later in `ArmadaIssues.jsx`/`ArmadaReturns.jsx` — but nothing told a dispatcher *the moment* it happens. `ArmadaRingkasan.jsx`'s "Perlu Perhatian Sekarang" feed (§6) now surfaces failed jobs and recent incidents in one place, each row clickable through to where it gets resolved.
+**Status: shipped.** A failed visit or incident used to only show up later in `ArmadaIssues.jsx`/`ArmadaReturns.jsx` — nothing told a dispatcher *the moment* it happened. `ArmadaRingkasan.jsx`'s "Perlu Perhatian Sekarang" feed (§6) now surfaces failed jobs and recent incidents in one place, and:
 
-**Still open:**
-- **Live refresh.** The feed loads once on mount, same as every other data fetch on this page — it does not poll. `ArmadaTracking.jsx` already has a proven 15-second polling pattern; wiring the same interval onto this page's `load()` is the natural next step if dispatchers need it to update without a manual refresh, rather than introducing a new real-time transport.
-- **Inline one-click reschedule.** Clicking an overdue/failed-job row currently navigates to the Jobs list or Issues page rather than opening the reschedule flow (`POST /armada/issues/:jobId/reschedule`) directly in place. Worth doing once it's clear from real usage that the extra click is actually a friction point, not preemptively.
+- **Live refresh.** `load()` polls every 15 seconds, reusing `ArmadaTracking.jsx`'s exact `POLL_MS` pattern rather than introducing a new real-time transport. Only the first call sets `loading`; subsequent polls update silently so the page doesn't re-skeleton every 15 seconds.
+- **Inline one-click reschedule.** Clicking an open-issue row opens `IssueRescheduleDrawer` (the same component `ArmadaIssues.jsx` uses) directly in place — reused, not rebuilt. Verified against `deriveIssueStatus()` (`backend/src/routes/armada.js:1408-1414`) that every job with `issueStatus === "OPEN"` genuinely has `status === "FAILED"`, so the drawer's reschedule form is always actionable for these rows, never a dead end.
+
+Overdue (not-yet-failed) job rows still route to the Jobs list / job detail drawer rather than getting their own inline editor — `JobDetailDrawer` already covers full edit there, so a second mini-editor on this page would just duplicate it.
 
 ---
 
@@ -146,8 +147,8 @@ Sequenced, each phase independently shippable — consistent with the existing P
 | **A — Cleanup** ✅ done | Deleted orphaned `ArmadaPlaceholder.jsx` + dead `trackingMock.js`, removed their unused imports from `App.jsx`, fixed the stale `App.jsx` tracking comment, pointed `divisionContent.js`'s Route Planner/Proof of Delivery/Driver App cards at their real, already-shipped routes | Nothing — done first, unblocks clean iteration |
 | **B — SLA monitoring** ✅ v1 shipped (visibility only) | `isJobOverdue`/`overdueDays` in `jobStatus.js`, overdue badges + hero stat on `ArmadaJobs.jsx`, "Butuh Perhatian" surfacing on `ArmadaDashboard.jsx`. **Remaining, blocked on §9 sign-off:** outbound WA/push alerting | Phase A |
 | **C — Delivery Command overview** ✅ shipped | New `/armada/ringkasan` screen — stat row, "Perlu Perhatian Sekarang" feed, driver workload, fleet status, on-time delivery rate (all sections in §6) | Phase B |
-| **D — Exception/field-coordination live surface** 🟡 partial | Feed shipped as part of Phase C. **Remaining:** live polling refresh, inline one-click reschedule (§7) | Phase C (lives inside the same screen) |
-| **E — Customer comms re-activation** | Shadow mode → limited rollout → full, per §5 | Independent of B–D, but sequenced last because it's the most owner-sensitive and benefits from the trust-building the other phases create |
+| **D — Exception/field-coordination live surface** ✅ done | 15s polling on `ArmadaRingkasan.jsx`, inline reschedule via reused `IssueRescheduleDrawer` (§7) | Phase C |
+| **E — Customer comms re-activation** ⏳ not started, needs sign-off first | Shadow mode → limited rollout → full, per §5 | Independent of B–D, but sequenced last because it's the most owner-sensitive and benefits from the trust-building the other phases create |
 
 ---
 

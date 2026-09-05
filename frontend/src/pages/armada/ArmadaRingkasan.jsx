@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, Clock, CalendarClock, Truck as TruckIcon, CheckCircle2, Wrench,
@@ -13,6 +13,14 @@ import { cn } from "@/lib/utils.js";
 import { hariIniWIB, hariSejak, toWIB } from "@/utils/formatDate.js";
 import { customerOf, orderNumberOf, isJobOverdue, overdueDays } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
+import IssueRescheduleDrawer from "@/features/armada/components/IssueRescheduleDrawer.jsx";
+
+// Polling 15 detik — SAMA persis pola & interval dengan ArmadaTracking.jsx
+// (POLL_MS di sana), bukan transport realtime baru. `load()` TIDAK
+// menyalakan `loading` lagi di siklus kedua dst — cuma dipakai sekali di
+// render pertama (state awal `useState(true)`), supaya polling tidak bikin
+// seluruh halaman berkedip skeleton tiap 15 detik.
+const POLL_MS = 15000;
 
 // Ringkasan Operasional — "Delivery Command" scoped ke workspace armada saja
 // (redesain Sep 2026, docs/ARMADA-REDESIGN-2026.md §6). BUKAN pengganti
@@ -60,46 +68,50 @@ export default function ArmadaRingkasan() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
+  // Reschedule inline (Gap 4, docs/ARMADA-REDESIGN-2026.md §7) — buka drawer
+  // yang SAMA dengan ArmadaIssues.jsx langsung dari feed, tanpa pindah
+  // halaman dulu untuk mencari job yang sama lagi di daftar.
+  const [selectedIssue, setSelectedIssue] = useState(null);
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const today = hariIniWIB();
+      const [jobsAllRes, unscheduledRes, jobsTodayRes, completedRes, issuesRes, incidents, reportSummary, drivers] = await Promise.all([
+        // Take 300, urut scheduledDate desc (default backend) — cukup untuk
+        // volume produksi saat ini, lihat catatan limitasi di isJobOverdue
+        // section di bawah kalau volume job aktif jauh melebihi ini.
+        api.getArmadaJobs({ take: 300 }),
+        api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
+        api.getArmadaJobs({ date: today, take: 200 }),
+        api.getArmadaJobs({ status: "COMPLETED", take: 300 }),
+        api.getIssues("OPEN"),
+        api.getVehicleIncidents({}),
+        api.getDeliveryReportSummary({}),
+        api.getDrivers(),
+      ]);
+      setData({
+        jobsAll: jobsAllRes.jobs || [],
+        unscheduled: unscheduledRes.jobs || [],
+        jobsToday: jobsTodayRes.jobs || [],
+        completed: completedRes.jobs || [],
+        openIssues: issuesRes.jobs || [],
+        incidents: incidents || [],
+        reportSummary: reportSummary || null,
+        drivers: drivers || [],
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const today = hariIniWIB();
-        const [jobsAllRes, unscheduledRes, jobsTodayRes, completedRes, issuesRes, incidents, reportSummary, drivers] = await Promise.all([
-          // Take 300, urut scheduledDate desc (default backend) — cukup untuk
-          // volume produksi saat ini, lihat catatan limitasi di isJobOverdue
-          // section di bawah kalau volume job aktif jauh melebihi ini.
-          api.getArmadaJobs({ take: 300 }),
-          api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
-          api.getArmadaJobs({ date: today, take: 200 }),
-          api.getArmadaJobs({ status: "COMPLETED", take: 300 }),
-          api.getIssues("OPEN"),
-          api.getVehicleIncidents({}),
-          api.getDeliveryReportSummary({}),
-          api.getDrivers(),
-        ]);
-        if (cancelled) return;
-        setData({
-          jobsAll: jobsAllRes.jobs || [],
-          unscheduled: unscheduledRes.jobs || [],
-          jobsToday: jobsTodayRes.jobs || [],
-          completed: completedRes.jobs || [],
-          openIssues: issuesRes.jobs || [],
-          incidents: incidents || [],
-          reportSummary: reportSummary || null,
-          drivers: drivers || [],
-        });
-      } catch (e) {
-        if (!cancelled) setError(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    load();
+    const t = setInterval(load, POLL_MS);
+    return () => clearInterval(t);
+  }, [load]);
 
   const overdueJobs = useMemo(() => {
     if (!data) return [];
@@ -161,7 +173,9 @@ export default function ArmadaRingkasan() {
       tone: "red",
       title: `${customerOf(j) || "Tanpa nama"} · ${orderNumberOf(j) || "—"}`,
       detail: j.failureReason ? `Gagal: ${j.failureReason}` : "Job gagal, belum dijadwalkan ulang",
-      onClick: () => navigate("/armada/issues"),
+      // Buka drawer reschedule LANGSUNG (Gap 4) — bukan pindah ke halaman
+      // Kendala lalu cari job yang sama lagi di daftar.
+      onClick: () => setSelectedIssue(j),
     }));
     const dariInsiden = data.incidents.slice(0, 3).map((inc) => ({
       key: `incident-${inc.id}`,
@@ -282,6 +296,8 @@ export default function ArmadaRingkasan() {
           </div>
         </div>
       </PageBody>
+
+      <IssueRescheduleDrawer job={selectedIssue} onClose={() => setSelectedIssue(null)} onChanged={load} />
     </PageContainer>
   );
 }
