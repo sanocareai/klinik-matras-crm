@@ -1413,13 +1413,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               key={opt.value}
               type="button"
               onClick={() => setCategory(opt.value)}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                border: category === opt.value ? "2px solid var(--primary)" : "1px solid var(--border)",
-                background: category === opt.value ? "#eff6ff" : "var(--bg-card)",
-                transition: "all 0.15s",
-              }}
+              style={wizardCardStyle(category === opt.value)}
             >
               <span style={{ fontSize: 22 }}>{opt.icon}</span>
               <div style={{ textAlign: "left" }}>
@@ -1498,13 +1492,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
                   setStep(2);
                 }
               }}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                border: productLine === opt.value ? "2px solid var(--primary)" : "1px solid var(--border)",
-                background: productLine === opt.value ? "#eff6ff" : "var(--bg-card)",
-                transition: "all 0.15s",
-              }}
+              style={wizardCardStyle(productLine === opt.value)}
             >
               <span style={{ fontSize: 22 }}>{opt.icon}</span>
               <div style={{ textAlign: "left" }}>
@@ -1541,12 +1529,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               key={val}
               type="button"
               onClick={() => { setProductType(val); if (val !== "KASUR_LAINNYA") setStep(3); }}
-              style={{
-                textAlign: "left", padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                border: productType === val ? "2px solid var(--primary)" : "1px solid var(--border)",
-                background: productType === val ? "#eff6ff" : "var(--bg-card)",
-                fontSize: 13, fontWeight: 600, transition: "all 0.15s",
-              }}
+              style={{ ...wizardCardStyle(productType === val), textAlign: "left", fontSize: 13, fontWeight: 600 }}
             >
               {PRODUCT_TYPE_LABELS[val]}
             </button>
@@ -2197,6 +2180,29 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
 }
 
 // ─── Style helpers ────────────────────────────────────────────────────────────
+// D-117 (redesign input order, 6 September 2026, laporan owner: "redesign
+// input order sesuai style glass yang sudah kita diskusikan") — objek di
+// bawah ini dipakai ULANG di RATUSAN titik lewat file ini (style={formBox}
+// dst), jadi cukup diperbaiki SEKALI DI SINI untuk beres di semua tempat
+// pemakaiannya, tanpa menyentuh logic/JSX lain sama sekali.
+//
+// BUG NYATA ditemukan: `formSelect.background` sebelumnya `var(--bg-primary)`
+// — token itu TIDAK PERNAH didefinisikan di mana pun di seluruh codebase
+// (digrep, nol hasil lain). Sesuai spesifikasi CSS, referensi var() yang
+// tidak valid membuat properti itu jadi `unset` (background jadi transparan)
+// — persis penyebab dropdown "Pilih Merk/Ukuran/Kota" tampil putih polos
+// (chrome native browser tembus pandang di baliknya) di laporan owner.
+//
+// --dh-elevated/--dh-hairline/--dh-accent dipakai LANGSUNG (bukan --bg-
+// secondary/--border lama) — token ini SUDAH theme-aware sendiri (nilai
+// gelap di delivery-dark.css, nilai terang di delivery-light.css, TIDAK
+// perlu override CSS terpisah) dan konsisten dengan seluruh redesign kaca
+// Inbox musim ini. Aman dipakai di sini: OrderSection.jsx HANYA dipanggil
+// dari 2 tempat (Customer360.jsx & OrderEditDrawer.jsx, digrep untuk
+// pastikan), keduanya SUDAH di dalam .glass-division (baik /customers
+// maupun /inbox ada di GLASS_PILOT_PATHS, Layout.jsx) — fallback var()
+// kedua tetap disertakan sebagai jaring pengaman kalau suatu hari dipanggil
+// dari luar konteks itu.
 const thStyle = {
   padding: "8px 12px", textAlign: "left", fontSize: 11,
   fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase",
@@ -2210,19 +2216,23 @@ const formLabel = {
 };
 
 const formSelect = {
-  fontSize: 13, padding: "7px 9px", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--bg-primary)",
+  fontSize: 13, padding: "8px 10px", borderRadius: 8,
+  border: "1px solid var(--dh-hairline, var(--border))",
+  background: "var(--dh-elevated, var(--bg-secondary))",
   color: "var(--text-primary)", width: "100%",
 };
 
 const formBox = {
-  marginBottom: 16, padding: 14, background: "var(--bg-secondary)",
-  borderRadius: 8, border: "1px solid var(--border)",
+  marginBottom: 16, padding: 16, background: "var(--dh-surface, var(--bg-secondary))",
+  borderRadius: 14, border: "1px solid var(--dh-hairline, var(--border))",
+  backdropFilter: "blur(16px) saturate(140%)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 32px -20px rgba(0,0,0,0.5)",
 };
 
 const selStyle = {
   fontSize: 11, padding: "3px 6px", borderRadius: 4,
-  border: "1px solid var(--border)", background: "var(--bg-secondary)",
+  border: "1px solid var(--dh-hairline, var(--border))",
+  background: "var(--dh-elevated, var(--bg-secondary))",
   color: "var(--text-primary)", flexShrink: 0,
 };
 
@@ -2238,5 +2248,28 @@ const metaLabel = {
 
 const chipStyle = {
   fontSize: 11, padding: "2px 8px", borderRadius: 99,
-  background: "var(--bg-secondary)", color: "var(--text-secondary)", fontWeight: 500,
+  background: "var(--dh-elevated, var(--bg-secondary))", color: "var(--text-secondary)", fontWeight: 500,
 };
+
+// Kartu pilihan wizard (kategori/lini produk/jenis produk, step 0-2) — DULU
+// state terpilih hardcode `background:"#eff6ff"` (biru nyaris-putih, cuma
+// masuk akal di atas kartu terang) — di atas panel kaca gelap tampil sebagai
+// kotak putih terang mencolok, sama persis kelas bug yang sudah berulang
+// kali ditemukan musim ini di tempat lain. Sekarang tint aksen kaca + glow
+// tipis, mengikuti resep yang sama dengan .dh-kanban-card (Pipeline).
+function wizardCardStyle(selected) {
+  return {
+    display: "flex", alignItems: "center", gap: 12,
+    padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+    border: selected
+      ? "1.5px solid color-mix(in oklab, var(--dh-accent, var(--accent)) 55%, transparent)"
+      : "1px solid var(--dh-hairline, var(--border))",
+    background: selected
+      ? "color-mix(in oklab, var(--dh-accent, var(--accent)) 14%, transparent)"
+      : "var(--dh-elevated, var(--bg-card))",
+    boxShadow: selected
+      ? "0 0 0 1px color-mix(in oklab, var(--dh-accent, var(--accent)) 20%, transparent), 0 0 14px 1px color-mix(in oklab, var(--dh-accent, var(--accent)) 25%, transparent)"
+      : "none",
+    transition: "all 0.15s",
+  };
+}

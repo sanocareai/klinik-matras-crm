@@ -971,6 +971,71 @@
   box-shadow: none;
 }
 
+/* ── 9f. SEMUA INPUT/SELECT/TEXTAREA NATIVE — GAYA KACA iOS (D-117) ───────
+   Laporan owner: "redesign input order sesuai style glass yang sudah kita
+   diskusikan". index.css punya aturan GLOBAL `input,select,textarea{
+   background:white}` (dibungkus @layer base, lihat komentar panjang di
+   sana soal kenapa) — di panel/drawer kaca gelap ini SELALU salah, dan di
+   form order beberapa `<select>` malah tampil transparan/putih native sama
+   sekali (bug terpisah: formSelect di OrderSection.jsx dulu mereferensikan
+   token --bg-primary yang TIDAK PERNAH didefinisikan — sudah diperbaiki di
+   sana, tapi baris CSS ini tetap perlu ada sebagai jaring pengaman umum
+   untuk PULUHAN input ad-hoc lain di file yang sama & file glass lain yang
+   tidak sempat diaudit satu per satu). !important WAJIB di sini — aturan
+   asalnya di @layer base, tapi rule INI unlayered (unlayered SELALU
+   menang lawan layer manapun terlepas urutan) DAN inline style (kalau ada)
+   masih lebih tinggi dari unlayered biasa, makanya !important tetap perlu
+   supaya benar-benar mengalahkan style inline lama yang mungkin masih
+   menyimpan warna terang. Reuse resep .chat-textarea (D-115) — SATU bahasa
+   visual field-kaca di seluruh app, bukan resep kedua yang bisa drift. */
+[data-theme="dark"] .glass-division input[type="text"],
+[data-theme="dark"] .glass-division input[type="number"],
+[data-theme="dark"] .glass-division input[type="email"],
+[data-theme="dark"] .glass-division input[type="password"],
+[data-theme="dark"] .glass-division input[type="date"],
+[data-theme="dark"] .glass-division input[type="url"],
+[data-theme="dark"] .glass-division input[type="tel"],
+[data-theme="dark"] .glass-division input:not([type]),
+[data-theme="dark"] .glass-division select,
+[data-theme="dark"] .glass-division textarea {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: var(--dh-hairline) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+[data-theme="dark"] .glass-division input::placeholder,
+[data-theme="dark"] .glass-division textarea::placeholder {
+  color: rgba(245, 245, 247, 0.38) !important;
+}
+[data-theme="dark"] .glass-division input:focus,
+[data-theme="dark"] .glass-division select:focus,
+[data-theme="dark"] .glass-division textarea:focus {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: color-mix(in oklab, var(--dh-accent) 42%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dh-accent) 13%, transparent) !important;
+  outline: none;
+}
+/* Tombol sekunder/netral ("Batal" dkk, .btn-secondary/.btn-ghost) — belum
+   pernah kebagian sentuhan kaca (cuma .btn-primary/.btn-tugaskan yang
+   sudah), masih flat solid/transparan-polos di atas panel navy. */
+[data-theme="dark"] .glass-division .btn-secondary {
+  background: var(--dh-elevated) !important;
+  border-color: var(--dh-hairline) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .glass-division .btn-secondary:hover {
+  background: color-mix(in oklab, var(--dh-accent) 10%, var(--dh-elevated)) !important;
+}
+[data-theme="dark"] .glass-division .btn-ghost {
+  border-color: var(--dh-hairline) !important;
+  color: var(--text-secondary) !important;
+}
+[data-theme="dark"] .glass-division .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--text-primary) !important;
+}
+
 /* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────
    backdrop-filter dimatikan total kalau user minta gerak/efek dikurangi —
    sekaligus jalur aman untuk perangkat yang berat merender blur. */
