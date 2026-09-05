@@ -878,7 +878,15 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
         key="overlay"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        className="fixed inset-0 z-40 bg-black/30"
+        // z-[550] (Wave 9, redesign Inbox) — dulu z-40 (default Tailwind).
+        // Dinaikkan supaya drawer ini benar muncul DI ATAS OrderEditDrawer.jsx
+        // (Inbox, z-[510]/[511]) saat dibuka BERSARANG dari dalamnya (klik
+        // ikon riwayat per-order di tabel OrderSection.jsx, yang sekarang
+        // bisa dirender di dalam drawer lain, bukan cuma inline di halaman).
+        // Murni angka — tidak mengubah cara/kapan drawer ini muncul di
+        // pemanggil manapun, cuma memastikan dia SELALU menang tumpuk
+        // (satu-satunya arah yang masuk akal untuk overlay paling dalam).
+        className="fixed inset-0 z-[550] bg-black/30"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -887,7 +895,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
         role="dialog" aria-modal="true" aria-label="Riwayat status order"
         initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
         transition={{ type: "tween", duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-base shadow-popover"
+        className="fixed right-0 top-0 z-[551] flex h-full w-full max-w-md flex-col bg-base shadow-popover"
       >
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3.5">
           <div className="min-w-0">

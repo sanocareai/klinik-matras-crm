@@ -2004,10 +2004,16 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
 }
 
 // ─── Container utama ──────────────────────────────────────────────────────────
-export default function OrderSection({ customer, onUpdate }) {
+// `initialOrderId` (Wave 9, redesign Inbox) — OPSIONAL, murni tambahan.
+// Kalau diisi, order itu langsung terbuka (expanded) begitu komponen mount —
+// dipakai OrderEditDrawer.jsx (Inbox) supaya klik "Buka Order" di
+// ActiveOrderCard langsung menuju order yang relevan, bukan tabel kosong
+// yang harus diklik lagi. CustomerDrawer.jsx (pemanggil lain) TIDAK
+// mengirim prop ini — default null, nol perubahan perilaku di sana.
+export default function OrderSection({ customer, onUpdate, initialOrderId = null }) {
   const navigate = useNavigate();
   const [showForm, setShowForm]     = useState(false);
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState(() => initialOrderId);
   // D-030 (20 Agustus 2026) — rincian pesanan lengkap (riwayat status, foto
   // dokumentasi penjemputan/produksi/pengiriman + tanda tangan penerima,
   // pembayaran) dibuka lewat OrderTimelineDrawer yang SAMA dengan halaman
