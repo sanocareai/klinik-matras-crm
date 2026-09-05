@@ -15,7 +15,11 @@ export const JENIS_LAYANAN = [
 export const MERK_KASUR = [
   "Comforta", "Spring Air", "Dunlopillo", "Therapedic",
   "King Koil", "Sealy", "Serta", "Lady Americana",
-  "Elite", "Florence", "Guhdo", "Sano", "Lainnya",
+  "Elite", "Florence", "Guhdo", "Sano",
+  // Ditambahkan 5 September 2026, permintaan owner.
+  "Informa", "Ocean", "Alga", "Airland", "Simmons", "Dreamline",
+  "Zees", "Romance", "Slumberland", "In The Box", "Zinus", "Turu Bed",
+  "Lainnya",
 ];
 
 // ⚠️ URUTAN & TEKSNYA TERIKAT ke UKURAN_VARIANT_KEY di
