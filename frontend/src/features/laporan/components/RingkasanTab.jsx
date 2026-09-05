@@ -146,7 +146,10 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           sini. Disembunyikan total kalau belum ada target diset sama sekali
           (targetValue 0), bukan tampil "0%" yang menyesatkan. */}
       {targetValue > 0 && (
-        <div className="rounded-2xl bg-surface p-5 shadow-card">
+        // rounded-card (D-111, bukan rounded-2xl) — sama alasan dengan
+        // KpiCard.jsx: radius identik (16px), cuma supaya "Target Bulanan
+        // Tim" ikut kaca seperti kartu lain di halaman ini.
+        <div className="rounded-card bg-surface p-5 shadow-card">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-[13px] font-medium text-ink3">
               Target Bulanan Tim

@@ -29,8 +29,17 @@ export default function KpiCard({
 
   return (
     <div
+      // rounded-card (D-111, bukan rounded-2xl) — pilot kaca Laporan: --r-lg
+      // (16px) SAMA PERSIS dengan rounded-2xl bawaan Tailwind, nol perubahan
+      // radius, cuma supaya cocok wildcard kaca yang sudah ada. Komponen ini
+      // dipakai bersama Armada (ArmadaDeliveryReport.jsx) & Gudang (Warehouse
+      // Reports/Dashboard) — aman di keduanya: Gudang tidak pernah py
+      // .glass-division jadi rule kaca tidak pernah match di sana (nol
+      // perubahan), Armada SUDAH .glass-division jadi otomatis dapat kaca
+      // juga (perbaikan tambahan, bukan regresi — sebelumnya kartu KPI
+      // Armada ini kelewat dari pilot kaca sejak awal karena rounded-2xl).
       className={cn(
-        "animate-fade-rise relative overflow-hidden rounded-2xl p-5 shadow-card transition-shadow duration-200 hover:shadow-popover text-ink",
+        "animate-fade-rise relative overflow-hidden rounded-card p-5 shadow-card transition-shadow duration-200 hover:shadow-popover text-ink",
         hero ? "bg-blue-50" : "bg-surface"
       )}
       style={{ animationDelay: `${index * 70}ms` }}

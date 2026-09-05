@@ -499,10 +499,26 @@ export default function Layout({ user, onLogout, children }) {
   //  - "/sales-intelligence", "/copilot", "/pengaturan-sales": NOL kelas
   //    legacy/hardcode warna (diverifikasi grep) — paling aman dari
   //    ketujuhnya, murni Tailwind + token tema.
+  // D-111, 5 September 2026 — "/laporan" (owner: "yang lebih challenging...
+  // redesign laporan tab"). Halaman TERBESAR yang diaudit sejauh ini (13
+  // file, ~3.400 baris gabungan pages/Laporan.jsx + features/laporan/*) —
+  // hasilnya TERNYATA paling bersih: KpiCard.jsx/MetricCard.jsx/ChartCard.jsx
+  // semua komponen MODERN (Card/rounded-card, bukan CSS legacy), NOL kelas
+  // yang bentrok dengan bulk selector tokens.css (beda dari D-109's Products/
+  // Broadcast/Automation). Cuma 2 titik `rounded-2xl` polos ditemukan
+  // (KpiCard.jsx, RingkasanTab.jsx "Target Bulanan Tim") — diganti
+  // `rounded-card` (radius identik 16px, nol efek visual selain kaca).
+  // SEMUA tabel (<table> mentah di TrafficTab/SalesReportTab/PerformaTimTab/
+  // PipelineTab) SUDAH dibungkus <ChartCard> (Card asli, sudah kaca) dengan
+  // wrapper polos overflow-x-auto tanpa background sendiri — TIDAK perlu
+  // class dh-table tambahan sama sekali. PipelineTab.jsx STAGE_BG/STAGE_BAR/
+  // STAGE_DOT (bar breakdown per stage: hijau=TRANSACTION "berhasil", netral
+  // bg-inset lainnya) SENGAJA TIDAK diikutkan — warna semantik kecil, sama
+  // pola dengan kenapa .estimate-card dikecualikan di D-109.
   const GLASS_PILOT_PATHS = [
     "/dashboard", "/customers", "/pipeline", "/orders",
     "/products", "/broadcast", "/tracking", "/sales-intelligence",
-    "/copilot", "/automation", "/pengaturan-sales",
+    "/copilot", "/automation", "/pengaturan-sales", "/laporan",
   ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   const glassOn = divisionKey === "armada" || pageGlassPilot;
