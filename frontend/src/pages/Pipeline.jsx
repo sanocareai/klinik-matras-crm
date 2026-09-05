@@ -358,7 +358,21 @@ export default function Pipeline() {
   );
 
   return (
-    <PageContainer>
+    // Lebar halaman DIBEBASKAN dari cap 1400px default (5 September 2026,
+    // laporan owner) khusus mode Papan — PageContainer normalnya
+    // `max-w-[1400px]` (konsisten dengan halaman lain), tapi itu justru
+    // MEMBUAT board Kanban selalu butuh scroll horizontal walau layar jauh
+    // lebih lebar dari 1400px: 5 stage × lantai 264px + gap + padding sudah
+    // sedikit MELEWATI 1400px sendiri (~1432px dibutuhkan vs ~1336px
+    // tersedia setelah padding), jadi scrollbar selalu muncul terlepas dari
+    // seberapa lebar monitornya — persis yang dilaporkan ("kiri kanan
+    // browser banyak sisi kosong tapi pipeline tetap harus di-slide").
+    // AMAN dibiarkan tanpa cap di sini karena setiap kolom SUDAH punya
+    // batas atasnya sendiri (`max-w-[360px]` di bawah, lihat komentar D-103)
+    // — itu yang mencegah board jadi absurd lebar di monitor ultra-wide,
+    // bukan cap di container. Mode Tabel TETAP 1400px (tidak dilaporkan
+    // bermasalah, dan tabel memang lebih enak dibaca tidak terlalu lebar).
+    <PageContainer className={viewMode === "papan" ? "max-w-none" : undefined}>
       <PageHeader
         title="Pipeline"
         subtitle={
