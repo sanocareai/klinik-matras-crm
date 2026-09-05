@@ -4,7 +4,7 @@ import { Package, MapPinned, AlertTriangle, ChevronDown, ArrowUpRight } from "lu
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { customerOf, unitCountOf, cityOf } from "../jobStatus.js";
+import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
 import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
@@ -54,6 +54,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
       draggable
       onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/job-id", j.id); onDragStart(j); }}
       onDragEnd={onDragEnd}
+      style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
       className={cn(
         // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
         // atas panel yang sudah kaca, MENGGANTIKAN `bg-surface` polos
@@ -66,7 +67,12 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
         // teks bawaan browser (perbaikan valid, tapi TERNYATA bukan akar
         // masalah utama laporan "klik dulu baru bisa pindahkan" — itu
         // bug remount di atas).
-        "dh-job-card flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+        //
+        // jobTypeCardTint/dh-bar-left (lanjutan redesain Sep 2026) — sama
+        // persis dengan RouteCard.jsx, lihat catatan panjang di
+        // jobStatus.js#jobTypeCardTint.
+        "dh-job-card relative flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+        isRentalOrder(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}
     >

@@ -5,7 +5,7 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, unitCountOf } from "../jobStatus.js";
+import { customerOf, unitCountOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
 import { JobMetaRow, JobTypeBadge, RentalBadge, ConfirmedTimeBadge, ServiceLabel } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -239,6 +239,7 @@ export default function RouteCard({
                 onDragOver={(e) => { if (isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverIdx(idx); } }}
                 onDrop={(e) => handleDropAtIndex(e, idx)}
                 onDragEnd={() => { setDraggingStopId(null); setDragOverIdx(null); }}
+                style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
                 className={cn(
                   // `dh-stop-card` (D-072) — kaca bertingkat di atas kartu
                   // rute yang sudah kaca, MENGGANTIKAN `bg-inset` polos yang
@@ -258,7 +259,18 @@ export default function RouteCard({
                   // ke-clear oleh klik) drag benar-benar jalan. Menonaktifkan
                   // seleksi teks di sini memastikan gestur drag PERTAMA
                   // langsung terbaca sebagai drag, bukan seleksi.
-                  "dh-stop-card flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
+                  //
+                  // jobTypeCardTint (lanjutan redesain Sep 2026) — gradasi
+                  // PENUH per tipe job (Pengambilan/Pengiriman), lihat catatan
+                  // panjang di jobStatus.js. `bg-inset` DIPERTAHANKAN sebagai
+                  // background-color dasar (gradient-nya background-image,
+                  // dua-duanya tampil bersamaan, bukan saling menimpa).
+                  // `dh-bar-left` untuk Sewa (rentalCardAccentStyle di atas
+                  // mengisi --dh-bar oranye) — kalau bukan Sewa, class ini
+                  // tidak py efek apa pun (fallback var(--dh-accent) TIDAK
+                  // dipakai di sini karena style inline tidak di-set).
+                  "dh-stop-card relative flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
+                  isRentalOrder(j) && "dh-bar-left",
                   isEditable && "cursor-grab active:cursor-grabbing",
                   dragOverIdx === idx && "ring-2 ring-accent",
                   // Item yang sedang digeser memudar + sedikit mengecil —

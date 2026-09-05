@@ -141,6 +141,52 @@ export function confirmedDateOf(job) {
   return job?.type === "PICKUP" ? (order.pickupConfirmedDate || null) : (order.deliveryConfirmedDate || null);
 }
 
+// Tint background PENUH per tipe job (lanjutan redesain Sep 2026 — laporan
+// owner: badge kecil kurang mencolok saat 1 rute mencampur banyak
+// pengambilan+pengiriman+sewa sekaligus, minta identifikasi warna kartu yang
+// benar-benar terlihat, bukan cuma chip kecil). Dihitung ULANG dari
+// job.type tiap render — kartu otomatis ikut berubah warna kalau job-nya
+// (mis. lewat drag ke rute lain / data refresh) ternyata tipe berbeda,
+// tidak pernah "nyangkut" ke warna lama.
+//
+// Reuse token WARNA STATUS yang SUDAH ADA (--accent-bg untuk Pengambilan,
+// --green-bg untuk Pengiriman) sebagai warna gradient, BUKAN warna baru —
+// tokens.css sudah membuktikan app ini SENGAJA melebur semua hue dekoratif
+// ke satu accent (--color-chart-violet/-ai-violet keduanya = var(--accent)),
+// jadi menambah hue solid baru akan menyimpang dari pola itu.
+//
+// STYLE INLINE, BUKAN class Tailwind — dicoba dulu lewat utility
+// `bg-gradient-to-br from-[var(--accent-bg)] ...`, TERNYATA tidak ter-
+// compile sama sekali (diverifikasi byte-exact di CSS produksi, bukan
+// tebakan — persis pola bug "utility warna kustom kadang tidak ter-
+// generate" yang sudah didokumentasikan CLAUDE.md §3). Tailwind v4 arbitrary-
+// value gradient stops tidak menerima `var(--x)` sebagai tipe warna yang
+// dikenali saat build. `style` inline langsung menulis `background-image`,
+// tidak lewat JIT sama sekali — dijamin tampil, dan tetap ikut tema karena
+// `var(--accent-bg)`/`var(--green-bg)` di-resolve BROWSER saat render, bukan
+// saat build.
+//
+// Kasur SEWA SENGAJA TIDAK dapat gradient ketiga di sini — satu job Sewa
+// tetap salah satu dari dua tipe ini juga (Pengambilan ATAU Pengiriman),
+// jadi Sewa bukan alternatif ketiga yang bersaing ruang gradient, melainkan
+// penanda TAMBAHAN di atasnya (lihat rentalCardAccentStyle di bawah: garis
+// aksen kiri oranye + badge "Sewa" yang sudah ada).
+export function jobTypeCardStyle(job) {
+  const warna = job?.type === "PICKUP" ? "var(--accent-bg)" : "var(--green-bg)";
+  return { backgroundImage: `linear-gradient(to bottom right, ${warna}, transparent 70%)` };
+}
+
+// Garis aksen kiri oranye untuk order kategori Sewa — dipasangkan dengan
+// class `dh-bar-left` yang SUDAH ADA (dh-bar-left/--dh-bar, lihat
+// ArmadaDashboard.jsx "Perlu Dijadwalkan" untuk pola identik), bukan
+// mekanisme baru. Dikembalikan sebagai object `style` inline karena
+// `--dh-bar` adalah CSS custom property PER-ELEMEN, tidak bisa lewat
+// className Tailwind biasa. Digabung dengan jobTypeCardStyle() di
+// pemanggil (satu object `style`, bukan dua prop terpisah).
+export function rentalCardAccentStyle(job) {
+  return isRentalOrder(job) ? { "--dh-bar": "var(--orange)" } : {};
+}
+
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
 // dispatcher perlu tahu siapa sales-nya buat koordinasi). Pola fallback
 // SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
