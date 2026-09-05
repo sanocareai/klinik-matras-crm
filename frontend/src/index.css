@@ -1027,8 +1027,16 @@ body {
   100%    { background-color: var(--accent); }
 }
 
+/* D-122 (laporan owner: "icon disini ga sejajar dengan chat") — dulu
+   align-items:flex-end, dipilih supaya tombol kirim "nempel di bawah"
+   saat textarea tumbuh multi-baris. Tapi utk kasus paling umum (satu
+   baris pendek), tombol bulat 34px vs kotak ketik yang tinggi min 42px
+   jadi tidak sejajar tengah — ikon kelihatan nempel ke satu sisi,
+   bukan sejajar dengan teks. `center` sejajar tengah SELALU benar utk
+   kasus satu-baris (99% kirim pesan), dan tetap wajar utk kasus jarang
+   multi-baris (tombol ikut di tengah tinggi textarea, bukan regresi). */
 .chat-input {
-  display: flex; gap: 8px; padding: 12px 16px; align-items: flex-end;
+  display: flex; gap: 8px; padding: 12px 16px; align-items: center;
   background: white; border-top: 1px solid var(--border); flex-shrink: 0;
 }
 /* Reskin 20 Agt 2026 — kotak ketik dulu border tipis rata dengan bar di
