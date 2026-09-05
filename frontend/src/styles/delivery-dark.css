@@ -158,6 +158,28 @@
   backdrop-filter: blur(24px) saturate(150%);
 }
 
+/* ⚠️ MOBILE (D-107, 5 September 2026) — BUG NYATA, laporan owner (PWA HP):
+   buka sidebar hasilnya "transparant", teks nav numpuk tak terbaca dengan
+   konten Dashboard di baliknya. AKAR MASALAH: 0.6 alpha + backdrop-filter
+   di atas dirancang untuk sidebar DESKTOP (kolom permanen di SAMPING
+   konten, blur cuma pemanis). Di lebar <768px, `.sidebar` index.css jadi
+   drawer OVERLAY PENUH LAYAR di ATAS seluruh halaman (`position:fixed`,
+   translateX) — kalau `backdrop-filter` tidak sungguh-sungguh dirender di
+   WebView/PWA perangkat itu (gap dukungan yang nyata di sebagian Android
+   WebView, tidak bisa diasumsikan selalu ada), 0.6 alpha SENDIRIAN
+   menyisakan ~40% konten di baliknya tembus — persis gejala di laporan.
+   Drawer mobile FUNGSINYA beda dari sidebar desktop (dia SATU-SATUNYA UI
+   navigasi yang menutupi seluruh halaman sementara), jadi keterbacaan
+   harus dijamin TANPA bergantung pada blur. Dinaikkan ke alpha nyaris
+   opak KHUSUS <768px — desktop (>768px) TIDAK tersentuh, tetap 0.6 seperti
+   semula. backdrop-filter dasar di atas dibiarkan (bonus kalau perangkat
+   mendukungnya), bukan lagi satu-satunya yang menjamin kontras. */
+@media (max-width: 768px) {
+  [data-theme="dark"] .glass-division .sidebar {
+    background-color: rgba(14, 17, 30, 0.97);
+  }
+}
+
 /* ── 1b. CHROME SIDEBAR: logo, pemilih workspace, footer profil (D-047) ───
    Ketiganya SEBELUMNYA terlewat — cuma dashboard/kartu yang jadi kaca,
    sementara "bingkai" sidebar di sekitarnya masih style DS v2 polos (kotak

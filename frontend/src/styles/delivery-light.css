@@ -140,6 +140,15 @@ html:not([data-theme="dark"]) .glass-division .sidebar {
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.6);
 }
 
+/* Mobile (D-107) — pasangan mode terang, baca komentar lengkap (kenapa
+   drawer overlay HP butuh lantai opacity tinggi tanpa bergantung blur) di
+   delivery-dark.css. */
+@media (max-width: 768px) {
+  html:not([data-theme="dark"]) .glass-division .sidebar {
+    background-color: rgba(255, 255, 255, 0.97);
+  }
+}
+
 /* Topbar kaca — inti "glass effect", sama alasan dengan dark mode. Opacity
    diturunkan + saturate dinaikkan (D-065) supaya gradien biru di balik
    panel ikut "terbawa" ke dalam blur-nya — persis efek liquid glass Apple,
