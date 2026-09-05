@@ -639,13 +639,27 @@ body {
      mem-block interaksi kalau z-index tidak dinaikkan. */
   position: relative; z-index: 41;
 }
+/* D-120 (redesign minimalis search, laporan owner) — bidang pencarian
+   DULU cuma mewarisi radius kotak generik (var(--radius-input), ~8-10px)
+   dan border penuh var(--border), terasa seperti input formulir biasa,
+   bukan bidang cari yang ringan/mengambang. Sekarang pil penuh
+   (border-radius:999px) — bentuk "search pill" yang lazim di app chat
+   minimalis (referensi yang dikirim owner) — TANPA menyentuh
+   .search-input-wrap/.search-input generik (dipakai juga di ProductPicker
+   dgn bentuk BEDA, radius 22px persegi-bulat, lihat komentar di sana) —
+   override di sini SENGAJA discope `.conv-search-bar ...` supaya cuma
+   berlaku di Inbox, tidak ikut mengubah pencarian produk. */
 .conv-search-bar {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.conv-search-bar .search-input-wrap {
+  border: none; border-radius: 999px; padding: 0; margin-bottom: 0;
+}
 .conv-search-bar .search-input {
   font-size: 13px;
+  border-radius: 999px;
   padding-right: 28px !important;
 }
 .conv-list-scroll { flex: 1; overflow-y: auto; }
