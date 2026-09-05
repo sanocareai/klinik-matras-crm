@@ -9,6 +9,7 @@ import { formatRupiah, formatRupiahShort, ORDER_STATUS_LABELS, STAGE_LABELS, SOU
 import { compareLabel, formatBucketTick } from "@/lib/dateRange.js";
 import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import ProgressRing from "@/components/ui/progress-ring.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
@@ -145,42 +146,48 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           utils/teamTarget.js) — sengaja tidak dihitung ulang terpisah di
           sini. Disembunyikan total kalau belum ada target diset sama sekali
           (targetValue 0), bukan tampil "0%" yang menyesatkan. */}
-      {targetValue > 0 && (
-        // rounded-card (D-111, bukan rounded-2xl) — sama alasan dengan
-        // KpiCard.jsx: radius identik (16px), cuma supaya "Target Bulanan
-        // Tim" ikut kaca seperti kartu lain di halaman ini.
-        <div className="rounded-card bg-surface p-5 shadow-card">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-medium text-ink3">
-              Target Bulanan Tim
-              {/* Selalu bulan berjalan — TIDAK ikut date picker di atas (lihat
-                  catatan Laporan.jsx#salesReportBulanIni). Ditandai eksplisit
-                  supaya tidak membingungkan saat rentang lain (mis. "Hari
-                  ini") sedang dipilih untuk sisa halaman. */}
-              <span className="ml-1.5 font-normal text-ink4">· {labelBulanTarget}</span>
-            </p>
-            <span className="text-xs text-ink3">
-              {formatRupiah(teamGrossAll)} <span className="text-ink3">/ {formatRupiah(targetValue)}</span>
-            </span>
-          </div>
-          <div className="mt-2.5 flex items-center gap-3">
-            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-inset">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-700 ease-out",
-                  percentToTarget == null ? "bg-line"
-                  : percentToTarget >= 100 ? "bg-green"
-                  : percentToTarget >= 50 ? "bg-accent" : "bg-orange"
-                )}
-                style={{ width: `${Math.min(percentToTarget ?? 0, 100)}%` }}
-              />
+      {targetValue > 0 && (() => {
+        // Warna cincin SEMANTIK, SAMA PERSIS logika bar linear lama (D-112,
+        // referensi ring NexusBank "Available"/LearnZimTPS "Daily Goal") —
+        // cuma bentuknya yang berubah (linear → bulat), maknanya TIDAK:
+        // hijau=tercapai, biru=setengah jalan (masih dalam "keluarga biru"
+        // yang diminta owner), oranye=tertinggal (peringatan, dipertahankan
+        // sebagai warna semantik, bukan dekoratif — sama pola dengan
+        // STAGE_DOT/mandek di halaman lain yang sengaja tidak dilebur ke
+        // satu warna).
+        const ringColor = percentToTarget == null ? "var(--hairline)"
+          : percentToTarget >= 100 ? "var(--green)"
+          : percentToTarget >= 50 ? "var(--accent)" : "var(--orange)";
+        return (
+          // rounded-card (D-111, bukan rounded-2xl) — sama alasan dengan
+          // KpiCard.jsx: radius identik (16px), cuma supaya "Target Bulanan
+          // Tim" ikut kaca seperti kartu lain di halaman ini.
+          <div className="rounded-card bg-surface p-5 shadow-card">
+            <div className="flex flex-wrap items-center gap-5">
+              <ProgressRing percent={percentToTarget ?? 0} color={ringColor} size={88} strokeWidth={9}>
+                <span className="text-xl font-extrabold tabular-nums text-ink">
+                  {percentToTarget != null ? `${percentToTarget}%` : "—"}
+                </span>
+              </ProgressRing>
+              <div className="min-w-[160px] flex-1">
+                <p className="text-[13px] font-medium text-ink3">
+                  Target Bulanan Tim
+                  {/* Selalu bulan berjalan — TIDAK ikut date picker di atas
+                      (lihat catatan Laporan.jsx#salesReportBulanIni).
+                      Ditandai eksplisit supaya tidak membingungkan saat
+                      rentang lain (mis. "Hari ini") sedang dipilih untuk
+                      sisa halaman. */}
+                  <span className="ml-1.5 font-normal text-ink4">· {labelBulanTarget}</span>
+                </p>
+                <p className="mt-1.5 text-lg font-bold tabular-nums text-ink">
+                  {formatRupiah(teamGrossAll)}
+                </p>
+                <p className="text-xs text-ink3">dari target {formatRupiah(targetValue)}</p>
+              </div>
             </div>
-            <span className="shrink-0 text-lg font-extrabold tabular-nums text-ink">
-              {percentToTarget != null ? `${percentToTarget}%` : "—"}
-            </span>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 1. UANG ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

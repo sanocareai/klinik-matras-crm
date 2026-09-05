@@ -204,8 +204,14 @@ export default function PerformaTimTab({ perf, summary, respTimeSeries, channelB
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={trenData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
             <defs>
+              {/* Gradasi SUNGGUHAN (D-112, referensi "Revenue Flow"
+                  NexusBank) — sebelumnya dua stop SAMA warna (var(--accent)
+                  di 0% & 100%), jadi secara visual flat satu warna walau
+                  namanya "gradient". Terang di atas → pekat di bawah, satu
+                  keluarga biru (blue-400 → accent), taat "aturan satu
+                  accent" — bukan hue baru, cuma kedalaman. */}
               <linearGradient id="performaTimBarFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent)" />
+                <stop offset="0%" stopColor="var(--blue-400)" />
                 <stop offset="100%" stopColor="var(--accent)" />
               </linearGradient>
             </defs>
