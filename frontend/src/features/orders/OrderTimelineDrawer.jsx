@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
-  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck, Pencil,
+  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
 } from "lucide-react";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
@@ -19,6 +19,7 @@ import {
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import { cn } from "@/lib/utils.js";
 
 const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
@@ -90,24 +91,26 @@ function BarisMini({ label, children }) {
 // sama persis dengan tempat aturan D-087 (wajib tanggal pasti sebelum
 // status Diproses/Terkirim) bakal menolak perubahan status kalau field
 // ini kosong, jadi perbaikannya ada tepat di tempat masalahnya muncul.
+//
+// Redesain 5 Sep 2026 (permintaan owner: "sesuai style SANSS Hub sekarang")
+// — versi pertama pakai <input type="date"> polos, muncul sebagai kalender
+// bawaan BROWSER (gaya OS, tidak ikut tema gelap/terang app) mengambang di
+// atas drawer, kontras banget dengan komponen lain yang sudah dirapikan.
+// Ganti total ke DatePicker (Sano DS v2, components/ui/date-picker.jsx) —
+// komponen SAMA yang sudah dipakai filter tanggal Delivery/Fulfillment,
+// jadi kalender di sini otomatis konsisten (warna, animasi, ukuran) dengan
+// SELURUH bagian lain aplikasi, bukan gaya keempat yang baru. Pilih tanggal
+// langsung tersimpan (tanpa tombol "Simpan" terpisah) — sama seperti
+// DatePicker dipakai di tempat lain, sekali klik tanggal = selesai.
 function TanggalPastiField({ value, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft]     = useState(value ? value.slice(0, 10) : "");
-  const [saving, setSaving]   = useState(false);
-  const [err, setErr]         = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState(null);
 
-  function mulaiEdit() {
-    setDraft(value ? value.slice(0, 10) : "");
-    setErr(null);
-    setEditing(true);
-  }
-
-  async function simpan() {
+  async function pilih(v) {
     setSaving(true);
     setErr(null);
     try {
-      await onSave(draft || "");
-      setEditing(false);
+      await onSave(v);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -115,33 +118,16 @@ function TanggalPastiField({ value, onSave }) {
     }
   }
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          type="date" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
-          className="rounded-lg border border-line bg-base px-2 py-1 text-[12.5px] text-ink outline-none focus:ring-2 focus:ring-accent/30"
-        />
-        <button type="button" onClick={simpan} disabled={saving}
-          className="rounded-lg bg-accent px-2 py-1 text-[11.5px] font-semibold text-white disabled:opacity-60">
-          {saving ? "..." : "Simpan"}
-        </button>
-        <button type="button" onClick={() => setEditing(false)} disabled={saving}
-          className="rounded-lg px-2 py-1 text-[11.5px] font-semibold text-ink3 hover:text-ink2">
-          Batal
-        </button>
-        {err && <span className="text-[11px] text-red">{err}</span>}
-      </div>
-    );
-  }
-
   return (
-    <button type="button" onClick={mulaiEdit} className="group flex items-center gap-1.5 text-left">
-      <span className={value ? "font-semibold text-ink" : "text-ink3"}>
-        {value ? formatTanggal(value) : "Belum diisi"}
-      </span>
-      <Pencil size={11} className="shrink-0 text-ink3 opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
+    <div className="flex items-center gap-1.5">
+      <DatePicker
+        value={value ? value.slice(0, 10) : ""}
+        onChange={pilih}
+        placeholder="Belum diisi"
+        className={saving ? "pointer-events-none opacity-60" : undefined}
+      />
+      {err && <span className="text-[11px] text-red">{err}</span>}
+    </div>
   );
 }
 
