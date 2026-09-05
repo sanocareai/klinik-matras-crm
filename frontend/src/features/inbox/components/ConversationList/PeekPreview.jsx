@@ -1,12 +1,20 @@
-// Peek Preview — port dari mobile (PeekPreviewModal.js). Hover sebentar di
-// atas baris percakapan (desktop) → popup ringan dekat kursor, tampilkan
+// Peek Preview — port dari mobile (PeekPreviewModal.js). Tampilkan
 // beberapa pesan terakhir TANPA menandai percakapan sudah dibaca. Fetch
 // lewat api.peekConversation() (GET /conversations/:id/peek) — endpoint
 // terpisah dari getMessages yang punya side-effect mark-as-read.
 //
-// Trigger HOVER (bukan long-press/klik-kanan seperti mobile) — klik-kanan
-// di baris ini sudah dipakai untuk menu Sematkan (lihat ConversationItem.jsx),
-// jadi Peek butuh trigger sendiri yang wajar untuk mouse.
+// D-126 (6 September 2026) — trigger DULU hover (450ms diam di baris),
+// diganti jadi item "Pratinjau Pesan" di context-menu yang sama dengan
+// "Sematkan" (klik-kanan desktop / tahan 600ms mobile — lihat
+// ConversationItem.jsx#openPeekFromMenu). Dua alasan: (1) hover tidak
+// berarti apa-apa di layar sentuh, (2) hover-triggered popup di dalam
+// daftar tervirtualisasi (react-virtuoso) rawan containing-block bug —
+// popup position:fixed diam-diam "terkurung" transform baris, kepotong/
+// ketutupan baris lain (laporan owner + screenshot). Root cause LENGKAP
+// & fix (portal ke document.body) ada di komentar D-126 ConversationItem.
+// Penutupan sekarang murni eksplisit (backdrop klik-luar, dipasang oleh
+// pemanggil) — bukan lagi timer mouse-leave, makanya prop onMouseEnter/
+// onMouseLeave yang dulu ada di sini sudah tidak dipakai, dihapus.
 import React, { useEffect, useState } from "react";
 import { MessageCircle, UserPlus, Image as ImageIcon, Video, Mic, FileText } from "lucide-react";
 import { api } from "../../../../api.js";
@@ -36,7 +44,7 @@ function PeekMessageRow({ message }) {
   );
 }
 
-export default function PeekPreview({ conversation, x, y, onClose, onOpenChat, onMouseEnter, onMouseLeave }) {
+export default function PeekPreview({ conversation, x, y, onClose, onOpenChat }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -86,24 +94,19 @@ export default function PeekPreview({ conversation, x, y, onClose, onOpenChat, o
 
   return (
     <>
-      {/* BUG NYATA (laporan owner, 5 September 2026: "kadang harus klik 2 kali
-          baru chat kebuka"): di sini DULU ada `<div className="conv-context-
-          backdrop" onClick={onClose} />` — backdrop fixed inset:0 yang menutup
-          SELURUH layar. Peek ini popup HOVER (muncul sendiri setelah 450ms
-          menggantung di atas baris — sangat gampang kejadian saat sales cuma
-          MEMBACA daftar), jadi begitu ia terbuka, klik pertama user JATUH ke
-          backdrop (cuma menutup peek), bukan ke baris percakapan di baliknya.
-          Klik kedua baru kena baris — persis gejala yang dilaporkan.
-          Backdrop DIHAPUS total: popup hover tidak boleh memblokir aksi
-          utama. Penutupannya sudah ditangani onMouseLeave (lihat
-          ConversationItem.jsx#handleMouseLeave) + klik baris yang sekarang
-          menutup peek lalu TETAP membuka chat. */}
+      {/* Riwayat (laporan owner, 5 September 2026: "kadang harus klik 2 kali
+          baru chat kebuka") — backdrop full-layar SEMPAT dihapus total di
+          sini karena waktu itu Peek masih trigger HOVER (muncul sendiri,
+          klik pertama user jatuh ke backdrop, bukan ke baris). D-126 (6
+          September 2026) mengganti trigger jadi manual (item di context-
+          menu, lihat ConversationItem.jsx), jadi backdrop klik-luar sudah
+          AMAN dipakai lagi — dipasang oleh PEMANGGIL (ConversationItem.jsx),
+          bukan di sini, supaya satu pola dengan `.conv-context-backdrop`
+          milik menu Sematkan. */}
       <div
         className="peek-popup"
         style={{ left, top }}
         onClick={(e) => e.stopPropagation()}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
       >
         <div className="peek-header">
           <span className="peek-header-name">{name}</span>

@@ -603,22 +603,23 @@
 
 [data-theme="dark"] .glass-division [class*="shadow-popover"],
 /* .chat-dots-dropdown/.template-picker-popup/.emoji-picker-popup/.conv-
-   context-menu (D-114) — 4 popover/menu legacy Inbox, TIDAK pakai shadow-
-   popover/role=dialog (custom lama dari index.css), sudah theme-aware
-   (sweep dark-mode) tapi belum kaca. `.attach-sheet` SENGAJA DIKELUARKAN
-   dari daftar ini (lihat blok terpisah di bawah, D-124) — beda dari 4
-   popover di sini, translucent 0.82 TERNYATA jadi bug: sheet-nya menutupi
-   sebagian besar tinggi layar (bukan kartu kecil), jadi isi chat di
-   baliknya keburu jelas kebaca menembus, membingungkan mana yang aktif.
-   `.transfer-picker-row` SENGAJA TIDAK diikutkan — itu BUKAN popover, tapi
-   satu ROW/tombol per sales DI DALAM popover `.conv-context-menu.transfer-
-   picker-menu` (compound class, shell luarnya SUDAH `.conv-context-menu`
-   yang ada di daftar ini) — nested item, sama pola dengan .product-image-
-   item: tone saja, tanpa blur sendiri. */
+   context-menu/.peek-popup (D-114, +.peek-popup D-126) — popover/menu
+   legacy Inbox, TIDAK pakai shadow-popover/role=dialog (custom lama dari
+   index.css), sudah theme-aware (sweep dark-mode) tapi belum kaca.
+   `.attach-sheet` SENGAJA DIKELUARKAN dari daftar ini (lihat blok terpisah
+   di bawah, D-124) — beda dari popover di sini, translucent 0.82 TERNYATA
+   jadi bug: sheet-nya menutupi sebagian besar tinggi layar (bukan kartu
+   kecil), jadi isi chat di baliknya keburu jelas kebaca menembus,
+   membingungkan mana yang aktif. `.transfer-picker-row` SENGAJA TIDAK
+   diikutkan — itu BUKAN popover, tapi satu ROW/tombol per sales DI DALAM
+   popover `.conv-context-menu.transfer-picker-menu` (compound class, shell
+   luarnya SUDAH `.conv-context-menu` yang ada di daftar ini) — nested item,
+   sama pola dengan .product-image-item: tone saja, tanpa blur sendiri. */
 [data-theme="dark"] .glass-division .chat-dots-dropdown,
 [data-theme="dark"] .glass-division .template-picker-popup,
 [data-theme="dark"] .glass-division .emoji-picker-popup,
-[data-theme="dark"] .glass-division .conv-context-menu {
+[data-theme="dark"] .glass-division .conv-context-menu,
+[data-theme="dark"] .glass-division .peek-popup {
   background-color: rgba(26, 33, 64, 0.82) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);

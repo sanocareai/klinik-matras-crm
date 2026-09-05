@@ -402,14 +402,15 @@ html:not([data-theme="dark"]) .glass-division [class*="shadow-popover"] [data-hi
 }
 
 /* .chat-dots-dropdown/.template-picker-popup/.emoji-picker-popup/.conv-
-   context-menu (D-114) — pasangan mode terang, baca komentar lengkap
-   (termasuk kenapa .transfer-picker-row SENGAJA tidak diikutkan) di
-   delivery-dark.css. `.attach-sheet` DIKELUARKAN (D-124) — lihat blok
-   terpisah di bawah. */
+   context-menu/.peek-popup (D-114, +.peek-popup D-126) — pasangan mode
+   terang, baca komentar lengkap (termasuk kenapa .transfer-picker-row
+   SENGAJA tidak diikutkan) di delivery-dark.css. `.attach-sheet`
+   DIKELUARKAN (D-124) — lihat blok terpisah di bawah. */
 html:not([data-theme="dark"]) .glass-division .chat-dots-dropdown,
 html:not([data-theme="dark"]) .glass-division .template-picker-popup,
 html:not([data-theme="dark"]) .glass-division .emoji-picker-popup,
-html:not([data-theme="dark"]) .glass-division .conv-context-menu {
+html:not([data-theme="dark"]) .glass-division .conv-context-menu,
+html:not([data-theme="dark"]) .glass-division .peek-popup {
   background-color: rgba(255, 255, 255, 0.88) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);

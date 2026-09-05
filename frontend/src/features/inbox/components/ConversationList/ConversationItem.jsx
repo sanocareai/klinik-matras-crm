@@ -1,4 +1,5 @@
 import React, { memo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Pin, Users, Eye, CheckCheck, Check, AlertTriangle } from "lucide-react";
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
@@ -9,10 +10,35 @@ import TransferPickerPopover from "./TransferPickerPopover.jsx";
 import PeekPreview from "./PeekPreview.jsx";
 import { isAdminUser } from "@/lib/roles.js";
 
-// Peek Preview (port dari mobile) — hover sebentar di baris ini, popup
-// muncul dekat kursor. Delay mencegah popup muncul tiap kursor lewat
-// sekilas saat scroll (bukan hover sungguhan).
-const PEEK_HOVER_DELAY_MS = 450;
+// D-126 (6 September 2026, laporan owner: "pop up chat view ketutupan card
+// percakapan" + screenshot popup pecah/terpotong) — Peek Preview DULU trigger
+// HOVER (450ms diam di baris), lihat riwayat di PeekPreview.jsx. Root cause
+// SEBENARNYA bukan soal delay/backdrop (2 bug itu sudah dibereskan sesi
+// sebelumnya) — daftar percakapan ini divirtualisasi (react-virtuoso), yang
+// memberi tiap BARIS `transform: translateY(...)` sendiri untuk positioning.
+// `transform` pada elemen manapun MEMBUAT containing block baru untuk semua
+// keturunan `position: fixed` (spec CSS, sama seperti `filter`/`backdrop-
+// filter`) — jadi `.peek-popup` yang harusnya "fixed ke viewport" (matematis
+// x/y dihitung dari `window.innerWidth/innerHeight`) diam-diam malah
+// "fixed ke baris virtuoso itu", DAN terkurung dalam stacking context baris
+// itu (kalah tumpuk lawan baris LAIN yang punya stacking context sendiri²,
+// biarpun z-index popup lebih tinggi) — persis gejala di screenshot: popup
+// kepotong, "ketutupan" baris lain. Pin-menu (`.conv-context-menu`) & transfer
+// popover TERKENA BUG STRUKTUR YANG SAMA (rendered dgn cara identik) — belum
+// pernah dilaporkan cuma karena keduanya aksi SEKALI-KLIK-LANGSUNG-PILIH,
+// tidak sempat "hidup" cukup lama saat list masih scroll utk kelihatan.
+//
+// FIX: ketiga popup (peek, pin-menu, transfer-picker) di-render lewat
+// React Portal ke `document.body` — keluar total dari pohon DOM baris
+// virtuoso, `position: fixed` kembali benar2 relatif ke viewport.
+//
+// SEKALIAN ganti skema trigger (diminta owner): hover DIHAPUS TOTAL (selain
+// rawan bug di atas, hover juga tidak ada artinya di layar sentuh mobile).
+// Peek sekarang jadi salah satu ITEM di context-menu yang SAMA dengan
+// "Sematkan" — dipicu KLIK KANAN (desktop) atau TAHAN/LONG-PRESS 600ms
+// (mobile, sudah ada mekanismenya di handleTouchStart di bawah, dulu cuma
+// dipakai utk pin). Satu trigger, satu menu, beberapa aksi — konsisten di
+// kedua platform, tidak ada 2 skema trigger berbeda yang bersaing lagi.
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
 
@@ -38,8 +64,6 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   const [peek, setPeek] = useState(null); // { x, y }
   const longPressTimerRef = useRef(null);
   const longPressAt = useRef(0);
-  const peekTimerRef = useRef(null);
-  const peekCloseTimerRef = useRef(null);
   const isAdmin = isCurrentUserAdmin();
 
   if (!c) return null;
@@ -119,15 +143,17 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   function handleTouchEnd() { clearTimeout(longPressTimerRef.current); }
   function handleTouchMove() { clearTimeout(longPressTimerRef.current); }
 
+  // D-126 — Pratinjau sekarang dipicu dari context-menu yang SAMA dengan
+  // "Sematkan" (klik kanan / tahan 600ms), bukan hover lagi. Posisi popup
+  // dipakai ulang persis dari posisi menu yang lagi terbuka.
+  function openPeekFromMenu() {
+    const pos = contextMenu;
+    setContextMenu(null);
+    if (pos) setPeek(pos);
+  }
+
   function handleClick() {
     if (Date.now() - longPressAt.current < 800) return;
-    // DULU: `if (peek) return;` — klik saat peek terbuka SENGAJA dibuang,
-    // dengan asumsi user sedang berinteraksi dengan popup-nya. Ternyata itu
-    // penyebab keluhan "harus klik 2 kali" (laporan owner 5 Sep 2026): peek
-    // muncul SENDIRI setelah 450ms menggantung — sangat sering terjadi saat
-    // sales cuma membaca baris sebelum mengklik, jadi klik pertama hilang
-    // tanpa jejak. Sekarang: tutup peek-nya, lalu TETAP lanjut buka chat —
-    // satu klik selalu berarti satu aksi.
     if (peek) setPeek(null);
     if (selectionMode) { onToggleSelect?.(id); return; }
     selectConversation();
@@ -138,35 +164,6 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
     if (selectionMode) onToggleSelect?.(id); else onEnterSelection?.(id);
   }
 
-  function handleMouseEnter(e) {
-    if (selectionMode) return;
-    const x = e.clientX, y = e.clientY;
-    clearTimeout(peekTimerRef.current);
-    clearTimeout(peekCloseTimerRef.current);
-    peekTimerRef.current = setTimeout(() => setPeek({ x, y }), PEEK_HOVER_DELAY_MS);
-  }
-  // BUG NYATA (dilaporkan owner, 5 September 2026): dulu di sini CUMA
-  // `clearTimeout(peekTimerRef.current)` — itu cuma membatalkan timer YANG
-  // BELUM SEMPAT jalan (peek yang belum terbuka). Begitu peek SUDAH terbuka
-  // (mouse diam >450ms di baris ini), pindah kursor pergi TIDAK menutupnya
-  // sama sekali — popup (dan `.conv-context-backdrop` fixed inset:0 z-index
-  // 998 miliknya, lihat PeekPreview.jsx) tetap ada TAK TERLIHAT di layar,
-  // menelan SETIAP klik berikutnya di baris manapun (klik jatuh ke backdrop
-  // yang cuma menutup popup lamanya, bukan ke tombol baris di baliknya).
-  // Gejala persis: "gabisa diklik, pas diklik cuma warna row berubah abu"
-  // (:hover row memang abu, .conversation-item.unread { background:
-  // var(--bg-subtle) } juga abu — user MENGIRA itu efek klik, padahal klik
-  // sungguhan tidak pernah sampai ke tombolnya). Ditutup lewat jeda pendek
-  // (bukan langsung setPeek(null)) supaya kursor sempat pindah dari baris
-  // ke popup-nya sendiri (klik "Buka Chat"/"Ambil Percakapan") tanpa keburu
-  // hilang — dibatalkan lagi kalau popup itu sendiri yang di-hover
-  // (onMouseEnter di PeekPreview, lihat props di bawah).
-  function handleMouseLeave() {
-    clearTimeout(peekTimerRef.current);
-    clearTimeout(peekCloseTimerRef.current);
-    peekCloseTimerRef.current = setTimeout(() => setPeek(null), 250);
-  }
-
   return (
     <button
       className={`conversation-item${isActive ? " active" : ""}${isUnread ? " unread" : ""}${isRead && !isUnread ? " conv-item-read" : ""}${selected ? " conv-item-selected" : ""}`}
@@ -175,8 +172,6 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchMove={handleTouchMove}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       style={{ WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none" }}
     >
       {/* Klik avatar = masuk/keluar mode pilih massal — pola sama dengan
@@ -269,42 +264,61 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
         )}
       </div>
 
-      {contextMenu && (
+      {/* D-126 — ketiga popup (menu klik-kanan/long-press, peek, transfer)
+          di-portal ke document.body (lihat komentar panjang di atas import).
+          Selain membereskan bug posisi, ini juga membereskan pelanggaran
+          HTML lama yang tidak disadari: baris ini SENDIRI adalah <button>,
+          dan <button> di dalam <button> tidak valid — portal memindahkan
+          DOM-nya keluar total dari situ juga. */}
+      {createPortal(
         <>
-          <div className="conv-context-backdrop"
-            onClick={(e) => { e.stopPropagation(); setContextMenu(null); }}
-            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }}
-          />
-          <div className="conv-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button onClick={(e) => { e.stopPropagation(); togglePin(!isPinned); setContextMenu(null); }}>
-              <Pin size={14} style={{ color: "#7c3aed" }} />
-              {isPinned ? "Lepas Sematan" : "Sematkan di Atas"}
-            </button>
-          </div>
-        </>
-      )}
+          {contextMenu && (
+            <>
+              <div className="conv-context-backdrop"
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }}
+              />
+              <div className="conv-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+                <button onClick={(e) => { e.stopPropagation(); openPeekFromMenu(); }}>
+                  <Eye size={14} style={{ color: "#2563eb" }} />
+                  Pratinjau Pesan
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); togglePin(!isPinned); setContextMenu(null); }}>
+                  <Pin size={14} style={{ color: "#7c3aed" }} />
+                  {isPinned ? "Lepas Sematan" : "Sematkan di Atas"}
+                </button>
+              </div>
+            </>
+          )}
 
-      {peek && (
-        <PeekPreview
-          conversation={c}
-          x={peek.x}
-          y={peek.y}
-          onClose={() => setPeek(null)}
-          onOpenChat={() => { setPeek(null); selectConversation(); }}
-          onMouseEnter={() => clearTimeout(peekCloseTimerRef.current)}
-          onMouseLeave={() => setPeek(null)}
-        />
-      )}
+          {/* Peek sekarang dipicu manual (menu di atas), bukan hover — jadi
+              penutupannya juga eksplisit: backdrop klik-luar (sama pola
+              dengan conv-context-backdrop), bukan lagi timer mouse-leave. */}
+          {peek && (
+            <>
+              <div className="conv-context-backdrop" onClick={() => setPeek(null)} />
+              <PeekPreview
+                conversation={c}
+                x={peek.x}
+                y={peek.y}
+                onClose={() => setPeek(null)}
+                onOpenChat={() => { setPeek(null); selectConversation(); }}
+              />
+            </>
+          )}
 
-      {transferPicker && (
-        <TransferPickerPopover
-          x={transferPicker.x}
-          y={transferPicker.y}
-          conversationId={id}
-          currentAssignedId={c.assignedToId}
-          onClose={() => setTransferPicker(null)}
-          onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
-        />
+          {transferPicker && (
+            <TransferPickerPopover
+              x={transferPicker.x}
+              y={transferPicker.y}
+              conversationId={id}
+              currentAssignedId={c.assignedToId}
+              onClose={() => setTransferPicker(null)}
+              onTransferred={(updated) => useConversationStore.getState().upsertConversation(updated)}
+            />
+          )}
+        </>,
+        document.body
       )}
     </button>
   );
