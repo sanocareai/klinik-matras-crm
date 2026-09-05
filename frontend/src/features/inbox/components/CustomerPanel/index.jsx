@@ -33,6 +33,10 @@ export default function CustomerPanel({ conversation, onClose }) {
   // drawer-nya harus tetap terbuka), jadi butuh boolean sendiri, bukan
   // "order ada isinya = terbuka" seperti alur edit.
   const [creatingOrder, setCreatingOrder] = useState(false);
+  // Tab dikontrol (bukan defaultValue) supaya bisa dipindah dari dalam
+  // konten — dipakai tautan "+N order lain — lihat semua" di ActiveOrderCard
+  // (D-115) untuk melompat ke tab Order.
+  const [tab, setTab] = useState("overview");
 
   useEffect(() => {
     // Ganti percakapan/pelanggan sementara OrderEditDrawer terbuka akan
@@ -40,6 +44,7 @@ export default function CustomerPanel({ conversation, onClose }) {
     // tutup dulu, konsisten dengan pola reset lain di effect ini.
     setOrderDrawerOrder(null);
     setCreatingOrder(false);
+    setTab("overview"); // ganti pelanggan → balik ke Overview, bukan nyangkut di tab pelanggan sebelumnya
     if (conversation?.type === "GROUP") { setCustomer(null); setLoadError(null); return; }
     if (!customerId) { setCustomer(null); setLoadError(null); return; }
     setLoadError(null);
@@ -106,7 +111,7 @@ export default function CustomerPanel({ conversation, onClose }) {
             2234 baris, tidak disentuh isinya) pindah ke OrderEditDrawer,
             dibuka dari tombol "Buka"/"Buka Order" di kedua tab Overview
             & Order — BUKAN lagi dirender permanen inline di sini. */}
-        <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col">
+        <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
           <div className="px-4">
             <TabsList className="w-full">
               <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
@@ -136,7 +141,12 @@ export default function CustomerPanel({ conversation, onClose }) {
                 editor. "Buka Order" → OrderEditDrawer. Render null diam-diam
                 kalau belum ada order sama sekali. */}
             <div className="panel-section">
-              <ActiveOrderCard customer={customer} onOpenOrder={setOrderDrawerOrder} onCreateOrder={() => setCreatingOrder(true)} />
+              <ActiveOrderCard
+                customer={customer}
+                onOpenOrder={setOrderDrawerOrder}
+                onCreateOrder={() => setCreatingOrder(true)}
+                onSeeAllOrders={() => setTab("order")}
+              />
             </div>
 
             <PipelineSection customer={customer} onUpdate={setCustomer} />

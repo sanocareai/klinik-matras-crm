@@ -615,6 +615,43 @@ html:not([data-theme="dark"]) .glass-division .dh-route-eta-badge::before {
   display: none !important;
 }
 
+/* ── 9d/9e. BARIS PERCAKAPAN & KOLOM KETIK (D-115) — pasangan mode terang,
+   baca komentar lengkap (termasuk kenapa abu netral #2C2C2E bermasalah di
+   mode gelap) di delivery-dark.css. Di mode terang abunya TIDAK
+   bermasalah, jadi di sini cuma menyelaraskan tint jadi biru-aksen tipis
+   supaya bahasa warnanya sama di kedua tema, bukan memperbaiki bug. */
+html:not([data-theme="dark"]) .glass-division .conversation-item.unread {
+  background: color-mix(in oklab, var(--dh-accent) 7%, transparent);
+}
+html:not([data-theme="dark"]) .glass-division .conversation-item.unread:hover {
+  background: color-mix(in oklab, var(--dh-accent) 12%, transparent);
+}
+html:not([data-theme="dark"]) .glass-division .conversation-item:hover {
+  background: color-mix(in oklab, var(--dh-accent) 6%, transparent);
+}
+html:not([data-theme="dark"]) .glass-division .conversation-item.active,
+html:not([data-theme="dark"]) .glass-division .conversation-item.active:hover,
+html:not([data-theme="dark"]) .glass-division .conversation-item.active.unread {
+  background: color-mix(in oklab, var(--dh-accent) 14%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--dh-accent);
+}
+html:not([data-theme="dark"]) .glass-division .chat-textarea {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(12px) saturate(140%);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+html:not([data-theme="dark"]) .glass-division .chat-textarea:focus {
+  background: #fff;
+  border-color: color-mix(in oklab, var(--dh-accent) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dh-accent) 12%, transparent);
+  outline: none;
+}
+html:not([data-theme="dark"]) .glass-division .chat-input,
+html:not([data-theme="dark"]) .glass-division .chat-input-area {
+  border-top: 1px solid var(--dh-hairline);
+}
+
 /* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────*/
 @media (prefers-reduced-motion: reduce) {
   html:not([data-theme="dark"]) .glass-division * {

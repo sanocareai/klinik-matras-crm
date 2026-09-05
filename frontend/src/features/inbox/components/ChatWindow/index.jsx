@@ -478,17 +478,12 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
               {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
             </button>
           )}
-          {/* Wave 3 (redesign Inbox) — Focus Mode: collapse daftar + panel
-              pelanggan sekaligus (state & restore-nya di Inbox.jsx), tinggal
-              chat selebar mungkin. Sengaja satu tombol di sini (bukan
-              tombol terpisah di luar ChatWindow) karena dua tombol collapse
-              lain untuk kolom yang sama sudah hidup di cluster ini juga. */}
-          {onToggleFocusMode && (
-            <button className={`chat-action-btn${focusMode ? " active" : ""}`} onClick={onToggleFocusMode}
-              title={focusMode ? "Keluar dari Focus Mode" : "Focus Mode — sembunyikan daftar & panel pelanggan"}>
-              {focusMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-            </button>
-          )}
+          {/* Focus Mode DIPINDAH ke menu "More" (D-115, laporan owner:
+              "banyak ikon"). Dulu ikonnya (Maximize2) duduk berjejer dengan
+              2 ikon panel-toggle yang bentuknya mirip — tiga ikon layout
+              beruntun yang sulit dibedakan sekilas. Sekarang cuma 2 ikon
+              layout yang tersisa di header (kiri=pane kiri, kanan=pane
+              kanan), Focus Mode jadi item BERLABEL di menu + shortcut F. */}
           {!isGroup && conversation.status !== "RESOLVED" && (
             <button className="btn btn-primary btn-sm" onClick={handleResolve} disabled={resolving} style={{ gap: 4, display: "flex", alignItems: "center", flexShrink: 0 }}>
               <CheckCircle size={13} /> <span className="resolve-label">{resolving ? "..." : "Selesaikan"}</span>
@@ -502,6 +497,14 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
           >
             <MenuItem icon={Search} onSelect={() => setShowSearch(true)}>Cari Pesan</MenuItem>
             <MenuItem icon={Info} onSelect={openCustomerDetail}>Info Pelanggan</MenuItem>
+            {onToggleFocusMode && (
+              <MenuItem
+                icon={focusMode ? Minimize2 : Maximize2}
+                onSelect={onToggleFocusMode}
+              >
+                {focusMode ? "Keluar Focus Mode (F)" : "Focus Mode (F)"}
+              </MenuItem>
+            )}
             {!isGroup && isAdminUser(user) && (
               <MenuItem icon={Download} onSelect={handleSyncHistory} disabled={syncingHistory}>
                 {syncingHistory ? "Sedang sinkronisasi..." : "Tarik Riwayat dari WAHA"}

@@ -122,7 +122,14 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
 
   function handleClick() {
     if (Date.now() - longPressAt.current < 800) return;
-    if (peek) return; // popup sedang terbuka — klik row seharusnya tidak ikut buka chat
+    // DULU: `if (peek) return;` — klik saat peek terbuka SENGAJA dibuang,
+    // dengan asumsi user sedang berinteraksi dengan popup-nya. Ternyata itu
+    // penyebab keluhan "harus klik 2 kali" (laporan owner 5 Sep 2026): peek
+    // muncul SENDIRI setelah 450ms menggantung — sangat sering terjadi saat
+    // sales cuma membaca baris sebelum mengklik, jadi klik pertama hilang
+    // tanpa jejak. Sekarang: tutup peek-nya, lalu TETAP lanjut buka chat —
+    // satu klik selalu berarti satu aksi.
+    if (peek) setPeek(null);
     if (selectionMode) { onToggleSelect?.(id); return; }
     selectConversation();
   }

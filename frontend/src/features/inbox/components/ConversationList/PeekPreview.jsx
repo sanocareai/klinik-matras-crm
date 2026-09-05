@@ -86,7 +86,18 @@ export default function PeekPreview({ conversation, x, y, onClose, onOpenChat, o
 
   return (
     <>
-      <div className="conv-context-backdrop" onClick={onClose} />
+      {/* BUG NYATA (laporan owner, 5 September 2026: "kadang harus klik 2 kali
+          baru chat kebuka"): di sini DULU ada `<div className="conv-context-
+          backdrop" onClick={onClose} />` — backdrop fixed inset:0 yang menutup
+          SELURUH layar. Peek ini popup HOVER (muncul sendiri setelah 450ms
+          menggantung di atas baris — sangat gampang kejadian saat sales cuma
+          MEMBACA daftar), jadi begitu ia terbuka, klik pertama user JATUH ke
+          backdrop (cuma menutup peek), bukan ke baris percakapan di baliknya.
+          Klik kedua baru kena baris — persis gejala yang dilaporkan.
+          Backdrop DIHAPUS total: popup hover tidak boleh memblokir aksi
+          utama. Penutupannya sudah ditangani onMouseLeave (lihat
+          ConversationItem.jsx#handleMouseLeave) + klik baris yang sekarang
+          menutup peek lalu TETAP membuka chat. */}
       <div
         className="peek-popup"
         style={{ left, top }}

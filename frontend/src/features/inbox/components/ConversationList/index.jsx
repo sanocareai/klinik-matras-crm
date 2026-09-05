@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Virtuoso } from "react-virtuoso";
-import { MessageSquarePlus, PanelLeftClose, X, Pin, PinOff, Check, Circle } from "lucide-react";
+import { MessageSquarePlus, X, Pin, PinOff, Check, Circle } from "lucide-react";
 import FilterTabs from "./FilterTabs.jsx";
 import FilterPopover from "./FilterPopover.jsx";
 import SearchBar from "./SearchBar.jsx";
@@ -184,16 +184,15 @@ export default function ConversationList({ userId, onCollapse }) {
           >
             <MessageSquarePlus size={17} />
           </button>
-          {onCollapse && (
-            <button
-              onClick={onCollapse}
-              title="Sembunyikan daftar percakapan"
-              aria-label="Sembunyikan daftar percakapan"
-              className="conv-list-icon-btn"
-            >
-              <PanelLeftClose size={17} />
-            </button>
-          )}
+          {/* Tombol "sembunyikan daftar" DIHAPUS dari sini (D-115, laporan
+              owner: "banyak ikon", "skema tutup-buka bar kurang suka").
+              Fungsinya PERSIS SAMA dengan ikon panel-kiri di header chat
+              sebelah — dua tombol untuk satu aksi, di dua panel bersebelahan,
+              itu justru sumber bingungnya. Sekarang satu aturan sederhana:
+              ikon di header chat paling KIRI mengatur pane KIRI, ikon di
+              KANAN mengatur pane KANAN. Prop `onCollapse` sengaja tetap
+              diterima (dipakai Inbox.jsx & mobile) tapi tidak lagi
+              memunculkan tombol kedua di sini. */}
         </div>
       )}
       {/* Wave 11 (redesign Inbox) — FilterPopover di sebelah FilterTabs,

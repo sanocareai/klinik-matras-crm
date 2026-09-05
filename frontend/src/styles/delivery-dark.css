@@ -888,6 +888,89 @@
   display: none !important;
 }
 
+/* ── 9d. BARIS PERCAKAPAN BELUM DIBACA (D-115) ────────────────────────────
+   BUG NYATA (laporan owner 5 September 2026: "ada bug warna dark grey di
+   list chat"): index.css menandai baris unread dengan
+   `background: var(--bg-subtle)` → var(--bg-inset) → #2C2C2E, yaitu ABU
+   NETRAL (palet iOS-dark bawaan tokens.css). Di atas panel kaca navy
+   (.conversation-list, D-114) abu netral itu tampil sebagai balok abu
+   mencolok yang jelas "bukan bagian dari" desainnya — persis yang
+   dilaporkan. Diganti tint NAVY-ACCENT translucent supaya tetap terbaca
+   sebagai "baris ini beda/perlu perhatian" TANPA memasukkan hue abu asing.
+   TIDAK pakai backdrop-filter (aturan performa di kepala file ini: baris
+   daftar bisa ratusan sekaligus) — cukup warna. */
+[data-theme="dark"] .glass-division .conversation-item.unread {
+  background: color-mix(in oklab, var(--dh-accent) 10%, transparent);
+}
+[data-theme="dark"] .glass-division .conversation-item.unread:hover {
+  background: color-mix(in oklab, var(--dh-accent) 16%, transparent);
+}
+/* Hover baris BIASA (bukan unread) juga memakai --bg-subtle abu yang sama —
+   ikut disamakan supaya seluruh daftar konsisten navy, bukan campur abu. */
+[data-theme="dark"] .glass-division .conversation-item:hover {
+  background: color-mix(in oklab, var(--dh-accent) 8%, transparent);
+}
+/* Baris TERPILIH harus selalu menang tampilan atas unread/hover di atas.
+   Ditulis eksplisit (spesifisitas sama, urutan LEBIH BAWAH = menang) —
+   tanpa ini, baris yang kebetulan masih bertanda unread saat diklik bisa
+   tampil seperti baris unread biasa, bukan seperti baris yang sedang
+   dibuka. Strip aksen kiri 2px dari D-113 tetap dipertahankan. */
+[data-theme="dark"] .glass-division .conversation-item.active,
+[data-theme="dark"] .glass-division .conversation-item.active:hover,
+[data-theme="dark"] .glass-division .conversation-item.active.unread {
+  background: color-mix(in oklab, var(--dh-accent) 22%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--dh-accent);
+}
+
+/* ── 9e. KOLOM KETIK (COMPOSER) — GAYA KACA iOS (D-115) ───────────────────
+   Laporan owner: "style typing bar kurang srek, ingin ala Apple, glass,
+   minimalist". Akar masalahnya sama dengan baris unread di atas —
+   `.chat-textarea` memakai var(--bg-secondary) → var(--bg-inset) → #2C2C2E,
+   ABU NETRAL palet iOS-dark, yang di atas bar kaca navy terbaca sebagai
+   kolom abu tempelan. Diganti isian putih-transparan tipis + hairline +
+   blur (pola "material" iOS: bidang tembus yang mengambil warna dari
+   belakangnya, bukan warna solid sendiri). backdrop-filter AMAN di sini —
+   elemennya SATU per layar, bukan elemen berulang (aturan performa di
+   kepala file ini). */
+[data-theme="dark"] .glass-division .chat-textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--dh-hairline);
+  backdrop-filter: blur(12px) saturate(140%);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+[data-theme="dark"] .glass-division .chat-textarea::placeholder {
+  color: rgba(245, 245, 247, 0.38);
+}
+/* Fokus: cincin aksen tipis, BUKAN outline tebal — gaya iOS yang menegaskan
+   "field ini aktif" tanpa bikin ramai. */
+[data-theme="dark"] .glass-division .chat-textarea:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: color-mix(in oklab, var(--dh-accent) 42%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dh-accent) 13%, transparent);
+  outline: none;
+}
+/* Garis pemisah bar ketik dari daftar pesan — hairline kaca, bukan border
+   abu solid var(--border) yang kelihatan seperti garis potong. */
+[data-theme="dark"] .glass-division .chat-input,
+[data-theme="dark"] .glass-division .chat-input-area {
+  border-top: 1px solid var(--dh-hairline);
+}
+/* Tombol kirim: aksen kaca + glow lembut (bukan biru datar menempel). */
+[data-theme="dark"] .glass-division .chat-send-btn {
+  background: var(--dh-accent);
+  box-shadow:
+    0 2px 10px color-mix(in oklab, var(--dh-accent) 45%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+[data-theme="dark"] .glass-division .chat-send-btn:hover {
+  background: var(--dh-accent-glow);
+}
+[data-theme="dark"] .glass-division .chat-send-btn:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.35);
+  box-shadow: none;
+}
+
 /* ── 10. HORMATI PREFERENSI GERAK & PERANGKAT LEMAH ───────────────────────
    backdrop-filter dimatikan total kalau user minta gerak/efek dikurangi —
    sekaligus jalur aman untuk perangkat yang berat merender blur. */
