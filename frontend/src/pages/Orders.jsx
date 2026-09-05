@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
@@ -392,6 +392,18 @@ export default function Orders() {
   // guardOrderLocked() di backend (yang benar-benar menegakkan kuncinya —
   // ini cuma UI, sengaja tidak dipisah supaya SATU aturan, tidak drift).
   const canEditLunas = isAdmin;
+  // boardScrollRef (D-104) — sama fix dengan Pipeline.jsx: reset scrollLeft
+  // ke 0 tiap window resize, supaya scroll horizontal absolut lama (dari
+  // sebelum resize) tidak nyangkut jadi clip tipis di kolom pertama board
+  // setelah D-103 (kolom ikut melebar) mengubah total lebar kontennya.
+  const boardScrollRef = useRef(null);
+  useEffect(() => {
+    function resetScroll() {
+      if (boardScrollRef.current) boardScrollRef.current.scrollLeft = 0;
+    }
+    window.addEventListener("resize", resetScroll);
+    return () => window.removeEventListener("resize", resetScroll);
+  }, []);
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1046,7 +1058,13 @@ export default function Orders() {
           // Papan per status kerja + scroll horizontal, tiap kolom punya scroll
           // vertikal sendiri (pelajaran dari Pipeline: satu kolom panjang tidak
           // boleh menentukan panjang halaman).
-          <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+          <div
+            // Callback ref (bukan objek ref biasa) — reset scrollLeft=0 TEPAT
+            // saat div ini attach ke DOM (termasuk board sempat unmount/
+            // remount karena toggle loading), sama pola dengan Pipeline.jsx.
+            ref={(el) => { boardScrollRef.current = el; if (el) el.scrollLeft = 0; }}
+            className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2"
+          >
             {(() => {
               // Kanban ringkas (4 Sep 2026): SEWA-only view pakai 2 status
               // aslinya, view lain (semua/LAYANAN/BARU campur) pakai 3 bucket

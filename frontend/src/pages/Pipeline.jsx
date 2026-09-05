@@ -169,6 +169,25 @@ export default function Pipeline() {
   const [limitKolom, setLimitKolom] = useState({});
   const dragState = useRef(null);
   const [dragOver, setDragOver] = useState(null);
+  // boardScrollRef (D-104) — owner: window di-maximize, board Kanban "slide
+  // ke kanan sedikit" (kolom "New" kepotong tepi kirinya). AKAR MASALAH:
+  // container `overflow-x-auto` di bawah TIDAK PERNAH kehilangan scrollLeft
+  // saat resize — browser mempertahankan nilai PIKSEL absolutnya, bukan
+  // proporsinya. Kalau sebelumnya sempat ke-scroll (sengaja atau tidak
+  // sengaja lewat scroll horizontal/trackpad), lalu window di-maximize
+  // (D-103 membuat kolom ikut melebar mengisi ruang lebih), scrollLeft lama
+  // yang tadinya "geser dikit untuk lihat kolom terakhir" sekarang
+  // menghasilkan clip tipis di kolom PERTAMA karena total lebar kolom
+  // berubah tapi scrollLeft absolut tidak ikut menyesuaikan. Reset paksa ke
+  // 0 tiap resize memastikan board SELALU mulai dari kolom pertama utuh.
+  const boardScrollRef = useRef(null);
+  useEffect(() => {
+    function resetScroll() {
+      if (boardScrollRef.current) boardScrollRef.current.scrollLeft = 0;
+    }
+    window.addEventListener("resize", resetScroll);
+    return () => window.removeEventListener("resize", resetScroll);
+  }, []);
   // ID card yang SEDANG digeser — hanya untuk visual "lift" (state `dragging`
   // di KanbanCard). Sengaja state terpisah dari dragState (yang tetap ref
   // supaya tidak memicu re-render tiap dragover).
@@ -482,7 +501,15 @@ export default function Pipeline() {
                 clamp ke 264px lalu overflow-x-auto di atas tetap jalan sama
                 seperti sebelumnya (scroll horizontal, bukan wrap ke baris
                 kedua — itu bug LAMA yang perbaikan ini tidak boleh kembali). */
-            <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
+            <div
+              // Callback ref (bukan objek ref biasa) — supaya scrollLeft=0
+              // ke-reset TEPAT saat div ini attach ke DOM (termasuk kalau
+              // board sempat unmount/remount karena toggle loading), bukan
+              // cuma sekali saat komponen Pipeline pertama mount (yang bisa
+              // kejadian SEBELUM board render kalau data masih loading).
+              ref={(el) => { boardScrollRef.current = el; if (el) el.scrollLeft = 0; }}
+              className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2"
+            >
               {STAGES.map((stage) => {
                 const cards = getCards(stage);
                 const limit = limitKolom[stage] || BATCH;
