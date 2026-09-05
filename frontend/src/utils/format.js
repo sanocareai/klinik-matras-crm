@@ -484,6 +484,9 @@ export const PRODUCT_TYPE_LABELS = {
   KASUR_SEHAT:      "Kasur Sehat",
   KASUR_2IN1:       "Kasur 2in1",
   KASUR_LAINNYA:    "Lainnya",
+  // Divan itu sendiri, terpisah dari Sandaran — khusus kategori LAYANAN
+  // (4 Sep 2026, lihat jenisProdukOptions()).
+  DIVAN_UTAMA:      "Divan",
 };
 
 // Jenis Kasur untuk kategori BARU (D-051 lanjutan, 4 Sep 2026 — laporan
@@ -493,9 +496,23 @@ export const PRODUCT_TYPE_LABELS = {
 // SOFA/DIVAN apapun kategorinya) tetap pakai PRODUCT_TYPES_BY_LINE seperti
 // biasa. KASUR_LAINNYA membuka input teks bebas (lihat OrderSection.jsx,
 // disimpan sbg field `jenisKasurLainnya` di Order.notes).
+//
+// Divan x LAYANAN (4 Sep 2026, laporan owner): sebelumnya Divan cuma py 1
+// jenis (Sandaran), auto-set tanpa ditanya — servis "badan" Divan itu
+// sendiri (rangka/busa utama) tidak pernah bisa dibedakan dari servis
+// Sandaran (bantalan sandaran) di pencatatan. Sekarang keduanya jadi
+// pilihan eksplisit. Katalog harga (Service Divan/Sandaran) TIDAK dipecah
+// jadi 2 harga terpisah — masih 1 baris harga yang sama dipakai utk
+// keduanya (harga belum dipisah oleh owner); ini murni supaya jenis yang
+// dikerjakan tercatat benar, bukan perubahan harga. BARU/SEWA TIDAK
+// disentuh — katalog PRODUCT-nya sudah lama punya baris Divan & Sandaran
+// terpisah dgn harga sendiri-sendiri (lihat PRD_DIVAN/PRD_SANDARAN).
 export function jenisProdukOptions(productLine, category) {
   if (productLine === "KASUR" && category === "BARU") {
     return ["KASUR_SEHAT", "MULTIBED", "KASUR_2IN1", "KASUR_LAINNYA"];
+  }
+  if (productLine === "DIVAN" && category === "LAYANAN") {
+    return ["DIVAN_UTAMA", "DIVAN_SANDARAN"];
   }
   return PRODUCT_TYPES_BY_LINE[productLine] || [];
 }

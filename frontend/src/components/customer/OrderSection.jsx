@@ -1462,8 +1462,10 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   // ── Step 1: Pilih Lini Produk (29 Agustus 2026 — BARU) ──
   // Berlaku utk SEMUA kategori (termasuk Service/Upgrade — dikonfirmasi
   // owner: servis Sofa/Divan sekarang layanan baru juga, jadi tidak boleh
-  // diasumsikan kasur terus). Divan cuma 1 jenis produk (Sandaran) — auto-
-  // set & lompat langsung ke step 3, tidak perlu step 2.
+  // diasumsikan kasur terus). Divan x BARU/SEWA cuma 1 jenis produk
+  // (Sandaran) — auto-set & lompat langsung ke step 3, tidak perlu step 2.
+  // Divan x LAYANAN (4 Sep 2026) BEDA — TETAP ke step 2, sales pilih Divan
+  // atau Sandaran (lihat onClick di bawah & jenisProdukOptions()).
   if (step === 1) {
     const catOpt = CATEGORY_OPTIONS.find((o) => o.value === category);
     return (
@@ -1482,7 +1484,13 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               type="button"
               onClick={() => {
                 setProductLine(opt.value);
-                if (opt.value === "DIVAN") {
+                // Divan x LAYANAN (4 Sep 2026): TIDAK lagi auto-skip ke
+                // Sandaran — sales sekarang eksplisit pilih Divan atau
+                // Sandaran di Step 2 (lihat jenisProdukOptions()). Divan x
+                // BARU/SEWA TETAP auto-set+lompat seperti sebelumnya (cuma
+                // 1 nilai productType di sana, katalog PRODUCT-nya sudah
+                // punya baris Divan & Sandaran terpisah sendiri).
+                if (opt.value === "DIVAN" && category !== "LAYANAN") {
                   setProductType("DIVAN_SANDARAN");
                   setStep(3);
                 } else {

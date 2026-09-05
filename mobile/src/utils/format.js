@@ -145,13 +145,23 @@ export const PRODUCT_TYPE_LABELS = {
   KASUR_SEHAT:      "Kasur Sehat",
   KASUR_2IN1:       "Kasur 2in1",
   KASUR_LAINNYA:    "Lainnya",
+  // Divan itu sendiri, terpisah dari Sandaran — khusus kategori LAYANAN
+  // (4 Sep 2026, paritas dgn web, lihat jenisProdukOptions()).
+  DIVAN_UTAMA:      "Divan",
 };
 
 // Jenis Kasur untuk kategori BARU (4 Sep 2026, paritas dgn web) — lihat
 // jenisProdukOptions() di frontend/src/utils/format.js untuk alasan lengkap.
+// Divan x LAYANAN (4 Sep 2026) juga di sini — sebelumnya Divan cuma py 1
+// jenis (Sandaran) auto-set tanpa ditanya, sekarang Divan & Sandaran jadi
+// pilihan eksplisit khusus kategori LAYANAN (katalog harganya TIDAK
+// dipecah, masih 1 baris "Service Divan/Sandaran" yang sama).
 export function jenisProdukOptions(productLine, category) {
   if (productLine === "KASUR" && category === "BARU") {
     return ["KASUR_SEHAT", "MULTIBED", "KASUR_2IN1", "KASUR_LAINNYA"];
+  }
+  if (productLine === "DIVAN" && category === "LAYANAN") {
+    return ["DIVAN_UTAMA", "DIVAN_SANDARAN"];
   }
   return PRODUCT_TYPES_BY_LINE[productLine] || [];
 }

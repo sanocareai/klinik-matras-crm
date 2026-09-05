@@ -180,7 +180,14 @@ enum ProductType {
   SOFA_1_SEATER
   SOFA_2_SEATER
   SOFA_3_SEATER
-  // Divan
+  // Divan — DIVAN_UTAMA ditambahkan 4 Sep 2026 (laporan owner: kategori
+  // LAYANAN/Service-Upgrade sebelumnya auto-set ke DIVAN_SANDARAN tanpa
+  // ditanya, tidak pernah membedakan servis badan Divan itu sendiri vs
+  // cuma Sandaran-nya). BARU/SEWA TIDAK terpengaruh — katalog PRODUCT
+  // untuk kategori itu SUDAH lama punya baris "Divan" & "Sandaran"
+  // terpisah (lihat PRD_DIVAN/PRD_SANDARAN di seedPriceList.mjs),
+  // productType di sana cuma tag deskriptif, bukan penentu katalog.
+  DIVAN_UTAMA
   DIVAN_SANDARAN
 }
 

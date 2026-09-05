@@ -842,7 +842,11 @@ export default function OrderFormModal({
                     onPress={() => {
                       if (isEdit) return;
                       setProductLine(opt.value);
-                      setProductType(opt.value === "DIVAN" ? "DIVAN_SANDARAN" : "");
+                      // Divan x LAYANAN (4 Sep 2026, paritas dgn web): TIDAK
+                      // lagi auto-set ke Sandaran — sales pilih Divan atau
+                      // Sandaran lewat picker "Jenis Produk" di bawah. Divan
+                      // x BARU/SEWA tetap auto-set seperti sebelumnya.
+                      setProductType(opt.value === "DIVAN" && category !== "LAYANAN" ? "DIVAN_SANDARAN" : "");
                     }}
                     disabled={isEdit}
                   >
@@ -852,10 +856,11 @@ export default function OrderFormModal({
               })}
             </View>
 
-            {/* Jenis Produk — cuma utk Kasur/Sofa (Divan cuma 1 varian,
-                auto-set di atas tanpa picker, lihat komentar PRODUCT_TYPES_BY_LINE
-                di utils/format.js). */}
-            {(productLine === "KASUR" || productLine === "SOFA") && (
+            {/* Jenis Produk — Kasur/Sofa selalu, Divan HANYA utk kategori
+                LAYANAN (4 Sep 2026, pilih Divan/Sandaran — lihat
+                jenisProdukOptions() di utils/format.js). Divan x BARU/SEWA
+                tetap auto-set tanpa picker (cuma 1 varian di sana). */}
+            {(productLine === "KASUR" || productLine === "SOFA" || (productLine === "DIVAN" && category === "LAYANAN")) && (
               <>
                 <Text style={styles.label}>Jenis Produk</Text>
                 <TouchableOpacity
