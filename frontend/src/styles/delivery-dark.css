@@ -505,11 +505,29 @@
   border-color: rgba(76, 141, 255, 0.35);
 }
 
-/* ── 4e. KARTU KANBAN PIPELINE — kaca + glow PER STAGE (D-101) ────────────
+/* ── 4e. KARTU KANBAN PIPELINE — kaca + glow PER STAGE (D-101, DIPERKUAT
+   setelah owner lapor "masih sama aja gaada perubahan") ──────────────────
    Laporan owner: kartu Kanban di Pipeline (D-099) abu-abu/gelap polos,
    "kurang match sama biru kita", minta glass effect + glow warna per stage
    (New oranye, Prospek biru, dst — SAMA seperti titik kecil STAGE_DOT yang
    SUDAH ada, bukan hue baru, cuma diperluas ke tepi kartu).
+
+   VERSI PERTAMA TERNYATA NYARIS TAK KELIHATAN — dua akar masalah:
+   1. box-shadow dulu `10px 24px -16px` (offset ke BAWAH + spread negatif) —
+      persis MENGARAH ke kartu BERIKUTNYA di kolom yang sama, jadi ketutup
+      total oleh kartu di bawahnya (kartu terakhir di kolom itu satu-
+      satunya yang mungkin kelihatan glow-nya, dan itu pun ke arah luar
+      kolom, bukan ke arah tetangga). Diganti AMBIENT (offset 0, spread
+      RINGAN POSITIF) — glow melingkar merata, tidak bisa "ketutup" kartu
+      lain arah manapun.
+   2. Border cuma 28-32% opacity — dinaikkan ke 55%/70% (hover) supaya garis
+      warnanya benar-benar kebaca, bukan cuma hint samar.
+   Kartu ini SEKARANG JUGA pakai `.dh-bar-left` (KanbanCard.jsx menambahkan
+   kelasnya + --dh-bar) — garis aksen kiri 3px + glow SENDIRI yang SUDAH
+   terbukti kelihatan di Delivery Hub, jadi ADA DUA sinyal warna independen
+   (garis kiri tebal + border+halo kartu), bukan cuma satu yang gampang
+   terlewat.
+
    TANPA backdrop-filter — SENGAJA, sama alasan dengan .dh-stop-card/.dh-
    job-card di atas: kolom Kanban BISA berisi ribuan kartu (kolom "New"
    pernah 4.166), blur di situ persis pelanggaran aturan "jangan backdrop-
@@ -519,16 +537,18 @@
    fallback var(--dh-accent) kalau entah kenapa tidak ke-set). */
 [data-theme="dark"] .glass-division .dh-kanban-card {
   background-color: var(--dh-elevated);
-  border: 1px solid color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 32%, transparent);
+  border: 1px solid color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 55%, transparent);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 10px 24px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 45%, transparent);
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 0 0 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 20%, transparent),
+    0 0 14px 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 30%, transparent);
 }
 [data-theme="dark"] .glass-division .dh-kanban-card:hover {
-  border-color: color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 55%, transparent);
+  border-color: color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 70%, transparent);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 14px 30px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 60%, transparent);
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 0 0 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 32%, transparent),
+    0 0 20px 2px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 45%, transparent);
 }
 
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────

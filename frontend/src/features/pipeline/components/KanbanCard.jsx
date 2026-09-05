@@ -103,11 +103,20 @@ export default function KanbanCard({
       role={onOpenChat ? "button" : undefined}
       tabIndex={onOpenChat ? 0 : undefined}
       aria-label={onOpenChat ? `Buka chat ${nama}` : undefined}
-      // --kb-accent (D-101) — dibaca CSS .dh-kanban-card (delivery-dark.css/
-      // -light.css), no-op di luar .glass-division/mode lama.
-      style={{ "--kb-accent": STAGE_GLOW[stage] || STAGE_GLOW.SPAM }}
+      // --kb-accent/--dh-bar (D-101, diperkuat setelah owner lapor "gaada
+      // perubahan" — glow versi pertama arahnya ke BAWAH dengan spread
+      // negatif, jadi ketutup kartu berikutnya di kolom yang sama; border-
+      // nya juga cuma 28-32% opacity, nyaris tak kelihatan). --dh-bar dibaca
+      // `.dh-bar-left::after` yang SUDAH terbukti kelihatan (dipakai
+      // Delivery Hub) — garis aksen kiri 3px + glow SENDIRI (posisi tetap,
+      // tidak ketutup kartu lain). --kb-accent dibaca .dh-kanban-card untuk
+      // border+halo tambahan (sekarang ambient, bukan drop-shadow ke bawah).
+      style={{
+        "--kb-accent": STAGE_GLOW[stage] || STAGE_GLOW.SPAM,
+        "--dh-bar": STAGE_GLOW[stage] || STAGE_GLOW.SPAM,
+      }}
       className={cn(
-        "dh-kanban-card group relative rounded-xl  bg-surface p-2.5 shadow-card",
+        "dh-kanban-card dh-bar-left group relative rounded-xl  bg-surface p-2.5 shadow-card",
         // Lift saat digeser: shadow-popover + scale ~1.02 dalam 150ms, dan slot asal
         // diredam (opacity) — sano-animation-guidelines.md §3.6.
         "transition-[box-shadow,transform,opacity] duration-150 ease-out",

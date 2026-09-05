@@ -374,20 +374,24 @@ html:not([data-theme="dark"]) .glass-division .dh-job-card:hover {
   border-color: rgba(76, 141, 255, 0.3);
 }
 
-/* ── 4e. KARTU KANBAN PIPELINE — kaca + glow PER STAGE (D-101) — pasangan
-   mode terang, baca komentar lengkap di delivery-dark.css. */
+/* ── 4e. KARTU KANBAN PIPELINE — kaca + glow PER STAGE (D-101, DIPERKUAT) —
+   pasangan mode terang, baca komentar lengkap (kenapa versi pertama nyaris
+   tak kelihatan + kenapa sekarang juga pakai .dh-bar-left) di delivery-
+   dark.css. */
 html:not([data-theme="dark"]) .glass-division .dh-kanban-card {
   background-color: var(--dh-elevated);
-  border: 1px solid color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 45%, transparent);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.7) inset,
-    0 8px 20px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 40%, transparent);
+    0 1px 0 rgba(255, 255, 255, 0.75) inset,
+    0 0 0 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 16%, transparent),
+    0 0 12px 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 22%, transparent);
 }
 html:not([data-theme="dark"]) .glass-division .dh-kanban-card:hover {
-  border-color: color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 48%, transparent);
+  border-color: color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 58%, transparent);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.8) inset,
-    0 12px 26px -16px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 50%, transparent);
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 0 0 1px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 26%, transparent),
+    0 0 16px 2px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 34%, transparent);
 }
 
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ──────────────── */
