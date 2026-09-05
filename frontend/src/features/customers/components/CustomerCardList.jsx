@@ -55,7 +55,18 @@ export default function CustomerCardList({ rows, loading, emptyMessage, onOpen }
             tabIndex={0}
             onClick={() => handleCardTap(c)}
             onKeyDown={(e) => { if (e.key === "Enter") handleCardTap(c); }}
-            className="w-full cursor-pointer rounded-2xl bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            // rounded-card (D-106, bukan rounded-2xl) — audit mobile pilot
+            // kaca: halaman ini paginated server-side (~20-50 baris per
+            // halaman, BUKAN ribuan seperti Kanban Pipeline/Order), jadi
+            // aman diberi backdrop-filter kaca sungguhan lewat wildcard
+            // yang sudah ada ([class*="rounded-card"]) — tinggal ganti nama
+            // radius, --r-lg (16px) SAMA PERSIS dengan rounded-2xl bawaan
+            // Tailwind, jadi nol perubahan visual di luar efek kaca. Kartu
+            // ini SATU-SATUNYA elemen di halaman Pelanggan yang sebelumnya
+            // tetap flat sementara topbar/filter bar/tabel desktop di
+            // sekitarnya sudah kaca sejak D-098 — cuma kelihatan bedanya di
+            // mobile, karena kartu ini "hidden md:block" kebalikannya (md:hidden).
+            className="w-full cursor-pointer rounded-card bg-surface p-3 text-left shadow-card transition-colors duration-100 active:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <div className="flex items-start gap-2.5">
               <Avatar name={displayName} src={c.profilePictureUrl} size="sm" />
