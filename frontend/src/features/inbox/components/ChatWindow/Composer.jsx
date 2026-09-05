@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough } from "lucide-react";
+import { Send, MessageSquare, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough, Sparkles } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
 import OrderEditDrawer from "../CustomerPanel/OrderEditDrawer.jsx";
@@ -106,6 +106,88 @@ function TemplatePicker({ customer, onSelect, onClose }) {
   );
 }
 
+// Wave 5 (redesign Inbox, plan starry-humming-knuth) — "Suggest Reply".
+// Menyambungkan backend yang sudah lama jadi (POST /api/ai/reply-
+// suggestions — kuota harian, validator anti-janji-terlarang, gate
+// komplain/handover WAJIB manusia, fallback template kalau LLM tidak
+// tersedia) tapi belum pernah dipanggil dari frontend manapun sebelum ini.
+// Klik satu saran cuma MENGISI draft (setDraft), TIDAK PERNAH mengirim
+// langsung — sales tetap harus baca ulang & tekan Kirim sendiri.
+//
+// CATATAN JUJUR (bukan disembunyikan): endpoint PATCH /reply-suggestions/:id
+// (lapor status Disalin/Diedit/Dikirim/Ditolak ke ReplySuggestionLog) ADA
+// di backend, tapi orchestrator (services/replyAssistant/index.js#finalize)
+// tidak pernah mengembalikan id baris log itu ke response — jadi frontend
+// tidak punya id yang valid untuk di-PATCH. Sengaja TIDAK dipanggil di sini
+// (mengarang/menebak id akan menulis data audit yang salah) — pelaporan
+// status itu perlu perbaikan kecil di backend dulu (kembalikan id log di
+// payload), bukan pekerjaan wave ini.
+function SuggestReplyPopover({ conversationId, onSelect, onClose }) {
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [data, setData]   = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.getReplySuggestions(conversationId)
+      .then((res) => { if (alive) { setData(res); setState("ready"); } })
+      .catch((err) => { if (alive) { setErrorMsg(err.message || "Gagal memuat saran balasan"); setState("error"); } });
+    return () => { alive = false; };
+  }, [conversationId]);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const suggestions = data?.suggestions || [];
+
+  return (
+    <div ref={ref} className="template-picker-popup">
+      <div className="template-picker-header">
+        <span style={{ fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          <Sparkles size={14} /> Saran Balasan AI
+        </span>
+        <button onClick={onClose} className="btn-icon"><X size={14} /></button>
+      </div>
+      <div style={{ overflowY: "auto", flex: 1, padding: "10px 14px" }}>
+        {state === "loading" && (
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Memuat saran...</p>
+        )}
+        {state === "error" && (
+          <p style={{ fontSize: 13, color: "var(--color-danger)" }}>{errorMsg}</p>
+        )}
+        {state === "ready" && data?.blocked && (
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Percakapan ini butuh ditangani langsung oleh sales (komplain/permintaan handover
+            terdeteksi) — AI sengaja tidak menyarankan draf balasan untuk kasus seperti ini.
+          </p>
+        )}
+        {state === "ready" && !data?.blocked && suggestions.length === 0 && (
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Tidak ada saran untuk saat ini.</p>
+        )}
+        {state === "ready" && !data?.blocked && suggestions.map((s) => (
+          <button
+            key={s.id}
+            className="template-item"
+            style={{ display: "block", width: "100%", textAlign: "left" }}
+            onClick={() => { onSelect(s.text); onClose(); }}
+          >
+            <p className="template-preview" style={{ margin: 0 }}>{s.text}</p>
+          </button>
+        ))}
+        {state === "ready" && data?.quota && (
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
+            Sisa kuota hari ini: {data.quota.remaining}/{data.quota.limit}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Emoji picker emoji-mart, lazy-loaded (JS + data JSON cuma diambil saat dibuka) ──
 function EmojiMartPopup({ onSelect, onClose }) {
   const [Picker, setPicker] = useState(null);
@@ -159,6 +241,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
   // Wave 13 (redesign Inbox) — "Buat Order" di menu lampiran. Order milik
   // Customer, jadi tidak relevan untuk percakapan grup (isGroup).
   const [showCreateOrder, setShowCreateOrder] = useState(false);
+  // Wave 5 (redesign Inbox) — "Suggest Reply". Tidak relevan untuk grup
+  // (endpoint butuh customerId tunggal, sama seperti Buat Order di atas).
+  const [showSuggestReply, setShowSuggestReply] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const textareaRef = useRef(null);
@@ -168,6 +253,7 @@ export default function Composer({ conversation, mediaUploaderRef }) {
     setShowEmoji(false);
     setShowProductPicker(false);
     setShowCreateOrder(false);
+    setShowSuggestReply(false);
   }, [conversationId]);
 
   useEffect(() => {
@@ -300,6 +386,14 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           onSent={(msgs) => { msgs.forEach((m) => useMessageStore.getState().upsertMessage(conversationId, m)); setShowProductPicker(false); }} />
       )}
 
+      {showSuggestReply && (
+        <SuggestReplyPopover
+          conversationId={conversationId}
+          onSelect={(text) => setDraft(text)}
+          onClose={() => setShowSuggestReply(false)}
+        />
+      )}
+
       {/* Wave 13 (redesign Inbox) — "Buat Order" dari menu lampiran. Instance
           drawer TERSENDIRI (bukan berbagi dengan CustomerPanel, yang berada
           di cabang komponen SIBLING, bukan leluhur/turunan Composer ini) —
@@ -351,6 +445,21 @@ export default function Composer({ conversation, mediaUploaderRef }) {
             onCreateOrder={!isGroup && conversation.customer?.id ? () => setShowCreateOrder(true) : undefined}
           />
         </Suspense>
+
+        {/* Wave 5 (redesign Inbox) — "Suggest Reply". Tidak relevan untuk
+            grup (endpoint AI butuh 1 customer, bukan banyak anggota). */}
+        {!isGroup && conversation.customer?.id && (
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setShowSuggestReply((v) => !v)}
+              className={`chat-action-btn ${showSuggestReply ? "active" : ""}`}
+              title="Saran balasan AI"
+            >
+              <Sparkles size={16} />
+            </button>
+          </div>
+        )}
 
         <div style={{ position: "relative" }}>
           <button type="button" onClick={() => setShowEmoji((v) => !v)} className={`chat-action-btn ${showEmoji ? "active" : ""}`} title="Emoji">

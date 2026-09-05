@@ -901,6 +901,12 @@ export const api = {
     request(`/ai/playground/${modelConfigId}/messages`, { method: "DELETE" }),
   coPilotChat: (message, conversationHistory = [], modelId) =>
     request("/ai/copilot-chat", { method: "POST", body: JSON.stringify({ message, conversationHistory, ...(modelId && { modelId }) }) }),
+  // Wave 5 (redesign Inbox) — "Suggest Reply" di composer. Backend
+  // (services/replyAssistant) sudah lama jadi (kuota, validator anti-janji-
+  // terlarang, gate komplain/handover), sebelumnya belum pernah dipanggil
+  // dari frontend manapun.
+  getReplySuggestions: (conversationId) =>
+    request("/ai/reply-suggestions", { method: "POST", body: JSON.stringify({ conversationId }) }),
   // Fase C — simulasi deteksi handover (SANDBOX ONLY, belum tersambung ke WAHA)
   checkHandover: (messages) =>
     request("/ai/handover-check", { method: "POST", body: JSON.stringify({ messages }) }),
