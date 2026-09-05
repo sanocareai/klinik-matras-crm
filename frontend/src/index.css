@@ -1761,9 +1761,18 @@ body {
 .media-gallery-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
 }
+/* BUG NYATA (dilaporkan owner, 5 September 2026, sudah dicoba hard-refresh
+   & incognito — jadi BUKAN cache, literal begini di CSS): `background:
+   #f1f5f9` hardcode abu-abu terang, TANPA override dark-mode di mana pun
+   (digrep di seluruh frontend/src, nol hit lain). Tiap sel galeri foto
+   (Media tab, CustomerPanel) yang gambarnya BELUM selesai dimuat (lazy-load
+   di luar layar, koneksi lambat, atau gagal 404 — tidak ada fallback error
+   sama sekali) menampilkan kotak abu-abu terang ini APA ADANYA, mencolok
+   di atas panel kaca gelap. var(--bg-inset) theme-aware (terang: #F5F5F7,
+   nyaris sama seperti sebelumnya; gelap: #2C2C2E, membaur dgn panel). */
 .media-gallery-item {
   aspect-ratio: 1; border-radius: 8px; overflow: hidden;
-  border: none; padding: 0; cursor: pointer; background: #f1f5f9;
+  border: none; padding: 0; cursor: pointer; background: var(--bg-inset);
   display: flex; align-items: center; justify-content: center;
   transition: opacity 0.15s;
 }
