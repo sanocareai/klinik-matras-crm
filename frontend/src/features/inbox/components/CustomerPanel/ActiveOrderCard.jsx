@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ShoppingCart } from "lucide-react";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -38,9 +38,25 @@ function formatTanggalPendek(d) {
 // memanggil onOpenOrder(order) → OrderEditDrawer.jsx yang membungkus
 // OrderSection.jsx APA ADANYA (file 2234 baris itu sendiri TIDAK disentuh
 // isinya) — di sanalah semua order lain & kemampuan edit penuh tetap ada.
-export default function ActiveOrderCard({ customer, onOpenOrder }) {
+// BUG NYATA (laporan owner, 5 September 2026): sebelum wave ini, tombol
+// "+Order" SELALU ada (dirender inline oleh OrderSection.jsx sendiri).
+// Setelah dipindah ke ActiveOrderCard yang ringkas, kartu ini `return null`
+// diam-diam kalau customer belum punya order SAMA SEKALI — hasilnya tombol
+// buat-order-pertama HILANG dari panel (satu-satunya jalan tersisa jadi
+// menu "+" Composer, yang tidak semua sales ketahui). Sekarang tampilkan
+// prompt "belum ada order" + tombol Buat Order, bukan kosong tanpa jejak.
+export default function ActiveOrderCard({ customer, onOpenOrder, onCreateOrder }) {
   const orders = customer?.orders || [];
-  if (orders.length === 0) return null;
+  if (orders.length === 0) {
+    return (
+      <Card variant="default" className="flex flex-col items-center gap-2 p-4 text-center">
+        <p className="text-[12.5px] text-ink3">Belum ada order untuk pelanggan ini.</p>
+        <Button type="button" variant="secondary" size="sm" className="w-full" onClick={onCreateOrder}>
+          <ShoppingCart size={14} /> Buat Order
+        </Button>
+      </Card>
+    );
+  }
   const order = orders.find((o) => !TERMINAL_STATUSES.has(o.status)) || orders[0];
 
   const deliveryDate = order.deliveryConfirmedDate || order.deliveryEstimate;

@@ -1,6 +1,7 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusVariant,
 } from "@/utils/format.js";
@@ -15,13 +16,24 @@ function statusLabel(status) {
 // OrderEditDrawer.jsx (OrderSection.jsx tidak diduplikasi di sini). Klik
 // baris mana pun membuka order itu di drawer yang sama dengan Overview's
 // ActiveOrderCard.
-export default function OrderHistoryList({ customer, onOpenOrder }) {
+//
+// Tombol "Buat Order" SELALU tampil di atas (bukan cuma saat kosong) — dulu
+// (sebelum wave ini) "+Order" ada permanen di dalam OrderSection.jsx yang
+// inline di panel, jadi selalu kelihatan tanpa perlu dipikir. Setelah
+// dipindah ke drawer terpisah, tombol ini WAJIB ada di sini juga supaya
+// menambah order KEDUA/KETIGA untuk pelanggan lama tetap semudah dulu.
+export default function OrderHistoryList({ customer, onOpenOrder, onCreateOrder }) {
   const orders = customer?.orders || [];
-  if (orders.length === 0) {
-    return <p className="text-muted" style={{ fontSize: 12.5, padding: "8px 0" }}>Belum ada order.</p>;
-  }
   return (
     <div className="flex flex-col gap-1.5">
+      <Button type="button" variant="secondary" size="sm" className="w-full" onClick={onCreateOrder}>
+        <Plus size={14} /> Buat Order
+      </Button>
+
+      {orders.length === 0 && (
+        <p className="text-muted" style={{ fontSize: 12.5, padding: "8px 0" }}>Belum ada order.</p>
+      )}
+
       {orders.map((o) => (
         <button
           key={o.id}

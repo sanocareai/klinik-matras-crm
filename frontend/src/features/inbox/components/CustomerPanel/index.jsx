@@ -28,12 +28,18 @@ export default function CustomerPanel({ conversation, onClose }) {
   // null = drawer tertutup. Dipicu dari ActiveOrderCard (tab Overview) MAUPUN
   // OrderHistoryList (tab Order), keduanya cuma memanggil setOrderDrawerOrder.
   const [orderDrawerOrder, setOrderDrawerOrder] = useState(null);
+  // Dipicu terpisah dari orderDrawerOrder (bukan disatukan lewat sentinel
+  // value) — "buat baru" TIDAK PERNAH punya order (order=null tetap, tapi
+  // drawer-nya harus tetap terbuka), jadi butuh boolean sendiri, bukan
+  // "order ada isinya = terbuka" seperti alur edit.
+  const [creatingOrder, setCreatingOrder] = useState(false);
 
   useEffect(() => {
     // Ganti percakapan/pelanggan sementara OrderEditDrawer terbuka akan
     // menampilkan order pelanggan yang SALAH begitu drawer masih terbuka —
     // tutup dulu, konsisten dengan pola reset lain di effect ini.
     setOrderDrawerOrder(null);
+    setCreatingOrder(false);
     if (conversation?.type === "GROUP") { setCustomer(null); setLoadError(null); return; }
     if (!customerId) { setCustomer(null); setLoadError(null); return; }
     setLoadError(null);
@@ -130,7 +136,7 @@ export default function CustomerPanel({ conversation, onClose }) {
                 editor. "Buka Order" → OrderEditDrawer. Render null diam-diam
                 kalau belum ada order sama sekali. */}
             <div className="panel-section">
-              <ActiveOrderCard customer={customer} onOpenOrder={setOrderDrawerOrder} />
+              <ActiveOrderCard customer={customer} onOpenOrder={setOrderDrawerOrder} onCreateOrder={() => setCreatingOrder(true)} />
             </div>
 
             <PipelineSection customer={customer} onUpdate={setCustomer} />
@@ -138,7 +144,7 @@ export default function CustomerPanel({ conversation, onClose }) {
           </TabsContent>
 
           <TabsContent value="order" className="panel-body">
-            <OrderHistoryList customer={customer} onOpenOrder={setOrderDrawerOrder} />
+            <OrderHistoryList customer={customer} onOpenOrder={setOrderDrawerOrder} onCreateOrder={() => setCreatingOrder(true)} />
           </TabsContent>
 
           <TabsContent value="media" className="panel-body">
@@ -152,10 +158,10 @@ export default function CustomerPanel({ conversation, onClose }) {
       </div>
 
       <OrderEditDrawer
-        open={!!orderDrawerOrder}
+        open={!!orderDrawerOrder || creatingOrder}
         order={orderDrawerOrder}
         customer={customer}
-        onClose={() => setOrderDrawerOrder(null)}
+        onClose={() => { setOrderDrawerOrder(null); setCreatingOrder(false); }}
         onUpdate={setCustomer}
       />
     </>
