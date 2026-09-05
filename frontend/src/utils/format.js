@@ -141,8 +141,16 @@ export const ORDER_STATUS_LABELS = {
   // Status KHUSUS kategori SEWA (4 Sep 2026) — lihat orderStatusesForCategory
   // & ORDER_STATUS_BUCKET di bawah. Order SEWA tidak pernah memakai 5 status
   // di atas.
+  //
+  // SEWA_DIAMBIL sengaja diberi label "Pengambilan Kembali" (bukan
+  // "Pengambilan" polos, koreksi 5 September 2026 permintaan owner) — kata
+  // "Pengambilan" sudah dipakai tahap PICKUP di atas (jemput kasur LAMA dari
+  // customer untuk diservis, di AWAL proses). Kalau dipakai lagi di sini
+  // artinya ambigu: sama kata, tapi satu di awal proses (Layanan), satu di
+  // akhir proses (nutup masa sewa). "Pengambilan Kembali" langsung kebaca
+  // beda konteksnya, tetap sepasang gaya dengan "Pengiriman" di atasnya.
   SEWA_DIKIRIM: "Pengiriman",
-  SEWA_DIAMBIL: "Pengambilan",
+  SEWA_DIAMBIL: "Pengambilan Kembali",
 };
 
 // ⚠️ "Meta Ads" TANPA embel-embel "(FB/IG)". Facebook & Instagram dipisah
