@@ -3119,33 +3119,15 @@ body {
   }
 }
 
-/* Wave 10 (redesign Inbox, plan starry-humming-knuth) — panel pelanggan
-   jadi drawer overlay juga di rentang 1025-1599px (dulu HANYA <=1024px,
-   lewat blok tablet gabungan di atas). Query TERPISAH, SENGAJA HANYA
-   menyentuh 3 selector Inbox ini (bukan memperlebar blok di atas, yang
-   JUGA mengatur kpi-grid/settings-sidebar/drawer-panel Dashboard/Settings/
-   dll di seluruh app — melebarkan itu akan ikut mengubah halaman-halaman
-   itu, di luar lingkup redesign Inbox). Perilakunya SAMA PERSIS dengan
-   blok tablet: `panelCollapsed` (state React di Inbox.jsx) yang tetap
-   menentukan APAKAH CustomerPanel dirender sama sekali — CSS di sini
-   cuma mengubah CARA dia tampil (kolom grid permanen → overlay
-   mengambang) begitu memang dirender. Lebar daftar percakapan disamakan
-   ke 300px tetap (bukan lebar custom hasil geser user) — sengaja, sama
-   seperti perilaku tablet yang sudah terbukti aman, bukan kelalaian. */
-@media (max-width: 1599px) and (min-width: 1025px) {
-  .inbox-body { grid-template-columns: 300px 1fr 0px !important; }
-  .inbox-body.list-collapsed { grid-template-columns: 0px 1fr 0px !important; }
-  .customer-panel {
-    position: fixed; top: 0; right: 0; bottom: 0; z-index: 320;
-    width: 380px; max-width: 88vw;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
-    animation: drawerSlideIn 0.2s ease;
-  }
-  .customer-panel-backdrop {
-    display: block; position: fixed; inset: 0; z-index: 310;
-    background: rgba(0, 0, 0, 0.35);
-  }
-}
+/* Wave 10 (redesign Inbox) SEMPAT memperluas drawer-overlay ini ke rentang
+   1025-1599px lewat query terpisah di sini. DICABUT (D-116, laporan
+   owner: monitor portrait — tombol toggle panel tidak memunculkan apa-apa
+   di lebar itu, akar pastinya belum ketemu lewat baca kode saja). Daripada
+   menambal breakpoint baru lagi yang berisiko meleset lagi di kombinasi
+   lebar lain, panel pelanggan sekarang balik jadi KOLOM GRID BIASA di
+   SEMUA lebar >=1025px (perilaku asli sebelum redesign, sudah bertahun-
+   tahun terbukti jalan) — drawer-overlay HANYA di <=1024px (blok tablet
+   di atas, tidak disentuh sama sekali, jadi tidak ikut kena masalah ini). */
 
 /* ─── PROVIDER BADGE (AI Playground model list) ────────────────────── */
 
