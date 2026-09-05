@@ -588,6 +588,11 @@ export const api = {
     request(`/customers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getCustomerConversations: (id) =>
     request(`/customers/${id}/conversations`),
+  // Wave 4A — Next Best Action (Inbox redesign). Backend engine sudah lama
+  // ada (services/intelligence/nextBestAction.js), TIDAK pernah dipanggil
+  // dari frontend manapun sebelum ini — murni menyambungkan yang sudah jadi.
+  getCustomerIntelligence: (id) =>
+    request(`/customers/${id}/intelligence`),
   addNote: (customerId, content) =>
     request(`/customers/${customerId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
   updateNote: (noteId, content) =>

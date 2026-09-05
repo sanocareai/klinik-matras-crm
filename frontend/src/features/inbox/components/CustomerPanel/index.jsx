@@ -9,6 +9,7 @@ import OrdersSection from "./OrdersSection.jsx";
 import MediaGallery from "./MediaGallery.jsx";
 import NotesSection from "./NotesSection.jsx";
 import GroupPanel from "./GroupPanel.jsx";
+import NextBestActionCard from "./NextBestActionCard.jsx";
 import { CustomerPanelSkeleton } from "../Skeletons.jsx";
 
 // Panel kanan Inbox (Fase E). type=GROUP → GroupPanel (tanpa pipeline/order/
@@ -77,6 +78,15 @@ export default function CustomerPanel({ conversation, onClose }) {
         </div>
 
         <div className="panel-body">
+          {/* Wave 2 (redesign Inbox) — Next Best Action, di atas Pipeline
+              supaya jadi hal PERTAMA yang dilihat sales saat buka panel:
+              "apa yang harus saya lakukan sekarang untuk pelanggan ini",
+              sebelum detail lain. Render null diam-diam kalau tidak
+              relevan/gagal — lihat komentar di NextBestActionCard.jsx. */}
+          <div className="panel-section">
+            <NextBestActionCard customerId={customer.id} />
+          </div>
+
           <PipelineSection customer={customer} onUpdate={setCustomer} />
           <InfoSection customer={customer} onUpdate={setCustomer} />
           <OrdersSection customer={customer} onUpdate={setCustomer} />

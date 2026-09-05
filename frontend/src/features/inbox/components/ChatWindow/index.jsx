@@ -5,10 +5,12 @@ import {
   MessageSquare, CheckCircle, X,
   Phone, ArrowLeft, UserCheck, Users, Info, MoreVertical,
   Forward, Search, PanelRightClose, PanelRightOpen, PanelLeftClose, PanelLeftOpen, Download, Trash2, Megaphone,
+  Maximize2, Minimize2,
 } from "lucide-react";
 import { api } from "../../../../api.js";
 import Avatar from "../../../../components/Avatar.jsx";
-import { formatPhoneDisplay } from "../../../../utils/format.js";
+import { Badge } from "@/components/ui/badge.jsx";
+import { formatPhoneDisplay, STAGE_LABELS, stageVariant } from "../../../../utils/format.js";
 import { buatPetaMention } from "../../../../utils/mention.js";
 import CustomerPanel from "../CustomerPanel/index.jsx";
 import MessageList from "./MessageList.jsx";
@@ -128,7 +130,7 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
 }
 
 // ── Main ChatWindow (Fase C + D) ────────────────────────────────────────
-export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel, listCollapsed, onToggleList }) {
+export default function ChatWindow({ conversation, user, onBack, panelCollapsed, onTogglePanel, listCollapsed, onToggleList, focusMode, onToggleFocusMode }) {
   const conversationId = conversation?.id;
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -432,6 +434,19 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
                     <Phone size={12} /> {formatPhoneDisplay(rawPhone)}
                   </a>
                 )}
+                {/* Wave 4 (redesign Inbox) — pipeline CRM (STAGE_LABELS) itu
+                    KONSEP LAIN dari status percakapan (STATUS_OPTIONS di
+                    bawah, select "Terbuka/Pending/Selesai"). Sebelumnya
+                    pipeline TIDAK ditampilkan sama sekali di ChatWindow —
+                    sales harus buka Customer Panel dulu untuk tahu tahap
+                    pipeline pelanggan. Ditaruh di baris meta (dekat identitas
+                    pelanggan), bukan di cluster status/resolve, supaya dua
+                    konsep itu terlihat jelas terpisah, bukan tercampur. */}
+                {conversation.customer?.pipelineStage && (
+                  <Badge variant={stageVariant(conversation.customer.pipelineStage)}>
+                    {STAGE_LABELS[conversation.customer.pipelineStage] || conversation.customer.pipelineStage}
+                  </Badge>
+                )}
                 {isMine ? (
                   <span className="lead-badge mine"><UserCheck size={11} /> Lead Kamu</span>
                 ) : assignedTo ? (
@@ -464,6 +479,17 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
             <button className="chat-action-btn" onClick={onTogglePanel}
               title={panelCollapsed ? "Tampilkan panel pelanggan" : "Sembunyikan panel pelanggan"}>
               {panelCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+            </button>
+          )}
+          {/* Wave 3 (redesign Inbox) — Focus Mode: collapse daftar + panel
+              pelanggan sekaligus (state & restore-nya di Inbox.jsx), tinggal
+              chat selebar mungkin. Sengaja satu tombol di sini (bukan
+              tombol terpisah di luar ChatWindow) karena dua tombol collapse
+              lain untuk kolom yang sama sudah hidup di cluster ini juga. */}
+          {onToggleFocusMode && (
+            <button className={`chat-action-btn${focusMode ? " active" : ""}`} onClick={onToggleFocusMode}
+              title={focusMode ? "Keluar dari Focus Mode" : "Focus Mode — sembunyikan daftar & panel pelanggan"}>
+              {focusMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             </button>
           )}
           {!isGroup && isAdminUser(user) && (

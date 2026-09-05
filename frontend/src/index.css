@@ -706,7 +706,11 @@ body {
   transition: background 0.15s ease;
 }
 .conversation-item:hover { background: var(--bg-subtle); }
-.conversation-item.active { background: var(--accent-soft); }
+/* inset box-shadow (bukan border-left) — Wave 1 (redesign Inbox), permintaan
+   "indikator kiri 2px". Sengaja BUKAN border: border menambah 2px ke lebar
+   kotak (butuh kompensasi padding, gampang geser konten 1px pas toggle),
+   inset shadow digambar DI DALAM kotak yang sudah ada, nol perubahan layout. */
+.conversation-item.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 0 var(--accent); }
 .conv-avatar-wrap { position: relative; flex-shrink: 0; }
 .conv-select-checkbox {
   position: absolute; bottom: -2px; right: -2px; z-index: 1;
@@ -767,7 +771,24 @@ body {
 }
 .conv-flag-opened  { background: #ede9fe; color: #5b21b6; }
 .conv-flag-replied { background: #ECFDF5; color: #059669; }
-.conv-flag-overdue { background: #FFF1F2; color: #E11D48; font-weight: 400; }
+/* .conv-flag-overdue SUDAH ADA di CSS sejak lama tapi TIDAK PERNAH dipakai
+   di JSX manapun (digrep, nol hit) — jadi warnanya belum pernah ketahuan
+   salah di dark mode. Wave 1 (redesign Inbox) adalah PEMAKAI PERTAMA
+   (penanda SLA >= 60 menit di ConversationItem.jsx), jadi sekalian
+   diperbaiki ke token var(--red)/var(--red-bg) di sini — bukan hex literal
+   yang butuh migrasi terpisah lagi nanti seperti .media-gallery-item. */
+.conv-flag-overdue { background: var(--red-bg); color: var(--red); font-weight: 400; }
+/* Tingkat "mendekati" SLA (45-59 menit belum dibalas, ambang resmi 60
+   menit ada di backend/src/routes/conversations.js) — oranye, satu takik
+   di bawah .conv-flag-overdue (merah, sudah lewat ambang/bisa di-Ambil
+   Alih). Baru, Wave 1. */
+.conv-flag-sla-warn { background: var(--orange-bg); color: var(--orange); font-weight: 400; }
+/* Label pipeline di baris percakapan (Wave 1, redesign Inbox) — SENGAJA
+   teks polos, TANPA latar berwarna, beda dari .lead-badge/.session-badge/
+   dll di sebelahnya. Permintaan brief: "gunakan ikon atau metadata halus,
+   bukan banyak pil berwarna" — pipeline cuma butuh terbaca, bukan menonjol
+   (beda dari status SLA yang MEMANG harus menarik perhatian). */
+.conv-pipeline-label { font-size: 11px; color: var(--text-small); }
 .empty { padding: 24px 16px; color: var(--text-small); font-size: 13px; text-align: center; }
 
 /* Context menu: Sematkan/Lepas Sematan */

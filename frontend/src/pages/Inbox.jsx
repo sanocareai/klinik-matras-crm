@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { useSSE } from "../hooks/useSSE.js";
@@ -83,6 +83,35 @@ export default function Inbox({ user }) {
     setListCollapsedState((prev) => {
       const next = typeof value === "function" ? value(prev) : value;
       localStorage.setItem(LIST_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  }
+
+  // Wave 3 (redesign Inbox) — Focus Mode: satu tombol yang collapse dua
+  // kolom sekaligus (daftar + panel pelanggan), meninggalkan cuma chat.
+  // SENGAJA tidak menyimpan localStorage-nya sendiri (beda dari
+  // listCollapsed/panelCollapsed) — ini toggle SESI cepat ("fokus sebentar"),
+  // bukan preferensi permanen; kalau ikut persist, reload halaman bisa
+  // "nyangkut" fokus tanpa jejak kenapa. listWidth/panelWidth TIDAK pernah
+  // disentuh oleh collapse (lihat komentar gridTemplateColumns di bawah),
+  // jadi keluar dari Focus Mode otomatis kembali ke lebar yang sama persis
+  // — yang perlu direstore hanya status collapse SEBELUM Focus Mode aktif
+  // (supaya kalau salah satu kolom memang sudah collapse manual sebelumnya,
+  // itu tidak ikut "dipaksa buka" saat Focus Mode dimatikan).
+  const [focusMode, setFocusModeState] = useState(false);
+  const focusPrevRef = useRef({ list: false, panel: false });
+
+  function toggleFocusMode() {
+    setFocusModeState((prev) => {
+      const next = !prev;
+      if (next) {
+        focusPrevRef.current = { list: listCollapsed, panel: panelCollapsed };
+        setListCollapsed(true);
+        setPanelCollapsed(true);
+      } else {
+        setListCollapsed(focusPrevRef.current.list);
+        setPanelCollapsed(focusPrevRef.current.panel);
+      }
       return next;
     });
   }
@@ -260,6 +289,8 @@ export default function Inbox({ user }) {
           onTogglePanel={() => setPanelCollapsed((v) => !v)}
           listCollapsed={listCollapsed}
           onToggleList={() => setListCollapsed((v) => !v)}
+          focusMode={focusMode}
+          onToggleFocusMode={toggleFocusMode}
         />
       </ColumnErrorBoundary>
       {!panelCollapsed && (

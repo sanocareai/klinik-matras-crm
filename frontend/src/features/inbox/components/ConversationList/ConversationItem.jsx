@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState } from "react";
-import { Pin, Users, Eye, CheckCheck, Check } from "lucide-react";
+import { Pin, Users, Eye, CheckCheck, Check, AlertTriangle } from "lucide-react";
 import Avatar from "../../../../components/Avatar.jsx";
-import { formatPhoneDisplay } from "../../../../utils/format.js";
+import { formatPhoneDisplay, STAGE_LABELS } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
 import { useConversation, useActiveId, useConversationStore, useConvSearchQuery } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
@@ -68,6 +68,16 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   // ini (lihat CLAUDE.md §"Multi-session WAHA"), jadi badge ini otomatis
   // tidak muncul sampai backend menambahkannya. Kode sudah siap pakai.
   const sessionLabel = c.sessionId === "CS-1" || c.sessionId === "CS-2" ? c.sessionId : null;
+  // Wave 1 (redesign Inbox) — SLA risk, dari data yang SUDAH ADA di payload
+  // GET /conversations (isUnanswered/unansweredMinutes), bukan hitungan
+  // baru. Ambang 60 menit SAMA PERSIS dengan yang dipakai backend untuk
+  // canTakeOver (backend/src/routes/conversations.js) — jangan diubah
+  // sepihak di sini, nanti dua tempat beda angka. 45 menit = "mendekati",
+  // kasih peringatan dini sebelum benar-benar lewat ambang.
+  const unansweredMinutes = c.unansweredMinutes;
+  const slaWarn = c.isUnanswered && typeof unansweredMinutes === "number" && unansweredMinutes >= 45 && unansweredMinutes < 60;
+  const slaBreach = c.isUnanswered && typeof unansweredMinutes === "number" && unansweredMinutes >= 60;
+  const pipelineLabel = c.customer?.pipelineStage ? (STAGE_LABELS[c.customer.pipelineStage] || c.customer.pipelineStage) : null;
 
   function selectConversation() {
     useConversationStore.getState().setActive(id);
@@ -206,13 +216,24 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
         </div>
 
         <div className="conv-badges">
-          <span
-            className={`badge ${STATUS_CLASS[c.status] || "badge-open"}${isAdmin ? " badge-clickable" : ""}`}
-            title={isAdmin ? "Klik untuk transfer lead ke sales lain" : undefined}
-            onClick={isAdmin ? (e) => { e.stopPropagation(); setTransferPicker({ x: e.clientX, y: e.clientY }); } : undefined}
-          >
-            {STATUS_LABEL[c.status] || c.status}
-          </span>
+          {/* "Buka" (status default/paling umum) DISEMBUNYIKAN untuk non-admin
+              (Wave 1, redesign Inbox — permintaan "jangan tampilkan chip Buka
+              yang tidak perlu": OPEN adalah status default hampir semua
+              baris, jadi menampilkannya di semua percakapan cuma bising,
+              tidak menyampaikan informasi baru). Pending/Selesai TETAP selalu
+              tampil (itu penyimpangan dari default, informatif). Admin TETAP
+              melihat chip OPEN juga — badge ini satu-satunya cara admin
+              transfer lead dari list (klik → TransferPickerPopover), jadi
+              TIDAK BOLEH hilang untuk role itu. */}
+          {(c.status !== "OPEN" || isAdmin) && (
+            <span
+              className={`badge ${STATUS_CLASS[c.status] || "badge-open"}${isAdmin ? " badge-clickable" : ""}`}
+              title={isAdmin ? "Klik untuk transfer lead ke sales lain" : undefined}
+              onClick={isAdmin ? (e) => { e.stopPropagation(); setTransferPicker({ x: e.clientX, y: e.clientY }); } : undefined}
+            >
+              {STATUS_LABEL[c.status] || c.status}
+            </span>
+          )}
           {sessionLabel && <span className="session-badge">{sessionLabel}</span>}
           {/* DUA badge berbeda arti — sebelumnya CUMA firstResponder yang
               tampil, TANPA label, sehingga terbaca sebagai "pemegang lead".
@@ -241,6 +262,26 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
           {isReplied && (
             <span title="Sudah dibalas" className="conv-flag-badge conv-flag-replied">
               <CheckCheck size={10} /> Dibalas
+            </span>
+          )}
+          {/* Pipeline (Wave 1) — teks polos, bukan pil berwarna baru (lihat
+              .conv-pipeline-label di index.css). */}
+          {pipelineLabel && <span className="conv-pipeline-label">{pipelineLabel}</span>}
+          {/* SLA risk (Wave 1) — dari data yang sudah ada (isUnanswered/
+              unansweredMinutes), 2 tingkat: oranye "mendekati" (45-59 menit),
+              merah "lewat ambang" (>=60 menit, match canTakeOver backend).
+              Ditaruh PALING TERAKHIR di baris badge supaya jadi hal yang
+              paling menarik mata kalau memang ada — tapi tidak pernah tampil
+              berbarengan dengan "Dibalas" (isReplied sudah pasti false kalau
+              isUnanswered true, dua-duanya saling meniadakan). */}
+          {slaBreach && (
+            <span title={`Belum dibalas ${unansweredMinutes} menit — sudah bisa diambil alih`} className="conv-flag-badge conv-flag-overdue">
+              <AlertTriangle size={10} /> {unansweredMinutes}m
+            </span>
+          )}
+          {slaWarn && (
+            <span title={`Belum dibalas ${unansweredMinutes} menit`} className="conv-flag-badge conv-flag-sla-warn">
+              <AlertTriangle size={10} /> {unansweredMinutes}m
             </span>
           )}
         </div>
