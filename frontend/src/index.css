@@ -789,6 +789,45 @@ body {
    bukan banyak pil berwarna" — pipeline cuma butuh terbaca, bukan menonjol
    (beda dari status SLA yang MEMANG harus menarik perhatian). */
 .conv-pipeline-label { font-size: 11px; color: var(--text-small); }
+
+/* D-119 (redesign minimalis daftar percakapan, laporan owner: "lebih
+   minimalis, enak diliat, tapi tetep keep warnanya") — baris percakapan
+   dulu bisa menumpuk sampai 5-6 pil berwarna (status/CS-1-2/1st:X/Dibuka
+   atau Dibalas/pipeline/SLA) di .conv-badges, sering meluber ke baris
+   kedua. Diganti jadi ikon kecil + SATU baris meta opsional — warna per
+   makna SAMA PERSIS dengan pil lama (lihat komentar per kelas di bawah),
+   cuma bentuknya bukan pil lagi.
+   .conv-badges/.conv-flag-* di atas SENGAJA DIBIARKAN (tidak dihapus) —
+   sudah tidak dipakai JSX manapun tapi inert, bukan risiko menyentuhnya
+   lagi di file yang sama dengan bug beruntun musim ini. */
+.conv-time-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+/* Sama warna dengan .conv-flag-overdue (merah)/.conv-flag-sla-warn (oranye)
+   lama — cuma ikon, bukan pil teks "⚠ 178m" lagi (menitnya pindah ke title). */
+.conv-sla-icon.breach { color: var(--red); flex-shrink: 0; }
+.conv-sla-icon.warn   { color: var(--orange); flex-shrink: 0; }
+/* Sama warna dengan .conv-flag-replied (hijau)/.conv-flag-opened (ungu)
+   lama — cuma ikon di slot kanan-bawah (dulu pil teks "Dibalas"/"Dibuka"). */
+.conv-status-icon.replied { color: var(--green); flex-shrink: 0; }
+.conv-status-icon.opened  { color: #7c3aed; flex-shrink: 0; }
+/* Baris meta ringkas — pemegang chat + titik status, gantikan .lead-badge/
+   .badge-open dkk yang dulu selalu makan tempat di SETIAP baris. */
+.conv-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
+.conv-status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+/* Sama warna dengan .badge-open/.badge-pending/.badge-resolved lama. */
+.conv-status-open      { background: var(--accent); }
+.conv-status-pending   { background: var(--orange); }
+.conv-status-resolved  { background: var(--green); }
+.conv-status-dot.clickable { cursor: pointer; }
+.conv-status-dot.clickable:hover { transform: scale(1.3); }
+/* Sama warna dengan .lead-badge.other lama (ungu) — sekarang teks polos,
+   bukan pil, mengikuti pola .conv-pipeline-label di atasnya. */
+.conv-assigned-name {
+  font-size: 11px; color: #7c3aed; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
 .empty { padding: 24px 16px; color: var(--text-small); font-size: 13px; text-align: center; }
 
 /* Context menu: Sematkan/Lepas Sematan */

@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState } from "react";
 import { Pin, Users, Eye, CheckCheck, Check, AlertTriangle } from "lucide-react";
 import Avatar from "../../../../components/Avatar.jsx";
-import { formatPhoneDisplay, STAGE_LABELS } from "../../../../utils/format.js";
+import { formatPhoneDisplay } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
 import { useConversation, useActiveId, useConversationStore, useConvSearchQuery } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
@@ -15,7 +15,6 @@ import { isAdminUser } from "@/lib/roles.js";
 const PEEK_HOVER_DELAY_MS = 450;
 
 const STATUS_LABEL = { OPEN: "Buka", PENDING: "Pending", RESOLVED: "Selesai" };
-const STATUS_CLASS = { OPEN: "badge-open", PENDING: "badge-pending", RESOLVED: "badge-resolved" };
 
 // Baca role langsung dari localStorage (pola sama dgn api.js#authHeaders) —
 // item ini ada RATUSAN di list, tidak masuk akal prop-drill `user` dari
@@ -64,10 +63,6 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   // produksi: badge tab "Belum Dibaca" 34 tapi baris yang lolos filter cuma 4).
   const unreadCount = c.unreadCount > 0 ? c.unreadCount : (isUnread ? 1 : 0);
   const unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount);
-  // Badge CS-1/CS-2 — field sessionId belum ada di schema Conversation saat
-  // ini (lihat CLAUDE.md §"Multi-session WAHA"), jadi badge ini otomatis
-  // tidak muncul sampai backend menambahkannya. Kode sudah siap pakai.
-  const sessionLabel = c.sessionId === "CS-1" || c.sessionId === "CS-2" ? c.sessionId : null;
   // Wave 1 (redesign Inbox) — SLA risk, dari data yang SUDAH ADA di payload
   // GET /conversations (isUnanswered/unansweredMinutes), bukan hitungan
   // baru. Ambang 60 menit SAMA PERSIS dengan yang dipakai backend untuk
@@ -77,7 +72,11 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   const unansweredMinutes = c.unansweredMinutes;
   const slaWarn = c.isUnanswered && typeof unansweredMinutes === "number" && unansweredMinutes >= 45 && unansweredMinutes < 60;
   const slaBreach = c.isUnanswered && typeof unansweredMinutes === "number" && unansweredMinutes >= 60;
-  const pipelineLabel = c.customer?.pipelineStage ? (STAGE_LABELS[c.customer.pipelineStage] || c.customer.pipelineStage) : null;
+  // D-119 (redesign minimalis) — CS-1/CS-2, "1st: X", dan label pipeline
+  // DIHAPUS dari baris ini (dulu dihitung di sini lalu dirender sebagai pil
+  // di .conv-badges) — detail sekunder itu tetap terlihat begitu percakapan
+  // dibuka (header chat/peek preview), tidak perlu bersaing tempat di
+  // SETIAP baris daftar. STAGE_LABELS tidak lagi dipakai file ini.
 
   function selectConversation() {
     useConversationStore.getState().setActive(id);
@@ -203,7 +202,16 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
             {isGroup && <Users size={12} className="conv-name-group-icon" title="Percakapan grup" />}
             {name}
           </span>
-          <span className="conv-time">{smartTimestamp(c.lastMessageAt)}</span>
+          {/* D-119 (redesign minimalis, laporan owner: "lebih minimalis, enak
+              diliat, tapi tetep keep warnanya") — SLA dulu pil teks penuh
+              ("⚠ 178m") di baris badge terpisah, sekarang cuma ikon kecil di
+              sebelah waktu (warna SAMA — merah lewat ambang, oranye mendekati
+              — detail menit persis pindah ke tooltip, bukan hilang). */}
+          <span className="conv-time-group">
+            {slaBreach && <AlertTriangle size={11} className="conv-sla-icon breach" title={`Belum dibalas ${unansweredMinutes} menit — sudah bisa diambil alih`} />}
+            {slaWarn && <AlertTriangle size={11} className="conv-sla-icon warn" title={`Belum dibalas ${unansweredMinutes} menit`} />}
+            <span className="conv-time">{smartTimestamp(c.lastMessageAt)}</span>
+          </span>
         </div>
 
         <div className="conversation-bottom">
@@ -219,79 +227,46 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
               ? c.searchMatch.snippet
               : lastMsg?.content || (lastMsg?.mediaType ? `[${lastMsg.mediaType}]` : "Belum ada pesan")}
           </p>
-          {unreadCount > 0 && <span className="unread-count-badge">{unreadLabel}</span>}
+          {/* Satu slot kanan-bawah, SATU dari tiga: badge unread (paling
+              penting, selalu menang kalau ada), lalu centang "dibalas"/mata
+              "dibuka belum dibalas" sebagai IKON POLOS (dulu pil teks
+              "Dibuka"/"Dibalas" di baris badge terpisah) — warna SAMA
+              (hijau=dibalas, ungu=dibuka, cocok .conv-flag-replied/-opened
+              lama), cuma bentuknya ikon kecil, bukan pil. */}
+          {unreadCount > 0 ? (
+            <span className="unread-count-badge">{unreadLabel}</span>
+          ) : isReplied ? (
+            <CheckCheck size={14} className="conv-status-icon replied" title="Sudah dibalas" />
+          ) : isRead ? (
+            <Eye size={13} className="conv-status-icon opened" title="Sudah dibuka, belum dibalas" />
+          ) : null}
         </div>
 
-        <div className="conv-badges">
-          {/* "Buka" (status default/paling umum) DISEMBUNYIKAN untuk non-admin
-              (Wave 1, redesign Inbox — permintaan "jangan tampilkan chip Buka
-              yang tidak perlu": OPEN adalah status default hampir semua
-              baris, jadi menampilkannya di semua percakapan cuma bising,
-              tidak menyampaikan informasi baru). Pending/Selesai TETAP selalu
-              tampil (itu penyimpangan dari default, informatif). Admin TETAP
-              melihat chip OPEN juga — badge ini satu-satunya cara admin
-              transfer lead dari list (klik → TransferPickerPopover), jadi
-              TIDAK BOLEH hilang untuk role itu. */}
-          {(c.status !== "OPEN" || isAdmin) && (
-            <span
-              className={`badge ${STATUS_CLASS[c.status] || "badge-open"}${isAdmin ? " badge-clickable" : ""}`}
-              title={isAdmin ? "Klik untuk transfer lead ke sales lain" : undefined}
-              onClick={isAdmin ? (e) => { e.stopPropagation(); setTransferPicker({ x: e.clientX, y: e.clientY }); } : undefined}
-            >
-              {STATUS_LABEL[c.status] || c.status}
-            </span>
-          )}
-          {sessionLabel && <span className="session-badge">{sessionLabel}</span>}
-          {/* DUA badge berbeda arti — sebelumnya CUMA firstResponder yang
-              tampil, TANPA label, sehingga terbaca sebagai "pemegang lead".
-              BUG NYATA (23 Agustus 2026): baris HENDRO menampilkan "Novi"
-              (yang pertama membalas) padahal header chat menampilkan "Kiki"
-              (yang sekarang memegang) — dua-duanya benar, tapi tidak ada
-              cara membedakannya. Sekarang pemegang SEKARANG jadi badge utama
-              (itu yang dicari sales saat menyortir inbox), dan "pertama
-              balas" cuma tampil kalau memang ORANG YANG BERBEDA, dengan
-              awalan "1st:" supaya tidak pernah tertukar lagi. */}
-          {c.assignedTo && (
-            <span className="lead-badge other" title={`Sedang dipegang ${c.assignedTo.name}`}>
-              {c.assignedTo.name}
-            </span>
-          )}
-          {c.firstResponder && c.firstResponder.id !== c.assignedTo?.id && (
-            <span className="first-responder-badge" title={`Pertama kali membalas: ${c.firstResponder.name}`}>
-              1st: {c.firstResponder.name}
-            </span>
-          )}
-          {isRead && !isReplied && (
-            <span title="Sudah dibuka tapi belum dibalas" className="conv-flag-badge conv-flag-opened">
-              <Eye size={10} /> Dibuka
-            </span>
-          )}
-          {isReplied && (
-            <span title="Sudah dibalas" className="conv-flag-badge conv-flag-replied">
-              <CheckCheck size={10} /> Dibalas
-            </span>
-          )}
-          {/* Pipeline (Wave 1) — teks polos, bukan pil berwarna baru (lihat
-              .conv-pipeline-label di index.css). */}
-          {pipelineLabel && <span className="conv-pipeline-label">{pipelineLabel}</span>}
-          {/* SLA risk (Wave 1) — dari data yang sudah ada (isUnanswered/
-              unansweredMinutes), 2 tingkat: oranye "mendekati" (45-59 menit),
-              merah "lewat ambang" (>=60 menit, match canTakeOver backend).
-              Ditaruh PALING TERAKHIR di baris badge supaya jadi hal yang
-              paling menarik mata kalau memang ada — tapi tidak pernah tampil
-              berbarengan dengan "Dibalas" (isReplied sudah pasti false kalau
-              isUnanswered true, dua-duanya saling meniadakan). */}
-          {slaBreach && (
-            <span title={`Belum dibalas ${unansweredMinutes} menit — sudah bisa diambil alih`} className="conv-flag-badge conv-flag-overdue">
-              <AlertTriangle size={10} /> {unansweredMinutes}m
-            </span>
-          )}
-          {slaWarn && (
-            <span title={`Belum dibalas ${unansweredMinutes} menit`} className="conv-flag-badge conv-flag-sla-warn">
-              <AlertTriangle size={10} /> {unansweredMinutes}m
-            </span>
-          )}
-        </div>
+        {/* Baris meta SANGAT ringkas — cuma tampil kalau memang ada info
+            yang tidak default: siapa pemegang chat (teks polos, BUKAN pil
+            berwarna lagi — cocok warna .lead-badge.other lama, ungu) dan
+            titik status (cuma utk admin/status-menyimpang, ganti pil
+            "Buka"/"Pending"/"Selesai" yang dulu selalu makan tempat).
+            CS-1/CS-2 & "1st: X" (kredit historis siapa balas pertama)
+            SENGAJA dihapus dari baris ini — detail sekunder yang sudah bisa
+            dilihat di header chat/peek preview begitu dibuka, bukan info
+            yang perlu bersaing tempat di tiap baris daftar. */}
+        {(c.assignedTo || c.status !== "OPEN" || isAdmin) && (
+          <div className="conv-meta-row">
+            {(c.status !== "OPEN" || isAdmin) && (
+              <span
+                className={`conv-status-dot conv-status-${(c.status || "OPEN").toLowerCase()}${isAdmin ? " clickable" : ""}`}
+                title={isAdmin ? `Status: ${STATUS_LABEL[c.status] || c.status} — klik untuk transfer lead ke sales lain` : `Status: ${STATUS_LABEL[c.status] || c.status}`}
+                onClick={isAdmin ? (e) => { e.stopPropagation(); setTransferPicker({ x: e.clientX, y: e.clientY }); } : undefined}
+              />
+            )}
+            {c.assignedTo && (
+              <span className="conv-assigned-name" title={`Sedang dipegang ${c.assignedTo.name}`}>
+                {c.assignedTo.name}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {contextMenu && (
