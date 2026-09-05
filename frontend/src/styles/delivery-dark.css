@@ -400,6 +400,18 @@
 [data-theme="dark"] .glass-division .chart-card,
 [data-theme="dark"] .glass-division .workflow-card,
 [data-theme="dark"] .glass-division .product-editor,
+/* .wizard-sidebar/.automation-sidebar/.products-sidebar (D-110, 5 September
+   2026) — owner: panel daftar (Broadcast "mdsp"/"Merdeka dari Sakit
+   Pinggang", Otomasi daftar workflow, Galeri Produk daftar produk) tampil
+   ABU-ABU polos, "kurang nyambung sama style kita, kurang minimalist" —
+   ketiganya SUDAH theme-aware (background: var(--bg-surface) dari sweep
+   dark-mode index.css), tapi tetap FLAT (bukan kaca) karena belum ikut
+   wildcard ini. `.wizard-step-circle` SENGAJA TIDAK diikutkan di sini —
+   itu indikator status progres (netral=belum sampai, biru=aktif/selesai
+   lewat .active/.done), abu-abunya BERMAKNA, bukan panel yang perlu kaca. */
+[data-theme="dark"] .glass-division .wizard-sidebar,
+[data-theme="dark"] .glass-division .automation-sidebar,
+[data-theme="dark"] .glass-division .products-sidebar,
 /* .dh-table (D-078, 5 September 2026) — TableWrap.jsx pakai `rounded-2xl`,
    BUKAN `rounded-card`, jadi tidak pernah cocok seleksi wildcard di atas —
    halaman "Semua Order" tetap tampil tabel polos walau dikelilingi panel
@@ -434,6 +446,9 @@
 [data-theme="dark"] .glass-division .chart-card::before,
 [data-theme="dark"] .glass-division .workflow-card::before,
 [data-theme="dark"] .glass-division .product-editor::before,
+[data-theme="dark"] .glass-division .wizard-sidebar::before,
+[data-theme="dark"] .glass-division .automation-sidebar::before,
+[data-theme="dark"] .glass-division .products-sidebar::before,
 [data-theme="dark"] .glass-division .dh-table::before,
 [data-theme="dark"] .glass-division .rounded-xl.bg-surface::before {
   content: "";
@@ -742,6 +757,23 @@
   background-color: rgba(14, 14, 20, 0.92) !important;
   backdrop-filter: blur(24px) saturate(140%);
   border-left: 1px solid var(--dh-hairline-strong);
+}
+
+/* .modal-overlay/.modal-box (D-110, 5 September 2026) — komentar aslinya di
+   index.css bilang class ini "dipakai LINTAS SELURUH APP" (puluhan modal
+   berbeda — Tambah/Reset/Peran/Hapus Pengguna, dst), jadi fix ini otomatis
+   memperbaiki SEMUA modal itu di 11 halaman pilot, bukan cuma "Tambah Model
+   AI" Otomasi yang jadi pemicu ditemukannya. Beda struktur dari .drawer-
+   panel (side drawer, border-left) — .modal-box PUSAT layar + rounded
+   penuh (lihat index.css: flex align-center/justify-center overlay + box
+   `border-radius: var(--radius-card)`), jadi border melingkar semua sisi. */
+[data-theme="dark"] .glass-division .modal-overlay {
+  background-color: rgba(6, 8, 14, 0.72) !important;
+}
+[data-theme="dark"] .glass-division .modal-box {
+  background-color: rgba(14, 14, 20, 0.92) !important;
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--dh-hairline-strong);
 }
 
 /* ── 8. AKSEN GRADIEN SELEKTIF (pola referensi #3) ────────────────────────

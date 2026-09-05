@@ -249,6 +249,12 @@ html:not([data-theme="dark"]) .glass-division .settings-card,
 html:not([data-theme="dark"]) .glass-division .chart-card,
 html:not([data-theme="dark"]) .glass-division .workflow-card,
 html:not([data-theme="dark"]) .glass-division .product-editor,
+/* .wizard-sidebar/.automation-sidebar/.products-sidebar (D-110) — pasangan
+   mode terang, baca komentar lengkap (termasuk kenapa .wizard-step-circle
+   SENGAJA tidak diikutkan) di delivery-dark.css. */
+html:not([data-theme="dark"]) .glass-division .wizard-sidebar,
+html:not([data-theme="dark"]) .glass-division .automation-sidebar,
+html:not([data-theme="dark"]) .glass-division .products-sidebar,
 /* .dh-table (D-078, 5 September 2026) — pasangan mode terang dari blok yang
    sama di delivery-dark.css, baca komentar di sana untuk konteks lengkap. */
 html:not([data-theme="dark"]) .glass-division .dh-table,
@@ -277,6 +283,9 @@ html:not([data-theme="dark"]) .glass-division [class*="rounded-card"]:not(.kpi-g
 html:not([data-theme="dark"]) .glass-division .chart-card::before,
 html:not([data-theme="dark"]) .glass-division .workflow-card::before,
 html:not([data-theme="dark"]) .glass-division .product-editor::before,
+html:not([data-theme="dark"]) .glass-division .wizard-sidebar::before,
+html:not([data-theme="dark"]) .glass-division .automation-sidebar::before,
+html:not([data-theme="dark"]) .glass-division .products-sidebar::before,
 html:not([data-theme="dark"]) .glass-division .dh-table::before,
 html:not([data-theme="dark"]) .glass-division .rounded-xl.bg-surface::before {
   content: "";
@@ -499,6 +508,18 @@ html:not([data-theme="dark"]) .glass-division .drawer-panel {
   background-color: rgba(255, 255, 255, 0.90) !important;
   backdrop-filter: blur(24px) saturate(150%);
   border-left: 1px solid var(--dh-hairline-strong);
+}
+
+/* .modal-overlay/.modal-box (D-110) — pasangan mode terang, baca komentar
+   lengkap (kenapa ini benar cuma satu perbaikan tapi memperbaiki puluhan
+   modal sekaligus) di delivery-dark.css. */
+html:not([data-theme="dark"]) .glass-division .modal-overlay {
+  background-color: rgba(20, 40, 80, 0.28) !important;
+}
+html:not([data-theme="dark"]) .glass-division .modal-box {
+  background-color: rgba(255, 255, 255, 0.90) !important;
+  backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid var(--dh-hairline-strong);
 }
 
 /* ── 8. AKSEN GRADIEN SELEKTIF (opt-in, dipasang manual di komponen) ────── */
