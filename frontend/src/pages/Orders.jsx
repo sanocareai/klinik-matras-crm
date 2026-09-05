@@ -998,12 +998,21 @@ export default function Orders() {
               { l: "Mandek", v: totalMandek.toLocaleString("id-ID"), tone: totalMandek > 0 ? "text-orange" : undefined,
                 tip: `Order yang tertahan di status yang sama ≥${MANDEK_HARI} hari (DELIVERED/CANCELLED dikecualikan — itu status akhir, wajar lama).` },
             ].map((k) => (
-              <div key={k.l} className="rounded-2xl bg-surface p-3.5 shadow-card">
+              // "order-kpi-glass" (D-108) — owner kirim referensi Apple
+              // liquid-glass (pil 3D glossy biru, ikon squircle dengan
+              // sheen terang di atas) untuk strip KPI ini ("bisa buat lebih
+              // menarik seperti referensi"). Marker class murni CSS, no-op
+              // di luar .glass-division — lihat delivery-dark.css/-light.css
+              // untuk gradient+sheen+glow-nya. Satu hue biru saja (gradasi
+              // terang->gelap dalam kartu, PERSIS gaya referensi: semua pil
+              // itu juga cuma satu warna, bedanya cuma lightness), taat
+              // "aturan satu accent" — bukan warna baru per kartu.
+              <div key={k.l} className="order-kpi-glass rounded-2xl bg-surface p-3.5 shadow-card">
                 <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink3">
                   {k.l}
                   <InfoTooltip text={k.tip} />
                 </p>
-                <p className={cn("mt-1 text-[17px] font-bold tabular-nums", k.tone || "text-ink")}>{k.v}</p>
+                <p className={cn("dh-figure mt-1 text-[17px] font-bold tabular-nums", k.tone || "text-ink")}>{k.v}</p>
               </div>
             ))}
           </div>

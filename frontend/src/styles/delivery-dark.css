@@ -607,6 +607,65 @@
     0 0 20px 2px color-mix(in oklab, var(--kb-accent, var(--dh-accent)) 45%, transparent);
 }
 
+/* ── 4f. STRIP KPI ORDER — "liquid glass" ala referensi Apple (D-108) ─────
+   Owner kirim 2 gambar referensi (pil 3D biru glossy bertumpuk, ikon
+   squircle "52% Charged" dengan sheen terang di atas + glow) dan minta
+   strip 10 kartu mini di halaman Order ("Total order/Total pelanggan/dst")
+   dibuat "lebih menarik seperti referensi". Kartu-kartu itu sebelumnya
+   FLAT SATU RUPA (rounded-2xl bg-surface polos, nol aksen) — paling polos
+   dari SEMUA kartu yang sudah disentuh pilot kaca ini.
+
+   TIGA elemen dari referensi yang ditiru, SATU hue biru saja (taat
+   "aturan satu accent" — perbedaan di referensi juga cuma LIGHTNESS per
+   pil, bukan hue baru):
+   1. Gradasi dalam kartu — dasar gelap ke atas SEDIKIT lebih terang biru,
+      meniru gradien pil (bukan flat satu warna).
+   2. SHEEN (`::before`) — pita highlight terang di sepertiga atas kartu,
+      persis pantulan cahaya di permukaan pil/ikon glossy referensi.
+   3. Ambient glow biru + border tipis — bukan drop-shadow ke bawah
+      (pelajaran dari bug D-101/D-102: shadow ke bawah gampang ketutup
+      elemen tetangga kalau kartu-kartu ini berderet rapat) — 0 offset,
+      merata ke semua sisi.
+
+   TANPA backdrop-filter — cukup 10 kartu per layar (bukan ratusan seperti
+   Kanban), jadi SEBENARNYA aman biaya-nya, tapi tetap tidak perlu: efek
+   glossy di sini datang dari gradient+sheen, background aslinya sudah
+   pekat (bukan perlu tembus pandang ke konten di baliknya). */
+[data-theme="dark"] .glass-division .order-kpi-glass {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--dh-accent) 16%, var(--dh-elevated)) 0%,
+    var(--dh-elevated) 70%
+  );
+  border: 1px solid color-mix(in oklab, var(--dh-accent-glow) 40%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px color-mix(in oklab, var(--dh-accent) 14%, transparent),
+    0 0 20px 1px color-mix(in oklab, var(--dh-accent) 22%, transparent);
+  transition: box-shadow 150ms ease, border-color 150ms ease;
+}
+/* Sheen — pita cahaya di sepertiga atas, meniru pantulan permukaan glossy
+   referensi. `border-radius: inherit` supaya sheen ikut melengkung sama
+   dengan sudut kartu (rounded-2xl), bukan kotak lurus menabrak sudut. */
+[data-theme="dark"] .glass-division .order-kpi-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 42%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent);
+  pointer-events: none;
+}
+[data-theme="dark"] .glass-division .order-kpi-glass:hover {
+  border-color: color-mix(in oklab, var(--dh-accent-glow) 60%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.09) inset,
+    0 0 0 1px color-mix(in oklab, var(--dh-accent) 22%, transparent),
+    0 0 26px 2px color-mix(in oklab, var(--dh-accent) 32%, transparent);
+}
+
 /* ── 5. TABEL: baris kaca, header lengket semi-transparan ─────────────────
    TIDAK memakai backdrop-filter di level baris (bisa ratusan baris — mahal).
    Cukup latar semi-transparan + hairline. */
