@@ -63,8 +63,12 @@ html:not([data-theme="dark"]) .glass-division {
   --dh-surface: rgba(255, 255, 255, 0.52);
   --dh-surface-solid: #FFFFFF;
   --dh-elevated: rgba(255, 255, 255, 0.72);
-  --dh-hairline: rgba(20, 87, 217, 0.10);
-  --dh-hairline-strong: rgba(20, 87, 217, 0.18);
+  /* D-123 — lihat catatan panjang di delivery-dark.css. Dinolkan di SATU
+     titik ini, bukan tiap `border:` satu-satu, supaya konsisten di semua
+     panel/input/tombol kaca. Border warna solid/accent (selected, warning,
+     dll) tidak memakai token ini — tetap utuh. */
+  --dh-hairline: transparent;
+  --dh-hairline-strong: transparent;
 
   /* SAMA PERSIS dengan delivery-dark.css — satu hue biru untuk elemen
      FUNGSIONAL, dua mode. */

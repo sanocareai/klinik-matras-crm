@@ -78,8 +78,17 @@
   --dh-surface: rgba(22, 28, 48, 0.58);
   --dh-surface-solid: #171B2E;
   --dh-elevated: rgba(30, 38, 64, 0.64);
-  --dh-hairline: rgba(255, 255, 255, 0.09);
-  --dh-hairline-strong: rgba(255, 255, 255, 0.16);
+  /* D-123 (6 September 2026, laporan owner: "hilangkan semua stroke
+     pembatas section" — tiap field/panel kaca punya garis tipis opacity
+     rendah, dianggap kurang minimalis dibanding referensi). SEMUA border
+     di file ini (dan delivery-light.css) dibangun dari 2 token ini —
+     dinolkan di SATU titik ini, bukan menghapus tiap `border:` satu-satu,
+     supaya efeknya konsisten di seluruh panel/input/tombol kaca dan tidak
+     ada yang terlewat. Warna solid/accent (border biru terseleksi, border
+     oranye peringatan, dll) TIDAK memakai token ini — tetap utuh, karena
+     itu penanda status, bukan "stroke pembatas" netral yang dikeluhkan. */
+  --dh-hairline: transparent;
+  --dh-hairline-strong: transparent;
 
   /* Aksen: SATU hue biru saja (4 September 2026, koreksi D-046 — laporan
      owner: "gradient ungu ganti jadi blue color pallete"). Warna kedua
