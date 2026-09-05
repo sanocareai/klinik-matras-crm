@@ -266,7 +266,8 @@
   border-color: var(--dh-hairline-strong);
 }
 
-/* ── 1d. TOPBAR: elemen yang TIDAK ADA di mockup (D-051, 4 September 2026) ─
+/* ── 1d. TOPBAR: elemen yang TIDAK ADA di mockup (D-051, 4 September 2026,
+   RE-SCOPED D-105, 5 September 2026 — BUG NYATA) ─────────────────────────
    Laporan owner: bandingkan langsung ke artifact — hamburger, tanggal, dan
    panah dropdown menu akun tidak pernah muncul di sana; badge notifikasi di
    sana juga cuma titik polos, bukan angka. Keempatnya disembunyikan lewat
@@ -274,11 +275,26 @@
    topbar-hamburger-btn [sudah ada], topbar-account-chevron,
    topbar-notif-badge) — Topbar.jsx tetap SATU komponen dipakai semua
    divisi, jadi tampilannya di Sales CRM/Produksi/Gudang/dll TIDAK berubah
-   sama sekali; ini murni override tampilan, bukan pengubahan komponen. */
+   sama sekali; ini murni override tampilan, bukan pengubahan komponen.
+
+   ⚠️ BUG NYATA D-105: keempat rule ini SEMPAT di-scope ke `.glass-division`
+   (kelas umum, dipakai bersama armada MAUPUN pilot per-halaman Sales CRM
+   sejak D-090/D-098/D-099/D-100) — padahal isinya adalah keputusan
+   ARMADA-SPESIFIK "cocokkan persis ke mockup artifact", BUKAN bagian dari
+   resep kaca umum. Akibatnya begitu Dashboard/Pelanggan/Pipeline/Order jadi
+   `.glass-division`, hamburger IKUT TERSEMBUNYI di sana juga — laporan
+   owner PERSIS seperti yang diperingatkan komentar asli di bawah ini
+   ("kalau nanti ada laporan sidebar tidak bisa dibuka di HP, INI
+   PENYEBABNYA"), cuma kejadian di Sales CRM (dipakai luas di HP), bukan
+   Delivery (yang memang selalu desktop). Dikembalikan ke `[data-division=
+   "armada"]` — atribut yang TETAP diset independen dari `.glass-division`
+   (lihat Layout.jsx), jadi keempat override ini SEKARANG BENAR-BENAR
+   kembali eksklusif Armada seperti niat asalnya, TIDAK ikut terbawa
+   perluasan kaca ke halaman Sales CRM lain. */
 
 /* Tanggal — subjudul dashboard Delivery sudah menyebut hitungan job hari
    ini (lihat D-050), jadi info temporal tidak hilang, cuma pindah tempat. */
-[data-theme="dark"] .glass-division .app-content > header .topbar-date {
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-date {
   display: none;
 }
 
@@ -291,14 +307,16 @@
    affordance pengganti (mis. swipe-edge). Diterapkan sesuai keputusan
    eksplisit owner (mengikuti tampilan artifact apa adanya) — kalau nanti ada
    laporan "sidebar Delivery tidak bisa dibuka di HP", INI PENYEBABNYA.
-   Dispatcher Delivery Hub sejauh ini memang selalu di desktop, bukan HP. */
-[data-theme="dark"] .glass-division .app-content > header .topbar-hamburger-btn {
+   Dispatcher Delivery Hub sejauh ini memang selalu di desktop, bukan HP.
+   ⚠️ Selector ini SENGAJA `[data-division="armada"]`, BUKAN `.glass-
+   division` — lihat komentar D-105 di atas kenapa itu penting. */
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-hamburger-btn {
   display: none !important;
 }
 
 /* Panah dropdown menu akun — menu tetap terbuka dengan klik di area yang
    sama, cuma indikator panahnya yang dihapus visualnya. */
-[data-theme="dark"] .glass-division .app-content > header .topbar-account-chevron {
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-account-chevron {
   display: none;
 }
 
@@ -310,7 +328,7 @@
    Ring putih dihapus (dirancang untuk permukaan terang, di ground navy
    malah jadi cincin putih mencolok) — diganti garis tipis warna ground
    sendiri, supaya titiknya terlihat menempel di badan lonceng kaca. */
-[data-theme="dark"] .glass-division .app-content > header .topbar-notif-badge {
+[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-notif-badge {
   height: 8px;
   min-width: 8px;
   width: 8px;
