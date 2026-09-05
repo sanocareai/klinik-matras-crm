@@ -103,6 +103,14 @@ enum OrderStatus {
   PICKUP // sedang diambil dari lokasi customer
   PROCESSING // sedang dikerjakan/produksi
   READY // siap kirim
+  // Ditambah 5 September 2026, permintaan owner: "tambahkan status order
+  // 'pengiriman setelah siap kirim' sehingga tau mana orderan yang sedang
+  // proses pengiriman" — sebelumnya order LANGSUNG loncat READY->DELIVERED,
+  // tidak ada penanda "sedang di jalan diantar" (beda dari PICKUP yang
+  // menandai "sedang di jalan MENJEMPUT"). Berlaku untuk LAYANAN & BARU
+  // (SEWA tidak terpengaruh — sudah punya SEWA_DIKIRIM sendiri di bawah,
+  // konsepnya sama tapi jalur terpisah karena BUKAN alur produksi).
+  SHIPPING // sedang dikirim ke customer
   DELIVERED // sudah terkirim/selesai
   CANCELLED
   // Ditambah 4 Sep 2026 — status KHUSUS kategori SEWA, lepas total dari

@@ -16,7 +16,9 @@
 
 import { prisma } from "../db.js";
 
-const RANK = { PICKUP: 0, PROCESSING: 1, READY: 2, DELIVERED: 3 };
+// SHIPPING ditambahkan 5 September 2026 (permintaan owner: penanda "sedang
+// di jalan diantar", sebelumnya loncat langsung READY->DELIVERED).
+const RANK = { PICKUP: 0, PROCESSING: 1, READY: 2, SHIPPING: 3, DELIVERED: 4 };
 
 // UnitStatus -> bucket OrderStatus. CANCELLED unit dikecualikan dari
 // agregasi (lihat computeOrderStatus), jadi tidak perlu baris di sini.
@@ -27,7 +29,13 @@ const UNIT_TO_ORDER_BUCKET = {
   IN_PRODUCTION: "PROCESSING",
   READY_FOR_DELIVERY: "READY",
   READY_ON_CUSTOMER_HOLD: "READY",
-  IN_TRANSIT_OUT: "READY",
+  // IN_TRANSIT_OUT (5 Sep 2026, KOREKSI) — sebelumnya dipetakan ke bucket
+  // READY, padahal ini PERSIS unit fisik sedang di jalan diantar driver
+  // (job DELIVERY berstatus EN_ROUTE/ARRIVED yang mengubah Unit ke status
+  // ini). Sekarang bucket sendiri (SHIPPING), supaya order yang benar-benar
+  // sedang dikirim terlihat beda dari yang baru "siap kirim tapi belum ada
+  // driver jalan".
+  IN_TRANSIT_OUT: "SHIPPING",
   DELIVERED: "DELIVERED",
 };
 

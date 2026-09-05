@@ -53,10 +53,13 @@ test("order tanpa unit sama sekali -> null", () => {
   assert.equal(computeOrderStatus([]), null);
 });
 
-test("IN_TRANSIT_OUT (dalam perjalanan kirim) masih dianggap READY, bukan DELIVERED", () => {
-  // Driver baru mulai perjalanan, belum sampai — order belum boleh bilang
-  // selesai sebelum job delivery benar-benar completed.
-  assert.equal(computeOrderStatus([adopted("IN_TRANSIT_OUT")]), "READY");
+test("IN_TRANSIT_OUT (dalam perjalanan kirim) -> SHIPPING, bukan READY ataupun DELIVERED", () => {
+  // KOREKSI 5 Sep 2026 — sebelumnya dianggap READY (bucket digabung).
+  // Sekarang bucket sendiri: order sedang di jalan diantar HARUS terlihat
+  // beda dari yang baru "siap kirim tapi belum ada driver jalan", dan
+  // TETAP belum boleh bilang selesai sebelum job delivery benar-benar
+  // completed (makanya bukan DELIVERED juga).
+  assert.equal(computeOrderStatus([adopted("IN_TRANSIT_OUT")]), "SHIPPING");
 });
 
 test("READY_ON_CUSTOMER_HOLD tetap READY, bukan DELIVERED ataupun PROCESSING", () => {

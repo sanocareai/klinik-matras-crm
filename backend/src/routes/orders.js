@@ -199,14 +199,17 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
   //      kasur LAMA customer sudah/akan diambil dulu sebelum dikerjakan —
   //      BARU tidak kena, unit-nya lahir langsung RECEIVED tanpa pickup
   //      sama sekali, lihat unitProvisioning.js).
-  //   2. Status apa pun → Terkirim WAJIB tanggal kirim pasti (SEWA tidak
-  //      relevan, statusnya sendiri SEWA_DIKIRIM/SEWA_DIAMBIL, tidak
-  //      pernah DELIVERED — lihat orderStatusesForCategory di frontend).
+  //   2. Status Pengiriman ATAU Terkirim → WAJIB tanggal kirim pasti (SEWA
+  //      tidak relevan, statusnya sendiri SEWA_DIKIRIM/SEWA_DIAMBIL, tidak
+  //      pernah SHIPPING/DELIVERED — lihat orderStatusesForCategory di
+  //      frontend). SHIPPING (5 Sep 2026) ikut disyaratkan di sini —
+  //      logikanya sama: order tidak masuk akal "sedang dikirim" kalau
+  //      tanggal kirimnya sendiri belum pasti.
   // Tanggal boleh SUDAH ada di order (diisi sebelumnya) ATAU dikirim
   // BERSAMAAN di request PATCH yang sama (form OrderSection.jsx yang
   // sering kirim semua field sekaligus) — dua-duanya dihitung sebagai
   // "sudah terisi".
-  if (status === "PROCESSING" || status === "DELIVERED") {
+  if (status === "PROCESSING" || status === "SHIPPING" || status === "DELIVERED") {
     const current = await prisma.order.findUnique({
       where: { id: req.params.id },
       select: { category: true, pickupConfirmedDate: true, deliveryConfirmedDate: true },
@@ -219,9 +222,9 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           error: "Order Layanan/Service tidak bisa diubah ke status Diproses sebelum Tanggal Pick Up Pasti diisi.",
         });
       }
-      if (status === "DELIVERED" && !finalDelivery) {
+      if ((status === "SHIPPING" || status === "DELIVERED") && !finalDelivery) {
         return res.status(400).json({
-          error: "Order tidak bisa diubah ke status Terkirim sebelum Tanggal Kirim Pasti diisi.",
+          error: `Order tidak bisa diubah ke status ${status === "SHIPPING" ? "Pengiriman" : "Terkirim"} sebelum Tanggal Kirim Pasti diisi.`,
         });
       }
     }

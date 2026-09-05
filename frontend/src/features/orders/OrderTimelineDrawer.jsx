@@ -812,7 +812,7 @@ function DocumentationTab({ orderId, conversationId }) {
 // itu, bukan sekadar bilang "tidak ada data" (yang terbaca seperti fitur rusak).
 const TONE = {
   PENDING: "bg-orange", PICKUP: "bg-accent", PROCESSING: "bg-accent",
-  READY: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
+  READY: "bg-accent", SHIPPING: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
 export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus = false }) {

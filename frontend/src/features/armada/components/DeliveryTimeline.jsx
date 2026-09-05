@@ -24,7 +24,9 @@ const STEPS = ORDER_STATUSES.filter((s) => s !== "CANCELLED");
 // TIDAK PERNAH bernilai PENDING/PICKUP untuk kategori ini — timeline visual
 // mengikuti kenyataan itu, bukan cuma memotong tampilan di atas data yang
 // sebenarnya masih 5 tahap.
-const BARU_STEPS = ["PROCESSING", "READY", "DELIVERED"];
+// SHIPPING (5 Sep 2026) disisipkan setelah READY — order BARU tetap lewat
+// tahap "sedang di jalan diantar" seperti LAYANAN, cuma tidak lewat PICKUP.
+const BARU_STEPS = ["PROCESSING", "READY", "SHIPPING", "DELIVERED"];
 
 // Job aktif (kalau ada) ditumpangkan sebagai baris kecil di bawah timeline —
 // cuma untuk status yang benar-benar berarti "sedang terjadi", bukan

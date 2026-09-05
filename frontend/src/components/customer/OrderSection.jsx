@@ -125,6 +125,7 @@ const ORDER_STATUS_BADGE = {
   PICKUP:     { bg: "#dbeafe", color: "#1e40af" },
   PROCESSING: { bg: "#ede9fe", color: "#5b21b6" },
   READY:      { bg: "#ccfbf1", color: "#065f46" },
+  SHIPPING:   { bg: "#dbeafe", color: "#1e40af" }, // sama biru dengan PICKUP — "sedang di jalan" (arah keluar)
   DELIVERED:  { bg: "#dcfce7", color: "#166534" },
   CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
   SEWA_DIKIRIM: { bg: "#dbeafe", color: "#1e40af" },

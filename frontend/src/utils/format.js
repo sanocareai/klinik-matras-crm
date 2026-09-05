@@ -136,6 +136,15 @@ export const ORDER_STATUS_LABELS = {
   PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
+  // Ditambah 5 September 2026, permintaan owner: "tambahkan status order
+  // 'pengiriman setelah siap kirim' sehingga tau mana orderan yang sedang
+  // proses pengiriman" — sebelumnya loncat langsung Siap Kirim -> Terkirim,
+  // tidak ada penanda "sedang di jalan diantar" (analog Pengambilan, tapi
+  // arah sebaliknya). Sudah tersambung ke sinkronisasi otomatis juga: unit
+  // dengan status IN_TRANSIT_OUT (driver mulai jalan) sekarang membawa
+  // Order.status ke sini, bukan lagi dianggap sama dengan Siap Kirim (lihat
+  // orderStatusSync.js).
+  SHIPPING: "Pengiriman",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
   // Status KHUSUS kategori SEWA (4 Sep 2026) — lihat orderStatusesForCategory
@@ -199,7 +208,7 @@ export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
 
 export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ value: v, label: l }));
 
-export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"];
 
 // Order kategori BARU (D-051, 4 September 2026 — laporan owner: "layanan
 // baru itu bikin produk/kasur baru, prosesnya beda dari service/upgrade,
@@ -221,7 +230,10 @@ export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELI
 // diambil kembali (Pengambilan). Dicek DULUAN, sebelum cabang BARU.
 export function orderStatusesForCategory(category) {
   if (category === "SEWA") return ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
-  return category === "BARU" ? ["PROCESSING", "READY", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+  // SHIPPING (5 Sep 2026) ikut ditambahkan ke BARU juga — kasur baru SAMA
+  // PERSIS lewat tahap "sedang di jalan diantar" seperti order LAYANAN,
+  // cuma tidak lewat PICKUP (tidak ada barang lama yang dijemput).
+  return category === "BARU" ? ["PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
 }
 
 // ── WARNA STATUS DOMAIN — SATU SUMBER KEBENARAN (Sano Design System v1) ──────
@@ -269,6 +281,7 @@ export const ORDER_STATUS_VARIANT = {
   PICKUP:    "violet",
   PROCESSING:"info",
   READY:     "info",
+  SHIPPING:  "info", // sama hue dengan READY/PROCESSING — "sedang berjalan" (4-hue rule)
   DELIVERED: "success",
   CANCELLED: "neutral",
   SEWA_DIKIRIM: "info",
@@ -299,11 +312,16 @@ export const ORDER_STATUS_VARIANT = {
 // bukan PICKUP) — jadi bucket "Pengambilan" ini SECARA STRUKTURAL cuma
 // pernah terisi order kategori LAYANAN, tanpa perlu guard kategori manual.
 // PENDING TETAP digabung ke "Diproses" (bukan itu yang dilaporkan hilang).
+// SHIPPING (5 Sep 2026) ikut jadi bucket sendiri sejak lahir — statusnya
+// baru saja ditambahkan langsung sebagai tahap terpisah (bukan hasil
+// pemisahan ulang seperti PICKUP di atas), jadi tidak ada "penggabungan
+// lama" yang perlu dikoreksi.
 export const ORDER_STATUS_BUCKET = {
   PENDING: "PROCESSING",
   PICKUP: "PICKUP",
   PROCESSING: "PROCESSING",
   READY: "READY",
+  SHIPPING: "SHIPPING",
   DELIVERED: "DELIVERED",
   CANCELLED: "CANCELLED",
 };
@@ -311,6 +329,7 @@ export const ORDER_STATUS_BUCKET_LABELS = {
   PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
+  SHIPPING: "Pengiriman",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
 };

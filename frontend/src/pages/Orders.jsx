@@ -54,7 +54,9 @@ import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 //
 // Alur kerja produksi (BUKAN alfabet) — urutan ini yang membuat papan terbaca
 // sebagai antrean, bukan daftar acak.
-const ALUR = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED"];
+// SHIPPING (5 Sep 2026) disisipkan setelah READY — lihat catatan lengkap di
+// ORDER_STATUS_LABELS (utils/format.js).
+const ALUR = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED"];
 const SEMUA_STATUS = [...ALUR, "CANCELLED"];
 
 const STATUS_TONE = {
@@ -62,6 +64,7 @@ const STATUS_TONE = {
   PICKUP:     { chip: "bg-accentbg text-accent", dot: "bg-accent" },
   PROCESSING: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
   READY:      { chip: "bg-accentbg text-accent", dot: "bg-accent" },
+  SHIPPING:   { chip: "bg-accentbg text-accent", dot: "bg-accent" },
   DELIVERED:  { chip: "bg-greenbg text-green",   dot: "bg-green" },
   CANCELLED:  { chip: "bg-redbg text-red",       dot: "bg-red" },
   SEWA_DIKIRIM: { chip: "bg-accentbg text-accent", dot: "bg-accent" },
@@ -78,7 +81,9 @@ const STATUS_TONE = {
 // otomatis kosong untuk order BARU (tidak pernah berstatus PICKUP) dan tidak
 // pernah terisi order SEWA (statusnya sendiri, bukan enum ini) — jadi
 // "Pengambilan" di sini SECARA STRUKTURAL cuma pernah berisi order LAYANAN.
-const KANBAN_BUCKETS = ["PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+// SHIPPING (5 Sep 2026) disisipkan setelah READY — lihat catatan lengkap di
+// ORDER_STATUS_LABELS (utils/format.js).
+const KANBAN_BUCKETS = ["PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"];
 const SEWA_KANBAN_STATUSES = ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
 // Kanban CAMPURAN (kategori tidak difilter ke SEWA saja) sengaja
 // menyederhanakan order SEWA yang ikut tampil ke bucket "Terkirim" —
