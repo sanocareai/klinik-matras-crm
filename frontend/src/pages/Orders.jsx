@@ -1109,7 +1109,13 @@ export default function Orders() {
             })}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl bg-surface shadow-card">
+          /* "dh-table" (D-100) — sama pola dengan CustomersTable.jsx (D-098)/
+             Pipeline.jsx (D-099): wrapper ini rounded-2xl (bukan rounded-
+             card), TableWrap.jsx sendiri malah TIDAK dipakai di sini (tabel
+             ditulis manual, bukan lewat <Table>/<TBody> component) — tetap
+             butuh class ini supaya cocok seleksi wildcard kaca. No-op di
+             luar .glass-division. */
+          <div className="overflow-x-auto rounded-2xl bg-surface shadow-card dh-table">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>

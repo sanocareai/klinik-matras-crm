@@ -473,7 +473,18 @@ export default function Layout({ user, onLogout, children }) {
   // Pelanggan/Semua Order. Toolbar (search/filter/tombol) semua pakai token
   // tema (bg-surface/bg-inset) atau Menu.jsx bersama (BadgeDropdown/
   // FilterDropdown) — NOL kelas warna hardcode.
-  const GLASS_PILOT_PATHS = ["/dashboard", "/customers", "/pipeline"];
+  // D-100 — "/orders" ditambahkan. Sama pola KanbanCard: OrderCard.jsx (kartu
+  // per order di mode Papan) SENGAJA `rounded-xl bg-surface` bukan `rounded-
+  // card` (aman dari blur massal). Mode Tabel di sini TIDAK pakai TableWrap
+  // component sama sekali (tabel ditulis manual) — dh-table ditambahkan
+  // langsung ke wrapper div-nya. OrderTimelineDrawer.jsx (drawer detail,
+  // dipakai bersama Armada sejak D-089) pakai role="dialog" — SUDAH lama
+  // terbukti aman di bawah .glass-division (itu Armada sendiri), jadi tidak
+  // perlu audit ulang di sini. Filter bar SATU-SATUNYA di antara 3 halaman
+  // sebelumnya yang pakai komponen <Card> langsung (bukan div bg-surface
+  // manual) — otomatis dapat glass penuh (blur+hairline) tanpa perlu class
+  // tambahan, itu memang perilaku wildcard yang diinginkan.
+  const GLASS_PILOT_PATHS = ["/dashboard", "/customers", "/pipeline", "/orders"];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   const glassOn = divisionKey === "armada" || pageGlassPilot;
 
