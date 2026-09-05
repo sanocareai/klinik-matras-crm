@@ -1074,7 +1074,13 @@ export default function Orders() {
               const labelMap = fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS;
               const nilaiKolom = kolom.reduce((s, o) => s + (o.value || 0), 0);
               return (
-                <div key={status} className="flex w-[272px] shrink-0 flex-col rounded-2xl bg-inset/80 p-2.5">
+                // min-w/max-w + flex-1 (D-103) — sama fix dengan Pipeline.jsx:
+                // lebar tetap (272px shrink-0) tidak ikut melebar saat window
+                // diperbesar, jadi board numpuk di kiri dengan area kosong di
+                // kanan di layar lebar. Sekarang sama rata mengisi ruang
+                // sampai 360px/kolom, tetap clamp ke 272px minimum (scroll
+                // horizontal existing tetap jalan di layar sempit/kolom banyak).
+                <div key={status} className="flex min-w-[272px] max-w-[360px] flex-1 flex-col rounded-2xl bg-inset/80 p-2.5">
                   <div className="flex items-center gap-2 px-0.5">
                     <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATUS_TONE[status]?.dot || "bg-ink3")} />
                     <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink2">

@@ -468,7 +468,20 @@ export default function Pipeline() {
                 seperti "stage berhasil hilang". Sekarang satu baris flex dengan
                 scroll HORIZONTAL — semua stage selalu terjangkau, dan tiap
                 kolom punya scroll VERTIKAL sendiri (max-h) supaya panjang satu
-                kolom tidak lagi menentukan panjang halaman. */
+                kolom tidak lagi menentukan panjang halaman.
+
+                REVISI (D-103, 5 September 2026) — owner: window di-maximize/
+                diperbesar, kolom TIDAK ikut melebar (dulu `w-[264px] shrink-0`
+                — lebar TETAP berapa pun sisa ruang), jadi di layar lebar
+                board cuma numpuk di kiri dengan area gelap kosong di kanan
+                ("tampilan slide ke kanan sedikit"). Diganti `flex-1
+                min-w-[264px] max-w-[360px]`: kolom SAMA RATA melebar mengisi
+                sisa ruang di layar lebar (sampai batas 360px per kolom biar
+                tidak jadi absurd lebar di monitor ultra-wide), tapi tetap
+                punya lantai 264px — di layar sempit/stage bertambah banyak,
+                clamp ke 264px lalu overflow-x-auto di atas tetap jalan sama
+                seperti sebelumnya (scroll horizontal, bukan wrap ke baris
+                kedua — itu bug LAMA yang perbaikan ini tidak boleh kembali). */
             <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
               {STAGES.map((stage) => {
                 const cards = getCards(stage);
@@ -483,7 +496,7 @@ export default function Pipeline() {
                     onDragLeave={() => setDragOver(null)}
                     onDrop={(e) => onDrop(e, stage)}
                     className={cn(
-                      "flex w-[264px] shrink-0 flex-col rounded-2xl p-2.5 transition-colors duration-150",
+                      "flex min-w-[264px] max-w-[360px] flex-1 flex-col rounded-2xl p-2.5 transition-colors duration-150",
                       dragOver === stage ? "bg-accentbg/70" : "border-transparent bg-inset/80"
                     )}
                   >
