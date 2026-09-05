@@ -1158,9 +1158,9 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {/* Keluhan/Catatan */}
       {editing ? (
         <div style={{ marginBottom: 8 }}>
-          <FieldLabel tone="note" small>{isLayanan ? "Keluhan Customer" : "Catatan"}</FieldLabel>
+          <FieldLabel tone="note" small>{isLayanan ? "Keluhan Detail/Request Khusus" : "Catatan"}</FieldLabel>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
-            placeholder={isLayanan ? "Keluhan kasur customer..." : "Catatan order..."}
+            placeholder={isLayanan ? "Keluhan kasur / request khusus customer..." : "Catatan order..."}
             rows={2} style={{ ...selStyleFull, resize: "vertical" }} />
         </div>
       ) : info.keluhanCustomer ? (
@@ -1763,9 +1763,9 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <FieldLabel tone="note">{isLayanan ? "Keluhan Customer" : "Catatan"}</FieldLabel>
+          <FieldLabel tone="note">{isLayanan ? "Keluhan Detail/Request Khusus" : "Catatan"}</FieldLabel>
           <textarea value={keluhan} onChange={(e) => setKeluhan(e.target.value)}
-            placeholder={isLayanan ? "Jelaskan keluhan kasur..." : "Catatan order..."}
+            placeholder={isLayanan ? "Jelaskan keluhan kasur / request khusus..." : "Catatan order..."}
             rows={3} style={{ ...formSelect, resize: "vertical" }} />
         </div>
 

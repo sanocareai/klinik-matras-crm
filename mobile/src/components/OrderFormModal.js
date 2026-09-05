@@ -1242,10 +1242,10 @@ export default function OrderFormModal({
             </TouchableOpacity>
 
             {/* Keluhan / Catatan */}
-            <Text style={styles.label}>{isLayanan ? "Keluhan Customer" : "Catatan"}</Text>
+            <Text style={styles.label}>{isLayanan ? "Keluhan Detail/Request Khusus" : "Catatan"}</Text>
             <TextInput
               style={[styles.input, styles.textarea]}
-              placeholder={isLayanan ? "Jelaskan keluhan kasur…" : "Catatan order (opsional)…"}
+              placeholder={isLayanan ? "Jelaskan keluhan kasur / request khusus…" : "Catatan order (opsional)…"}
               placeholderTextColor={tokens.color.textMuted}
               value={keluhan}
               onChangeText={setKeluhan}
