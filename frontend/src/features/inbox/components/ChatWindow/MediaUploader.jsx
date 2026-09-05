@@ -301,7 +301,19 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
         <div className="attach-sheet-overlay" onClick={() => setShowSheet(false)}>
           <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="attach-sheet-handle" />
-            <div className="attach-grid-title">Lampirkan</div>
+            {/* Header + tombol X (D-124, 6 September 2026, laporan owner:
+                "gabisa ditutup misal gajadi kirim file") — sebelumnya
+                satu-satunya cara batal cuma klik BACKDROP di luar sheet
+                (tidak terlihat/tidak jelas sebagai tombol batal). Tombol X
+                eksplisit di sini sama pola dengan modal lain (LocationModal/
+                ContactModal/media-preview-modal di file yang sama, semua
+                punya `.modal-close`). */}
+            <div className="attach-sheet-header">
+              <span className="attach-grid-title">Lampirkan</span>
+              <button type="button" className="modal-close" onClick={() => setShowSheet(false)} title="Batal">
+                <X size={16} />
+              </button>
+            </div>
             <div className="attach-grid">
               <label className="attach-item">
                 <input type="file" accept="image/*,video/*" multiple style={{ display: "none" }}

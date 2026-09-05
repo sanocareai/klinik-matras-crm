@@ -590,25 +590,40 @@
 }
 
 [data-theme="dark"] .glass-division [class*="shadow-popover"],
-/* .chat-dots-dropdown/.attach-sheet/.template-picker-popup/.emoji-picker-
-   popup/.conv-context-menu (D-114) — 5 popover/menu legacy Inbox, TIDAK
-   pakai shadow-popover/role=dialog (custom lama dari index.css), sudah
-   theme-aware (sweep dark-mode) tapi belum kaca. Sama treatment dengan
-   popover modern (blur pekat) — kecuali .attach-sheet (bottom sheet
-   mobile, TANPA border di CSS aslinya, jadi cuma dapat background+blur
-   di sini, bukan garis tepi baru). `.transfer-picker-row` SENGAJA TIDAK
-   diikutkan — itu BUKAN popover, tapi satu ROW/tombol per sales DI DALAM
-   popover `.conv-context-menu.transfer-picker-menu` (compound class, shell
-   luarnya SUDAH `.conv-context-menu` yang ada di daftar ini) — nested item,
-   sama pola dengan .product-image-item: tone saja, tanpa blur sendiri. */
+/* .chat-dots-dropdown/.template-picker-popup/.emoji-picker-popup/.conv-
+   context-menu (D-114) — 4 popover/menu legacy Inbox, TIDAK pakai shadow-
+   popover/role=dialog (custom lama dari index.css), sudah theme-aware
+   (sweep dark-mode) tapi belum kaca. `.attach-sheet` SENGAJA DIKELUARKAN
+   dari daftar ini (lihat blok terpisah di bawah, D-124) — beda dari 4
+   popover di sini, translucent 0.82 TERNYATA jadi bug: sheet-nya menutupi
+   sebagian besar tinggi layar (bukan kartu kecil), jadi isi chat di
+   baliknya keburu jelas kebaca menembus, membingungkan mana yang aktif.
+   `.transfer-picker-row` SENGAJA TIDAK diikutkan — itu BUKAN popover, tapi
+   satu ROW/tombol per sales DI DALAM popover `.conv-context-menu.transfer-
+   picker-menu` (compound class, shell luarnya SUDAH `.conv-context-menu`
+   yang ada di daftar ini) — nested item, sama pola dengan .product-image-
+   item: tone saja, tanpa blur sendiri. */
 [data-theme="dark"] .glass-division .chat-dots-dropdown,
-[data-theme="dark"] .glass-division .attach-sheet,
 [data-theme="dark"] .glass-division .template-picker-popup,
 [data-theme="dark"] .glass-division .emoji-picker-popup,
 [data-theme="dark"] .glass-division .conv-context-menu {
   background-color: rgba(26, 33, 64, 0.82) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 60px -14px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(59, 130, 246, 0.08);
+}
+
+/* D-124 (6 September 2026, laporan owner: sheet "Lampirkan" transparan,
+   pesan chat di belakangnya kebaca menembus, bikin susah dibedakan mana
+   yang lagi aktif) — solid OPAQUE, TANPA backdrop-filter. Warna sama hue
+   dengan resep glass di atas (navy `--dh-surface-solid`-like), tapi alpha
+   1 (bukan 0.82) supaya benar-benar menutup penuh apa pun di baliknya. */
+[data-theme="dark"] .glass-division .attach-sheet {
+  background-color: #1A2140 !important;
+  border-color: var(--dh-hairline) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 24px 60px -14px rgba(0, 0, 0, 0.7),

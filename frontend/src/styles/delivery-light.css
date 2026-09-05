@@ -399,18 +399,28 @@ html:not([data-theme="dark"]) .glass-division [class*="shadow-popover"] [data-hi
   background-color: rgba(76, 141, 255, 0.1) !important;
 }
 
-/* .chat-dots-dropdown/.attach-sheet/.template-picker-popup/.emoji-picker-
-   popup/.conv-context-menu (D-114) — pasangan mode terang, baca komentar
-   lengkap (termasuk kenapa .transfer-picker-row SENGAJA tidak diikutkan)
-   di delivery-dark.css. */
+/* .chat-dots-dropdown/.template-picker-popup/.emoji-picker-popup/.conv-
+   context-menu (D-114) — pasangan mode terang, baca komentar lengkap
+   (termasuk kenapa .transfer-picker-row SENGAJA tidak diikutkan) di
+   delivery-dark.css. `.attach-sheet` DIKELUARKAN (D-124) — lihat blok
+   terpisah di bawah. */
 html:not([data-theme="dark"]) .glass-division .chat-dots-dropdown,
-html:not([data-theme="dark"]) .glass-division .attach-sheet,
 html:not([data-theme="dark"]) .glass-division .template-picker-popup,
 html:not([data-theme="dark"]) .glass-division .emoji-picker-popup,
 html:not([data-theme="dark"]) .glass-division .conv-context-menu {
   background-color: rgba(255, 255, 255, 0.88) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 24px 50px -18px rgba(20, 87, 217, 0.25);
+}
+
+/* D-124 — pasangan mode terang, baca alasan lengkap di delivery-dark.css.
+   Solid putih penuh, tanpa backdrop-filter. */
+html:not([data-theme="dark"]) .glass-division .attach-sheet {
+  background-color: #FFFFFF !important;
+  border-color: var(--dh-hairline) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 24px 50px -18px rgba(20, 87, 217, 0.25);
