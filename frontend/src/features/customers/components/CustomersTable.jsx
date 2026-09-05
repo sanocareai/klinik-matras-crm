@@ -8,7 +8,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow,
 } from "@/components/ui/table.jsx";
 import {
-  formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, HEALTH_LABELS, SOURCE_LABELS,
+  formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS, SOURCE_LABELS,
   stageVariant, orderStatusVariant, healthVariant, tagClass, isVIP,
 } from "@/utils/format.js";
 
@@ -139,8 +139,11 @@ export default function CustomersTable({
                 </TD>
 
                 <TD>
-                  {c.healthStatus
-                    ? <Badge variant={healthVariant(c.healthStatus)}>{HEALTH_LABELS[c.healthStatus]}</Badge>
+                  {/* Dibaca dari Order.healthStatus (pernahSakit, dihitung
+                      backend dari riwayat order), BUKAN Customer.healthStatus
+                      lama — lihat catatan di routes/customers.js. */}
+                  {c.pernahSakit
+                    ? <Badge variant={healthVariant("SAKIT")}>Sakit</Badge>
                     : <span className="text-ink3">—</span>}
                 </TD>
 

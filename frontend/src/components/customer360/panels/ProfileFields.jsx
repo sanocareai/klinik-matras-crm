@@ -17,6 +17,14 @@ const LEAD_SOURCE_OPTIONS = [
 // Panel edit profil — memegang LOGIKA edit profil (pakai api.updateCustomer +
 // StageSelect yang sudah ada). Bukan dipindah ke orchestrator. onUpdated dipanggil
 // setelah perubahan supaya data 360 di-refetch.
+//
+// "Kondisi Pelanggan" (Customer.healthStatus) DIHAPUS dari sini (4 Sep 2026,
+// permintaan owner) — REDUNDAN dgn healthStatus per-ORDER yang sudah ada di
+// form input order (Order.healthStatus, OrderSection.jsx). Order.healthStatus
+// sekarang SATU-SATUNYA sumber kebenaran; filter "Sakit" di tabel Pelanggan
+// dibaca dari situ (lihat buildCustomerWhere() di routes/customers.js). Kolom
+// Customer.healthStatus di database TIDAK dihapus, cuma tidak ada lagi UI
+// mana pun yang menulisnya.
 export default function ProfileFields({ customer, onUpdated }) {
   const [form, setForm] = useState({ name: "", phone: "", city: "", email: "", tags: "" });
   const [feedback, setFeedback] = useState(null);
@@ -69,7 +77,6 @@ export default function ProfileFields({ customer, onUpdated }) {
 
   const fbClass = feedback?.type === "success" ? "bg-greenbg text-green"
     : feedback?.type === "warning" ? "bg-orangebg text-orange" : "bg-redbg text-red";
-  const health = customer.healthStatus;
   const ctype = customer.customerType || "END_USER";
   const selectCls = "h-9 w-full rounded-lg bg-surface px-3 text-sm text-ink outline-none focus:ring-2 focus:ring-accent/30";
 
@@ -94,18 +101,6 @@ export default function ProfileFields({ customer, onUpdated }) {
       <Field label="Tags (pisahkan koma)"><Input value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="premium, repeat-order" /></Field>
 
       <Field label="Tahap Pipeline"><StageSelect value={customer.pipelineStage} onChange={(s) => patch({ pipelineStage: s })} /></Field>
-
-      <Field label="Kondisi Pelanggan">
-        <div className="flex flex-wrap gap-1.5">
-          {[["SAKIT", "Sakit"], ["TIDAK_SAKIT", "Tidak Sakit"]].map(([v, l]) => (
-            <button key={v} type="button" disabled={busy} onClick={() => patch({ healthStatus: health === v ? null : v })}
-              className={`rounded-full  px-3 py-1 text-[12px] font-semibold transition-colors ${
-                health === v
-                  ? (v === "SAKIT" ? "border-red bg-redbg text-red" : "border-green bg-greenbg text-green")
-                  : "text-ink2 hover:bg-hovertint"}`}>{l}</button>
-          ))}
-        </div>
-      </Field>
 
       <Field label="Tipe Customer">
         <div className="flex gap-1.5">

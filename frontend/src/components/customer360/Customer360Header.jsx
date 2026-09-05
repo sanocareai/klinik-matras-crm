@@ -3,7 +3,7 @@ import { X, MessageSquare, MapPin, ShoppingBag, Clock } from "lucide-react";
 import Avatar from "../Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { STAGE_LABELS, stageVariant, healthVariant, HEALTH_LABELS, formatRupiahShort, formatTanggalWaktu } from "../../utils/format.js";
+import { STAGE_LABELS, stageVariant, healthVariant, formatRupiahShort, formatTanggalWaktu } from "../../utils/format.js";
 
 // Header 360 — hierarki identitas: NAMA → lokasi · kontak → order (jumlah·nilai) ·
 // stage · owner → konteks (interaksi terakhir · pelanggan sejak). CTA utama
@@ -21,7 +21,9 @@ export default function Customer360Header({ customer, orderCount = 0, orderValue
         {/* Nama + status */}
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="truncate text-[17px] font-bold tracking-[-0.01em] text-ink">{name}</h2>
-          {customer.healthStatus && <Badge variant={healthVariant(customer.healthStatus)}>{HEALTH_LABELS[customer.healthStatus]}</Badge>}
+          {/* Dibaca dari Order.healthStatus (pernahSakit), BUKAN
+              Customer.healthStatus lama — lihat catatan di routes/customers.js. */}
+          {customer.pernahSakit && <Badge variant={healthVariant("SAKIT")}>Sakit</Badge>}
           {customer.pernahKomplain && <Badge variant="danger">Pernah Komplain</Badge>}
         </div>
 

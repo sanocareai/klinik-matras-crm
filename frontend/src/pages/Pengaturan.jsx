@@ -305,7 +305,6 @@ export default function Pengaturan({ user, onUserUpdate }) {
 
   async function handleExportCustomers() {
     const { exportToExcel } = await import("../utils/export.js");
-    const HEALTH_LABELS = { SAKIT: "Sakit", TIDAK_SAKIT: "Tidak Sakit" };
     setExporting(true);
     try {
       const customers = await api.getCustomers();
@@ -325,7 +324,9 @@ export default function Pengaturan({ user, onUserUpdate }) {
           "Ukuran Kasur":       c.latestUkuranKasur || "",
           "Berat Badan (kg)":   c.latestBeratBadan || "",
           Layanan:              c.latestLayanan || "",
-          "Status Kesehatan":   HEALTH_LABELS[c.healthStatus] || "Belum Diisi",
+          // Dibaca dari Order.healthStatus (pernahSakit), BUKAN
+          // Customer.healthStatus lama — lihat catatan di routes/customers.js.
+          "Status Kesehatan":   c.pernahSakit ? "Sakit" : "Tidak/Belum Diisi",
           Tags:                 (c.tags || []).join(", "),
           "Tipe Pelanggan":     c.customerType === "CORPORATE" ? "Korporat" : "End User",
           Kota:                 c.city || "",

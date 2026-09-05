@@ -23,6 +23,12 @@ const CHIPS = [
   { key: "vip",      label: "VIP (≥ Rp5jt)",        active: "bg-accent text-white border-accent" },
   { key: "no-order", label: "Belum Order",           active: "bg-orange text-white border-orange" },
   { key: "inactive", label: "Tidak Aktif (>30 hari)", active: "bg-ink3 text-surface" },
+  // Kondisi Sakit (4 Sep 2026) — DIBACA dari Order.healthStatus (cocok
+  // kalau ADA SATU ATAU LEBIH order pelanggan ini yang healthStatus-nya
+  // SAKIT), BUKAN Customer.healthStatus lama (field itu tidak lagi diedit
+  // lewat UI mana pun, lihat catatan panjang di
+  // InfoSection.jsx/ProfileFields.jsx).
+  { key: "sakit",    label: "Sakit",                 active: "bg-red text-white border-red" },
 ];
 
 export default function CustomerFilters({

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { api } from "../../../../api.js";
-import { HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS } from "../../../../utils/format.js";
 
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
@@ -35,8 +34,8 @@ function pillTone(hex) {
   return { background: `${hex}26`, color: hex };
 }
 
-// Sumber lead, Kondisi Pelanggan, Tipe Customer — semua inline edit lewat
-// endpoint existing (PATCH /customers/:id, sama seperti CustomerPanel lama).
+// Sumber lead, Tipe Customer — inline edit lewat endpoint existing
+// (PATCH /customers/:id, sama seperti CustomerPanel lama).
 //
 // Kota DIHAPUS dari sini (29 Agustus 2026, permintaan owner) — Customer.city
 // dianggap redundan dgn Order.deliveryCity (kota pengiriman per order, D-027)
@@ -45,9 +44,21 @@ function pillTone(hex) {
 // Customer360) — SENGAJA scope sempit sesuai keputusan owner, field-field
 // itu tetap baca/tulis Customer.city seperti biasa. Kolom di database juga
 // TIDAK dihapus, cuma tidak lagi bisa diedit lewat panel ini.
+//
+// "Kondisi Pelanggan" (Customer.healthStatus/complaintCategory) DIHAPUS
+// dari sini juga (4 Sep 2026, permintaan owner) — REDUNDAN dgn healthStatus
+// per-ORDER yang sudah ada di form input order (Order.healthStatus,
+// OrderSection.jsx), dan dua sumber yang bisa berbeda nilai justru
+// membingungkan ("customer ini sakit atau tidak?" — jawabannya beda-beda
+// tergantung dilihat dari mana). Order.healthStatus sekarang SATU-SATUNYA
+// sumber kebenaran; filter "Sakit" di tabel Pelanggan (Customers.jsx)
+// dibaca dari situ (lihat buildCustomerWhere() di routes/customers.js).
+// Kolom Customer.healthStatus/complaintCategory di database TIDAK dihapus
+// (masih ada endpoint PATCH /customers/:id yang menerimanya), cuma tidak
+// ada lagi UI mana pun yang menulisnya — akan makin basi seiring waktu,
+// itu memang yang diinginkan.
 export default function InfoSection({ customer, onUpdate }) {
   const [leadSourceDraft, setLeadSourceDraft] = useState(customer.leadSource || "OTHER");
-  const [savingHealth, setSavingHealth] = useState(false);
   const [savingType, setSavingType]     = useState(false);
   const [feedback, setFeedback]         = useState(null);
 
@@ -61,36 +72,6 @@ export default function InfoSection({ customer, onUpdate }) {
       const updated = await api.updateCustomer(customer.id, { leadSource: leadSourceDraft });
       onUpdate((c) => ({ ...c, ...updated }));
       showFeedback("success", "Sumber lead tersimpan");
-    } catch (err) {
-      showFeedback("error", err.message);
-    }
-  }
-
-  async function toggleHealthStatus(value) {
-    const newVal = customer.healthStatus === value ? null : value;
-    setSavingHealth(true);
-    try {
-      const updated = await api.updateCustomer(customer.id, { healthStatus: newVal });
-      // Backend juga null-kan complaintCategory kalau newVal !== "SAKIT" —
-      // ikutkan di sini supaya dropdown kategori langsung hilang, tidak
-      // nunggu refresh.
-      onUpdate((c) => ({ ...c, healthStatus: updated.healthStatus, complaintCategory: updated.complaintCategory }));
-    } catch (err) {
-      showFeedback("error", err.message);
-    } finally {
-      setSavingHealth(false);
-    }
-  }
-
-  // D-028 (revisi multi-pilih, 20 Agustus 2026): keluhan biasanya lebih dari
-  // satu area sekaligus (mis. leher+bahu+punggung bersamaan) — toggle satu
-  // kategori masuk/keluar dari array, bukan ganti satu nilai.
-  async function toggleComplaintCategory(key) {
-    const current = customer.complaintCategory || [];
-    const next = current.includes(key) ? current.filter((v) => v !== key) : [...current, key];
-    try {
-      const updated = await api.updateCustomer(customer.id, { complaintCategory: next });
-      onUpdate((c) => ({ ...c, complaintCategory: updated.complaintCategory }));
     } catch (err) {
       showFeedback("error", err.message);
     }
@@ -154,60 +135,6 @@ export default function InfoSection({ customer, onUpdate }) {
           </select>
           <button className="btn btn-secondary btn-sm" onClick={handleSaveLeadSource}>Simpan</button>
         </div>
-      </div>
-
-      {/* Kondisi Pelanggan (nama field DB tetap healthStatus, cuma label UI) */}
-      <div className="panel-section">
-        <span className="panel-section-label">Kondisi Pelanggan</span>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {[
-            { value: "SAKIT", label: "Sakit", hex: "#dc2626" },
-            { value: "TIDAK_SAKIT", label: "Tidak Sakit", hex: "#16a34a" },
-          ].map(({ value, label, hex }) => {
-            const active = customer.healthStatus === value;
-            return (
-              <button key={value} disabled={savingHealth} onClick={() => toggleHealthStatus(value)}
-                className={active ? undefined : "text-ink2"}
-                style={{
-                  fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 99, cursor: "pointer", transition: "all 0.15s",
-                  border: `1.5px solid ${active ? hex : "var(--border)"}`,
-                  ...(active ? pillTone(hex) : { background: "transparent" }),
-                }}>
-                {label}
-              </button>
-            );
-          })}
-          {customer.healthStatus && (
-            <button disabled={savingHealth} onClick={() => toggleHealthStatus(customer.healthStatus)}
-              className="text-ink3"
-              style={{ fontSize: 11, padding: "4px 8px", borderRadius: 99, border: "1px solid var(--border)", background: "transparent", cursor: "pointer" }}>
-              Reset
-            </button>
-          )}
-        </div>
-        {!customer.healthStatus && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>Belum ditanyakan ke customer</p>}
-        {/* D-028: kategori keluhan cuma muncul kalau kondisinya Sakit,
-            multi-pilih — keluhan biasanya lebih dari satu area sekaligus. */}
-        {customer.healthStatus === "SAKIT" && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {HEALTH_COMPLAINT_OPTIONS.map((k) => {
-              const active = (customer.complaintCategory || []).includes(k);
-              return (
-                <button
-                  key={k} type="button" onClick={() => toggleComplaintCategory(k)}
-                  className={active ? undefined : "text-ink2"}
-                  style={{
-                    fontSize: 11.5, fontWeight: 600, padding: "3px 10px", borderRadius: 99,
-                    cursor: "pointer", transition: "all 0.15s",
-                    border: `1.5px solid ${active ? "#dc2626" : "var(--border)"}`,
-                    ...(active ? { background: "#dc26261a", color: "#dc2626" } : { background: "transparent" }),
-                  }}>
-                  {HEALTH_COMPLAINT_LABELS[k]}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* Tipe Customer */}

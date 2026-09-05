@@ -56,6 +56,14 @@ function buildCustomerWhere(query) {
     const cutoff = new Date(Date.now() - 30 * 86_400_000);
     where.NOT = { conversations: { some: { type: "INDIVIDUAL", lastMessageAt: { gt: cutoff } } } };
   }
+  // Kondisi Sakit (4 Sep 2026, permintaan owner) — DIBACA dari Order.healthStatus
+  // (terisi lewat form input order), BUKAN Customer.healthStatus. Customer.healthStatus
+  // TIDAK lagi diedit lewat UI mana pun (panel profil pelanggan yang dulu
+  // menuliskannya sudah dicabut, lihat InfoSection.jsx/ProfileFields.jsx) — kolom DB-nya
+  // dibiarkan apa adanya (tidak dihapus), tapi bukan lagi sumber kebenaran "pelanggan ini
+  // sakit atau tidak". Cocok kalau ADA SATU ATAU LEBIH order pelanggan ini yang
+  // healthStatus-nya SAKIT.
+  if (quickChip === "sakit") where.orders = { some: { healthStatus: "SAKIT" } };
   return where;
 }
 
@@ -346,6 +354,12 @@ customerRouter.get("/", async (req, res) => {
         latestLayanan,
         pernahKomplain: riwayatKomplain.length > 0,
         riwayatKomplain,
+        // Kondisi Sakit (4 Sep 2026) — DIBACA dari Order.healthStatus (satu
+        // ATAU LEBIH order pelanggan ini pernah healthStatus SAKIT), BUKAN
+        // Customer.healthStatus lama (tidak lagi diedit lewat UI mana pun —
+        // lihat InfoSection.jsx/ProfileFields.jsx). Sama pola dgn
+        // pernahKomplain di atas.
+        pernahSakit: custOrders.some((o) => o.healthStatus === "SAKIT"),
       };
     });
 
@@ -458,7 +472,11 @@ customerRouter.get("/:id", async (req, res) => {
     deliveryJob: ringkasJob(jobs.find((j) => j.type === "DELIVERY")),
   }));
 
-  res.json({ ...customer, orders, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain });
+  // pernahSakit — sama pola dgn GET / list (lihat catatan di sana): dibaca
+  // dari Order.healthStatus, bukan Customer.healthStatus.
+  const pernahSakit = customer.orders.some((o) => o.healthStatus === "SAKIT");
+
+  res.json({ ...customer, orders, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain, pernahSakit });
 });
 
 // Update data CRM: nama, phone, tags, pipeline stage, sales yang ditugaskan, dll

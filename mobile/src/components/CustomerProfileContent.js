@@ -161,19 +161,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
     }
   }
 
-  async function toggleHealth(value) {
-    const newVal = customer.healthStatus === value ? null : value;
-    const prev = customer.healthStatus;
-    update({ healthStatus: newVal });
-    try {
-      const updated = await api.updateCustomer(customerId, { healthStatus: newVal });
-      update({ healthStatus: updated.healthStatus });
-    } catch (err) {
-      update({ healthStatus: prev });
-      Alert.alert("Gagal", err.message);
-    }
-  }
-
   async function toggleCustomerType(value) {
     if ((customer.customerType || "END_USER") === value) return;
     const prev = customer.customerType;
@@ -353,24 +340,6 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
         <TouchableOpacity style={styles.selectBox} onPress={() => setShowLeadSourcePicker(true)}>
           <Text style={styles.selectBoxText}>{LEAD_SOURCE_LABELS[customer.leadSource] || "— Pilih —"}</Text>
         </TouchableOpacity>
-      </Section>
-
-      <Section title="Kondisi Pelanggan">
-        <View style={styles.pillRow}>
-          {[{ v: "SAKIT", l: "Sakit" }, { v: "TIDAK_SAKIT", l: "Tidak Sakit" }].map(({ v, l }) => {
-            const active = customer.healthStatus === v;
-            return (
-              <TouchableOpacity
-                key={v}
-                style={[styles.smallPill, active && (v === "SAKIT" ? styles.pillDangerActive : styles.pillSuccessActive)]}
-                onPress={() => toggleHealth(v)}
-              >
-                <Text style={[styles.smallPillText, active && styles.smallPillTextActive]}>{l}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        {!customer.healthStatus && <Text style={styles.hint}>Belum ditanyakan ke customer</Text>}
       </Section>
 
       <Section title="Tipe Customer">
