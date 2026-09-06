@@ -195,6 +195,42 @@ async function notifyDriverGroupText(message) {
   emitConversationUpdate(updatedGroup);
 }
 
+// ⚠️ SEMENTARA (6 September 2026, keputusan owner: "untuk saat ini ketika
+// terbitkan rute coba kirim personal chat ke natasha +62 878-8874-7922
+// jangan ke grup drivethru") — ringkasan rute saat PUBLISH (bukan edit
+// darurat — itu tetap ke grup driver, tidak diminta diubah) dikirim ke chat
+// PRIBADI Natasha, BUKAN ke grup driver, untuk sementara waktu ("untuk saat
+// ini" menandakan ini bisa berubah lagi kapan pun). Nomor di-hardcode
+// konstanta (bukan field konfigurasi/Setting baru) supaya gampang diubah
+// balik ke grup atau ke nomor lain — sudah ada Customer+Conversation
+// INDIVIDUAL tercatat untuk nomor ini (diverifikasi di database), jadi
+// dipakai langsung, bukan bikin kontak baru.
+const NATASHA_PHONE = "6287888747922";
+
+async function notifyNatashaText(message) {
+  const conversation = await prisma.conversation.findFirst({
+    where: { type: "INDIVIDUAL", customer: { phone: NATASHA_PHONE } },
+    include: { customer: true },
+  });
+  if (!conversation) return; // belum ada percakapan tercatat — diam-diam, bukan error
+
+  const target = resolveSendTarget(conversation);
+  if (!target) return;
+
+  const { session } = await sendWithSessionFallback(conversation, (s) => sendText(target, message, null, s));
+  conversation.sessionId = session;
+
+  const msg = await prisma.message.create({
+    data: { conversationId: conversation.id, direction: "OUTBOUND", content: message },
+  });
+  const updatedConv = await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(message, null) },
+  });
+  emitNewMessage(conversation.id, msg);
+  emitConversationUpdate(updatedConv);
+}
+
 // Rangkai pesan rute untuk grup driver — format mengikuti contoh yang sudah
 // biasa dipakai tim SEBELUM ini (dispatcher ketik manual): hari+tanggal,
 // kendaraan+driver, link peta, lalu "Detail Catatan" freeform DARI
@@ -1626,17 +1662,20 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       }),
     ]);
 
-    // Kirim ringkasan rute + link Maps ke grup driver OTOMATIS (redesain
-    // Route Planner, Sep 2026) — MENGGANTIKAN langkah manual "dispatcher
-    // susun rute sendiri di Google Maps lalu copy-paste link ke grup WA".
-    // BEST-EFFORT murni: publish SUDAH SELESAI (transaksi di atas commit),
-    // kegagalan kirim WA di sini TIDAK BOLEH membatalkan publish yang sudah
-    // terjadi — cuma dicatat ke log server.
+    // Kirim ringkasan rute + link Maps OTOMATIS (redesain Route Planner, Sep
+    // 2026) — MENGGANTIKAN langkah manual "dispatcher susun rute sendiri di
+    // Google Maps lalu copy-paste link ke grup WA". BEST-EFFORT murni:
+    // publish SUDAH SELESAI (transaksi di atas commit), kegagalan kirim WA
+    // di sini TIDAK BOLEH membatalkan publish yang sudah terjadi — cuma
+    // dicatat ke log server.
+    //
+    // Target SEMENTARA chat pribadi Natasha, BUKAN grup driver — lihat
+    // catatan lengkap di notifyNatashaText di atas.
     try {
       const { url } = buildRouteMapsUrl(updatedRoute.jobs);
-      await notifyDriverGroupText(formatRouteWaMessage(updatedRoute, url));
+      await notifyNatashaText(formatRouteWaMessage(updatedRoute, url));
     } catch (err) {
-      console.error("[publish] Gagal kirim ringkasan rute ke grup driver:", err.message);
+      console.error("[publish] Gagal kirim ringkasan rute ke Natasha:", err.message);
     }
 
     res.json(updatedRoute);
