@@ -29,7 +29,7 @@ import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../ser
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
+import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl, shortenUrl } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -239,14 +239,23 @@ async function notifyNatashaText(message) {
 // terstruktur karena sifatnya kasuistik, jadi tetap teks bebas, bukan field
 // baru per kasus). `label` opsional untuk membedakan pesan publish pertama
 // vs update setelah edit darurat (lihat pemanggil).
-function formatRouteWaMessage(route, mapsUrl, label = "") {
+//
+// ASYNC (6 September 2026) — mapsUrl DIPENDEKKAN dulu lewat shortenUrl()
+// (services/maps.js) sebelum ditempel ke teks, laporan owner: link waypoint
+// mentah "hasil broadcast nya lumayan berantakan" (berbaris-baris di WA).
+// Dipusatkan DI SINI (bukan diulang di tiap pemanggil) — SATU-SATUNYA tempat
+// mapsUrl dirangkai jadi teks pesan, jadi cuma perlu dipendekkan sekali di
+// sini supaya ketiga pemanggil (publish, 2x edit darurat) otomatis ikut
+// rapi tanpa masing-masing perlu diubah/diingat.
+async function formatRouteWaMessage(route, mapsUrl, label = "") {
   const kendaraan = route.vehicle?.plateNumber || "Kendaraan belum diisi";
   const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
+  const mapsUrlPendek = mapsUrl ? await shortenUrl(mapsUrl) : mapsUrl;
   const baris = [
     label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
     `${kendaraan} — ${driverLine}`,
     "",
-    mapsUrl ? `Link Maps: ${mapsUrl}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)",
+    mapsUrlPendek ? `Link Maps: ${mapsUrlPendek}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)",
   ];
   if (route.notes?.trim()) {
     baris.push("", "Detail Catatan:", route.notes.trim());
@@ -1431,7 +1440,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await notifyDriverGroupText(await formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
       } catch (err) {
         console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
       }
@@ -1581,7 +1590,7 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await notifyDriverGroupText(await formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
       } catch (err) {
         console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
       }
@@ -1673,7 +1682,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     // catatan lengkap di notifyNatashaText di atas.
     try {
       const { url } = buildRouteMapsUrl(updatedRoute.jobs);
-      await notifyNatashaText(formatRouteWaMessage(updatedRoute, url));
+      await notifyNatashaText(await formatRouteWaMessage(updatedRoute, url));
     } catch (err) {
       console.error("[publish] Gagal kirim ringkasan rute ke Natasha:", err.message);
     }

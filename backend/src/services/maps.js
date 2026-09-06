@@ -340,6 +340,37 @@ export function buildRouteMapsUrl(jobs) {
   return { url, stopCount: params.length, missingCoords, missingLocation: missingLocation.length };
 }
 
+// Persingkat URL Maps SUPAYA rapi di broadcast WA (6 September 2026,
+// laporan owner: link waypoint mentah panjangnya berbaris-baris, "hasil
+// broadcast nya lumayan berantakan" — contoh format pendek yang diinginkan:
+// https://maps.app.goo.gl/xxx). maps.app.goo.gl SENDIRI cuma bisa dibuat
+// dari dalam app/situs Google Maps (tombol "Share") — TIDAK ADA API publik
+// untuk generate link berformat itu langsung dari URL directions apa pun.
+// TinyURL dipakai sebagai gantinya (API publik GRATIS, tanpa API key,
+// endpoint GET sederhana) — hasilnya bukan domain maps.app.goo.gl persis,
+// tapi SAMA-SAMA pendek+1-baris+langsung buka Google Maps kalau diklik,
+// itu inti keluhannya. BEST-EFFORT murni (pola sama dengan geocoding
+// fallback di atas): timeout 5 detik + try/catch, gagal apa pun alasannya
+// -> balik ke URL panjang aslinya, publish/broadcast TETAP jalan, bukan
+// tertahan atau gagal total cuma karena layanan pemendek link sedang down.
+export async function shortenUrl(url) {
+  if (!url) return url;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return url;
+    const short = (await res.text()).trim();
+    return short.startsWith("http") ? short : url;
+  } catch (err) {
+    console.error("[maps] shortenUrl gagal, pakai URL panjang:", err.message);
+    return url;
+  }
+}
+
 export async function routeLegs(stops) {
   if (stops.length < 2) return [];
 
