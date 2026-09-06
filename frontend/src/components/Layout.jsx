@@ -527,7 +527,18 @@ export default function Layout({ user, onLogout, children }) {
     "/inbox",
   ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
-  const glassOn = divisionKey === "armada" || pageGlassPilot;
+  // D-138 (6 September 2026, laporan owner: "redesign production
+  // operations") — "bengkel" (Production Operations) dinyalakan SATU
+  // DIVISI PENUH, bukan per-halaman seperti growth — pola yang SAMA
+  // dengan armada (divisi operasional, bukan CRM dengan puluhan halaman
+  // legacy yang perlu diaudit satu-satu). Efeknya: SEMUA halaman Bengkel
+  // (dashboard produksi, antrean QC, daftar unit, dst) langsung ikut
+  // sistem kaca gelap/terang yang sama — chrome sidebar/topbar/kartu.
+  // Kalau ada elemen SPESIFIK yang belum pas (pola yang berulang kali
+  // terjadi waktu armada/growth pertama dinyalakan — logo, ikon workspace,
+  // badge warna semantik, dll), itu tindak lanjut TERPISAH per laporan,
+  // bukan alasan menunda nyalakan gerbang utamanya.
+  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || pageGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
