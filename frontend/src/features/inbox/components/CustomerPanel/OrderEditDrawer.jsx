@@ -78,11 +78,18 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
     <AnimatePresence>
       {isOpen && f.customer && (
         <>
+          {/* D-130 (6 September 2026, laporan owner: "background workspace
+              ngeblur, lalu muncul card 3 pilihan itu") — DULU cuma
+              `bg-black/30` (tint gelap flat, tanpa blur) — workspace di
+              belakang tetap tajam/terbaca, kesannya cuma "digelapkan", bukan
+              kartunya yang jadi fokus. `backdrop-blur-sm` ditambahkan supaya
+              workspace di belakang benar-benar buram, mendorong perhatian ke
+              kartu wizard di depannya. */}
           <motion.div
             key="order-edit-overlay"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-[510] bg-black/30"
+            className="fixed inset-0 z-[510] bg-black/30 backdrop-blur-sm"
             onClick={onClose}
             aria-hidden="true"
           />
@@ -94,10 +101,20 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
             style={{ position: "fixed", top: 0, width: "min(100%, 720px)" }}
             className="z-[511] flex h-full flex-col bg-base shadow-popover"
           >
-            <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
-              <p className="text-sm font-bold text-ink">
-                {f.order ? "Order" : "Buat Order Baru"} — {f.customer?.name || "Pelanggan"}
-              </p>
+            {/* D-130 — laporan owner: "hilangkan text 'Buat Order Baru -
+                Giling' karna redundant, gaperlu penjelasan/keterangan itu".
+                Judul mode-BUAT dihapus total (nama customer & konteksnya
+                sudah kebaca dari layar Inbox/CustomerPanel di baliknya,
+                lewat backdrop blur baru di atas). Mode EDIT ("Order — Nama")
+                TETAP dipertahankan — drawer itu tidak selalu dibuka dari
+                konteks yang sudah menunjukkan nama customer (mis. dari tab
+                Order CustomerPanel sendiri). */}
+            <header className={`flex items-center gap-3 border-b border-line px-4 py-3.5 ${f.order ? "justify-between" : "justify-end"}`}>
+              {f.order && (
+                <p className="text-sm font-bold text-ink">
+                  Order — {f.customer?.name || "Pelanggan"}
+                </p>
+              )}
               <button
                 type="button" onClick={onClose} aria-label="Tutup"
                 className="shrink-0 rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"

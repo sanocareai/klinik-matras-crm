@@ -2103,14 +2103,21 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <p className="text-muted" style={{ margin: 0, fontSize: 12 }}>
-          {customer.orders.length} order · Total {formatRupiah(totalValue)}
-        </p>
-        {!showForm && (
+      {/* D-130 (6 September 2026, laporan owner: "hilangkan text '0 order
+          Total', itu nanti muncul di tempat berbeda") — baris ringkasan ini
+          DULU selalu tampil, termasuk saat wizard "Buat Order Baru" (step 0)
+          lagi aktif di bawahnya — redundan/membingungkan (angka "0 order"
+          muncul tepat di atas kartu yang MAU membuat order pertama). Sekarang
+          disembunyikan bareng tombol "+ Order" (`!showForm`, pola yang sama
+          persis sudah dipakai tombol itu di sini). */}
+      {!showForm && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <p className="text-muted" style={{ margin: 0, fontSize: 12 }}>
+            {customer.orders.length} order · Total {formatRupiah(totalValue)}
+          </p>
           <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Order</button>
-        )}
-      </div>
+        </div>
+      )}
 
       {showForm && (
         <AddOrderForm
