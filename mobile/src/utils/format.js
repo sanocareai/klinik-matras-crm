@@ -45,51 +45,68 @@ export function formatRupiahShort(n) {
 // dipakai), jadi status order tampil mentah ("PENDING" dst, bukan
 // "Menunggu") — dipindah ke sini supaya satu sumber dipakai OrderCard.js
 // juga, tidak dobel-definisi lagi.
+// ⚠️ PARITAS 5 September 2026 — file ini sempat TERTINGGAL dari
+// frontend/src/utils/format.js (mobile itu app Expo TERPISAH, butuh publish
+// OTA sendiri, tidak ikut ke-update otomatis waktu web di-deploy — ditemukan
+// dari laporan owner: tab "Pengiriman" tidak muncul di HP padahal sudah live
+// di web). 3 perubahan disamakan di sini:
+//   1. PICKUP dikembalikan jadi bucket sendiri (sempat digabung ke PROCESSING)
+//   2. SEWA_DIAMBIL label jadi "Pengambilan Kembali" (sempat "Pengambilan"
+//      polos, ambigu dengan PICKUP di atas)
+//   3. SHIPPING ditambahkan (status baru "Pengiriman", antara READY & DELIVERED)
 export const ORDER_STATUS_LABELS = {
   PENDING: "Menunggu",
   PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
+  SHIPPING: "Pengiriman",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
   // Status KHUSUS kategori SEWA (4 Sep 2026, paritas dgn web) — lihat
   // orderStatusesForCategory & ORDER_STATUS_BUCKET di bawah.
   SEWA_DIKIRIM: "Pengiriman",
-  SEWA_DIAMBIL: "Pengambilan",
+  SEWA_DIAMBIL: "Pengambilan Kembali",
 };
 export const ORDER_STATUS_BADGE = {
   PENDING:    { backgroundColor: "#fef3c7", color: "#92400e" },
   PICKUP:     { backgroundColor: "#dbeafe", color: "#1e40af" },
   PROCESSING: { backgroundColor: "#ede9fe", color: "#5b21b6" },
   READY:      { backgroundColor: "#ccfbf1", color: "#065f46" },
+  SHIPPING:   { backgroundColor: "#dbeafe", color: "#1e40af" }, // sama biru dgn PICKUP — "sedang di jalan" (arah keluar)
   DELIVERED:  { backgroundColor: "#dcfce7", color: "#166534" },
   CANCELLED:  { backgroundColor: "#fee2e2", color: "#991b1b" },
   SEWA_DIKIRIM: { backgroundColor: "#dbeafe", color: "#1e40af" },
   SEWA_DIAMBIL: { backgroundColor: "#dcfce7", color: "#166534" },
 };
-export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
+export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"];
 
 // SEWA (4 Sep 2026) TIDAK ikut sistem status Unit/Bengkel sama sekali (lihat
 // guard category==="SEWA" di backend/src/services/orderStatusSync.js) — cuma
 // 2 status manual. Cek DULUAN, sebelum cabang BARU.
 export function orderStatusesForCategory(category) {
   if (category === "SEWA") return ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
-  return category === "BARU" ? ["PROCESSING", "READY", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+  return category === "BARU" ? ["PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
 }
 
 // Bucket tampilan ringkas (4 Sep 2026, paritas dgn frontend/src/utils/format.js)
 // — status ASLI Order.status TIDAK berubah, ini cuma utk badge/kartu ringkas.
+// PICKUP & SHIPPING masing-masing bucket sendiri (bukan digabung ke
+// PROCESSING) — dua-duanya menandai TAHAP FISIK berbeda (barang sedang di
+// jalan, masuk atau keluar), bukan cuma noise granular.
 export const ORDER_STATUS_BUCKET = {
   PENDING: "PROCESSING",
-  PICKUP: "PROCESSING",
+  PICKUP: "PICKUP",
   PROCESSING: "PROCESSING",
   READY: "READY",
+  SHIPPING: "SHIPPING",
   DELIVERED: "DELIVERED",
   CANCELLED: "CANCELLED",
 };
 export const ORDER_STATUS_BUCKET_LABELS = {
+  PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
+  SHIPPING: "Pengiriman",
   DELIVERED: "Terkirim",
   CANCELLED: "Dibatalkan",
 };

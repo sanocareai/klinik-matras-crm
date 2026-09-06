@@ -43,14 +43,19 @@ const isMandek = (o) =>
   !["DELIVERED", "CANCELLED", "SEWA_DIKIRIM", "SEWA_DIAMBIL"].includes(o.status) && (o.daysInStatus || 0) >= MANDEK_HARI;
 
 // Tab status ringkas (4 Sep 2026, paritas dgn web pages/Orders.jsx) — bucket
-// utk LAYANAN/BARU (Diproses/Siap Kirim/Terkirim), + 2 status SEWA aslinya
-// sbg tab terpisah (layar ini tidak punya filter Kategori tersendiri, jadi
-// SEWA tetap harus bisa dicari lewat tab). "PROCESSING" dipakai SENTINEL
-// bucket — lihat statusQueryParam().
+// utk LAYANAN/BARU (Pengambilan/Diproses/Siap Kirim/Pengiriman/Terkirim),
+// + 2 status SEWA aslinya sbg tab terpisah (layar ini tidak punya filter
+// Kategori tersendiri, jadi SEWA tetap harus bisa dicari lewat tab).
+// "PROCESSING" dipakai SENTINEL bucket — lihat statusQueryParam().
+//
+// PICKUP & SHIPPING ditambahkan sbg tab sendiri (5 Sep 2026, paritas) —
+// lihat catatan panjang di utils/format.js ORDER_STATUS_BUCKET.
 const STATUS_TABS = [
   { key: "", label: "Semua" },
+  { key: "PICKUP", label: ORDER_STATUS_BUCKET_LABELS.PICKUP },
   { key: "PROCESSING", label: ORDER_STATUS_BUCKET_LABELS.PROCESSING },
   { key: "READY", label: ORDER_STATUS_BUCKET_LABELS.READY },
+  { key: "SHIPPING", label: ORDER_STATUS_BUCKET_LABELS.SHIPPING },
   { key: "DELIVERED", label: ORDER_STATUS_BUCKET_LABELS.DELIVERED },
   { key: "SEWA_DIKIRIM", label: ORDER_STATUS_LABELS.SEWA_DIKIRIM },
   { key: "SEWA_DIAMBIL", label: ORDER_STATUS_LABELS.SEWA_DIAMBIL },
