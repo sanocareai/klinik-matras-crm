@@ -11,7 +11,7 @@ import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
 import {
-  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, salesLocationUrl,
+  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
   estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
@@ -295,30 +295,14 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       drawer dispatcher supaya bisa langsung cek lokasi di
                       Maps tanpa harus jadi driver yang login. Link publik
                       Google Maps biasa, TIDAK butuh API key/billing. */}
-                  {(mapsUrl(job) || salesLocationUrl(job)) && (
-                    <div className="space-y-1.5 py-2">
-                      {mapsUrl(job) && (
-                        <a
-                          href={mapsUrl(job)} target="_blank" rel="noreferrer"
-                          className="flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
-                        >
-                          <Navigation size={13} className="shrink-0" /> Buka di Google Maps
-                        </a>
-                      )}
-                      {/* Link Maps dari Sales (6 September 2026, laporan
-                          owner) — TERPISAH dari link di atas, SENGAJA tidak
-                          digabung (lihat catatan salesLocationUrl di
-                          jobStatus.js). Ini pin ASLI yang sales dapat dari
-                          customer saat input order, bukan hasil geocode
-                          alamat job. */}
-                      {salesLocationUrl(job) && (
-                        <a
-                          href={salesLocationUrl(job)} target="_blank" rel="noreferrer"
-                          className="flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
-                        >
-                          <MapPin size={13} className="shrink-0" /> Link Maps dari Sales
-                        </a>
-                      )}
+                  {mapsUrl(job) && (
+                    <div className="py-2">
+                      <a
+                        href={mapsUrl(job)} target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
+                      >
+                        <Navigation size={13} /> Buka di Google Maps
+                      </a>
                     </div>
                   )}
                   {/* Alamat & Catatan pindah jadi field EDITABLE di kartu

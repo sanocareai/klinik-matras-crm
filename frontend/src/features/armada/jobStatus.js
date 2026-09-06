@@ -285,23 +285,30 @@ export const ESTIMASI_JAM_PRESET = [
 // (akurat, pin persis) — fallback ke pencarian teks alamat kalau job belum
 // sempat di-geocode (tetap berfungsi, cuma Google yang mencari sendiri).
 // TIDAK butuh API key/billing — ini URL publik `maps/dir` biasa.
+// Link Maps yang SALES sudah dapat & catat langsung dari customer saat
+// input order (Order.locationUrl). Fallback job.units[].unit.order sama
+// pola dengan customerOf.
+export function salesLocationUrl(job) {
+  return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
+}
+
+// SATU link Maps, prioritas: link sales (D-040 lanjutan, 6 September 2026)
+// > lat/lng hasil geocode Job.addressText > pencarian teks alamat.
+//
+// SEMPAT dicoba tampil 2 link TERPISAH (sales vs geocode job) supaya
+// dispatcher bisa cross-check kalau beda — TERNYATA di praktiknya cuma
+// jadi dobel/berantakan di layar (laporan owner langsung, screenshot),
+// karena Job.addressText pada umumnya MEMANG diisi dari alamat sales yang
+// sama, jadi dua link itu hampir selalu menuju titik yang sama. Balik jadi
+// SATU sumber kebenaran: link sales menang kalau ada (dikonfirmasi
+// langsung ke customer, lebih dipercaya dari geocode alamat teks), baru
+// fallback ke geocode job sendiri kalau order belum punya link sales.
 export function mapsUrl(job) {
+  const sales = salesLocationUrl(job);
+  if (sales) return sales;
   if (job?.lat && job?.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
   if (job?.addressText) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.addressText)}`;
   return null;
-}
-
-// Link Maps yang SALES sudah dapat & catat langsung dari customer saat
-// input order (Order.locationUrl) — 6 September 2026, laporan owner.
-// SENGAJA DIPISAH dari mapsUrl() di atas, BUKAN digabung/prioritas satu
-// sama lain: mapsUrl() itu hasil geocode Job.addressText (snapshot alamat
-// KUNJUNGAN, bisa beda dari alamat awal kalau driver/dispatcher koreksi di
-// lapangan), sementara ini pin ASLI dari sales saat order dibuat. Kalau
-// digabung jadi satu link "terbaik", perbedaan dua-duanya (yang justru bisa
-// jadi sinyal berguna — sales & driver pegang alamat beda) malah hilang
-// diam-diam. Fallback job.units[].unit.order sama pola dengan customerOf.
-export function salesLocationUrl(job) {
-  return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
 }
 
 // Label ringkas manusiawi untuk 1 job (D-037 lanjutan, 31 Agustus 2026 —
