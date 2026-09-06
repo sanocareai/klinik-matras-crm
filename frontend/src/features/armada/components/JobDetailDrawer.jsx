@@ -114,6 +114,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [address, setAddress] = useState("");
   const [accessNotes, setAccessNotes] = useState("");
   const [timeWindow, setTimeWindow] = useState("");
+  // Estimasi durasi custom dalam JAM (6 September 2026) — draft LOKAL sama
+  // alasannya dengan Alamat/Catatan/Jam di atas (user ketik angka desimal
+  // sebelum blur-simpan). Cuma terisi kalau nilai job SEKARANG bukan salah
+  // satu preset (lihat sinkronisasi di effect job?.id di bawah) — supaya
+  // input ini tidak "menempel" nilai lama begitu dispatcher pilih preset.
+  const [customJam, setCustomJam] = useState("");
 
   function muat() {
     if (!jobId) return;
@@ -169,8 +175,29 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     setAddress(job.addressText || "");
     setAccessNotes(job.accessNotes || "");
     setTimeWindow(job.timeWindow || "");
+    const cocokPreset = ESTIMASI_DURASI_PRESET.some((p) => p.menit === job.estimatedDurationMinutes);
+    setCustomJam(
+      job.estimatedDurationMinutes && !cocokPreset
+        ? String(Math.round((job.estimatedDurationMinutes / 60) * 100) / 100).replace(".", ",")
+        : ""
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id]);
+
+  // Commit input jam custom (6 September 2026) — terpisah dari ubahJadwal
+  // biasa karena butuh parsing + validasi angka dulu (koma ATAU titik
+  // desimal, dua-duanya lazim diketik orang Indonesia).
+  function commitCustomJam() {
+    const teks = customJam.trim().replace(",", ".");
+    if (!teks) return; // dikosongkan tanpa isi apa pun — tidak ada yang perlu disimpan
+    const jam = Number(teks);
+    if (!Number.isFinite(jam) || jam <= 0) {
+      setActionError("Jam harus angka lebih dari 0 (mis. 1,2)");
+      return;
+    }
+    const menit = Math.round(jam * 60);
+    if (menit !== job.estimatedDurationMinutes) ubahJadwal({ estimatedDurationMinutes: menit });
+  }
 
   // Alamat SALES/rencana (Order.deliveryAddress/deliveryCity, D-027/D-032) —
   // SARAN, bukan auto-fill (lihat tombol "Pakai alamat order" di bawah),
@@ -466,6 +493,25 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                             </button>
                           );
                         })}
+                      </div>
+                      {/* Custom (6 September 2026, laporan owner: form Google
+                          Sheets lama punya angka menit ganjil per order —
+                          70, 75, 50, dst — yang tidak masuk preset di atas
+                          manapun). Satuan JAM (bukan menit) supaya konsisten
+                          dengan preset & label baca-nya, desimal diterima
+                          (mis. "1,2" = 72 menit). */}
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <span className="text-[11px] text-ink3">atau isi manual:</span>
+                        <input
+                          value={customJam}
+                          onChange={(e) => setCustomJam(e.target.value)}
+                          onBlur={commitCustomJam}
+                          disabled={busy}
+                          inputMode="decimal"
+                          placeholder="mis. 1,2"
+                          className="h-7 w-20 rounded-full border border-border bg-surface px-2.5 text-center text-[11px] text-ink outline-none focus:border-accent"
+                        />
+                        <span className="text-[11px] text-ink3">jam</span>
                       </div>
                     </div>
 

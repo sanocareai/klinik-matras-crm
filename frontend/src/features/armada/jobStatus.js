@@ -222,23 +222,35 @@ export function salesPersonOf(job) {
   );
 }
 
-// Label ringkas estimasi durasi ("~30 menit", "~2 jam", "~1,5 jam") dari
+// Label ringkas estimasi durasi ("~0,5 jam", "~2 jam", "~1,2 jam") dari
 // Job.estimatedDurationMinutes (D-043). null/0 -> null (biar pemanggil
 // putuskan sendiri mau tampil apa saat belum diisi, bukan dipaksa "-").
+//
+// SELALU dalam satuan JAM sejak 6 September 2026 (laporan owner: form lama
+// di Google Sheets menampilkan estimasi konsisten dalam jam — versi
+// sebelumnya di sini menampilkan "menit" murni untuk <60 menit lalu lompat
+// ke "jam" begitu >=60, dua satuan berbeda di kolom yang sama). Dibulatkan
+// ke 0,1 jam (BUKAN 0,5 jam seperti versi lama) — pembulatan 0,5 jam
+// menyamakan 60 menit dan 70 menit jadi "1 jam" yang sama persis, padahal
+// keduanya beda job nyata (lihat ESTIMASI_DURASI_PRESET, custom input jam
+// di JobDetailDrawer sekarang bisa mengisi angka sepresisi itu).
 export function estimasiDurasiLabel(minutes) {
   if (!minutes || minutes <= 0) return null;
-  if (minutes < 60) return `~${minutes} menit`;
-  const jam = minutes / 60;
-  const dibulatkan = Math.round(jam * 2) / 2; // kelipatan 0,5 jam
-  const teks = Number.isInteger(dibulatkan) ? `${dibulatkan}` : dibulatkan.toFixed(1).replace(".", ",");
+  const jam = Math.round((minutes / 60) * 10) / 10;
+  const teks = Number.isInteger(jam) ? `${jam}` : jam.toFixed(1).replace(".", ",");
   return `~${teks} jam`;
 }
 
-// Preset durasi umum untuk chip picker (D-043) — dalam menit. Dipakai
-// JobDetailDrawer supaya dispatcher tinggal ketuk, bukan ketik angka manual
-// untuk kasus paling umum (custom tetap bisa lewat input angka).
+// Preset durasi umum untuk chip picker (D-043, direlabel ke satuan jam 6
+// September 2026) — Job.estimatedDurationMinutes di database TETAP menit
+// (tidak ada migrasi skema, cuma presentasi), field `menit` di sini
+// namanya tetap apa adanya. Dipakai JobDetailDrawer supaya dispatcher
+// tinggal ketuk untuk kasus umum; untuk angka yang tidak bulat (mis. 70/75
+// menit seperti di form Google Sheets lama) ada input custom "jam" di
+// bawah chip ini, BUKAN cuma janji komentar seperti versi sebelumnya —
+// diperiksa langsung, input itu ternyata belum pernah benar-benar dibuat.
 export const ESTIMASI_DURASI_PRESET = [
-  { menit: 30, label: "30 menit" },
+  { menit: 30, label: "0,5 jam" },
   { menit: 60, label: "1 jam" },
   { menit: 90, label: "1,5 jam" },
   { menit: 120, label: "2 jam" },
