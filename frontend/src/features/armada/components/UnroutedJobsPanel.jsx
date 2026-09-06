@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
-import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge } from "./JobBadges.jsx";
+import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
@@ -94,6 +94,14 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
         <div className="flex flex-wrap items-center gap-1">
           <JobTypeBadge job={j} />
           <RentalBadge job={j} />
+          {/* CityBadge di sini TERASA redundan dengan header section kota
+              di panel ini sendiri, TAPI kartu yang sama (JobRow) juga
+              dipakai secara visual sebagai acuan drag — begitu di-drag ke
+              RouteCard, konteks section-nya hilang. Tetap sengaja
+              ditampilkan, konsisten dengan permintaan "setiap card" &
+              RouteCard.jsx/ArmadaJobs.jsx yang memang tidak py section kota
+              sama sekali. */}
+          <CityBadge job={j} />
         </div>
         <div className="mt-1 truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
         <ServiceLabel job={j} />

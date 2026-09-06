@@ -1,10 +1,10 @@
 import React from "react";
-import { Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2 } from "lucide-react";
+import { Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
-  isRentalOrder, serviceLabelOf, confirmedDateOf,
+  isRentalOrder, serviceLabelOf, confirmedDateOf, cityOf,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
@@ -116,6 +116,33 @@ export function ConfirmedTimeBadge({ job, className }) {
       )}
     >
       <CalendarCheck2 size={11} className="shrink-0" /> Pasti: {formatTanggalPendek(tanggal)}
+    </span>
+  );
+}
+
+// Label kota (Order.deliveryCity) — penanda TAMBAHAN per-kartu (laporan
+// owner: "setiap card/order customer bisa tambah label kota"), MELENGKAPI
+// (bukan menggantikan) pengelompokan per kota di UnroutedJobsPanel — di
+// sana kota sudah jadi header section, TAPI RouteCard.jsx (stop rute) dan
+// daftar Jadwal & Penugasan TIDAK punya pengelompokan kota sama sekali,
+// jadi dispatcher tidak bisa tahu sekilas apakah stop-stop dalam satu rute
+// searah tanpa buka alamat lengkap satu-satu. Netral (ink3/inset) SENGAJA
+// — ini info kontekstual, bukan status/kategori yang perlu menonjol warna
+// seperti JobTypeBadge/RentalBadge. null kalau Order.deliveryCity belum
+// diisi (lihat catatan panjang soal Esty Bagus di UnroutedJobsPanel.jsx) —
+// TIDAK menampilkan "Kota belum diisi" di sini, itu urusan section "Belum
+// Ada Kota" di panel yang memang mengelompokkan berdasarkan kota.
+export function CityBadge({ job, className }) {
+  const kota = cityOf(job);
+  if (!kota) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-inset px-2 py-0.5 text-[10.5px] font-semibold text-ink2",
+        className
+      )}
+    >
+      <MapPinned size={11} className="shrink-0" /> {kota}
     </span>
   );
 }
