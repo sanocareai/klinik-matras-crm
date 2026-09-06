@@ -1581,8 +1581,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     const jenisList = jenisProdukOptions(productLine, category);
     return (
       <div style={formBox}>
+        {/* D-135 (6 September 2026, laporan owner: "hilangkan juga tuh emoji
+            samping 'Kasur — Pilih Jenis'") — emoji lini produk
+            (PRODUCT_LINE_ICONS, mis. 🛏️) dihapus dari judul step ini,
+            dipertahankan sebagai teks label saja. */}
         <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-          {lineOpt?.icon} {lineOpt?.label} — Pilih Jenis
+          {lineOpt?.label} — Pilih Jenis
         </p>
         {/* SEWA (2 Sep 2026): step 1 (Lini Produk) SENGAJA dilompati —
             Klinik Matras cuma menyewakan kasur, tidak ada pilihan lini
@@ -1592,12 +1596,25 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           {category === "SEWA" ? "← Ganti kategori" : "← Ganti lini produk"}
         </button>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {/* D-135 — laporan owner: "section jenis produk belum di
+              redesign". Kartu ini TIDAK punya ikon per-item (10+ nilai enum
+              jenis produk lintas Kasur/Sofa/Divan — sebagian besar cuma
+              beda ukuran/konstruksi, tidak masing-masing punya ikon yang
+              masuk akal), jadi disamakan lewat WARNA & GAYA saja: kartu
+              hitam glossy + glow yang SAMA dengan step Lini Produk,
+              memakai warna lini produk yang lagi aktif (PRODUCT_LINE_ICON_
+              THEME[productLine]) — konsisten satu warna identitas per
+              lini di sepanjang alurnya, dari step 1 sampai step 2. */}
           {jenisList.map((val) => (
             <button
               key={val}
               type="button"
+              className="category-card"
               onClick={() => { setProductType(val); if (val !== "KASUR_LAINNYA") setStep(3); }}
-              style={{ ...wizardCardStyle(productType === val), textAlign: "left", fontSize: 13, fontWeight: 600 }}
+              style={{
+                ...categoryCardStyle(productType === val, PRODUCT_LINE_ICON_THEME[productLine]),
+                textAlign: "left", fontSize: 13, fontWeight: 600, color: "#f5f5f7",
+              }}
             >
               {PRODUCT_TYPE_LABELS[val]}
             </button>
