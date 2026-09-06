@@ -531,7 +531,21 @@ export default function ArmadaDashboard() {
             di kanan) supaya dua halaman yang sama-sama daftar job tetap
             satu bahasa visual. */}
         <Card className="overflow-hidden">
-          <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Job Hari Ini</h3></div>
+          {/* Judul DIBUAT DINAMIS (6 September 2026, laporan owner: "cek
+              dashboard > job hari ini") — BUG NYATA ditemukan: judul
+              "Job Hari Ini" statis, TAPI isinya sebenarnya SELALU ikut
+              filter `range` di atas (D-082/083, default "Semua" — bukan
+              hardcode hari ini). Sebelum ini, dispatcher yang buka
+              Dashboard TANPA mengubah filter apa pun melihat judul "Job
+              Hari Ini" padahal daftarnya berisi job dari SEMUA tanggal
+              sepanjang masa — bukan salah data (isinya benar sesuai
+              `range` yang aktif), tapi judulnya bohong. Pola dijadikan
+              sama dengan "Sebaran job pada {formatRangeText(range)}" di
+              bawah, satu halaman ini, supaya konsisten — bukan hardcode
+              balik ke "selalu hari ini" (itu akan MELANGGAR keputusan
+              D-082/083 yang sengaja default "Semua" utk SELURUH filter di
+              halaman ini, termasuk KPI di atas). */}
+          <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Job — {formatRangeText(range)}</h3></div>
           {loading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
@@ -551,7 +565,15 @@ export default function ArmadaDashboard() {
                   <li key={j.id}>
                     <button
                       type="button"
-                      onClick={() => navigate("/armada/jobs")}
+                      // Deep-link ?job= (6 September 2026) — BUG NYATA
+                      // ditemukan: dua panel LAIN di Dashboard ini
+                      // ("Perlu Dijadwalkan") SUDAH pakai pola ini, tapi
+                      // panel ini TERLEWAT — klik kartu job cuma
+                      // membuka daftar KOSONG (Jadwal & Penugasan polos,
+                      // job yang diklik TIDAK terbuka), dispatcher harus
+                      // cari manual lagi. Disamakan supaya klik di sini
+                      // BENAR-BENAR langsung ke job yang diklik.
+                      onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint"
                     >
                       <Avatar name={cust || "?"} size="sm" gradient />
