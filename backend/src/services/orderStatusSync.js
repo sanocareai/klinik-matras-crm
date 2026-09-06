@@ -127,6 +127,39 @@ export async function selesaikanJobBelumJalan(tx, orderId) {
   for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
 }
 
+// Job Pengambilan yang NYANGKUT ditutup begitu Order-nya kadung READY
+// (D-064 lanjutan lagi, 6 September 2026 — laporan owner, contoh nyata Cst
+// VERA/RES-31082026-217: admin dorong Order.status manual ke READY jam
+// 12:55, unit ikut lompat ke READY_FOR_DELIVERY, TAPI job Pengambilan yang
+// lama [ASSIGNED, terjadwal 1 Sep, masih nempel di rute B 9341 ZYA] tidak
+// pernah ikut ditutup — dispatcher lihat kartu order "Siap Kirim" tapi job
+// Pengambilan-nya seolah masih perlu dikerjakan driver). Owner menegaskan
+// prinsipnya: "status order jadi indikator utama, kalo status order sudah
+// update otomatis yang lain juga update" — sistem masih baru, banyak unit
+// lama tidak lewat Armada sama sekali (tidak ada job Pengambilan) ATAU
+// job-nya ketinggalan begitu status didorong manual lewat StatusSelect,
+// bukan lewat alur produksi/Armada normal.
+//
+// SENGAJA cuma job TIPE PICKUP, BUKAN reuse selesaikanJobBelumJalan (yang
+// menutup SEMUA tipe) — order yang baru saja READY biasanya JUGA baru
+// punya job DELIVERY yang baru dibuat suggestDeliveryJob() (aktif,
+// menunggu dijadwalkan/dijalankan driver sungguhan) — itu TIDAK BOLEH ikut
+// tertutup di sini, cuma job Pengambilan yang sudah tidak relevan lagi
+// karena unitnya sudah melewati tahap itu.
+export async function selesaikanJobPengambilanTertinggal(tx, orderId) {
+  const jobs = await tx.job.findMany({
+    where: { orderId, type: "PICKUP", status: { in: ACTIVE_JOB_STATUSES } },
+    select: { id: true, routeId: true },
+  });
+  if (jobs.length === 0) return;
+  await tx.job.updateMany({
+    where: { id: { in: jobs.map((j) => j.id) } },
+    data: { status: "COMPLETED", completedAt: new Date() },
+  });
+  const routeIds = [...new Set(jobs.map((j) => j.routeId).filter(Boolean))];
+  for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
+}
+
 /** Hitung ulang satu Order dan tulis Order.status kalau berubah + berhak. */
 export async function syncOrderStatus(tx, orderId) {
   const order = await tx.order.findUnique({

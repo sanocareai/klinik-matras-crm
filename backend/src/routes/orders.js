@@ -17,7 +17,7 @@ import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
-import { syncOrderStatus, selesaikanJobBelumJalan } from "../services/orderStatusSync.js";
+import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
@@ -450,6 +450,15 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             select: { id: true },
           });
           for (const u of unitsSiapKirim) await suggestDeliveryJob(tx, u.id);
+
+          // Job Pengambilan yang nyangkut (D-064 lanjutan lagi, 6 September
+          // 2026 — lihat komentar lengkap di selesaikanJobPengambilanTertinggal)
+          // ikut ditutup di sini: kalau Order-nya BILANG sudah READY (siap
+          // kirim), unit fisiknya sudah pasti melewati tahap pengambilan,
+          // jadi job Pengambilan yang masih ASSIGNED/dst untuk order ini
+          // sudah tidak relevan lagi — bukan job Pengiriman yang baru saja
+          // dibuat suggestDeliveryJob() di atas (itu TETAP aktif).
+          await selesaikanJobPengambilanTertinggal(tx, updated.id);
         }
       }
 
