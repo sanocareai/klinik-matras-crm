@@ -1,11 +1,13 @@
-import React, { useMemo } from "react";
-import { Package, MapPinned } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Package, MapPinned, PackageCheck } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
+import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder, orderStatusOf } from "../jobStatus.js";
 import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
 // mana pun (routeId=null). Diseret ke salah satu RouteCard di kanan.
@@ -144,7 +146,21 @@ export default function UnroutedJobsPanel({
   // langsung, tanggalnya otomatis terisi dari rute tujuan. JobRow sendiri
   // sudah menangani job.scheduledDate kosong dengan baik (baris tanggal
   // cuma tidak tampil, bukan error/kosong aneh).
-  const semuaJob = useMemo(() => [...jobs, ...undatedJobs], [jobs, undatedJobs]);
+  // Filter status Order (6 September 2026, laporan owner: "tambahkan juga
+  // filter status order/pipelines... dibagian belum masuk rute aja") —
+  // LOKAL ke panel ini (bukan lewat ArmadaRoutes.jsx/server), karena
+  // jobs/undatedJobs sudah dimuat penuh (take 500) di klien; menyaring di
+  // sini cukup, tidak perlu bolak-balik ke server. Options-nya PERSIS
+  // ORDER_STATUS_LABELS yang sama dipakai Jadwal & Penugasan/Orders.jsx/
+  // Pipeline.jsx (dikurangi varian SEWA_*, beda lifecycle) — kategori
+  // konsisten di seluruh app.
+  const [fOrderStatus, setFOrderStatus] = useState("");
+
+  const semuaJob = useMemo(() => {
+    const gabungan = [...jobs, ...undatedJobs];
+    if (!fOrderStatus) return gabungan;
+    return gabungan.filter((j) => orderStatusOf(j) === fOrderStatus);
+  }, [jobs, undatedJobs, fOrderStatus]);
 
   const groups = useMemo(() => {
     const byCity = new Map();
@@ -170,9 +186,21 @@ export default function UnroutedJobsPanel({
 
   return (
     <div className="flex h-full flex-col rounded-card border border-border bg-surface">
-      <div className="shrink-0 border-b border-line px-3 py-2.5">
-        <h3 className="text-[12.5px] font-bold text-ink">Belum Masuk Rute</h3>
-        <p className="text-[10.5px] text-ink3">{semuaJob.length} job — seret ke rute mana pun (selama belum diterbitkan)</p>
+      <div className="shrink-0 space-y-2 border-b border-line px-3 py-2.5">
+        <div>
+          <h3 className="text-[12.5px] font-bold text-ink">Belum Masuk Rute</h3>
+          <p className="text-[10.5px] text-ink3">{semuaJob.length} job — seret ke rute mana pun (selama belum diterbitkan)</p>
+        </div>
+        <FilterDropdown
+          value={fOrderStatus}
+          onChange={setFOrderStatus}
+          options={Object.entries(ORDER_STATUS_LABELS)
+            .filter(([k]) => !k.startsWith("SEWA_"))
+            .map(([k, label]) => ({ value: k, label }))}
+          placeholder="Semua status order"
+          icon={PackageCheck}
+          ariaLabel="Filter status order"
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
