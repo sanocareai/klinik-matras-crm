@@ -17,7 +17,7 @@ import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
-import { syncOrderStatus } from "../services/orderStatusSync.js";
+import { syncOrderStatus, selesaikanJobBelumJalan } from "../services/orderStatusSync.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -1491,19 +1491,10 @@ async function hapusJobBelumJalan(tx, orderId) {
   });
 }
 
-// Kebalikan dari hapusJobBelumJalan di atas, dipakai saat order ditutup
-// "Terkirim" (bukan dibatalkan) — job yang belum jalan (UNSCHEDULED/
-// SCHEDULED/ASSIGNED) DI-SINKRON jadi COMPLETED, BUKAN dihapus (keputusan
-// 4 September 2026: order/unit-nya sendiri sudah benar, cuma status Job di
-// Armada yang belum nyambung — datanya tetap berharga untuk riwayat, jadi
-// jangan dibuang). Job EN_ROUTE/ARRIVED tidak akan pernah sampai sini —
-// guard unitEnRoute di pemanggil sudah menolak lebih dulu.
-async function selesaikanJobBelumJalan(tx, orderId) {
-  await tx.job.updateMany({
-    where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
-    data: { status: "COMPLETED", completedAt: new Date() },
-  });
-}
+// selesaikanJobBelumJalan dipindah ke services/orderStatusSync.js (6 September
+// 2026) — dipakai ulang dari SANA juga (sync otomatis saat Order jadi
+// DELIVERED lewat agregasi Unit, bukan cuma lewat PATCH manual di sini).
+// Diimpor di atas, bukan didefinisikan dua kali.
 
 // POST /api/orders/:id/cancel — "hapus" yang aman untuk order yang sudah
 // punya unit/job/pembayaran (RESTRICT di atas menolak hard-delete-nya).

@@ -15,6 +15,7 @@
 // Unit.status, bukan trigger DB, supaya jejaknya mudah ditelusuri dari kode.
 
 import { prisma } from "../db.js";
+import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 
 // SHIPPING ditambahkan 5 September 2026 (permintaan owner: penanda "sedang
 // di jalan diantar", sebelumnya loncat langsung READY->DELIVERED).
@@ -68,6 +69,21 @@ export function computeOrderStatus(units) {
   return terlemah;
 }
 
+// Job yang belum jalan (lihat ACTIVE_JOB_STATUSES) DI-SINKRON jadi COMPLETED,
+// BUKAN dihapus — sama persis dengan yang sudah dilakukan jalur manual PATCH
+// /orders/:id saat admin menutup order "Terkirim" (D-064 lanjutan, 6 September
+// 2026: laporan owner — order lama yang statusnya sudah Delivered [sah, dari
+// bukti WA driver] tapi job Armada-nya nyangkut selamanya "Belum Dijadwalkan").
+// SATU-SATUNYA definisi — dipakai jalur manual (routes/orders.js) DAN jalur
+// otomatis di bawah (syncOrderStatus), supaya tidak ada 2 salinan logic yang
+// bisa diam-diam menyimpang.
+export async function selesaikanJobBelumJalan(tx, orderId) {
+  await tx.job.updateMany({
+    where: { orderId, status: { in: ACTIVE_JOB_STATUSES } },
+    data: { status: "COMPLETED", completedAt: new Date() },
+  });
+}
+
 /** Hitung ulang satu Order dan tulis Order.status kalau berubah + berhak. */
 export async function syncOrderStatus(tx, orderId) {
   const order = await tx.order.findUnique({
@@ -90,6 +106,21 @@ export async function syncOrderStatus(tx, orderId) {
   await tx.orderStatusTransition.create({
     data: { orderId, fromStatus: order.status, toStatus: computed, changedById: null },
   });
+
+  // D-064 lanjutan (6 September 2026, "Ya, buat otomatis permanen") — kalau
+  // Order baru saja TERHITUNG jadi DELIVERED lewat jalur OTOMATIS ini (bukan
+  // PATCH manual, yang sudah punya sinkronisasi sendiri), job Armada yang
+  // masih terbuka untuk order ini ikut ditutup. Jalur manual PATCH sudah
+  // menolak transisi DELIVERED kalau ada job EN_ROUTE/ARRIVED (unitEnRoute
+  // guard) SEBELUM sampai sini — jalur otomatis ini tidak punya guard yang
+  // sama, tapi itu memang tidak masalah: EN_ROUTE/ARRIVED berarti job masih
+  // benar-benar berjalan, jadi kalaupun tersentuh di sini artinya job itu
+  // memang sudah selesai secara fisik (order sudah delivered) cuma belum
+  // ditutup manual oleh driver/dispatcher — ditutup otomatis di sini justru
+  // benar, bukan menimpa sesuatu yang masih aktif.
+  if (computed === "DELIVERED") {
+    await selesaikanJobBelumJalan(tx, orderId);
+  }
 }
 
 /**
