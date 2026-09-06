@@ -538,7 +538,10 @@ export default function Layout({ user, onLogout, children }) {
   // terjadi waktu armada/growth pertama dinyalakan — logo, ikon workspace,
   // badge warna semantik, dll), itu tindak lanjut TERPISAH per laporan,
   // bukan alasan menunda nyalakan gerbang utamanya.
-  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || pageGlassPilot;
+  // D-139 (6 September 2026, laporan owner: "redesign untuk warehouse") —
+  // "warehouse" (Gudang/Warehouse & Inventory Control) menyusul dengan
+  // pola SAMA PERSIS (divisi operasional penuh, bukan per-halaman).
+  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || pageGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
