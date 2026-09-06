@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
-import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge } from "./JobBadges.jsx";
+import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
@@ -105,6 +105,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
               RouteCard.jsx/ArmadaJobs.jsx yang memang tidak py section kota
               sama sekali. */}
           <CityBadge job={j} />
+          <OrderStatusBadge job={j} />
         </div>
         <div className="mt-1 truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
         <ServiceLabel job={j} />

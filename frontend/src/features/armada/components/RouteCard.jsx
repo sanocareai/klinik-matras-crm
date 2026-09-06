@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
-import { JobMetaRow, JobTypeBadge, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge } from "./JobBadges.jsx";
+import { JobMetaRow, JobTypeBadge, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -382,6 +382,7 @@ export default function RouteCard({
                     <JobTypeBadge job={j} />
                     <RentalBadge job={j} />
                     <CityBadge job={j} />
+                    <OrderStatusBadge job={j} />
                   </div>
                   <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <ServiceLabel job={j} />
