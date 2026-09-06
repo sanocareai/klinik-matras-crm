@@ -686,6 +686,14 @@ html:not([data-theme="dark"]) .glass-division textarea {
   background: rgba(255, 255, 255, 0.72) !important;
   border-color: var(--dh-hairline) !important;
   backdrop-filter: blur(12px) saturate(140%);
+  /* D-136 — pasangan mode terang, baca alasan lengkap di delivery-dark.css.
+     Di sini masalahnya malah lebih kentara: kartu pembungkus (formBox)
+     SEKARANG putih solid (D-129), dan field-nya SENDIRI rgba(255,255,
+     255,0.72) — nyaris putih-di-atas-putih, nyaris tak ada definisi sama
+     sekali. Inset shadow tipis (bukan highlight terang seperti dark mode —
+     di atas putih perlu bayangan GELAP tipis, bukan cahaya) memberi kesan
+     "permukaan cekung" tanpa border solid. */
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06) !important;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 html:not([data-theme="dark"]) .glass-division input:focus,
@@ -693,7 +701,7 @@ html:not([data-theme="dark"]) .glass-division select:focus,
 html:not([data-theme="dark"]) .glass-division textarea:focus {
   background: #fff !important;
   border-color: color-mix(in oklab, var(--dh-accent) 40%, transparent) !important;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dh-accent) 12%, transparent) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 3px color-mix(in oklab, var(--dh-accent) 12%, transparent) !important;
   outline: none;
 }
 html:not([data-theme="dark"]) .glass-division .btn-secondary {

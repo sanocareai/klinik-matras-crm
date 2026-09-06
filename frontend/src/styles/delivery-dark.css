@@ -1039,6 +1039,19 @@
   border-color: var(--dh-hairline) !important;
   color: var(--text-primary) !important;
   backdrop-filter: blur(12px) saturate(140%);
+  /* D-136 (6 September 2026, laporan owner: "redesign field pengisian
+     order agar konsisten dengan style kita" — screenshot form "Info
+     Kasur") — root cause kenapa field-field ini terasa "polos": (1)
+     `--dh-hairline` sudah dinolkan total (D-123), jadi border-nya nyaris
+     tak kelihatan; (2) `backdrop-filter:blur()` TIDAK PUNYA efek terlihat
+     di sini karena kartu pembungkusnya (formBox) sekarang solid HITAM
+     (D-129) — tidak ada apa pun di baliknya untuk diburamkan. Field jadi
+     cuma kelihatan "kotak abu sedikit lebih terang", bukan permukaan kaca
+     yang berkarakter. Inset highlight tipis di tepi atas (mirip sapuan
+     kaca di badge ikon 3D — categoryIconBadgeStyle) menambah kesan
+     "permukaan cekung berlapis" TANPA perlu border solid (tetap sejalan
+     dengan D-123: hierarki dari tone permukaan, bukan garis pembatas). */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 [data-theme="dark"] .glass-division input::placeholder,
@@ -1050,7 +1063,10 @@
 [data-theme="dark"] .glass-division textarea:focus {
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: color-mix(in oklab, var(--dh-accent) 42%, transparent) !important;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dh-accent) 13%, transparent) !important;
+  /* D-136 — inset highlight (lihat rule rest-state di atas) dipertahankan
+     bareng cincin fokus, bukan diganti total — supaya transisi rest→focus
+     terasa "field yang sama menyala", bukan berubah jadi gaya lain. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 3px color-mix(in oklab, var(--dh-accent) 13%, transparent) !important;
   outline: none;
 }
 /* Tombol sekunder/netral ("Batal" dkk, .btn-secondary/.btn-ghost) — belum
