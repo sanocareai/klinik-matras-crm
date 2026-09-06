@@ -18,6 +18,7 @@ import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../se
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus, selesaikanJobBelumJalan } from "../services/orderStatusSync.js";
+import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -394,6 +395,49 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // ini SENGAJA, supaya tetap tampil jujur sebagai "Belum Lengkap"
           // di verifikasi POD, bukan berpura-pura terdokumentasi penuh.
           await selesaikanJobBelumJalan(tx, updated.id);
+        } else if (status === "READY") {
+          // BUG NYATA ditemukan+diperbaiki 6 September 2026 (laporan owner
+          // — order Ichas RES-03092026-014: dorong status manual ke Siap
+          // Kirim lewat dropdown D-086 [Route Planner/Jadwal & Penugasan/
+          // POD], TAPI job Pengiriman-nya tidak pernah muncul). Akar
+          // masalah: jalur OTOMATIS ("unit tuntas produksi" di
+          // unitStageEngine.js#advanceUnitPastStage) memanggil
+          // suggestDeliveryJob() begitu unit jadi READY_FOR_DELIVERY —
+          // tapi dropdown status MANUAL ini SAMA SEKALI TIDAK melewati
+          // jalur itu, cuma menulis Order.status. Order-nya BILANG "Siap
+          // Kirim", tapi tidak ada job Delivery yang pernah benar-benar
+          // dibuat untuk unitnya.
+          //
+          // Fix: begitu status manual jadi READY, unit yang belum di
+          // status akhir (CANCELLED/DELIVERED) DAN belum READY_FOR_DELIVERY
+          // ikut disamakan, LALU suggestDeliveryJob() dipanggil untuk
+          // SEMUA unit yang statusnya sudah/baru READY_FOR_DELIVERY —
+          // fungsi itu sendiri idempotent (cek jobUnits dulu, skip kalau
+          // unit sudah pernah masuk job DELIVERY manapun), jadi aman
+          // dipanggil berulang tanpa bikin job dobel.
+          //
+          // SENGAJA TIDAK menyentuh unit yang statusnya SUDAH DELIVERED —
+          // itu klaim "sudah benar-benar terkirim", override manual READY
+          // di sini tidak boleh diam-diam memundurkannya. Kalau unit
+          // sudah kadung salah ter-DELIVERED gara-gara override lain
+          // (kasus Ichas — Order sempat "dicoba" DELIVERED lalu ditarik
+          // balik ke READY), itu perlu dibetulkan manual per-kasus, bukan
+          // ditimpa otomatis di sini.
+          const unitsPerluDisamakan = await tx.unit.findMany({
+            where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"] } },
+            select: { id: true },
+          });
+          if (unitsPerluDisamakan.length > 0) {
+            await tx.unit.updateMany({
+              where: { id: { in: unitsPerluDisamakan.map((u) => u.id) } },
+              data: { status: "READY_FOR_DELIVERY" },
+            });
+          }
+          const unitsSiapKirim = await tx.unit.findMany({
+            where: { orderId: updated.id, status: { in: ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"] } },
+            select: { id: true },
+          });
+          for (const u of unitsSiapKirim) await suggestDeliveryJob(tx, u.id);
         }
       }
 
