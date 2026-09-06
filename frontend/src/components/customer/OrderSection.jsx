@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check, PackageSearch,
   Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText, Send, Truck,
-  Wrench, Sparkles,
+  Wrench, Sparkles, BedDouble, Sofa, PanelTop,
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
@@ -93,6 +93,24 @@ const PRODUCT_LINE_OPTIONS = [
   { value: "SOFA",  icon: PRODUCT_LINE_ICONS.SOFA,  label: PRODUCT_LINE_LABELS.SOFA,  sub: "Sofabed, Sofa L, 1/2/3 seater" },
   { value: "DIVAN", icon: PRODUCT_LINE_ICONS.DIVAN, label: PRODUCT_LINE_LABELS.DIVAN, sub: "Divan - Sandaran" },
 ];
+
+// D-133 (6 September 2026, laporan owner: "redesign card setelah jenis
+// produk agar selaras dan konsisten" — screenshot step "Pilih Lini Produk")
+// — badge ikon 3D-glass KHUSUS kartu step ini, TERPISAH dari
+// `PRODUCT_LINE_OPTIONS.icon` (emoji string di atas, dipertahankan APA
+// ADANYA — dipakai di TEMPAT LAIN sebagai teks polos: judul step 1/2 di
+// bawah, dan kemungkinan Orders.jsx/OrderTimelineDrawer.jsx yang JUGA baca
+// PRODUCT_LINE_ICONS dari utils/format.js. Mengubah nilainya jadi komponen
+// React akan mematahkan SEMUA pemakaian teks itu, sama persis kelas bug
+// yang sudah ditemukan & diperbaiki di CATEGORY_OPTIONS.icon D-127). Warna
+// SENGAJA beda dari 3 warna step 0 (ungu/biru/oranye) — supaya kartu step
+// ini tidak "terasa sama" dengan kartu kategori sebelumnya walau gaya
+// visualnya (glass 3D + glow) konsisten.
+const PRODUCT_LINE_ICON_THEME = {
+  KASUR: { icon: BedDouble, base: "#6366f1", light: "#a5b4fc", glow: "rgba(99,102,241,0.55)" },
+  SOFA:  { icon: Sofa,      base: "#0d9488", light: "#5eead4", glow: "rgba(13,148,136,0.55)" },
+  DIVAN: { icon: PanelTop,  base: "#e11d48", light: "#fda4af", glow: "rgba(225,29,72,0.55)" },
+};
 
 // priceItemId/variantKey/normalPrice/standardPrice (29 Agustus 2026) —
 // terisi kalau item dipilih dari katalog harga, tetap null kalau diketik
@@ -1510,7 +1528,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           ← Ganti kategori
         </button>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-          {PRODUCT_LINE_OPTIONS.map((opt) => (
+          {PRODUCT_LINE_OPTIONS.map((opt) => {
+            // D-133 — theme+ikon 3D-glass diambil terpisah per baris (lihat
+            // PRODUCT_LINE_ICON_THEME) supaya bisa dirender `<Icon/>` biasa
+            // (JSX tidak bisa render akses bracket `obj[key].icon` langsung
+            // sebagai tag — harus lewat variabel dulu).
+            const lineTheme = PRODUCT_LINE_ICON_THEME[opt.value];
+            const Icon = lineTheme.icon;
+            return (
             <button
               key={opt.value}
               type="button"
@@ -1530,15 +1555,20 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
                   setStep(2);
                 }
               }}
-              style={wizardCardStyle(productLine === opt.value)}
+              className="category-card"
+              style={categoryCardStyle(productLine === opt.value, lineTheme)}
             >
-              <span style={{ fontSize: 22 }}>{opt.icon}</span>
+              <span style={categoryIconBadgeStyle(lineTheme)}>
+                <span style={categoryIconSheenStyle} />
+                <Icon size={18} color="#fff" style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.35))" }} />
+              </span>
               <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{opt.sub}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f7" }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: "rgba(245,245,247,0.6)" }}>{opt.sub}</div>
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
         <button className="btn btn-ghost" onClick={onCancel}>Batal</button>
       </div>
