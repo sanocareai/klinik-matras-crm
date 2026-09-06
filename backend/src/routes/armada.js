@@ -1374,10 +1374,18 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
       });
       // Lalu tempel + urutkan yang baru. Satu per satu (bukan updateMany)
       // karena tiap job butuh nilai `sequence` BERBEDA.
+      //
+      // scheduledDate ikut disamakan ke Route.date (6 September 2026) — dulu
+      // TIDAK disentuh sama sekali di sini, jadi job yang sebelumnya punya
+      // scheduledDate lain (atau kosong) bisa diam-diam beda tanggal dari
+      // rute yang menampungnya. Route.date sendiri TIDAK PERNAH bisa diedit
+      // setelah rute dibuat (lihat PATCH /routes/:id — cuma driver/helper/
+      // vehicle/notes yang diterima), jadi menyamakan di titik "masuk rute"
+      // ini aman dan tidak akan diam-diam basi lagi belakangan.
       for (let i = 0; i < jobIds.length; i++) {
         await tx.job.update({
           where: { id: jobIds[i] },
-          data: { routeId: route.id, sequence: i + 1 },
+          data: { routeId: route.id, sequence: i + 1, scheduledDate: route.date },
         });
       }
       // Rute PUBLISHED — stop yang BARU ditambahkan lewat edit darurat ini
@@ -1474,7 +1482,13 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
         // sendiri sudah lengkap. Sekarang Route otoritas PENUH begitu
         // diterbitkan, konsisten dengan guard PATCH /jobs/:id yang menolak
         // job ber-routeId diubah driver/helper/vehicle-nya lewat Penjadwalan.
-        data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
+        //
+        // scheduledDate ikut disamakan (6 September 2026) — jaring pengaman
+        // untuk job yang sempat masuk rute SEBELUM PATCH /routes/:id/jobs
+        // mulai menyamakan tanggalnya sendiri (lihat komentar di sana);
+        // tanpa ini job lama begitu bisa terlanjur publish dengan
+        // scheduledDate basi walau sudah dipindah ke rute yang benar.
+        data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId, scheduledDate: route.date },
       }),
       prisma.job.updateMany({
         where: { routeId: route.id, status: "UNSCHEDULED" },

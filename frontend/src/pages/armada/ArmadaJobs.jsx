@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -440,6 +440,20 @@ export default function ArmadaJobs() {
                             <JobTypeBadge job={j} />
                             <RentalBadge job={j} />
                             <CityBadge job={j} />
+                            {/* Sudah masuk Route (D-077, 6 September 2026) —
+                                dulu tabel ini nol indikasi soal ini, jadi
+                                dispatcher baru tahu drivernya "terkunci" ke
+                                Route Planner SETELAH klik baris & coba ganti
+                                driver (gagal dengan error backend). Badge ini
+                                memberi tahu LEBIH DULU, sebelum klik. */}
+                            {j.route && (
+                              <span
+                                title={`Driver/helper/kendaraan job ini diatur di Route Planner (${j.route.code}), bukan di sini`}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-inset px-2 py-0.5 text-[10.5px] font-semibold text-ink2"
+                              >
+                                <Lock size={10} className="shrink-0" /> {j.route.code}
+                              </span>
+                            )}
                             {unitCount > 1 && (
                               <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold text-ink3">
                                 {unitCount} unit

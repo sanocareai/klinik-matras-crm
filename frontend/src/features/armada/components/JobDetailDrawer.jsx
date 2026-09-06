@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation } from "lucide-react";
+import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -144,6 +144,16 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
   const units = job?.units?.map((ju) => ju.unit) || [];
   const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
+  // Job sudah masuk Route (D-077) — Route jadi SATU-SATUNYA otoritas untuk
+  // driver/helper/kendaraan, backend MENOLAK PATCH ketiga field itu lewat
+  // sini (lihat armada.js PATCH /jobs/:id). Sebelumnya kartu Penugasan di
+  // bawah tetap tampil seolah bisa diklik untuk job begini — klik driver
+  // baru gagal SETELAH request, dengan error mentah. Sekarang dikunci
+  // proaktif di UI, bukan cuma dibiarkan gagal di backend. Tanggal/jam/
+  // estimasi/alamat/catatan TETAP bisa diedit di sini walau routeId ada —
+  // guard backend cuma soal driver/helper/vehicle, jadi kuncinya juga
+  // SESEMPIT itu, bukan mengunci seluruh kartu Penugasan.
+  const terkunciRute = job?.routeId != null;
   // Job RIWAYAT — selesai/gagal sebelum sistem Armada dipakai (backfill),
   // TIDAK PUNYA driver/tanggal karena memang tidak pernah dicatat, bukan
   // karena belum ditindaklanjuti (laporan owner 31 Agustus 2026: "kenapa
@@ -176,12 +186,16 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // cek vehicleId null mencegah ini menembak ulang setelah user sengaja
   // melepas kendaraan lewat "Belum ada kendaraan").
   useEffect(() => {
-    if (!job || !editable || busy) return;
+    // terkunciRute (D-077, 6 September 2026) — job ber-routeId TIDAK BOLEH
+    // di-PATCH vehicleId lewat sini, backend selalu menolak. Tanpa guard ini
+    // efek di bawah nembak PATCH yang pasti gagal SETIAP kali drawer job
+    // begini dibuka (armada dengan cuma 1 kendaraan aktif).
+    if (!job || !editable || busy || terkunciRute) return;
     if (vehicles.length === 1 && !job.vehicleId) {
       ubahJadwal({ vehicleId: vehicles[0].id });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.id, job?.vehicleId, vehicles.length, editable]);
+  }, [job?.id, job?.vehicleId, vehicles.length, editable, terkunciRute]);
 
   async function ubahJadwal(patch) {
     setBusy(true);
@@ -311,52 +325,87 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                 {editable ? (
                   <div className="mt-3 space-y-3 rounded-btn border border-border bg-inset/30 p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Penugasan</p>
-                    <div>
-                      <label className="mb-1.5 block text-[11px] text-ink2">Driver</label>
-                      <ChipPilih
-                        items={drivers}
-                        selectedId={job.driverId}
-                        disabled={busy}
-                        kosongLabel="Belum ditugaskan"
-                        onPick={(id) => ubahJadwal({ driverId: id })}
-                      />
-                    </div>
-                    {/* Helper (pendamping driver, D-037, 31 Agustus 2026) —
-                        OPSIONAL, kolam nama TERPISAH dari Driver di atas
-                        (lihat GET /armada/helpers). Job boleh jalan tanpa
-                        helper sama sekali, karena itu "Tanpa helper" dan
-                        bukan "Belum ditugaskan" (beda nuansa: yang satu
-                        wajar dikosongkan, yang satu perlu ditindaklanjuti). */}
-                    <div>
-                      <label className="mb-1.5 block text-[11px] text-ink2">Helper</label>
-                      <ChipPilih
-                        items={helpers}
-                        selectedId={job.helperId}
-                        disabled={busy}
-                        kosongLabel="Tanpa helper"
-                        onPick={(id) => ubahJadwal({ helperId: id })}
-                      />
-                    </div>
-                    {/* Kendaraan: 1 pilihan saja -> auto-terisi (lihat efek di
-                        atas), tampil sebagai info, bukan pilihan berulang.
-                        >1 kendaraan baru tampil chip yang sama pola dgn Driver. */}
-                    {vehicles.length > 1 ? (
-                      <div>
-                        <label className="mb-1.5 block text-[11px] text-ink2">Kendaraan</label>
-                        <ChipPilih
-                          items={vehicles.map((v) => ({ id: v.id, name: v.plateNumber }))}
-                          selectedId={job.vehicleId}
-                          disabled={busy}
-                          kosongLabel="Belum ada kendaraan"
-                          onPick={(id) => ubahJadwal({ vehicleId: id })}
-                        />
+                    {/* Terkunci (D-077) — job ini sudah jadi stop di sebuah
+                        Route, jadi driver/helper/kendaraan diatur DI SANA,
+                        bukan di sini (Route otoritas penuh begitu job masuk
+                        rute). Tampil read-only + penjelasan, BUKAN dihilangkan
+                        total, supaya dispatcher tetap tahu siapa yang
+                        ditugaskan tanpa perlu buka Route Planner cuma untuk
+                        mengecek. */}
+                    {terkunciRute ? (
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-1.5 rounded-btn bg-orangebg px-2.5 py-2 text-[11.5px] text-orange">
+                          <Lock size={13} className="mt-0.5 shrink-0" />
+                          <span>
+                            Sudah masuk rute <strong>{job.route?.code || "?"}</strong> — driver/helper/kendaraan
+                            diatur di Route Planner, bukan di sini.
+                          </span>
+                        </div>
+                        <p className="flex items-center gap-1.5 text-[12px] text-ink2">
+                          <User size={13} className="text-ink3" /> {job.driver?.name || "Belum ditugaskan"}
+                        </p>
+                        {job.helper?.name && (
+                          <p className="flex items-center gap-1.5 text-[12px] text-ink2">
+                            <User size={13} className="text-ink3" /> {job.helper.name} (helper)
+                          </p>
+                        )}
+                        {job.vehicle && (
+                          <p className="flex items-center gap-1.5 text-[12px] text-ink2">
+                            <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      job.vehicle && (
-                        <p className="flex items-center gap-1.5 text-[12px] text-ink2">
-                          <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
-                        </p>
-                      )
+                      <>
+                        <div>
+                          <label className="mb-1.5 block text-[11px] text-ink2">Driver</label>
+                          <ChipPilih
+                            items={drivers}
+                            selectedId={job.driverId}
+                            disabled={busy}
+                            kosongLabel="Belum ditugaskan"
+                            onPick={(id) => ubahJadwal({ driverId: id })}
+                          />
+                        </div>
+                        {/* Helper (pendamping driver, D-037, 31 Agustus 2026) —
+                            OPSIONAL, kolam nama TERPISAH dari Driver di atas
+                            (lihat GET /armada/helpers). Job boleh jalan tanpa
+                            helper sama sekali, karena itu "Tanpa helper" dan
+                            bukan "Belum ditugaskan" (beda nuansa: yang satu
+                            wajar dikosongkan, yang satu perlu ditindaklanjuti). */}
+                        <div>
+                          <label className="mb-1.5 block text-[11px] text-ink2">Helper</label>
+                          <ChipPilih
+                            items={helpers}
+                            selectedId={job.helperId}
+                            disabled={busy}
+                            kosongLabel="Tanpa helper"
+                            onPick={(id) => ubahJadwal({ helperId: id })}
+                          />
+                        </div>
+                        {/* Kendaraan: 1 pilihan saja -> auto-terisi (lihat efek
+                            di atas), tampil sebagai info, bukan pilihan
+                            berulang. >1 kendaraan baru tampil chip pola sama
+                            dgn Driver. */}
+                        {vehicles.length > 1 ? (
+                          <div>
+                            <label className="mb-1.5 block text-[11px] text-ink2">Kendaraan</label>
+                            <ChipPilih
+                              items={vehicles.map((v) => ({ id: v.id, name: v.plateNumber }))}
+                              selectedId={job.vehicleId}
+                              disabled={busy}
+                              kosongLabel="Belum ada kendaraan"
+                              onPick={(id) => ubahJadwal({ vehicleId: id })}
+                            />
+                          </div>
+                        ) : (
+                          job.vehicle && (
+                            <p className="flex items-center gap-1.5 text-[12px] text-ink2">
+                              <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
+                            </p>
+                          )
+                        )}
+                      </>
                     )}
                     <div className="flex items-end gap-2">
                       <div className="flex-1">
