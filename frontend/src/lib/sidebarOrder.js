@@ -52,3 +52,31 @@ export function saveSectionOrder(divisionKey, section, orderedTos) {
   all[section] = orderedTos;
   writeAll(divisionKey, all);
 }
+
+// D-137 (6 September 2026, laporan owner: "buatkan skema urutan workspace
+// bisa di drag and drop") — susun ulang daftar PEMILIH WORKSPACE (bukan menu
+// sidebar per-divisi di atas). Key TERPISAH dari `KEY_PREFIX` per-divisi
+// karena daftar workspace itu SATU daftar GLOBAL (tidak bergantung divisi
+// aktif) — memakai `readAll("__workspaces__")` akan salah kalau kebetulan
+// ada divisi bernama sama, jadi pakai kunci literal sendiri. Reuse
+// `applyCustomOrder` apa adanya — WORKSPACES (WorkspaceSwitcher.jsx) sudah
+// punya field `.to` yang sama bentuknya dengan item menu sidebar.
+const WORKSPACE_ORDER_KEY = "sidebar-order:__workspaces__";
+
+export function getWorkspaceOrder() {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_ORDER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveWorkspaceOrder(orderedTos) {
+  try {
+    localStorage.setItem(WORKSPACE_ORDER_KEY, JSON.stringify(orderedTos));
+  } catch {
+    // localStorage penuh/diblokir (mode privat dkk) — biarkan urutan
+    // default, jangan sampai error ini menjatuhkan seluruh sidebar.
+  }
+}
