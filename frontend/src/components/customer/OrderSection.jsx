@@ -1640,8 +1640,23 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     const lineLabel = category === "SEWA" ? "Kasur Sehat" : (PRODUCT_LINE_LABELS[productLine] || "Produk");
     return (
       <div style={formBox}>
-        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-          {opt?.icon} {opt?.label} — Info {lineLabel}
+        {/* D-134 (6 September 2026, laporan owner: "muncul field input order
+            di tengah... terjadi kesalahan dan harus muat ulang" — repro:
+            klik "Kasur 2in1" di step Pilih Jenis Produk (kategori BARU) →
+            lanjut ke step ini → crash) — root cause: `opt.icon` sejak D-127
+            adalah KOMPONEN lucide (bukan emoji string lagi), tapi baris ini
+            TERLEWAT saat migrasi (cuma header step 1 yang diperbaiki waktu
+            itu) — masih diinterpolasi `{opt?.icon}` mentah, yang React
+            tolak keras: "Functions are not valid as a React child". Karena
+            ChatWindow.Composer merender OrderEditDrawer sebagai anak
+            (createPortal cuma pindah DOM-nya, bukan React tree-nya), error
+            ini naik sampai ColumnErrorBoundary "Chat" — persis gejala
+            "kolom lain tetap normal" di laporan. Diperbaiki sama seperti
+            step 1: render `<opt.icon/>` sebagai elemen, bukan interpolasi
+            string. */}
+        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          {opt?.icon && <opt.icon size={15} color={opt.iconTheme?.base} />}
+          {opt?.label} — Info {lineLabel}
         </p>
         <p style={{ margin: "0 0 4px", fontSize: 11, color: "var(--text-muted)" }}>
           {lineLabel}{productType ? ` · ${PRODUCT_TYPE_LABELS[productType]}` : ""}
