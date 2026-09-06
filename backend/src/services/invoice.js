@@ -48,7 +48,12 @@ import { prisma } from "../db.js";
 // PRODUCT_LINE_LABELS/PRODUCT_TYPE_LABELS juga salinan backend dari
 // utils/format.js frontend (nilai HARUS sama persis — kalau enum baru
 // ditambah di schema.prisma, update DUA tempat itu bareng label di sini).
-function parseOrderNotesForInvoice(notes) {
+//
+// DIEKSPOR (6 September 2026) — routes/armada.js (broadcast rute ke
+// Natasha) JUGA butuh produk+ukuran per stop. Ini SATU-SATUNYA salinan
+// backend yang benar (lihat catatan bug di atas), jadi armada.js reuse
+// dari sini alih-alih duplikasi ketiga kalinya.
+export function parseOrderNotesForInvoice(notes) {
   if (!notes) return { merkKasur: "", ukuranKasur: "" };
   try {
     const p = JSON.parse(notes);
@@ -57,8 +62,8 @@ function parseOrderNotesForInvoice(notes) {
     return { merkKasur: "", ukuranKasur: "" };
   }
 }
-const PRODUCT_LINE_LABELS = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
-const PRODUCT_TYPE_LABELS = {
+export const PRODUCT_LINE_LABELS = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
+export const PRODUCT_TYPE_LABELS = {
   KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", MULTIBED: "Multibed",
   KASUR_2IN1_ATAS: "Kasur 2in1 Atas", KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
   KASUR_SEHAT: "Kasur Sehat", KASUR_2IN1: "Kasur 2in1", KASUR_LAINNYA: "Lainnya",

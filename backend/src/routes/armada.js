@@ -30,6 +30,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
+import { parseOrderNotesForInvoice, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS } from "../services/invoice.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -277,11 +278,44 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   // route.jobs SUDAH terurut sequence asc (routeInclude), sama urutan yang
   // dipakai Route Card di frontend — TIDAK di-sort ulang di sini supaya
   // kedua tempat ini mustahil menampilkan urutan berbeda.
+  //
+  // Detail per stop DIPERLUAS 6 September 2026 (laporan owner, contoh flow
+  // kerja Natasha manual di Google Sheets: nomor customer, "EST DIATAS JAM
+  // X" per stop, jenis+ukuran produk) — "gue butuh detail informasi:
+  // nomer customer, estimasi jam..., jenis produk, ukuran (ini untuk kasur
+  // aja)". Ukuran SENGAJA cuma ditempel untuk productLine KASUR — Sofa/
+  // Divan tidak punya konsep "ukuran" yang sama (dijelaskan eksplisit oleh
+  // owner), cukup jenis produknya saja yang tetap tampil.
   const stopLines = (route.jobs || []).map((j, idx) => {
-    const nama = j.order?.customer?.name || j.units?.[0]?.unit?.order?.customer?.name || "Tanpa nama";
+    const order = j.order || j.units?.[0]?.unit?.order;
+    const nama = order?.customer?.name || "Tanpa nama";
+    const telp = order?.customer?.phone || "";
     const tipe = j.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
-    return `${idx + 1}. ${nama} — ${tipe}\n   ${alamat}`;
+
+    let produk = "";
+    if (order) {
+      const lini = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
+      const jenis = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
+      const bagianProduk = [jenis ? `${lini} ${jenis}` : lini];
+      if (order.productLine === "KASUR") {
+        const { ukuranKasur } = parseOrderNotesForInvoice(order.notes);
+        if (ukuranKasur) bagianProduk.push(ukuranKasur);
+      }
+      produk = bagianProduk.join(" · ");
+    }
+
+    // timeWindow (D-043/redesain Sep 2026, field "Estimasi Jam (opsional)"
+    // di JobDetailDrawer > Penugasan) — teks bebas ("Di atas jam 09.00"
+    // dkk), sama field yang diminta owner di sini.
+    const estimasi = j.timeWindow?.trim();
+
+    const detailBaris = [telp, produk].filter(Boolean).join(" · ");
+    const isiBaris = [`${idx + 1}. ${nama} — ${tipe}`];
+    if (detailBaris) isiBaris.push(`   ${detailBaris}`);
+    isiBaris.push(`   ${alamat}`);
+    if (estimasi) isiBaris.push(`   Estimasi: ${estimasi}`);
+    return isiBaris.join("\n");
   });
 
   const baris = [
@@ -368,6 +402,12 @@ const jobInclude = {
       // sales tidak pernah terlihat dispatcher/driver sama sekali walau
       // sudah ada di data Order sejak awal.
       locationUrl: true,
+      // productLine/productType/notes (6 September 2026, laporan owner:
+      // broadcast rute butuh "jenis produk, ukuran [khusus kasur]") —
+      // notes di-parse lewat parseOrderNotesForInvoice (services/invoice.js,
+      // SATU-SATUNYA tempat JSON Order.notes di-parse untuk merk/ukuran,
+      // reuse bukan duplikasi ketiga kalinya) untuk ambil ukuranKasur.
+      productLine: true, productType: true, notes: true,
       customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
     },
   },
@@ -404,6 +444,9 @@ const jobInclude = {
               // locationUrl — lihat catatan panjang di order.select di atas,
               // fallback ini sama alasannya.
               locationUrl: true,
+              // productLine/productType/notes — fallback ini sama alasannya
+              // dengan order.select di atas.
+              productLine: true, productType: true, notes: true,
               // assignedSales (D-043, 2 September 2026) — laporan owner:
               // dispatcher perlu tahu SIAPA sales yang pegang order ini
               // (buat koordinasi/tanya-jawab), bukan cuma nama customer.
