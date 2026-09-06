@@ -81,6 +81,11 @@ const invoicePdfsDir = path.join(__dirname, "../data/invoice-pdfs");
 // dengan invoice-pdfs di atas (WAHA butuh URL yang bisa dijangkau sendiri
 // lewat jaringan Docker internal).
 const warrantyPdfsDir = path.join(__dirname, "../data/warranty-pdfs");
+// Gambar tabel rute (6 September 2026, laporan owner — pengganti
+// screenshot Google Sheets manual Natasha) — pola sama persis dengan
+// invoice-pdfs/warranty-pdfs di atas, WAHA butuh URL yang bisa dijangkau
+// sendiri lewat jaringan Docker internal. Lihat services/routeSheetImage.js.
+const routeSheetsDir = path.join(__dirname, "../data/route-sheets");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
@@ -90,6 +95,7 @@ mkdirSync(scopeRevisionPhotosDir, { recursive: true });
 mkdirSync(vehicleReceiptsDir, { recursive: true });
 mkdirSync(invoicePdfsDir, { recursive: true });
 mkdirSync(warrantyPdfsDir, { recursive: true });
+mkdirSync(routeSheetsDir, { recursive: true });
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -124,6 +130,7 @@ app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
+app.use("/media/route-sheets", express.static(routeSheetsDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);
