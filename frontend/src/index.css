@@ -2741,14 +2741,23 @@ body {
      align-items) — margin:auto pada elemen di dalam container yang
      overflow SELALU bisa dijangkau penuh lewat scroll, tidak pernah
      "menghilang" seperti align-items:center. */
-  display: flex; justify-content: center;
+  /* align-items:flex-start WAJIB eksplisit — default flex `stretch` bikin
+     `.media-preview-modal` (yang TIDAK punya height, cuma max-height) melar
+     paksa ke 86dvh. Grid di dalamnya `flex:1` lalu menelan seluruh ruang
+     kosong itu → modal jadi kotak tinggi hampir kosong, footer + tombol
+     Kirim terdorong ke tepi bawah viewport / ketutup composer (persis gejala
+     laporan owner 6 Sep 2026 sesudah overlay ini di-portal ke body). Dengan
+     flex-start modal kembali setinggi kontennya; `margin:auto` memusatkannya
+     saat muat, dan `overflow-y:auto` overlay ini menyelamatkannya jadi
+     bisa di-scroll kalau ternyata lebih tinggi dari layar. */
+  display: flex; justify-content: center; align-items: flex-start;
   overflow-y: auto; padding: 24px 0;
   animation: fadeIn 0.15s ease;
 }
 .media-preview-modal {
   background: white; border-radius: 14px; width: 520px; max-width: 94vw;
-  margin: auto 0;
-  max-height: 86vh; max-height: 86dvh;
+  margin: auto;
+  max-height: calc(100dvh - 48px);
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: var(--shadow-md);
 }
