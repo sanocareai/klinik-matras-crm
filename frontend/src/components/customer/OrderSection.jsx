@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronDown, ChevronUp, Trash2, AlertTriangle, Lock, Copy, Check, PackageSearch,
   Weight, Bed, Ruler, MapPin, HeartPulse, CalendarClock, Link2, Tag, Banknote, MessageSquareText, Send, Truck,
+  Wrench, Sparkles,
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
@@ -64,10 +65,17 @@ const EMPTY_ORDER_OPTIONS = { jenisLayanan: [], merkKasur: [], ukuranKasur: [] }
 // (Kasur/Sofa/Divan, dipilih di step TERPISAH sesudah ini — lihat
 // PRODUCT_LINE_OPTIONS). Sebelumnya tertulis literal "Kasur Baru"/"Kasur
 // Sewa" krn kasur satu-satunya produk yang ada.
+// D-127 (6 September 2026, redesign wizard "Pilih Jenis" — referensi owner:
+// ikon 3D-glass mengkilap, warna beda per kategori) — icon diganti dari emoji
+// jadi komponen lucide + `iconTheme` (base/light/glow) supaya bisa dirender
+// sebagai badge kaca 3D berwarna lewat categoryIconBadgeStyle() di bawah,
+// BUKAN cuma teks emoji polos. Warna dipilih SESUAI permintaan owner —
+// bukan asal, biar tiap kategori langsung kebaca dari warnanya saja:
+// Service/Upgrade = ungu, Baru = biru, Sewa = oranye.
 const CATEGORY_OPTIONS = [
-  { value: "LAYANAN", icon: "🔧", label: "Service / Upgrade", sub: "Upgrade fondasi, ganti kain, reupholstery, dsb." },
-  { value: "BARU",    icon: "✨", label: "Baru",              sub: "Pembelian produk baru" },
-  { value: "SEWA",    icon: "📅", label: "Sewa",              sub: "Sewa produk" },
+  { value: "LAYANAN", icon: Wrench, iconTheme: { base: "#7c3aed", light: "#c4b5fd", glow: "rgba(124,58,237,0.55)" }, label: "Service / Upgrade", sub: "Upgrade fondasi, ganti kain, reupholstery, dsb." },
+  { value: "BARU",    icon: Sparkles, iconTheme: { base: "#2563eb", light: "#93c5fd", glow: "rgba(37,99,235,0.55)" }, label: "Baru",              sub: "Pembelian produk baru" },
+  { value: "SEWA",    icon: CalendarClock, iconTheme: { base: "#f97316", light: "#fdba74", glow: "rgba(249,115,22,0.55)" }, label: "Sewa",         sub: "Sewa produk" },
 ];
 
 const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
@@ -1429,9 +1437,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               key={opt.value}
               type="button"
               onClick={() => setCategory(opt.value)}
-              style={wizardCardStyle(category === opt.value)}
+              style={categoryCardStyle(category === opt.value, opt.iconTheme)}
             >
-              <span style={{ fontSize: 22 }}>{opt.icon}</span>
+              <span style={categoryIconBadgeStyle(opt.iconTheme)}>
+                <span style={categoryIconSheenStyle} />
+                <opt.icon size={18} color="#fff" style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.35))" }} />
+              </span>
               <div style={{ textAlign: "left" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{opt.sub}</div>
@@ -1480,8 +1491,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
     const catOpt = CATEGORY_OPTIONS.find((o) => o.value === category);
     return (
       <div style={formBox}>
-        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-          {catOpt?.icon} {catOpt?.label} — Pilih Lini Produk
+        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          {/* D-127 — catOpt.icon sekarang komponen lucide (bukan emoji
+              string lagi, lihat CATEGORY_OPTIONS), jadi WAJIB dirender
+              sebagai elemen `<catOpt.icon/>`, bukan diinterpolasi langsung
+              seperti dulu — kalau tidak, React melempar error "Functions
+              are not valid as a React child". */}
+          {catOpt?.icon && <catOpt.icon size={15} color={catOpt.iconTheme?.base} />}
+          {catOpt?.label} — Pilih Lini Produk
         </p>
         <button type="button" onClick={() => setStep(0)}
           style={{ fontSize: 11, color: "var(--primary)", background: "none", border: "none", cursor: "pointer", padding: "0 0 10px" }}>
@@ -2287,3 +2304,59 @@ function wizardCardStyle(selected) {
     transition: "all 0.15s",
   };
 }
+
+// D-127 — varian wizardCardStyle KHUSUS kartu Kategori Order (step 0), yang
+// masing-masing punya warna sendiri (ungu/biru/oranye — lihat iconTheme di
+// CATEGORY_OPTIONS), BUKAN satu warna aksen generik untuk ketiganya. State
+// terpilih jadi ikut warna kategorinya sendiri — kartu "Sewa" terpilih glow
+// oranye, bukan biru seperti kartu lain — supaya warna itu benar-benar
+// berarti (identitas kategori), bukan sekadar dekorasi ikon saja.
+function categoryCardStyle(selected, theme) {
+  return {
+    display: "flex", alignItems: "center", gap: 12,
+    padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+    border: selected
+      ? `1.5px solid color-mix(in oklab, ${theme.base} 55%, transparent)`
+      : "1px solid var(--dh-hairline, var(--border))",
+    background: selected
+      ? `color-mix(in oklab, ${theme.base} 14%, transparent)`
+      : "var(--dh-elevated, var(--bg-card))",
+    boxShadow: selected
+      ? `0 0 0 1px color-mix(in oklab, ${theme.base} 20%, transparent), 0 0 14px 1px color-mix(in oklab, ${theme.base} 25%, transparent)`
+      : "none",
+    transition: "all 0.15s",
+  };
+}
+
+// D-127 — badge ikon "3D glass" per kategori: gradien terang→gelap (arah
+// sama dengan referensi ikon koin owner), sapuan highlight kaca miring di
+// lapisan atas (simulasi pantulan cahaya), inset shadow atas/bawah untuk
+// kesan melengkung, dan glow warna di luar (box-shadow blur, warna SAMA
+// dengan gradiennya) — bukan cuma flat-color circle. `position:relative` +
+// `overflow:hidden` supaya sapuan highlight (span absolute di bawah) tidak
+// bocor keluar bentuk rounded-nya.
+function categoryIconBadgeStyle(theme) {
+  return {
+    position: "relative", width: 40, height: 40, borderRadius: 12,
+    flexShrink: 0, overflow: "hidden",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: `linear-gradient(135deg, ${theme.light}, ${theme.base})`,
+    border: `1px solid color-mix(in oklab, ${theme.light} 70%, transparent)`,
+    boxShadow: [
+      `0 2px 6px ${theme.glow}`,
+      `0 0 16px 1px ${theme.glow}`,
+      "inset 0 1px 1px rgba(255,255,255,0.6)",
+      "inset 0 -3px 5px rgba(0,0,0,0.28)",
+    ].join(", "),
+  };
+}
+
+// Sapuan highlight kaca — dirender sebagai <span> terpisah DI DALAM badge
+// (bukan ::before, karena ini inline style object, bukan class CSS), diagonal
+// dari putih transparan (kiri-atas, "sumber cahaya") memudar ke transparan
+// penuh di kanan-bawah. `pointerEvents:none` supaya tidak mengganggu klik
+// kartu di baliknya.
+const categoryIconSheenStyle = {
+  position: "absolute", inset: 0, pointerEvents: "none",
+  background: "linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.15) 40%, transparent 65%)",
+};
