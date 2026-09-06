@@ -258,6 +258,27 @@ export const ESTIMASI_DURASI_PRESET = [
   { menit: 240, label: "Setengah hari" },
 ];
 
+// Estimasi Jam (6 September 2026) — GANTI TOTAL dari konsep "estimasi
+// durasi" di atas. Laporan owner: durasi pengerjaan tidak bisa diukur
+// akurat (tergantung macet jalanan, tidak terukur dari sistem manapun),
+// yang benar-benar berguna buat dispatcher/customer adalah "job ini
+// estimasi baru bisa dikerjakan DI ATAS jam berapa" — replika form Google
+// Sheets lama ("EST DIATAS JAM 09.00"). Preset APA ADANYA dari owner,
+// bukan dikarang/dibulatkan sendiri.
+//
+// Field targetnya Job.timeWindow (String?, jam kunjungan) — BUKAN
+// Job.estimatedDurationMinutes. Dua field itu beda makna: timeWindow =
+// KAPAN, estimatedDurationMinutes = BERAPA LAMA (yang sekarang sudah tidak
+// ditawarkan lagi lewat UI, lihat JobDetailDrawer — datanya lama tetap
+// tersimpan & ditampilkan kalau ada, cuma tidak ada jalur isi baru lagi).
+export const ESTIMASI_JAM_PRESET = [
+  { value: "Di atas jam 09.00", label: "09.00" },
+  { value: "Di atas jam 12.00", label: "12.00" },
+  { value: "Di atas jam 15.00", label: "15.00" },
+  { value: "Di atas jam 17.00", label: "17.00" },
+  { value: "Di atas jam 19.00", label: "19.00" },
+];
+
 // Link Google Maps satu sumber kebenaran (D-040, 31 Agustus 2026 — sebelum
 // ini disalin 2x persis sama di Armada.jsx & DriverJobs.jsx, gampang diam-
 // diam beda kalau salah satu diubah). Utamakan koordinat hasil geocode

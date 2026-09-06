@@ -12,7 +12,7 @@ import ChipPilih from "./ChipPilih.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
-  estimasiDurasiLabel, ESTIMASI_DURASI_PRESET,
+  estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
@@ -114,12 +114,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [address, setAddress] = useState("");
   const [accessNotes, setAccessNotes] = useState("");
   const [timeWindow, setTimeWindow] = useState("");
-  // Estimasi durasi custom dalam JAM (6 September 2026) — draft LOKAL sama
-  // alasannya dengan Alamat/Catatan/Jam di atas (user ketik angka desimal
-  // sebelum blur-simpan). Cuma terisi kalau nilai job SEKARANG bukan salah
-  // satu preset (lihat sinkronisasi di effect job?.id di bawah) — supaya
-  // input ini tidak "menempel" nilai lama begitu dispatcher pilih preset.
-  const [customJam, setCustomJam] = useState("");
 
   function muat() {
     if (!jobId) return;
@@ -175,29 +169,8 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     setAddress(job.addressText || "");
     setAccessNotes(job.accessNotes || "");
     setTimeWindow(job.timeWindow || "");
-    const cocokPreset = ESTIMASI_DURASI_PRESET.some((p) => p.menit === job.estimatedDurationMinutes);
-    setCustomJam(
-      job.estimatedDurationMinutes && !cocokPreset
-        ? String(Math.round((job.estimatedDurationMinutes / 60) * 100) / 100).replace(".", ",")
-        : ""
-    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id]);
-
-  // Commit input jam custom (6 September 2026) — terpisah dari ubahJadwal
-  // biasa karena butuh parsing + validasi angka dulu (koma ATAU titik
-  // desimal, dua-duanya lazim diketik orang Indonesia).
-  function commitCustomJam() {
-    const teks = customJam.trim().replace(",", ".");
-    if (!teks) return; // dikosongkan tanpa isi apa pun — tidak ada yang perlu disimpan
-    const jam = Number(teks);
-    if (!Number.isFinite(jam) || jam <= 0) {
-      setActionError("Jam harus angka lebih dari 0 (mis. 1,2)");
-      return;
-    }
-    const menit = Math.round(jam * 60);
-    if (menit !== job.estimatedDurationMinutes) ubahJadwal({ estimatedDurationMinutes: menit });
-  }
 
   // Alamat SALES/rencana (Order.deliveryAddress/deliveryCity, D-027/D-032) —
   // SARAN, bukan auto-fill (lihat tombol "Pakai alamat order" di bawah),
@@ -434,55 +407,49 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         )}
                       </>
                     )}
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1">
-                        <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
-                        <DatePicker
-                          value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
-                          onChange={(v) => ubahJadwal({ scheduledDate: v || null })}
-                          placeholder="Pilih tanggal"
-                          className="w-full"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="mb-1 block text-[11px] text-ink2">Jam (opsional)</label>
-                        <input
-                          value={timeWindow}
-                          onChange={(e) => setTimeWindow(e.target.value)}
-                          onBlur={() => timeWindow !== (job.timeWindow || "") && ubahJadwal({ timeWindow: timeWindow || null })}
-                          disabled={busy}
-                          placeholder="mis. 09:00–12:00"
-                          className={selectClass}
-                        />
-                      </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
+                      <DatePicker
+                        value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
+                        onChange={(v) => ubahJadwal({ scheduledDate: v || null })}
+                        placeholder="Pilih tanggal"
+                        className="w-full"
+                      />
                     </div>
 
-                    {/* Estimasi durasi pengerjaan (D-043, 2 September 2026) —
-                        chip preset (bukan ChipPilih — itu berbasis Avatar
-                        untuk driver/helper, tidak cocok untuk durasi) supaya
-                        dispatcher tinggal ketuk untuk kasus umum. */}
+                    {/* Estimasi Jam (6 September 2026, GANTI TOTAL dari
+                        "Estimasi Durasi" — laporan owner: durasi/menit tidak
+                        bisa diukur akurat karena tergantung macet jalanan,
+                        yang benar-benar berguna buat dispatcher adalah "job
+                        ini estimasi baru bisa dikerjakan DI ATAS jam berapa"
+                        — persis pola form Google Sheets lama ("EST DIATAS
+                        JAM 09.00"). Field targetnya Job.timeWindow (jam
+                        kunjungan), BUKAN Job.estimatedDurationMinutes —
+                        beda field, beda makna, jangan disatukan lagi.
+                        Preset APA ADANYA dari owner (09.00/12.00/15.00/
+                        17.00/19.00), bukan dikarang. */}
                     <div>
-                      <label className="mb-1.5 block text-[11px] text-ink2">Estimasi Durasi (opsional)</label>
+                      <label className="mb-1.5 block text-[11px] text-ink2">Estimasi Jam (opsional)</label>
                       <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => ubahJadwal({ estimatedDurationMinutes: null })}
+                          onClick={() => { setTimeWindow(""); ubahJadwal({ timeWindow: null }); }}
                           className={cn(
                             "flex h-7 items-center rounded-full border-2 px-2.5 text-[11px] font-medium transition-colors disabled:opacity-50",
-                            !job.estimatedDurationMinutes ? "border-ink3 bg-inset text-ink2" : "border-border text-ink3 hover:border-ink3"
+                            !job.timeWindow ? "border-ink3 bg-inset text-ink2" : "border-border text-ink3 hover:border-ink3"
                           )}
                         >
                           Belum diisi
                         </button>
-                        {ESTIMASI_DURASI_PRESET.map((p) => {
-                          const active = job.estimatedDurationMinutes === p.menit;
+                        {ESTIMASI_JAM_PRESET.map((p) => {
+                          const active = job.timeWindow === p.value;
                           return (
                             <button
-                              key={p.menit}
+                              key={p.value}
                               type="button"
                               disabled={busy}
-                              onClick={() => ubahJadwal({ estimatedDurationMinutes: p.menit })}
+                              onClick={() => { setTimeWindow(p.value); ubahJadwal({ timeWindow: p.value }); }}
                               className={cn(
                                 "flex h-7 items-center gap-1 rounded-full border-2 px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
                                 active ? "border-orange bg-orangebg text-orange" : "border-border text-ink2 hover:border-ink3"
@@ -494,25 +461,17 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           );
                         })}
                       </div>
-                      {/* Custom (6 September 2026, laporan owner: form Google
-                          Sheets lama punya angka menit ganjil per order —
-                          70, 75, 50, dst — yang tidak masuk preset di atas
-                          manapun). Satuan JAM (bukan menit) supaya konsisten
-                          dengan preset & label baca-nya, desimal diterima
-                          (mis. "1,2" = 72 menit). */}
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <span className="text-[11px] text-ink3">atau isi manual:</span>
-                        <input
-                          value={customJam}
-                          onChange={(e) => setCustomJam(e.target.value)}
-                          onBlur={commitCustomJam}
-                          disabled={busy}
-                          inputMode="decimal"
-                          placeholder="mis. 1,2"
-                          className="h-7 w-20 rounded-full border border-border bg-surface px-2.5 text-center text-[11px] text-ink outline-none focus:border-accent"
-                        />
-                        <span className="text-[11px] text-ink3">jam</span>
-                      </div>
+                      {/* Fallback manual — kasus jam di luar 5 preset di atas
+                          tetap bisa diketik bebas, field yang sama persis
+                          (timeWindow), cuma jalur beda. */}
+                      <input
+                        value={timeWindow}
+                        onChange={(e) => setTimeWindow(e.target.value)}
+                        onBlur={() => timeWindow !== (job.timeWindow || "") && ubahJadwal({ timeWindow: timeWindow || null })}
+                        disabled={busy}
+                        placeholder="atau isi manual, mis. Di atas jam 14.00"
+                        className={cn(selectClass, "mt-1.5")}
+                      />
                     </div>
 
                     {/* Alamat & Catatan Akses (D-039, 31 Agustus 2026) — dulu
