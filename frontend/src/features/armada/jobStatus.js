@@ -214,21 +214,33 @@ export function rentalCardAccentStyle(job) {
 // Planner TETAP pakai jobTypeCardStyle (gradasi penuh) di atas — beda
 // konteks, kartu di sana lebih besar/lebih sedikit per layar.
 //
-// Prioritas: Sewa (oranye) MENANG atas tipe job — Sewa penanda kategori
-// order yang lebih jarang & butuh perhatian ekstra (alur retur beda), bukan
-// sekadar arah job. Pengiriman dapat hijau. Pengambilan SENGAJA tanpa warna
-// sama sekali (permintaan eksplisit owner) — bukan lupa, bukan bug.
+// KOREKSI 6 September 2026 (laporan owner, contoh nyata "Ingke" — kartu
+// stop job Pengambilan yang SUDAH tuntas, order-nya sudah berstatus
+// "Pengiriman"/SHIPPING: "ini statusnya pengiriman bukan order finish, dan
+// untuk yang statusnya pengiriman harus ada label glow hijau di card nya").
+// Hijau SEKARANG mengikuti STATUS ORDER "Pengiriman" (SHIPPING), BUKAN
+// job.type job itu sendiri lagi — aturan LAMA (job.type === DELIVERY)
+// membuat job Pengambilan yang tersisa di rute untuk order yang SUDAH
+// SHIPPING [pickup-nya sendiri sudah tuntas, order-nya sedang dalam
+// perjalanan kirim] tidak dapat warna sama sekali, padahal itu justru
+// order yang paling relevan untuk menonjol. Status order LAIN (Menunggu/
+// Diproses/Siap Kirim) TIDAK dapat hijau — "Terkirim" (DELIVERED) juga
+// TIDAK diulang di sini, itu sudah dapat sinyal hijau sendiri lewat
+// OrderStatusBadge (orderStatusVariant "success").
+//
+// Prioritas: Sewa (oranye) MENANG atas status order — Sewa penanda
+// kategori order yang lebih jarang & butuh perhatian ekstra (alur retur
+// beda), bukan sekadar arah pengiriman.
 export function jobAccentBarStyle(job) {
   if (isRentalOrder(job)) return { "--dh-bar": "var(--orange)" };
-  if (job?.type === "DELIVERY") return { "--dh-bar": "var(--green)" };
+  if (orderStatusOf(job) === "SHIPPING") return { "--dh-bar": "var(--green)" };
   return {};
 }
 
 // Dipasangkan dengan jobAccentBarStyle() — class `dh-bar-left` HANYA
-// ditambahkan kalau memang ada warna untuk ditampilkan (Pengambilan biasa
-// tidak dapat class ini sama sekali, bukan class-tapi-tanpa-efek).
+// ditambahkan kalau memang ada warna untuk ditampilkan.
 export function hasJobAccentBar(job) {
-  return isRentalOrder(job) || job?.type === "DELIVERY";
+  return isRentalOrder(job) || orderStatusOf(job) === "SHIPPING";
 }
 
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:

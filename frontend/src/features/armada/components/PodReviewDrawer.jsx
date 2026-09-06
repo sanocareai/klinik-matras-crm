@@ -248,8 +248,13 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
             <p className="text-[11.5px] text-ink2">Driver: {job.driver?.name || "—"}</p>
 
             <div className="mt-4 border-t border-line pt-3.5">
+              {/* Label dibedakan per tipe job (6 September 2026, laporan
+                  owner — sama alasan dengan JobDetailDrawer.jsx: "Foto
+                  Bukti" generik tidak bilang ini bukti AMBIL atau bukti
+                  KIRIM). job.proofPhotoUrls TETAP satu field, job ini
+                  SELALU salah satu Pengambilan ATAU Pengiriman. */}
               <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
-                <Camera size={12} aria-hidden /> Foto Bukti
+                <Camera size={12} aria-hidden /> Foto Bukti {job.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
               </h4>
               {job.proofPhotoUrls?.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">

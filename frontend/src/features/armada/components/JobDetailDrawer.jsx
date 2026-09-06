@@ -829,11 +829,21 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   )}
                 </div>
 
-                {/* Bukti — foto yang SUDAH diunggah driver lewat aplikasi */}
+                {/* Bukti — foto yang SUDAH diunggah driver lewat aplikasi.
+                    Label DIBEDAKAN per tipe job (6 September 2026, laporan
+                    owner: "bukti serah terima adalah bukti pengambilan...
+                    buat menjadi 2 dokumentasi pengambilan dan pengiriman") —
+                    "Bukti Serah Terima" generik menyesatkan untuk job
+                    Pengambilan (bukti AMBIL dari customer, bukan SERAH ke
+                    customer). Job.proofPhotoUrls TETAP satu field per job
+                    (sudah type-specific secara data — job ini SELALU salah
+                    satu Pengambilan ATAU Pengiriman, tidak pernah dua-duanya
+                    sekaligus), yang berubah cuma labelnya supaya jujur soal
+                    bukti APA yang sedang dilihat. */}
                 {(job.proofPhotoUrls?.length > 0 || job.signatureUrl) && (
                   <div className="mt-4">
                     <h4 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
-                      <Camera size={12} aria-hidden /> Bukti Serah Terima
+                      <Camera size={12} aria-hidden /> Bukti {pickupJob ? "Pengambilan" : "Pengiriman"}
                     </h4>
                     <div className="flex flex-wrap gap-2">
                       {job.proofPhotoUrls?.map((src) => (
