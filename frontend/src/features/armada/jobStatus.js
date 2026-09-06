@@ -291,6 +291,19 @@ export function mapsUrl(job) {
   return null;
 }
 
+// Link Maps yang SALES sudah dapat & catat langsung dari customer saat
+// input order (Order.locationUrl) — 6 September 2026, laporan owner.
+// SENGAJA DIPISAH dari mapsUrl() di atas, BUKAN digabung/prioritas satu
+// sama lain: mapsUrl() itu hasil geocode Job.addressText (snapshot alamat
+// KUNJUNGAN, bisa beda dari alamat awal kalau driver/dispatcher koreksi di
+// lapangan), sementara ini pin ASLI dari sales saat order dibuat. Kalau
+// digabung jadi satu link "terbaik", perbedaan dua-duanya (yang justru bisa
+// jadi sinyal berguna — sales & driver pegang alamat beda) malah hilang
+// diam-diam. Fallback job.units[].unit.order sama pola dengan customerOf.
+export function salesLocationUrl(job) {
+  return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
+}
+
 // Label ringkas manusiawi untuk 1 job (D-037 lanjutan, 31 Agustus 2026 —
 // laporan owner: kolom "Job" cuma tampil 8 karakter acak dari cuid,
 // "a4d74468" dst, tidak bisa disebut ke driver/customer). Job SELALU

@@ -255,6 +255,14 @@ const jobInclude = {
       // konfirmasi tanggal yang sudah disepakati ke customer.
       pickupConfirmedDate: true, deliveryConfirmedDate: true,
       deliveryAddress: true, deliveryCity: true,
+      // locationUrl (6 September 2026, laporan owner) — link Google Maps
+      // yang SALES sudah dapat & catat langsung dari customer saat input
+      // order (pin akurat, bukan hasil geocode alamat teks). Sebelumnya
+      // TIDAK PERNAH ikut ter-include ke sini — JobDetailDrawer cuma tahu
+      // mapsUrl(job) hasil geocode Job.addressText sendiri, link asli dari
+      // sales tidak pernah terlihat dispatcher/driver sama sekali walau
+      // sudah ada di data Order sejak awal.
+      locationUrl: true,
       customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
     },
   },
@@ -286,6 +294,9 @@ const jobInclude = {
               // ini jalur baca-saja, tidak menimpa job.addressText yang
               // sudah diisi/diverifikasi driver.
               deliveryAddress: true, deliveryCity: true,
+              // locationUrl — lihat catatan panjang di order.select di atas,
+              // fallback ini sama alasannya.
+              locationUrl: true,
               // assignedSales (D-043, 2 September 2026) — laporan owner:
               // dispatcher perlu tahu SIAPA sales yang pegang order ini
               // (buat koordinasi/tanya-jawab), bukan cuma nama customer.
@@ -528,6 +539,9 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
             id: true, orderNumber: true, deliveryCity: true, category: true,
             items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
             pickupConfirmedDate: true, deliveryConfirmedDate: true,
+            // locationUrl (6 September 2026) — lihat catatan panjang di
+            // jobInclude.order.select di atas.
+            locationUrl: true,
             customer: { select: { id: true, name: true, phone: true } },
           },
         },

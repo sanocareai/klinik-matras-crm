@@ -11,7 +11,7 @@ import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
 import {
-  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
+  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, salesLocationUrl,
   estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
@@ -103,7 +103,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [actionError, setActionError] = useState("");
   const [showForm, setShowForm] = useState(null); // "complete" | "fail" | null
 
-  // Draft Alamat/Catatan Akses/Jam (31 Agustus 2026, D-039 — laporan owner:
+  // Draft Alamat/Catatan/Jam (31 Agustus 2026, D-039 — laporan owner:
   // "form order-nya bisa buat lebih lengkap?", drawer ini sebelumnya cuma
   // menampilkan ketiganya read-only, tidak pernah bisa diisi/diubah dari
   // sini sama sekali walau backend PATCH /jobs/:id sudah menerima ketiganya
@@ -295,17 +295,33 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       drawer dispatcher supaya bisa langsung cek lokasi di
                       Maps tanpa harus jadi driver yang login. Link publik
                       Google Maps biasa, TIDAK butuh API key/billing. */}
-                  {mapsUrl(job) && (
-                    <div className="py-2">
-                      <a
-                        href={mapsUrl(job)} target="_blank" rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
-                      >
-                        <Navigation size={13} /> Buka di Google Maps
-                      </a>
+                  {(mapsUrl(job) || salesLocationUrl(job)) && (
+                    <div className="space-y-1.5 py-2">
+                      {mapsUrl(job) && (
+                        <a
+                          href={mapsUrl(job)} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
+                        >
+                          <Navigation size={13} className="shrink-0" /> Buka di Google Maps
+                        </a>
+                      )}
+                      {/* Link Maps dari Sales (6 September 2026, laporan
+                          owner) — TERPISAH dari link di atas, SENGAJA tidak
+                          digabung (lihat catatan salesLocationUrl di
+                          jobStatus.js). Ini pin ASLI yang sales dapat dari
+                          customer saat input order, bukan hasil geocode
+                          alamat job. */}
+                      {salesLocationUrl(job) && (
+                        <a
+                          href={salesLocationUrl(job)} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1.5 text-[12.5px] font-semibold text-accent hover:underline"
+                        >
+                          <MapPin size={13} className="shrink-0" /> Link Maps dari Sales
+                        </a>
+                      )}
                     </div>
                   )}
-                  {/* Alamat & Catatan Akses pindah jadi field EDITABLE di kartu
+                  {/* Alamat & Catatan pindah jadi field EDITABLE di kartu
                       Penugasan di bawah selama job masih boleh diedit — baris
                       read-only di sini cuma untuk job yang statusnya sudah
                       lewat (EN_ROUTE/dst), supaya tidak ada 2 tampilan nilai
@@ -313,7 +329,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   {!editable && (
                     <>
                       <Baris icon={MapPin} label="Alamat">{job.addressText}</Baris>
-                      <Baris label="Catatan akses">{job.accessNotes}</Baris>
+                      <Baris label="Catatan">{job.accessNotes}</Baris>
                     </>
                   )}
                 </div>
@@ -474,10 +490,17 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       />
                     </div>
 
-                    {/* Alamat & Catatan Akses (D-039, 31 Agustus 2026) — dulu
-                        cuma bisa diedit dari board lama (Armada.jsx JobCard),
+                    {/* Alamat & Catatan (D-039, 31 Agustus 2026) — dulu cuma
+                        bisa diedit dari board lama (Armada.jsx JobCard),
                         sekarang tersedia langsung di drawer supaya dispatcher
-                        tidak perlu pindah tampilan untuk melengkapi job. */}
+                        tidak perlu pindah tampilan untuk melengkapi job.
+                        Label "Catatan Akses" DIGANTI "Catatan" (6 September
+                        2026, laporan owner) — isinya di lapangan TERNYATA
+                        jarang soal akses/patokan, lebih sering pengingat
+                        bawaan buat driver ("Bawa Mesin EDC", "Bawa Roda
+                        Divan/Sofa") — nama field lama menyesatkan cakupan
+                        sebenarnya. accessNotes di backend TIDAK diubah,
+                        cuma label & placeholder di UI. */}
                     <div>
                       <label className="mb-1 block text-[11px] text-ink2">Alamat</label>
                       <input
@@ -503,13 +526,13 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       )}
                     </div>
                     <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Catatan Akses (opsional)</label>
+                      <label className="mb-1 block text-[11px] text-ink2">Catatan (Opsional)</label>
                       <input
                         value={accessNotes}
                         onChange={(e) => setAccessNotes(e.target.value)}
                         onBlur={() => accessNotes !== (job.accessNotes || "") && ubahJadwal({ accessNotes: accessNotes || null })}
                         disabled={busy}
-                        placeholder="mis. patokan rumah, nomor pagar, titip satpam"
+                        placeholder="mis. Bawa Mesin EDC, Bawa Roda Divan, patokan rumah"
                         className={selectClass}
                       />
                     </div>
