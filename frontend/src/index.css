@@ -2730,7 +2730,21 @@ body {
 }
 .media-preview-modal {
   background: white; border-radius: 14px; width: 520px; max-width: 94vw;
-  max-height: 86vh; display: flex; flex-direction: column; overflow: hidden;
+  /* BUG DIPERBAIKI (6 September 2026, laporan owner: PWA mobile — modal
+     "kirim foto" tertutup, tombol Kirim tidak kelihatan/tidak bisa
+     ditekan). `vh` di browser mobile dihitung dari viewport PENUH
+     (termasuk area di belakang address bar/toolbar), bukan area yang
+     BENAR-BENAR terlihat — saat toolbar Safari/Chrome masih terbuka
+     (address bar + tombol navigasi bawah, seperti di screenshot), 86vh
+     lebih tinggi dari layar yang sungguh kelihatan, jadi footer (tombol
+     Kirim, toggle HD/Standar) terdorong ke bawah viewport yang
+     tersembunyi. `dvh` (dynamic viewport height) menghitung tinggi yang
+     BENAR-BENAR terlihat saat itu — pola SAMA yang sudah dipakai di
+     .app-shell/.customer-panel/dst (cari "100dvh" di file ini). Baris
+     `vh` dipertahankan sebagai fallback, browser lama yang belum kenal
+     `dvh` abaikan baris ini otomatis. */
+  max-height: 86vh; max-height: 86dvh;
+  display: flex; flex-direction: column; overflow: hidden;
   box-shadow: var(--shadow-md);
 }
 .media-preview-header {
