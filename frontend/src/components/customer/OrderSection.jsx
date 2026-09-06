@@ -2258,10 +2258,20 @@ const formSelect = {
   color: "var(--text-primary)", width: "100%",
 };
 
+// D-129 (6 September 2026, laporan owner: panel wizard "card abu" masih
+// beda dari kartu di dalamnya yang sudah hitam solid — ganti "hitam untuk
+// darkmode, putih untuk light mode") — SEBELUMNYA `var(--dh-surface, ...)`,
+// translucent-glass (navy tembus di dark, putih pudar di terang) — begitu
+// kartu kategori (D-128) jadi hitam SOLID, panel pembungkusnya yang masih
+// kaca-navy-transparan jadi kontras aneh persis di laporan ini (panah
+// menunjuk area ATAS panel, bukan kartunya). Ganti ke `var(--bg-surface)` —
+// SUDAH solid & theme-aware (dari tokens.css: `#1C1C1E` gelap/`#FFFFFF`
+// terang — persis "hitam utk darkmode, putih utk light mode" yang diminta,
+// bukan token baru). `backdropFilter` dilepas (percuma di atas warna solid,
+// cuma buang biaya render GPU tanpa efek terlihat).
 const formBox = {
-  marginBottom: 16, padding: 16, background: "var(--dh-surface, var(--bg-secondary))",
+  marginBottom: 16, padding: 16, background: "var(--bg-surface)",
   borderRadius: 14, border: "1px solid var(--dh-hairline, var(--border))",
-  backdropFilter: "blur(16px) saturate(140%)",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 32px -20px rgba(0,0,0,0.5)",
 };
 
