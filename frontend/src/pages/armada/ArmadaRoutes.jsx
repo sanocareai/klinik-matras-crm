@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
@@ -52,6 +53,15 @@ export default function ArmadaRoutes() {
   // default ke HARI INI, kasus paling umum dispatcher buka halaman ini.
   const [range, setRange] = useState(() => makeRange("all_time"));
   const tanggalRuteBaru = (range.from && range.from === range.to) ? range.from : todayISO();
+  // Pilih tanggal saat "Buat Rute" (revisi Sep 2026, membalik D-067 di atas
+  // — laporan owner: dispatcher tetap perlu bisa MEMILIH tanggal rute baru,
+  // bukan cuma menerima turunan diam-diam dari filter tampilan). SENGAJA
+  // TIDAK mengembalikan kontrol tanggal KEDUA yang selalu terlihat di
+  // header (itu keluhan asli D-067) — DatePicker di sini cuma muncul
+  // SEMENTARA, tepat saat tombol "Buat Rute" diklik, lalu hilang lagi
+  // setelah rute jadi/dibatalkan. `null` = tidak sedang membuat rute.
+  const [tanggalBaru, setTanggalBaru] = useState(null);
+  const [membuatRute, setMembuatRute] = useState(false);
   const [routes, setRoutes] = useState(null);
   const [unrouted, setUnrouted] = useState(null);
   // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
@@ -131,12 +141,25 @@ export default function ArmadaRoutes() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function buatRute() {
+  // Buka jalur pilih-tanggal (bukan langsung buat) — default ke
+  // tanggalRuteBaru (turunan filter) supaya kasus paling umum (dispatcher
+  // sedang melihat satu tanggal spesifik) tetap tinggal klik "Buat", tapi
+  // sekarang BISA diubah dulu sebelum konfirmasi.
+  function mulaiBuatRute() {
+    setTanggalBaru(tanggalRuteBaru);
+  }
+
+  async function konfirmasiBuatRute() {
+    if (!tanggalBaru) return;
+    setMembuatRute(true);
     try {
-      await api.createRoute({ date: tanggalRuteBaru });
-      load();
+      await api.createRoute({ date: tanggalBaru });
+      setTanggalBaru(null);
+      await load();
     } catch (e) {
       alert("Gagal membuat rute: " + e.message);
+    } finally {
+      setMembuatRute(false);
     }
   }
 
@@ -296,11 +319,32 @@ export default function ArmadaRoutes() {
                 hari/rentang tertentu lewat picker yang sama dengan
                 Dashboard/Laporan. */}
             <DateRangePicker value={range} onChange={setRange} />
-            {/* Tombol "Buat Rute" memakai `tanggalRuteBaru` (turunan dari
-                `range`, lihat catatan di state-nya) — TANPA kontrol tanggal
-                kedua yang selalu terlihat (D-067, dihapus karena dobel
-                dengan picker di atas). */}
-            <Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>
+            {/* "Buat Rute" sekarang 2 langkah (revisi Sep 2026, lihat catatan
+                panjang di state tanggalBaru) — klik pertama membuka
+                DatePicker (default tanggalRuteBaru, BISA diubah), klik
+                "Buat" mengonfirmasi. TIDAK ada kontrol tanggal kedua yang
+                SELALU terlihat — cuma muncul sesaat saat memang sedang
+                membuat rute, jadi tidak mengulang keluhan D-067 ("dua
+                kontrol tanggal berdampingan terlihat dobel"). */}
+            {tanggalBaru != null ? (
+              <>
+                <DatePicker value={tanggalBaru} onChange={setTanggalBaru} placeholder="Pilih tanggal" />
+                <Button size="sm" onClick={konfirmasiBuatRute} disabled={membuatRute || !tanggalBaru}>
+                  {membuatRute ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Buat
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setTanggalBaru(null)}
+                  disabled={membuatRute}
+                  aria-label="Batalkan buat rute"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-hovertint disabled:opacity-40"
+                >
+                  <X size={14} />
+                </button>
+              </>
+            ) : (
+              <Button size="sm" onClick={mulaiBuatRute}><Plus size={14} /> Buat Rute</Button>
+            )}
           </>
         }
       />
@@ -404,7 +448,7 @@ export default function ArmadaRoutes() {
               <EmptyState
                 title="Belum ada rute pada rentang ini"
                 description="Buat rute lalu seret job dari panel kiri ke dalamnya."
-                action={<Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>}
+                action={<Button size="sm" onClick={mulaiBuatRute}><Plus size={14} /> Buat Rute</Button>}
               />
             ) : (
               // Maks 3 kolom (revisi Sep 2026 — laporan owner: kartu terasa
