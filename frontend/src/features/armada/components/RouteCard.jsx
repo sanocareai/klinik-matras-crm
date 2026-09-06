@@ -57,6 +57,7 @@ export default function RouteCard({
   // formatRouteWaMessage di armada.js).
   const [manualMapsUrlDraft, setManualMapsUrlDraft] = useState(route.manualMapsUrl || "");
   const [resendBusy, setResendBusy] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
@@ -93,10 +94,24 @@ export default function RouteCard({
   // Edit darurat, yang mewajibkan alasan DAN tercatat sebagai riwayat edit
   // walau sebenarnya tidak ada yang berubah). Endpoint ini TIDAK mengedit
   // apa pun, murni kirim ulang pesan yang sama ke Natasha.
+  //
+  // KOREKSI 6 September 2026 (laporan owner LANGSUNG setelah tombol ini
+  // dipakai: "ngirimnya banyak banget" — tanpa konfirmasi/tanda "berhasil",
+  // klik berulang [ragu apa sudah kekirim] tiap kali jadi kiriman BARU,
+  // bukan diblokir — `disabled={resendBusy}` cuma mencegah klik SAAT
+  // request sedang berjalan, tidak mencegah klik ulang SETELAH request
+  // sebelumnya selesai). Sekarang: (1) confirm() dulu — setiap klik jadi
+  // aksi sadar, bukan bisa "kepencet" berkali-kali tanpa sengaja; (2)
+  // tanda "✓ Terkirim" tampil beberapa detik di tombolnya sendiri supaya
+  // jelas SUDAH terkirim, tidak perlu klik lagi untuk mastiin.
   async function kirimUlang() {
+    if (!window.confirm(`Kirim ulang broadcast rute ${route.code} ke Natasha?`)) return;
     setResendBusy(true);
+    setResendSent(false);
     try {
       await api.resendRouteBroadcast(route.id);
+      setResendSent(true);
+      setTimeout(() => setResendSent(false), 3000);
     } catch (e) {
       alert("Gagal kirim ulang broadcast: " + e.message);
     } finally {
@@ -276,9 +291,19 @@ export default function RouteCard({
                 onClick={kirimUlang}
                 disabled={resendBusy}
                 title="Kirim ulang ringkasan rute + link Maps ke Natasha, tanpa mengedit apa pun."
-                className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
+                className={cn(
+                  "flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold transition-colors disabled:opacity-40",
+                  resendSent ? "text-green" : "text-ink3 hover:bg-hovertint hover:text-accent"
+                )}
               >
-                {resendBusy ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Kirim Ulang
+                {resendBusy ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : resendSent ? (
+                  <Check size={11} />
+                ) : (
+                  <Send size={11} />
+                )}
+                {resendSent ? "Terkirim" : "Kirim Ulang"}
               </button>
             )}
             {/* Edit darurat (redesain Sep 2026) — HANYA untuk PUBLISHED.
