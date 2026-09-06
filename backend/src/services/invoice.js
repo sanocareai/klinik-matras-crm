@@ -72,14 +72,29 @@ export const PRODUCT_TYPE_LABELS = {
   DIVAN_UTAMA: "Divan", DIVAN_SANDARAN: "Sandaran",
 };
 
-// Ringkasan produk SATU BARIS ("Kasur Spring · 160x200 cm", "Sandaran",
-// "Sofa L") — pola SAMA dengan productSummary() di frontend
-// features/inbox/components/CustomerPanel/orderSummary.js, dipakai untuk
-// caption invoice WA (ringkas, bukan dump semua field mentah).
-function produkLabel(order, ukuranKasur) {
+// Gabungkan Lini + Jenis Produk TANPA duplikasi kata (BUG NYATA ditemukan
+// 6 September 2026, sambil sanity-check data nyata untuk fitur broadcast
+// rute: PRODUCT_TYPE_LABELS MAYORITAS SUDAH menyertakan nama lininya
+// sendiri — "Kasur Spring", "Sofa L", "Divan" — jadi concat naif
+// `${line} ${type}` menghasilkan "Kasur Kasur Spring"/"Sofa Sofa L"/
+// "Divan Divan". Ketahuan SEBELUM terkirim ke WhatsApp lewat cek data
+// production langsung [order KASUR_SPRING sungguhan], BUKAN dari laporan
+// owner. Pola concat naif yang SAMA persis juga ada di productSummary()
+// frontend (features/inbox/components/CustomerPanel/orderSummary.js) —
+// DIBIARKAN apa adanya di sana (di luar cakupan perbaikan sesi ini,
+// belum dilaporkan owner), TAPI jangan tiru bug itu di kode BARU manapun.
+export function produkLineLabel(order) {
   const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
   const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
-  return [type ? `${line} ${type}` : line, ukuranKasur].filter(Boolean).join(" · ");
+  if (!type) return line;
+  return type.startsWith(line) ? type : `${line} ${type}`;
+}
+
+// Ringkasan produk SATU BARIS ("Kasur Spring · 160x200 cm", "Sandaran",
+// "Sofa L") — dipakai untuk caption invoice WA (ringkas, bukan dump semua
+// field mentah).
+function produkLabel(order, ukuranKasur) {
+  return [produkLineLabel(order), ukuranKasur].filter(Boolean).join(" · ");
 }
 
 // Penomoran: INV-DDMMYYYY-NNN, counter per bulan — memakai ULANG tabel

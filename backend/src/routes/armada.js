@@ -30,7 +30,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
-import { parseOrderNotesForInvoice, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS } from "../services/invoice.js";
+import { parseOrderNotesForInvoice, produkLineLabel } from "../services/invoice.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -295,9 +295,10 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
 
     let produk = "";
     if (order) {
-      const lini = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
-      const jenis = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
-      const bagianProduk = [jenis ? `${lini} ${jenis}` : lini];
+      // produkLineLabel (services/invoice.js) — SATU sumber gabungan
+      // Lini+Jenis Produk yang benar (tanpa duplikasi kata, lihat catatan
+      // panjang di sana). Ukuran ditempel TERPISAH di sini, khusus KASUR.
+      const bagianProduk = [produkLineLabel(order)];
       if (order.productLine === "KASUR") {
         const { ukuranKasur } = parseOrderNotesForInvoice(order.notes);
         if (ukuranKasur) bagianProduk.push(ukuranKasur);
