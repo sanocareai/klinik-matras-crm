@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
-import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge, JobTypeBadge } from "./JobBadges.jsx";
+import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -486,19 +486,22 @@ export default function RouteCard({
                   <div className="flex flex-wrap items-center gap-1">
                     <RentalBadge job={j} />
                     <CityBadge job={j} />
-                    {/* JobTypeBadge (6 September 2026) — badge EKSPLISIT
-                        Pengambilan/Pengiriman, dipasang di sini (sebelumnya
-                        komponennya ADA tapi tidak pernah dipakai di Route
-                        Planner — lihat komentar lengkap di JobBadges.jsx).
-                        Badge "Selesai/Gagal" per-job yang SEMPAT dicoba di
-                        sini DICABUT lagi — laporan owner: itu bikin bingung
-                        karena job Pengambilan yang sudah tuntas [VERA, Ingke,
-                        Rahma Hutami] ikut kelihatan "Selesai" hijau padahal
-                        ORDER-nya sendiri belum terkirim. "Selesai/Terkirim"
-                        yang benar itu status ORDER (OrderStatusBadge di
-                        bawah — DELIVERED sudah otomatis hijau lewat
-                        orderStatusVariant, tidak perlu badge job terpisah). */}
-                    <JobTypeBadge job={j} />
+                    {/* JobTypeBadge SENGAJA TIDAK dipasang di sini (regresi
+                        6 September 2026 — sempat ditambahkan lagi lewat
+                        commit "badge Pengiriman jadi hijau eksplisit", TAPI
+                        itu menciptakan ULANG persis masalah yang SUDAH
+                        diputuskan owner sebelumnya di commit b87b36d8:
+                        "kita hanya butuh 1 status" — 2 badge teks
+                        [JobTypeBadge Pengambilan/Pengiriman + OrderStatusBadge
+                        Pengambilan/Diproses/Siap Kirim/Pengiriman/Terkirim]
+                        gampang tampil BERDAMPINGAN dengan kata yang SAMA
+                        [mis. "Pengambilan SIAP KIRIM"] dan membingungkan.
+                        Sinyal tipe job [Pengambilan/Pengiriman] TETAP ada
+                        lewat warna glow aksen kiri kartu — jobAccentBarStyle/
+                        hasJobAccentBar di style={} bawah, hijau khusus
+                        Pengiriman — itu yang dimaksud "badge hijau", BUKAN
+                        badge teks kedua. OrderStatusBadge SATU-SATUNYA badge
+                        status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
                   </div>
                   <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
