@@ -13,8 +13,9 @@ import { CustomerProfileCard } from "./JobBadges.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, orderOf,
-  estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
+  estimasiDurasiLabel, ESTIMASI_JAM_PRESET, confirmedDateOf,
 } from "../jobStatus.js";
+import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
 // Drawer detail job — data NYATA dari GET /armada/jobs/:id.
@@ -167,6 +168,19 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // sudah terkirim statusnya tapi masih harus diambil?" — "Belum
   // dijadwalkan"/"Belum ditugaskan" terbaca seolah masih pending).
   const historis = job && ["COMPLETED", "FAILED"].includes(job.status) && !job.scheduledDate && !job.driverId;
+
+  // Label "Tanggal Pengambilan/Pengiriman" + pembanding janji sales (6
+  // September 2026, laporan owner — contoh nyata Cst VERA: field "Tanggal"
+  // di sini cuma polos, tidak jelas ini tanggal ambil atau kirim, DAN tidak
+  // ada cara lihat apa tanggal armada ini masih sama dengan yang sales
+  // janjikan ke customer [Order.pickupConfirmedDate/deliveryConfirmedDate]
+  // tanpa pindah ke Sales CRM). Job.scheduledDate (rencana ARMADA, bisa
+  // digeser dispatcher) SENGAJA field terpisah dari janji sales — dua-duanya
+  // ditampilkan BERDAMPINGAN di sini, bukan disatukan, supaya perbedaan
+  // (kalau ada) justru kelihatan, bukan hilang ditimpa.
+  const pickupJob = job?.type === "PICKUP";
+  const janjiSales = confirmedDateOf(job);
+  const bedaDariJanjiSales = janjiSales && job?.scheduledDate?.slice(0, 10) !== janjiSales.slice(0, 10);
 
   // Sinkron draft SEKALI per job dibuka (job?.id, bukan job) — supaya PATCH
   // lain yang mengubah job (mis. pilih driver) tidak diam-diam menimpa ketikan
@@ -486,13 +500,24 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                       </>
                     )}
                     <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Tanggal</label>
+                      <label className="mb-1 block text-[11px] text-ink2">
+                        Tanggal {pickupJob ? "Pengambilan" : "Pengiriman"}
+                      </label>
                       <DatePicker
                         value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
                         onChange={(v) => ubahJadwal({ scheduledDate: v || null })}
                         placeholder="Pilih tanggal"
                         className="w-full"
                       />
+                      {janjiSales && (
+                        <p className={cn(
+                          "mt-1 text-[11px]",
+                          bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3"
+                        )}>
+                          Janji sales ke customer: {formatTanggalPendek(janjiSales)}
+                          {bedaDariJanjiSales && " — beda dari tanggal di atas"}
+                        </p>
+                      )}
                     </div>
 
                     {/* Estimasi Jam (6 September 2026, GANTI TOTAL dari
@@ -601,13 +626,19 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   </div>
                 ) : (
                   <div className="divide-y divide-line">
-                    <Baris icon={Clock} label="Jadwal">
+                    <Baris icon={Clock} label={`Jadwal ${pickupJob ? "Pengambilan" : "Pengiriman"}`}>
                       {job.scheduledDate
                         ? new Date(job.scheduledDate).toLocaleDateString("id-ID", {
                             weekday: "long", day: "numeric", month: "long", year: "numeric",
                           })
                         : historis ? "— (data riwayat)" : "Belum dijadwalkan"}
                       {job.timeWindow ? ` · ${job.timeWindow}` : ""}
+                      {janjiSales && (
+                        <span className={cn("mt-0.5 block text-[11px]", bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
+                          Janji sales ke customer: {formatTanggalPendek(janjiSales)}
+                          {bedaDariJanjiSales && " — beda dari tanggal di atas"}
+                        </span>
+                      )}
                     </Baris>
                     <Baris icon={User} label="Driver">
                       {job.driver?.name || (historis ? "— (data riwayat)" : "Belum ditugaskan")}

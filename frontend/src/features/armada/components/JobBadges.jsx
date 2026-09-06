@@ -109,18 +109,27 @@ export function RentalBadge({ job, className }) {
 // beda dari EstimasiBadge (oranye = perkiraan): ini FAKTA yang sudah
 // disepakati ke customer, bukan angka perkiraan. null (belum dikonfirmasi)
 // = tidak render apa-apa, bukan tempelan "Belum pasti" di setiap kartu.
+//
+// Label diperjelas jadi "Pasti Ambil"/"Pasti Kirim" (6 September 2026,
+// laporan owner — contoh nyata Cst VERA: badge "Pasti: 1 Sep" datanya SUDAH
+// BENAR [ikut job.type di bawah, bukan salah ambil field], tapi teks yang
+// KELIHATAN cuma "Pasti" polos — dispatcher yang scan cepat lintas kartu
+// Pengambilan+Pengiriman campur tidak bisa tahu ini janji ambil atau janji
+// kirim tanpa hover ke tooltip. SEBELUM ini keterangan jenisnya cuma ada di
+// `title` (hover), sekarang ikut ada di teks yang langsung kelihatan.
 export function ConfirmedTimeBadge({ job, className }) {
   const tanggal = confirmedDateOf(job);
   if (!tanggal) return null;
+  const pickup = job?.type === "PICKUP";
   return (
     <span
-      title={`Tanggal ${job?.type === "PICKUP" ? "pengambilan" : "pengiriman"} PASTI, sudah dikonfirmasi ke pelanggan`}
+      title={`Tanggal ${pickup ? "pengambilan" : "pengiriman"} PASTI, sudah dikonfirmasi ke pelanggan`}
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] font-semibold text-green",
         className
       )}
     >
-      <CalendarCheck2 size={11} className="shrink-0" /> Pasti: {formatTanggalPendek(tanggal)}
+      <CalendarCheck2 size={11} className="shrink-0" /> Pasti {pickup ? "Ambil" : "Kirim"}: {formatTanggalPendek(tanggal)}
     </span>
   );
 }
