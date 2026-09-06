@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder } from "../jobStatus.js";
-import { JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
+import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
@@ -95,7 +95,6 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
       <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1">
-          <JobTypeBadge job={j} />
           <RentalBadge job={j} />
           {/* CityBadge di sini TERASA redundan dengan header section kota
               di panel ini sendiri, TAPI kartu yang sama (JobRow) juga

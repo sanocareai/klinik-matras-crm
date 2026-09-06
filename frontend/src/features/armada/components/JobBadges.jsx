@@ -1,5 +1,8 @@
 import React from "react";
-import { Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned } from "lucide-react";
+import {
+  Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned,
+  Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass,
+} from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
@@ -158,11 +161,38 @@ export function CityBadge({ job, className }) {
 // tone kustom seperti badge lain di file ini) SUPAYA warnanya identik
 // dengan tampilan status order di halaman lain (Orders.jsx, Pipeline.jsx,
 // dst) — status yang sama harus selalu kelihatan sama di seluruh app.
+//
+// Ikon per status (6 September 2026, laporan owner: "boleh masing-masing
+// label warnanya dibedakan") — JobTypeBadge (Pengambilan/Pengiriman) baru
+// saja DICABUT dari kartu-kartu ini karena dobel dengan badge ini (laporan
+// owner sebelumnya), jadi badge ini sekarang SATU-SATUNYA penanda status
+// yang tampil. Tapi 4 dari 6 status LAYANAN/BARU (PICKUP/PROCESSING/READY/
+// SHIPPING) sengaja SATU warna "accent" saja di badgeVariants (aturan Sano
+// DS v2: cuma 4 hue boleh — orange/accent/green/neutral, lihat komentar di
+// components/ui/badge.jsx) — kalau cuma warna, dispatcher tidak bisa bedakan
+// 4 status tengah itu sekilas. TIDAK melanggar aturan 4-hue itu (warnanya
+// TETAP sama dengan tampilan status order di halaman lain) — pembedanya
+// ikon, bukan warna baru, pola SAMA dengan "jangan andalkan warna sendirian"
+// yang sudah dipakai StatusBadge.jsx/JobTypeBadge di file ini.
+const ORDER_STATUS_ICON = {
+  PENDING: Hourglass,
+  PICKUP: PackageOpen,
+  PROCESSING: Wrench,
+  READY: PackageCheck,
+  SHIPPING: Truck,
+  DELIVERED: CheckCircle2,
+  CANCELLED: XCircle,
+  SEWA_DIKIRIM: Truck,
+  SEWA_DIAMBIL: RotateCcw,
+};
+
 export function OrderStatusBadge({ job, className }) {
   const status = orderStatusOf(job);
   if (!status) return null;
+  const Ikon = ORDER_STATUS_ICON[status];
   return (
     <Badge variant={orderStatusVariant(status)} className={cn("shrink-0", className)}>
+      {Ikon && <Ikon size={11} className="shrink-0" />}
       {ORDER_STATUS_LABELS[status] || status}
     </Badge>
   );

@@ -14,7 +14,7 @@ import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
-import { JobMetaRow, JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
+import { JobMetaRow, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   JOB_STATUS_REAL, ACTIVE_STATUSES,
@@ -437,7 +437,6 @@ export default function ArmadaJobs() {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="truncate text-[13px] font-semibold text-ink">{nama}</span>
-                            <JobTypeBadge job={j} />
                             <RentalBadge job={j} />
                             <CityBadge job={j} />
                             <OrderStatusBadge job={j} />
