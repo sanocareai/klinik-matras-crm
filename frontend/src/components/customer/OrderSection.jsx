@@ -1436,6 +1436,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             <button
               key={opt.value}
               type="button"
+              className="category-card"
               onClick={() => setCategory(opt.value)}
               style={categoryCardStyle(category === opt.value, opt.iconTheme)}
             >
@@ -1443,9 +1444,13 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
                 <span style={categoryIconSheenStyle} />
                 <opt.icon size={18} color="#fff" style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.35))" }} />
               </span>
+              {/* Teks WAJIB warna terang eksplisit (bukan var(--text-primary)/
+                  var(--text-muted) lagi) — kartu sekarang SENGAJA hitam solid
+                  di kedua tema (lihat catatan D-128 di categoryCardStyle),
+                  teks gelap bawaan tema terang akan tak terbaca di atasnya. */}
               <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{opt.sub}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f7" }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: "rgba(245,245,247,0.6)" }}>{opt.sub}</div>
               </div>
             </button>
           ))}
@@ -2305,26 +2310,41 @@ function wizardCardStyle(selected) {
   };
 }
 
-// D-127 — varian wizardCardStyle KHUSUS kartu Kategori Order (step 0), yang
-// masing-masing punya warna sendiri (ungu/biru/oranye — lihat iconTheme di
-// CATEGORY_OPTIONS), BUKAN satu warna aksen generik untuk ketiganya. State
-// terpilih jadi ikut warna kategorinya sendiri — kartu "Sewa" terpilih glow
-// oranye, bukan biru seperti kartu lain — supaya warna itu benar-benar
-// berarti (identitas kategori), bukan sekadar dekorasi ikon saja.
+// D-128 (6 September 2026, laporan owner: "card abu muda nya aja nih, style
+// kita redesign seperti gambar diatas" — referensi pill hitam glossy +
+// glow pelangi lembut membayang di bawah) — DULU (D-127) kartu unselected
+// pakai `var(--dh-elevated)` translucent, yang di TEMA TERANG jadi kotak
+// abu-muda/putih pudar (keluhan persis ini). Diganti jadi gradien HITAM
+// solid, SENGAJA SAMA di kedua tema (bukan lagi ikut var(--dh-elevated)) —
+// presedennya SAMA dengan .sidebar-brand-icon (CLAUDE.md D-063): identitas
+// visual yang sengaja tidak ikut invert warna, bukan permukaan biasa.
+// Glow warna-warni di bawah kartu TIDAK BISA lewat inline `boxShadow` kalau
+// mau dianimasikan (keyframes tidak jalan di inline style React) — jadi
+// cuma custom property `--card-glow` yang diset di sini; animasi + posisi
+// ::after-nya ada di index.css (.category-card). State terpilih pakai
+// warna kategorinya sendiri (ungu/biru/oranye, lihat iconTheme di
+// CATEGORY_OPTIONS) untuk glow-nya — unselected pakai glow 3-warna netral
+// (hijau-toska/ungu/oranye, meniru referensi) supaya tetap hidup walau
+// belum dipilih.
 function categoryCardStyle(selected, theme) {
   return {
+    position: "relative",
     display: "flex", alignItems: "center", gap: 12,
-    padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+    padding: "12px 14px", borderRadius: 14, cursor: "pointer",
     border: selected
-      ? `1.5px solid color-mix(in oklab, ${theme.base} 55%, transparent)`
-      : "1px solid var(--dh-hairline, var(--border))",
+      ? `1px solid color-mix(in oklab, ${theme.base} 60%, transparent)`
+      : "1px solid rgba(255,255,255,0.08)",
     background: selected
-      ? `color-mix(in oklab, ${theme.base} 14%, transparent)`
-      : "var(--dh-elevated, var(--bg-card))",
-    boxShadow: selected
-      ? `0 0 0 1px color-mix(in oklab, ${theme.base} 20%, transparent), 0 0 14px 1px color-mix(in oklab, ${theme.base} 25%, transparent)`
-      : "none",
-    transition: "all 0.15s",
+      ? `linear-gradient(180deg, color-mix(in oklab, ${theme.base} 24%, #17171d), #0a0a0d)`
+      : "linear-gradient(180deg, #1c1c22, #0a0a0d)",
+    boxShadow: [
+      "inset 0 1px 0 rgba(255,255,255,0.08)",
+      "inset 0 -10px 16px -12px rgba(0,0,0,0.6)",
+    ].join(", "),
+    "--card-glow": selected
+      ? `radial-gradient(circle at 22% 130%, ${theme.base} 0%, transparent 55%), radial-gradient(circle at 78% 130%, ${theme.light} 0%, transparent 55%)`
+      : "radial-gradient(circle at 12% 130%, #34d399 0%, transparent 50%), radial-gradient(circle at 50% 140%, #a78bfa 0%, transparent 55%), radial-gradient(circle at 88% 130%, #fb923c 0%, transparent 50%)",
+    transition: "transform 0.15s ease, background 0.2s ease, border-color 0.2s ease",
   };
 }
 

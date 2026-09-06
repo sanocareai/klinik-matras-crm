@@ -1447,6 +1447,44 @@ body {
 .wizard-body { max-width: 640px; }
 .wizard-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border); }
 
+/* D-128 (6 September 2026) — kartu "Order Baru > Pilih Jenis"
+   (OrderSection.jsx#categoryCardStyle), referensi owner: pill hitam glossy
+   dengan glow pelangi lembut MEMBAYANG di bawah kartu (bukan flat), dan
+   diminta ada animasi (bukan statis). Warna/layout kartu itu sendiri
+   di-set inline (per-kategori, lihat categoryCardStyle) — CSS di sini
+   HANYA mengurus 2 hal yang tidak bisa dilakukan inline style React:
+   (1) `@keyframes` untuk animasi glow "bernapas", (2) posisi `::after`
+   yang menaruh glow itu SEDIKIT DI LUAR kartu (kiri/kanan/bawah), bukan
+   menimpa kartu itu sendiri. Warna glow-nya sendiri tetap dari
+   `--card-glow` (custom property, diset inline per kartu). */
+.category-card {
+  position: relative;
+  transition: transform 0.15s ease;
+}
+.category-card:hover { transform: translateY(-1px); }
+.category-card:active { transform: translateY(0) scale(0.99); }
+.category-card::after {
+  content: "";
+  position: absolute;
+  left: 8%; right: 8%; bottom: -9px; height: 20px;
+  border-radius: 999px;
+  background: var(--card-glow);
+  filter: blur(14px);
+  opacity: 0.7;
+  z-index: -1;
+  pointer-events: none;
+  animation: category-card-glow-pulse 3.2s ease-in-out infinite;
+}
+@keyframes category-card-glow-pulse {
+  0%, 100% { opacity: 0.5; transform: scaleX(0.92); }
+  50%      { opacity: 0.85; transform: scaleX(1.04); }
+}
+/* Hormati preferensi user yang minta animasi diminimalkan — glow tetap
+   ada (statis), cuma tidak berdenyut terus-menerus. */
+@media (prefers-reduced-motion: reduce) {
+  .category-card::after { animation: none; opacity: 0.65; }
+}
+
 /* Health check alert */
 .health-alert {
   padding: 12px 16px; border-radius: 10px; font-size: 13px;
