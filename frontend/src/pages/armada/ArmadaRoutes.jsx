@@ -270,7 +270,19 @@ export default function ArmadaRoutes() {
   const loading = routes === null;
 
   return (
-    <PageContainer className="max-w-none">
+    // max-w-[1800px] (revisi Sep 2026 — laporan owner: "kolom kiri bisa
+    // dibuat rata tengah?") — SEBELUMNYA "max-w-none", yang berarti TIDAK
+    // ADA batas lebar sama sekali. PageContainer sendiri sudah py `mx-auto`
+    // bawaan (lihat components/ui/page.jsx) — tapi mx-auto TIDAK ADA
+    // efeknya kalau max-width-nya "none", karena kontainernya SELALU persis
+    // selebar viewport (tidak ada sisa ruang untuk "ditengahkan"). Ini akar
+    // masalah sebenarnya: panel "Belum Masuk Rute" TERLIHAT nempel ke kiri
+    // di monitor lebar bukan karena grid-nya salah, tapi karena seluruh
+    // halaman ini memang selebar layar. 1800px dipilih (lebih lebar dari
+    // 1400px default PageContainer) supaya 3 kolom kartu rute (diturunkan
+    // dari 4, lihat catatan grid-cols di bawah) tetap lega, TAPI cukup
+    // dibatasi supaya mx-auto benar-benar menengahkan di monitor ultrawide.
+    <PageContainer className="max-w-[1800px]">
       <PageHeader
         title="Route Planner"
         subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
@@ -372,7 +384,14 @@ export default function ArmadaRoutes() {
                 catatan di sana) supaya lebarnya mengikuti kolom grid, bukan
                 lebar tetap yang cuma masuk akal dalam baris horizontal. */}
             {loading ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              // Maks 3 kolom (revisi Sep 2026 — laporan owner: kartu terasa
+              // sempit di 4 kolom, terutama sejak kartu bertambah isi: badge
+              // tipe/Sewa, catatan rute, tombol Buat Peta). DULU naik sampai
+              // xl:grid-cols-4 — dihapus, bukan diganti angka lain, supaya
+              // berhenti di 3 untuk SEMUA layar ≥1024px (breakpoint Tailwind
+              // min-width, jadi lg:grid-cols-3 tetap berlaku di xl/2xl kalau
+              // tidak ada override di atasnya).
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2].map((i) => <div key={i} className="h-64 animate-pulse rounded-card bg-inset" />)}
               </div>
             ) : routes.length === 0 ? (
@@ -382,7 +401,14 @@ export default function ArmadaRoutes() {
                 action={<Button size="sm" onClick={buatRute}><Plus size={14} /> Buat Rute</Button>}
               />
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              // Maks 3 kolom (revisi Sep 2026 — laporan owner: kartu terasa
+              // sempit di 4 kolom, terutama sejak kartu bertambah isi: badge
+              // tipe/Sewa, catatan rute, tombol Buat Peta). DULU naik sampai
+              // xl:grid-cols-4 — dihapus, bukan diganti angka lain, supaya
+              // berhenti di 3 untuk SEMUA layar ≥1024px (breakpoint Tailwind
+              // min-width, jadi lg:grid-cols-3 tetap berlaku di xl/2xl kalau
+              // tidak ada override di atasnya).
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {routes.map((r) => (
                   <RouteCard
                     key={r.id}
