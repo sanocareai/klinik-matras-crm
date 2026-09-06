@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { customerOf, unitCountOf, cityOf, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder, orderStatusOf } from "../jobStatus.js";
+import { customerOf, unitCountOf, cityOf, jobAccentBarStyle, hasJobAccentBar, orderStatusOf } from "../jobStatus.js";
 import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
@@ -71,7 +71,14 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
       // Klik 1x buka JobDetailDrawer — sama persis dengan RouteCard.jsx,
       // lihat catatan panjang di sana. Aman berdampingan dengan `draggable`.
       onClick={() => onOpenJob?.(j.id)}
-      style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
+      // Glow aksen kiri per tipe (6 September 2026, laporan owner: "status
+      // pengiriman kita udah rencanakan agar kasih glow hijau tapi ini
+      // masih belum di rute planner" — skema ini SUDAH diterapkan di
+      // Jadwal & Penugasan, Route Planner sebelumnya TERLEWAT, masih pakai
+      // jobTypeCardStyle/rentalCardAccentStyle lama [gradasi penuh].
+      // Disamakan supaya identifikasi visual konsisten di SELURUH Delivery
+      // Hub. Lihat jobStatus.js#jobAccentBarStyle.
+      style={jobAccentBarStyle(j)}
       className={cn(
         // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
         // atas panel yang sudah kaca, MENGGANTIKAN `bg-surface` polos
@@ -84,12 +91,8 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         // teks bawaan browser (perbaikan valid, tapi TERNYATA bukan akar
         // masalah utama laporan "klik dulu baru bisa pindahkan" — itu
         // bug remount di atas).
-        //
-        // jobTypeCardTint/dh-bar-left (lanjutan redesain Sep 2026) — sama
-        // persis dengan RouteCard.jsx, lihat catatan panjang di
-        // jobStatus.js#jobTypeCardTint.
         "dh-job-card relative flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
-        isRentalOrder(j) && "dh-bar-left",
+        hasJobAccentBar(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}
     >
