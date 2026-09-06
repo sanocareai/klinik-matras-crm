@@ -2725,24 +2725,29 @@ body {
 .media-preview-overlay {
   position: fixed; inset: 0; z-index: 600;
   background: rgba(0,0,0,0.45);
-  display: flex; align-items: center; justify-content: center;
+  /* BUG DIPERBAIKI (6 September 2026, laporan owner — TERULANG di desktop
+     & incognito juga, jadi BUKAN sekadar viewport mobile/cache PWA seperti
+     dugaan pertama): `align-items: center` di flex container ini + `.media-
+     preview-modal` yang `overflow:hidden` bikin bagian modal yang melebihi
+     tinggi kontainer (kenapa pun sebabnya — konten caption panjang, dst)
+     KEPOTONG TANPA CARA MENJANGKAUNYA, footer (tombol Kirim) hilang dari
+     jangkauan sama sekali. `align-items:center` TIDAK aman dipakai bareng
+     overflow — ini gotcha CSS yang sudah lama diketahui (browser boleh
+     memilih meng-clip sisi mana pun saat centered content melebihi
+     container, bukan cuma menambah scroll). Fix: overlay ini sendiri yang
+     `overflow-y: auto` (jadi BISA discroll kalau modal ternyata lebih
+     tinggi dari layar, alih-alih terpotong tanpa jalan keluar), dan
+     `.media-preview-modal` dipusatkan pakai `margin: auto` (bukan
+     align-items) — margin:auto pada elemen di dalam container yang
+     overflow SELALU bisa dijangkau penuh lewat scroll, tidak pernah
+     "menghilang" seperti align-items:center. */
+  display: flex; justify-content: center;
+  overflow-y: auto; padding: 24px 0;
   animation: fadeIn 0.15s ease;
 }
 .media-preview-modal {
   background: white; border-radius: 14px; width: 520px; max-width: 94vw;
-  /* BUG DIPERBAIKI (6 September 2026, laporan owner: PWA mobile — modal
-     "kirim foto" tertutup, tombol Kirim tidak kelihatan/tidak bisa
-     ditekan). `vh` di browser mobile dihitung dari viewport PENUH
-     (termasuk area di belakang address bar/toolbar), bukan area yang
-     BENAR-BENAR terlihat — saat toolbar Safari/Chrome masih terbuka
-     (address bar + tombol navigasi bawah, seperti di screenshot), 86vh
-     lebih tinggi dari layar yang sungguh kelihatan, jadi footer (tombol
-     Kirim, toggle HD/Standar) terdorong ke bawah viewport yang
-     tersembunyi. `dvh` (dynamic viewport height) menghitung tinggi yang
-     BENAR-BENAR terlihat saat itu — pola SAMA yang sudah dipakai di
-     .app-shell/.customer-panel/dst (cari "100dvh" di file ini). Baris
-     `vh` dipertahankan sebagai fallback, browser lama yang belum kenal
-     `dvh` abaikan baris ini otomatis. */
+  margin: auto 0;
   max-height: 86vh; max-height: 86dvh;
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: var(--shadow-md);
