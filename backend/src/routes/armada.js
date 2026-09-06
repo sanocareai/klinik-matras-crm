@@ -85,6 +85,17 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
+// ⛔ NONAKTIF SEMENTARA (6 September 2026, keputusan owner) — "lagi test
+// sistem ya... nice, tapi untuk sekarang stop dulu broadcast ke grupnya,
+// kita matangkan dulu sistem saat ini". Owner sendiri yang baru tes fitur
+// ini (foto POD otomatis ke grup WA driver) dan MINTA DIPAUSE — bukan
+// ditemukan rusak, sengaja dimatikan sampai owner minta nyalakan lagi.
+// Pola SAMA PERSIS dengan DELIVERY_NOTIF_AKTIF di services/
+// customerNotifications.js (kill-switch satu baris, JANGAN tulis ulang
+// fungsinya) — TIDAK memengaruhi notifyDriverGroupText (ringkasan rute
+// publish/edit ke grup), itu TIDAK diminta dipause.
+const POD_BROADCAST_AKTIF = false;
+
 // D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
 // ditugaskan (Conversation.isDriverGroup). BEST-EFFORT, SELALU dibungkus
 // try/catch oleh pemanggil — menyelesaikan job ADALAH kebenaran (Unit/Job
@@ -97,6 +108,7 @@ function handleErr(err, res) {
 // pola yang sama dengan "kepala produksi update ke grup" yang Gilang
 // sebut sebagai praktik biasa, bukan sesuatu yang perlu direview per pesan.
 async function notifyDriverGroup(job, photoUrls, headline) {
+  if (!POD_BROADCAST_AKTIF) return; // diam total — lihat catatan flag di atas
   const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
   if (!group) return; // belum ditetapkan — diam-diam, bukan error
 
@@ -437,7 +449,7 @@ armadaRouter.get("/helpers", requirePermission(P.JOB_WRITE), async (req, res) =>
 // itu saat pertama dibuka.
 armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { type, status, driverId, routeId, date, from, to, q, take } = req.query;
+    const { type, status, orderStatus, driverId, routeId, date, from, to, q, take } = req.query;
 
     // Rentang tanggal memakai batas WIB, BUKAN `new Date(x)` polos — container
     // backend jalan di UTC, jadi batas polos menggeser jendela 7 jam dan job
@@ -491,6 +503,16 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
       where: {
         ...(type && { type }),
         ...(status && { status }),
+        // orderStatus (6 September 2026, laporan owner: "filter disini
+        // ganti aja sesuai dengan order/pipeline") — filter TERPISAH dari
+        // `status` di atas (itu status JOB/armada), ini status ORDER-nya
+        // sendiri (Menunggu/Pengambilan/Diproses/Siap Kirim/dst). Job.order
+        // adalah relasi LANGSUNG (job.orderId FK), bukan lewat units[], jadi
+        // filter relasi Prisma biasa cukup — tidak perlu jalur fallback
+        // seperti orderStatusOf() di frontend (itu urusan tampilan kartu
+        // yang datanya kadang cuma ke-include lewat units[], BUKAN soal
+        // relasi database yang sebenarnya).
+        ...(orderStatus && { order: { status: orderStatus } }),
         // "none" = job yang BELUM punya driver — ini yang dicari dispatcher
         // tiap pagi, dan tidak bisa diungkapkan dengan driverId biasa.
         ...(driverId === "none" ? { driverId: null } : driverId ? { driverId } : {}),

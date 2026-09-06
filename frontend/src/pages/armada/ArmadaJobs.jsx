@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -16,6 +16,7 @@ import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx"
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JobMetaRow, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
+import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 import {
   JOB_STATUS_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
@@ -114,6 +115,12 @@ export default function ArmadaJobs() {
   // bawah mengembalikannya ke preset ini.
   const [range, setRange] = useState(() => makeRange("all_time"));
   const [fStatus, setFStatus] = useState("");
+  // Filter status ORDER (6 September 2026, laporan owner: "filter disini
+  // ganti aja sesuai dengan order/pipeline") — TERPISAH dari fStatus di
+  // atas (status JOB/armada). Dropdown BARU, bukan menggantikan fStatus —
+  // dispatcher tetap perlu cari "job belum ada driver" dst lewat fStatus,
+  // yang ini menjawab pertanyaan beda: "order mana yang sudah Siap Kirim".
+  const [fOrderStatus, setFOrderStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
 
   const [jobs, setJobs] = useState(null);
@@ -159,6 +166,7 @@ export default function ArmadaJobs() {
         // jadi filter satu hari juga di backend (gte & lte tanggal yang sama).
         ...toApiParams(range),
         status: fStatus || undefined,
+        orderStatus: fOrderStatus || undefined,
         driverId: fDriver || undefined,
       };
       if (tab === "PICKUP" || tab === "DELIVERY") params.type = tab;
@@ -176,7 +184,7 @@ export default function ArmadaJobs() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, range, fStatus, fDriver, tab]);
+  }, [debounced, range, fStatus, fOrderStatus, fDriver, tab]);
 
   // Jangan panggil endpoint dispatcher untuk driver — hasilnya pasti 403 dan
   // cuma mengotori konsol (lihat catatan isDriverOnlyUser di atas).
@@ -337,6 +345,23 @@ export default function ArmadaJobs() {
               icon={ListIcon}
               ariaLabel="Filter status"
             />
+            {/* Filter status ORDER (6 September 2026, laporan owner: "filter
+                disini ganti aja sesuai dengan order/pipeline") — dropdown
+                BARU, terpisah dari "Semua status" di atas (itu status job/
+                armada). Options-nya PERSIS ORDER_STATUS_LABELS yang sama
+                dipakai Orders.jsx/Pipeline.jsx, supaya kategorinya konsisten
+                di seluruh app, bukan daftar karangan sendiri untuk halaman
+                ini. Backend: GET /armada/jobs?orderStatus=X (armada.js). */}
+            <FilterDropdown
+              value={fOrderStatus}
+              onChange={setFOrderStatus}
+              options={Object.entries(ORDER_STATUS_LABELS)
+                .filter(([k]) => !k.startsWith("SEWA_"))
+                .map(([k, label]) => ({ value: k, label }))}
+              placeholder="Semua status order"
+              icon={PackageCheck}
+              ariaLabel="Filter status order"
+            />
             <FilterDropdown
               value={fDriver}
               onChange={setFDriver}
@@ -353,8 +378,8 @@ export default function ArmadaJobs() {
                 akurat walau user memilih "Semua" via preset ATAU lewat
                 kalender manual yang kebetulan menghasilkan from/to kosong
                 juga (preset beda: "all_time" vs "custom"). */}
-            {(cari || range.preset !== "all_time" || fStatus || fDriver) && (
-              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("all_time")); setFStatus(""); setFDriver(""); }}>
+            {(cari || range.preset !== "all_time" || fStatus || fOrderStatus || fDriver) && (
+              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("all_time")); setFStatus(""); setFOrderStatus(""); setFDriver(""); }}>
                 Reset
               </Button>
             )}
@@ -372,7 +397,7 @@ export default function ArmadaJobs() {
                 icon={CalendarDays}
                 title="Belum ada job yang cocok"
                 description={
-                  cari || range.preset !== "all_time" || fStatus || fDriver
+                  cari || range.preset !== "all_time" || fStatus || fOrderStatus || fDriver
                     ? "Coba longgarkan filter atau kata kuncinya."
                     : "Job dibuat dari mode Papan — pilih unit yang siap lalu tugaskan driver."
                 }
