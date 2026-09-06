@@ -1,6 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Package, MapPinned, AlertTriangle, ChevronDown, ArrowUpRight } from "lucide-react";
+import React, { useMemo } from "react";
+import { Package, MapPinned } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
@@ -134,13 +133,23 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
 export default function UnroutedJobsPanel({
   jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd, onOpenJob,
 }) {
-  const navigate = useNavigate();
-  const [showUndated, setShowUndated] = useState(false);
+  // Job TANPA tanggal digabung LANGSUNG ke daftar biasa (6 September 2026,
+  // laporan owner: "masukkan aja di 'belum masuk rute' agar ga bolak balik
+  // dari rute planner trus ke jadwal penugasan") — dulu SENGAJA dipisah ke
+  // panel collapsed non-draggable karena "rute selalu terikat SATU tanggal
+  // pasti, job ini wajib dikasih tanggal dulu di Jadwal & Penugasan".
+  // Alasan itu SUDAH TIDAK BERLAKU sejak PATCH /routes/:id/jobs menyamakan
+  // scheduledDate job ke Route.date otomatis begitu ditempel ke rute (lihat
+  // catatan di armada.js) — job tanpa tanggal sekarang AMAN diseret
+  // langsung, tanggalnya otomatis terisi dari rute tujuan. JobRow sendiri
+  // sudah menangani job.scheduledDate kosong dengan baik (baris tanggal
+  // cuma tidak tampil, bukan error/kosong aneh).
+  const semuaJob = useMemo(() => [...jobs, ...undatedJobs], [jobs, undatedJobs]);
 
   const groups = useMemo(() => {
     const byCity = new Map();
     const tanpaKota = [];
-    for (const j of jobs) {
+    for (const j of semuaJob) {
       const kota = cityOf(j);
       if (!kota) { tanpaKota.push(j); continue; }
       if (!byCity.has(kota)) byCity.set(kota, []);
@@ -157,63 +166,21 @@ export default function UnroutedJobsPanel({
       return a.kota.localeCompare(b.kota, "id");
     });
     return { semuaKota, tanpaKota };
-  }, [jobs]);
+  }, [semuaJob]);
 
   return (
     <div className="flex h-full flex-col rounded-card border border-border bg-surface">
       <div className="shrink-0 border-b border-line px-3 py-2.5">
         <h3 className="text-[12.5px] font-bold text-ink">Belum Masuk Rute</h3>
-        <p className="text-[10.5px] text-ink3">{jobs?.length ?? 0} job — seret ke rute mana pun (selama belum diterbitkan)</p>
+        <p className="text-[10.5px] text-ink3">{semuaJob.length} job — seret ke rute mana pun (selama belum diterbitkan)</p>
       </div>
-
-      {/* Backlog TANPA TANGGAL SAMA SEKALI (D-062, 4 September 2026 —
-          laporan owner: "di Jadwal & Penugasan banyak order yang belum
-          dijadwalkan dan belum masuk rute", tapi panel di atas cuma
-          mengecek tanggal yang SEDANG dibuka — job tanpa tanggal apa pun
-          tidak pernah cocok filter tanggal manapun, jadi tidak pernah
-          kelihatan). SENGAJA TIDAK draggable seperti job di bawah — rute
-          selalu terikat SATU tanggal pasti, jadi job ini wajib dikasih
-          tanggal dulu (di Jadwal & Penugasan) sebelum bisa masuk rute
-          mana pun. Ini murni pengingat + jalan pintas ke sana, bukan drag
-          source kedua. */}
-      {undatedJobs.length > 0 && (
-        <div className="shrink-0 border-b border-line bg-orangebg/40 px-2.5 py-2">
-          <button
-            type="button"
-            onClick={() => setShowUndated((v) => !v)}
-            className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold text-orange"
-          >
-            <AlertTriangle size={13} className="shrink-0" />
-            <span className="flex-1">{undatedJobs.length} job belum ada tanggal sama sekali</span>
-            <ChevronDown size={13} className={cn("shrink-0 transition-transform", showUndated && "rotate-180")} />
-          </button>
-          {showUndated && (
-            <div className="mt-2 space-y-1.5">
-              <ul className="space-y-1">
-                {undatedJobs.map((j) => (
-                  <li key={j.id} className="truncate text-[11px] text-ink2">
-                    {customerOf(j) || "Tanpa nama"} <span className="text-ink3">· {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}</span>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                onClick={() => navigate("/armada/jobs")}
-                className="flex items-center gap-1 text-[10.5px] font-semibold text-orange hover:underline"
-              >
-                Atur tanggalnya di Jadwal & Penugasan <ArrowUpRight size={11} />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {loading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
           </div>
-        ) : jobs.length === 0 ? (
+        ) : semuaJob.length === 0 ? (
           <EmptyState
             icon={Package}
             title="Semua job sudah masuk rute"
