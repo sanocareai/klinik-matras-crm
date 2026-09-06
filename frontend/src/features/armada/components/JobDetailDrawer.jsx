@@ -168,26 +168,14 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // dijadwalkan"/"Belum ditugaskan" terbaca seolah masih pending).
   const historis = job && ["COMPLETED", "FAILED"].includes(job.status) && !job.scheduledDate && !job.driverId;
 
-  // Label "Tanggal Pengambilan/Pengiriman" + KEDUA janji sales (6 September
-  // 2026, laporan owner lanjutan — contoh nyata Cst VERA: order-nya sudah
-  // "Siap Kirim", jadi Tanggal Kirim yang dijanjikan sales SAMA relevannya
-  // dengan Tanggal Ambil walau job yang sedang dibuka ini masih job
-  // Pengambilan. Versi SEBELUMNYA cuma menampilkan SATU janji sales — yang
-  // mengikuti job.type job ini saja — sekarang KEDUA tanggal [pickupConfirmedDate
-  // DAN deliveryConfirmedDate] ditampilkan berdampingan, apa pun tipe job
-  // yang sedang dibuka, supaya dispatcher lihat gambaran LENGKAP perjalanan
-  // customer ini dalam satu buka drawer, bukan cuma potongan yang cocok
-  // dengan job ini. Yang mismatch dengan tanggal ARMADA job ini sendiri
-  // (Job.scheduledDate, bisa digeser dispatcher) ditandai oranye — yang
-  // TIDAK relevan untuk job ini (mis. Tanggal Kirim saat job-nya Pengambilan)
-  // tetap ditampilkan netral, bukan dibandingkan (beda job, beda tanggal,
-  // wajar beda).
+  // Tanggal Pengambilan/Pengiriman (6 September 2026, laporan owner —
+  // rangkaian revisi berakhir dengan penggabungan Job.scheduledDate +
+  // Order.pickupConfirmedDate/deliveryConfirmedDate jadi SATU kontrol,
+  // lihat ubahTanggalTerpadu di bawah). orderUntukTanggal masih dipakai
+  // sebagai target PATCH Order; janjiAmbil/janjiKirim/perbandingan mismatch
+  // tidak relevan lagi karena sekarang literal field yang sama.
   const pickupJob = job?.type === "PICKUP";
   const orderUntukTanggal = orderOf(job);
-  const janjiAmbil = orderUntukTanggal?.pickupConfirmedDate || null;
-  const janjiKirim = orderUntukTanggal?.deliveryConfirmedDate || null;
-  const janjiSalesJobIni = pickupJob ? janjiAmbil : janjiKirim;
-  const bedaDariJanjiSales = janjiSalesJobIni && job?.scheduledDate?.slice(0, 10) !== janjiSalesJobIni.slice(0, 10);
 
   // Sinkron draft SEKALI per job dibuka (job?.id, bukan job) — supaya PATCH
   // lain yang mengubah job (mis. pilih driver) tidak diam-diam menimpa ketikan
@@ -262,20 +250,26 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     }
   }
 
-  // Ubah janji tanggal ke customer (Order.pickupConfirmedDate/
-  // deliveryConfirmedDate) langsung dari drawer (6 September 2026, laporan
-  // owner: "field tanggal pickup dan delivery nya ditampilin aja dan bisa
-  // diedit, dan ketika di edit, teredit juga di semua divisi" — sebelumnya
-  // cuma teks baca-saja hasil bandingan). Field YANG SAMA dibaca/ditulis
-  // Sales CRM (OrderSection.jsx, PATCH /orders/:id) — TIDAK ada sinkronisasi
-  // terpisah yang perlu dibangun, "kesemua divisi" otomatis tercapai karena
-  // ini SATU baris Order yang sama, cuma dieditnya dari drawer Delivery
-  // Hub sekarang, bukan cuma dari tab Semua Order.
-  async function ubahJanjiSales(order, field, value) {
+  // Tanggal armada PENUGASAN dan janji ke customer DIGABUNG jadi satu
+  // kontrol (6 September 2026, laporan owner lanjutan atas fitur di atas:
+  // "sekarang tanggal armada penugasan pakai tanggal status order aja...
+  // ganti tanggal armada yang 7 september itu" — dikonfirmasi lewat
+  // AskUserQuestion: "satu tanggal, edit sekali update semua"). Dulu ada
+  // DUA field terpisah yang gampang beda sendiri (Job.scheduledDate di
+  // Penugasan vs Order.pickupConfirmedDate/deliveryConfirmedDate di
+  // "Janji ke Customer") — sekarang SATU DatePicker di Penugasan menulis
+  // KEDUANYA sekaligus, field Order dipilih sesuai tipe job ini
+  // (pickupJob -> pickupConfirmedDate, selain itu -> deliveryConfirmedDate).
+  // muat() di akhir merefetch job UTUH (termasuk job.order) jadi tidak
+  // perlu setJob manual dari 2 response yang bentuknya beda (Job vs Order).
+  async function ubahTanggalTerpadu(value) {
     setBusy(true);
     setActionError("");
     try {
-      await api.updateOrder(order.id, { [field]: value || null });
+      const field = pickupJob ? "pickupConfirmedDate" : "deliveryConfirmedDate";
+      const tugas = [api.updateArmadaJob(job.id, { scheduledDate: value || null })];
+      if (orderUntukTanggal) tugas.push(api.updateOrder(orderUntukTanggal.id, { [field]: value || null }));
+      await Promise.all(tugas);
       muat();
       onChanged?.();
     } catch (e) {
@@ -396,45 +390,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     )}
                   </div>
                 )}
-                {/* Janji tanggal ke customer — EDITABLE (6 September 2026,
-                    laporan owner: "field tanggal pickup dan delivery nya
-                    ditampilin aja dan bisa diedit, dan ketika di edit,
-                    teredit juga di semua divisi"). Field Order (bukan Job),
-                    jadi SENGAJA ditaruh di luar blok editable/read-only job
-                    di bawah — tetap bisa dikoreksi walau job-nya sendiri
-                    sudah Selesai/Gagal, sama alasan dengan Status Order di
-                    atas. "Teredit di semua divisi" otomatis tercapai: ini
-                    field Order yang SAMA dibaca Sales CRM, bukan salinan
-                    terpisah yang perlu disinkronkan manual. */}
-                {orderUntukTanggal && (
-                  <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Janji ke Customer — Ambil</label>
-                      <DatePicker
-                        value={janjiAmbil ? janjiAmbil.slice(0, 10) : ""}
-                        onChange={(v) => ubahJanjiSales(orderUntukTanggal, "pickupConfirmedDate", v)}
-                        placeholder="Belum diisi"
-                        className="w-full"
-                      />
-                      {pickupJob && bedaDariJanjiSales && (
-                        <p className="mt-0.5 text-[11px] font-semibold text-orange">Beda dari tanggal armada di bawah</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] text-ink2">Janji ke Customer — Kirim</label>
-                      <DatePicker
-                        value={janjiKirim ? janjiKirim.slice(0, 10) : ""}
-                        onChange={(v) => ubahJanjiSales(orderUntukTanggal, "deliveryConfirmedDate", v)}
-                        placeholder="Belum diisi"
-                        className="w-full"
-                      />
-                      {!pickupJob && bedaDariJanjiSales && (
-                        <p className="mt-0.5 text-[11px] font-semibold text-orange">Beda dari tanggal armada di bawah</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {job.order?.status && (
                   <DeliveryTimeline
                     orderStatus={job.order.status}
@@ -570,11 +525,15 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     )}
                     <div>
                       <label className="mb-1 block text-[11px] text-ink2">
-                        Tanggal {pickupJob ? "Pengambilan" : "Pengiriman"}
+                        Tanggal Pengambilan/Pengiriman
                       </label>
+                      {/* SATU kontrol, gabungan Job.scheduledDate (rencana
+                          armada) + Order.pickupConfirmedDate/deliveryConfirmedDate
+                          (janji ke customer) — lihat ubahTanggalTerpadu di
+                          atas. Diedit sekali, dua-duanya ikut ke-update. */}
                       <DatePicker
                         value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
-                        onChange={(v) => ubahJadwal({ scheduledDate: v || null })}
+                        onChange={(v) => ubahTanggalTerpadu(v)}
                         placeholder="Pilih tanggal"
                         className="w-full"
                       />
