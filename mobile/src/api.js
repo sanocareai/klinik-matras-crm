@@ -71,7 +71,12 @@ async function request(path, options = {}) {
       let msg;
       try { msg = JSON.parse(text).error; } catch {}
       if (!msg) msg = text ? `${res.status}: ${text.slice(0, 300)}` : `Error ${res.status}`;
-      throw new Error(msg);
+      // `.status` disertakan (5 Sep 2026, paritas dgn frontend/src/api.js) —
+      // supaya pemanggil bisa membedakan "diblokir karena ada data terkait"
+      // (409, mis. hapus order yang sudah punya unit/job) dari error lain
+      // tanpa cocokkan teks pesan. Sebelumnya TIDAK ada, jadi mobile tidak
+      // bisa menawarkan "Batalkan Order" sebagai alternatif seperti web.
+      throw Object.assign(new Error(msg), { status: res.status });
     }
     return res.json();
   } catch (err) {
@@ -333,6 +338,14 @@ export const api = {
     request(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteOrder: (orderId) =>
     request(`/orders/${orderId}`, { method: "DELETE" }),
+  // Alternatif hapus permanen (5 Sep 2026, paritas dgn web api.js) — untuk
+  // order yang sudah punya unit/job/pembayaran (delete permanen ditolak
+  // backend 409, lihat routes/orders.js). Order & unit yang BELUM disentuh
+  // bengkel ditandai CANCELLED (statusLocked, riwayat tetap ada); kalau ada
+  // unit yang sudah mulai dikerjakan, backend menolak lagi & minta ditangani
+  // manual di Kendali.
+  cancelOrder: (orderId, reason) =>
+    request(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   updateOrderItem: (itemId, data) =>
     request(`/orders/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteOrderItem: (itemId) =>

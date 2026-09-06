@@ -81,6 +81,15 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
   const [savingComplaint, setSavingComplaint] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
 
+  // Order yang sudah punya unit/job/pembayaran TIDAK BISA dihapus permanen
+  // (RESTRICT di backend, lihat routes/orders.js) — riwayat produksi/uang
+  // tidak boleh hilang diam-diam. BUG DIPERBAIKI (5 Sep 2026, laporan owner:
+  // dialog error di mobile cuma "OK" tanpa jalan keluar) — sebelumnya
+  // fallback "Batalkan Order" ini HANYA ada di web (OrderSection.jsx),
+  // mobile cuma menampilkan pesan error mentah lalu buntu. Sekarang paritas:
+  // kalau delete ditolak (409), tawarkan "Batalkan" sebagai alternatif —
+  // order & unit-nya (kalau belum disentuh bengkel) ditandai CANCELLED,
+  // bukan dihapus.
   function handleDelete() {
     Alert.alert("Hapus order ini?", "Semua item & data terkait juga akan dihapus.", [
       { text: "Batal", style: "cancel" },
@@ -92,8 +101,31 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
             await api.deleteOrder(order.id);
             onDeleted(order.id);
           } catch (err) {
-            Alert.alert("Gagal hapus order", err.message);
-            setDeleting(false);
+            if (err.status === 409) {
+              Alert.alert("Gagal hapus order", `${err.message}\n\nMau ditandai "Dibatalkan" saja (bukan dihapus permanen — nilainya tidak dihitung lagi tapi riwayatnya tetap tersimpan)?`, [
+                { text: "Batal", style: "cancel", onPress: () => setDeleting(false) },
+                {
+                  text: "Ya, Batalkan Order", style: "destructive",
+                  onPress: async () => {
+                    try {
+                      // onRefresh (BUKAN onDeleted) — order ini TETAP ada,
+                      // cuma status jadi CANCELLED, jadi baris/kartunya
+                      // masih harus muncul (dgn status barunya), bukan
+                      // hilang dari daftar seperti hapus permanen.
+                      await api.cancelOrder(order.id, "Salah input");
+                      onRefresh();
+                    } catch (err2) {
+                      Alert.alert("Gagal membatalkan order", err2.message);
+                    } finally {
+                      setDeleting(false);
+                    }
+                  },
+                },
+              ]);
+            } else {
+              Alert.alert("Gagal hapus order", err.message);
+              setDeleting(false);
+            }
           }
         },
       },
