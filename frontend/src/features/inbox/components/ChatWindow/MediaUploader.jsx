@@ -1,6 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles, MapPin, User, Navigation, ShoppingCart } from "lucide-react";
+import { Plus, Image as ImageIcon, Video as VideoIcon, Camera, FileText, Package, X, Sparkles, MapPin, User, Navigation, ShoppingCart } from "lucide-react";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { api } from "../../../../api.js";
 
@@ -340,15 +340,38 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
               </button>
             </div>
             <div className="attach-grid">
+              {/* DULU satu tombol "Foto/Video" pakai accept="image/*,video/*".
+                  Di Android, filter mime GABUNGAN itu yang bikin pilihan
+                  "Galeri/Foto" HILANG dari chooser sistem (yang tersisa cuma
+                  Kamera + Camcorder + Files) — laporan owner 6 Sep 2026.
+                  accept SATU tipe (image/* saja / video/* saja) selalu
+                  memunculkan galeri. Jadi dipecah: Foto (galeri gambar),
+                  Video (galeri video), Kamera (jepret/rekam langsung). */}
               <label className="attach-item">
-                <input type="file" accept="image/*,video/*" multiple style={{ display: "none" }}
+                <input type="file" accept="image/*" multiple style={{ display: "none" }}
                   onChange={(e) => { addFiles(e.target.files); e.target.value = ""; setShowSheet(false); }} />
                 {/* bg alpha dari warna ikon (bukan pastel hardcode) — otomatis
                     membaur wajar di permukaan terang MAUPUN gelap, lihat
                     catatan pillTone() di InfoSection.jsx (fix dark mode
                     20 Agt 2026, masalah yang sama). */}
                 <div className="attach-item-icon" style={{ background: "#2563eb26" }}><ImageIcon size={24} style={{ color: "#2563eb" }} /></div>
-                <span className="attach-item-label">Foto/Video</span>
+                <span className="attach-item-label">Foto</span>
+              </label>
+              <label className="attach-item">
+                <input type="file" accept="video/*" multiple style={{ display: "none" }}
+                  onChange={(e) => { addFiles(e.target.files); e.target.value = ""; setShowSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#e11d4826" }}><VideoIcon size={24} style={{ color: "#e11d48" }} /></div>
+                <span className="attach-item-label">Video</span>
+              </label>
+              {/* Kamera — capture="environment" buka kamera langsung (belakang).
+                  accept foto+video sekaligus: 1 tombol ini bisa dua-duanya,
+                  app kamera yang menentukan pilih mode jepret / rekam. Tidak
+                  perlu `multiple` (kamera selalu balik 1 file). */}
+              <label className="attach-item">
+                <input type="file" accept="image/*,video/*" capture="environment" style={{ display: "none" }}
+                  onChange={(e) => { addFiles(e.target.files); e.target.value = ""; setShowSheet(false); }} />
+                <div className="attach-item-icon" style={{ background: "#0ea5e926" }}><Camera size={24} style={{ color: "#0ea5e9" }} /></div>
+                <span className="attach-item-label">Kamera</span>
               </label>
               <label className="attach-item">
                 <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv" multiple style={{ display: "none" }}
