@@ -15,7 +15,6 @@ import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, orderOf,
   estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
-import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
 
 // Drawer detail job — data NYATA dari GET /armada/jobs/:id.
@@ -263,6 +262,29 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     }
   }
 
+  // Ubah janji tanggal ke customer (Order.pickupConfirmedDate/
+  // deliveryConfirmedDate) langsung dari drawer (6 September 2026, laporan
+  // owner: "field tanggal pickup dan delivery nya ditampilin aja dan bisa
+  // diedit, dan ketika di edit, teredit juga di semua divisi" — sebelumnya
+  // cuma teks baca-saja hasil bandingan). Field YANG SAMA dibaca/ditulis
+  // Sales CRM (OrderSection.jsx, PATCH /orders/:id) — TIDAK ada sinkronisasi
+  // terpisah yang perlu dibangun, "kesemua divisi" otomatis tercapai karena
+  // ini SATU baris Order yang sama, cuma dieditnya dari drawer Delivery
+  // Hub sekarang, bukan cuma dari tab Semua Order.
+  async function ubahJanjiSales(order, field, value) {
+    setBusy(true);
+    setActionError("");
+    try {
+      await api.updateOrder(order.id, { [field]: value || null });
+      muat();
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Catatan reschedule retroaktif untuk job Selesai (6 September 2026,
   // laporan owner — contoh nyata RES-02092026-010/Julhan: scheduledDate 2
   // Sep, completedAt 5 Sep, TIDAK ADA cara mencatat alasan mundurnya karena
@@ -374,6 +396,45 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     )}
                   </div>
                 )}
+                {/* Janji tanggal ke customer — EDITABLE (6 September 2026,
+                    laporan owner: "field tanggal pickup dan delivery nya
+                    ditampilin aja dan bisa diedit, dan ketika di edit,
+                    teredit juga di semua divisi"). Field Order (bukan Job),
+                    jadi SENGAJA ditaruh di luar blok editable/read-only job
+                    di bawah — tetap bisa dikoreksi walau job-nya sendiri
+                    sudah Selesai/Gagal, sama alasan dengan Status Order di
+                    atas. "Teredit di semua divisi" otomatis tercapai: ini
+                    field Order yang SAMA dibaca Sales CRM, bukan salinan
+                    terpisah yang perlu disinkronkan manual. */}
+                {orderUntukTanggal && (
+                  <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Janji ke Customer — Ambil</label>
+                      <DatePicker
+                        value={janjiAmbil ? janjiAmbil.slice(0, 10) : ""}
+                        onChange={(v) => ubahJanjiSales(orderUntukTanggal, "pickupConfirmedDate", v)}
+                        placeholder="Belum diisi"
+                        className="w-full"
+                      />
+                      {pickupJob && bedaDariJanjiSales && (
+                        <p className="mt-0.5 text-[11px] font-semibold text-orange">Beda dari tanggal armada di bawah</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Janji ke Customer — Kirim</label>
+                      <DatePicker
+                        value={janjiKirim ? janjiKirim.slice(0, 10) : ""}
+                        onChange={(v) => ubahJanjiSales(orderUntukTanggal, "deliveryConfirmedDate", v)}
+                        placeholder="Belum diisi"
+                        className="w-full"
+                      />
+                      {!pickupJob && bedaDariJanjiSales && (
+                        <p className="mt-0.5 text-[11px] font-semibold text-orange">Beda dari tanggal armada di bawah</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {job.order?.status && (
                   <DeliveryTimeline
                     orderStatus={job.order.status}
@@ -517,22 +578,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         placeholder="Pilih tanggal"
                         className="w-full"
                       />
-                      {(janjiAmbil || janjiKirim) && (
-                        <div className="mt-1 space-y-0.5 text-[11px]">
-                          {janjiAmbil && (
-                            <p className={cn(pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
-                              Janji sales — Ambil: {formatTanggalPendek(janjiAmbil)}
-                              {pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
-                            </p>
-                          )}
-                          {janjiKirim && (
-                            <p className={cn(!pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
-                              Janji sales — Kirim: {formatTanggalPendek(janjiKirim)}
-                              {!pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
-                            </p>
-                          )}
-                        </div>
-                      )}
                     </div>
 
                     {/* Estimasi Jam (6 September 2026, GANTI TOTAL dari
@@ -648,18 +693,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           })
                         : historis ? "— (data riwayat)" : "Belum dijadwalkan"}
                       {job.timeWindow ? ` · ${job.timeWindow}` : ""}
-                      {janjiAmbil && (
-                        <span className={cn("mt-0.5 block text-[11px]", pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
-                          Janji sales — Ambil: {formatTanggalPendek(janjiAmbil)}
-                          {pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
-                        </span>
-                      )}
-                      {janjiKirim && (
-                        <span className={cn("mt-0.5 block text-[11px]", !pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
-                          Janji sales — Kirim: {formatTanggalPendek(janjiKirim)}
-                          {!pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
-                        </span>
-                      )}
                     </Baris>
                     <Baris icon={User} label="Driver">
                       {job.driver?.name || (historis ? "— (data riwayat)" : "Belum ditugaskan")}
