@@ -112,16 +112,18 @@ export default function WorkspaceSwitcher({ activeKey, collapsed = false, userRo
             collapsed && "mx-2 justify-center px-0"
           )}
         >
-          {/* D-137 (laporan owner: "hilangkan block birunya") — `bg-blue-50
-              text-blue-700` SEBELUMNYA warna literal Tailwind, dirancang
-              untuk PERMUKAAN TERANG saja — di sidebar gelap tampil sebagai
-              kotak biru pucat yang mencolok/salah tempat (tidak pernah
-              beradaptasi ke tema gelap). Diganti token aksen tema-aware
-              yang SUDAH dipakai pola sama di FilterDropdown.jsx (state
-              aktif: `bg-accentbg text-accent`) — otomatis benar di kedua
-              tema, bukan warna baru. */}
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accentbg text-accent">
-            <ActiveIcon className="h-4 w-4" strokeWidth={2} />
+          {/* D-137 KOREKSI (laporan owner: "block biru di text workspace
+              masih ada" — percobaan pertama cuma GANTI warna blok jadi
+              `bg-accentbg text-accent`, TERNYATA itu sendiri masih biru
+              (warna aksen app ini memang biru) jadi tetap terbaca sebagai
+              "blok biru" walau sudah theme-aware. Yang diminta owner
+              BUKAN blok biru yang lebih benar temanya — TIDAK ADA blok
+              sama sekali. Wadah kotak+background dihapus total, ikon
+              dirender polos (tone sama dengan label "WORKSPACE" di
+              sampingnya, text-ink3) — konsisten dengan ikon MenuItem di
+              dropdown yang sama, yang juga polos tanpa kotak berwarna. */}
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+            <ActiveIcon className="h-[18px] w-[18px] text-ink3" strokeWidth={2} />
           </span>
           {!collapsed && (
             <>
