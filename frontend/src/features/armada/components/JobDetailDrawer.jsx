@@ -250,25 +250,30 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     }
   }
 
-  // Tanggal armada PENUGASAN dan janji ke customer DIGABUNG jadi satu
-  // kontrol (6 September 2026, laporan owner lanjutan atas fitur di atas:
-  // "sekarang tanggal armada penugasan pakai tanggal status order aja...
-  // ganti tanggal armada yang 7 september itu" — dikonfirmasi lewat
-  // AskUserQuestion: "satu tanggal, edit sekali update semua"). Dulu ada
-  // DUA field terpisah yang gampang beda sendiri (Job.scheduledDate di
-  // Penugasan vs Order.pickupConfirmedDate/deliveryConfirmedDate di
-  // "Janji ke Customer") — sekarang SATU DatePicker di Penugasan menulis
-  // KEDUANYA sekaligus, field Order dipilih sesuai tipe job ini
-  // (pickupJob -> pickupConfirmedDate, selain itu -> deliveryConfirmedDate).
-  // muat() di akhir merefetch job UTUH (termasuk job.order) jadi tidak
-  // perlu setJob manual dari 2 response yang bentuknya beda (Job vs Order).
-  async function ubahTanggalTerpadu(value) {
+  // Tanggal Pengambilan & Pengiriman — KEDUANYA tetap tampil terpisah
+  // (6 September 2026, koreksi owner atas percobaan "satu tanggal" di atas:
+  // "tetep tampilkan tanggal pickup dan kirim, karna di crm sales seperti
+  // ini udah pasti kirim dan pickup jelas" — merujuk tampilan
+  // OrderSection.jsx Sales CRM yang sudah punya "JADWAL PICK UP"/"JADWAL
+  // KIRIM" terpisah). Jadi field-nya TETAP DUA (Order.pickupConfirmedDate
+  // & Order.deliveryConfirmedDate), bukan digabung jadi satu — yang
+  // digabung cuma SUMBER KEBENARANNYA dengan Job.scheduledDate: kalau
+  // field yang diedit COCOK dengan tipe job yang sedang dibuka (pickupJob
+  // -> pickupConfirmedDate, selain itu -> deliveryConfirmedDate),
+  // Job.scheduledDate ikut ditulis di aksi yang sama supaya kartu
+  // Penugasan tidak lagi butuh input tanggal terpisah sendiri (itu yang
+  // dulu bikin redundan/bisa beda sendiri — lihat komentar lama di git
+  // blame kalau perlu riwayatnya). Field yang TIDAK cocok tipe job ini
+  // cuma menulis Order (job lain di order yang sama yang punya tipe itu
+  // yang menentukan scheduledDate-nya sendiri, lewat drawer job itu).
+  async function ubahTanggalOrder(field, value) {
     setBusy(true);
     setActionError("");
     try {
-      const field = pickupJob ? "pickupConfirmedDate" : "deliveryConfirmedDate";
-      const tugas = [api.updateArmadaJob(job.id, { scheduledDate: value || null })];
+      const fieldTipeJobIni = pickupJob ? "pickupConfirmedDate" : "deliveryConfirmedDate";
+      const tugas = [];
       if (orderUntukTanggal) tugas.push(api.updateOrder(orderUntukTanggal.id, { [field]: value || null }));
+      if (field === fieldTipeJobIni) tugas.push(api.updateArmadaJob(job.id, { scheduledDate: value || null }));
       await Promise.all(tugas);
       muat();
       onChanged?.();
@@ -390,6 +395,37 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     )}
                   </div>
                 )}
+                {/* Tanggal Pengambilan & Pengiriman — field Order, jadi
+                    SENGAJA di luar blok editable/read-only job di bawah
+                    (tetap bisa dikoreksi walau job-nya sendiri sudah
+                    Selesai/Gagal, sama alasan dengan Status Order di atas).
+                    Edit di sini otomatis "teredit di semua divisi" karena
+                    field Order yang SAMA dibaca Sales CRM — lihat
+                    ubahTanggalOrder di atas untuk kenapa DUA field ini
+                    (bukan satu) tapi tetap nyambung ke Job.scheduledDate. */}
+                {orderUntukTanggal && (
+                  <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Tanggal Pengambilan</label>
+                      <DatePicker
+                        value={orderUntukTanggal.pickupConfirmedDate ? orderUntukTanggal.pickupConfirmedDate.slice(0, 10) : ""}
+                        onChange={(v) => ubahTanggalOrder("pickupConfirmedDate", v)}
+                        placeholder="Belum diisi"
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Tanggal Pengiriman</label>
+                      <DatePicker
+                        value={orderUntukTanggal.deliveryConfirmedDate ? orderUntukTanggal.deliveryConfirmedDate.slice(0, 10) : ""}
+                        onChange={(v) => ubahTanggalOrder("deliveryConfirmedDate", v)}
+                        placeholder="Belum diisi"
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {job.order?.status && (
                   <DeliveryTimeline
                     orderStatus={job.order.status}
@@ -523,21 +559,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         )}
                       </>
                     )}
-                    <div>
-                      <label className="mb-1 block text-[11px] text-ink2">
-                        Tanggal Pengambilan/Pengiriman
-                      </label>
-                      {/* SATU kontrol, gabungan Job.scheduledDate (rencana
-                          armada) + Order.pickupConfirmedDate/deliveryConfirmedDate
-                          (janji ke customer) — lihat ubahTanggalTerpadu di
-                          atas. Diedit sekali, dua-duanya ikut ke-update. */}
-                      <DatePicker
-                        value={job.scheduledDate ? job.scheduledDate.slice(0, 10) : ""}
-                        onChange={(v) => ubahTanggalTerpadu(v)}
-                        placeholder="Pilih tanggal"
-                        className="w-full"
-                      />
-                    </div>
+                    {/* Tanggal sudah diedit lewat "Tanggal Pengambilan/
+                        Pengiriman" di atas (field Order, nyambung otomatis
+                        ke Job.scheduledDate job ini — lihat ubahTanggalOrder).
+                        TIDAK ada input tanggal terpisah lagi di sini supaya
+                        tidak ada 2 kontrol yang bisa beda sendiri. */}
 
                     {/* Estimasi Jam (6 September 2026, GANTI TOTAL dari
                         "Estimasi Durasi" — laporan owner: durasi/menit tidak
