@@ -61,20 +61,27 @@ export function EstimasiBadge({ job, className }) {
 }
 
 // ─── Identifikasi kartu Route Planner (redesain Sep 2026) ───────────────────
-// Palet dibatasi (docs/design-system/sano-color-system.md — hanya
-// accent/red/orange/green, dekoratif lain SENGAJA dilebur ke accent, lihat
-// --color-chart-violet/-ai-violet di tokens.css yang keduanya = var(--accent)
-// bukan warna violet sungguhan). Jadi pembeda visual di sini TIDAK menambah
-// hue baru — Pengambilan pakai chip TERISI (accent), Pengiriman pakai chip
-// GARIS (outline, netral); ikon + label beda juga, bukan warna doang
-// (aturan "jangan andalkan warna sendirian" — lihat StatusBadge.jsx).
+// Pengiriman = HIJAU TERISI (6 September 2026, perintah eksplisit owner:
+// "ubah aja codenya setiap status pengiriman itu dapet badge hijau" — akar
+// masalah sesi ini panjang: komponen ini SUDAH ADA dari redesain sebelumnya
+// tapi TIDAK PERNAH benar-benar dipasang di RouteCard.jsx/UnroutedJobsPanel.jsx
+// [diverifikasi: nol pemanggil di luar file ini], jadi satu-satunya sinyal
+// tipe job di Route Planner selama ini cuma glow garis kiri 3px yang HALUS
+// [jobAccentBarStyle] — gampang tidak kelihatan sama sekali, itu sebabnya
+// owner berkali-kali melaporkan "kok ga ada hijau" walau job Pengiriman
+// SEBENARNYA sudah dapat warna di garis kiri). Sekarang badge INI dipasang
+// eksplisit di kedua panel (lihat RouteCard.jsx/UnroutedJobsPanel.jsx), dan
+// Pengiriman-nya SENGAJA hijau terisi — bukan garis netral lagi seperti
+// versi lama (aturan "palet dibatasi" tetap dipegang, cuma tidak lagi
+// menghindari hijau untuk Pengiriman — itu keputusan LAMA yang sekarang
+// eksplisit ditimpa owner, bukan dilanggar diam-diam).
 export function JobTypeBadge({ job, className }) {
   const pickup = job?.type === "PICKUP";
   return (
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
-        pickup ? "bg-accentbg text-accent" : "border border-border text-ink2",
+        pickup ? "bg-accentbg text-accent" : "bg-greenbg text-green",
         className
       )}
     >

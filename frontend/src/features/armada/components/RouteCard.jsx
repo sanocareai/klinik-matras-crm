@@ -6,8 +6,8 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar, JOB_STATUS_REAL } from "../jobStatus.js";
-import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
+import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
+import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge, JobTypeBadge } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -387,23 +387,20 @@ export default function RouteCard({
                   <div className="flex flex-wrap items-center gap-1">
                     <RentalBadge job={j} />
                     <CityBadge job={j} />
+                    {/* JobTypeBadge (6 September 2026) — badge EKSPLISIT
+                        Pengambilan/Pengiriman, dipasang di sini (sebelumnya
+                        komponennya ADA tapi tidak pernah dipakai di Route
+                        Planner — lihat komentar lengkap di JobBadges.jsx).
+                        Badge "Selesai/Gagal" per-job yang SEMPAT dicoba di
+                        sini DICABUT lagi — laporan owner: itu bikin bingung
+                        karena job Pengambilan yang sudah tuntas [VERA, Ingke,
+                        Rahma Hutami] ikut kelihatan "Selesai" hijau padahal
+                        ORDER-nya sendiri belum terkirim. "Selesai/Terkirim"
+                        yang benar itu status ORDER (OrderStatusBadge di
+                        bawah — DELIVERED sudah otomatis hijau lewat
+                        orderStatusVariant, tidak perlu badge job terpisah). */}
+                    <JobTypeBadge job={j} />
                     <OrderStatusBadge job={j} />
-                    {/* Badge status JOB ini sendiri (6 September 2026, laporan
-                        owner berulang: "cust vera status pengiriman, tapi
-                        masih belum ada label glow hijau" — kebingungannya
-                        ternyata BUKAN soal glow tipe job [itu memang sengaja
-                        cuma Pengiriman yang dapat, lihat jobAccentBarStyle],
-                        tapi stop yang JOB-nya SUDAH Selesai/Gagal tidak
-                        kelihatan beda sama sekali dari stop yang masih aktif
-                        — OrderStatusBadge di atas cuma status ORDER
-                        [keseluruhan], bukan status job PER-STOP ini. Cuma
-                        muncul untuk status TERMINAL [Selesai/Gagal/
-                        Dijadwalkan Ulang] — status aktif [Belum Dijadwalkan/
-                        Terjadwal/dst] sudah cukup jelas dari driver/kendaraan
-                        yang tampil, tidak perlu badge tambahan bikin ramai). */}
-                    {["COMPLETED", "FAILED", "RESCHEDULED"].includes(j.status) && (
-                      <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
-                    )}
                   </div>
                   <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <ServiceLabel job={j} />
