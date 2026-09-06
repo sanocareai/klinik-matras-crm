@@ -2004,6 +2004,18 @@ model Route {
   publishedAt DateTime? @map("published_at")
   notes       String?
 
+  // manualMapsUrl (6 September 2026) — laporan owner: link Maps auto-generate
+  // (buildRouteMapsUrl, waypoint mentah) "berantakan" di WA, tapi
+  // maps.app.goo.gl (link pendek Google Maps ASLI) TIDAK BISA dibuat lewat
+  // API apa pun — cuma bisa lewat tombol "Copy Link" di UI Google Maps
+  // (manusia klik "Buat Peta" di sini, atur rute di Maps, klik Copy Link).
+  // Field ini tempat dispatcher TEMPEL hasilnya secara manual — kalau
+  // terisi, dipakai formatRouteWaMessage() MENGGANTIKAN link auto-generate;
+  // kalau kosong, tetap fallback ke auto-generate seperti sebelumnya.
+  // BUKAN dihitung ulang otomatis — dispatcher yang tahu kapan perlu
+  // diperbarui (mis. rute berubah setelah link lama ditempel).
+  manualMapsUrl String? @map("manual_maps_url")
+
   createdById String? @map("created_by")
   createdBy   User?   @relation("RouteCreator", fields: [createdById], references: [id], onDelete: SetNull)
 

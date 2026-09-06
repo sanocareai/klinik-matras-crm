@@ -48,6 +48,14 @@ export default function RouteCard({
   // jarang diketik ulang dari 2 tempat berbeda bersamaan).
   const [notesDraft, setNotesDraft] = useState(route.notes || "");
   const [mapsBusy, setMapsBusy] = useState(false);
+  // Link Maps manual (6 September 2026) — laporan owner: link auto-generate
+  // "berantakan" di WA, tapi link PENDEK ASLI (maps.app.goo.gl) cuma bisa
+  // dibuat lewat tombol "Copy Link" di UI Google Maps sendiri, TIDAK ADA API
+  // publik untuk itu (dikonfirmasi ke owner). Owner memilih generate manual
+  // tiap kali — field ini tempat tempelnya, sama pola dengan notesDraft di
+  // atas. Kosong = tetap pakai link auto-generate seperti sebelumnya (lihat
+  // formatRouteWaMessage di armada.js).
+  const [manualMapsUrlDraft, setManualMapsUrlDraft] = useState(route.manualMapsUrl || "");
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
@@ -82,6 +90,11 @@ export default function RouteCard({
   function simpanCatatan() {
     if (notesDraft === (route.notes || "")) return; // tidak berubah, tidak perlu panggil API
     jalankan(() => onAssign(route, { notes: notesDraft }, editingReason));
+  }
+
+  function simpanManualMapsUrl() {
+    if (manualMapsUrlDraft === (route.manualMapsUrl || "")) return;
+    jalankan(() => onAssign(route, { manualMapsUrl: manualMapsUrlDraft }, editingReason));
   }
 
   // "Buat Peta" (redesain Sep 2026) — MENGGANTIKAN langkah manual dispatcher
@@ -270,6 +283,34 @@ export default function RouteCard({
           />
         ) : route.notes ? (
           <p className="whitespace-pre-line rounded-lg bg-inset px-2 py-1.5 text-[11px] text-ink2">{route.notes}</p>
+        ) : null}
+
+        {/* Link Maps manual (6 September 2026) — laporan owner: link Maps
+            auto-generate "berantakan" di broadcast WA, tapi link PENDEK ASLI
+            (maps.app.goo.gl) TIDAK BISA dibuat lewat API — cuma lewat tombol
+            "Copy Link" di UI Google Maps sendiri. Alur: klik "Buat Peta" di
+            atas -> susun/cek rute di Google Maps -> klik "Copy Link" di sana
+            -> tempel hasilnya di sini. Kalau diisi, MENGGANTIKAN link
+            auto-generate di broadcast WA (formatRouteWaMessage) — kosong =
+            tetap pakai auto-generate seperti sebelumnya. */}
+        {isEditable ? (
+          <input
+            type="text"
+            value={manualMapsUrlDraft}
+            onChange={(e) => setManualMapsUrlDraft(e.target.value)}
+            onBlur={simpanManualMapsUrl}
+            placeholder="Link Maps (opsional) — tempel hasil 'Copy Link' dari Google Maps"
+            className="w-full rounded-lg border border-border px-2 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          />
+        ) : route.manualMapsUrl ? (
+          <a
+            href={route.manualMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block truncate text-[11px] text-accent hover:underline"
+          >
+            🔗 {route.manualMapsUrl}
+          </a>
         ) : null}
 
         {/* Jejak edit darurat terakhir (Route.lastEditReason, kolom biasa

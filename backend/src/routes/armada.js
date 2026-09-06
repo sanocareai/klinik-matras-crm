@@ -244,8 +244,9 @@ async function notifyNatashaText(message) {
 // atas): "gue ingin tetep kayak tadi tapi detail gitu, gaperlu tinyurl gitu,
 // padahal rute nya banyak" — DUA hal:
 // 1. shortenUrl() DICABUT lagi dari sini — link Maps balik ke URL panjang
-//    ASLI. Percobaan tinyurl SEBELUMNYA (commit fec1df49) ternyata bukan
-//    yang diinginkan.
+//    ASLI (kecuali route.manualMapsUrl diisi, lihat poin 3 di bawah).
+//    Percobaan tinyurl SEBELUMNYA (commit fec1df49) ternyata bukan yang
+//    diinginkan.
 // 2. Pesan SEBELUMNYA cuma header (hari/kendaraan/driver) + link + catatan
 //    freeform — TIDAK PERNAH menyebutkan stop-nya SATU PUN, padahal Route
 //    Card di Route Planner sudah menampilkan tiap stop dengan jelas
@@ -254,9 +255,16 @@ async function notifyNatashaText(message) {
 //    antara header dan link Maps — supaya driver bisa baca urutan kerja
 //    LANGSUNG dari WA tanpa perlu buka Maps dulu, persis kegunaan link Maps
 //    yang selama ini jadi satu-satunya sumber urutan.
+// 3. Link SINGKAT ASLI (maps.app.goo.gl) diminta lagi setelah owner tahu
+//    itu TIDAK BISA di-generate otomatis (cuma lewat tombol "Copy Link" di
+//    UI Google Maps) — "saya generate manual tiap kali" adalah pilihan
+//    owner sendiri. route.manualMapsUrl (schema.prisma, migrasi
+//    20260906150000) MENGGANTIKAN mapsUrl (parameter auto-generate) kalau
+//    diisi dispatcher — lihat input "Link Maps (opsional)" di RouteCard.jsx.
 function formatRouteWaMessage(route, mapsUrl, label = "") {
   const kendaraan = route.vehicle?.plateNumber || "Kendaraan belum diisi";
   const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
+  const mapsUrlFinal = route.manualMapsUrl?.trim() || mapsUrl;
 
   // route.jobs SUDAH terurut sequence asc (routeInclude), sama urutan yang
   // dipakai Route Card di frontend — TIDAK di-sort ulang di sini supaya
@@ -277,7 +285,7 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   }
   baris.push(
     "",
-    mapsUrl ? `Link Maps: ${mapsUrl}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)"
+    mapsUrlFinal ? `Link Maps: ${mapsUrlFinal}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)"
   );
   if (route.notes?.trim()) {
     baris.push("", "Detail Catatan:", route.notes.trim());
@@ -1406,7 +1414,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     const route = await prisma.route.findUnique({ where: { id: req.params.id } });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
 
-    const { driverId, helperId, vehicleId, notes, reason } = req.body;
+    const { driverId, helperId, vehicleId, notes, manualMapsUrl, reason } = req.body;
     const editingPublished = route.status === "PUBLISHED";
     if (editingPublished && !reason?.trim()) {
       throw new ArmadaError("Rute sudah diterbitkan — wajib isi alasan untuk mengeditnya");
@@ -1423,6 +1431,10 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
           ...(helperId !== undefined && { helperId: helperId || null }),
           ...(vehicleId !== undefined && { vehicleId: vehicleId || null }),
           ...(notes !== undefined && { notes: notes?.trim() || null }),
+          // manualMapsUrl (6 September 2026) — link Maps pendek ASLI
+          // (maps.app.goo.gl) yang dispatcher tempel manual dari Google Maps
+          // "Copy Link", lihat catatan panjang di formatRouteWaMessage.
+          ...(manualMapsUrl !== undefined && { manualMapsUrl: manualMapsUrl?.trim() || null }),
           ...(editingPublished && {
             lastEditReason: reason.trim(),
             lastEditedAt: new Date(),
