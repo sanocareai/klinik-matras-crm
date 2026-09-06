@@ -103,6 +103,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [showForm, setShowForm] = useState(null); // "complete" | "fail" | null
+  // Catatan reschedule retroaktif (6 September 2026) — form kecil, cuma
+  // muncul di job yang SUDAH Selesai TAPI belum punya rescheduleReason.
+  // Draft LOKAL (pola sama dengan textarea gagal di AksiFotoForm) supaya
+  // ketikan tidak langsung tersimpan sebelum tombol Simpan ditekan.
+  const [showRescheduleNote, setShowRescheduleNote] = useState(false);
+  const [rescheduleNoteReason, setRescheduleNoteReason] = useState("");
 
   // Draft Alamat/Catatan/Jam (31 Agustus 2026, D-039 — laporan owner:
   // "form order-nya bisa buat lebih lengkap?", drawer ini sebelumnya cuma
@@ -227,6 +233,30 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     try {
       await api.updateOrder(order.id, { status: newStatus });
       muat();
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Catatan reschedule retroaktif untuk job Selesai (6 September 2026,
+  // laporan owner — contoh nyata RES-02092026-010/Julhan: scheduledDate 2
+  // Sep, completedAt 5 Sep, TIDAK ADA cara mencatat alasan mundurnya karena
+  // job Selesai terkunci total). TIDAK mengubah tanggal/driver/status job —
+  // cuma menambahkan alasan+jejak waktu (lihat POST /jobs/:id/reschedule-note
+  // di armada.js untuk kenapa ini SENGAJA endpoint terpisah dari reschedule
+  // biasa yang MENYALAKAN ULANG job dari status Gagal).
+  async function simpanCatatanReschedule() {
+    if (!rescheduleNoteReason.trim()) { setActionError("Alasan reschedule wajib diisi"); return; }
+    setBusy(true);
+    setActionError("");
+    try {
+      const updated = await api.addRescheduleNote(job.id, { reason: rescheduleNoteReason.trim() });
+      setJob(updated);
+      setShowRescheduleNote(false);
+      setRescheduleNoteReason("");
       onChanged?.();
     } catch (e) {
       setActionError(e.message);
@@ -589,6 +619,54 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     <Baris icon={Clock} label="Estimasi Durasi">
                       {estimasiDurasiLabel(job.estimatedDurationMinutes)}
                     </Baris>
+                  </div>
+                )}
+
+                {/* Catatan reschedule retroaktif (6 September 2026, laporan
+                    owner — contoh nyata Julhan/RES-...-010: job Selesai
+                    terkunci total, tidak ada cara mencatat kalau ternyata
+                    ini mundur dari rencana awal). CUMA muncul untuk job
+                    Selesai — job aktif tinggal ganti Tanggal langsung di
+                    kartu Penugasan di atas, tidak perlu jalur terpisah. */}
+                {job.status === "COMPLETED" && (
+                  <div className="mt-3 rounded-btn border border-border bg-inset/30 p-3">
+                    {job.rescheduleReason ? (
+                      <>
+                        <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-ink3">Catatan Reschedule</p>
+                        <p className="text-[12.5px] text-ink">{job.rescheduleReason}</p>
+                        <p className="mt-1 text-[11px] text-ink3">
+                          Dicatat {job.rescheduledBy?.name ? `oleh ${job.rescheduledBy.name}` : ""}
+                          {job.rescheduledAt ? ` · ${new Date(job.rescheduledAt).toLocaleDateString("id-ID")}` : ""}
+                        </p>
+                      </>
+                    ) : showRescheduleNote ? (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Catat sebagai Reschedule</p>
+                        <textarea
+                          value={rescheduleNoteReason}
+                          onChange={(e) => setRescheduleNoteReason(e.target.value)}
+                          placeholder="Kenapa job ini mundur dari rencana awal? (mis. customer tidak di tempat, driver reschedule ke hari lain)"
+                          rows={2}
+                          className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent"
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" disabled={busy || !rescheduleNoteReason.trim()} onClick={simpanCatatanReschedule}>
+                            {busy ? <Loader2 size={13} className="animate-spin" /> : "Simpan"}
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setShowRescheduleNote(false); setRescheduleNoteReason(""); }}>
+                            Batal
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowRescheduleNote(true)}
+                        className="text-[12px] font-semibold text-accent hover:underline"
+                      >
+                        Job ini mundur dari rencana awal? Catat sebagai reschedule
+                      </button>
+                    )}
                   </div>
                 )}
 

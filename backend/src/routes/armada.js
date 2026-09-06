@@ -232,6 +232,11 @@ const jobInclude = {
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
   // ke GET /routes/:id cuma untuk kode & status rutenya.
   route: { select: { id: true, code: true, status: true } },
+  // rescheduledBy (6 September 2026) — siapa yang mencatat reschedule
+  // (baik dari jalur Gagal->reschedule yang lama, maupun catatan
+  // retroaktif job Selesai yang baru, lihat POST /jobs/:id/reschedule-note)
+  // supaya JobDetailDrawer bisa tampilkan "dicatat oleh X", bukan cuma ID.
+  rescheduledBy: { select: { id: true, name: true } },
   // BUG DITEMUKAN 31 Agustus 2026 (laporan owner: JobDetailDrawer terasa
   // "kosong" — Kontak & Timeline status Order tidak pernah muncul). Job
   // punya relasi LANGSUNG ke Order (job.orderId, lihat schema.prisma), TAPI
@@ -1806,6 +1811,53 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
         helperId: helperId || null,
         vehicleId: vehicleId || null,
         status: deriveStatus(!!nextDriverId, !!nextDate),
+        rescheduleReason: reason.trim(),
+        rescheduledById: req.user.id,
+        rescheduledAt: new Date(),
+        customerConfirmedReschedule: !!customerConfirmed,
+      },
+      include: jobInclude,
+    });
+    res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /jobs/:id/reschedule-note — CATATAN reschedule RETROAKTIF khusus job
+// yang SUDAH Selesai (6 September 2026, laporan owner: contoh nyata job
+// Pengambilan Julhan — scheduledDate 2 Sep, baru benar-benar dikerjakan/
+// completedAt 5 Sep, tapi TIDAK ADA cara mencatat "ini sempat mundur dari
+// rencana" karena job Selesai terkunci total dari editing, dan jalur
+// reschedule yang sudah ada (di atas) CUMA bisa dipakai dari status Gagal).
+//
+// SENGAJA TIDAK sama dengan /issues/:jobId/reschedule di atas — endpoint
+// itu MENYALAKAN ULANG job (ubah tanggal/driver/status, keluar dari Gagal).
+// Ini BUKAN itu: job yang statusnya sudah COMPLETED TIDAK PERNAH berubah
+// status/tanggal/driver-nya lewat sini — cuma menambahkan alasan+jejak
+// waktu ke field rescheduleReason/rescheduledAt/rescheduledById yang SAMA
+// (field-nya sudah ada di skema, dipakai bersama), murni supaya riwayat
+// tercatat jujur untuk laporan (job ini otomatis ikut muncul di GET /issues
+// sebagai "RESCHEDULED" begitu rescheduleReason terisi — lihat
+// deriveIssueStatus di atas, TIDAK perlu endpoint/tampilan terpisah).
+//
+// scheduledDate (rencana awal) & completedAt (kapan benar-benar selesai)
+// TIDAK diulang di sini sebagai input — dua-duanya SUDAH ada di job apa
+// adanya, endpoint ini cuma menambahkan ALASAN kenapa dua tanggal itu beda.
+armadaRouter.post("/jobs/:id/reschedule-note", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+    if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.status !== "COMPLETED") {
+      throw new ArmadaError("Catatan reschedule di sini khusus job yang sudah Selesai — job berstatus Gagal pakai jalur reschedule biasa, job aktif tinggal ganti tanggal langsung.");
+    }
+
+    const { reason, customerConfirmed } = req.body;
+    if (!reason?.trim()) throw new ArmadaError("Alasan reschedule wajib diisi");
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: {
         rescheduleReason: reason.trim(),
         rescheduledById: req.user.id,
         rescheduledAt: new Date(),

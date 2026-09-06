@@ -114,6 +114,9 @@ export const api = {
 
   // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
   getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
+  // Production Command Center (Production Core Slice 2E) — SATU endpoint
+  // teragregasi: summary, workspaceHealth, exceptions, flow, unscheduledUnits.
+  getCommandCenter: (date) => request(`/production/command-center${date ? `?date=${date}` : ""}`),
   // Daftar SELURUH unit (Production Tahap 1) — lebih lebar dari /board yang
   // sengaja cuma menampilkan unit yang ada di bengkel hari ini.
   getWorkOrders: (params = {}) => {
@@ -147,6 +150,12 @@ export const api = {
   recordStageDone: (unitId, { photoUrls, note } = {}) =>
     request(`/production/units/${unitId}/done`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
   getOrderDocumentation: (orderId) => request(`/production/orders/${orderId}/documentation`),
+  // Aktivitas lintas entitas (Production Core Slice 1) — linimasa + audit
+  // GENERIK di atas activity_events. entityType saat ini cuma "unit".
+  getActivity: (entityType, entityId, cursor) => {
+    const qs = new URLSearchParams({ entityType, entityId, ...(cursor && { cursor }) }).toString();
+    return request(`/activity?${qs}`);
+  },
   // Kirim tahap dokumentasi terpilih ke customer via WAHA (D-015). entries =
   // subset dari GET getOrderDocumentation di atas yang dicentang sales.
   sendDocumentation: (conversationId, orderId, entries) =>
@@ -231,6 +240,11 @@ export const api = {
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
   rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),
+  // Catatan reschedule retroaktif untuk job yang SUDAH Selesai (6 September
+  // 2026) — TERPISAH dari rescheduleIssue di atas (itu buat job Gagal,
+  // ganti tanggal/driver & menyalakan job lagi). Ini murni catatan, tidak
+  // ada apa pun di job yang berubah selain rescheduleReason/rescheduledAt.
+  addRescheduleNote: (jobId, data) => request(`/armada/jobs/${jobId}/reschedule-note`, { method: "POST", body: JSON.stringify(data) }),
 
   // Revisi, disebut "Retur" di menu (Delivery Tahap 6)
   getRevisions: (params = {}) => {
@@ -423,10 +437,20 @@ export const api = {
     request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
   skipUnitStage: (unitId, note) => request(`/units/${unitId}/stages/skip`, { method: "POST", body: JSON.stringify({ note }) }),
   setUnitService: (unitId, serviceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId }) }),
+  // Prioritas & tanggal target produksi (Production Core Slice 1) — TERPISAH
+  // dari stage engine, murni metadata perencanaan. Permission UNIT_ROUTING_WRITE.
+  updateUnitProduction: (unitId, { priority, productionDueAt } = {}) =>
+    request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt }) }),
   getServiceCatalog: () => request("/master-data/service-catalog"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
     request(`/units/${unitId}/stages/${stageId}/fail`, {
       method: "POST", body: JSON.stringify({ blockReason, note }),
+    }),
+  // RESOLVE BLOCKER (Production Core Slice 2A) — TERPISAH dari me-restart
+  // tahap (startUnitStage juga auto-resolve, lihat catatan backend).
+  resolveBlocker: (unitId, blockerId, resolutionNote) =>
+    request(`/units/${unitId}/blockers/${blockerId}/resolve`, {
+      method: "POST", body: JSON.stringify({ resolutionNote }),
     }),
   recordQcFitTest: (unitId, stageId, data) =>
     request(`/units/${unitId}/stages/${stageId}/qc`, { method: "POST", body: JSON.stringify(data) }),
