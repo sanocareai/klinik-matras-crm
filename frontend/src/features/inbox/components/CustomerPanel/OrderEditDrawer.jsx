@@ -74,17 +74,57 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
   }
   const f = isOpen ? { order, customer: resolvedCustomer } : frozen;
 
+  // D-131 (6 September 2026, laporan owner: "masih ada warna hitamnya di
+  // background" — setelah backdrop-blur ditambah D-130, screenshot masih
+  // menunjukkan PANEL DRAWER ITU SENDIRI (bukan overlay-nya) yang solid
+  // hitam & lebar penuh (min(100%,720px)), padahal isinya cuma kartu wizard
+  // kecil di step 0-2 — sisa ruang di bawah/sampingnya jadi kotak hitam
+  // kosong raksasa, workspace blur di baliknya nyaris tidak kebagian tempat
+  // untuk terlihat. Root cause: drawer edge-docked full-height itu memang
+  // masuk akal untuk mode EDIT (form order lengkap, banyak field/riwayat),
+  // tapi TIDAK untuk mode BUAT BARU yang justru pas jadi modal kecil di
+  // tengah — sesuai skema yang diminta owner sejak awal ("card 3 pilihan
+  // itu" muncul mengambang, bukan panel penuh layar).
+  const isCreateMode = !f.order;
+
+  const header = (
+    <header className={`flex items-center gap-3 border-b border-line px-4 py-3.5 ${f.order ? "justify-between" : "justify-end"}`}>
+      {/* Judul mode-BUAT dihapus total (D-130) — nama customer & konteksnya
+          sudah kebaca dari layar Inbox/CustomerPanel di baliknya. Mode EDIT
+          ("Order — Nama") TETAP dipertahankan — drawer itu tidak selalu
+          dibuka dari konteks yang sudah menunjukkan nama customer. */}
+      {f.order && (
+        <p className="text-sm font-bold text-ink">
+          Order — {f.customer?.name || "Pelanggan"}
+        </p>
+      )}
+      <button
+        type="button" onClick={onClose} aria-label="Tutup"
+        className="shrink-0 rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+      >
+        <X size={16} />
+      </button>
+    </header>
+  );
+
+  const body = (
+    <div className="flex-1 overflow-y-auto p-4">
+      <OrderSection
+        customer={f.customer}
+        onUpdate={onUpdate}
+        initialOrderId={f.order?.id}
+        initialShowForm={!f.order}
+      />
+    </div>
+  );
+
   return createPortal(
     <AnimatePresence>
       {isOpen && f.customer && (
         <>
-          {/* D-130 (6 September 2026, laporan owner: "background workspace
-              ngeblur, lalu muncul card 3 pilihan itu") — DULU cuma
-              `bg-black/30` (tint gelap flat, tanpa blur) — workspace di
-              belakang tetap tajam/terbaca, kesannya cuma "digelapkan", bukan
-              kartunya yang jadi fokus. `backdrop-blur-sm` ditambahkan supaya
-              workspace di belakang benar-benar buram, mendorong perhatian ke
-              kartu wizard di depannya. */}
+          {/* D-130 — DULU cuma `bg-black/30` (tint gelap flat, tanpa blur),
+              workspace di belakang tetap tajam/terbaca. `backdrop-blur-sm`
+              ditambahkan supaya workspace di belakang benar-benar buram. */}
           <motion.div
             key="order-edit-overlay"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -93,44 +133,40 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
             onClick={onClose}
             aria-hidden="true"
           />
-          <motion.aside
-            key="order-edit-drawer"
-            role="dialog" aria-modal="true" aria-label="Edit order"
-            initial={{ right: "-100%" }} animate={{ right: 0 }} exit={{ right: "-100%" }}
-            transition={{ type: "tween", duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            style={{ position: "fixed", top: 0, width: "min(100%, 720px)" }}
-            className="z-[511] flex h-full flex-col bg-base shadow-popover"
-          >
-            {/* D-130 — laporan owner: "hilangkan text 'Buat Order Baru -
-                Giling' karna redundant, gaperlu penjelasan/keterangan itu".
-                Judul mode-BUAT dihapus total (nama customer & konteksnya
-                sudah kebaca dari layar Inbox/CustomerPanel di baliknya,
-                lewat backdrop blur baru di atas). Mode EDIT ("Order — Nama")
-                TETAP dipertahankan — drawer itu tidak selalu dibuka dari
-                konteks yang sudah menunjukkan nama customer (mis. dari tab
-                Order CustomerPanel sendiri). */}
-            <header className={`flex items-center gap-3 border-b border-line px-4 py-3.5 ${f.order ? "justify-between" : "justify-end"}`}>
-              {f.order && (
-                <p className="text-sm font-bold text-ink">
-                  Order — {f.customer?.name || "Pelanggan"}
-                </p>
-              )}
-              <button
-                type="button" onClick={onClose} aria-label="Tutup"
-                className="shrink-0 rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+          {isCreateMode ? (
+            // D-131 — modal MENGAMBANG di tengah, bukan drawer penuh layar.
+            // Wrapper luar `pointer-events-none` (klik area kosong di
+            // sekitarnya tembus ke overlay gelap di belakangnya, yang sudah
+            // menutup dgn onClose) — cuma kotak modal sendiri yang
+            // `pointer-events-auto`.
+            <div className="fixed inset-0 z-[511] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                key="order-edit-modal"
+                role="dialog" aria-modal="true" aria-label="Buat order baru"
+                initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                style={{ width: "min(92vw, 520px)", maxHeight: "88vh" }}
+                className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-base shadow-popover"
               >
-                <X size={16} />
-              </button>
-            </header>
-            <div className="flex-1 overflow-y-auto p-4">
-              <OrderSection
-                customer={f.customer}
-                onUpdate={onUpdate}
-                initialOrderId={f.order?.id}
-                initialShowForm={!f.order}
-              />
+                {header}
+                {body}
+              </motion.div>
             </div>
-          </motion.aside>
+          ) : (
+            <motion.aside
+              key="order-edit-drawer"
+              role="dialog" aria-modal="true" aria-label="Edit order"
+              initial={{ right: "-100%" }} animate={{ right: 0 }} exit={{ right: "-100%" }}
+              transition={{ type: "tween", duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              style={{ position: "fixed", top: 0, width: "min(100%, 720px)" }}
+              className="z-[511] flex h-full flex-col bg-base shadow-popover"
+            >
+              {header}
+              {body}
+            </motion.aside>
+          )}
         </>
       )}
     </AnimatePresence>,
