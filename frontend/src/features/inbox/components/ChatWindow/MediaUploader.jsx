@@ -1,7 +1,27 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Image as ImageIcon, FileText, Package, X, Sparkles, MapPin, User, Navigation, ShoppingCart } from "lucide-react";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { api } from "../../../../api.js";
+
+// Semua overlay di file ini (`.attach-sheet-overlay`, `.media-preview-overlay`)
+// pakai `position: fixed; inset: 0` DAN dirender sebagai keturunan
+// `.chat-input-area` di dalam composer. Composer itu sendiri ada di dalam
+// `<motion.div>` pembungkus halaman di components/Layout.jsx yang meninggalkan
+// `transform: translateY(0px)` permanen setelah animasi transisi rute — dan
+// `transform` apa pun (selain `none`) menjadikan motion.div itu CONTAINING
+// BLOCK untuk elemen `position: fixed` di bawahnya. Akibatnya overlay tidak
+// lagi mengisi viewport melainkan kotak motion.div; modal preview yang
+// `max-height: 86dvh` (dvh tetap relatif viewport asli) meluber ke bawah dan
+// tombol Kirim + kartu preview "tenggelam" di bawah composer, tak terjangkau
+// (laporan owner 6 Sep 2026 — fix CSS `overflow-y:auto` sebelumnya tidak
+// cukup karena containing block-nya sendiri yang salah). Portal ke
+// document.body mengeluarkannya dari motion.div → `fixed` kembali relatif
+// viewport. Pola sama persis dengan ChatBaruDialog / OrderEditDrawer /
+// ConversationItem yang sudah lebih dulu pakai trik ini.
+function Portal({ children }) {
+  return createPortal(children, document.body);
+}
 
 // "Kirim Lokasi" — port dari mobile/src/components/KirimLokasiModal.js.
 // TIDAK ADA peta visual/nearby-places di sini (sama alasan seperti mobile:
@@ -59,6 +79,7 @@ function LocationModal({ conversationId, onClose, onSent }) {
   }
 
   return (
+    <Portal>
     <div className="media-preview-overlay" onClick={onClose}>
       <div className="media-preview-modal small-modal" onClick={(e) => e.stopPropagation()}>
         <div className="media-preview-header">
@@ -88,6 +109,7 @@ function LocationModal({ conversationId, onClose, onSent }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -117,6 +139,7 @@ function ContactModal({ conversationId, onClose, onSent }) {
   }
 
   return (
+    <Portal>
     <div className="media-preview-overlay" onClick={onClose}>
       <div className="media-preview-modal small-modal" onClick={(e) => e.stopPropagation()}>
         <div className="media-preview-header">
@@ -135,6 +158,7 @@ function ContactModal({ conversationId, onClose, onSent }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -298,6 +322,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
       </button>
 
       {showSheet && (
+        <Portal>
         <div className="attach-sheet-overlay" onClick={() => setShowSheet(false)}>
           <div className="attach-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="attach-sheet-handle" />
@@ -356,6 +381,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {showLocation && (
@@ -367,6 +393,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
 
       {/* Modal preview grid sebelum kirim */}
       {items.length > 0 && (
+        <Portal>
         <div className="media-preview-overlay" onClick={() => !sending && closePreview()}>
           <div className="media-preview-modal" onClick={(e) => e.stopPropagation()}>
             <div className="media-preview-header">
@@ -420,6 +447,7 @@ const MediaUploader = forwardRef(function MediaUploader({ conversationId, onOpen
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </>
   );
