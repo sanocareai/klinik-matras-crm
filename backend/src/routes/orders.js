@@ -161,11 +161,12 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,
           ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget } = req.body;
+          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget,
+          customerPromiseDate } = req.body;
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget, customerPromiseDate]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -312,6 +313,13 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             deliveryConfirmedDate: parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti"),
           }),
           ...(locationUrl         !== undefined && { locationUrl: locationUrl || null }),
+          // customerPromiseDate (Production Core, 6 September 2026) — tanggal
+          // YANG DIJANJIKAN ke customer, dipakai sisi PRODUKSI sebagai acuan
+          // urgensi. Sama pola parsing dengan pickup/deliveryConfirmedDate:
+          // "" atau null melepasnya lagi.
+          ...(customerPromiseDate !== undefined && {
+            customerPromiseDate: parseTanggalKalender(customerPromiseDate, "Tanggal Janji ke Customer"),
+          }),
           // dpTarget (2 Sep 2026) — DP yang DISEPAKATI dengan customer, murni
           // pembanding di UI/invoice ("DP kurang Rp X"). "" atau null = lepas
           // kesepakatan DP lagi (bukan "sudah dibayar 0" — beda konsep dari
@@ -357,6 +365,10 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // atas (31 Agustus 2026, laporan sales tidak bisa membatalkan
           // order gara-gara job kerangka kosong).
           await hapusJobBelumJalan(tx, updated.id);
+          // Job yang MASIH aktif (driver sungguhan EN_ROUTE/ARRIVED) ikut
+          // ditandai FAILED (5 September 2026) — lihat catatan lengkap di
+          // checkCancelBlockers/gagalkanJobAktif.
+          await gagalkanJobAktif(tx, updated.id);
         } else if (status === "DELIVERED") {
           const unitEnRoute = await tx.unit.findFirst({
             where: {
@@ -1487,25 +1499,28 @@ orderRouter.delete("/:id", async (req, res) => {
 // AWAITING_PICKUP order-nya sudah CANCELLED — sebagian besar via jalur ini.
 // Sekarang SATU fungsi dipakai KEDUANYA supaya tidak ada lagi jalur kedua
 // yang lupa diberi pengaman yang sama.
-// Job dianggap "komitmen nyata" (blokir cancel) HANYA kalau driver SUDAH
-// bergerak (EN_ROUTE/ARRIVED) atau SUDAH selesai (COMPLETED) — bukan
-// sekadar ADA. Ditemukan 31 Agustus 2026 (laporan sales, screenshot):
-// sales gagal membatalkan order yang job-nya cuma UNSCHEDULED (kerangka
-// otomatis dari armadaAutoJob.js — tanpa driver, tanpa tanggal, TIDAK ADA
-// komitmen fisik apa pun). Job seperti ini dibersihkan otomatis saat
-// order dibatalkan (lihat hapusJobBelumJalan di bawah), bukan jadi alasan
-// menolak sales.
-const JOB_STATUS_BLOKIR_CANCEL = ["EN_ROUTE", "ARRIVED", "COMPLETED"];
-
+// Job pickup/pengiriman TIDAK LAGI blokir cancel, apa pun statusnya (5
+// September 2026, permintaan owner — laporan: sales tertahan batalkan
+// order yang job-nya sudah EN_ROUTE/ARRIVED/COMPLETED, biasanya gara-gara
+// salah input atau order dibatalkan customer setelah driver kadung
+// jalan). Job COMPLETED dibiarkan APA ADANYA (riwayat asli, driver memang
+// benar-benar sudah kerja — TIDAK diutak-atik, itu fakta yang tidak boleh
+// hilang). Job yang MASIH aktif (EN_ROUTE/ARRIVED) ditandai FAILED lewat
+// gagalkanJobAktif() di bawah supaya tidak nyangkut selamanya kelihatan
+// "sedang jalan" di papan Armada utk order yang sudah dibatalkan — BUKAN
+// dihapus (failureReason mencatat kenapa), beda dari job yang belum
+// jalan sama sekali (UNSCHEDULED/SCHEDULED/ASSIGNED, dihapus abis lewat
+// hapusJobBelumJalan — tidak ada apa pun yang perlu diingat dari situ).
+//
+// Blocker yang MASIH DIPERTAHANKAN (unit sedang dikerjakan bengkel,
+// pembayaran tercatat, revisi lingkup kerja) — beda kelas risiko dari job
+// pengiriman: itu duit sungguhan/pekerjaan bengkel aktif, tetap butuh
+// admin/Kendali, TIDAK termasuk perubahan ini.
 async function checkCancelBlockers(orderId) {
-  const [units, jobsBlokir, paymentCount, scopeRevisionCount] = await Promise.all([
+  const [units, paymentCount, scopeRevisionCount] = await Promise.all([
     prisma.unit.findMany({
       where: { orderId },
       select: { id: true, status: true, currentStageId: true, unitCode: true },
-    }),
-    prisma.job.findMany({
-      where: { orderId, status: { in: JOB_STATUS_BLOKIR_CANCEL } },
-      select: { id: true },
     }),
     prisma.payment.count({ where: { orderId } }),
     prisma.scopeRevision.count({ where: { orderId } }),
@@ -1518,10 +1533,23 @@ async function checkCancelBlockers(orderId) {
   if (inFlightUnits.length > 0) {
     blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
   }
-  if (jobsBlokir.length > 0) blockers.push(`${jobsBlokir.length} job pickup/pengiriman sedang berjalan atau sudah selesai`);
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
   return { blockers, units };
+}
+
+// Job pickup/pengiriman yang MASIH aktif (driver sungguhan sedang di jalan
+// atau sudah tiba) saat order-nya dipaksa batal — ditandai FAILED (bukan
+// dihapus, beda dari hapusJobBelumJalan di bawah yang memang menghapus job
+// yang belum sempat jalan sama sekali). failureReason mencatat SEBABNYA
+// supaya Armada tidak salah kira ini kegagalan driver di lapangan. Job
+// COMPLETED SENGAJA tidak disentuh sama sekali — itu riwayat asli yang
+// sudah benar, tidak ada yang perlu "digagalkan".
+async function gagalkanJobAktif(tx, orderId) {
+  await tx.job.updateMany({
+    where: { orderId, status: { in: ["EN_ROUTE", "ARRIVED"] } },
+    data: { status: "FAILED", failureReason: "Order dibatalkan sales — dihentikan otomatis, bukan kegagalan driver di lapangan." },
+  });
 }
 
 // Job yang BELUM jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak punya alasan
@@ -1576,6 +1604,10 @@ orderRouter.post("/:id/cancel", async (req, res) => {
         });
       }
       await hapusJobBelumJalan(tx, req.params.id);
+      // Job yang MASIH aktif (driver sungguhan EN_ROUTE/ARRIVED) ikut
+      // ditandai FAILED (5 September 2026) — lihat checkCancelBlockers/
+      // gagalkanJobAktif.
+      await gagalkanJobAktif(tx, req.params.id);
       const result = await tx.order.update({
         where: { id: req.params.id },
         data: {
