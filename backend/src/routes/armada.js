@@ -1469,44 +1469,30 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
         });
       }
 
-      // Auto-prefill driver/helper Rute dari job yang di-drag masuk (6
-      // September 2026, laporan owner) — "1 rute dipegang pasti oleh 1 PIC,
-      // hampir gapernah ganti tiba-tiba", tapi dispatcher SEBELUM ini tetap
-      // dipaksa pilih driver LAGI di level rute walau job yang di-drag
-      // masuk sudah punya driver sendiri dari Jadwal & Penugasan — kerja
-      // dua kali untuk keputusan yang sama. HANYA untuk rute DRAFT yang
-      // BELUM punya driver sama sekali (rute PUBLISHED sudah pasti py
-      // driver — syarat wajib sebelum bisa diterbitkan — jadi tidak pernah
-      // relevan di sana). Ambil dari stop PERTAMA (urutan jobIds) yang
-      // sudah punya driverId individual — bukan majority vote, supaya
-      // predictable & gampang dijelaskan. Dispatcher tetap bisa ganti manual
-      // kalau ternyata salah, ini cuma prefill bukan penguncian.
-      if (!editingPublished && !route.driverId) {
-        const sumberDriver = jobIds.map((id) => jobLama.find((j) => j.id === id)).find((j) => j?.driverId);
-        if (sumberDriver) {
-          await tx.route.update({
-            where: { id: route.id },
-            data: { driverId: sumberDriver.driverId, helperId: sumberDriver.helperId || null },
-          });
-        }
-      }
-
-      // Rute PUBLISHED — stop yang BARU ditambahkan lewat edit darurat ini
-      // perlu ikut disalinkan driver/helper/vehicle rutenya juga (persis
-      // yang dilakukan POST /routes/:id/publish saat rute pertama kali
-      // diterbitkan), supaya tidak ada job "menempel ke rute tapi tidak
-      // pernah kebagian driver". Stop LAMA yang tetap di rute ini tidak
-      // rugi diulang (data-nya sama), jadi disamaratakan saja tanpa
-      // membedakan mana yang baru vs lama — lebih sederhana dan pasti benar.
+      // Cascade PIC Rute -> job (6 September 2026, laporan owner: "ketika
+      // drag card yang belum ada driver ke rute yang udah ada PIC-nya
+      // [misal Agung & Diva], otomatis langsung terisi... lalu just in case
+      // orderan itu pindah ke rute lain [Apri & Alwan], otomatis keubah
+      // juga"). Dulu kaskade Route->Job CUMA jalan saat rute diterbitkan
+      // (dulu cabang `editingPublished` di bawah) — rute DRAFT yang SUDAH
+      // punya driver (baik dari prefill di bawah, atau dipilih manual
+      // dispatcher) TIDAK PERNAH menyalinkan driver itu ke job BARU yang
+      // menyusul masuk, jadi kartu job tetap "Belum ditugaskan" sampai rute
+      // diterbitkan — padahal rutenya sendiri sudah jelas py PIC di layar.
+      // Sekarang SATU aturan berlaku untuk DRAFT maupun PUBLISHED: begitu
+      // rute SUDAH punya driver, SEMUA job anggotanya (lama maupun baru
+      // saja ditempel/dipindah dari rute lain) ikut disalinkan — konsisten
+      // dengan filosofi D-077 "Route otoritas penuh begitu job masuk rute",
+      // sebelumnya cuma ditegakkan saat publish, sekarang tiap kali
+      // membership rute berubah (drag masuk ATAU pindah antar-rute — job
+      // yang dipindah ke rute lain otomatis lepas dari rute asalnya karena
+      // routeId cuma bisa menunjuk SATU rute, jadi "pindah PIC" terjadi
+      // wajar tanpa langkah tambahan).
       //
-      // KECUALI stop yang SUDAH TUNTAS — BUG NYATA diperbaiki 6 September
-      // 2026 (skenario ganti PIC darurat: kecelakaan di tengah rute, sisa
-      // stop dialihkan ke driver/kurir lain). Sebelum ini, ganti driver di
-      // rute PUBLISHED menimpa SEMUA job termasuk yang sudah terkirim —
-      // riwayat pengiriman jadi salah bilang siapa yang benar-benar
-      // mengantar. Job COMPLETED/FAILED harus tetap mencatat pengerjanya
-      // yang asli, selamanya.
-      if (editingPublished) {
+      // KECUALI job yang SUDAH TUNTAS (COMPLETED/FAILED) — sama alasan
+      // dengan guard scheduledDate di atas (kasus ganti PIC darurat: stop
+      // yang sudah terkirim tidak boleh ikut tertimpa).
+      if (route.driverId) {
         await tx.job.updateMany({
           where: { routeId: route.id, status: { notIn: STATUS_TUNTAS } },
           data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
@@ -1515,6 +1501,39 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
           where: { routeId: route.id, status: "UNSCHEDULED" },
           data: { status: "ASSIGNED" },
         });
+      } else if (!editingPublished) {
+        // Auto-prefill driver/helper RUTE dari job yang di-drag masuk —
+        // kebalikan dari kaskade di atas, cuma relevan kalau rute ini
+        // MASIH KOSONG PIC-nya sama sekali: "1 rute dipegang pasti oleh 1
+        // PIC", dispatcher tidak perlu pilih driver dua kali untuk
+        // keputusan yang sama kalau job yang di-drag masuk kebetulan sudah
+        // punya driver individual dari Jadwal & Penugasan. Ambil dari stop
+        // PERTAMA (urutan jobIds) yang sudah punya driverId — bukan
+        // majority vote, predictable & gampang dijelaskan. Rute PUBLISHED
+        // TIDAK PERNAH masuk cabang ini (route.driverId wajib terisi
+        // sebelum bisa diterbitkan, lihat POST /routes/:id/publish).
+        const sumberDriver = jobIds.map((id) => jobLama.find((j) => j.id === id)).find((j) => j?.driverId);
+        if (sumberDriver) {
+          await tx.route.update({
+            where: { id: route.id },
+            data: { driverId: sumberDriver.driverId, helperId: sumberDriver.helperId || null },
+          });
+          // Rute BARU SAJA dapat driver dari prefill ini — susulkan kaskade
+          // yang sama seperti di atas supaya SEMUA job di rute ini (bukan
+          // cuma sumbernya sendiri) langsung konsisten, tanpa nunggu drag
+          // berikutnya baru ke-trigger.
+          await tx.job.updateMany({
+            where: { routeId: route.id, status: { notIn: STATUS_TUNTAS } },
+            data: { driverId: sumberDriver.driverId, helperId: sumberDriver.helperId || null },
+          });
+          await tx.job.updateMany({
+            where: { routeId: route.id, status: "UNSCHEDULED" },
+            data: { status: "ASSIGNED" },
+          });
+        }
+      }
+
+      if (editingPublished) {
         await tx.route.update({
           where: { id: route.id },
           data: { lastEditReason: reason.trim(), lastEditedAt: new Date(), lastEditedById: req.user.id },
