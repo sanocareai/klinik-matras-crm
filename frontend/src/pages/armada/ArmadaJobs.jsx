@@ -19,7 +19,7 @@ import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   JOB_STATUS_REAL, ACTIVE_STATUSES,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
-  isJobOverdue, overdueDays, jobTypeCardStyle, rentalCardAccentStyle, isRentalOrder,
+  isJobOverdue, overdueDays, jobAccentBarStyle, hasJobAccentBar,
 } from "@/features/armada/jobStatus.js";
 
 // Jadwal & Penugasan — Delivery Tahap 2.
@@ -423,14 +423,14 @@ export default function ArmadaJobs() {
                       <button
                         type="button"
                         onClick={() => setOpenJobId(j.id)}
-                        // Gradasi background per tipe + garis aksen Sewa
-                        // (lanjutan redesain Sep 2026 — laporan owner: "di
-                        // Jadwal & Penugasan bisa terapkan yang sama?" seperti
-                        // Route Planner). Lihat jobStatus.js#jobTypeCardStyle.
-                        style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
+                        // Glow aksen kiri per tipe (revisi Sep 2026 — owner
+                        // minta versi TENANG, bukan gradasi penuh, untuk
+                        // daftar padat ini). Sewa=oranye, Pengiriman=hijau,
+                        // Pengambilan=tanpa warna. Lihat jobStatus.js#jobAccentBarStyle.
+                        style={jobAccentBarStyle(j)}
                         className={cn(
                           "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
-                          isRentalOrder(j) && "dh-bar-left"
+                          hasJobAccentBar(j) && "dh-bar-left"
                         )}
                       >
                         <Avatar name={nama} size="sm" gradient className="mt-0.5" />

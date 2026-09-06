@@ -187,6 +187,29 @@ export function rentalCardAccentStyle(job) {
   return isRentalOrder(job) ? { "--dh-bar": "var(--orange)" } : {};
 }
 
+// Glow aksen kiri (revisi Sep 2026 — laporan owner: gradasi PENUH di atas
+// "terlalu ramai" untuk daftar padat seperti Jadwal & Penugasan; dh-bar-left
+// glow yang SUDAH dipakai buat Sewa dirasa cukup DAN lebih tenang). Route
+// Planner TETAP pakai jobTypeCardStyle (gradasi penuh) di atas — beda
+// konteks, kartu di sana lebih besar/lebih sedikit per layar.
+//
+// Prioritas: Sewa (oranye) MENANG atas tipe job — Sewa penanda kategori
+// order yang lebih jarang & butuh perhatian ekstra (alur retur beda), bukan
+// sekadar arah job. Pengiriman dapat hijau. Pengambilan SENGAJA tanpa warna
+// sama sekali (permintaan eksplisit owner) — bukan lupa, bukan bug.
+export function jobAccentBarStyle(job) {
+  if (isRentalOrder(job)) return { "--dh-bar": "var(--orange)" };
+  if (job?.type === "DELIVERY") return { "--dh-bar": "var(--green)" };
+  return {};
+}
+
+// Dipasangkan dengan jobAccentBarStyle() — class `dh-bar-left` HANYA
+// ditambahkan kalau memang ada warna untuk ditampilkan (Pengambilan biasa
+// tidak dapat class ini sama sekali, bukan class-tapi-tanpa-efek).
+export function hasJobAccentBar(job) {
+  return isRentalOrder(job) || job?.type === "DELIVERY";
+}
+
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
 // dispatcher perlu tahu siapa sales-nya buat koordinasi). Pola fallback
 // SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
