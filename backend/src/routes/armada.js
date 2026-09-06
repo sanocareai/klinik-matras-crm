@@ -27,7 +27,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
-import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
+import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 
@@ -2573,6 +2573,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         data: { status: job.type === "PICKUP" ? "RECEIVED" : "DELIVERED" },
       });
       await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
+      await syncRouteCompletionStatus(tx, job.routeId);
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
@@ -2637,6 +2638,7 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
         });
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
+      await syncRouteCompletionStatus(tx, job.routeId);
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });

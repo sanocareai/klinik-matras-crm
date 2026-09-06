@@ -430,7 +430,14 @@ export default function ArmadaRoutes() {
 
         {/* Tengah — papan rute */}
         <div className="min-w-0">
-          <RouteMap routes={routes} />
+          {/* Peta cuma menampilkan rute DRAFT (6 September 2026, laporan
+              owner: "rute yang sudah terbit gamuncul lagi di maps") — peta
+              ini alat PERENCANAAN (susun urutan stop sebelum diterbitkan),
+              begitu rute diterbitkan rencananya sudah final, tidak perlu
+              lagi menumpuk garis di peta yang sama dengan rute yang MASIH
+              disusun. Kartu rute PUBLISHED/COMPLETED/CANCELLED tetap tampil
+              apa adanya di bawah, cuma tidak ikut digambar di peta atas. */}
+          <RouteMap routes={(routes || []).filter((r) => r.status === "DRAFT")} />
           <div className="mt-3">
             {/* Grid turun ke bawah (D-060, 4 September 2026) — SEBELUMNYA
                 flex + overflow-x-auto (kartu berjejer ke samping, digulir

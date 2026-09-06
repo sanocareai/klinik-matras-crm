@@ -69,6 +69,36 @@ export function computeOrderStatus(units) {
   return terlemah;
 }
 
+// Route otomatis jadi COMPLETED begitu SEMUA job anggotanya tuntas
+// (COMPLETED/FAILED, tidak ada lagi yang aktif) — 6 September 2026, laporan
+// owner: "rute yang udah diterbitkan dan berhasil, ubah warnanya jadi hijau
+// agar mudah identifikasi". Infrastrukturnya SUDAH ADA sejak awal —
+// RouteStatus.COMPLETED + tone hijau "Selesai" di frontend/src/features/
+// armada/vehicleStatus.js — TAPI backend TIDAK PERNAH menuliskannya ke
+// Route manapun (diverifikasi langsung: nol hasil untuk `Route.status =
+// "COMPLETED"` di seluruh routes/armada.js). Dipanggil dari POST
+// /jobs/:id/complete & /fail di armada.js (job gagal pun tetap
+// "menuntaskan" keterlibatan rutenya, bukan cuma yang sukses), DAN dari
+// selesaikanJobBelumJalan di bawah (jalur bulk-complete D-064) — ditaruh di
+// SINI (bukan armada.js) supaya dua-duanya bisa memakai definisi yang sama
+// tanpa import melingkar (armada.js sudah mengimpor dari file service ini,
+// arah sebaliknya akan melingkar).
+//
+// HANYA menyentuh rute PUBLISHED (bukan DRAFT — belum ada apa pun untuk
+// "selesai", dan bukan CANCELLED — sudah status akhir sendiri) yang punya
+// minimal 1 job — rute kosong tidak relevan ditandai selesai.
+export async function syncRouteCompletionStatus(tx, routeId) {
+  if (!routeId) return;
+  const route = await tx.route.findUnique({ where: { id: routeId }, select: { status: true } });
+  if (!route || route.status !== "PUBLISHED") return;
+  const jobs = await tx.job.findMany({ where: { routeId }, select: { status: true } });
+  if (jobs.length === 0) return;
+  const semuaTuntas = jobs.every((j) => ["COMPLETED", "FAILED"].includes(j.status));
+  if (semuaTuntas) {
+    await tx.route.update({ where: { id: routeId }, data: { status: "COMPLETED" } });
+  }
+}
+
 // Job yang belum jalan (lihat ACTIVE_JOB_STATUSES) DI-SINKRON jadi COMPLETED,
 // BUKAN dihapus — sama persis dengan yang sudah dilakukan jalur manual PATCH
 // /orders/:id saat admin menutup order "Terkirim" (D-064 lanjutan, 6 September
@@ -77,11 +107,24 @@ export function computeOrderStatus(units) {
 // SATU-SATUNYA definisi — dipakai jalur manual (routes/orders.js) DAN jalur
 // otomatis di bawah (syncOrderStatus), supaya tidak ada 2 salinan logic yang
 // bisa diam-diam menyimpang.
+//
+// routeId dikumpulkan SEBELUM updateMany (updateMany sendiri tidak
+// mengembalikan baris yang kena) supaya rute-rute yang terdampak bisa ikut
+// disinkronkan status penyelesaiannya (syncRouteCompletionStatus di atas) —
+// tanpa ini, order yang ditutup lewat jalur bulk ini tidak akan pernah
+// membuat rutenya sendiri berubah warna jadi hijau/Selesai.
 export async function selesaikanJobBelumJalan(tx, orderId) {
-  await tx.job.updateMany({
+  const jobs = await tx.job.findMany({
     where: { orderId, status: { in: ACTIVE_JOB_STATUSES } },
+    select: { id: true, routeId: true },
+  });
+  if (jobs.length === 0) return;
+  await tx.job.updateMany({
+    where: { id: { in: jobs.map((j) => j.id) } },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
+  const routeIds = [...new Set(jobs.map((j) => j.routeId).filter(Boolean))];
+  for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
 }
 
 /** Hitung ulang satu Order dan tulis Order.status kalau berubah + berhak. */
