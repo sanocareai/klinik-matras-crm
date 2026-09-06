@@ -66,7 +66,15 @@ export default function RouteCard({
   }
 
   function mulaiEditDarurat() {
-    const alasan = window.prompt("Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang:");
+    // Contoh alasan di prompt (6 September 2026) — SEBELUM ini teksnya
+    // generik, dispatcher tidak langsung sadar tombol INI yang dipakai
+    // untuk kasus ganti PIC darurat (kecelakaan di tengah rute, dialihkan
+    // ke driver lain/kurir pihak ketiga seperti Lalamove) — padahal
+    // mekanismenya sudah pas untuk itu (lihat guard status TUNTAS di
+    // armada.js, stop yang sudah terkirim tidak ikut tertimpa).
+    const alasan = window.prompt(
+      "Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang (mis. kecelakaan - ganti driver, tambah/kurang stop):"
+    );
     if (!alasan?.trim()) return; // batal kalau kosong/Cancel
     setEditingReason(alasan.trim());
   }
@@ -235,7 +243,7 @@ export default function RouteCard({
               <button
                 type="button"
                 onClick={mulaiEditDarurat}
-                title="Rute sudah diterbitkan — edit tetap bisa, wajib isi alasan (tercatat)"
+                title="Rute sudah diterbitkan — tetap bisa ganti driver/helper/kendaraan (mis. kecelakaan, dialihkan ke kurir lain), wajib isi alasan (tercatat). Stop yang sudah terkirim TIDAK ikut berubah."
                 className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-hovertint hover:text-accent"
               >
                 <Pencil size={11} /> Edit

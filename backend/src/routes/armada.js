@@ -1330,9 +1330,19 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       // Kalau field ini diedit di sini tanpa re-cascade, Route dan Job-nya
       // diam-diam beda ("desync") — dispatcher lihat driver baru di kartu
       // rute, tapi driver app/JobDetailDrawer masih tampilkan driver lama.
+      //
+      // status NOT IN (COMPLETED, FAILED) — BUG NYATA diperbaiki 6 September
+      // 2026 (kasus ganti PIC darurat, mis. kecelakaan di tengah rute lalu
+      // sisa stop dialihkan ke driver lain/Lalamove). SEBELUM ini, ganti
+      // driver di sini menimpa SEMUA job termasuk yang SUDAH terkirim —
+      // riwayat pengiriman jadi bilang stop yang sudah selesai dikirim
+      // driver LAMA seolah dikirim driver BARU, padahal faktanya bukan.
+      // Stop yang sudah tuntas (COMPLETED/FAILED) HARUS tetap mencatat
+      // siapa yang benar-benar mengerjakannya — cuma stop yang belum
+      // selesai yang wajar ikut penugasan baru.
       if (editingPublished && (driverId !== undefined || helperId !== undefined || vehicleId !== undefined)) {
         await tx.job.updateMany({
-          where: { routeId: r.id },
+          where: { routeId: r.id, status: { notIn: ["COMPLETED", "FAILED"] } },
           data: { driverId: r.driverId, helperId: r.helperId, vehicleId: r.vehicleId },
         });
       }
@@ -1386,6 +1396,16 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
         where: { routeId: route.id, id: { notIn: jobIds } },
         data: { routeId: null, sequence: null },
       });
+      // Status job yang SUDAH tuntas (dipakai 2 guard di bawah) — dicek
+      // SEKALI di sini, bukan tebak-tebak per baris (6 September 2026, kasus
+      // ganti PIC darurat/kecelakaan mid-rute).
+      const STATUS_TUNTAS = ["COMPLETED", "FAILED"];
+      const jobLama = await tx.job.findMany({
+        where: { id: { in: jobIds } },
+        select: { id: true, status: true, driverId: true, helperId: true },
+      });
+      const statusJobLama = new Map(jobLama.map((j) => [j.id, j.status]));
+
       // Lalu tempel + urutkan yang baru. Satu per satu (bukan updateMany)
       // karena tiap job butuh nilai `sequence` BERBEDA.
       //
@@ -1396,12 +1416,41 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
       // setelah rute dibuat (lihat PATCH /routes/:id — cuma driver/helper/
       // vehicle/notes yang diterima), jadi menyamakan di titik "masuk rute"
       // ini aman dan tidak akan diam-diam basi lagi belakangan.
+      //
+      // KECUALI job yang SUDAH TUNTAS (COMPLETED/FAILED) — kalau stop itu
+      // masih ikut di jobIds (wajar, stop yang sudah selesai tetap anggota
+      // rute), scheduledDate-nya JANGAN ditimpa jadi Route.date; itu tanggal
+      // beneran dia dikerjakan, bukan tanggal rencana rute.
       for (let i = 0; i < jobIds.length; i++) {
+        const tuntas = STATUS_TUNTAS.includes(statusJobLama.get(jobIds[i]));
         await tx.job.update({
           where: { id: jobIds[i] },
-          data: { routeId: route.id, sequence: i + 1, scheduledDate: route.date },
+          data: { routeId: route.id, sequence: i + 1, ...(!tuntas && { scheduledDate: route.date }) },
         });
       }
+
+      // Auto-prefill driver/helper Rute dari job yang di-drag masuk (6
+      // September 2026, laporan owner) — "1 rute dipegang pasti oleh 1 PIC,
+      // hampir gapernah ganti tiba-tiba", tapi dispatcher SEBELUM ini tetap
+      // dipaksa pilih driver LAGI di level rute walau job yang di-drag
+      // masuk sudah punya driver sendiri dari Jadwal & Penugasan — kerja
+      // dua kali untuk keputusan yang sama. HANYA untuk rute DRAFT yang
+      // BELUM punya driver sama sekali (rute PUBLISHED sudah pasti py
+      // driver — syarat wajib sebelum bisa diterbitkan — jadi tidak pernah
+      // relevan di sana). Ambil dari stop PERTAMA (urutan jobIds) yang
+      // sudah punya driverId individual — bukan majority vote, supaya
+      // predictable & gampang dijelaskan. Dispatcher tetap bisa ganti manual
+      // kalau ternyata salah, ini cuma prefill bukan penguncian.
+      if (!editingPublished && !route.driverId) {
+        const sumberDriver = jobIds.map((id) => jobLama.find((j) => j.id === id)).find((j) => j?.driverId);
+        if (sumberDriver) {
+          await tx.route.update({
+            where: { id: route.id },
+            data: { driverId: sumberDriver.driverId, helperId: sumberDriver.helperId || null },
+          });
+        }
+      }
+
       // Rute PUBLISHED — stop yang BARU ditambahkan lewat edit darurat ini
       // perlu ikut disalinkan driver/helper/vehicle rutenya juga (persis
       // yang dilakukan POST /routes/:id/publish saat rute pertama kali
@@ -1409,9 +1458,17 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
       // pernah kebagian driver". Stop LAMA yang tetap di rute ini tidak
       // rugi diulang (data-nya sama), jadi disamaratakan saja tanpa
       // membedakan mana yang baru vs lama — lebih sederhana dan pasti benar.
+      //
+      // KECUALI stop yang SUDAH TUNTAS — BUG NYATA diperbaiki 6 September
+      // 2026 (skenario ganti PIC darurat: kecelakaan di tengah rute, sisa
+      // stop dialihkan ke driver/kurir lain). Sebelum ini, ganti driver di
+      // rute PUBLISHED menimpa SEMUA job termasuk yang sudah terkirim —
+      // riwayat pengiriman jadi salah bilang siapa yang benar-benar
+      // mengantar. Job COMPLETED/FAILED harus tetap mencatat pengerjanya
+      // yang asli, selamanya.
       if (editingPublished) {
         await tx.job.updateMany({
-          where: { routeId: route.id },
+          where: { routeId: route.id, status: { notIn: STATUS_TUNTAS } },
           data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
         });
         await tx.job.updateMany({
