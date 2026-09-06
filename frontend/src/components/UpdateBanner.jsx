@@ -9,34 +9,81 @@
 //
 // Ini TIDAK mengganggu workflow — user tetap bisa kerja, banner tidak modal/blocking.
 //
+// ⚠️ AUTO-RELOAD SAAT APP DI-BACKGROUND (ditambahkan 6 Sep 2026). Masalah nyata
+// yang berulang: fix sudah dide­ploy, tapi user PWA di HP masih lihat versi lama
+// karena tab PWA yang sudah terbuka TIDAK pernah reload sendiri — `autoUpdate`
+// vite-plugin-pwa cuma meng-ACTIVATE SW baru (skipWaiting/clientsClaim), bukan
+// me-reload halaman. Dua kali dalam satu sesi sebuah perbaikan "kelihatan tidak
+// jalan" di HP owner semata-mata karena ini. Sekarang: kalau update terdeteksi
+// SEMENTARA app sedang tidak dilihat (`visibilityState === "hidden"` — user
+// pindah app / kunci layar), langsung reload diam-diam di situ juga, jadi begitu
+// dibuka lagi sudah versi baru. TIDAK PERNAH auto-reload saat app terlihat/aktif
+// (itu bisa buang draft chat yang belum terkirim) — di kondisi itu tetap pakai
+// banner manual seperti sebelumnya.
+//
 // virtual:pwa-register/react adalah virtual module dari vite-plugin-pwa.
 // Di production: jalan normal. Di dev mode: no-op (needRefresh selalu false).
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { RefreshCw, X } from "lucide-react";
 
-const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 jam
+// Turun dari 60 menit → 20 menit. Trade-off-nya cuma 3 HEAD request /jam per tab
+// (registration.update() tidak menarik ulang bundle, cuma cek sw.js) — murah,
+// dan memangkas jendela "masih versi lama" dari maks 1 jam jadi maks 20 menit.
+const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
 
 export default function UpdateBanner() {
+  const registrationRef = useRef(null);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
-    // Tanpa ini, SW cuma dicek ulang browser saat navigasi/reload halaman —
-    // sales/admin yang biasa buka CRM ini di 1 tab terus-menerus SEHARIAN
-    // tanpa pernah reload manual TIDAK AKAN pernah lihat banner update
-    // sampai mereka kebetulan reload sendiri, padahal tujuan autoUpdate
-    // justru supaya tidak perlu itu. Polling registration.update() tiap
-    // jam selama tab terbuka memastikan SW baru terdeteksi & banner ini
-    // muncul walau tab tidak pernah ditutup/direfresh.
     onRegisteredSW(swUrl, registration) {
       if (!registration) return;
+      registrationRef.current = registration;
+
+      // Tanpa ini, SW cuma dicek ulang browser saat navigasi/reload halaman —
+      // sales/admin yang biasa buka CRM ini di 1 tab terus-menerus SEHARIAN
+      // tanpa pernah reload manual TIDAK AKAN pernah lihat banner update
+      // sampai mereka kebetulan reload sendiri.
       setInterval(() => {
         registration.update().catch(() => {});
       }, UPDATE_CHECK_INTERVAL_MS);
     },
   });
+
+  // Begitu app kembali TERLIHAT, paksa cek SW baru sekali (jangan nunggu tick
+  // interval berikutnya) — momen paling sering user "baru buka lagi setelah
+  // deploy". Kalau ternyata ada update, `needRefresh` akan flip dan efek di
+  // bawah yang menanganinya.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        registrationRef.current?.update().catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  // Auto-reload HANYA saat app tidak dilihat. Kalau update sudah pending dan
+  // user memindahkan app ke background (atau sudah di background saat update
+  // terdeteksi), reload di situ — tidak ada yang hilang karena tidak ada
+  // interaksi aktif, dan buka berikutnya langsung versi baru.
+  useEffect(() => {
+    if (!needRefresh) return;
+
+    if (document.visibilityState === "hidden") {
+      updateServiceWorker(true);
+      return;
+    }
+    function onHide() {
+      if (document.visibilityState === "hidden") updateServiceWorker(true);
+    }
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [needRefresh, updateServiceWorker]);
 
   // Tidak perlu tampilkan apapun kalau tidak ada update
   if (!needRefresh) return null;
@@ -44,11 +91,11 @@ export default function UpdateBanner() {
   return (
     <div style={{
       position:   "fixed",
-      bottom:     20,
+      bottom:     "max(20px, env(safe-area-inset-bottom))",
       left:       "50%",
       transform:  "translateX(-50%)",
       zIndex:     9999,
-      background: "#2563EB",
+      background: "var(--color-primary, #2563EB)",
       color:      "#fff",
       borderRadius: 12,
       padding:    "10px 14px",
@@ -66,7 +113,7 @@ export default function UpdateBanner() {
         onClick={() => updateServiceWorker(true)}
         style={{
           background:   "#fff",
-          color:        "#2563EB",
+          color:        "var(--color-primary, #2563EB)",
           border:       "none",
           borderRadius: 7,
           padding:      "5px 12px",
