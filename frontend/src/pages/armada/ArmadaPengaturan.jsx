@@ -929,11 +929,22 @@ function VehicleTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // BUG NYATA diperbaiki 6 September 2026 (laporan owner: coba hapus
+  // kendaraan yang sudah punya riwayat, diarahkan "ubah status ke Nonaktif
+  // saja" — TAPI ternyata dropdown ini SELAMA INI cuma menulis `status`,
+  // TIDAK PERNAH menyentuh `active`. Vehicle.active itulah yang benar-benar
+  // dibaca pemilih driver/kendaraan di tempat lain (mis. ArmadaRoutes.jsx:
+  // `vehicles.filter(v => v.active)`) — jadi kendaraan yang statusnya sudah
+  // "Tidak Aktif" TETAP muncul di semua dropdown assignment, kontradiksi
+  // dengan arti label-nya sendiri. Sekarang dua field itu disamakan:
+  // INACTIVE -> active:false, status lain -> active:true (kendaraan yang
+  // masih Tersedia/Digunakan/Dalam Perawatan memang wajar tetap muncul).
   async function ubahStatus(vehicle, status) {
+    const active = status !== "INACTIVE";
     const sebelum = vehicles;
-    setVehicles((list) => list.map((v) => (v.id === vehicle.id ? { ...v, status } : v)));
+    setVehicles((list) => list.map((v) => (v.id === vehicle.id ? { ...v, status, active } : v)));
     try {
-      await api.updateVehicle(vehicle.id, { status });
+      await api.updateVehicle(vehicle.id, { status, active });
     } catch (err) {
       setVehicles(sebelum);
       alert("Gagal mengubah status: " + err.message);
