@@ -24,13 +24,26 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 // bukan library baru. `draggable` + onDragStart menaruh job.id di dataTransfer;
 // RouteCard yang membacanya di onDrop.
 //
-// PENGELOMPOKAN KOTA (D-058, DIPERTAHANKAN) — job dikelompokkan per
-// Order.deliveryCity, kota dengan 2+ job muncul PALING ATAS dengan label
-// "kandidat 1 rute" (bukan otomatis dibuatkan rute — cuma petunjuk visual,
-// dispatcher yang putuskan apa searah beneran layak digabung, lalu seret
-// satu-satu ke rute yang sama). Kota dengan 1 job atau tanpa kota (alamat
-// belum lengkap) tetap tampil di kelompok "Lainnya" di bawah, TIDAK
-// disembunyikan — order itu tetap harus terlihat & terjadwalkan.
+// PENGELOMPOKAN KOTA (D-058, DIREVISI Sep 2026) — job dikelompokkan per
+// Order.deliveryCity. SEBELUM revisi ini, kota dengan HANYA 1 job ikut
+// dilempar ke "Lainnya" tanpa label kota sama sekali — laporan owner:
+// "Esty Bagus kotanya udah diisi Bandung tapi kok gaada kotanya?" Dicek
+// LANGSUNG ke database produksi: delivery_city order itu MEMANG terisi
+// "Bandung" — bukan data kosong, bukan bug pembacaan field. Akar masalah
+// SEBENARNYA: ambang "kandidat 1 rute" butuh 2+ job SEKOTA, dan saat itu
+// dia satu-satunya job Bandung yang belum masuk rute — jadi menurut logic
+// LAMA dianggap "tidak cukup ramai untuk section sendiri" dan disamakan
+// dengan job yang MEMANG tidak ada kotanya sama sekali. Dua kasus itu beda
+// makna (tidak ada kota vs cuma sendirian) tapi sebelumnya diperlakukan
+// SAMA — itu yang diperbaiki di sini.
+//
+// SEKARANG: SETIAP kota (walau cuma 1 job) dapat section+label sendiri.
+// Kota 2+ job TETAP ditandai "kandidat 1 rute" dan naik ke atas (peluang
+// gabung rute paling besar) — bukan dihapus, cuma bukan lagi satu-satunya
+// yang dapat label. Kota 1 job tampil di bawahnya, urut alfabet. HANYA job
+// yang delivery_city-nya BENAR-BENAR kosong yang jatuh ke "Belum Ada Kota"
+// di paling bawah — label ini sekarang JUJUR (cuma kasus kota kosong
+// sungguhan), bukan bercampur dengan "kota sepi" seperti sebelumnya.
 // Kartu SATU job di panel ini (D-074, 4 September 2026) — DIPINDAH ke luar
 // UnroutedJobsPanel, jadi komponen level-atas sendiri, bukan lagi
 // didefinisikan DI DALAM body UnroutedJobsPanel seperti sebelumnya.
@@ -115,20 +128,24 @@ export default function UnroutedJobsPanel({
 
   const groups = useMemo(() => {
     const byCity = new Map();
+    const tanpaKota = [];
     for (const j of jobs) {
-      const kota = cityOf(j) || "__lainnya";
+      const kota = cityOf(j);
+      if (!kota) { tanpaKota.push(j); continue; }
       if (!byCity.has(kota)) byCity.set(kota, []);
       byCity.get(kota).push(j);
     }
-    const kandidat = [];
-    const lainnya = [];
-    for (const [kota, list] of byCity) {
-      if (kota !== "__lainnya" && list.length >= 2) kandidat.push({ kota, list });
-      else lainnya.push(...list);
-    }
-    // Kota dengan job TERBANYAK duluan — itu peluang gabung rute paling besar.
-    kandidat.sort((a, b) => b.list.length - a.list.length);
-    return { kandidat, lainnya };
+    const semuaKota = [...byCity.entries()].map(([kota, list]) => ({ kota, list }));
+    // Kota 2+ job ("kandidat 1 rute") duluan, urut TERBANYAK — peluang
+    // gabung rute paling besar. Kota 1 job menyusul, urut alfabet (tidak
+    // ada dasar prioritas lain untuk kota yang cuma py 1 job).
+    semuaKota.sort((a, b) => {
+      const aKandidat = a.list.length >= 2, bKandidat = b.list.length >= 2;
+      if (aKandidat !== bKandidat) return aKandidat ? -1 : 1;
+      if (aKandidat) return b.list.length - a.list.length;
+      return a.kota.localeCompare(b.kota, "id");
+    });
+    return { semuaKota, tanpaKota };
   }, [jobs]);
 
   return (
@@ -193,24 +210,36 @@ export default function UnroutedJobsPanel({
           />
         ) : (
           <div className="space-y-3">
-            {groups.kandidat.map(({ kota, list }) => (
-              <div key={kota}>
-                <span className="mb-1 flex items-center gap-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
-                  <MapPinned size={11} /> {kota} · kandidat 1 rute
-                </span>
-                <ul className="space-y-1.5">
-                  {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
-                </ul>
-              </div>
-            ))}
+            {/* SETIAP kota dapat section sendiri sekarang (revisi Sep 2026)
+                — kota 1 job TIDAK LAGI dilempar ke "Lainnya" tanpa nama.
+                Warna label beda: accent (biru) untuk kandidat 1 rute (2+
+                job), netral untuk kota yang cuma 1 job — supaya dua makna
+                beda ini tetap kebeda kalau dipindai cepat. */}
+            {groups.semuaKota.map(({ kota, list }) => {
+              const kandidat = list.length >= 2;
+              return (
+                <div key={kota}>
+                  <span className={cn(
+                    "mb-1 flex items-center gap-1 px-0.5 text-[10px] font-bold uppercase tracking-wide",
+                    kandidat ? "text-accent" : "text-ink3"
+                  )}>
+                    <MapPinned size={11} /> {kota}{kandidat && " · kandidat 1 rute"}
+                  </span>
+                  <ul className="space-y-1.5">
+                    {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
+                  </ul>
+                </div>
+              );
+            })}
 
-            {groups.lainnya.length > 0 && (
+            {/* Cuma job yang delivery_city-nya BENAR-BENAR kosong sampai
+                sini sekarang — label ini sekarang jujur, tidak lagi
+                bercampur dengan kota yang sekadar sepi. */}
+            {groups.tanpaKota.length > 0 && (
               <div>
-                {groups.kandidat.length > 0 && (
-                  <p className="mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-ink3">Lainnya</p>
-                )}
+                <p className="mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-orange">Belum Ada Kota</p>
                 <ul className="space-y-1.5">
-                  {groups.lainnya.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
+                  {groups.tanpaKota.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
                 </ul>
               </div>
             )}
