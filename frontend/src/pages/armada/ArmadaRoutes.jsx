@@ -270,19 +270,22 @@ export default function ArmadaRoutes() {
   const loading = routes === null;
 
   return (
-    // max-w-[1800px] (revisi Sep 2026 — laporan owner: "kolom kiri bisa
-    // dibuat rata tengah?") — SEBELUMNYA "max-w-none", yang berarti TIDAK
-    // ADA batas lebar sama sekali. PageContainer sendiri sudah py `mx-auto`
-    // bawaan (lihat components/ui/page.jsx) — tapi mx-auto TIDAK ADA
-    // efeknya kalau max-width-nya "none", karena kontainernya SELALU persis
-    // selebar viewport (tidak ada sisa ruang untuk "ditengahkan"). Ini akar
-    // masalah sebenarnya: panel "Belum Masuk Rute" TERLIHAT nempel ke kiri
-    // di monitor lebar bukan karena grid-nya salah, tapi karena seluruh
-    // halaman ini memang selebar layar. 1800px dipilih (lebih lebar dari
-    // 1400px default PageContainer) supaya 3 kolom kartu rute (diturunkan
-    // dari 4, lihat catatan grid-cols di bawah) tetap lega, TAPI cukup
-    // dibatasi supaya mx-auto benar-benar menengahkan di monitor ultrawide.
-    <PageContainer className="max-w-[1800px]">
+    // style={{maxWidth}} INLINE, BUKAN class Tailwind max-w-[1800px] —
+    // ditemukan lewat laporan owner sendiri (screenshot monitor ultrawide
+    // 3434px: konten tetap mepet penuh ke kanan-kiri, TIDAK ke-tengah sama
+    // sekali walau class sudah dipasang). Dicek byte-exact ke CSS hasil
+    // build: class arbitrary `max-w-[1800px]` TIDAK ter-compile — dan
+    // ternyata `max-w-[1400px]` DEFAULT PageContainer sendiri (components/
+    // ui/page.jsx) JUGA tidak pernah ter-compile, dari AWAL, di SEMUA
+    // halaman lain yang memakai PageContainer, bukan cuma di sini. Ini
+    // temuan baru, pola yang SAMA dengan bug "utility warna kustom kadang
+    // tidak ter-generate" di CLAUDE.md §3 — cuma sekarang terbukti juga
+    // kejadian di utility UKURAN (max-w-[Npx]), bukan cuma warna. `style`
+    // inline SELALU menang atas class apa pun (compile atau tidak), jadi
+    // ini perbaikan yang pasti bekerja, bukan tebakan class lain yang
+    // belum tentu nasibnya beda. PageContainer men-spread `...props` ke
+    // div-nya sendiri, jadi `style` di sini diteruskan apa adanya.
+    <PageContainer style={{ maxWidth: "1800px" }}>
       <PageHeader
         title="Route Planner"
         subtitle="Kelompokkan job ke dalam rute, atur urutan stop, dan tetapkan driver."
