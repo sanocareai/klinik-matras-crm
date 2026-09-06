@@ -6,7 +6,7 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
+import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar, JOB_STATUS_REAL } from "../jobStatus.js";
 import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -388,6 +388,22 @@ export default function RouteCard({
                     <RentalBadge job={j} />
                     <CityBadge job={j} />
                     <OrderStatusBadge job={j} />
+                    {/* Badge status JOB ini sendiri (6 September 2026, laporan
+                        owner berulang: "cust vera status pengiriman, tapi
+                        masih belum ada label glow hijau" — kebingungannya
+                        ternyata BUKAN soal glow tipe job [itu memang sengaja
+                        cuma Pengiriman yang dapat, lihat jobAccentBarStyle],
+                        tapi stop yang JOB-nya SUDAH Selesai/Gagal tidak
+                        kelihatan beda sama sekali dari stop yang masih aktif
+                        — OrderStatusBadge di atas cuma status ORDER
+                        [keseluruhan], bukan status job PER-STOP ini. Cuma
+                        muncul untuk status TERMINAL [Selesai/Gagal/
+                        Dijadwalkan Ulang] — status aktif [Belum Dijadwalkan/
+                        Terjadwal/dst] sudah cukup jelas dari driver/kendaraan
+                        yang tampil, tidak perlu badge tambahan bikin ramai). */}
+                    {["COMPLETED", "FAILED", "RESCHEDULED"].includes(j.status) && (
+                      <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
+                    )}
                   </div>
                   <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <ServiceLabel job={j} />

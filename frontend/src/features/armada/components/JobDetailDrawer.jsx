@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock } from "lucide-react";
 import { api } from "@/api.js";
@@ -122,17 +122,33 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [accessNotes, setAccessNotes] = useState("");
   const [timeWindow, setTimeWindow] = useState("");
 
+  // Guard balapan (6 September 2026, laporan owner — contoh nyata: klik
+  // stop "Cst VERA" di Route Planner, drawer yang kebuka malah nampilin
+  // data "Morning Dew/Novan" [stop LAIN di rute yang sama]). Akar masalah:
+  // klik cepat berpindah job (drawer masih kebuka, jobId prop ganti sebelum
+  // fetch job SEBELUMNYA selesai) — TANPA guard, respons yang datang
+  // BELAKANGAN menang siapa pun urutan permintaannya, jadi request yang
+  // lambat untuk job LAMA bisa menimpa state SETELAH request job BARU
+  // (lebih cepat) sudah lebih dulu selesai duluan. `jobIdRef` menyimpan
+  // jobId yang PALING BARU diminta; begitu respons datang, dicek dulu
+  // apa jobId itu MASIH yang diminta sekarang — kalau sudah usang (user
+  // sudah pindah ke job lain), dibuang begitu saja, bukan dipakai.
+  const jobIdRef = useRef(jobId);
+
   function muat() {
     if (!jobId) return;
+    const jobIdSaatDiminta = jobId;
+    jobIdRef.current = jobIdSaatDiminta;
     setLoading(true);
     setError("");
-    api.getArmadaJob(jobId)
-      .then(setJob)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    api.getArmadaJob(jobIdSaatDiminta)
+      .then((data) => { if (jobIdRef.current === jobIdSaatDiminta) setJob(data); })
+      .catch((e) => { if (jobIdRef.current === jobIdSaatDiminta) setError(e.message); })
+      .finally(() => { if (jobIdRef.current === jobIdSaatDiminta) setLoading(false); });
   }
 
   useEffect(() => {
+    jobIdRef.current = jobId;
     muat();
     setShowForm(null);
     setActionError("");
