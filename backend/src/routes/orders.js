@@ -1040,6 +1040,24 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
     // ada — konsisten dengan nama yang benar-benar tercetak di PDF-nya,
     // supaya sapaan di WA dan nama di dokumen tidak pernah beda.
     const namaSapaan = view.invoice.namaTujuan || view.customer.nama || "Kak";
+    const daftarOrder = view.orders || [view.order];
+
+    // Detail pesanan RINGKAS (6 September 2026, laporan owner: "broadcast
+    // masih kurang detail... ada ukuran kasur, layanan, produk misal sofa,
+    // kasur, divan atau sandaran") — 1 baris per order: produk (Lini + Jenis
+    // + Ukuran, lihat produkLabel di services/invoice.js) — layanan (nama
+    // OrderItem, dipisah koma). Order number cuma ditempel kalau invoice-nya
+    // GABUNGAN (>1 order) — invoice tunggal sudah jelas dari baris "Order:"
+    // di atas, tidak perlu diulang.
+    const detailBaris = daftarOrder
+      .map((o) => {
+        const layananList = (view.items || []).filter((i) => i.orderNumber === o.orderNumber).map((i) => i.nama).join(", ");
+        const inti = [o.produk, layananList].filter(Boolean).join(" — ");
+        if (!inti) return null;
+        return `🛏️ ${daftarOrder.length > 1 ? `${o.orderNumber}: ` : ""}${inti}`;
+      })
+      .filter(Boolean);
+
     const caption =
       `🧾 *Invoice Klinik Matras*\n\n` +
       `Halo ${namaSapaan}, berikut invoice untuk pesanan Anda 🙏\n` +
@@ -1049,7 +1067,8 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
       // (SEMUA order dalam bundle), bukan view.order (cuma primary).
       // Bug nyata: caption WA cuma nyebut 1 order padahal invoice-nya
       // gabungan 3 order — customer/sales bisa salah kira cuma 1 resi.
-      `Order: ${(view.orders || [view.order]).map((o) => o.orderNumber).filter(Boolean).join(", ") || "-"}`;
+      `Order: ${daftarOrder.map((o) => o.orderNumber).filter(Boolean).join(", ") || "-"}` +
+      (detailBaris.length ? `\n\n${detailBaris.join("\n")}` : "");
 
     let wahaMsg;
     try {

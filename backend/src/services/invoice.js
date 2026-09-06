@@ -30,6 +30,53 @@
 
 import { prisma } from "../db.js";
 
+// ─── Merk/Ukuran kasur + label Lini/Jenis Produk (6 September 2026) ────────
+// BUG NYATA ditemukan hari ini (laporan owner: caption invoice WA kurang
+// detail): orderShape di bawah SELAMA INI membaca `order.merkKasur`/
+// `order.ukuranKasur` LANGSUNG dari row Prisma Order — TAPI kolom itu TIDAK
+// PERNAH ADA di schema.prisma (merk/ukuran kasur disimpan sebagai JSON di
+// dalam Order.notes, lihat buildOrderNotes/parseOrderNotes di frontend
+// utils/format.js). Jadi keduanya SELALU undefined, diam-diam, sejak
+// invoice.js pertama dibuat — tidak pernah ketahuan karena UI invoice/PDF
+// tidak pernah menampilkan dua field itu sampai sekarang diminta.
+//
+// parseOrderNotesForInvoice() di bawah SENGAJA salinan backend TERPISAH
+// dari parseOrderNotes() frontend (bukan reuse lintas frontend/backend —
+// dua runtime beda), tapi identik dengan parseOrderNotesForWa() yang sudah
+// ada di routes/orders.js (buildWaMessage, ringkasan order ke grup sales)
+// — SATU-SATUNYA tempat backend lain yang sudah benar membaca field ini.
+// PRODUCT_LINE_LABELS/PRODUCT_TYPE_LABELS juga salinan backend dari
+// utils/format.js frontend (nilai HARUS sama persis — kalau enum baru
+// ditambah di schema.prisma, update DUA tempat itu bareng label di sini).
+function parseOrderNotesForInvoice(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "" };
+  try {
+    const p = JSON.parse(notes);
+    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "" };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "" };
+  }
+}
+const PRODUCT_LINE_LABELS = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
+const PRODUCT_TYPE_LABELS = {
+  KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", MULTIBED: "Multibed",
+  KASUR_2IN1_ATAS: "Kasur 2in1 Atas", KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
+  KASUR_SEHAT: "Kasur Sehat", KASUR_2IN1: "Kasur 2in1", KASUR_LAINNYA: "Lainnya",
+  SOFABED: "Sofabed", SOFA_L: "Sofa L", SOFA_1_SEATER: "Sofa 1 Seater",
+  SOFA_2_SEATER: "Sofa 2 Seater", SOFA_3_SEATER: "Sofa 3 Seater",
+  DIVAN_UTAMA: "Divan", DIVAN_SANDARAN: "Sandaran",
+};
+
+// Ringkasan produk SATU BARIS ("Kasur Spring · 160x200 cm", "Sandaran",
+// "Sofa L") — pola SAMA dengan productSummary() di frontend
+// features/inbox/components/CustomerPanel/orderSummary.js, dipakai untuk
+// caption invoice WA (ringkas, bukan dump semua field mentah).
+function produkLabel(order, ukuranKasur) {
+  const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
+  const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
+  return [type ? `${line} ${type}` : line, ukuranKasur].filter(Boolean).join(" · ");
+}
+
 // Penomoran: INV-DDMMYYYY-NNN, counter per bulan — memakai ULANG tabel
 // OrderSequence yang sudah ada (kuncinya [prefix, year, month], jadi prefix
 // "INV" tinggal masuk) alih-alih membuat tabel counter kedua yang harus
@@ -227,6 +274,7 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true 
 
   const nominal = hitungNominal(order, order.payments);
   const status = statusEfektif({ invoice, nominal });
+  const { merkKasur, ukuranKasur } = parseOrderNotesForInvoice(order.notes);
 
   const orderShape = {
     id: order.id,
@@ -235,8 +283,15 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true 
     status: order.status,
     paymentStatus: order.paymentStatus,
     dpTarget: order.dpTarget,
-    merkKasur: order.merkKasur,
-    ukuranKasur: order.ukuranKasur,
+    merkKasur,
+    ukuranKasur,
+    // productLine/productType (Lini & Jenis Produk — Kasur/Sofa/Divan dst,
+    // lihat enum di schema.prisma) + produk: ringkasan siap-pakai satu
+    // baris untuk caption WA/PDF, TIDAK PERNAH ada di orderShape sebelum
+    // ini (lihat catatan panjang parseOrderNotesForInvoice di atas).
+    productLine: order.productLine,
+    productType: order.productType,
+    produk: produkLabel(order, ukuranKasur),
     deliveryAddress: order.deliveryAddress,
     deliveryCity: order.deliveryCity,
     pickupEstimate: order.pickupEstimate,
