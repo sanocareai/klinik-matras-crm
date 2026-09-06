@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Package, MapPinned, PackageCheck } from "lucide-react";
+import { Package, MapPinned, PackageCheck, Search, X } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { customerOf, unitCountOf, cityOf, jobAccentBarStyle, hasJobAccentBar, orderStatusOf } from "../jobStatus.js";
+import { customerOf, unitCountOf, cityOf, jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf } from "../jobStatus.js";
 import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
@@ -163,12 +163,28 @@ export default function UnroutedJobsPanel({
   // Pipeline.jsx (dikurangi varian SEWA_*, beda lifecycle) — kategori
   // konsisten di seluruh app.
   const [fOrderStatus, setFOrderStatus] = useState("");
+  // Pencarian (6 September 2026, laporan owner: "tambahkan fitur search")
+  // — LOKAL ke panel ini, pola SAMA dengan Pipeline.jsx (board Kanban):
+  // jobs/undatedJobs sudah dimuat penuh di klien, tidak perlu ke server.
+  // Cocokkan ke nama customer, nomor order, DAN alamat — 3 hal yang paling
+  // sering jadi acuan dispatcher mencari satu job spesifik di antara
+  // banyak kartu (nama kalau sudah kenal customer-nya, nomor order kalau
+  // pegang catatan sales, alamat kalau menyusun rute per area).
+  const [cari, setCari] = useState("");
 
   const semuaJob = useMemo(() => {
-    const gabungan = [...jobs, ...undatedJobs];
-    if (!fOrderStatus) return gabungan;
-    return gabungan.filter((j) => orderStatusOf(j) === fOrderStatus);
-  }, [jobs, undatedJobs, fOrderStatus]);
+    let hasil = [...jobs, ...undatedJobs];
+    if (fOrderStatus) hasil = hasil.filter((j) => orderStatusOf(j) === fOrderStatus);
+    if (cari.trim()) {
+      const q = cari.trim().toLowerCase();
+      hasil = hasil.filter((j) =>
+        (customerOf(j) || "").toLowerCase().includes(q) ||
+        (orderNumberOf(j) || "").toLowerCase().includes(q) ||
+        (j.addressText || "").toLowerCase().includes(q)
+      );
+    }
+    return hasil;
+  }, [jobs, undatedJobs, fOrderStatus, cari]);
 
   const groups = useMemo(() => {
     const byCity = new Map();
@@ -199,6 +215,25 @@ export default function UnroutedJobsPanel({
           <h3 className="text-[12.5px] font-bold text-ink">Belum Masuk Rute</h3>
           <p className="text-[10.5px] text-ink3">{semuaJob.length} job — seret ke rute mana pun (selama belum diterbitkan)</p>
         </div>
+        <div className="relative">
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
+          <input
+            type="search"
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            placeholder="Cari nama, no. order, alamat…"
+            aria-label="Cari job belum masuk rute"
+            className="h-8 w-full rounded-lg border border-border bg-surface pl-7 pr-7 text-[12px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          />
+          {cari && (
+            <button
+              type="button" onClick={() => setCari("")} aria-label="Hapus pencarian"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink3 hover:text-ink"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
         <FilterDropdown
           value={fOrderStatus}
           onChange={setFOrderStatus}
@@ -217,11 +252,22 @@ export default function UnroutedJobsPanel({
             {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
           </div>
         ) : semuaJob.length === 0 ? (
-          <EmptyState
-            icon={Package}
-            title="Semua job sudah masuk rute"
-            description="Atau belum ada job terjadwal pada rentang tanggal ini."
-          />
+          // Pesan dibedakan (6 September 2026) — "semua sudah masuk rute"
+          // menyesatkan kalau sebenarnya ADA job tapi tersaring habis oleh
+          // pencarian/filter yang sedang aktif.
+          (cari.trim() || fOrderStatus) ? (
+            <EmptyState
+              icon={Search}
+              title="Tidak ada yang cocok"
+              description="Coba kata kunci lain atau hapus filter status order."
+            />
+          ) : (
+            <EmptyState
+              icon={Package}
+              title="Semua job sudah masuk rute"
+              description="Atau belum ada job terjadwal pada rentang tanggal ini."
+            />
+          )
         ) : (
           <div className="space-y-3">
             {/* SETIAP kota dapat section sendiri sekarang (revisi Sep 2026)

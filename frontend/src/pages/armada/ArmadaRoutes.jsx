@@ -387,11 +387,17 @@ export default function ArmadaRoutes() {
           job sering membungkus tidak rapi di lebar sekian. */}
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
         {/* Kiri — Ringkasan (kecil) + Belum Masuk Rute, ditumpuk dalam SATU
-            kolom yang tingginya dikunci (xl:h-[calc(100vh-220px)]);
+            kolom yang tingginya dikunci (xl:h-[calc(100vh-Npx)]);
             Ringkasan `shrink-0` (tinggi tetap secukupnya), panel job
             `flex-1 min-h-0` mengambil SISA tinggi supaya scroll internalnya
-            (sudah ada di UnroutedJobsPanel) tetap berfungsi seperti semula. */}
-        <div className="flex flex-col gap-3 xl:h-[calc(100vh-220px)]">
+            (sudah ada di UnroutedJobsPanel) tetap berfungsi seperti semula.
+            Offset DIKURANGI 220px -> 170px (6 September 2026, laporan
+            owner: "panjangkan kebawah lagi untuk card belum masuk rute")
+            — 220px sebelumnya lebih dari cukup menyisakan ruang kosong di
+            bawah panel pada kebanyakan ukuran layar; 170px masih aman
+            (PageHeader+DateRangePicker+padding di atas grid ini nyatanya
+            tidak sampai 170px), panel jadi lebih tinggi/panjang. */}
+        <div className="flex flex-col gap-3 xl:h-[calc(100vh-170px)]">
           {/* Ringkasan — dikecilkan drastis (D-057): baris label+angka
               SATU BARIS (bukan kartu KPI terpisah per angka seperti D-055),
               supaya total tingginya ~seperlima dari sebelumnya dan pantas
