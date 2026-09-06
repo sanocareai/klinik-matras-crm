@@ -13,7 +13,7 @@ import { CustomerProfileCard } from "./JobBadges.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, orderOf,
-  estimasiDurasiLabel, ESTIMASI_JAM_PRESET, confirmedDateOf,
+  estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
@@ -169,18 +169,26 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // dijadwalkan"/"Belum ditugaskan" terbaca seolah masih pending).
   const historis = job && ["COMPLETED", "FAILED"].includes(job.status) && !job.scheduledDate && !job.driverId;
 
-  // Label "Tanggal Pengambilan/Pengiriman" + pembanding janji sales (6
-  // September 2026, laporan owner — contoh nyata Cst VERA: field "Tanggal"
-  // di sini cuma polos, tidak jelas ini tanggal ambil atau kirim, DAN tidak
-  // ada cara lihat apa tanggal armada ini masih sama dengan yang sales
-  // janjikan ke customer [Order.pickupConfirmedDate/deliveryConfirmedDate]
-  // tanpa pindah ke Sales CRM). Job.scheduledDate (rencana ARMADA, bisa
-  // digeser dispatcher) SENGAJA field terpisah dari janji sales — dua-duanya
-  // ditampilkan BERDAMPINGAN di sini, bukan disatukan, supaya perbedaan
-  // (kalau ada) justru kelihatan, bukan hilang ditimpa.
+  // Label "Tanggal Pengambilan/Pengiriman" + KEDUA janji sales (6 September
+  // 2026, laporan owner lanjutan — contoh nyata Cst VERA: order-nya sudah
+  // "Siap Kirim", jadi Tanggal Kirim yang dijanjikan sales SAMA relevannya
+  // dengan Tanggal Ambil walau job yang sedang dibuka ini masih job
+  // Pengambilan. Versi SEBELUMNYA cuma menampilkan SATU janji sales — yang
+  // mengikuti job.type job ini saja — sekarang KEDUA tanggal [pickupConfirmedDate
+  // DAN deliveryConfirmedDate] ditampilkan berdampingan, apa pun tipe job
+  // yang sedang dibuka, supaya dispatcher lihat gambaran LENGKAP perjalanan
+  // customer ini dalam satu buka drawer, bukan cuma potongan yang cocok
+  // dengan job ini. Yang mismatch dengan tanggal ARMADA job ini sendiri
+  // (Job.scheduledDate, bisa digeser dispatcher) ditandai oranye — yang
+  // TIDAK relevan untuk job ini (mis. Tanggal Kirim saat job-nya Pengambilan)
+  // tetap ditampilkan netral, bukan dibandingkan (beda job, beda tanggal,
+  // wajar beda).
   const pickupJob = job?.type === "PICKUP";
-  const janjiSales = confirmedDateOf(job);
-  const bedaDariJanjiSales = janjiSales && job?.scheduledDate?.slice(0, 10) !== janjiSales.slice(0, 10);
+  const orderUntukTanggal = orderOf(job);
+  const janjiAmbil = orderUntukTanggal?.pickupConfirmedDate || null;
+  const janjiKirim = orderUntukTanggal?.deliveryConfirmedDate || null;
+  const janjiSalesJobIni = pickupJob ? janjiAmbil : janjiKirim;
+  const bedaDariJanjiSales = janjiSalesJobIni && job?.scheduledDate?.slice(0, 10) !== janjiSalesJobIni.slice(0, 10);
 
   // Sinkron draft SEKALI per job dibuka (job?.id, bukan job) — supaya PATCH
   // lain yang mengubah job (mis. pilih driver) tidak diam-diam menimpa ketikan
@@ -509,14 +517,21 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         placeholder="Pilih tanggal"
                         className="w-full"
                       />
-                      {janjiSales && (
-                        <p className={cn(
-                          "mt-1 text-[11px]",
-                          bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3"
-                        )}>
-                          Janji sales ke customer: {formatTanggalPendek(janjiSales)}
-                          {bedaDariJanjiSales && " — beda dari tanggal di atas"}
-                        </p>
+                      {(janjiAmbil || janjiKirim) && (
+                        <div className="mt-1 space-y-0.5 text-[11px]">
+                          {janjiAmbil && (
+                            <p className={cn(pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
+                              Janji sales — Ambil: {formatTanggalPendek(janjiAmbil)}
+                              {pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
+                            </p>
+                          )}
+                          {janjiKirim && (
+                            <p className={cn(!pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
+                              Janji sales — Kirim: {formatTanggalPendek(janjiKirim)}
+                              {!pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -633,10 +648,16 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           })
                         : historis ? "— (data riwayat)" : "Belum dijadwalkan"}
                       {job.timeWindow ? ` · ${job.timeWindow}` : ""}
-                      {janjiSales && (
-                        <span className={cn("mt-0.5 block text-[11px]", bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
-                          Janji sales ke customer: {formatTanggalPendek(janjiSales)}
-                          {bedaDariJanjiSales && " — beda dari tanggal di atas"}
+                      {janjiAmbil && (
+                        <span className={cn("mt-0.5 block text-[11px]", pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
+                          Janji sales — Ambil: {formatTanggalPendek(janjiAmbil)}
+                          {pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
+                        </span>
+                      )}
+                      {janjiKirim && (
+                        <span className={cn("mt-0.5 block text-[11px]", !pickupJob && bedaDariJanjiSales ? "font-semibold text-orange" : "text-ink3")}>
+                          Janji sales — Kirim: {formatTanggalPendek(janjiKirim)}
+                          {!pickupJob && bedaDariJanjiSales && " (beda dari tanggal di atas)"}
                         </span>
                       )}
                     </Baris>
