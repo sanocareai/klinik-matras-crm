@@ -20,7 +20,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 // slot ini masih perkiraan kasar) — sistem menandai, manusia memutuskan.
 export default function RouteCard({
   route, drivers, vehicles, helpers = [], draggingJobId,
-  onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize,
+  onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize, onOpenJob,
 }) {
   const [dragOverIdx, setDragOverIdx] = useState(null);
   // Stop yang SEDANG diseret (D-072, 4 September 2026) — SEBELUMNYA tidak
@@ -314,6 +314,13 @@ export default function RouteCard({
                 onDragOver={(e) => { if (isEditable) { e.preventDefault(); e.stopPropagation(); setDragOverIdx(idx); } }}
                 onDrop={(e) => handleDropAtIndex(e, idx)}
                 onDragEnd={() => { setDraggingStopId(null); setDragOverIdx(null); }}
+                // Klik 1x buka JobDetailDrawer (redesain Sep 2026 — laporan
+                // owner: "sistemnya cuma drag-and-drop", minta bisa lihat/ubah
+                // status+alamat+link maps tanpa pindah ke Jadwal & Penugasan).
+                // AMAN berdampingan dengan `draggable` di atas — browser
+                // membedakan gestur drag (dragstart) dari klik biasa secara
+                // native, tidak perlu guard tambahan.
+                onClick={() => onOpenJob?.(j.id)}
                 style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
                 className={cn(
                   // `dh-stop-card` (D-072) — kaca bertingkat di atas kartu
@@ -346,7 +353,7 @@ export default function RouteCard({
                   // dipakai di sini karena style inline tidak di-set).
                   "dh-stop-card relative flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
                   isRentalOrder(j) && "dh-bar-left",
-                  isEditable && "cursor-grab active:cursor-grabbing",
+                  isEditable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                   dragOverIdx === idx && "ring-2 ring-accent",
                   // Item yang sedang digeser memudar + sedikit mengecil —
                   // penanda visual yang SEBELUMNYA tidak ada sama sekali di
@@ -379,7 +386,7 @@ export default function RouteCard({
                 {isEditable && (
                   <button
                     type="button"
-                    onClick={() => jalankan(() => onRemoveJob(route, j.id, editingReason))}
+                    onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
                     aria-label={`Keluarkan job dari ${route.code}`}
                     className="mt-0.5 shrink-0 text-ink3 transition-colors hover:text-red"
                   >

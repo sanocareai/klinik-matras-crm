@@ -61,12 +61,15 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 // Percobaan KEDUA berhasil karena parent sudah berhenti re-render saat itu,
 // DOM-nya stabil sepanjang gestur. Kartu stop di RouteCard.jsx TIDAK kena
 // masalah ini karena ditulis inline (bukan komponen bersarang terpisah).
-function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
+function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
   return (
     <li
       draggable
       onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/job-id", j.id); onDragStart(j); }}
       onDragEnd={onDragEnd}
+      // Klik 1x buka JobDetailDrawer — sama persis dengan RouteCard.jsx,
+      // lihat catatan panjang di sana. Aman berdampingan dengan `draggable`.
+      onClick={() => onOpenJob?.(j.id)}
       style={{ ...jobTypeCardStyle(j), ...rentalCardAccentStyle(j) }}
       className={cn(
         // `dh-job-card` (D-072, 4 September 2026) — kaca bertingkat di
@@ -129,7 +132,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd }) {
 }
 
 export default function UnroutedJobsPanel({
-  jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd,
+  jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd, onOpenJob,
 }) {
   const navigate = useNavigate();
   const [showUndated, setShowUndated] = useState(false);
@@ -234,7 +237,7 @@ export default function UnroutedJobsPanel({
                     <MapPinned size={11} /> {kota}{kandidat && " · kandidat 1 rute"}
                   </span>
                   <ul className="space-y-1.5">
-                    {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
+                    {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} />)}
                   </ul>
                 </div>
               );
@@ -247,7 +250,7 @@ export default function UnroutedJobsPanel({
               <div>
                 <p className="mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-orange">Belum Ada Kota</p>
                 <ul className="space-y-1.5">
-                  {groups.tanpaKota.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
+                  {groups.tanpaKota.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} />)}
                 </ul>
               </div>
             )}

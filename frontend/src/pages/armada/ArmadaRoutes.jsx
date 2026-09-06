@@ -10,6 +10,7 @@ import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
+import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { unitCountOf } from "@/features/armada/jobStatus.js";
 
 // Route Planner — Delivery Tahap 3.
@@ -62,6 +63,13 @@ export default function ArmadaRoutes() {
   // setelah rute jadi/dibatalkan. `null` = tidak sedang membuat rute.
   const [tanggalBaru, setTanggalBaru] = useState(null);
   const [membuatRute, setMembuatRute] = useState(false);
+  // Klik 1x kartu job (redesain Sep 2026 — laporan owner: sistemnya cuma
+  // drag-and-drop, minta klik satu kali buka detail order langsung dari
+  // sini). REUSE JobDetailDrawer.jsx apa adanya — komponen yang sama sudah
+  // dipakai Jadwal & Penugasan (ArmadaJobs.jsx), sudah mendukung ubah
+  // status, ubah alamat, dan link Google Maps; tidak ada drawer baru yang
+  // dibangun di sini. `null` = tertutup.
+  const [openJobId, setOpenJobId] = useState(null);
   const [routes, setRoutes] = useState(null);
   const [unrouted, setUnrouted] = useState(null);
   // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
@@ -415,6 +423,7 @@ export default function ArmadaRoutes() {
               draggingId={draggingJobId}
               onDragStart={(j) => setDraggingJobId(j.id)}
               onDragEnd={() => setDraggingJobId(null)}
+              onOpenJob={setOpenJobId}
             />
           </div>
         </div>
@@ -475,6 +484,7 @@ export default function ArmadaRoutes() {
                     onCancel={batalkan}
                     onDelete={hapusRute}
                     onOptimize={urutkanOtomatis}
+                    onOpenJob={setOpenJobId}
                   />
                 ))}
               </div>
@@ -482,6 +492,8 @@ export default function ArmadaRoutes() {
           </div>
         </div>
       </div>
+
+      <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
     </PageContainer>
   );
 }
