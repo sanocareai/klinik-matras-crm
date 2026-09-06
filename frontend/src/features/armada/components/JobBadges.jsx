@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
-  isRentalOrder, serviceLabelOf, confirmedDateOf, cityOf, orderStatusOf,
+  isRentalOrder, serviceLabelOf, cityOf, orderStatusOf, orderOf,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS, orderStatusVariant } from "@/utils/format.js";
@@ -117,19 +117,46 @@ export function RentalBadge({ job, className }) {
 // Pengambilan+Pengiriman campur tidak bisa tahu ini janji ambil atau janji
 // kirim tanpa hover ke tooltip. SEBELUM ini keterangan jenisnya cuma ada di
 // `title` (hover), sekarang ikut ada di teks yang langsung kelihatan.
+//
+// TAMPILKAN KEDUANYA (6 September 2026, laporan owner lanjutan — kartu Cst
+// VERA di Route Planner cuma menampilkan "Pasti Ambil", padahal Tanggal
+// Kirim-nya JUGA sudah dikonfirmasi (7 Sep) — dispatcher scan kartu tidak
+// tahu order ini juga sudah punya janji kirim tanpa buka drawer). Dulu cuma
+// SATU badge yang ikut job.type job ini; sekarang KEDUA tanggal [pickup DAN
+// delivery confirmed date, kalau ada] dirender berdampingan, sama seperti
+// keputusan yang sama di JobDetailDrawer — badge yang ikut tipe job INI
+// digarisbawahi (font-bold) supaya tetap jelas mana yang paling relevan
+// untuk kartu yang sedang dilihat, tanpa menyembunyikan yang satunya lagi.
 export function ConfirmedTimeBadge({ job, className }) {
-  const tanggal = confirmedDateOf(job);
-  if (!tanggal) return null;
-  const pickup = job?.type === "PICKUP";
+  const order = orderOf(job);
+  const ambil = order?.pickupConfirmedDate || null;
+  const kirim = order?.deliveryConfirmedDate || null;
+  if (!ambil && !kirim) return null;
+  const pickupJob = job?.type === "PICKUP";
   return (
-    <span
-      title={`Tanggal ${pickup ? "pengambilan" : "pengiriman"} PASTI, sudah dikonfirmasi ke pelanggan`}
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] font-semibold text-green",
-        className
+    <span className={cn("inline-flex shrink-0 flex-wrap items-center gap-1", className)}>
+      {ambil && (
+        <span
+          title="Tanggal pengambilan PASTI, sudah dikonfirmasi ke pelanggan"
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] text-green",
+            pickupJob ? "font-bold" : "font-semibold"
+          )}
+        >
+          <CalendarCheck2 size={11} className="shrink-0" /> Pasti Ambil: {formatTanggalPendek(ambil)}
+        </span>
       )}
-    >
-      <CalendarCheck2 size={11} className="shrink-0" /> Pasti {pickup ? "Ambil" : "Kirim"}: {formatTanggalPendek(tanggal)}
+      {kirim && (
+        <span
+          title="Tanggal pengiriman PASTI, sudah dikonfirmasi ke pelanggan"
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] text-green",
+            !pickupJob ? "font-bold" : "font-semibold"
+          )}
+        >
+          <CalendarCheck2 size={11} className="shrink-0" /> Pasti Kirim: {formatTanggalPendek(kirim)}
+        </span>
+      )}
     </span>
   );
 }
