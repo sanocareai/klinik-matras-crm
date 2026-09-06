@@ -60,14 +60,23 @@ const NOMINATIM_USER_AGENT = "SANSS-KlinikMatras/1.0 (+https://app.sanomatrasseh
 const GOOGLE_MAPS_LINK_RE = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.com\/maps)\S*/i;
 const LATLNG_IN_URL_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
 
-// Lokasi Klinik Matras by SANO CARE (D-076, 4 September 2026) — laporan
-// owner: "buat semua jalur mulai dan berakhir di lokasi klinik matras".
-// Koordinat diambil LANGSUNG dari link Google Maps yang owner kirim
-// (share.google/dOuyp6vGICSFLPCrZ → "KLINIK MATRAS by SANO CARE", diverifikasi
-// silang lewat reverse-geocode Nominatim: Beji, Depok, Jawa Barat 16422 —
-// masuk akal untuk lokasi klinik). SATU sumber kebenaran untuk seluruh
-// backend — jangan hardcode ulang angka ini di tempat lain, import dari sini.
-export const DEPOT = { lat: -6.38784855, lng: 106.8177975, label: "Klinik Matras" };
+// Lokasi Klinik Matras by SANO CARE (D-076, 4 September 2026 — DIKOREKSI 6
+// September 2026). Laporan owner: "buat semua jalur mulai dan berakhir di
+// lokasi klinik matras". Koordinat SEBELUMNYA (-6.38784855, 106.8177975,
+// dari link share.google/dOuyp6vGICSFLPCrZ) TERNYATA salah pin — laporan
+// owner LANGSUNG: begitu dipakai bikin rute di Google Maps, titik awal/
+// akhirnya bukan alamat Klinik Matras sungguhan.
+//
+// Koordinat BARU diambil dari link yang owner kirim ulang
+// (maps.app.goo.gl/AbZ3TKZHgCcNdnF99 → resolve ke tempat "KLINIK MATRAS by
+// SANO CARE" yang SAMA di Google Maps, cuma pin-nya beda/lebih akurat dari
+// link lama), diverifikasi silang lewat reverse-geocode Nominatim: Pancoran
+// Mas, Depok, Jawa Barat 16435 — cocok PERSIS dengan alamat yang owner
+// sebutkan ("Jl. Raya Keadilan Jl. Asrama Polri No.81, RT.5/RW.12,
+// Pancoran Mas, Kota Depok, Jawa Barat 16434"). SATU sumber kebenaran
+// untuk seluruh backend — jangan hardcode ulang angka ini di tempat lain,
+// import dari sini.
+export const DEPOT = { lat: -6.4036521, lng: 106.7839743, label: "Klinik Matras" };
 
 async function geocodeFromMapsLink(text) {
   const match = text.match(GOOGLE_MAPS_LINK_RE);

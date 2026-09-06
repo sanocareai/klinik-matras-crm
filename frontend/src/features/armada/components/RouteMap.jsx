@@ -42,11 +42,13 @@ const JAKARTA_CENTER = [-6.2088, 106.8456];
 const PALET_RUTE = ["#2563eb", "#dc2626", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2"];
 
 // Lokasi Klinik Matras by SANO CARE — SAMA PERSIS dengan DEPOT di
-// backend/src/services/maps.js (lihat komentar D-076 di sana untuk sumber
-// koordinatnya). Duplikasi angka ini TIDAK BISA dihindari (frontend tidak
-// bisa import langsung dari backend), tapi keduanya WAJIB diubah bersamaan
-// kalau lokasi klinik pernah pindah.
-const DEPOT = { lat: -6.38784855, lng: 106.8177975, label: "Klinik Matras" };
+// backend/src/services/maps.js (lihat komentar D-076/koreksi 6 September
+// 2026 di sana untuk sumber koordinatnya — pin lama salah, laporan owner
+// langsung setelah dites bikin rute sungguhan). Duplikasi angka ini TIDAK
+// BISA dihindari (frontend tidak bisa import langsung dari backend), tapi
+// keduanya WAJIB diubah bersamaan kalau lokasi klinik pernah pindah/pin-nya
+// dikoreksi lagi.
+const DEPOT = { lat: -6.4036521, lng: 106.7839743, label: "Klinik Matras" };
 
 // CARTO basemap gratis tanpa API key — dipilih sesuai tema aktif supaya
 // menyatu dengan kaca terang/gelap Delivery Hub (bukan tile OSM warna-warni
