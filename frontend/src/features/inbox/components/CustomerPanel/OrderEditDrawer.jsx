@@ -87,8 +87,25 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
   // itu" muncul mengambang, bukan panel penuh layar).
   const isCreateMode = !f.order;
 
+  // D-132 (6 September 2026, laporan owner: "hilangkan fill black atau
+  // background hitam dibelakang, sisakan aja yang di line hijau, karna
+  // card nya jadi double") — modal D-131 nge-fix ukuran, tapi shell-nya
+  // SENDIRI (motion.div, `bg-base shadow-popover rounded-2xl`) MASIH kartu
+  // solid hitam berbeda dari `formBox` (OrderSection.jsx) yang dibungkusnya
+  // — dua kotak gelap bersarang, kelihatan seperti "kartu dobel". Mode BUAT
+  // sekarang shell-nya TRANSPARAN TOTAL (bukan cuma dikecilkan) — SATU-
+  // SATUNYA kartu yang kelihatan adalah `formBox` di dalamnya. Header juga
+  // ikut transparan (bukan `border-b border-line` lagi) supaya tombol X
+  // mengambang bebas di atas blur, tidak menggantung di bilah gelap kosong.
+  // Mode EDIT TIDAK disentuh — drawer itu memang SATU kartu (tidak ada
+  // formBox bersarang di dalamnya sebagai kartu kedua), jadi fill solidnya
+  // benar, bukan bug.
   const header = (
-    <header className={`flex items-center gap-3 border-b border-line px-4 py-3.5 ${f.order ? "justify-between" : "justify-end"}`}>
+    <header className={
+      f.order
+        ? "flex items-center justify-between gap-3 border-b border-line px-4 py-3.5"
+        : "flex items-center justify-end px-1 pb-2"
+    }>
       {/* Judul mode-BUAT dihapus total (D-130) — nama customer & konteksnya
           sudah kebaca dari layar Inbox/CustomerPanel di baliknya. Mode EDIT
           ("Order — Nama") TETAP dipertahankan — drawer itu tidak selalu
@@ -98,6 +115,11 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
           Order — {f.customer?.name || "Pelanggan"}
         </p>
       )}
+      {/* D-132 — tombol X TETAP pakai token warna theme-aware yang sama
+          persis (text-ink3/hover:text-ink), BUKAN warna putih hardcode —
+          shell mode-buat transparan duduk di atas backdrop blur yang bisa
+          terang (tema terang) atau gelap (tema gelap), putih hardcode akan
+          tak terlihat di backdrop terang. */}
       <button
         type="button" onClick={onClose} aria-label="Tutup"
         className="shrink-0 rounded-md p-1.5 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
@@ -108,7 +130,7 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
   );
 
   const body = (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div className={f.order ? "flex-1 overflow-y-auto p-4" : "flex-1 overflow-y-auto"}>
       <OrderSection
         customer={f.customer}
         onUpdate={onUpdate}
@@ -148,7 +170,7 @@ export default function OrderEditDrawer({ open, order, customer, customerId, onC
                 exit={{ opacity: 0, scale: 0.96, y: 8 }}
                 transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                 style={{ width: "min(92vw, 520px)", maxHeight: "88vh" }}
-                className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-base shadow-popover"
+                className="pointer-events-auto flex flex-col overflow-hidden"
               >
                 {header}
                 {body}
