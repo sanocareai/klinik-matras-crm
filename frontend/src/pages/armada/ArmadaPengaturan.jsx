@@ -918,6 +918,24 @@ function VehicleTab() {
   // begitu `vehicles` refresh, modal ikut menunjukkan data terbaru.
   const [detailVehicleId, setDetailVehicleId] = useState(null);
   const detailVehicle = vehicles?.find((v) => v.id === detailVehicleId) || null;
+  // Kendaraan nonaktif disembunyikan DEFAULT (6 September 2026, laporan
+  // owner: "buat agar bisa di delete, jadi hilangkan aja sekaligus di
+  // armada" — kendaraan B 0000 UJI sudah punya riwayat 12 job + 2 biaya,
+  // TIDAK bisa dihapus permanen tanpa merusak riwayat itu, sama prinsipnya
+  // dengan RESTRICT di seluruh sistem ini: "jangan hilangkan jejak data
+  // demi membersihkan tampilan"). Sebelum ini halaman Daftar Kendaraan
+  // menampilkan SEMUA kendaraan tanpa filter apa pun — status "Nonaktif"
+  // (setelah diperbaiki kemarin supaya benar-benar keluar dari dropdown
+  // assignment) TETAP nongkrong di tabel ini selamanya. Toggle di bawah
+  // (bukan dihilangkan permanen dari tabel) supaya riwayat biaya/servis
+  // kendaraan nonaktif tetap bisa dibuka kalau perlu ditelusuri lagi —
+  // pola SAMA dengan User.active (staf resign: hilang dari picker, TETAP
+  // bisa dicari untuk lihat riwayat).
+  const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false);
+  const vehiclesTampil = useMemo(
+    () => (vehicles || []).filter((v) => tampilkanNonaktif || v.active),
+    [vehicles, tampilkanNonaktif]
+  );
 
   const load = useCallback(() => {
     setLoading(true);
@@ -990,6 +1008,15 @@ function VehicleTab() {
       <Card className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <h3 className="text-[13px] font-bold text-ink">Daftar Kendaraan</h3>
+          <label className="ml-3 flex cursor-pointer items-center gap-1.5 text-[11.5px] text-ink2">
+            <input
+              type="checkbox"
+              checked={tampilkanNonaktif}
+              onChange={(e) => setTampilkanNonaktif(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--accent)]"
+            />
+            Tampilkan kendaraan nonaktif
+          </label>
           <Button size="sm" className="ml-auto" onClick={() => setFormOpen(true)}>
             <Plus size={14} /> Tambah Kendaraan
           </Button>
@@ -997,13 +1024,21 @@ function VehicleTab() {
 
         {loading ? (
           <div className="p-4"><TableSkeletonRows rows={4} cols={7} /></div>
-        ) : vehicles.length === 0 ? (
-          <EmptyState
-            icon={TruckIcon}
-            title="Belum ada kendaraan terdaftar"
-            description="Tambahkan kendaraan supaya bisa dipilih di Route Planner."
-            action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Tambah Kendaraan</Button>}
-          />
+        ) : vehiclesTampil.length === 0 ? (
+          vehicles.length > 0 ? (
+            <EmptyState
+              icon={TruckIcon}
+              title="Semua kendaraan sedang nonaktif"
+              description="Centang “Tampilkan kendaraan nonaktif” di atas untuk melihatnya."
+            />
+          ) : (
+            <EmptyState
+              icon={TruckIcon}
+              title="Belum ada kendaraan terdaftar"
+              description="Tambahkan kendaraan supaya bisa dipilih di Route Planner."
+              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Tambah Kendaraan</Button>}
+            />
+          )
         ) : (
           <TableWrap>
             <Table>
@@ -1013,7 +1048,7 @@ function VehicleTab() {
                   <TH>Status</TH><TH>Dokumen</TH><TH /></TR>
               </THead>
               <TBody>
-                {vehicles.map((v) => {
+                {vehiclesTampil.map((v) => {
                   const dok = dokumenTerdekat(v);
                   return (
                     <TR key={v.id}>
