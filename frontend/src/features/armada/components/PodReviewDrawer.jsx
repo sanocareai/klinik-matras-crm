@@ -7,7 +7,8 @@ import Avatar from "@/components/Avatar.jsx";
 import AssignDropdown from "./AssignDropdown.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { POD_STATUS } from "../podStatus.js";
-import { customerOf, orderNumberOf, unitCountOf, jobLabelOf } from "../jobStatus.js";
+import { customerOf, orderNumberOf, unitCountOf, jobLabelOf, orderOf } from "../jobStatus.js";
+import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 
 // "YYYY-MM-DDTHH:mm" dalam jam LOKAL perangkat (kontrak <input type=
 // "datetime-local"> — TIDAK boleh dipakai untuk kolom DATE murni, cuma
@@ -143,6 +144,27 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
     }
   }
 
+  // Ubah status Order langsung dari POD (6 September 2026, laporan owner:
+  // "pastikan bisa diedit statusnya di... proof of delivery"). TIDAK
+  // menutup drawer (beda dari verifikasi/tolak) — mengoreksi status bukan
+  // "selesai review", admin wajar lanjut lihat foto/detail lain setelahnya.
+  // Staleness `job` prop ditangani di ArmadaPod.jsx (resync effect di sana),
+  // bukan di sini — komponen ini tidak tahu/tidak perlu tahu soal state
+  // list induknya.
+  async function ubahStatusOrder(order, newStatus) {
+    if (newStatus === order.status) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.updateOrder(order.id, { status: newStatus });
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function selesaikanManual() {
     if (proofFiles.length === 0) { setUploadError("Minimal 1 foto bukti wajib diunggah"); return; }
     if (!manualCompletedAt) { setUploadError("Waktu selesai wajib diisi"); return; }
@@ -195,6 +217,25 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
                 <p className="text-[11.5px] text-ink2">{jobLabelOf(job)} · {orderNumberOf(job) || "—"} · {unitCountOf(job)} unit</p>
               </div>
             </div>
+
+            {/* Ubah status Order langsung dari sini (6 September 2026,
+                laporan owner) — StatusSelect.jsx (D-086) dipakai ulang
+                persis, sama dengan JobDetailDrawer (Route Planner/Jadwal &
+                Penugasan). */}
+            {orderOf(job) && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-ink3">Status Order</span>
+                  <StatusSelect order={orderOf(job)} onChange={ubahStatusOrder} />
+                </div>
+                {/* Error di sini TERPISAH dari `error` yang dipakai tombol
+                    Verifikasi/Tolak di footer bawah — footer itu cuma
+                    dirender kalau bisaDitinjau, jadi kalau job ini sudah
+                    VERIFIED/REJECTED, error ubah status tidak akan pernah
+                    kelihatan tanpa baris ini. */}
+                {!bisaDitinjau && error && <p className="mt-1.5 text-[11.5px] text-red">{error}</p>}
+              </div>
+            )}
 
             <div className="mt-3.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-ink3">
               <Package size={12} aria-hidden /> Waktu Selesai

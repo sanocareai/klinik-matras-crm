@@ -10,8 +10,9 @@ import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
+import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
-  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl,
+  JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, orderOf,
   estimasiDurasiLabel, ESTIMASI_JAM_PRESET,
 } from "../jobStatus.js";
 import { performSubmit } from "@/utils/submitJobAction.js";
@@ -211,6 +212,29 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     }
   }
 
+  // Ubah status ORDER langsung dari drawer (6 September 2026, laporan
+  // owner: "pastikan bisa diedit statusnya di rute planner, jadwal
+  // penugasan, proof of delivery" — bukan cuma tab "Semua Order"). Endpoint
+  // & pola SAMA PERSIS dengan handleStatusChange di ArmadaOrders.jsx (D-086)
+  // — StatusSelect.jsx sudah reusable, jangan tulis ulang logicnya di sini.
+  // muat() dipanggil (bukan cuma setJob) karena PATCH /orders/:id
+  // mengembalikan Order, bukan Job — job.order butuh di-refetch utuh
+  // supaya DeliveryTimeline/badge ikut update konsisten.
+  async function ubahStatusOrder(order, newStatus) {
+    if (newStatus === order.status) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      await api.updateOrder(order.id, { status: newStatus });
+      muat();
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function jalankanAksi(action, payload = {}, files = []) {
     setBusy(true);
     setActionError("");
@@ -274,6 +298,30 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
             {job && !loading && (
               <>
+                {/* Ubah status Order langsung dari sini (6 September 2026,
+                    laporan owner: "pastikan bisa diedit statusnya di rute
+                    planner, jadwal penugasan, proof of delivery") — dulu
+                    HANYA bisa diedit dari tab "Semua Order" (Sales CRM),
+                    dispatcher harus pindah halaman cuma untuk membetulkan
+                    status yang sales lupa update. StatusSelect.jsx (D-086)
+                    dipakai ulang persis, bukan kontrol baru. */}
+                {orderOf(job) && (
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-ink3">Status Order</span>
+                      <StatusSelect order={orderOf(job)} onChange={ubahStatusOrder} />
+                    </div>
+                    {/* actionError di bawah (dekat tombol Status Pekerjaan)
+                        TIDAK dirender untuk job COMPLETED/FAILED — kalau
+                        ubah status di sini gagal justru pada job seperti
+                        itu (kasus paling wajar: benerin status yang salah
+                        SETELAH job selesai), errornya harus tetap kelihatan
+                        di sini, bukan hilang diam-diam. */}
+                    {["COMPLETED", "FAILED"].includes(job.status) && actionError && (
+                      <p className="mt-1.5 text-[11.5px] text-red">{actionError}</p>
+                    )}
+                  </div>
+                )}
                 {job.order?.status && (
                   <DeliveryTimeline
                     orderStatus={job.order.status}

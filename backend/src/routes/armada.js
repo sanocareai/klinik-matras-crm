@@ -245,6 +245,11 @@ const jobInclude = {
   order: {
     select: {
       id: true, orderNumber: true, status: true,
+      // statusLocked (6 September 2026) — dipakai StatusSelect.jsx (D-086)
+      // supaya JobDetailDrawer bisa menampilkan ikon 🔒 yang sama kalau
+      // status order ini sedang di-override manual, konsisten dengan
+      // ArmadaOrders.jsx/ProductionOrders.jsx.
+      statusLocked: true,
       // category (D-051, 4 September 2026) — dipakai DeliveryTimeline.jsx
       // untuk membedakan alur order BARU (3 tahap: Diproses/Siap Kirim/
       // Terkirim, TANPA Menunggu/Pengambilan — tidak ada barang fisik yang
@@ -292,6 +297,8 @@ const jobInclude = {
               // (30 Agustus 2026) supaya drawer bisa menampilkan tahap Order
               // (Menunggu/Pengambilan/dst), bukan cuma status Job itu sendiri.
               status: true,
+              // statusLocked — lihat catatan di order.select di atas.
+              statusLocked: true,
               // category (D-051) — lihat catatan di order.select di atas.
               category: true,
               // items/pickupConfirmedDate/deliveryConfirmedDate (redesain
@@ -563,6 +570,8 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
             // perlu tampilkan status ORDER (Siap Kirim/Pengambilan/dst),
             // bukan cuma status Job. Dipakai OrderStatusBadge (JobBadges.jsx).
             status: true,
+            // statusLocked — lihat catatan di jobInclude.order.select.
+            statusLocked: true,
             items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
             pickupConfirmedDate: true, deliveryConfirmedDate: true,
             // locationUrl (6 September 2026) — lihat catatan panjang di
@@ -1713,7 +1722,19 @@ function derivePodStatus(job) {
 
 const PIC_INCLUDE_FOR_POD = {
   ...jobInclude,
-  order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
+  // status/category/statusLocked (6 September 2026, laporan owner:
+  // "pastikan bisa diedit statusnya di... proof of delivery") — SEBELUM
+  // ini order.select di sini cuma id/orderNumber/customer, jadi
+  // OrderStatusBadge & StatusSelect (edit status langsung dari POD) tidak
+  // bisa jalan sama sekali di halaman ini walau sudah dipasang di Route
+  // Planner/Jadwal & Penugasan — beda dari jobInclude.order.select di
+  // atas yang sudah lengkap, override sempit ini yang ketinggalan.
+  order: {
+    select: {
+      id: true, orderNumber: true, status: true, category: true, statusLocked: true,
+      customer: { select: { id: true, name: true, phone: true } },
+    },
+  },
   podVerifiedBy: { select: { id: true, name: true } },
 };
 

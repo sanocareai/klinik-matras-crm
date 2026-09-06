@@ -93,6 +93,14 @@ export function orderStatusOf(job) {
   return job?.order?.status || job?.units?.[0]?.unit?.order?.status || null;
 }
 
+// Objek Order LENGKAP (bukan cuma status-nya) — dibutuhkan StatusSelect.jsx
+// (D-086) yang minta {id, status, category, statusLocked} sekaligus untuk
+// bisa MENGEDIT status, bukan cuma menampilkannya. Pola fallback SAMA
+// dengan orderStatusOf di atas.
+export function orderOf(job) {
+  return job?.order || job?.units?.[0]?.unit?.order || null;
+}
+
 // Nomor HP customer — pola fallback SAMA dengan customerOf (job.order
 // langsung dulu, jatuh ke jalur berlapis units[].unit.order kalau job.order
 // belum ke-load). Dipakai CustomerProfileCard (JobBadges.jsx) untuk tombol

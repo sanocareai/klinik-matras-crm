@@ -109,6 +109,19 @@ export default function ArmadaPod() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Sinkron ulang `selected` begitu `jobs` di-refresh (6 September 2026) —
+  // `selected` cuma snapshot job saat drawer dibuka, `load()` (dipanggil
+  // dari onChanged) TIDAK otomatis memperbarui referensi itu. Tanpa ini,
+  // aksi baru "ubah Status Order langsung dari drawer" akan menyimpan
+  // dengan benar ke server tapi drawer tetap menampilkan status LAMA
+  // sampai ditutup-buka ulang — data benar, tampilan bohong.
+  useEffect(() => {
+    if (!selected || !jobs) return;
+    const terbaru = jobs.find((j) => j.id === selected.id);
+    if (terbaru && terbaru !== selected) setSelected(terbaru);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs]);
+
   // Hitungan PER STATUS dari dataset yang sedang termuat — dipakai tab
   // (badge jumlah, opsional) DAN KPI strip. Dihitung sekali di sini,
   // bukan diam-diam berbeda antara tab dan hero.
