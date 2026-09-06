@@ -92,8 +92,10 @@ function handleErr(err, res) {
 // ditemukan rusak, sengaja dimatikan sampai owner minta nyalakan lagi.
 // Pola SAMA PERSIS dengan DELIVERY_NOTIF_AKTIF di services/
 // customerNotifications.js (kill-switch satu baris, JANGAN tulis ulang
-// fungsinya) — TIDAK memengaruhi notifyDriverGroupText (ringkasan rute
-// publish/edit ke grup), itu TIDAK diminta dipause.
+// fungsinya) — TIDAK ada hubungannya dengan ringkasan rute publish/edit,
+// itu TIDAK diminta dipause (lihat notifyNatashaText di bawah — target
+// ringkasan rute sekarang chat pribadi Natasha, bukan grup, sejak 6
+// September 2026).
 const POD_BROADCAST_AKTIF = false;
 
 // D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
@@ -166,14 +168,20 @@ function hariTanggalWIB(date) {
   return new Date(date).toLocaleString("id-ID", { timeZone: WIB_TZ, weekday: "long", day: "numeric", month: "long" }).toUpperCase();
 }
 
-// Kirim TEKS (bukan foto) ke grup driver — dipakai untuk ringkasan rute +
-// link Google Maps saat rute diterbitkan/diedit (redesain Route Planner,
-// Sep 2026, docs/ARMADA-REDESIGN-2026.md). Pola SAMA PERSIS dengan
+// Kirim TEKS (bukan foto) ke grup driver — Pola SAMA PERSIS dengan
 // notifyDriverGroup() di atas (cari grup, resolveSendTarget,
 // sendWithSessionFallback, simpan Message, emit socket) — cuma sendText
 // menggantikan sendMedia karena tidak ada foto di sini. BEST-EFFORT: dipanggil
-// dibungkus try/catch oleh pemanggil, publish/edit rute TETAP berhasil walau
-// pesan WA gagal terkirim (grup belum ditetapkan, WAHA sedang down, dst).
+// dibungkus try/catch oleh pemanggil.
+//
+// ⚠️ SAAT INI TIDAK DIPAKAI (6 September 2026) — ringkasan rute
+// publish/edit yang dulu dikirim lewat fungsi ini SEKARANG dikirim lewat
+// notifyNatashaText (chat pribadi Natasha, laporan owner: "kirim personal
+// chat ke natasha... jangan ke grup drivethru", lalu "samakan ke Natasha"
+// untuk update juga). SENGAJA TIDAK DIHAPUS — target ini sempat bolak-balik
+// beberapa kali dalam satu sesi (grup -> Natasha -> ["gaperlu tinyurl" dst]),
+// dibiarkan di sini supaya gampang dibalik lagi tanpa menulis ulang kalau
+// owner minta balik ke grup lagi.
 async function notifyDriverGroupText(message) {
   const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
   if (!group) return;
@@ -1467,16 +1475,18 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       }
       return r;
     });
-    // Rute PUBLISHED yang baru diedit — kabari ulang grup driver (redesain
-    // Route Planner, Sep 2026), sama pola BEST-EFFORT dengan publish
-    // pertama. Label "🔄" membedakan dari pesan publish awal, supaya driver
-    // tahu ini KOREKSI, bukan rute baru/dobel.
+    // Rute PUBLISHED yang baru diedit — kabari ulang Natasha (redesain Route
+    // Planner, Sep 2026; target disamakan dari grup driver ke Natasha 6
+    // September 2026, konsisten dengan publish di atas — laporan owner:
+    // "samakan ke Natasha"), sama pola BEST-EFFORT dengan publish pertama.
+    // Label "🔄" membedakan dari pesan publish awal, supaya jelas ini
+    // KOREKSI, bukan rute baru/dobel.
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await notifyNatashaText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
       } catch (err) {
-        console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
+        console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
       }
     }
     res.json(updated);
@@ -1621,12 +1631,14 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     });
 
     const updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    // Target disamakan ke Natasha 6 September 2026 — lihat catatan lengkap
+    // di PATCH /routes/:id di atas.
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await notifyNatashaText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
       } catch (err) {
-        console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
+        console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
       }
     }
     res.json(updated);
@@ -1722,6 +1734,33 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     }
 
     res.json(updatedRoute);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /routes/:id/resend-broadcast — kirim ULANG ringkasan rute + link Maps
+// ke Natasha, TANPA mengedit apa pun (6 September 2026, laporan owner:
+// "gimana cara gue share broadcast ulang" — jalur SATU-SATUNYA sebelum ini
+// cuma lewat "Edit" darurat, yang mewajibkan alasan DAN tercatat sebagai
+// riwayat edit [lastEditReason dkk] walau sebenarnya tidak ada yang
+// berubah). Endpoint ini TIDAK menyentuh Route/Job sama sekali — murni
+// kirim pesan, cocok dipakai kapan pun perlu ("driver bilang belum lihat",
+// "mau dikirim ulang di pagi hari", dst), bukan hanya sekali saat publish.
+//
+// Label "📤 KIRIM ULANG" (beda dari publish tanpa label & edit "🔄 RUTE
+// DIPERBARUI") — supaya Natasha tahu ini BUKAN rute baru ATAU koreksi,
+// murni pengiriman ulang info yang sama.
+armadaRouter.post("/routes/:id/resend-broadcast", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (route.status !== "PUBLISHED") {
+      throw new ArmadaError("Cuma rute yang sudah diterbitkan yang bisa dikirim ulang");
+    }
+    const { url } = buildRouteMapsUrl(route.jobs);
+    await notifyNatashaText(formatRouteWaMessage(route, url, "📤 KIRIM ULANG"));
+    res.json({ ok: true });
   } catch (err) {
     handleErr(err, res);
   }

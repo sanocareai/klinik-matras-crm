@@ -217,6 +217,10 @@ export const api = {
   // untuk rute DRAFT (tidak diminta, tidak dikirim juga aman).
   setRouteJobs: (id, jobIds, reason) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds, ...(reason && { reason }) }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
+  // Kirim ULANG broadcast rute ke Natasha tanpa mengedit apa pun (6 September
+  // 2026) — beda dari publish (sekali, DRAFT->PUBLISHED) atau edit darurat
+  // (mewajibkan alasan, tercatat sebagai riwayat edit).
+  resendRouteBroadcast: (id) => request(`/armada/routes/${id}/resend-broadcast`, { method: "POST" }),
   // Link Google Maps multi-stop (redesain Route Planner, Sep 2026) — tombol
   // "Buat Peta" manual; publish/edit rute mengirim otomatis lewat backend,
   // TIDAK lewat panggilan ini (dibangun ulang di server, satu sumber kebenaran).

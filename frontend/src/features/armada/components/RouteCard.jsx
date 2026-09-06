@@ -56,6 +56,7 @@ export default function RouteCard({
   // atas. Kosong = tetap pakai link auto-generate seperti sebelumnya (lihat
   // formatRouteWaMessage di armada.js).
   const [manualMapsUrlDraft, setManualMapsUrlDraft] = useState(route.manualMapsUrl || "");
+  const [resendBusy, setResendBusy] = useState(false);
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
@@ -85,6 +86,22 @@ export default function RouteCard({
     );
     if (!alasan?.trim()) return; // batal kalau kosong/Cancel
     setEditingReason(alasan.trim());
+  }
+
+  // Kirim ulang broadcast (6 September 2026, laporan owner: "gimana cara
+  // gue share broadcast ulang" — jalur SATU-SATUNYA sebelum ini cuma lewat
+  // Edit darurat, yang mewajibkan alasan DAN tercatat sebagai riwayat edit
+  // walau sebenarnya tidak ada yang berubah). Endpoint ini TIDAK mengedit
+  // apa pun, murni kirim ulang pesan yang sama ke Natasha.
+  async function kirimUlang() {
+    setResendBusy(true);
+    try {
+      await api.resendRouteBroadcast(route.id);
+    } catch (e) {
+      alert("Gagal kirim ulang broadcast: " + e.message);
+    } finally {
+      setResendBusy(false);
+    }
   }
 
   function simpanCatatan() {
@@ -248,6 +265,22 @@ export default function RouteCard({
               {route.driver?.name || "Tanpa driver"}
               {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
             </div>
+            {/* Kirim Ulang (6 September 2026) — HANYA PUBLISHED, sama cakupan
+                dengan Edit darurat di sebelahnya. TIDAK mengedit apa pun,
+                cuma kirim ulang pesan yang sama ke Natasha (lihat kirimUlang
+                di atas) — dipakai kalau driver/Natasha bilang belum lihat,
+                mau dikirim ulang pagi hari, dst. */}
+            {canEmergencyEdit && (
+              <button
+                type="button"
+                onClick={kirimUlang}
+                disabled={resendBusy}
+                title="Kirim ulang ringkasan rute + link Maps ke Natasha, tanpa mengedit apa pun."
+                className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-hovertint hover:text-accent disabled:opacity-40"
+              >
+                {resendBusy ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Kirim Ulang
+              </button>
+            )}
             {/* Edit darurat (redesain Sep 2026) — HANYA untuk PUBLISHED.
                 IN_PROGRESS/COMPLETED/CANCELLED tetap terkunci total (lihat
                 canEmergencyEdit) — rute yang sedang/sudah dijalankan atau
