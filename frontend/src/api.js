@@ -208,6 +208,10 @@ export const api = {
   // untuk rute DRAFT (tidak diminta, tidak dikirim juga aman).
   setRouteJobs: (id, jobIds, reason) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds, ...(reason && { reason }) }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
+  // Link Google Maps multi-stop (redesain Route Planner, Sep 2026) — tombol
+  // "Buat Peta" manual; publish/edit rute mengirim otomatis lewat backend,
+  // TIDAK lewat panggilan ini (dibangun ulang di server, satu sumber kebenaran).
+  getRouteMapsLink: (id) => request(`/armada/routes/${id}/maps-link`),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini

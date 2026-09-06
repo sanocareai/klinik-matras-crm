@@ -20,8 +20,8 @@ import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
-import { sendMedia } from "../services/wahaClient.js";
+import { startOfDayWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
+import { sendMedia, sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
@@ -29,7 +29,7 @@ import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../ser
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, routeLegs, DEPOT } from "../services/maps.js";
+import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -142,6 +142,68 @@ async function notifyDriverGroup(job, photoUrls, headline) {
     savedMessages.forEach((m) => emitNewMessage(group.id, m));
     emitConversationUpdate(updatedGroup);
   }
+}
+
+// "RABU, 2 SEPTEMBER" — dipakai header pesan rute ke grup driver di bawah.
+// TIDAK reuse formatWIB() (utils/wib.js): fungsi itu SELALU menempel jam +
+// akhiran "WIB" (dirancang untuk stempel waktu kejadian), sementara ini
+// murni label HARI kalender rute, tanpa jam. WIB_TZ tetap diimpor dari sana
+// supaya zona waktunya satu sumber kebenaran, bukan string "Asia/Jakarta"
+// disalin ulang.
+function hariTanggalWIB(date) {
+  return new Date(date).toLocaleString("id-ID", { timeZone: WIB_TZ, weekday: "long", day: "numeric", month: "long" }).toUpperCase();
+}
+
+// Kirim TEKS (bukan foto) ke grup driver — dipakai untuk ringkasan rute +
+// link Google Maps saat rute diterbitkan/diedit (redesain Route Planner,
+// Sep 2026, docs/ARMADA-REDESIGN-2026.md). Pola SAMA PERSIS dengan
+// notifyDriverGroup() di atas (cari grup, resolveSendTarget,
+// sendWithSessionFallback, simpan Message, emit socket) — cuma sendText
+// menggantikan sendMedia karena tidak ada foto di sini. BEST-EFFORT: dipanggil
+// dibungkus try/catch oleh pemanggil, publish/edit rute TETAP berhasil walau
+// pesan WA gagal terkirim (grup belum ditetapkan, WAHA sedang down, dst).
+async function notifyDriverGroupText(message) {
+  const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
+  if (!group) return;
+
+  const target = resolveSendTarget(group);
+  if (!target) return;
+
+  const { session } = await sendWithSessionFallback(group, (s) => sendText(target, message, null, s));
+  group.sessionId = session;
+
+  const msg = await prisma.message.create({
+    data: { conversationId: group.id, direction: "OUTBOUND", content: message },
+  });
+  const updatedGroup = await prisma.conversation.update({
+    where: { id: group.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(message, null) },
+  });
+  emitNewMessage(group.id, msg);
+  emitConversationUpdate(updatedGroup);
+}
+
+// Rangkai pesan rute untuk grup driver — format mengikuti contoh yang sudah
+// biasa dipakai tim SEBELUM ini (dispatcher ketik manual): hari+tanggal,
+// kendaraan+driver, link peta, lalu "Detail Catatan" freeform DARI
+// Route.notes (dispatcher yang isi manual, mis. "WILSON Pagi > EMON-helper"
+// — pergantian driver di tengah jalan TIDAK bisa dimodelkan sebagai data
+// terstruktur karena sifatnya kasuistik, jadi tetap teks bebas, bukan field
+// baru per kasus). `label` opsional untuk membedakan pesan publish pertama
+// vs update setelah edit darurat (lihat pemanggil).
+function formatRouteWaMessage(route, mapsUrl, label = "") {
+  const kendaraan = route.vehicle?.plateNumber || "Kendaraan belum diisi";
+  const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
+  const baris = [
+    label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
+    `${kendaraan} — ${driverLine}`,
+    "",
+    mapsUrl ? `Link Maps: ${mapsUrl}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)",
+  ];
+  if (route.notes?.trim()) {
+    baris.push("", "Detail Catatan:", route.notes.trim());
+  }
+  return baris.join("\n");
 }
 
 // ACTIVE_JOB_STATUSES & ELIGIBLE_ORDER_STATUS dipindah ke
@@ -1262,6 +1324,18 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       }
       return r;
     });
+    // Rute PUBLISHED yang baru diedit — kabari ulang grup driver (redesain
+    // Route Planner, Sep 2026), sama pola BEST-EFFORT dengan publish
+    // pertama. Label "🔄" membedakan dari pesan publish awal, supaya driver
+    // tahu ini KOREKSI, bukan rute baru/dobel.
+    if (editingPublished) {
+      try {
+        const { url } = buildRouteMapsUrl(updated.jobs);
+        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+      } catch (err) {
+        console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
+      }
+    }
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -1330,6 +1404,14 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     });
 
     const updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    if (editingPublished) {
+      try {
+        const { url } = buildRouteMapsUrl(updated.jobs);
+        await notifyDriverGroupText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+      } catch (err) {
+        console.error("[route-edit] Gagal kirim update rute ke grup driver:", err.message);
+      }
+    }
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -1400,7 +1482,36 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       }),
     ]);
 
+    // Kirim ringkasan rute + link Maps ke grup driver OTOMATIS (redesain
+    // Route Planner, Sep 2026) — MENGGANTIKAN langkah manual "dispatcher
+    // susun rute sendiri di Google Maps lalu copy-paste link ke grup WA".
+    // BEST-EFFORT murni: publish SUDAH SELESAI (transaksi di atas commit),
+    // kegagalan kirim WA di sini TIDAK BOLEH membatalkan publish yang sudah
+    // terjadi — cuma dicatat ke log server.
+    try {
+      const { url } = buildRouteMapsUrl(updatedRoute.jobs);
+      await notifyDriverGroupText(formatRouteWaMessage(updatedRoute, url));
+    } catch (err) {
+      console.error("[publish] Gagal kirim ringkasan rute ke grup driver:", err.message);
+    }
+
     res.json(updatedRoute);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /routes/:id/maps-link — link Google Maps multi-stop untuk tombol
+// "Buat Peta" di Route Planner (redesain Sep 2026). Dipanggil manual oleh
+// dispatcher (mis. untuk preview sebelum publish, atau share ulang secara
+// manual) — TERPISAH dari kirim-otomatis-ke-grup di publish/edit di atas,
+// yang keduanya juga memanggil buildRouteMapsUrl() yang SAMA (satu sumber
+// kebenaran, bukan dua cara membangun URL yang bisa diam-diam beda).
+armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: { jobs: true } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    res.json(buildRouteMapsUrl(route.jobs));
   } catch (err) {
     handleErr(err, res);
   }

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map } from "lucide-react";
+import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
@@ -40,6 +41,13 @@ export default function RouteCard({
   // terpisah — tiap aksi (drag, ganti driver, dst) sudah menyimpan LANGSUNG
   // persis seperti mode Draft, "Selesai" di bawah cuma menutup mode edit.
   const [editingReason, setEditingReason] = useState(null);
+  // Catatan Rute (redesain Sep 2026, docs/ARMADA-REDESIGN-2026.md §10) —
+  // pola SAMA dengan address di JobCard.jsx (Armada.jsx): local state,
+  // simpan saat blur, TIDAK resync ulang dari prop route.notes tiap render
+  // (kesederhanaan yang sudah diterima di JobCard, cukup untuk field yang
+  // jarang diketik ulang dari 2 tempat berbeda bersamaan).
+  const [notesDraft, setNotesDraft] = useState(route.notes || "");
+  const [mapsBusy, setMapsBusy] = useState(false);
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
@@ -61,6 +69,37 @@ export default function RouteCard({
     const alasan = window.prompt("Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang:");
     if (!alasan?.trim()) return; // batal kalau kosong/Cancel
     setEditingReason(alasan.trim());
+  }
+
+  function simpanCatatan() {
+    if (notesDraft === (route.notes || "")) return; // tidak berubah, tidak perlu panggil API
+    jalankan(() => onAssign(route, { notes: notesDraft }, editingReason));
+  }
+
+  // "Buat Peta" (redesain Sep 2026) — MENGGANTIKAN langkah manual dispatcher
+  // menyusun rute di Google Maps sendiri. Backend membangun ulang URL yang
+  // SAMA yang otomatis dikirim ke grup driver saat publish/edit (satu sumber
+  // kebenaran, GET /armada/routes/:id/maps-link) — tombol ini untuk
+  // preview/share manual di luar momen publish/edit itu.
+  async function bukaPeta() {
+    setMapsBusy(true);
+    try {
+      const { url, missingCoords, missingLocation } = await api.getRouteMapsLink(route.id);
+      if (!url) {
+        alert("Belum bisa membuat peta — belum ada stop dengan alamat/koordinat di rute ini.");
+        return;
+      }
+      if (missingLocation > 0) {
+        alert(`${missingLocation} stop belum punya alamat sama sekali, TIDAK ikut masuk peta. Sisanya tetap dibuka.`);
+      } else if (missingCoords > 0) {
+        alert(`${missingCoords} stop belum ke-geocode — Google akan mencari sendiri dari teks alamatnya, mungkin kurang presisi.`);
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert("Gagal membuat link peta: " + e.message);
+    } finally {
+      setMapsBusy(false);
+    }
   }
 
   function handleDropOnCard(e) {
@@ -103,6 +142,21 @@ export default function RouteCard({
             turun baris kalau memang mepet, tidak masalah secara makna. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-[12.5px] font-bold text-ink">{route.code}</span>
+          {/* "Buat Peta" (redesain Sep 2026) — MENGGANTIKAN dispatcher
+              menyusun rute di Google Maps satu-per-satu manual. Tampil untuk
+              rute apa pun yang sudah punya stop (bukan cuma Draft/Published)
+              — dispatcher bisa preview/share ulang kapan saja. */}
+          {jobs.length > 0 && (
+            <button
+              type="button"
+              onClick={bukaPeta}
+              disabled={mapsBusy}
+              title="Buka rute ini di Google Maps (urutan stop sesuai sequence)"
+              className="flex shrink-0 items-center gap-1 rounded-chip bg-accentbg px-2 py-1 text-[10.5px] font-semibold text-accent transition-colors hover:opacity-80 disabled:opacity-40"
+            >
+              {mapsBusy ? <Loader2 size={11} className="animate-spin" /> : <Map size={11} />} Buat Peta
+            </button>
+          )}
           <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />
         </div>
         {/* Tanggal rute (D-063, 4 September 2026) — Route Planner sekarang
@@ -189,6 +243,27 @@ export default function RouteCard({
             )}
           </div>
         )}
+
+        {/* Catatan Rute (redesain Sep 2026) — Route.notes, field yang SUDAH
+            ADA di schema/PATCH /routes/:id tapi sebelum ini tidak punya
+            input UI sama sekali. Ikut dikirim ke grup driver di bawah judul
+            "Detail Catatan" (lihat formatRouteWaMessage di armada.js) —
+            tempat freeform untuk kasus yang tidak bisa dimodelkan
+            terstruktur, mis. "WILSON Pagi > EMON-helper, balik ganti driver
+            AGUNG-helper". */}
+        {isEditable ? (
+          <textarea
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            onBlur={simpanCatatan}
+            placeholder="Catatan rute (opsional) — ikut terkirim ke grup driver, mis. pergantian driver di tengah jalan"
+            rows={2}
+            className="w-full resize-none rounded-lg border border-border px-2 py-1.5 text-[11px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+          />
+        ) : route.notes ? (
+          <p className="whitespace-pre-line rounded-lg bg-inset px-2 py-1.5 text-[11px] text-ink2">{route.notes}</p>
+        ) : null}
+
         {/* Jejak edit darurat terakhir (Route.lastEditReason, kolom biasa
             bukan ledger — lihat catatan panjang di schema.prisma) — tampil
             terus walau sesi edit sudah selesai, supaya dispatcher lain yang

@@ -276,6 +276,61 @@ async function routeLegsLocationIQ(stops) {
 // supaya kuota gratis 10.000/bulan tidak boros untuk rute dengan banyak stop.
 // Gagal/tidak terkonfigurasi -> fallback haversineLegs, BUKAN throw — lihat
 // catatan Fase 2 di kepala file.
+// ─── LINK GOOGLE MAPS MULTI-STOP (redesain Route Planner, Sep 2026) ─────────
+// Dispatcher SEBELUM ini menyusun rute di Google Maps MANUAL: buka Maps,
+// tempel alamat satu-satu sesuai urutan, baru copy link untuk di-share ke
+// grup WA driver. Fungsi ini membuat link itu OTOMATIS dari urutan stop yang
+// sudah disusun di Route Planner (Job.sequence).
+//
+// SENGAJA pakai URL publik `google.com/maps/dir` (skema `api=1` + parameter
+// origin/destination/waypoints) — BUKAN Directions API berbayar. Ini bukan
+// keterbatasan yang dipilih untuk v1 saja (beda dari optimasi VRP di PRD
+// §1.5) — Google Cloud billing project TERBUKTI DITOLAK berulang kali
+// (kartu debit MAUPUN kredit, lihat catatan Fase 2/3 di kepala file ini),
+// jadi opsi berbayar memang tidak tersedia sama sekali. URL publik ini
+// GRATIS, TANPA API key, TANPA billing — persis yang dipakai mapsUrl() di
+// frontend (jobStatus.js) untuk 1 tujuan, di sini diperluas jadi banyak stop.
+//
+// Format per stop MENGIKUTI PRIORITAS geocodeAddress(): lat/lng kalau sudah
+// ke-geocode (paling akurat), fallback ke teks alamat (Google mencari
+// sendiri) kalau belum — TIDAK ada stop yang dilewati/disembunyikan hanya
+// karena belum ke-geocode, dispatcher tetap dapat link yang mengikutsertakan
+// SEMUA stop, cuma sebagian kurang presisi.
+//
+// BULAT-BALIK dari/ke Klinik (origin=destination=DEPOT) — konsisten dengan
+// asumsi routeLegs()/publish (D-076): rute SELALU dianggap berangkat dan
+// kembali ke klinik.
+//
+// ⚠️ BATAS WAYPOINT: Google Maps (versi konsumer, bukan API berbayar) TIDAK
+// mendokumentasikan batas pasti, tapi SECARA PRAKTIK UI web/app pernah
+// terbukti mengabaikan/memotong diam-diam kalau waypoint terlalu banyak
+// (umum dilaporkan sekitar 9-10 stop). Field `stopCount` dikembalikan supaya
+// UI bisa memperingatkan dispatcher untuk rute yang sangat panjang — TIDAK
+// dipotong otomatis di sini (memotong diam-diam lebih buruk: dispatcher
+// mengira semua stop masuk padahal tidak).
+function stopParam(stop) {
+  if (stop.lat != null && stop.lng != null) return `${stop.lat},${stop.lng}`;
+  if (stop.addressText?.trim()) return encodeURIComponent(stop.addressText.trim());
+  return null;
+}
+
+export function buildRouteMapsUrl(jobs) {
+  const terurut = [...jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+  const missingLocation = terurut.filter((j) => j.lat == null && !j.addressText?.trim());
+  const params = terurut.map(stopParam).filter(Boolean);
+  const missingCoords = terurut.filter((j) => j.lat == null && j.addressText?.trim()).length;
+
+  if (params.length === 0) return { url: null, stopCount: 0, missingCoords: 0, missingLocation: missingLocation.length };
+
+  const depotParam = `${DEPOT.lat},${DEPOT.lng}`;
+  const url =
+    `https://www.google.com/maps/dir/?api=1&travelmode=driving` +
+    `&origin=${depotParam}&destination=${depotParam}` +
+    `&waypoints=${params.join("|")}`;
+
+  return { url, stopCount: params.length, missingCoords, missingLocation: missingLocation.length };
+}
+
 export async function routeLegs(stops) {
   if (stops.length < 2) return [];
 
