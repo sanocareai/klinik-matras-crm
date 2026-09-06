@@ -327,7 +327,10 @@ export default function ArmadaRoutes() {
           tanggal yang sedang dibuka, beda dari KPI Dashboard yang mengukur
           status JOB (bukan rute) lintas hari ini; menaruhnya di Dashboard
           justru mencampur dua ukuran yang berbeda. */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[240px_minmax(0,1fr)]">
+      {/* 300px (revisi Sep 2026, dari 240px) — laporan owner: panel "Belum
+          Masuk Rute" terasa sempit, badge tipe/kota/tanggal di tiap kartu
+          job sering membungkus tidak rapi di lebar sekian. */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
         {/* Kiri — Ringkasan (kecil) + Belum Masuk Rute, ditumpuk dalam SATU
             kolom yang tingginya dikunci (xl:h-[calc(100vh-220px)]);
             Ringkasan `shrink-0` (tinggi tetap secukupnya), panel job
