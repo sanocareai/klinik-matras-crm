@@ -537,6 +537,10 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         order: {
           select: {
             id: true, orderNumber: true, deliveryCity: true, category: true,
+            // status (6 September 2026) — laporan owner: Jadwal & Penugasan
+            // perlu tampilkan status ORDER (Siap Kirim/Pengambilan/dst),
+            // bukan cuma status Job. Dipakai OrderStatusBadge (JobBadges.jsx).
+            status: true,
             items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
             pickupConfirmedDate: true, deliveryConfirmedDate: true,
             // locationUrl (6 September 2026) — lihat catatan panjang di

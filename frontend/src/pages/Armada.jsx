@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button.jsx";
 import ChipPilih from "@/features/armada/components/ChipPilih.jsx";
 import AssignDropdown from "@/features/armada/components/AssignDropdown.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
+import { OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange } from "@/lib/dateRange.js";
 import DriverJobs from "./DriverJobs.jsx";
 import { EDITABLE_JOB_STATUSES, mapsUrl } from "@/features/armada/jobStatus.js";
@@ -170,7 +171,18 @@ function JobCard({ job, drivers, vehicles, helpers, onChanged }) {
           <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
           <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
         </div>
-        <Badge variant={STATUS_BADGE[job.status]}>{STATUS_LABEL[job.status]}</Badge>
+        {/* Dua badge status BEDA KONSEP, sengaja ditumpuk bukan digabung
+            (6 September 2026, laporan owner: "tambahkan status order nya
+            apakah siap kirim, pengambilan dan lainnya") — Badge atas =
+            status JOB (alur penjadwalan armada, dari STATUS_LABEL lokal
+            file ini), Badge bawah = status ORDER (alur fulfillment/
+            produksi, dari OrderStatusBadge/JobBadges.jsx). Dispatcher
+            sering butuh tahu keduanya sekaligus: job-nya "Belum
+            Dijadwalkan" tapi order-nya sendiri sudah/belum "Siap Kirim". */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant={STATUS_BADGE[job.status]}>{STATUS_LABEL[job.status]}</Badge>
+          <OrderStatusBadge job={job} />
+        </div>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1">

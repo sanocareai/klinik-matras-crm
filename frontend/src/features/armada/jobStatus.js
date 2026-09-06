@@ -80,6 +80,19 @@ export function customerOf(job) {
   );
 }
 
+// Status ORDER (Menunggu/Pengambilan/Diproses/Siap Kirim/Pengiriman/
+// Terkirim/dst dari ORDER_STATUS_LABELS di utils/format.js) — 6 September
+// 2026, laporan owner: Jadwal & Penugasan cuma menampilkan status JOB
+// (Belum Dijadwalkan/Ditugaskan/dst, alur ARMADA), tidak menampilkan status
+// ORDER-nya sendiri (alur PRODUKSI/fulfillment) sama sekali — dispatcher
+// tidak tahu sekilas order-nya sudah "Siap Kirim" atau masih "Diproses" di
+// bengkel tanpa buka drawer. DUA status BEDA konsep (job = penjadwalan
+// armada, order = progres fulfillment), sengaja TIDAK digabung jadi satu
+// badge. Pola fallback SAMA dengan customerOf di atas.
+export function orderStatusOf(job) {
+  return job?.order?.status || job?.units?.[0]?.unit?.order?.status || null;
+}
+
 // Nomor HP customer — pola fallback SAMA dengan customerOf (job.order
 // langsung dulu, jatuh ke jalur berlapis units[].unit.order kalau job.order
 // belum ke-load). Dipakai CustomerProfileCard (JobBadges.jsx) untuk tombol

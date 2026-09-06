@@ -1,12 +1,14 @@
 import React from "react";
 import { Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
-  isRentalOrder, serviceLabelOf, confirmedDateOf, cityOf,
+  isRentalOrder, serviceLabelOf, confirmedDateOf, cityOf, orderStatusOf,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { ORDER_STATUS_LABELS, orderStatusVariant } from "@/utils/format.js";
 
 // ─── Badge Sales Person & Estimasi Durasi (D-043, 2 September 2026) ──────────
 // Laporan owner: dispatcher perlu tahu SIAPA sales pemilik order (buat
@@ -144,6 +146,25 @@ export function CityBadge({ job, className }) {
     >
       <MapPinned size={11} className="shrink-0" /> {kota}
     </span>
+  );
+}
+
+// Status ORDER (Menunggu/Pengambilan/Diproses/Siap Kirim/Pengiriman/
+// Terkirim/dst) — 6 September 2026, laporan owner: "bisa tambahkan status
+// order nya apakah siap kirim, pengambilan dan lainnya". SENGAJA beda dari
+// JobTypeBadge/status Job di atas — itu status ARMADA (Belum Dijadwalkan/
+// Ditugaskan/dst), ini status ORDER di sisi produksi/fulfillment, dua alur
+// yang beda. Pakai Badge + orderStatusVariant dari utils/format.js (BUKAN
+// tone kustom seperti badge lain di file ini) SUPAYA warnanya identik
+// dengan tampilan status order di halaman lain (Orders.jsx, Pipeline.jsx,
+// dst) — status yang sama harus selalu kelihatan sama di seluruh app.
+export function OrderStatusBadge({ job, className }) {
+  const status = orderStatusOf(job);
+  if (!status) return null;
+  return (
+    <Badge variant={orderStatusVariant(status)} className={cn("shrink-0", className)}>
+      {ORDER_STATUS_LABELS[status] || status}
+    </Badge>
   );
 }
 

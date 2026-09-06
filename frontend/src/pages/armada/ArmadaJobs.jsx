@@ -14,7 +14,7 @@ import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
-import { JobMetaRow, JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge } from "@/features/armada/components/JobBadges.jsx";
+import { JobMetaRow, JobTypeBadge, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
   JOB_STATUS_REAL, ACTIVE_STATUSES,
@@ -440,6 +440,7 @@ export default function ArmadaJobs() {
                             <JobTypeBadge job={j} />
                             <RentalBadge job={j} />
                             <CityBadge job={j} />
+                            <OrderStatusBadge job={j} />
                             {/* Sudah masuk Route (D-077, 6 September 2026) —
                                 dulu tabel ini nol indikasi soal ini, jadi
                                 dispatcher baru tahu drivernya "terkunci" ke
