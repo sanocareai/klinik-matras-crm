@@ -30,7 +30,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
-import { parseOrderNotesForInvoice, produkLineLabel } from "../services/invoice.js";
+import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -61,6 +61,11 @@ const upload = multer({
 // dengan foto proses job di disk.
 const vehicleReceiptsDir = path.join(__dirname, "../../data/vehicle-receipts");
 if (!fs.existsSync(vehicleReceiptsDir)) fs.mkdirSync(vehicleReceiptsDir, { recursive: true });
+// Gambar tabel rute (6 September 2026) — dir & static route sudah dibuat di
+// index.js (mkdirSync + app.use("/media/route-sheets", ...)); jalur di sini
+// cuma perlu MENUNJUK ke folder yang sama untuk fs.writeFileSync-nya
+// notifyNatashaImage (lihat definisi function di bawah).
+const routeSheetsDir = path.join(__dirname, "../../data/route-sheets");
 const uploadReceipt = multer({
   storage: multer.diskStorage({
     destination: vehicleReceiptsDir,
@@ -216,11 +221,17 @@ async function notifyDriverGroupText(message) {
 // dipakai langsung, bukan bikin kontak baru.
 const NATASHA_PHONE = "6287888747922";
 
-async function notifyNatashaText(message) {
-  const conversation = await prisma.conversation.findFirst({
+// Dipakai notifyNatashaText DAN notifyNatashaImage — SATU tempat mencari
+// percakapan, bukan duplikasi query yang sama 2x.
+async function getNatashaConversation() {
+  return prisma.conversation.findFirst({
     where: { type: "INDIVIDUAL", customer: { phone: NATASHA_PHONE } },
     include: { customer: true },
   });
+}
+
+async function notifyNatashaText(message) {
+  const conversation = await getNatashaConversation();
   if (!conversation) return; // belum ada percakapan tercatat — diam-diam, bukan error
 
   const target = resolveSendTarget(conversation);
@@ -235,6 +246,44 @@ async function notifyNatashaText(message) {
   const updatedConv = await prisma.conversation.update({
     where: { id: conversation.id },
     data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(message, null) },
+  });
+  emitNewMessage(conversation.id, msg);
+  emitConversationUpdate(updatedConv);
+}
+
+// Kirim GAMBAR (bukan teks) ke Natasha — dipakai untuk tabel detail rute
+// (buildRouteSheetImage, services/routeSheetImage.js), pengganti screenshot
+// Google Sheets manual (laporan owner: "next dalam broadcast gue butuh
+// detail informasi... atau bisa ga si broadcast nya ada bentuk gambar
+// detail order gitu?"). Pola SAMA dengan notifyDriverGroup (foto POD) di
+// atas — buffer disimpan ke disk dulu (WAHA butuh URL yang bisa dijangkau
+// sendiri lewat jaringan Docker internal, bukan buffer inline), lalu
+// dikirim via sendMedia.
+async function notifyNatashaImage(buffer, filename, caption) {
+  const conversation = await getNatashaConversation();
+  if (!conversation) return;
+
+  const target = resolveSendTarget(conversation);
+  if (!target) return;
+
+  fs.writeFileSync(path.join(routeSheetsDir, filename), buffer);
+  const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
+  const fileUrl = `${BACKEND_INTERNAL_URL}/media/route-sheets/${filename}`;
+
+  const { session } = await sendWithSessionFallback(conversation, (s) =>
+    sendMedia(target, { mimetype: "image/png", filename, url: fileUrl }, caption, "media", s)
+  );
+  conversation.sessionId = session;
+
+  const msg = await prisma.message.create({
+    data: {
+      conversationId: conversation.id, direction: "OUTBOUND", content: caption,
+      mediaType: "image", mediaUrl: `/media/route-sheets/${filename}`,
+    },
+  });
+  const updatedConv = await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, "image") },
   });
   emitNewMessage(conversation.id, msg);
   emitConversationUpdate(updatedConv);
@@ -279,44 +328,19 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   // dipakai Route Card di frontend — TIDAK di-sort ulang di sini supaya
   // kedua tempat ini mustahil menampilkan urutan berbeda.
   //
-  // Detail per stop DIPERLUAS 6 September 2026 (laporan owner, contoh flow
-  // kerja Natasha manual di Google Sheets: nomor customer, "EST DIATAS JAM
-  // X" per stop, jenis+ukuran produk) — "gue butuh detail informasi:
-  // nomer customer, estimasi jam..., jenis produk, ukuran (ini untuk kasur
-  // aja)". Ukuran SENGAJA cuma ditempel untuk productLine KASUR — Sofa/
-  // Divan tidak punya konsep "ukuran" yang sama (dijelaskan eksplisit oleh
-  // owner), cukup jenis produknya saja yang tetap tampil.
+  // Detail per stop SENGAJA TETAP RINGKAS (nama+tipe+alamat) — laporan
+  // owner: rincian lengkap [No. HP, produk+ukuran, estimasi jam] sekarang
+  // dikirim sebagai GAMBAR TABEL terpisah (lihat buildRouteSheetImage,
+  // services/routeSheetImage.js, dipanggil di pemanggil bareng fungsi ini),
+  // BUKAN dijejalkan ke teks — persis alasan gambar itu dibuat: "kalo text
+  // semua mungkin terlalu panjang". Teks ini cuma peta cepat "siapa & ke
+  // mana", gambar itu sumber detailnya.
   const stopLines = (route.jobs || []).map((j, idx) => {
     const order = j.order || j.units?.[0]?.unit?.order;
     const nama = order?.customer?.name || "Tanpa nama";
-    const telp = order?.customer?.phone || "";
     const tipe = j.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
-
-    let produk = "";
-    if (order) {
-      // produkLineLabel (services/invoice.js) — SATU sumber gabungan
-      // Lini+Jenis Produk yang benar (tanpa duplikasi kata, lihat catatan
-      // panjang di sana). Ukuran ditempel TERPISAH di sini, khusus KASUR.
-      const bagianProduk = [produkLineLabel(order)];
-      if (order.productLine === "KASUR") {
-        const { ukuranKasur } = parseOrderNotesForInvoice(order.notes);
-        if (ukuranKasur) bagianProduk.push(ukuranKasur);
-      }
-      produk = bagianProduk.join(" · ");
-    }
-
-    // timeWindow (D-043/redesain Sep 2026, field "Estimasi Jam (opsional)"
-    // di JobDetailDrawer > Penugasan) — teks bebas ("Di atas jam 09.00"
-    // dkk), sama field yang diminta owner di sini.
-    const estimasi = j.timeWindow?.trim();
-
-    const detailBaris = [telp, produk].filter(Boolean).join(" · ");
-    const isiBaris = [`${idx + 1}. ${nama} — ${tipe}`];
-    if (detailBaris) isiBaris.push(`   ${detailBaris}`);
-    isiBaris.push(`   ${alamat}`);
-    if (estimasi) isiBaris.push(`   Estimasi: ${estimasi}`);
-    return isiBaris.join("\n");
+    return `${idx + 1}. ${nama} — ${tipe}\n   ${alamat}`;
   });
 
   const baris = [
@@ -334,6 +358,31 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
     baris.push("", "Detail Catatan:", route.notes.trim());
   }
   return baris.join("\n");
+}
+
+// Kirim ringkasan rute LENGKAP ke Natasha — GAMBAR TABEL (detail per stop:
+// No. HP, produk+ukuran, estimasi jam) DIIKUTI teks ringkas (header+link+
+// catatan), meniru URUTAN persis kebiasaan manual Natasha selama ini
+// (screenshot Sheets dulu, teks di bawahnya — lihat contoh nyata yang
+// dikirim owner). SATU fungsi dipanggil dari 4 tempat (publish, 2x edit
+// darurat, resend) supaya urutan gambar-lalu-teks ini konsisten di semua
+// jalur, tidak perlu diingat ulang tiap pemanggil.
+//
+// Gambar best-effort TERPISAH dari teks (try/catch sendiri) — kalau
+// render/kirim gambar gagal (mis. sharp/WAHA bermasalah), teks ringkas
+// TETAP terkirim, bukan ikut gagal total karena satu titik kegagalan.
+async function kirimRingkasanRuteKeNatasha(route, mapsUrl, label = "") {
+  try {
+    const buffer = await buildRouteSheetImage(route);
+    if (buffer) {
+      const filename = `${route.code}-${Date.now()}.png`;
+      const caption = label ? `${label} — Detail Rute ${route.code}` : `Detail Rute ${route.code}`;
+      await notifyNatashaImage(buffer, filename, caption);
+    }
+  } catch (err) {
+    console.error("[kirimRingkasanRuteKeNatasha] Gagal kirim gambar tabel:", err.message);
+  }
+  await notifyNatashaText(formatRouteWaMessage(route, mapsUrl, label));
 }
 
 // ACTIVE_JOB_STATUSES & ELIGIBLE_ORDER_STATUS dipindah ke
@@ -1528,7 +1577,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyNatashaText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
       } catch (err) {
         console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
       }
@@ -1680,7 +1729,7 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     if (editingPublished) {
       try {
         const { url } = buildRouteMapsUrl(updated.jobs);
-        await notifyNatashaText(formatRouteWaMessage(updated, url, "🔄 RUTE DIPERBARUI"));
+        await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
       } catch (err) {
         console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
       }
@@ -1772,7 +1821,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     // catatan lengkap di notifyNatashaText di atas.
     try {
       const { url } = buildRouteMapsUrl(updatedRoute.jobs);
-      await notifyNatashaText(formatRouteWaMessage(updatedRoute, url));
+      await kirimRingkasanRuteKeNatasha(updatedRoute, url);
     } catch (err) {
       console.error("[publish] Gagal kirim ringkasan rute ke Natasha:", err.message);
     }
@@ -1803,7 +1852,7 @@ armadaRouter.post("/routes/:id/resend-broadcast", requirePermission(P.ROUTE_WRIT
       throw new ArmadaError("Cuma rute yang sudah diterbitkan yang bisa dikirim ulang");
     }
     const { url } = buildRouteMapsUrl(route.jobs);
-    await notifyNatashaText(formatRouteWaMessage(route, url, "📤 KIRIM ULANG"));
+    await kirimRingkasanRuteKeNatasha(route, url, "📤 KIRIM ULANG");
     res.json({ ok: true });
   } catch (err) {
     handleErr(err, res);
