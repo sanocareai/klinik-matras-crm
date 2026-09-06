@@ -132,7 +132,7 @@ async function notifyDriverGroup(job, photoUrls, headline) {
     const isLast = i === photoUrls.length - 1;
     const caption = isLast ? `${headline}\n*${orderNo}*\n${unitList}` : "";
     try {
-      const { session } = await sendWithSessionFallback(group, (s) =>
+      const { result: wahaMsg, session } = await sendWithSessionFallback(group, (s) =>
         sendMedia(
           target,
           { mimetype: "image/jpeg", filename: photoUrls[i].split("/").pop(), url: `${BACKEND_INTERNAL_URL}${photoUrls[i]}` },
@@ -143,8 +143,15 @@ async function notifyDriverGroup(job, photoUrls, headline) {
       // Simpan Message supaya riwayat grup di Inbox CRM tetap sinkron dengan
       // apa yang benar-benar terkirim ke WhatsApp — sama seperti pola
       // send-product/send-documentation, bukan jalur kirim yang "senyap".
+      // externalId (6 September 2026) — TANPA ini, webhook echo fromMe:true
+      // tidak bisa mencocokkan baris ini, jadi bikin baris Message KEDUA
+      // untuk pengiriman yang SAMA (bug nyata ditemukan+diperbaiki di
+      // notifyNatashaText/notifyNatashaImage, lihat catatan lengkap di sana).
       const msg = await prisma.message.create({
-        data: { conversationId: group.id, direction: "OUTBOUND", content: caption, mediaType: "image", mediaUrl: photoUrls[i] },
+        data: {
+          conversationId: group.id, direction: "OUTBOUND", content: caption, mediaType: "image", mediaUrl: photoUrls[i],
+          externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+        },
       });
       savedMessages.push(msg);
     } catch (err) {
@@ -195,11 +202,13 @@ async function notifyDriverGroupText(message) {
   const target = resolveSendTarget(group);
   if (!target) return;
 
-  const { session } = await sendWithSessionFallback(group, (s) => sendText(target, message, null, s));
+  const { result: wahaMsg, session } = await sendWithSessionFallback(group, (s) => sendText(target, message, null, s));
   group.sessionId = session;
 
+  // externalId — lihat catatan bug duplikat baris Message di
+  // notifyNatashaText (fungsi aktif yang menggantikan ini sekarang).
   const msg = await prisma.message.create({
-    data: { conversationId: group.id, direction: "OUTBOUND", content: message },
+    data: { conversationId: group.id, direction: "OUTBOUND", content: message, externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null },
   });
   const updatedGroup = await prisma.conversation.update({
     where: { id: group.id },
@@ -237,12 +246,41 @@ async function notifyNatashaText(message) {
   const target = resolveSendTarget(conversation);
   if (!target) return;
 
-  const { session } = await sendWithSessionFallback(conversation, (s) => sendText(target, message, null, s));
+  const { result: wahaMsg, session } = await sendWithSessionFallback(conversation, (s) => sendText(target, message, null, s));
   conversation.sessionId = session;
 
-  const msg = await prisma.message.create({
-    data: { conversationId: conversation.id, direction: "OUTBOUND", content: message },
-  });
+  // BUG NYATA ditemukan+diperbaiki 6 September 2026 (laporan owner: "kirim
+  // ulang, ini broadcastnya banyak banget" — diverifikasi lewat 1 panggilan
+  // API TERKONTROL: SATU klik ternyata memang cuma 1 pengiriman WhatsApp
+  // sungguhan, TAPI menghasilkan 2 baris Message di database — baris KITA
+  // di sini [externalId TIDAK PERNAH diisi sebelum baris ini] dan baris
+  // KEDUA dari webhook yang meng-echo balik pengiriman fromMe:true yang
+  // sama [routes/webhooks.js, sudah py logic dedup by externalId, tapi
+  // TIDAK KETEMU karena baris kita tidak punya externalId sama sekali
+  // untuk dicocokkan]. Inbox CRM (baca tabel Message ini langsung) jadi
+  // menampilkan 2 bubble untuk 1 pengiriman nyata — itu yang terlihat
+  // sebagai "banyak banget". Pola perbaikan SAMA PERSIS dengan yang sudah
+  // benar di routes/orders.js (invoice/warranty send).
+  //
+  // externalId UNIK di skema (Message.externalId @unique) — kalau webhook
+  // KEBETULAN sudah lebih dulu bikin baris untuk id yang sama (race,
+  // meski belum pernah teramati di sample nyata: webhook SELALU belasan-
+  // ratusan ms belakangan), P2002 di sini TIDAK BOLEH menggagalkan seluruh
+  // notifikasi — pesan WA-nya sendiri SUDAH benar-benar terkirim di titik
+  // ini, cuma soal baris DB mana yang "menang" mencatatnya.
+  let msg;
+  try {
+    msg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id, direction: "OUTBOUND", content: message,
+        externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+      },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    msg = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized } });
+    if (!msg) return; // seharusnya tidak sampai sini, tapi jangan sampai emitNewMessage(undefined)
+  }
   const updatedConv = await prisma.conversation.update({
     where: { id: conversation.id },
     data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(message, null) },
@@ -270,17 +308,28 @@ async function notifyNatashaImage(buffer, filename, caption) {
   const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
   const fileUrl = `${BACKEND_INTERNAL_URL}/media/route-sheets/${filename}`;
 
-  const { session } = await sendWithSessionFallback(conversation, (s) =>
+  const { result: wahaMsg, session } = await sendWithSessionFallback(conversation, (s) =>
     sendMedia(target, { mimetype: "image/png", filename, url: fileUrl }, caption, "media", s)
   );
   conversation.sessionId = session;
 
-  const msg = await prisma.message.create({
-    data: {
-      conversationId: conversation.id, direction: "OUTBOUND", content: caption,
-      mediaType: "image", mediaUrl: `/media/route-sheets/${filename}`,
-    },
-  });
+  // externalId — lihat catatan panjang bug duplikat baris Message +
+  // guard P2002 di notifyNatashaText di atas, penyebab & fix-nya sama
+  // persis di sini.
+  let msg;
+  try {
+    msg = await prisma.message.create({
+      data: {
+        conversationId: conversation.id, direction: "OUTBOUND", content: caption,
+        mediaType: "image", mediaUrl: `/media/route-sheets/${filename}`,
+        externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized || null,
+      },
+    });
+  } catch (e) {
+    if (e.code !== "P2002") throw e;
+    msg = await prisma.message.findUnique({ where: { externalId: wahaMsg?.id || wahaMsg?._data?.id?._serialized } });
+    if (!msg) return;
+  }
   const updatedConv = await prisma.conversation.update({
     where: { id: conversation.id },
     data: { lastMessageAt: new Date(), lastMessagePreview: buildMessagePreview(caption, "image") },
