@@ -541,7 +541,12 @@ export default function RouteCard({
                   // pasti, sales) tersusun rapi turun ke bawah, bukan
                   // berdesakan di satu baris sempit (kartu ini sekarang
                   // cuma separuh lebar kolom rute, grid 2 kolom).
-                  "dh-stop-card relative flex select-none flex-col gap-1 rounded-btn border border-border bg-inset px-2.5 py-2 transition-all duration-150",
+                  // `leading-tight` (8 September 2026, laporan owner soal
+                  // panel "Belum Masuk Rute": "jarak antara text kasur dan
+                  // alamat terlalu jauh... rapatkan line space nya") —
+                  // dipasang di sini juga supaya kartu stop rute ini tetap
+                  // SAMA rapatnya, konsisten dengan UnroutedJobsPanel.jsx.
+                  "dh-stop-card relative flex select-none flex-col gap-1 rounded-btn border border-border bg-inset px-2.5 py-2 leading-tight transition-all duration-150",
                   hasJobAccentBar(j) && "dh-bar-left",
                   isEditable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                   dragOverIdx === idx && "ring-2 ring-accent",
