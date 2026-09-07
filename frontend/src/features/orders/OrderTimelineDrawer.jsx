@@ -9,16 +9,15 @@ import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
 import { StatusSelect } from "./StatusSelect.jsx";
+import { PaymentStatusSelect } from "./PaymentStatusSelect.jsx";
 import { api } from "../../api.js";
 import {
-  formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
-  HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
+  formatRupiah, ORDER_STATUS_LABELS,
+  HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, buildOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
-  orderStatusVariant, paymentStatusVariant,
 } from "../../utils/format.js";
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
-import { Badge } from "@/components/ui/badge.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { cn } from "@/lib/utils.js";
 
@@ -131,6 +130,86 @@ function TanggalPastiField({ value, onSave }) {
   );
 }
 
+// Edit inline field TEKS (7 September 2026, permintaan owner) — sebelumnya
+// alamat/link Google Maps/catatan keluhan CUMA bisa diisi lewat "Lengkapi
+// di profil pelanggan" (ReadinessPanel), yang menutup drawer ini dan
+// navigasi ke halaman lain. Sekarang bisa diisi LANGSUNG di sini, pola yang
+// sama dengan TanggalPastiField di atas: klik ikon pensil → muncul input →
+// Simpan/Batal. Beda dari TanggalPastiField karena teks butuh tombol Simpan
+// eksplisit (bukan auto-save tiap ketikan seperti DatePicker yang sekali
+// klik = selesai).
+function InlineTextEdit({ value, onSave, placeholder, multiline, renderValue }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(value || "");
+  const [saving, setSaving]   = useState(false);
+  const [err, setErr]         = useState(null);
+
+  function mulaiEdit() {
+    setDraft(value || "");
+    setErr(null);
+    setEditing(true);
+  }
+
+  async function simpan() {
+    setSaving(true);
+    setErr(null);
+    try {
+      await onSave(draft.trim());
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    const Field = multiline ? "textarea" : "input";
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Field
+          autoFocus
+          rows={multiline ? 2 : undefined}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          className="w-full rounded-lg border border-line bg-base px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
+        />
+        {err && <p className="text-[11px] text-red">{err}</p>}
+        <div className="flex gap-1.5">
+          <button
+            type="button" onClick={() => setEditing(false)}
+            className="h-7 flex-1 rounded-lg text-[11px] font-semibold text-ink2"
+          >
+            Batal
+          </button>
+          <button
+            type="button" disabled={saving} onClick={simpan}
+            className="h-7 flex-1 rounded-lg bg-accent text-[11px] font-semibold text-white disabled:opacity-40"
+          >
+            {saving ? <Loader2 size={11} className="mx-auto animate-spin" /> : "Simpan"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        {value
+          ? (renderValue ? renderValue(value) : <span className="break-words">{value}</span>)
+          : <span className="italic text-ink3">{placeholder || "Belum diisi"}</span>}
+      </div>
+      <button
+        type="button" onClick={mulaiEdit} title="Edit"
+        className="shrink-0 rounded-lg p-1 text-ink3 transition-colors hover:bg-hovertint hover:text-ink"
+      >
+        <PenTool size={11} />
+      </button>
+    </div>
+  );
+}
+
 function DetailPesananSection({ order, onChanged }) {
   const info = parseOrderNotes(order.notes);
   const berat = (order.weightEntries || []).map((w) => `${w.label}: ${w.beratKg} kg`).join(" · ");
@@ -150,9 +229,21 @@ function DetailPesananSection({ order, onChanged }) {
   // drawer re-render dari state induk manapun sebelum tab ini ditutup.
   const [pickupOverride, setPickupOverride] = useState(undefined);
   const [deliveryOverride, setDeliveryOverride] = useState(undefined);
-  useEffect(() => { setPickupOverride(undefined); setDeliveryOverride(undefined); }, [order.id]);
+  // Override lokal (7 September 2026) untuk Alamat/Link Lokasi/Catatan —
+  // alasan SAMA PERSIS dengan pickup/deliveryOverride di atas: `order` prop
+  // tidak auto-refresh begitu field ini disimpan dari sini.
+  const [addressOverride, setAddressOverride] = useState(undefined);
+  const [locationUrlOverride, setLocationUrlOverride] = useState(undefined);
+  const [keluhanOverride, setKeluhanOverride] = useState(undefined);
+  useEffect(() => {
+    setPickupOverride(undefined); setDeliveryOverride(undefined);
+    setAddressOverride(undefined); setLocationUrlOverride(undefined); setKeluhanOverride(undefined);
+  }, [order.id]);
   const pickupConfirmedDate = pickupOverride !== undefined ? pickupOverride : order.pickupConfirmedDate;
   const deliveryConfirmedDate = deliveryOverride !== undefined ? deliveryOverride : order.deliveryConfirmedDate;
+  const deliveryAddress = addressOverride !== undefined ? addressOverride : order.deliveryAddress;
+  const locationUrl = locationUrlOverride !== undefined ? locationUrlOverride : order.locationUrl;
+  const keluhanCustomer = keluhanOverride !== undefined ? keluhanOverride : info.keluhanCustomer;
 
   async function simpanTanggal(field, value) {
     const updated = await api.updateOrder(order.id, { [field]: value });
@@ -161,7 +252,30 @@ function DetailPesananSection({ order, onChanged }) {
     onChanged?.();
   }
 
-  const adaKondisi = info.keluhanCustomer || berat || order.healthStatus || order.promo;
+  async function simpanAlamat(v) {
+    const updated = await api.updateOrder(order.id, { deliveryAddress: v || null });
+    setAddressOverride(updated.deliveryAddress);
+    onChanged?.();
+  }
+
+  async function simpanLokasi(v) {
+    const updated = await api.updateOrder(order.id, { locationUrl: v || null });
+    setLocationUrlOverride(updated.locationUrl);
+    onChanged?.();
+  }
+
+  // Keluhan/catatan TIDAK punya kolom sendiri di Order — masih tersimpan di
+  // JSON `notes` bersama merkKasur/ukuranKasur/jenisKasurLainnya (lihat
+  // buildOrderNotes/parseOrderNotes di utils/format.js, SATU-SATUNYA jalur
+  // penulisan yang dipakai OrderSection.jsx). Kirim ulang field lain apa
+  // adanya (dari `info` yang sudah diurai) supaya tidak menimpa/menghapus
+  // isinya, cuma keluhanCustomer yang berubah.
+  async function simpanKeluhan(v) {
+    const notesBaru = buildOrderNotes({ ...info, keluhanCustomer: v });
+    const updated = await api.updateOrder(order.id, { notes: notesBaru });
+    setKeluhanOverride(parseOrderNotes(updated.notes).keluhanCustomer);
+    onChanged?.();
+  }
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -207,21 +321,33 @@ function DetailPesananSection({ order, onChanged }) {
           `adaPengiriman`). Jadwal Pick Up/Kirim WAJIB selalu kelihatan &
           bisa diklik supaya sales tahu HARUS isi ini sebelum status bisa
           diubah ke Diproses/Terkirim (D-087) — field yang cuma muncul
-          setelah ada isinya tidak bisa dipakai sebagai TEMPAT mengisi. */}
+          setelah ada isinya tidak bisa dipakai sebagai TEMPAT mengisi.
+          Alamat & Link Lokasi (7 September 2026) ikut aturan yang sama —
+          dulu cuma tampil kalau sudah terisi, satu-satunya jalur isi awal
+          adalah "Lengkapi di profil pelanggan" (ReadinessPanel, navigasi
+          keluar drawer). Sekarang editable LANGSUNG di sini. */}
       <KartuTema icon={Truck} hex="#ea580c" title="Pengiriman">
-          {(order.deliveryAddress || order.deliveryCity) && (
-            <BarisMini label="Alamat">
-              {order.deliveryAddress || ""}
-              {order.deliveryCity && <span className="font-semibold"> · {order.deliveryCity}</span>}
-            </BarisMini>
-          )}
-          {order.locationUrl && (
-            <BarisMini label="Link Lokasi">
-              <a href={order.locationUrl} target="_blank" rel="noreferrer" className="font-semibold text-accent underline">
-                Buka lokasi ↗
-              </a>
-            </BarisMini>
-          )}
+          <BarisMini label="Alamat">
+            <InlineTextEdit
+              value={deliveryAddress}
+              onSave={simpanAlamat}
+              placeholder="Klik ikon pensil untuk isi alamat pengiriman"
+              multiline
+            />
+            {order.deliveryCity && <p className="mt-1 text-[12.5px] font-semibold text-ink2">{order.deliveryCity}</p>}
+          </BarisMini>
+          <BarisMini label="Link Lokasi (Google Maps)">
+            <InlineTextEdit
+              value={locationUrl}
+              onSave={simpanLokasi}
+              placeholder="Klik ikon pensil untuk tempel link share lokasi Google Maps"
+              renderValue={(v) => (
+                <a href={v} target="_blank" rel="noreferrer" className="break-all font-semibold text-accent underline">
+                  Buka lokasi ↗
+                </a>
+              )}
+            />
+          </BarisMini>
           {/* Jadwal Pick Up cuma relevan utk LAYANAN (kasur LAMA customer
               diambil dulu sebelum dikerjakan) — BARU/SEWA tidak pernah
               lewat tahap ini sama sekali (lihat D-087/unitProvisioning.js),
@@ -256,12 +382,21 @@ function DetailPesananSection({ order, onChanged }) {
           )}
       </KartuTema>
 
-      {/* Kondisi & Catatan — keluhan, berat badan, kesehatan, promo. */}
-      {adaKondisi && (
-        <KartuTema icon={HeartPulse} hex="#475569" title="Kondisi & Catatan">
-          {info.keluhanCustomer && (
-            <BarisMini label="Keluhan / Catatan">{info.keluhanCustomer}</BarisMini>
-          )}
+      {/* Kondisi & Catatan — keluhan, berat badan, kesehatan, promo. Kartu
+          ini SEKARANG SELALU tampil (7 September 2026 — sebelumnya
+          disembunyikan total kalau belum ada satu pun dari keempatnya,
+          `adaKondisi`), sama alasan dengan Pengiriman di atas: Keluhan/
+          Catatan sekarang editable LANGSUNG di sini, jadi butuh selalu
+          kelihatan supaya bisa dipakai sebagai TEMPAT mengisi. */}
+      <KartuTema icon={HeartPulse} hex="#475569" title="Kondisi & Catatan">
+          <BarisMini label="Keluhan / Catatan">
+            <InlineTextEdit
+              value={keluhanCustomer}
+              onSave={simpanKeluhan}
+              placeholder="Klik ikon pensil untuk isi keluhan/catatan customer"
+              multiline
+            />
+          </BarisMini>
           {berat && <BarisMini label="Berat Badan">{berat}</BarisMini>}
           {order.healthStatus && (
             <BarisMini label="Kondisi Kesehatan">
@@ -280,8 +415,7 @@ function DetailPesananSection({ order, onChanged }) {
               </span>
             </BarisMini>
           )}
-        </KartuTema>
-      )}
+      </KartuTema>
     </div>
   );
 }
@@ -815,7 +949,12 @@ const TONE = {
   READY: "bg-accent", SHIPPING: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus = false }) {
+// `canEditStatus` (D-086) TIDAK LAGI dibaca di sini sejak 7 September 2026 —
+// Status sekarang SELALU editable di ringkasan atas drawer utk semua
+// pemanggil (lihat komentar di JSX-nya). Prop-nya SENGAJA tetap diterima
+// (bukan dihapus dari signature) supaya ProductionOrders.jsx/ArmadaOrders.jsx
+// yang masih mengirimnya tidak perlu ikut diubah — cuma jadi no-op di sini.
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
@@ -836,10 +975,19 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
     return () => { batal = true; };
   }, [order]);
 
-  // Ubah status dari drawer ini (D-086) — dipakai halaman yang lewat
-  // canEditStatus={true} (Delivery/Produksi "Semua Order"). Reuse
-  // onPaymentRecorded sebagai callback refresh generik, pola SAMA dengan
-  // InvoicePanel/WarrantyPanel di atas (satu callback, banyak pemanggil).
+  // Ubah status dari drawer ini (D-086) — Reuse onPaymentRecorded sebagai
+  // callback refresh generik, pola SAMA dengan InvoicePanel/WarrantyPanel
+  // di atas (satu callback, banyak pemanggil).
+  //
+  // Revisi 7 September 2026 (permintaan owner): dulu HANYA muncul kalau
+  // pemanggil lewat canEditStatus={true} (Delivery/Produksi "Semua Order")
+  // — sales harus tutup drawer, balik ke tabel Order/profil pelanggan buat
+  // ubah status/pembayaran. Sekarang Status & Pembayaran SELALU editable
+  // langsung di ringkasan atas drawer, untuk SEMUA pemanggil — konsisten
+  // dengan yang sudah berlaku di tabel Order (StatusSelect/
+  // PaymentStatusSelect di pages/Orders.jsx) dan form Pelanggan
+  // (OrderSection.jsx), jadi ini TIDAK membuka kemampuan baru, cuma
+  // menambah satu jalur lagi ke kemampuan yang sudah ada.
   async function handleStatusChange(ord, newStatus) {
     if (newStatus === ord.status) return;
     try {
@@ -847,6 +995,16 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
       onPaymentRecorded?.();
     } catch (err) {
       alert("Gagal ubah status: " + err.message);
+    }
+  }
+
+  async function handlePaymentStatusChange(ord, newStatus) {
+    if (newStatus === (ord.paymentStatus || "BELUM_BAYAR")) return;
+    try {
+      await api.updateOrder(ord.id, { paymentStatus: newStatus });
+      onPaymentRecorded?.();
+    } catch (err) {
+      alert("Gagal ubah status pembayaran: " + err.message);
     }
   }
 
@@ -915,21 +1073,26 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          {/* Ringkasan order — Status/Pembayaran jadi <Badge> berwarna
-              (D-089, 5 September 2026) — sebelumnya teks tebal polos,
-              beda bahasa visual dari kolom Status/Pembayaran di tabel
-              Semua Order (ArmadaOrders.jsx) yang sudah pakai Badge sejak
-              D-078. SATU sumber warna (orderStatusVariant/
-              paymentStatusVariant) untuk keduanya — bukan pengulangan
-              hardcode baru. */}
+          {/* Ringkasan order — Status/Pembayaran SEKARANG dropdown editable
+              (revisi 7 September 2026, permintaan owner: "gaperlu tutup
+              sidebar dan balik ke order ketika ingin sekaligus update
+              status dan pembayaran") — sebelumnya <Badge> baca-saja (D-089,
+              5 September 2026). StatusSelect/PaymentStatusSelect SAMA
+              PERSIS komponen yang dipakai tabel Order & form Pelanggan,
+              jadi warna & opsinya konsisten, bukan implementasi kedua. */}
           <div className="grid grid-cols-2 gap-2.5">
             <div className="rounded-xl bg-surface p-2.5 shadow-card">
               <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Status</p>
-              <Badge variant={orderStatusVariant(o.status)} className="mt-1">{ORDER_STATUS_LABELS[o.status] || o.status}</Badge>
+              <StatusSelect order={o} onChange={handleStatusChange} className="mt-1" />
             </div>
             <div className="rounded-xl bg-surface p-2.5 shadow-card">
               <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Pembayaran</p>
-              <Badge variant={paymentStatusVariant(o.paymentStatus)} className="mt-1">{PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}</Badge>
+              <PaymentStatusSelect
+                order={o}
+                onChange={handlePaymentStatusChange}
+                locked={o.paymentStatus === "LUNAS" && !canEditLunas}
+                className="mt-1"
+              />
             </div>
             {[
               { l: "Nilai", v: formatRupiah(o.value || 0) },
@@ -1006,18 +1169,13 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
           ) : (
           <>
-          {/* Ubah status lintas divisi (D-086, 5 September 2026) — HANYA
-              tampil kalau pemanggil lewat canEditStatus={true} (Delivery/
-              Produksi "Semua Order"). Sales tetap punya jalur override-nya
-              sendiri di OrderSection.jsx (Pelanggan/Inbox) — ini BUKAN
-              menggantikan itu, cuma membuka jalur yang sama untuk divisi
-              lain, supaya tidak perlu menunggu Sales yang update. */}
-          {canEditStatus && (
-            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl bg-surface p-2.5 shadow-card">
-              <p className="text-[11.5px] font-medium text-ink3">Ubah status</p>
-              <StatusSelect order={o} onChange={handleStatusChange} />
-            </div>
-          )}
+          {/* Ubah status lintas divisi (D-086, 5 September 2026) — dulu di
+              sini, di BAWAH tab Status, HANYA muncul kalau pemanggil lewat
+              canEditStatus={true} (Delivery/Produksi "Semua Order"). Dihapus
+              7 September 2026 — sekarang jadi duplikat persis dari dropdown
+              Status di ringkasan atas drawer (SELALU tampil untuk semua
+              pemanggil, lihat komentar di sana), jadi kontrol kedua di sini
+              cuma bikin bingung (dua dropdown identik di satu drawer). */}
           {loading ? (
             <div className="flex flex-col gap-2">
               {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
