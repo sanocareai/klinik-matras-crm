@@ -158,9 +158,14 @@ export default function RouteMap({ routes }) {
   const onLoad = useCallback((map) => { mapRef.current = map; }, []);
   const onUnmount = useCallback(() => { mapRef.current = null; }, []);
 
+  // Tinggi 220px -> 480px (8 September 2026, laporan owner: "jalur maps
+  // kecil banget") — masuk akal sejak peta ini masih Leaflet+CARTO polos
+  // (lebih dekorasi daripada alat baca rute), tapi sekarang ini Google Maps
+  // sungguhan dengan fitBounds otomatis ke SELURUH rute — 220px terlalu
+  // pendek untuk benar-benar membaca jalur di kota sebesar Jabodetabek.
   if (!adaTitik) {
     return (
-      <div className="flex h-[220px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-border bg-inset px-4 text-center">
+      <div className="flex h-[480px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-border bg-inset px-4 text-center">
         <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
         <p className="text-[12px] font-semibold text-ink2">Peta rute</p>
         <p className="max-w-[260px] text-[10.5px] text-ink3">
@@ -172,7 +177,7 @@ export default function RouteMap({ routes }) {
 
   if (!GOOGLE_MAPS_JS_KEY) {
     return (
-      <div className="flex h-[220px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-border bg-inset px-4 text-center">
+      <div className="flex h-[480px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-border bg-inset px-4 text-center">
         <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
         <p className="text-[12px] font-semibold text-ink2">Peta belum aktif</p>
         <p className="max-w-[260px] text-[10.5px] text-ink3">
@@ -183,11 +188,11 @@ export default function RouteMap({ routes }) {
   }
 
   if (!isLoaded) {
-    return <div className="flex h-[220px] shrink-0 items-center justify-center rounded-card border border-border bg-inset text-[11.5px] text-ink3">Memuat peta…</div>;
+    return <div className="flex h-[480px] shrink-0 items-center justify-center rounded-card border border-border bg-inset text-[11.5px] text-ink3">Memuat peta…</div>;
   }
 
   return (
-    <div className="h-[220px] shrink-0 overflow-hidden rounded-card border border-border">
+    <div className="h-[480px] shrink-0 overflow-hidden rounded-card border border-border">
       <GoogleMap
         mapContainerStyle={{ height: "100%", width: "100%" }}
         center={DEPOT}

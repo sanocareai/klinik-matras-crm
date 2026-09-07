@@ -401,12 +401,19 @@ export default function RouteCard({
       {/* Daftar stop — drop target. `transition-colors` (D-072) — tint
           drop-zone SEBELUMNYA muncul/hilang seketika, terasa "kedip"
           dibanding transisi halus yang sudah jadi standar di tempat lain
-          (kartu, popover). */}
+          (kartu, popover).
+          Grid 2 kolom (8 September 2026, laporan owner: "buat jadi rute
+          1,2 [1 baris] 3,4 [1 baris]") — MENGGANTIKAN tumpukan vertikal
+          1 kolom (space-y-1.5) yang bikin kartu rute banyak-stop jadi
+          sangat panjang ke bawah. Drag & drop TIDAK berubah sama sekali —
+          tiap stop tetap draggable/droppable sendiri-sendiri lewat
+          onDragOver/onDrop per item (handleDropAtIndex), cuma susunan
+          visualnya yang berubah dari 1 kolom jadi 2 kolom. */}
       <div
         onDragOver={(e) => { if (isEditable) { e.preventDefault(); setDragOverIdx(jobs.length); } }}
         onDrop={handleDropOnCard}
         className={cn(
-          "min-h-[80px] flex-1 space-y-1.5 p-2 transition-colors duration-150",
+          "min-h-[80px] flex-1 p-2 transition-colors duration-150",
           dragOverIdx !== null && isEditable && "bg-accentbg/40"
         )}
       >
@@ -415,7 +422,8 @@ export default function RouteCard({
             {isEditable ? "Seret job ke sini" : "Tidak ada stop"}
           </p>
         ) : (
-          jobs
+        <div className="grid grid-cols-2 gap-1.5">
+          {jobs
             .slice()
             .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
             .map((j, idx) => (
@@ -529,7 +537,8 @@ export default function RouteCard({
                   </button>
                 )}
               </div>
-            ))
+            ))}
+        </div>
         )}
       </div>
 

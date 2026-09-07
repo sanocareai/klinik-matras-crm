@@ -463,14 +463,16 @@ export default function ArmadaRoutes() {
                 catatan di sana) supaya lebarnya mengikuti kolom grid, bukan
                 lebar tetap yang cuma masuk akal dalam baris horizontal. */}
             {loading ? (
-              // Maks 3 kolom (revisi Sep 2026 — laporan owner: kartu terasa
-              // sempit di 4 kolom, terutama sejak kartu bertambah isi: badge
-              // tipe/Sewa, catatan rute, tombol Buat Peta). DULU naik sampai
-              // xl:grid-cols-4 — dihapus, bukan diganti angka lain, supaya
-              // berhenti di 3 untuk SEMUA layar ≥1024px (breakpoint Tailwind
-              // min-width, jadi lg:grid-cols-3 tetap berlaku di xl/2xl kalau
-              // tidak ada override di atasnya).
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              // Maks 2 kolom (8 September 2026, laporan owner: "buat jadi 2
+              // card aja deh" — turun dari 3, yang sebelumnya sudah turun
+              // dari 4 di revisi Sep 2026 dengan alasan sama: kartu makin
+              // banyak isi [badge tipe/Sewa/Tanpa link Maps, catatan rute,
+              // tombol Buat Peta, DAN sejak D-08Sep stop di dalamnya sendiri
+              // jadi grid 2 kolom, lihat RouteCard.jsx] jadi butuh lebar
+              // lebih, bukan lebih sempit. lg:grid-cols-2 berlaku untuk
+              // SEMUA layar ≥1024px (breakpoint Tailwind min-width, tidak
+              // naik lagi di xl/2xl kalau tidak ada override di atasnya).
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {[1, 2].map((i) => <div key={i} className="h-64 animate-pulse rounded-card bg-inset" />)}
               </div>
             ) : routes.length === 0 ? (
@@ -480,14 +482,8 @@ export default function ArmadaRoutes() {
                 action={<Button size="sm" onClick={mulaiBuatRute}><Plus size={14} /> Buat Rute</Button>}
               />
             ) : (
-              // Maks 3 kolom (revisi Sep 2026 — laporan owner: kartu terasa
-              // sempit di 4 kolom, terutama sejak kartu bertambah isi: badge
-              // tipe/Sewa, catatan rute, tombol Buat Peta). DULU naik sampai
-              // xl:grid-cols-4 — dihapus, bukan diganti angka lain, supaya
-              // berhenti di 3 untuk SEMUA layar ≥1024px (breakpoint Tailwind
-              // min-width, jadi lg:grid-cols-3 tetap berlaku di xl/2xl kalau
-              // tidak ada override di atasnya).
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              // Maks 2 kolom — lihat catatan panjang di skeleton loading di atas.
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {routes.map((r) => (
                   <RouteCard
                     key={r.id}
