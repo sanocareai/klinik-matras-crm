@@ -212,7 +212,7 @@ async function loadIncompleteDataBySales() {
 
 // ── Poin 4: nol closing hari ini (cuma dipakai di slot eodHour) ────────────
 async function loadZeroClosingSalesIds(salesList, now) {
-  const { year, month, day } = nowPartsWIB(now);
+  const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const startToday = startOfDayWIB(todayStr);
 
