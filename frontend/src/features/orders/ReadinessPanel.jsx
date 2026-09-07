@@ -43,7 +43,7 @@ export default function ReadinessPanel({ order, onOpenChat }) {
         <Icon size={14} className="shrink-0" />
         {hasil.state === READINESS.BLOCKED
           ? "Belum bisa diserahkan ke Delivery & Fulfillment"
-          : "Bisa diserahkan, tapi ada yang perlu dilengkapi"}
+          : "Bisa diserahkan, tapi belum ada pembayaran masuk"}
       </p>
 
       {hasil.missingBlockers.length > 0 && (

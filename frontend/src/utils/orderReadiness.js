@@ -29,12 +29,13 @@ export const READINESS = {
 // Label diganti (7 Sep 2026, permintaan owner) — "Ready"/"Perlu Info"/
 // "Blocked" bahasa Inggris teknis, dan "Blocked" khususnya kesannya order
 // GAGAL/dibatalkan padahal cuma "datanya belum cukup buat lanjut ke
-// Delivery". "Perlu Dilengkapi" vs "Wajib Dilengkapi" sengaja dibedakan
-// beratnya (yang kedua = ada blocker struktural, bukan cuma peringatan).
+// Delivery". NEEDS_INFO sekarang cuma berarti SATU hal (lihat WARNING_RULES
+// di bawah — tinggal aturan "payment") jadi labelnya diganti "Belum Bayar"
+// langsung, bukan lagi "Perlu Dilengkapi" yang generik.
 export const READINESS_META = {
-  READY:      { label: "Lengkap",           tone: "green" },
-  NEEDS_INFO: { label: "Perlu Dilengkapi",  tone: "orange" },
-  BLOCKED:    { label: "Wajib Dilengkapi",  tone: "red" },
+  READY:      { label: "Lengkap",     tone: "green" },
+  NEEDS_INFO: { label: "Belum Bayar", tone: "orange" },
+  BLOCKED:    { label: "Wajib Dilengkapi", tone: "red" },
 };
 
 // PENTING: `label` di SEMUA rule adalah KALIMAT UTUH ("X belum diisi", "Belum
