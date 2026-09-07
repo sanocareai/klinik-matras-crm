@@ -51,8 +51,15 @@ const BLOCKER_RULES = [
     relevan: (o) => (o.productLine || "KASUR") === "KASUR",
     check: (o) => !!parseOrderNotes(o.notes).ukuranKasur,
   },
+  // Cuma relevan utk kategori LAYANAN — itu satu-satunya yang punya tahap
+  // pickup (jemput barang LAMA dari customer). BARU (beli baru) & SEWA
+  // tidak pernah menjemput apa pun dari customer, jadi tidak butuh jadwal
+  // ini — OrderTimelineDrawer.jsx sendiri sudah sengaja tidak menampilkan
+  // baris "Jadwal Pick Up" untuk dua kategori itu (lihat komentar di sana),
+  // aturan readiness ini WAJIB konsisten dengan itu.
   {
     key: "pickupDate", label: "Jadwal pickup belum diisi",
+    relevan: (o) => o.category === "LAYANAN",
     check: (o) => !!(o.pickupConfirmedDate || o.pickupEstimate),
   },
   { key: "salesOwner", label: "Belum ada sales pemegang", check: (o) => !!o.assignedSales },
