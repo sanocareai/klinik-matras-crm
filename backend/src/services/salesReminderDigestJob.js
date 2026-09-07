@@ -21,7 +21,7 @@
 //      dibuat SEJAK config.dataSejakTanggal (default 1 September 2026 —
 //      sistem baru mulai running bulan ini). Default jadwal: 13:00 WIB.
 //   4. Follow-up H+1 setelah Terkirim — order yang pindah ke DELIVERED
-//      KEMARIN (batas kalender WIB, lihat loadFollowUpDueBySales), TAPI
+//      KEMARIN (batas kalender WIB, lihat loadStatusTransitionReminderBySales), TAPI
 //      belum ada pesan OUTBOUND apa pun ke customer itu sejak itu. Window
 //      kalender (bukan geser per jam) SENGAJA supaya tiap order HANYA
 //      dilaporkan SATU KALI (permintaan owner). Default jadwal: 15:00 WIB.
@@ -30,6 +30,13 @@
 //      dicek dari pagi, HAMPIR SEMUA sales pasti "belum closing" (belum
 //      waktunya), jadi jam berapa pun disebut — tekanan palsu, bukan
 //      pengingat berguna.
+//   6. Mulai Diproses KEMARIN — order yang pindah ke status PROCESSING
+//      kemarin (SAMA pola windowing kalender WIB & pengecualian "sudah
+//      ada outbound sejak itu" dengan poin 4/Follow-up H+1, cuma toStatus
+//      beda), mengingatkan sales utk: pantau progres di grup produksi,
+//      kirim update dokumentasi ke customer, dan pastikan semua request
+//      customer sudah dipenuhi SEBELUM dikirim (permintaan owner 7 Sep
+//      2026). Default jadwal: 14:00 WIB.
 //
 // RIWAYAT (7 September 2026, permintaan owner — "gahanya riwayat broadcast
 // yang dibikin manual, tapi yang dikirim otomatis juga"): tiap kali SATU
@@ -70,6 +77,7 @@ const DEFAULT_CONFIG = {
     unread:      "0 9 * * 1-6",
     hanging:     "0 11 * * 1-6",
     incomplete:  "0 13 * * 1-6",
+    processing:  "0 14 * * 1-6",
     followUp:    "0 15 * * 1-6",
     zeroClosing: "0 17 * * 1-6",
   },
@@ -230,7 +238,15 @@ async function loadZeroClosingSalesIds(salesList, now) {
 // dari window geser berbasis jam yang bisa dobel/bocor kalau waktu cron
 // sedikit meleset) — order yang DELIVERED kemarin (kapan pun jam berapa
 // pun) HANYA masuk window ini SATU KALI.
-async function loadFollowUpDueBySales(config, now) {
+// Generik (7 Sep 2026) — dipakai poin 4 (Follow-up H+1, toStatus=DELIVERED)
+// DAN poin 6 (Mulai Diproses, toStatus=PROCESSING). Order yang pindah ke
+// `toStatus` KEMARIN, DAN belum ada pesan OUTBOUND apa pun ke customer itu
+// sejak transisi tsb (dianggap "sudah ditindaklanjuti", tidak diingatkan
+// lagi) — sinyal sengaja generik (bukan cek dokumentasi terkirim
+// spesifik), supaya SATU aturan berlaku utk dua konteks (follow-up
+// testimoni ATAU update dokumentasi produksi) tanpa cek keluar/masuk yang
+// beda-beda tiap kasus.
+async function loadStatusTransitionReminderBySales(config, now, toStatus) {
   const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const startToday = startOfDayWIB(todayStr);
@@ -238,7 +254,7 @@ async function loadFollowUpDueBySales(config, now) {
 
   const transitions = await prisma.orderStatusTransition.findMany({
     where: {
-      toStatus: "DELIVERED",
+      toStatus,
       createdAt: { gte: startYesterday, lt: startToday },
       order: { createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) } },
     },
@@ -259,9 +275,9 @@ async function loadFollowUpDueBySales(config, now) {
   });
 
   // Dedupe per order (ditemukan lewat preview 7 Sep 2026: order yang
-  // sempat di-DELIVERED lalu dikoreksi lalu DELIVERED lagi tercatat 2 baris
-  // transisi dalam window yang sama — tanpa ini order itu muncul dobel di
-  // pesan). Ambil transisi TERBARU per order.
+  // sempat berpindah status lalu dikoreksi lalu berpindah lagi ke status
+  // yang sama tercatat 2 baris transisi dalam window yang sama — tanpa
+  // ini order itu muncul dobel di pesan). Ambil transisi TERBARU per order.
   const latestPerOrder = new Map(); // orderId -> transition
   for (const t of transitions) {
     const existing = latestPerOrder.get(t.order.id);
@@ -280,7 +296,7 @@ async function loadFollowUpDueBySales(config, now) {
           select: { id: true },
         })
       : null;
-    if (outboundSince) continue; // sudah ada follow-up
+    if (outboundSince) continue; // sudah ada tindak lanjut
 
     if (!bySales.has(salesId)) bySales.set(salesId, []);
     bySales.get(salesId).push({
@@ -345,6 +361,17 @@ function composeFollowUpMessage(nama, items) {
 
 function composeZeroClosingMessage(nama) {
   return `👋 Halo *${nama}*, belum ada order baru yang closing hari ini — yuk semangat, masih ada waktu! 💪`;
+}
+
+function composeProcessingMessage(nama, items) {
+  if (!items?.length) return null;
+  return [
+    `👋 Halo *${nama}*, ada ${items.length} order yang mulai *Diproses* kemarin:`,
+    "",
+    ...items.map((f) => `- ${f.nama} (${f.orderNumber})`),
+    "",
+    "Yuk pantau progresnya di grup produksi, kirim update dokumentasi ke customer, dan pastikan semua request customer sudah dipenuhi sebelum dikirim 🙏",
+  ].filter(Boolean).join("\n");
 }
 
 // ── Dispatcher bersama tiap topik — hitung pesan per sales, kirim (kalau
@@ -429,10 +456,21 @@ export async function runFollowUpCycle({ referenceNow = new Date(), dryRun = fal
   const config = readConfig();
   const now = referenceNow.getTime();
   const salesList = await daftarSalesAktif();
-  const followUpBySales = await loadFollowUpDueBySales(config, now);
+  const followUpBySales = await loadStatusTransitionReminderBySales(config, now, "DELIVERED");
   return dispatchSection({
     config, dryRun, salesList, label: "Follow-up H+1",
     computeMessage: (s) => composeFollowUpMessage(s.name, followUpBySales.get(s.id)),
+  });
+}
+
+export async function runProcessingCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const salesList = await daftarSalesAktif();
+  const processingBySales = await loadStatusTransitionReminderBySales(config, now, "PROCESSING");
+  return dispatchSection({
+    config, dryRun, salesList, label: "Mulai Diproses",
+    computeMessage: (s) => composeProcessingMessage(s.name, processingBySales.get(s.id)),
   });
 }
 
@@ -453,6 +491,7 @@ export function startSalesReminderDigestJob() {
     ["unread", config.schedule.unread, runUnreadCycle, "Chat Belum Dibaca"],
     ["hanging", config.schedule.hanging, runHangingCycle, "Chat Menggantung"],
     ["incomplete", config.schedule.incomplete, runIncompleteCycle, "Data Belum Lengkap"],
+    ["processing", config.schedule.processing, runProcessingCycle, "Mulai Diproses"],
     ["followUp", config.schedule.followUp, runFollowUpCycle, "Follow-up H+1"],
     ["zeroClosing", config.schedule.zeroClosing, runZeroClosingCycle, "Belum Closing"],
   ];
@@ -462,5 +501,5 @@ export function startSalesReminderDigestJob() {
       await fn();
     }, { timezone: "Asia/Jakarta" });
   }
-  console.log(`[sales-reminder] 5 topik terdaftar (jadwal masing-masing beda) — enabled=${config.enabled}`);
+  console.log(`[sales-reminder] ${topik.length} topik terdaftar (jadwal masing-masing beda) — enabled=${config.enabled}`);
 }

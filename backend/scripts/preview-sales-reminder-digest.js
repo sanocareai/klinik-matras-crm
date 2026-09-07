@@ -14,7 +14,7 @@
 
 import {
   runUnreadCycle, runHangingCycle, runIncompleteCycle,
-  runFollowUpCycle, runZeroClosingCycle,
+  runProcessingCycle, runFollowUpCycle, runZeroClosingCycle,
 } from "../src/services/salesReminderDigestJob.js";
 import { prisma } from "../src/db.js";
 
@@ -22,6 +22,7 @@ const TOPIK = [
   ["Chat Belum Dibaca", runUnreadCycle],
   ["Chat Menggantung", runHangingCycle],
   ["Data Belum Lengkap", runIncompleteCycle],
+  ["Mulai Diproses", runProcessingCycle],
   ["Follow-up H+1", runFollowUpCycle],
   ["Belum Closing", runZeroClosingCycle],
 ];
