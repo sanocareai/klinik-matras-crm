@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { GoogleMap, Marker, Polyline, InfoWindow, OverlayView, useJsApiLoader } from "@react-google-maps/api";
 import { Truck, MapPinned, Navigation } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
-import { avatarColor, getInitials } from "@/utils/format.js";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { getRoadRoute } from "@/services/osrm.js";
+import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
+import { MAP_STYLE_DARK } from "@/features/armada/googleMapStyle.js";
+import { driverIcon, destinationIcon } from "@/features/armada/googleMapIcons.js";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 
@@ -21,66 +21,28 @@ import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 // mismatch tipe uuid/text di raw query GET /armada/tracking). Yang palsu
 // SELALU cuma halaman ini, bukan datanya — sekarang disambungkan.
 //
-// Peta pakai Leaflet + tile CARTO (D-075, lihat di bawah) — GRATIS, TANPA
-// API key/billing. Google Maps TIDAK dipakai di sini SENGAJA: billing
-// project Google Cloud masih REQUEST_DENIED (dites langsung 30 Agustus
-// 2026). Pin driver SELALU akurat (koordinat GPS asli dari HP, bukan hasil
-// geocode).
+// Peta pakai Google Maps JavaScript API (DIMIGRASI 8 September 2026 dari
+// Leaflet + tile CARTO — CARTO tiba-tiba mewajibkan API key akhir Agustus
+// 2026, watermark "API KEY REQUIRED" muncul di production, DAN billing
+// Google Cloud sudah aktif hari yang sama — lihat catatan panjang di
+// lib/googleMaps.js). Pin driver SELALU akurat (koordinat GPS asli dari HP,
+// bukan hasil geocode).
 //
-// FASE 2 (30 Agustus 2026) — pin TUJUAN (alamat customer) sekarang ikut
-// ditampilkan kalau job-nya sudah punya koordinat (destinationLat/Lng dari
-// GET /armada/tracking) — bisa dari Google ATAU dari fallback gratis
-// Nominatim (lihat services/maps.js). Kalau job BELUM punya koordinat sama
-// sekali, tidak ada pin dipaksakan — alamat tetap tampil sebagai teks di
-// panel kanan, supaya tidak berpura-pura akurat padahal datanya tidak ada.
+// Pin TUJUAN (alamat customer) ikut ditampilkan kalau job-nya sudah punya
+// koordinat (destinationLat/Lng dari GET /armada/tracking). Kalau job BELUM
+// punya koordinat sama sekali, tidak ada pin dipaksakan — alamat tetap
+// tampil sebagai teks di panel kanan, supaya tidak berpura-pura akurat
+// padahal datanya tidak ada.
 //
-// REDESIGN VISUAL + GARIS JALAN ASLI (D-075, 4 September 2026) — laporan
-// owner: peta "masih jauh dari harapan seperti Google Maps", garis lurus
-// antar titik, minta lebih simple/minimalist/detail. Sama seperti
-// RouteMap.jsx: tile OSM raster → CARTO Positron/Dark Matter (menyatu
-// dengan tema Delivery Hub), dan garis driver→tujuan sekarang minta
-// geometri jalan asli ke OSRM (services/osrm.js) — fallback senyap ke garis
-// lurus kalau OSRM gagal/timeout (server demo publik, bukan SLA
-// production). Badge "±N menit lagi" di pin tujuan dari durasi OSRM.
-//
-// Pengambilan rute OSRM disentralkan di komponen ini (state `jalurByJob`,
-// BUKAN dipecah jadi komponen anak per driver) — supaya hasilnya gampang
-// ditempel ke marker tujuan yang SUDAH ada (satu marker, Popup+Tooltip
-// sekaligus) tanpa perlu marker bayangan kedua di titik yang sama.
-const JAKARTA_CENTER = [-6.2088, 106.8456];
+// Garis driver->tujuan minta geometri jalan asli ke OSRM (services/osrm.js)
+// — fallback senyap ke garis lurus kalau OSRM gagal/timeout (server demo
+// publik, bukan SLA production). Badge "±N menit lagi" di pin tujuan dari
+// durasi OSRM. TIDAK diganti Google Directions API saat migrasi tile —
+// lihat alasan yang sama di RouteMap.jsx (API berbayar ketiga belum tentu
+// perlu).
+const JAKARTA_CENTER = { lat: -6.2088, lng: 106.8456 };
 const POLL_MS = 15000;
-
-const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const TILE_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-
-// Warna SATU aksen (D-075) — konsisten dengan aturan "satu accent" Delivery
-// Hub (lihat components/ui/card.jsx): garis ini elemen FUNGSIONAL (jalur
-// tempuh nyata), bukan hiasan, jadi tetap satu hue biru brand, sama dengan
-// --dh-accent di delivery-light.css/delivery-dark.css.
 const WARNA_JALUR = "#4C8DFF";
-
-function driverIcon(name) {
-  const { bg, text } = avatarColor(name || "?");
-  const initials = getInitials(name);
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:${bg};color:${text};width:38px;height:38px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)">${initials}</div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
-    popupAnchor: [0, -19],
-  });
-}
-
-// Pin tujuan — SENGAJA bentuk beda total dari avatar driver (kotak vs
-// lingkaran) supaya tidak pernah tertukar sekilas mata di peta yang sama.
-const destinationIcon = L.divIcon({
-  className: "",
-  html: `<div style="width:22px;height:22px;background:#dc2626;border:2px solid white;border-radius:4px 4px 4px 0;transform:rotate(45deg);box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 20],
-});
 
 function waktuLalu(iso) {
   if (!iso) return null;
@@ -99,12 +61,33 @@ function formatMenit(detik) {
   return sisaMenit > 0 ? `${jam} j ${sisaMenit} mnt lagi` : `${jam} jam lagi`;
 }
 
+// Badge waktu tempuh mengambang di atas pin tujuan — OverlayView (bukan
+// Marker.label) supaya bisa dipasangi class CSS `.dh-route-eta-badge` yang
+// sudah ada, sama tampilan dengan versi Leaflet Tooltip lama.
+function EtaBadge({ position, children }) {
+  return (
+    <OverlayView
+      position={position}
+      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+      getPixelPositionOffset={(w, h) => ({ x: -w / 2, y: -h - 26 })}
+    >
+      <div className="dh-route-eta-badge">{children}</div>
+    </OverlayView>
+  );
+}
+
 export default function ArmadaTracking() {
   const { resolved } = useTheme();
+  const { isLoaded } = useJsApiLoader({
+    id: GOOGLE_MAPS_SCRIPT_ID,
+    googleMapsApiKey: GOOGLE_MAPS_JS_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
   const [items, setItems] = useState(null);
   const [error, setError] = useState("");
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [openJobId, setOpenJobId] = useState(null);
+  const [activeInfo, setActiveInfo] = useState(null); // jobId marker YANG SEDANG buka InfoWindow
   // Hasil OSRM per job — { [jobId]: { coords, legDurations } | undefined }.
   // `undefined` (belum ada key) = belum selesai diminta ATAU gagal; kedua
   // kasus itu fallback ke garis lurus di render, TIDAK dibedakan di sini.
@@ -146,7 +129,7 @@ export default function ArmadaTracking() {
   }, [sinyalJalur]);
 
   const center = withPosition.length > 0
-    ? [withPosition[0].lastPosition.lat, withPosition[0].lastPosition.lng]
+    ? { lat: withPosition[0].lastPosition.lat, lng: withPosition[0].lastPosition.lng }
     : JAKARTA_CENTER;
 
   return (
@@ -165,70 +148,96 @@ export default function ArmadaTracking() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="overflow-hidden p-0">
           <div className="h-[460px] w-full">
-            {/* key berubah SEKALI saat data posisi pertama kali masuk — MEMAKSA
-                remount, karena react-leaflet TIDAK reaktif terhadap prop
-                `center` yang berubah setelah mount pertama (cuma dibaca
-                sekali). Tanpa ini, peta akan diam di titik tengah Jakarta
-                (fallback) selamanya walau driver asli sudah kelihatan
-                posisinya di GET /armada/tracking. */}
-            <MapContainer key={withPosition.length > 0 ? "ada-posisi" : "kosong"} center={center} zoom={12} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
-              <TileLayer attribution={TILE_ATTRIBUTION} url={resolved === "dark" ? TILE_DARK : TILE_LIGHT} />
-              {withDestination.map((j) => {
-                const jalanAsli = jalurByJob[j.jobId];
-                const garisLurus = [[j.lastPosition.lat, j.lastPosition.lng], [j.destinationLat, j.destinationLng]];
-                return (
-                  <Polyline
-                    key={`jalur-${j.jobId}`}
-                    positions={jalanAsli?.coords || garisLurus}
-                    pathOptions={{ color: WARNA_JALUR, weight: 4, opacity: 0.8, lineCap: "round", lineJoin: "round" }}
-                  />
-                );
-              })}
-              {withPosition.map((j) => (
-                <Marker
-                  key={j.jobId}
-                  position={[j.lastPosition.lat, j.lastPosition.lng]}
-                  icon={driverIcon(j.driverName)}
-                  eventHandlers={{ click: () => setSelectedJobId(j.jobId) }}
-                >
-                  <Popup>
-                    <div className="text-xs">
-                      <p className="font-semibold">{j.driverName}</p>
-                      <p>{j.customerName} · {JOB_TYPE_REAL[j.type]?.label || j.type}</p>
-                      <button
-                        type="button"
-                        className="mt-1 font-semibold text-blue-600 underline"
-                        onClick={() => setOpenJobId(j.jobId)}
-                      >
-                        Buka detail job
-                      </button>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-              {withDestination.map((j) => {
-                const estimasiDetik = jalurByJob[j.jobId]?.legDurations?.[0];
-                return (
-                  <Marker
-                    key={`tujuan-${j.jobId}`}
-                    position={[j.destinationLat, j.destinationLng]}
-                    icon={destinationIcon}
-                  >
-                    {estimasiDetik != null && (
-                      <Tooltip permanent direction="top" offset={[0, -20]} className="dh-route-eta-badge" opacity={1}>
-                        {formatMenit(estimasiDetik)}
-                      </Tooltip>
-                    )}
-                    <Popup>
-                      <div className="text-xs">
-                        <p className="font-semibold">Tujuan — {j.customerName}</p>
-                        <p>{j.addressText}</p>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
-            </MapContainer>
+            {!GOOGLE_MAPS_JS_KEY ? (
+              <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center">
+                <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
+                <p className="text-[12px] font-semibold text-ink2">Peta belum aktif</p>
+                <p className="max-w-[260px] text-[10.5px] text-ink3">
+                  VITE_GOOGLE_MAPS_JS_KEY belum diisi — lihat docs deploy untuk cara mengaktifkannya.
+                </p>
+              </div>
+            ) : !isLoaded ? (
+              <div className="flex h-full items-center justify-center text-[11.5px] text-ink3">Memuat peta…</div>
+            ) : (
+              <GoogleMap
+                mapContainerStyle={{ height: "100%", width: "100%" }}
+                center={center}
+                zoom={12}
+                options={{
+                  styles: resolved === "dark" ? MAP_STYLE_DARK : undefined,
+                  disableDefaultUI: true,
+                  zoomControl: true,
+                  clickableIcons: false,
+                }}
+              >
+                {withDestination.map((j) => {
+                  const jalanAsli = jalurByJob[j.jobId];
+                  const garisLurus = [
+                    { lat: j.lastPosition.lat, lng: j.lastPosition.lng },
+                    { lat: j.destinationLat, lng: j.destinationLng },
+                  ];
+                  const posisiGaris = jalanAsli?.coords
+                    ? jalanAsli.coords.map(([lat, lng]) => ({ lat, lng }))
+                    : garisLurus;
+                  return (
+                    <Polyline
+                      key={`jalur-${j.jobId}`}
+                      path={posisiGaris}
+                      options={{ strokeColor: WARNA_JALUR, strokeWeight: 4, strokeOpacity: 0.8 }}
+                    />
+                  );
+                })}
+                {withPosition.map((j) => {
+                  const posisi = { lat: j.lastPosition.lat, lng: j.lastPosition.lng };
+                  return (
+                    <React.Fragment key={j.jobId}>
+                      <Marker
+                        position={posisi}
+                        icon={driverIcon(window.google, j.driverName)}
+                        onClick={() => { setSelectedJobId(j.jobId); setActiveInfo(`driver-${j.jobId}`); }}
+                      />
+                      {activeInfo === `driver-${j.jobId}` && (
+                        <InfoWindow position={posisi} onCloseClick={() => setActiveInfo(null)}>
+                          <div className="text-xs">
+                            <p className="font-semibold">{j.driverName}</p>
+                            <p>{j.customerName} · {JOB_TYPE_REAL[j.type]?.label || j.type}</p>
+                            <button
+                              type="button"
+                              className="mt-1 font-semibold text-blue-600 underline"
+                              onClick={() => setOpenJobId(j.jobId)}
+                            >
+                              Buka detail job
+                            </button>
+                          </div>
+                        </InfoWindow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+                {withDestination.map((j) => {
+                  const estimasiDetik = jalurByJob[j.jobId]?.legDurations?.[0];
+                  const posisi = { lat: j.destinationLat, lng: j.destinationLng };
+                  return (
+                    <React.Fragment key={`tujuan-${j.jobId}`}>
+                      <Marker
+                        position={posisi}
+                        icon={destinationIcon(window.google)}
+                        onClick={() => setActiveInfo(`tujuan-${j.jobId}`)}
+                      />
+                      {estimasiDetik != null && <EtaBadge position={posisi}>{formatMenit(estimasiDetik)}</EtaBadge>}
+                      {activeInfo === `tujuan-${j.jobId}` && (
+                        <InfoWindow position={posisi} onCloseClick={() => setActiveInfo(null)}>
+                          <div className="text-xs">
+                            <p className="font-semibold">Tujuan — {j.customerName}</p>
+                            <p>{j.addressText}</p>
+                          </div>
+                        </InfoWindow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </GoogleMap>
+            )}
           </div>
         </Card>
 

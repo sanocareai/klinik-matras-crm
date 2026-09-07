@@ -606,15 +606,21 @@ html:not([data-theme="dark"]) .glass-division h1 {
    punya aturan sama sekali = tidak berefek" — itu benar untuk KEDUA file,
    bukan cuma tokens.css. */
 
-/* ── 9b. PETA (Route Planner & Live Tracking) — D-075, 4 September 2026 ──
-   Laporan owner: peta "masih jauh dari harapan seperti Google Maps", minta
-   lebih simple/minimalist/detail (referensi: kartu rute logistik putih-
-   minimalis dengan badge waktu tempuh). Badge ini menggantikan tooltip
-   Leaflet default (kotak putih + panah lancip) dengan pil mengambang
-   bersih — dipakai RouteMap.jsx (Route Planner, badge menit kumulatif per
-   stop) & ArmadaTracking.jsx (Live Tracking, badge "±N menit lagi" di pin
-   tujuan). Kedua file MEMBERI KELAS ini via prop `className` react-leaflet
-   <Tooltip>, TIDAK ada CSS module/dependency baru. */
+/* ── 9b. PETA (Route Planner & Live Tracking) — D-075, 4 September 2026,
+   DIKOREKSI 8 September 2026 (migrasi Leaflet -> Google Maps JavaScript API,
+   lihat lib/googleMaps.js). Laporan owner: peta "masih jauh dari harapan
+   seperti Google Maps", minta lebih simple/minimalist/detail (referensi:
+   kartu rute logistik putih-minimalis dengan badge waktu tempuh) — badge
+   pil mengambang ini yang menjawabnya. Dipakai RouteMap.jsx (Route Planner,
+   badge menit kumulatif per stop) & ArmadaTracking.jsx (Live Tracking,
+   badge "±N menit lagi" di pin tujuan). SEBELUM migrasi, kelas ini dipasang
+   lewat prop `className` react-leaflet <Tooltip> (bawaan Leaflet punya kotak
+   putih + panah lancip, aturan `::before` di bawah membuang panah itu) —
+   SEKARANG dipasang di <div> polos di dalam komponen OverlayView
+   @react-google-maps/api (googleMapIcons.js/RouteMap.jsx#EtaBadge), yang
+   memang tidak punya panah bawaan sama sekali. Aturan `::before` DIBIARKAN
+   (tidak menimpa apa pun lagi, murni jaga-jaga tidak berbahaya) — cuma
+   komentar ini yang perlu akurat, TIDAK ada CSS module/dependency baru. */
 html:not([data-theme="dark"]) .glass-division .dh-route-eta-badge {
   background: #fff !important;
   color: #1D1D1F !important;

@@ -1,84 +1,40 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GoogleMap, Marker, Polyline, InfoWindow, OverlayView, useJsApiLoader } from "@react-google-maps/api";
 import { MapPinned } from "lucide-react";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { getRoadRoute } from "@/services/osrm.js";
+import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
+import { MAP_STYLE_DARK } from "../googleMapStyle.js";
+import { stopIcon, depotIcon } from "../googleMapIcons.js";
 
-// Peta Route Planner NYATA (31 Agustus 2026) — menggantikan
-// RouteMapPlaceholder.jsx. Leaflet + tile CARTO (D-075, lihat di bawah),
-// GRATIS tanpa API key/billing (sama pola dengan ArmadaTracking.jsx) —
-// Google Maps billing masih REQUEST_DENIED, lihat catatan Fase 2 di
-// services/maps.js.
+// Peta Route Planner NYATA (31 Agustus 2026) — awalnya Leaflet + tile CARTO
+// gratis. DIMIGRASI ke Google Maps JavaScript API sungguhan (8 September
+// 2026) — CARTO tiba-tiba mewajibkan API key akhir Agustus 2026 (basemap
+// gratis berhenti berfungsi, watermark "API KEY REQUIRED" muncul di
+// production), DAN billing Google Cloud sudah aktif hari yang sama (akun
+// baru) — dua alasan sekaligus untuk pindah, bukan cuma tambal CARTO.
+// Lihat catatan panjang di lib/googleMaps.js untuk detail pemisahan key.
 //
-// REDESIGN VISUAL + GARIS JALAN ASLI (D-075, 4 September 2026) — laporan
-// owner: peta "masih jauh dari harapan seperti Google Maps", terutama garis
-// rute LURUS antar titik, dan minta gaya lebih simple/minimalist/detail
-// (referensi: kartu rute restoran/logistik bergaya putih-minimalis dgn
-// badge waktu tempuh). Dua perubahan:
-// 1. Tile OpenStreetMap raster (ramai warna) → CARTO Positron/Dark Matter
-//    (basemaps.cartocdn.com, GRATIS tanpa key) — jalan & bangunan abu-abu
-//    minimalis, cocok dengan tema Delivery Hub terang/gelap yang sudah ada.
-// 2. Garis antar stop sekarang MINTA geometri jalan asli ke OSRM
-//    (services/osrm.js) alih-alih menyambung titik lurus. OSRM server DEMO
-//    publik (bukan SLA production) — kalau gagal/timeout, KEMBALI ke garis
-//    lurus seperti sebelumnya (fallback senyap, bukan error ke user). Badge
-//    "±N menit" di tiap stop (dari legDurations OSRM) meniru bubble waktu
-//    tempuh di referensi — HANYA muncul kalau OSRM berhasil, tidak dipaksa
-//    dari estimasi kasar.
+// Garis antar stop TETAP minta geometri jalan asli ke OSRM (services/osrm.js,
+// server demo publik gratis) — TIDAK diganti Google Directions API. Alasan:
+// OSRM sudah cukup baik untuk garis rute (bukan navigasi turn-by-turn) dan
+// mengaktifkan Directions API berarti API berbayar KETIGA (setelah
+// Geocoding+Distance Matrix) yang belum tentu perlu — kalau nanti garis OSRM
+// dirasa kurang akurat, itu keputusan terpisah, bukan ikut migrasi tile ini.
 //
 // SEMUA RUTE MULAI & BERAKHIR DI KLINIK (D-076, 4 September 2026) — laporan
 // owner: "buat semua jalur mulai dan berakhir di lokasi klinik matras".
 // DEPOT (koordinat sama dengan backend/src/services/maps.js — SATU sumber
 // kebenaran, jangan diketik ulang beda di sini) ditempel sebagai titik
-// PERTAMA & TERAKHIR sebelum diminta ke OSRM, jadi garis rute yang tampil
-// benar-benar bulat-balik dari/ke klinik, bukan cuma stop pertama sampai
-// terakhir. Marker depot SATU untuk seluruh peta (bukan per-rute — semua
-// rute berbagi titik awal yang sama), bentuknya SENGAJA beda dari nomor
-// stop (rumah, bukan lingkaran bernomor) supaya jelas ini titik pangkalan,
-// bukan stop pelanggan.
-const JAKARTA_CENTER = [-6.2088, 106.8456];
+// PERTAMA & TERAKHIR sebelum diminta ke OSRM.
 const PALET_RUTE = ["#2563eb", "#dc2626", "#16a34a", "#f59e0b", "#7c3aed", "#0891b2"];
 
 // Lokasi Klinik Matras by SANO CARE — SAMA PERSIS dengan DEPOT di
 // backend/src/services/maps.js (lihat komentar D-076/koreksi 6 September
-// 2026 di sana untuk sumber koordinatnya — pin lama salah, laporan owner
-// langsung setelah dites bikin rute sungguhan). Duplikasi angka ini TIDAK
-// BISA dihindari (frontend tidak bisa import langsung dari backend), tapi
-// keduanya WAJIB diubah bersamaan kalau lokasi klinik pernah pindah/pin-nya
-// dikoreksi lagi.
+// 2026 di sana untuk sumber koordinatnya). Duplikasi angka ini TIDAK BISA
+// dihindari (frontend tidak bisa import langsung dari backend), tapi
+// keduanya WAJIB diubah bersamaan kalau lokasi klinik pernah pindah.
 const DEPOT = { lat: -6.4036521, lng: 106.7839743, label: "Klinik Matras" };
-
-// CARTO basemap gratis tanpa API key — dipilih sesuai tema aktif supaya
-// menyatu dengan kaca terang/gelap Delivery Hub (bukan tile OSM warna-warni
-// yang kontras keras dengan panel kaca di sekelilingnya).
-const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const TILE_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-
-function stopIcon(warna, nomor) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:${warna};color:white;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)">${nomor}</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
-}
-
-// Marker depot — kotak dengan sudut membulat + ikon rumah sederhana (bukan
-// lingkaran bernomor seperti stop) supaya sekilas mata langsung beda dari
-// stop pelanggan. Warna netral gelap (bukan salah satu warna PALET_RUTE) —
-// depot itu MILIK BERSAMA semua rute, tidak boleh terlihat "punya" satu
-// rute tertentu.
-const depotIcon = L.divIcon({
-  className: "",
-  html: `<div style="background:#1D1D1F;color:white;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>`,
-  iconSize: [30, 30],
-  iconAnchor: [15, 28],
-  popupAnchor: [0, -26],
-});
 
 function formatMenit(detik) {
   const menit = Math.round(detik / 60);
@@ -89,14 +45,28 @@ function formatMenit(detik) {
   return sisaMenit > 0 ? `${jam} j ${sisaMenit} mnt` : `${jam} jam`;
 }
 
-// SATU rute (garis + marker stop-nya) — komponen level-atas sendiri (D-074:
-// jangan didefinisikan di dalam body RouteMap, supaya identitasnya stabil
-// lintas render). Minta geometri jalan asli ke OSRM begitu daftar stop-nya
-// berubah; sementara menunggu/gagal, tampil garis lurus dulu (TIDAK pernah
-// kosong sama sekali) supaya dispatcher tetap lihat urutan rute. Titik yang
-// diminta ke OSRM SELALU [DEPOT, ...stops, DEPOT] (D-076) — garis & badge
-// waktu tempuh jadi bulat-balik dari/ke klinik, bukan cuma antar stop.
-function RouteLine({ route, warna, stops }) {
+// Badge waktu tempuh mengambang di atas marker stop — OverlayView (bukan
+// Marker.label, yang cuma teks polos DI DALAM ikon) supaya bisa dipasangi
+// class CSS `.dh-route-eta-badge` yang sudah ada (delivery-light.css/
+// delivery-dark.css), sama tampilan dengan versi Leaflet Tooltip lama.
+function EtaBadge({ position, children }) {
+  return (
+    <OverlayView
+      position={position}
+      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+      getPixelPositionOffset={(w, h) => ({ x: -w / 2, y: -h - 22 })}
+    >
+      <div className="dh-route-eta-badge">{children}</div>
+    </OverlayView>
+  );
+}
+
+// SATU rute (garis + marker stop-nya). Minta geometri jalan asli ke OSRM
+// begitu daftar stop-nya berubah; sementara menunggu/gagal, tampil garis
+// lurus dulu (TIDAK pernah kosong sama sekali) supaya dispatcher tetap lihat
+// urutan rute. Titik yang diminta ke OSRM SELALU [DEPOT, ...stops, DEPOT]
+// (D-076) — garis & badge waktu tempuh jadi bulat-balik dari/ke klinik.
+function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onStopClose }) {
   const [jalanAsli, setJalanAsli] = useState(null); // { coords, legDurations } | null
 
   useEffect(() => {
@@ -111,34 +81,36 @@ function RouteLine({ route, warna, stops }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stops.map((s) => `${s.id}:${s.lat}:${s.lng}`).join(",")]);
 
-  const garisLurus = [[DEPOT.lat, DEPOT.lng], ...stops.map((s) => [s.lat, s.lng]), [DEPOT.lat, DEPOT.lng]];
-  const posisiGaris = jalanAsli?.coords || garisLurus;
+  const garisLurus = [
+    { lat: DEPOT.lat, lng: DEPOT.lng },
+    ...stops.map((s) => ({ lat: s.lat, lng: s.lng })),
+    { lat: DEPOT.lat, lng: DEPOT.lng },
+  ];
+  const posisiGaris = jalanAsli?.coords
+    ? jalanAsli.coords.map(([lat, lng]) => ({ lat, lng }))
+    : garisLurus;
 
   return (
     <>
-      <Polyline positions={posisiGaris} pathOptions={{ color: warna, weight: 4, opacity: 0.75, lineCap: "round", lineJoin: "round" }} />
+      <Polyline path={posisiGaris} options={{ strokeColor: warna, strokeWeight: 4, strokeOpacity: 0.75, geodesic: false }} />
       {stops.map((s, i) => {
-        // Waktu tempuh KUMULATIF dari KLINIK sampai stop ini — legDurations[0]
-        // = klinik→stop pertama (karena titik yang diminta ke OSRM diawali
-        // DEPOT), jadi stop PERTAMA pun sekarang dapat badge (sebelum D-076
-        // cuma stop ke-2 dst yang punya badge, dihitung dari stop pertama).
         const menitKumulatif = jalanAsli?.legDurations
           ? jalanAsli.legDurations.slice(0, i + 1).reduce((a, b) => a + b, 0)
           : null;
+        const posisi = { lat: s.lat, lng: s.lng };
         return (
-          <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(warna, i + 1)}>
-            {menitKumulatif != null && (
-              <Tooltip permanent direction="top" offset={[0, -14]} className="dh-route-eta-badge" opacity={1}>
-                {formatMenit(menitKumulatif)}
-              </Tooltip>
+          <React.Fragment key={s.id}>
+            <Marker position={posisi} icon={stopIcon(google, warna, i + 1)} onClick={() => onStopClick(s.id)} />
+            {menitKumulatif != null && <EtaBadge position={posisi}>{formatMenit(menitKumulatif)}</EtaBadge>}
+            {activeStop === s.id && (
+              <InfoWindow position={posisi} onCloseClick={onStopClose}>
+                <div className="text-xs">
+                  <p className="font-semibold">{route.code} · stop {i + 1}</p>
+                  <p>{s.addressText}</p>
+                </div>
+              </InfoWindow>
             )}
-            <Popup>
-              <div className="text-xs">
-                <p className="font-semibold">{route.code} · stop {i + 1}</p>
-                <p>{s.addressText}</p>
-              </div>
-            </Popup>
-          </Marker>
+          </React.Fragment>
         );
       })}
     </>
@@ -147,6 +119,13 @@ function RouteLine({ route, warna, stops }) {
 
 export default function RouteMap({ routes }) {
   const { resolved } = useTheme();
+  const { isLoaded } = useJsApiLoader({
+    id: GOOGLE_MAPS_SCRIPT_ID,
+    googleMapsApiKey: GOOGLE_MAPS_JS_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+  const mapRef = useRef(null);
+  const [activeStop, setActiveStop] = useState(null);
 
   const dataRute = useMemo(() => {
     return (routes || []).map((route, i) => {
@@ -159,8 +138,25 @@ export default function RouteMap({ routes }) {
     });
   }, [routes]);
 
-  const semuaTitik = dataRute.flatMap((r) => r.stops.map((s) => [s.lat, s.lng]));
+  const semuaTitik = dataRute.flatMap((r) => r.stops.map((s) => ({ lat: s.lat, lng: s.lng })));
   const adaTitik = semuaTitik.length > 0;
+
+  // Sinyal ringkas perubahan titik (dipakai dependency, bukan array
+  // reference-nya sendiri yang berubah tiap render) — fitBounds MEMANGGIL
+  // peta langsung, tidak lewat prop React biasa.
+  const sinyalTitik = semuaTitik.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|");
+
+  useEffect(() => {
+    if (!mapRef.current || !window.google || semuaTitik.length === 0) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    bounds.extend(DEPOT);
+    for (const p of semuaTitik) bounds.extend(p);
+    mapRef.current.fitBounds(bounds, 40);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinyalTitik, isLoaded]);
+
+  const onLoad = useCallback((map) => { mapRef.current = map; }, []);
+  const onUnmount = useCallback(() => { mapRef.current = null; }, []);
 
   if (!adaTitik) {
     return (
@@ -168,31 +164,57 @@ export default function RouteMap({ routes }) {
         <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
         <p className="text-[12px] font-semibold text-ink2">Peta rute</p>
         <p className="max-w-[260px] text-[10.5px] text-ink3">
-          Belum ada stop dengan koordinat pada tanggal ini — isi alamat job dulu (koordinat terisi otomatis).
+          Belum ada rute draft dengan koordinat untuk dipratinjau — buat/edit rute dulu (koordinat terisi otomatis dari alamat job).
         </p>
       </div>
     );
   }
 
+  if (!GOOGLE_MAPS_JS_KEY) {
+    return (
+      <div className="flex h-[220px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-border bg-inset px-4 text-center">
+        <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
+        <p className="text-[12px] font-semibold text-ink2">Peta belum aktif</p>
+        <p className="max-w-[260px] text-[10.5px] text-ink3">
+          VITE_GOOGLE_MAPS_JS_KEY belum diisi — lihat docs deploy untuk cara mengaktifkannya.
+        </p>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return <div className="flex h-[220px] shrink-0 items-center justify-center rounded-card border border-border bg-inset text-[11.5px] text-ink3">Memuat peta…</div>;
+  }
+
   return (
     <div className="h-[220px] shrink-0 overflow-hidden rounded-card border border-border">
-      {/* key berubah kalau jumlah titik berubah -> remount, sama alasan
-          dengan ArmadaTracking.jsx: react-leaflet cuma baca `center` sekali
-          saat mount pertama. */}
-      <MapContainer key={semuaTitik.length} center={semuaTitik[0]} zoom={11} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
-        <TileLayer attribution={TILE_ATTRIBUTION} url={resolved === "dark" ? TILE_DARK : TILE_LIGHT} />
+      <GoogleMap
+        mapContainerStyle={{ height: "100%", width: "100%" }}
+        center={DEPOT}
+        zoom={11}
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        options={{
+          styles: resolved === "dark" ? MAP_STYLE_DARK : undefined,
+          disableDefaultUI: true,
+          zoomControl: true,
+          clickableIcons: false,
+        }}
+      >
         {dataRute.map(({ route, warna, stops }) => (
-          <RouteLine key={route.id} route={route} warna={warna} stops={stops} />
+          <RouteLine
+            key={route.id}
+            route={route}
+            warna={warna}
+            stops={stops}
+            google={window.google}
+            activeStop={activeStop}
+            onStopClick={setActiveStop}
+            onStopClose={() => setActiveStop(null)}
+          />
         ))}
-        <Marker position={[DEPOT.lat, DEPOT.lng]} icon={depotIcon}>
-          <Popup>
-            <div className="text-xs">
-              <p className="font-semibold">{DEPOT.label}</p>
-              <p>Titik awal &amp; akhir semua rute</p>
-            </div>
-          </Popup>
-        </Marker>
-      </MapContainer>
+        <Marker position={DEPOT} icon={depotIcon(window.google)} title={DEPOT.label} />
+      </GoogleMap>
     </div>
   );
 }
