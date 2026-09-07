@@ -233,7 +233,11 @@ export function orderStatusesForCategory(category) {
   // SHIPPING (5 Sep 2026) ikut ditambahkan ke BARU juga — kasur baru SAMA
   // PERSIS lewat tahap "sedang di jalan diantar" seperti order LAYANAN,
   // cuma tidak lewat PICKUP (tidak ada barang lama yang dijemput).
-  return category === "BARU" ? ["PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+  // PENDING ditambahkan lagi (6 Sep 2026, permintaan owner) SEBELUM
+  // PROCESSING — order BARU baru masuk/dicatat tapi belum mulai dikerjakan
+  // (nunggu konfirmasi/jadwal produksi) butuh tahap "Menunggu" eksplisit,
+  // bukan langsung dianggap Diproses begitu order dibuat.
+  return category === "BARU" ? ["PENDING", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
 }
 
 // ── WARNA STATUS DOMAIN — SATU SUMBER KEBENARAN (Sano Design System v1) ──────

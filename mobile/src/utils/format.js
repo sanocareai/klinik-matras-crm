@@ -85,7 +85,10 @@ export const ORDER_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIP
 // 2 status manual. Cek DULUAN, sebelum cabang BARU.
 export function orderStatusesForCategory(category) {
   if (category === "SEWA") return ["SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
-  return category === "BARU" ? ["PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
+  // PENDING ditambahkan lagi (6 Sep 2026, permintaan owner, paritas dgn
+  // web) SEBELUM PROCESSING — order BARU yang baru masuk/dicatat tapi
+  // belum mulai dikerjakan butuh tahap "Menunggu" eksplisit.
+  return category === "BARU" ? ["PENDING", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "CANCELLED"] : ORDER_STATUSES;
 }
 
 // Bucket tampilan ringkas (4 Sep 2026, paritas dgn frontend/src/utils/format.js)
