@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
-  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight,
+  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, Send,
   Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check,
@@ -79,6 +79,11 @@ const DIVISIONS = {
         items: [
           { to: "/broadcast", label: "Broadcast & Campaign", Icon: Megaphone },
           { to: "/tracking",  label: "Link Pelacakan",       Icon: Link2 },
+          // Broadcast MANUAL admin/leader ke WA pribadi SALES (7 September
+          // 2026) — beda dari "Broadcast & Campaign" di atas (itu ke
+          // PELANGGAN). adminOnly di level section ini sudah cukup, sales
+          // tidak perlu (dan backend menolak) akses halaman ini.
+          { to: "/broadcast-sales", label: "Broadcast Sales", Icon: Send },
         ],
       },
       {

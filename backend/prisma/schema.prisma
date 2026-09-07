@@ -382,6 +382,7 @@ model User {
   productsCreated            Product[]                @relation("ProductCreator")
   productionBlockersOpened   ProductionBlocker[]      @relation("ProductionBlockerOpener")
   productionBlockersResolved ProductionBlocker[]      @relation("ProductionBlockerResolver")
+  staffBroadcastsCreated     StaffBroadcast[]         @relation("StaffBroadcastCreator")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -4202,6 +4203,48 @@ model BroadcastTarget {
   // Menghitung kuota terpakai hari ini.
   @@index([sentAt])
   @@map("broadcast_targets")
+}
+
+enum StaffBroadcastStatus {
+  SCHEDULED // menunggu waktu kirim (scheduledAt)
+  SENT      // worker sudah MENCOBA kirim ke semua penerima — lihat `results`
+            // untuk detail per orang, SENT tidak berarti semua sukses
+  CANCELLED // dibatalkan admin sebelum sempat dikirim
+}
+
+// ─── STAFF BROADCAST (7 September 2026) ────────────────────────────────────
+// Broadcast MANUAL admin/leader ke WA PRIBADI sales (mis. "meeting tanggal
+// X") — TOTAL BEDA dari BroadcastCampaign di atas (itu untuk PELANGGAN,
+// perlu anti-ban daily cap karena volumenya bisa ribuan). Staff broadcast
+// SELALU cuma beberapa penerima (maks jumlah sales aktif, ~8), jadi TIDAK
+// butuh pacing/kuota harian — begitu waktunya tiba, worker kirim ke SEMUA
+// penerima sekaligus dalam satu siklus. TIDAK ADA tabel target terpisah
+// (beda dari BroadcastTarget) — di skala sekecil ini, hasil per-penerima
+// cukup JSON di kolom `results`, bukan baris terpisah per orang.
+model StaffBroadcast {
+  id      String @id @default(cuid())
+  message String
+
+  // Snapshot User.id SAAT DIJADWALKAN — BUKAN "semua sales" yang dihitung
+  // ulang saat kirim, supaya kalau ada sales masuk/keluar di antara waktu
+  // dijadwalkan dan waktu kirim, penerima tetap sesuai yang disetujui
+  // admin (sama filosofi dgn BroadcastTarget.phone yang dibekukan).
+  recipientIds String[]             @default([]) @map("recipient_ids")
+  scheduledAt  DateTime             @map("scheduled_at")
+  status       StaffBroadcastStatus @default(SCHEDULED)
+
+  // Diisi worker SETELAH percobaan kirim:
+  // { [userId]: { nama, phone, status: "TERKIRIM"|"GAGAL", error? } }
+  results Json?
+
+  createdById String?   @map("created_by_id")
+  createdBy   User?     @relation("StaffBroadcastCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime? @map("sent_at")
+
+  // Query terpanas worker: "ambil SCHEDULED yang sudah waktunya".
+  @@index([status, scheduledAt])
+  @@map("staff_broadcasts")
 }
 
 // ─── OAuth 2.1 untuk MCP server (/mcp, /oauth/*) ────────────────────────────

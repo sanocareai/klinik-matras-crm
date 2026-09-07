@@ -26,6 +26,7 @@ const ROUTE_LABELS = {
   "/pipeline":    ["Data", "Pipeline"],
   "/products":    ["Data", "Galeri Produk"],
   "/broadcast":   ["Outreach", "Broadcast & Campaign"],
+  "/broadcast-sales": ["Outreach", "Broadcast Sales"],
   "/laporan":     ["Analitik", "Laporan"],
   "/automation":  ["AI & Otomasi", "Otomasi"],
   "/pengaturan":  ["Pengaturan"],

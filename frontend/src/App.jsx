@@ -32,6 +32,7 @@ const SalesPerformance = lazy(() => import("./pages/SalesPerformance.jsx"));
 const Pengguna      = lazy(() => import("./pages/Pengguna.jsx"));
 const Products      = lazy(() => import("./pages/Products.jsx"));
 const TrackingLinks = lazy(() => import("./pages/TrackingLinks.jsx"));
+const BroadcastSales = lazy(() => import("./pages/BroadcastSales.jsx"));
 const CoPilot       = lazy(() => import("./pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("./pages/Portal.jsx"));
 const DivisionPage  = lazy(() => import("./pages/DivisionPage.jsx"));
@@ -423,6 +424,7 @@ export default function App() {
             <Route path="/pengguna"    element={<Pengguna user={user} />} />
             <Route path="/products"    element={<Products user={user} />} />
             <Route path="/tracking"    element={<TrackingLinks />} />
+            <Route path="/broadcast-sales" element={<BroadcastSales />} />
             <Route path="/copilot"     element={<CoPilot />} />
             {/* Notification Center — kejadian LINTAS workspace. Sengaja BUKAN
                 di bawah /inbox: Inbox khusus percakapan pelanggan (#26/#27). */}

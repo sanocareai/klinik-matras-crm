@@ -809,6 +809,17 @@ export const api = {
     request(`/tracking/links/${id}`, { method: "DELETE" }),
   getTrackingLinkStats: (id) => request(`/tracking/links/${id}/stats`),
 
+  // Broadcast Sales (7 September 2026) — broadcast MANUAL admin/leader ke
+  // WA pribadi sales, terjadwal. Beda dari getBroadcastCampaigns dkk
+  // (routes/broadcast.js, untuk PELANGGAN) — lihat catatan di
+  // routes/staffBroadcast.js.
+  getStaffBroadcasts: () => request("/staff-broadcast"),
+  getStaffBroadcastRecipients: () => request("/staff-broadcast/recipients"),
+  createStaffBroadcast: (data) =>
+    request("/staff-broadcast", { method: "POST", body: JSON.stringify(data) }),
+  cancelStaffBroadcast: (id) =>
+    request(`/staff-broadcast/${id}/cancel`, { method: "POST" }),
+
   // Users
   // Default: hanya user AKTIF (dipakai semua picker assign/transfer sales).
   // Pengguna.jsx (satu-satunya tempat yang perlu kelola akun nonaktif)

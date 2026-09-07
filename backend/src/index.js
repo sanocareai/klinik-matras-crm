@@ -22,6 +22,7 @@ import { dashboardRouter }  from "./routes/dashboard.js";
 import { userRouter }       from "./routes/users.js";
 import { pipelineRouter }   from "./routes/pipeline.js";
 import { broadcastRouter, mulaiWorkerBroadcast }  from "./routes/broadcast.js";
+import { staffBroadcastRouter } from "./routes/staffBroadcast.js";
 import { automationRouter } from "./routes/automation.js";
 import { aiRouter }         from "./routes/ai.js";
 import { replyAssistantRouter } from "./routes/replyAssistant.js";
@@ -55,6 +56,7 @@ import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
+import { startStaffBroadcastWorker } from "./services/staffBroadcastWorker.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
 import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
@@ -149,6 +151,7 @@ app.use("/api/dashboard",    dashboardRouter);
 app.use("/api/users",        userRouter);
 app.use("/api/pipeline",     pipelineRouter);
 app.use("/api/broadcast",    broadcastRouter);
+app.use("/api/staff-broadcast", staffBroadcastRouter);
 app.use("/api/automation",   automationRouter);
 app.use("/api/ai",           aiRouter);
 app.use("/api/ai",           replyAssistantRouter); // Wave 4B.0 — additive, tidak mengubah aiRouter
@@ -260,4 +263,7 @@ server.listen(PORT, () => {
   // ulang tiap restart — dia tinggal melanjutkan target yang masih
   // MENUNGGU, tidak mengulang yang sudah TERKIRIM.
   mulaiWorkerBroadcast();
+  // Broadcast MANUAL admin/leader ke sales (beda dari mulaiWorkerBroadcast
+  // di atas, itu untuk pelanggan) — antrean juga di database, aman restart.
+  startStaffBroadcastWorker();
 });
