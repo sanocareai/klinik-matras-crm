@@ -54,6 +54,7 @@ import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
+import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
 import { startWeeklyNarrativeJob } from "./services/qualityScorer/weeklyNarrative.js";
@@ -239,6 +240,11 @@ server.listen(PORT, () => {
   startReconciliationJob();
   startSlaAlertJob();
   startStaleLeadAlertJob();
+  // Terdaftar tapi DORMAN — enabled:false default (lihat
+  // salesReminderDigestJob.js), tidak pernah kirim WA sampai owner
+  // meninjau contoh pesan (scripts/preview-sales-reminder-digest.js) dan
+  // eksplisit set data/settings.json > salesReminderDigest.enabled = true.
+  startSalesReminderDigestJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
   // DINYALAKAN LAGI (29 Agustus 2026) — sempat dipause krn owner menemukan
