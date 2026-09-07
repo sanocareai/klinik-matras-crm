@@ -254,8 +254,18 @@ async function loadFollowUpDueBySales(config, now) {
     },
   });
 
-  const bySales = new Map(); // salesId -> [{ orderNumber, customerName }]
+  // Dedupe per order (ditemukan lewat preview 7 Sep 2026: order yang
+  // sempat di-DELIVERED lalu dikoreksi lalu DELIVERED lagi tercatat 2 baris
+  // transisi dalam window yang sama — tanpa ini order itu muncul dobel di
+  // pesan). Ambil transisi TERBARU per order.
+  const latestPerOrder = new Map(); // orderId -> transition
   for (const t of transitions) {
+    const existing = latestPerOrder.get(t.order.id);
+    if (!existing || t.createdAt > existing.createdAt) latestPerOrder.set(t.order.id, t);
+  }
+
+  const bySales = new Map(); // salesId -> [{ orderNumber, customerName }]
+  for (const t of latestPerOrder.values()) {
     const salesId = t.order.customer?.assignedSalesId;
     if (!salesId) continue;
 
