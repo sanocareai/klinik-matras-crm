@@ -591,8 +591,10 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 // owner: "Buat Peta" di Route Planner "mental kemana-mana"; DIPERKETAT 8
 // September 2026 jadi LINK-ONLY, lihat catatan panjang di
 // services/maps.js#geocodeAddress) — dipanggil TEPAT SEBELUM
-// buildRouteMapsUrl() di 4 titik (publish, 2x edit darurat, resend, dan
-// endpoint "Buat Peta" sendiri). Job yang BELUM punya koordinat (lat null —
+// buildRouteMapsUrl() di 3 titik (publish, resend, dan endpoint "Buat
+// Peta" sendiri — 2 titik "edit darurat" yang DULU juga memanggil ini
+// SUDAH DICABUT dari auto-broadcast, lihat catatan panjang di PATCH
+// /routes/:id soal kenapa). Job yang BELUM punya koordinat (lat null —
 // kasus paling sering: job auto-buat dari order sales, lihat catatan
 // panjang di services/armadaAutoJob.js soal geocoding yang SENGAJA dilewati
 // saat job lahir) di-geocode DI SINI lewat geocodeAddress() — yang SEKARANG
@@ -1676,21 +1678,20 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       }
       return r;
     });
-    // Rute PUBLISHED yang baru diedit — kabari ulang Natasha (redesain Route
-    // Planner, Sep 2026; target disamakan dari grup driver ke Natasha 6
-    // September 2026, konsisten dengan publish di atas — laporan owner:
-    // "samakan ke Natasha"), sama pola BEST-EFFORT dengan publish pertama.
-    // Label "🔄" membedakan dari pesan publish awal, supaya jelas ini
-    // KOREKSI, bukan rute baru/dobel.
-    if (editingPublished) {
-      try {
-        await ensureJobsGeocoded(updated.jobs);
-        const { url } = buildRouteMapsUrl(updated.jobs);
-        await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
-      } catch (err) {
-        console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
-      }
-    }
+    // Broadcast otomatis DICABUT dari sini (8 September 2026 — laporan
+    // owner: "ada pengeditan jalur, ketika proses pengeditan itu tiba-tiba
+    // auto broadcast beberapa kali padahal pengeditan rute belum selesai
+    // dan belum klik tombol kirim ulang"). AKAR MASALAH: endpoint ini
+    // dipanggil SEKALI PER PERUBAHAN (ganti driver, isi catatan saat blur,
+    // tempel link Maps manual saat blur, dst) — satu sesi "Edit Darurat"
+    // dispatcher WAJAR terdiri dari beberapa perubahan kecil berurutan,
+    // dan SEBELUM ini TIAP perubahan itu langsung mengirim broadcast penuh
+    // (gambar+teks) ke Natasha sendiri-sendiri — bukan cuma di akhir sesi
+    // edit. Sekarang broadcast HANYA lewat aksi eksplisit dispatcher:
+    // tombol "Kirim Ulang" (POST /routes/:id/resend-broadcast, RouteCard.jsx)
+    // begitu mereka BENAR-BENAR selesai mengedit — audit trail
+    // (lastEditReason/lastEditedAt/lastEditedById) TETAP tercatat di atas,
+    // cuma pengiriman WA yang tidak lagi otomatis menempel di tiap PATCH.
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -1833,17 +1834,13 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     });
 
     const updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
-    // Target disamakan ke Natasha 6 September 2026 — lihat catatan lengkap
-    // di PATCH /routes/:id di atas.
-    if (editingPublished) {
-      try {
-        await ensureJobsGeocoded(updated.jobs);
-        const { url } = buildRouteMapsUrl(updated.jobs);
-        await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
-      } catch (err) {
-        console.error("[route-edit] Gagal kirim update rute ke Natasha:", err.message);
-      }
-    }
+    // Broadcast otomatis DICABUT dari sini (8 September 2026) — lihat
+    // catatan panjang di PATCH /routes/:id di atas. Endpoint ini dipanggil
+    // SEKALI PER DRAG (susun ulang/tambah/keluarkan stop) — 1 sesi edit
+    // rute PUBLISHED yang menggeser beberapa stop SEBELUM ini mengirim
+    // broadcast sebanyak jumlah drag-nya, bukan sekali di akhir. Sekarang
+    // dispatcher WAJIB klik "Kirim Ulang" secara sadar begitu benar-benar
+    // selesai mengedit.
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -1889,17 +1886,37 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       }
     }
 
-    const [updatedRoute] = await prisma.$transaction([
-      prisma.route.update({
-        where: { id: route.id },
+    // KLAIM ATOMIK status DRAFT->PUBLISHED (8 September 2026 — laporan owner:
+    // "broadcast ada duplicate... di 1 waktu dia bisa mengirim 2-3 pesan
+    // duplicate yang sama"). AKAR MASALAH: `route.status !== "DRAFT"` di atas
+    // dibaca SEBELUM transaksi ini dimulai — kalau dispatcher klik ganda
+    // (atau klik lambat lalu klik lagi karena tombolnya BELUM sempat
+    // `disabled` di render berikutnya, ada jeda nyata antara klik dan React
+    // benar-benar menonaktifkan tombol), 2-3 request POST /publish nyaris
+    // BERSAMAAN bisa SAMA-SAMA lolos pengecekan awal itu, sama-sama
+    // menerbitkan, sama-sama memanggil kirimRingkasanRuteKeNatasha di bawah
+    // — itu sumber "2-3 pesan duplicate" yang dilaporkan, BUKAN bug di
+    // pengiriman WA-nya sendiri.
+    //
+    // FIX: `updateMany` dengan `where: {status: "DRAFT"}` ATOMIK di level
+    // database — Postgres menjamin cuma SATU dari beberapa UPDATE bersamaan
+    // yang benar-benar mengubah baris (row lock), sisanya `count` 0. Request
+    // yang KALAH berhenti DI SINI (throw), tidak pernah sampai ke transaksi
+    // job/kirim WA di bawahnya — jaminan SATU publish = SATU broadcast, apa
+    // pun kecepatan klik dispatcher.
+    const updatedRoute = await prisma.$transaction(async (tx) => {
+      const klaim = await tx.route.updateMany({
+        where: { id: route.id, status: "DRAFT" },
         data: { status: "PUBLISHED", publishedAt: new Date(), plannedDistanceKm, plannedDurationMin },
-        include: routeInclude,
-      }),
+      });
+      if (klaim.count === 0) {
+        throw new ArmadaError("Rute ini baru saja diterbitkan (mungkin dari klik ganda) — muat ulang halaman untuk lihat status terbaru.");
+      }
       // Salin rencana → penugasan berlaku. deriveStatus: job yang sebelumnya
       // UNSCHEDULED (belum py tanggal/driver) naik ke ASSIGNED sekarang juga
       // punya driver+kendaraan; job yang sudah lebih maju (mis. sudah
       // dijadwalkan manual sebelum masuk rute) status-nya TIDAK dimundurkan.
-      prisma.job.updateMany({
+      await tx.job.updateMany({
         where: { routeId: route.id },
         // helperId ikut disalin (D-077) — DULU cuma driverId/vehicleId,
         // helper WAJIB diisi manual satu-satu di Penjadwalan walau rutenya
@@ -1913,12 +1930,13 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
         // tanpa ini job lama begitu bisa terlanjur publish dengan
         // scheduledDate basi walau sudah dipindah ke rute yang benar.
         data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId, scheduledDate: route.date },
-      }),
-      prisma.job.updateMany({
+      });
+      await tx.job.updateMany({
         where: { routeId: route.id, status: "UNSCHEDULED" },
         data: { status: "ASSIGNED" },
-      }),
-    ]);
+      });
+      return tx.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    });
 
     // Kirim ringkasan rute + link Maps OTOMATIS (redesain Route Planner, Sep
     // 2026) — MENGGANTIKAN langkah manual "dispatcher susun rute sendiri di

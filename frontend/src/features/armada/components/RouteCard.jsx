@@ -1,14 +1,26 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
-import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge, MapsLinkMissingBadge } from "./JobBadges.jsx";
+import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
+import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge } from "./JobBadges.jsx";
+import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+
+// "EST: Di atas 09.00" (8 September 2026, redesain kartu stop — laporan
+// owner: "tambah estimasi jam mungkin bisa disingkat"). Job.timeWindow
+// SELALU salah satu dari 5 preset tetap ("Di atas jam 09.00" dst, lihat
+// ESTIMASI_JAM_PRESET di jobStatus.js) — BUKAN teks bebas, jadi aman
+// dipendekkan dengan regex tetap (bukan tebakan) tanpa risiko memotong
+// kalimat yang formatnya beda-beda.
+function estimasiJamSingkat(timeWindow) {
+  if (!timeWindow) return null;
+  return timeWindow.replace(/^Di atas jam /i, "Di atas ");
+}
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
 // ATAU dari kolom rute lain, plus drag-reorder stop di dalamnya.
@@ -82,8 +94,14 @@ export default function RouteCard({
     // ke driver lain/kurir pihak ketiga seperti Lalamove) — padahal
     // mekanismenya sudah pas untuk itu (lihat guard status TUNTAS di
     // armada.js, stop yang sudah terkirim tidak ikut tertimpa).
+    // Pesan diperjelas (8 September 2026 — laporan owner: broadcast
+    // otomatis nyala berkali-kali di tengah proses edit sebelum selesai)
+    // — SEKARANG mengedit TIDAK LAGI otomatis mengirim apa pun ke Natasha
+    // di tiap perubahan (lihat catatan panjang di armada.js#PATCH
+    // /routes/:id). Dispatcher perlu tahu itu dari awal, bukan menebak
+    // kenapa Natasha tidak dapat kabar setelah selesai edit.
     const alasan = window.prompt(
-      "Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang (mis. kecelakaan - ganti driver, tambah/kurang stop):"
+      "Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang (mis. kecelakaan - ganti driver, tambah/kurang stop).\n\nCatatan: mengedit TIDAK otomatis mengirim update ke Natasha — setelah selesai, klik \"Kirim Ulang\" secara manual."
     );
     if (!alasan?.trim()) return; // batal kalau kosong/Cancel
     setEditingReason(alasan.trim());
@@ -131,9 +149,11 @@ export default function RouteCard({
 
   // "Buat Peta" (redesain Sep 2026) — MENGGANTIKAN langkah manual dispatcher
   // menyusun rute di Google Maps sendiri. Backend membangun ulang URL yang
-  // SAMA yang otomatis dikirim ke grup driver saat publish/edit (satu sumber
-  // kebenaran, GET /armada/routes/:id/maps-link) — tombol ini untuk
-  // preview/share manual di luar momen publish/edit itu.
+  // SAMA yang otomatis dikirim ke Natasha saat publish ATAU "Kirim Ulang"
+  // (satu sumber kebenaran, GET /armada/routes/:id/maps-link) — tombol ini
+  // untuk preview/share manual di luar momen itu. BUKAN lagi "saat edit" —
+  // sejak 8 September 2026 mengedit rute PUBLISHED tidak otomatis mengirim
+  // apa pun lagi, lihat catatan panjang di armada.js#PATCH /routes/:id.
   //
   // KEBIJAKAN LINK-ONLY (8 September 2026, keputusan owner) — stop yang
   // order-nya TIDAK punya link Maps DIKECUALIKAN dari URL peta (bukan lagi
@@ -477,7 +497,16 @@ export default function RouteCard({
                   // Pengambilan=tanpa warna. jobAccentBarStyle mengisi
                   // --dh-bar, hasJobAccentBar menentukan class-nya aktif
                   // atau tidak (Pengambilan tidak py efek apa pun).
-                  "dh-stop-card relative flex select-none items-start gap-1.5 rounded-btn border border-border bg-inset px-2 py-1.5 transition-all duration-150",
+                  // Redesain kartu stop (8 September 2026, permintaan owner
+                  // — susunan info + ikon maps + produk/ukuran, lihat
+                  // catatan per-baris di bawah) — kontainer jadi kolom
+                  // vertikal (flex-col), BUKAN lagi 1 baris avatar+teks
+                  // seperti sebelumnya, supaya semua info yang diminta
+                  // (kota+status, EST jam, nama, produk, alamat, tanggal
+                  // pasti, sales) tersusun rapi turun ke bawah, bukan
+                  // berdesakan di satu baris sempit (kartu ini sekarang
+                  // cuma separuh lebar kolom rute, grid 2 kolom).
+                  "dh-stop-card relative flex select-none flex-col gap-1 rounded-btn border border-border bg-inset px-2.5 py-2 transition-all duration-150",
                   hasJobAccentBar(j) && "dh-bar-left",
                   isEditable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                   dragOverIdx === idx && "ring-2 ring-accent",
@@ -488,54 +517,108 @@ export default function RouteCard({
                   draggingStopId === j.id && "scale-[0.97] opacity-40"
                 )}
               >
-                {isEditable && <GripVertical size={12} className="mt-0.5 shrink-0 text-ink3" aria-hidden />}
-                <span className="mt-0.5 shrink-0 text-[10px] font-bold text-ink3">{idx + 1}.</span>
-                {/* Avatar gradien (D-055) — konsisten dengan pola
-                    avatar-forward di seluruh Delivery Hub (Dashboard,
-                    Papan); sebelumnya stop di sini cuma teks polos tanpa
-                    identitas visual sama sekali. */}
-                <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-5 w-5 shrink-0 text-[8px]" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <RentalBadge job={j} />
+                {/* Baris 1 — nomor urut + drag handle (kiri), badge
+                    kota/status kirim/Sewa/Tanpa link Maps (tengah), aksi
+                    ikon Maps + hapus (kanan). 3 zona jelas, bukan semua
+                    bercampur di satu baris rata dengan avatar seperti versi
+                    lama. */}
+                <div className="flex items-center gap-1.5">
+                  {isEditable && <GripVertical size={12} className="shrink-0 text-ink3" aria-hidden />}
+                  <span className="shrink-0 text-[10px] font-bold text-ink3">{idx + 1}.</span>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                     <CityBadge job={j} />
-                    {/* JobTypeBadge SENGAJA TIDAK dipasang di sini (regresi
-                        6 September 2026 — sempat ditambahkan lagi lewat
-                        commit "badge Pengiriman jadi hijau eksplisit", TAPI
-                        itu menciptakan ULANG persis masalah yang SUDAH
-                        diputuskan owner sebelumnya di commit b87b36d8:
-                        "kita hanya butuh 1 status" — 2 badge teks
-                        [JobTypeBadge Pengambilan/Pengiriman + OrderStatusBadge
-                        Pengambilan/Diproses/Siap Kirim/Pengiriman/Terkirim]
-                        gampang tampil BERDAMPINGAN dengan kata yang SAMA
-                        [mis. "Pengambilan SIAP KIRIM"] dan membingungkan.
-                        Sinyal tipe job [Pengambilan/Pengiriman] TETAP ada
+                    {/* OrderStatusBadge = "status kirim" (Pengambilan/
+                        Diproses/Siap Kirim/Pengiriman/Terkirim). JobTypeBadge
+                        SENGAJA TIDAK dipasang di sini (regresi 6 September
+                        2026 — sempat ditambahkan lagi lewat commit "badge
+                        Pengiriman jadi hijau eksplisit", TAPI itu menciptakan
+                        ULANG persis masalah yang SUDAH diputuskan owner
+                        sebelumnya di commit b87b36d8: "kita hanya butuh 1
+                        status" — 2 badge teks tampil berdampingan dengan kata
+                        yang SAMA dan membingungkan. Sinyal tipe job tetap ada
                         lewat warna glow aksen kiri kartu — jobAccentBarStyle/
-                        hasJobAccentBar di style={} bawah, hijau khusus
-                        Pengiriman — itu yang dimaksud "badge hijau", BUKAN
-                        badge teks kedua. OrderStatusBadge SATU-SATUNYA badge
-                        status teks di kartu ini. */}
+                        hasJobAccentBar di style={} atas. OrderStatusBadge
+                        SATU-SATUNYA badge status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
+                    <RentalBadge job={j} />
                     <MapsLinkMissingBadge job={j} />
                   </div>
-                  <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
-                  <ServiceLabel job={j} />
-                  <div className="truncate text-[10px] text-ink2">{j.addressText || "—"}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <ConfirmedTimeBadge job={j} />
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    {/* Ikon link Maps (8 September 2026, permintaan owner:
+                        "tambah icon maps sebagai link google maps") —
+                        mapsUrl() SATU sumber kebenaran yang sama dipakai
+                        DriverJobs.jsx (prioritas link sales > koordinat >
+                        pencarian teks, lihat jobStatus.js). stopPropagation
+                        supaya klik ikon TIDAK ikut membuka JobDetailDrawer
+                        (onClick kartu di bawah). null kalau tidak ada apa
+                        pun untuk dituju — MapsLinkMissingBadge di atas sudah
+                        menandai kasus itu, ikon ini sengaja tidak dipaksa
+                        tampil kosong/disabled. */}
+                    {mapsUrl(j) && (
+                      <a
+                        href={mapsUrl(j)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Buka lokasi di Google Maps"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink3 transition-colors hover:bg-accentbg hover:text-accent"
+                      >
+                        <MapPinned size={12} />
+                      </a>
+                    )}
+                    {isEditable && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
+                        aria-label={`Keluarkan job dari ${route.code}`}
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink3 transition-colors hover:bg-redbg hover:text-red"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
-                  <JobMetaRow job={j} className="mt-1" />
                 </div>
-                {isEditable && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
-                    aria-label={`Keluarkan job dari ${route.code}`}
-                    className="mt-0.5 shrink-0 text-ink3 transition-colors hover:text-red"
-                  >
-                    <X size={12} />
-                  </button>
+
+                {/* Baris 2 — estimasi jam, opsional (cuma tampil kalau admin
+                    delivery sudah isi Job.timeWindow). */}
+                {estimasiJamSingkat(j.timeWindow) && (
+                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-1.5 py-0.5 text-[10px] font-semibold text-orange">
+                    <Clock size={10} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+                  </span>
                 )}
+
+                {/* Baris 3 — identitas pelanggan (avatar-forward, konsisten
+                    dengan pola avatar-forward Delivery Hub lainnya). */}
+                <div className="flex items-center gap-1.5">
+                  <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-5 w-5 shrink-0 text-[8px]" />
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+                </div>
+
+                {/* Baris 4 — produk & ukuran (8 September 2026, GANTI dari
+                    label layanan generik — permintaan owner: "layanan yang
+                    dipilih diganti jadi detail produk ukuran, bisa ambil
+                    dari inputan order sales, di tab order ada ukuran").
+                    productSummary() SATU sumber kebenaran yang SAMA dipakai
+                    Dashboard (lini produk + jenis + ukuran dari
+                    parseOrderNotes, lihat orderSummary.js) — bukan
+                    implementasi kedua yang bisa diam-diam beda. */}
+                {orderOf(j) && productSummary(orderOf(j)) && (
+                  <p className="truncate text-[10.5px] text-ink2">{productSummary(orderOf(j))}</p>
+                )}
+
+                {/* Baris 5 — alamat lengkap. */}
+                <p className="truncate text-[10px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
+
+                {/* Baris 6 — tanggal PASTI pengambilan & pengiriman.
+                    ConfirmedTimeBadge SUDAH menampilkan KEDUANYA kalau ada
+                    (bukan cuma yang cocok dengan tipe job ini) — sama
+                    prinsip dengan JobDetailDrawer: di CRM sales pickup dan
+                    kirim dua-duanya jelas, lihat catatan panjang di
+                    JobBadges.jsx#ConfirmedTimeBadge. */}
+                <ConfirmedTimeBadge job={j} className="flex-wrap" />
+
+                {/* Baris 7 — sales person pemegang order ini. */}
+                <SalesBadge job={j} className="w-fit" />
               </div>
             ))}
         </div>
