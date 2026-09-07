@@ -19,18 +19,23 @@
 //      sebut eksplisit (BUKAN semua BLOCKER_RULES di orderReadiness.js
 //      frontend, itu daftar lebih luas untuk kebutuhan berbeda/Delivery):
 //      alamat, link Google Maps, jadwal pickup (LAYANAN saja, sama aturan
-//      dgn orderReadiness.js), catatan/keluhan customer.
+//      dgn orderReadiness.js), catatan/keluhan customer. Cuma order yang
+//      dibuat SEJAK config.dataSejakTanggal (default 1 September 2026 —
+//      sistem baru mulai running bulan ini, order lama tidak ditagih PR
+//      yang belum jadi standar saat dibuat).
 //   4. Belum closing HARI INI — nol Order baru (kategori apa saja) sejak
 //      00:00 WIB hari ini. Dikirim HANYA di slot AKHIR HARI (lihat
 //      `eodHour`) — kalau dicek dari pagi, HAMPIR SEMUA sales pasti "belum
 //      closing" (belum waktunya), jadi jam berapa pun disebut. Menyebutnya
 //      dari pagi cuma bikin sales dapat tekanan palsu, bukan pengingat
 //      berguna.
-//   5. Follow-up H+1 setelah Terkirim — order yang baru pindah ke
-//      DELIVERED sekitar followUpAfterDeliveryHours lalu, TAPI belum ada
-//      pesan OUTBOUND apa pun ke customer itu sejak transisi itu (minta
-//      review/testimoni, dst). Sama pola timing dengan #4 — cuma
-//      relevan/berguna dicek di slot akhir hari juga.
+//   5. Follow-up H+1 setelah Terkirim — order yang pindah ke DELIVERED
+//      KEMARIN (batas kalender WIB, lihat loadFollowUpDueBySales), TAPI
+//      belum ada pesan OUTBOUND apa pun ke customer itu sejak transisi itu
+//      (minta review/testimoni, dst). Window kalender (bukan geser per
+//      jam) SENGAJA supaya tiap order HANYA dilaporkan SATU KALI (permintaan
+//      owner: "hanya 1 kali broadcast aja sebagai pengingat") — sama
+//      timing dengan #4, cuma dicek di slot akhir hari.
 //
 // PENERIMA: SENGAJA CUMA role SALES aktif (BUKAN Novi/leader — permintaan
 // eksplisit owner: "jangan ke sales leader, nanti ada skema notifikasi
@@ -77,13 +82,14 @@ const DEFAULT_CONFIG = {
   eodHour: 17, // jam WIB (0-23) tempat poin "belum closing" & "follow-up H+1" ikut disertakan
   unreadThresholdMinutes: 60, // poin 1
   hangingThresholdMinutes: 60, // poin 2
-  followUpAfterDeliveryHours: 24, // poin 5 — window H+1, lihat FOLLOWUP_WINDOW_SLACK_HOURS
+  // Poin 3 & 5 (7 September 2026, permintaan owner) — sistem BARU mulai
+  // running September 2026, order Agustus & sebelumnya dibuat SEBELUM
+  // kolom alamat/link Maps/dst jadi kebiasaan yang diharapkan sales. Order
+  // sebelum tanggal ini TIDAK PERNAH ikut dihitung "perlu dilengkapi" atau
+  // "perlu follow-up", walau statusnya masih aktif — jangan menagih PR
+  // lama yang memang belum jadi standar saat order itu dibuat.
+  dataSejakTanggal: "2026-09-01",
 };
-
-// H+1 dicek dalam JENDELA (bukan "tepat 24 jam"), supaya order yang delivered
-// jam berapa pun kemarin tetap tertangkap oleh SATU slot akhir-hari hari ini
-// — jendela selebar (24h slot antar hari) + sedikit slack, bukan pas 24.0 jam.
-const FOLLOWUP_WINDOW_SLACK_HOURS = 8;
 
 function readConfig() {
   let raw = {};
@@ -173,10 +179,14 @@ async function loadUnansweredBySales(config, now) {
 // production): 304 dari ~388 order sudah DELIVERED — kalau ikut dihitung,
 // digest banjir "kurang link Google Maps" pada order yang SUDAH SELESAI
 // bertahun-tahun, tidak ada apa pun yang bisa ditindaklanjuti sales dari
-// situ. Scope ke order yang MASIH AKTIF saja (belum Terkirim/Dibatalkan).
-async function loadIncompleteDataBySales() {
+// situ. Scope ke order yang MASIH AKTIF saja (belum Terkirim/Dibatalkan),
+// DAN dibuat sejak config.dataSejakTanggal (lihat catatan di DEFAULT_CONFIG).
+async function loadIncompleteDataBySales(config) {
   const orders = await prisma.order.findMany({
-    where: { status: { notIn: ["CANCELLED", "DELIVERED"] } },
+    where: {
+      status: { notIn: ["CANCELLED", "DELIVERED"] },
+      createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) },
+    },
     select: {
       id: true, orderNumber: true, category: true, notes: true,
       deliveryAddress: true, locationUrl: true,
@@ -232,12 +242,25 @@ async function loadZeroClosingSalesIds(salesList, now) {
 }
 
 // ── Poin 5: follow-up H+1 setelah Terkirim (cuma dipakai di slot eodHour) ──
+// Window = PERSIS "kemarin" menurut kalender WIB (batas hari, bukan
+// "24-32 jam lalu") — permintaan owner 7 September 2026: "hanya 1 kali
+// broadcast aja sebagai pengingat". Batas kalender TIDAK PERNAH tumpang
+// tindih antar hari (beda dari window geser berbasis jam yang bisa
+// dobel/bocor kalau waktu cron sedikit meleset) — order yang DELIVERED
+// kemarin (kapan pun jam berapa pun) HANYA masuk window ini SATU KALI,
+// tepat di slot eodHour hari ini, lalu tidak pernah muncul lagi.
 async function loadFollowUpDueBySales(config, now) {
-  const windowEnd = new Date(now - config.followUpAfterDeliveryHours * 3_600_000);
-  const windowStart = new Date(windowEnd.getTime() - FOLLOWUP_WINDOW_SLACK_HOURS * 3_600_000);
+  const { year, month, day } = nowPartsWIB(new Date(now));
+  const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const startToday = startOfDayWIB(todayStr);
+  const startYesterday = new Date(startToday.getTime() - 86_400_000);
 
   const transitions = await prisma.orderStatusTransition.findMany({
-    where: { toStatus: "DELIVERED", createdAt: { gte: windowStart, lte: windowEnd } },
+    where: {
+      toStatus: "DELIVERED",
+      createdAt: { gte: startYesterday, lt: startToday },
+      order: { createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) } },
+    },
     select: {
       createdAt: true,
       order: {
@@ -357,7 +380,7 @@ export async function buildDigest({ referenceNow = new Date() } = {}) {
   });
 
   const { unread, hanging } = await loadUnansweredBySales(config, now);
-  const incompleteBySales = await loadIncompleteDataBySales();
+  const incompleteBySales = await loadIncompleteDataBySales(config);
   const zeroClosingIds = eodSlot ? new Set(await loadZeroClosingSalesIds(salesList, now)) : new Set();
   const followUpBySales = eodSlot ? await loadFollowUpDueBySales(config, now) : new Map();
 
