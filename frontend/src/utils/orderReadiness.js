@@ -44,15 +44,24 @@ export const READINESS_META = {
 // tapi nilainya "belum terjadi" (mis. paymentStatus default BELUM_BAYAR itu
 // bukan kosong) — user sempat bingung dibilang "belum diisi" padahal dia
 // SUDAH pilih "Belum Bayar" secara eksplisit di dropdown.
+// Definisi diperluas (7 Sep 2026, permintaan owner) — ukuran kasur, jadwal
+// pickup, sales pemegang, dan catatan keluhan PINDAH dari PERHATIAN ke
+// BLOCKER. Alasannya: keempatnya ternyata dianggap sama krusialnya dengan
+// alamat/harga sebelum order boleh diserahkan ke Delivery & Fulfillment,
+// bukan cuma "berisiko keliru" — jadi "Wajib Dilengkapi" sekarang mencakup
+// alamat (+link Google Maps), ukuran kasur, jadwal pickup, sales pemegang,
+// dan catatan keluhan. "Perlu Dilengkapi" tinggal SATU hal: pembayaran.
 const BLOCKER_RULES = [
   { key: "customerName",  label: "Nama pelanggan belum diisi", check: (o) => !!o.customerName },
   { key: "customerPhone", label: "Nomor HP belum diisi",       check: (o) => !!o.customerPhone },
-  { key: "address",       label: "Alamat pengiriman belum diisi", check: (o) => !!(o.deliveryAddress || "").trim() },
+  // Alamat teks ATAU link share lokasi Google Maps (Order.locationUrl) —
+  // salah satu cukup, dua-duanya sama-sama menjawab "mau dikirim ke mana".
+  {
+    key: "address", label: "Alamat pengiriman / link Google Maps belum diisi",
+    check: (o) => !!(o.deliveryAddress || "").trim() || !!o.locationUrl,
+  },
   { key: "items",         label: "Belum ada layanan/paket dipilih", check: (o) => (o.items?.length || 0) > 0 },
   { key: "price",         label: "Harga (nilai order) belum diisi", check: (o) => (o.value || 0) > 0 },
-];
-
-const WARNING_RULES = [
   // Ukuran kasur cuma relevan utk lini KASUR — Sofa/Divan punya konsep
   // ukuran berbeda (kalau ada) dan TIDAK memakai field ini, jadi jangan
   // ditandai "kurang lengkap" untuk order yang memang bukan kasur.
@@ -66,14 +75,17 @@ const WARNING_RULES = [
     check: (o) => !!(o.pickupConfirmedDate || o.pickupEstimate),
   },
   { key: "salesOwner", label: "Belum ada sales pemegang", check: (o) => !!o.assignedSales },
-  // Bukan penghalang mutlak (ada kasus sah COD/bayar di tempat), tapi layak
-  // ditinjau sebelum dikirim ke lapangan.
-  { key: "payment", label: "Belum ada pembayaran masuk", check: (o) => o.paymentStatus !== "BELUM_BAYAR" },
   {
     key: "complaintNotes", label: "Catatan keluhan belum diisi",
     relevan: (o) => !!o.hasComplaint,
     check: (o) => !!parseOrderNotes(o.notes).keluhanCustomer,
   },
+];
+
+// Tinggal satu — pembayaran BUKAN penghalang mutlak (ada kasus sah COD/bayar
+// di tempat), tapi tetap layak ditinjau sebelum dikirim ke lapangan.
+const WARNING_RULES = [
+  { key: "payment", label: "Belum ada pembayaran masuk", check: (o) => o.paymentStatus !== "BELUM_BAYAR" },
 ];
 
 /**
@@ -83,7 +95,9 @@ const WARNING_RULES = [
 export function evaluateReadiness(order) {
   if (!order || order.status === "CANCELLED") return null;
 
-  const missingBlockers = BLOCKER_RULES.filter((r) => !r.check(order));
+  const missingBlockers = BLOCKER_RULES
+    .filter((r) => (r.relevan ? r.relevan(order) : true))
+    .filter((r) => !r.check(order));
   const missingWarnings = WARNING_RULES
     .filter((r) => (r.relevan ? r.relevan(order) : true))
     .filter((r) => !r.check(order));
