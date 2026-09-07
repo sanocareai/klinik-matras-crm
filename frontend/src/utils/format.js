@@ -321,7 +321,12 @@ export const ORDER_STATUS_VARIANT = {
 // pemisahan ulang seperti PICKUP di atas), jadi tidak ada "penggabungan
 // lama" yang perlu dikoreksi.
 export const ORDER_STATUS_BUCKET = {
-  PENDING: "PROCESSING",
+  // PENDING (6 Sep 2026) SEMPAT digabung ke bucket PROCESSING/"Diproses" —
+  // salah, karena "Menunggu" sekarang tahap eksplisit yang beda dari
+  // "Diproses" (permintaan owner). Badge/kartu ringkas harus tampil
+  // "Menunggu" sendiri, bukan ikut Diproses, kalau tidak sales bingung
+  // pilih Menunggu tapi kartu tetap bilang Diproses.
+  PENDING: "PENDING",
   PICKUP: "PICKUP",
   PROCESSING: "PROCESSING",
   READY: "READY",
@@ -330,6 +335,7 @@ export const ORDER_STATUS_BUCKET = {
   CANCELLED: "CANCELLED",
 };
 export const ORDER_STATUS_BUCKET_LABELS = {
+  PENDING: "Menunggu",
   PICKUP: "Pengambilan",
   PROCESSING: "Diproses",
   READY: "Siap Kirim",
