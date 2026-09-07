@@ -1,13 +1,38 @@
 import React, { useMemo, useState } from "react";
-import { Package, MapPinned, PackageCheck, Search, X } from "lucide-react";
+import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
-import { customerOf, unitCountOf, cityOf, jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf } from "../jobStatus.js";
-import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge } from "./JobBadges.jsx";
+import {
+  customerOf, orderOf, unitCountOf, cityOf, mapsUrl, conversationIdOf, customerPhoneOf,
+  jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf,
+} from "../jobStatus.js";
+import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge } from "./JobBadges.jsx";
+import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
+import QuickChatModal from "./QuickChatModal.jsx";
+
+// "EST: Di atas 09.00" — SATU SUMBER dengan RouteCard.jsx (duplikasi
+// fungsi murni, bukan import silang antar dua komponen kartu yang
+// sengaja terpisah) — lihat catatan panjang di RouteCard.jsx untuk kenapa
+// data lama butuh dibersihkan dulu ("EST"/"EST:" ganda) sebelum di-prefix.
+function estimasiJamSingkat(timeWindow) {
+  if (!timeWindow) return null;
+  return timeWindow
+    .trim()
+    .replace(/^est\.?:?\s*/i, "")
+    .replace(/^di\s*atas\s*jam\s*/i, "Di atas ");
+}
+
+// Pesan konfirmasi default — SATU SUMBER dengan RouteCard.jsx (duplikasi
+// fungsi murni yang sama alasannya dengan estimasiJamSingkat di atas).
+function pesanKonfirmasiDefault(job) {
+  const nama = customerOf(job) || "Kak";
+  const aksi = job?.type === "PICKUP" ? "pengambilan" : "pengiriman";
+  return `Halo ${nama}, mohon konfirmasi untuk jadwal ${aksi} kasur hari ini — apakah Anda/perwakilan ada di tempat? Terima kasih 🙏`;
+}
 
 // Panel kiri Route Planner: job pada rentang terpilih yang BELUM masuk rute
 // mana pun (routeId=null). Diseret ke salah satu RouteCard di kanan.
@@ -63,6 +88,12 @@ import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 // DOM-nya stabil sepanjang gestur. Kartu stop di RouteCard.jsx TIDAK kena
 // masalah ini karena ditulis inline (bukan komponen bersarang terpisah).
 function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
+  // Chat WA cepat (8 September 2026) — state LOKAL per baris (bukan
+  // diangkat ke UnroutedJobsPanel) karena JobRow SUDAH jadi unit
+  // representasi 1 job sendiri (beda dari RouteCard.jsx yang menampung
+  // BANYAK stop dalam 1 komponen, jadi state chat di sana memang perlu
+  // ada di level kartu rute). Pola sama, level beda.
+  const [chatOpen, setChatOpen] = useState(false);
   return (
     <li
       draggable
@@ -91,22 +122,25 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         // teks bawaan browser (perbaikan valid, tapi TERNYATA bukan akar
         // masalah utama laporan "klik dulu baru bisa pindahkan" — itu
         // bug remount di atas).
-        "dh-job-card relative flex cursor-grab select-none items-start gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
+        //
+        // Redesain (8 September 2026, laporan owner: "make sure semua
+        // dapat tampilan card order yang sama" — panel ini sebelumnya
+        // TERLEWAT saat RouteCard.jsx dirombak, masih pakai layout lama
+        // tanpa ikon chat/Maps & tanpa produk+ukuran). Susunan/konten SAMA
+        // PERSIS dengan stop card RouteCard.jsx sekarang — flex-col,
+        // bukan lagi 1 baris avatar+teks.
+        "dh-job-card relative flex cursor-grab select-none flex-col gap-1 rounded-btn border border-border bg-surface px-2.5 py-2 transition-all duration-150 active:cursor-grabbing",
         hasJobAccentBar(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}
     >
-      <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-0.5 h-6 w-6 shrink-0 text-[9px]" />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1">
-          <RentalBadge job={j} />
-          {/* CityBadge di sini TERASA redundan dengan header section kota
-              di panel ini sendiri, TAPI kartu yang sama (JobRow) juga
-              dipakai secara visual sebagai acuan drag — begitu di-drag ke
-              RouteCard, konteks section-nya hilang. Tetap sengaja
-              ditampilkan, konsisten dengan permintaan "setiap card" &
-              RouteCard.jsx/ArmadaJobs.jsx yang memang tidak py section kota
-              sama sekali. */}
+      {/* Baris 1 — badge kota/status kirim/Sewa (kiri), aksi ikon chat+Maps
+          (kanan). CityBadge di sini TERASA redundan dengan header section
+          kota di panel ini sendiri, TAPI kartu yang sama (JobRow) juga
+          dipakai secara visual sebagai acuan drag — begitu di-drag ke
+          RouteCard, konteks section-nya hilang. Tetap sengaja ditampilkan. */}
+      <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
           <CityBadge job={j} />
           {/* JobTypeBadge SENGAJA TIDAK dipasang — lihat catatan lengkap di
               RouteCard.jsx (regresi "1 status badge per kartu" yang sudah
@@ -114,29 +148,91 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
               Sinyal tipe job tetap ada lewat glow aksen kiri (hijau =
               Pengiriman). OrderStatusBadge SATU-SATUNYA badge status teks. */}
           <OrderStatusBadge job={j} />
-          <MapsLinkMissingBadge job={j} />
+          <RentalBadge job={j} />
         </div>
-        <div className="mt-1 truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
-        <ServiceLabel job={j} />
-        <div className="mt-0.5 truncate text-[10.5px] text-ink2">{j.addressText || "Alamat belum diisi"}</div>
-        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-ink3">
-          {/* Tanggal ikut ditampilkan (D-063, 4 September 2026) — sejak
-              panel ini bisa menampilkan RENTANG tanggal (bukan cuma satu
-              hari terkunci), job dari hari berbeda tercampur dalam satu
-              daftar; tanpa ini tidak ada cara tahu job mana untuk hari
-              apa hanya dari kartunya sendiri. */}
-          {j.scheduledDate && (
-            <>
-              <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
-              <span aria-hidden>·</span>
-            </>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {conversationIdOf(j) && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
+              title="Chat cepat dengan pelanggan"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-greenbg hover:text-green"
+            >
+              <MessageCircle size={16} />
+            </button>
           )}
-          <span>{j.timeWindow || "Tanpa jam"}</span>
-          <span aria-hidden>·</span>
-          <span>{unitCountOf(j)} unit</span>
+          {mapsUrl(j) && (
+            <a
+              href={mapsUrl(j)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Buka lokasi di Google Maps"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-accentbg hover:text-accent"
+            >
+              <MapPinned size={16} />
+            </a>
+          )}
         </div>
-        <div className="mt-1"><ConfirmedTimeBadge job={j} /></div>
       </div>
+
+      {/* Baris 1b — "Tanpa link Maps", baris sendiri (lihat catatan
+          panjang di RouteCard.jsx kenapa TIDAK ikut baris 1 di atas). */}
+      <MapsLinkMissingBadge job={j} className="w-fit" />
+
+      {/* Baris 2 — estimasi jam, opsional. */}
+      {estimasiJamSingkat(j.timeWindow) && (
+        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[11px] font-semibold text-orange">
+          <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+        </span>
+      )}
+
+      {/* Baris 3 — identitas pelanggan. */}
+      <div className="flex items-center gap-1.5">
+        <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-6 w-6 shrink-0 text-[9.5px]" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+      </div>
+
+      {/* Baris 4 — produk & ukuran (GANTI dari label layanan generik, lihat
+          catatan panjang di RouteCard.jsx). */}
+      {orderOf(j) && productSummary(orderOf(j)) && (
+        <p className="truncate text-[11.5px] text-ink2">{productSummary(orderOf(j))}</p>
+      )}
+
+      {/* Baris 5 — alamat. */}
+      <p className="truncate text-[11px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
+
+      {/* Baris 6 — tanggal TERJADWAL + jam + jumlah unit (D-063, 4
+          September 2026) — KHUSUS panel ini (RouteCard.jsx tidak perlu,
+          stop di dalam rute sudah pasti tanggalnya = tanggal rute).
+          Job di panel ini bisa dari HARI BERBEDA-BEDA (rentang tanggal
+          Route Planner), jadi baris ini tetap perlu supaya dispatcher
+          tahu job mana untuk hari apa hanya dari kartunya sendiri. */}
+      <div className="flex items-center gap-1.5 text-[10.5px] text-ink3">
+        {j.scheduledDate && (
+          <>
+            <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
+            <span aria-hidden>·</span>
+          </>
+        )}
+        <span>{unitCountOf(j)} unit</span>
+      </div>
+
+      {/* Baris 7 — tanggal PASTI ambil & kirim. */}
+      <ConfirmedTimeBadge job={j} className="flex-wrap" />
+
+      {/* Baris 8 — sales person. */}
+      <SalesBadge job={j} className="w-fit" />
+
+      {chatOpen && (
+        <QuickChatModal
+          conversationId={conversationIdOf(j)}
+          customerName={customerOf(j)}
+          customerPhone={customerPhoneOf(j)}
+          defaultMessage={pesanKonfirmasiDefault(j)}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </li>
   );
 }

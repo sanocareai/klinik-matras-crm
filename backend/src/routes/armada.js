@@ -900,7 +900,27 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
             // lain — endpoint ini pakai select TERPISAH jadi perlu ditambah
             // di sini juga, bukan otomatis ikut.
             productLine: true, productType: true, notes: true,
-            customer: { select: { id: true, name: true, phone: true } },
+            // conversations (8 September 2026) — lihat catatan panjang di
+            // jobInclude.order.select di atas; endpoint ini pakai select
+            // TERPISAH (override, bukan spread jobInclude.order) jadi perlu
+            // ditambah di sini juga.
+            // assignedSales (8 September 2026) — SalesBadge (JobBadges.jsx)
+            // butuh ini, endpoint ini sebelumnya tidak menyertakannya sama
+            // sekali (beda dari jobInclude.order.select di atas yang sudah
+            // punya sejak D-043) — akar kenapa baris "sales person" tidak
+            // pernah muncul di panel "Belum Masuk Rute" walau sudah ada di
+            // kartu stop RouteCard.jsx.
+            customer: {
+              select: {
+                id: true, name: true, phone: true,
+                assignedSales: { select: { id: true, name: true } },
+                conversations: {
+                  where: { type: "INDIVIDUAL" },
+                  orderBy: { lastMessageAt: "desc" }, take: 1,
+                  select: { id: true },
+                },
+              },
+            },
           },
         },
       },

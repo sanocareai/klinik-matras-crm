@@ -143,11 +143,18 @@ export function ConfirmedTimeBadge({ job, className }) {
   const pickupJob = job?.type === "PICKUP";
   return (
     <span className={cn("inline-flex shrink-0 flex-wrap items-center gap-1", className)}>
+      {/* Biru/accent untuk Ambil, hijau untuk Kirim (8 September 2026,
+          laporan owner: "ubah warna pasti ambil jadi warna biru") — dua
+          warna beda SEKARANG jadi penanda tambahan (Ambil vs Kirim jelas
+          tanpa baca teksnya), sekalian konsisten dengan konvensi warna
+          yang SUDAH ada di tempat lain (jobTypeCardStyle di jobStatus.js:
+          --accent-bg untuk PICKUP, --green-bg untuk DELIVERY). SEBELUM
+          ini keduanya hijau, cuma dibedakan font-bold/font-semibold. */}
       {ambil && (
         <span
           title="Tanggal pengambilan PASTI, sudah dikonfirmasi ke pelanggan"
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 rounded-full bg-greenbg px-2 py-0.5 text-[10.5px] text-green",
+            "inline-flex shrink-0 items-center gap-1 rounded-full bg-accentbg px-2 py-0.5 text-[10.5px] text-accent",
             pickupJob ? "font-bold" : "font-semibold"
           )}
         >

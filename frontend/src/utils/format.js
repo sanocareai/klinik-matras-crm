@@ -285,7 +285,16 @@ export const ORDER_STATUS_VARIANT = {
   PICKUP:    "violet",
   PROCESSING:"info",
   READY:     "info",
-  SHIPPING:  "info", // sama hue dengan READY/PROCESSING — "sedang berjalan" (4-hue rule)
+  // GANTI 8 September 2026 (laporan owner: "ubah warna label status order
+  // untuk label 'pengiriman' jadi warna hijau") — SEBELUMNYA "info" (sama
+  // hue dengan READY/PROCESSING, "sedang berjalan"). Konsisten dengan
+  // jobAccentBarStyle() di jobStatus.js (Route Planner/Jadwal & Penugasan)
+  // yang SUDAH memakai hijau untuk SHIPPING sejak 6 September 2026 — badge
+  // ini menyusul supaya warnanya sama di SEMUA tempat, bukan cuma glow
+  // aksen kartu. Catatan: DELIVERED juga hijau ("success") — dua status
+  // beda makna (sedang dikirim vs sudah sampai) sekarang berbagi hue yang
+  // sama, keputusan sadar owner, bukan kelalaian.
+  SHIPPING:  "success",
   DELIVERED: "success",
   CANCELLED: "neutral",
   SEWA_DIKIRIM: "info",

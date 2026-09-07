@@ -553,10 +553,9 @@ export default function RouteCard({
                 )}
               >
                 {/* Baris 1 — nomor urut + drag handle (kiri), badge
-                    kota/status kirim/Sewa/Tanpa link Maps (tengah), aksi
-                    ikon Maps + hapus (kanan). 3 zona jelas, bukan semua
-                    bercampur di satu baris rata dengan avatar seperti versi
-                    lama. */}
+                    kota/status kirim/Sewa (tengah), aksi ikon chat+Maps+
+                    hapus (kanan). 3 zona jelas, bukan semua bercampur di
+                    satu baris rata dengan avatar seperti versi lama. */}
                 <div className="flex items-center gap-1.5">
                   {isEditable && <GripVertical size={13} className="shrink-0 text-ink3" aria-hidden />}
                   <span className="shrink-0 text-[11px] font-bold text-ink3">{idx + 1}.</span>
@@ -576,7 +575,6 @@ export default function RouteCard({
                         SATU-SATUNYA badge status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
                     <RentalBadge job={j} />
-                    <MapsLinkMissingBadge job={j} />
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">
                     {/* Ikon link Maps (8 September 2026, permintaan owner:
@@ -632,6 +630,18 @@ export default function RouteCard({
                     )}
                   </div>
                 </div>
+
+                {/* Baris 1b — "Tanpa link Maps", baris SENDIRI (8 September
+                    2026, laporan owner: "layoutnya jadi sedikit berantakan"
+                    ketika badge ini ikut baris 1 di atas — waktu badge kota/
+                    status yang sudah 2-3 pil ITU MASIH ditambah pil oranye
+                    ini di flex-wrap yang sama, sering pecah ke baris kedua
+                    yang lebar-nya tanggung DAN sejajar vertikal dengan ikon
+                    aksi kanan [chat/Maps/hapus] yang TIDAK ikut wrap — dua
+                    hal beda tinggi baris jadi rebutan align-items:center.
+                    Baris sendiri, lebar penuh, tidak pernah tabrakan dengan
+                    apa pun. */}
+                <MapsLinkMissingBadge job={j} className="w-fit" />
 
                 {/* Baris 2 — estimasi jam, opsional (cuma tampil kalau admin
                     delivery sudah isi Job.timeWindow). */}
