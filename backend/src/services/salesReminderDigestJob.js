@@ -169,9 +169,14 @@ async function loadUnansweredBySales(config, now) {
 }
 
 // ── Poin 3: data pelanggan wajib dilengkapi (scope sempit, lihat header) ───
+// BUKAN CUMA exclude CANCELLED (ditemukan lewat preview 7 Sep 2026,
+// production): 304 dari ~388 order sudah DELIVERED — kalau ikut dihitung,
+// digest banjir "kurang link Google Maps" pada order yang SUDAH SELESAI
+// bertahun-tahun, tidak ada apa pun yang bisa ditindaklanjuti sales dari
+// situ. Scope ke order yang MASIH AKTIF saja (belum Terkirim/Dibatalkan).
 async function loadIncompleteDataBySales() {
   const orders = await prisma.order.findMany({
-    where: { status: { not: "CANCELLED" } },
+    where: { status: { notIn: ["CANCELLED", "DELIVERED"] } },
     select: {
       id: true, orderNumber: true, category: true, notes: true,
       deliveryAddress: true, locationUrl: true,
