@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { api } from "../../../../api.js";
@@ -37,6 +37,19 @@ export default function CustomerPanel({ conversation, onClose }) {
   // konten — dipakai tautan "+N order lain — lihat semua" di ActiveOrderCard
   // (D-115) untuk melompat ke tab Order.
   const [tab, setTab] = useState("overview");
+  // `.customer-panel` adalah SATU scroll container yang dipakai bersama
+  // oleh keempat tab (Overview/Order/Media/Aktivitas) — bukan tiap tab
+  // punya scroll area sendiri. Bug nyata (laporan owner 7 Sep 2026):
+  // scroll ke bawah di tab Overview (yang panjang), lalu pindah ke tab
+  // Order/Media (jauh lebih pendek) — scrollTop TIDAK pernah direset,
+  // jadi browser tetap di posisi scroll lama yang sekarang sudah lewat
+  // konten baru yang pendek itu: terlihat ruang kosong besar di ATAS,
+  // konten aslinya malah "kepental" ke bawah viewport. Reset scrollTop=0
+  // tiap kali tab berpindah menghilangkan bug ini.
+  const panelRef = useRef(null);
+  useEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }, [tab]);
 
   useEffect(() => {
     // Ganti percakapan/pelanggan sementara OrderEditDrawer terbuka akan
@@ -91,7 +104,7 @@ export default function CustomerPanel({ conversation, onClose }) {
   return (
     <>
       <div className="customer-panel-backdrop" onClick={onClose} />
-      <div className="customer-panel">
+      <div className="customer-panel" ref={panelRef}>
         <ProfileSection customer={customer} conversation={conversation} onUpdate={setCustomer} />
 
         <div style={{ padding: "0 16px 12px" }}>

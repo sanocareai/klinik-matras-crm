@@ -1921,14 +1921,27 @@ body {
    di atas panel kaca gelap. var(--bg-inset) theme-aware (terang: #F5F5F7,
    nyaris sama seperti sebelumnya; gelap: #2C2C2E, membaur dgn panel). */
 .media-gallery-item {
+  position: relative; /* containing block utk .media-gallery-play-badge */
   aspect-ratio: 1; border-radius: 8px; overflow: hidden;
   border: none; padding: 0; cursor: pointer; background: var(--bg-inset);
   display: flex; align-items: center; justify-content: center;
   transition: opacity 0.15s;
 }
 .media-gallery-item:hover { opacity: 0.85; }
-.media-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-gallery-item img,
+.media-gallery-item video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 .media-gallery-thumb-icon { color: var(--text-muted); }
+/* Ikon play di atas thumbnail video (7 Sep 2026) — <video preload="metadata">
+   di JSX sudah menampilkan frame pertama sungguhan sebagai gambar diam
+   (bukan lagi ikon placeholder polos yang sempat tampil blank putih),
+   badge ini cuma penanda "ini video, klik untuk putar". */
+.media-gallery-play-badge {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
 
 /* ─── MEDIA VIEWER (fullscreen lightbox) ─────────────────── */
 .media-viewer-overlay {

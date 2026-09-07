@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Video, X } from "lucide-react";
+import { FileText, Play, X } from "lucide-react";
 import "yet-another-react-lightbox/styles.css";
 import { useMessagesForConv } from "../../stores/messageStore.js";
 
@@ -70,7 +70,22 @@ export default function MediaGallery({ conversationId }) {
           {visibleItems.map((m) => (
             <button key={m.id} className="media-gallery-item" onClick={() => handleClickItem(m)}>
               {m.mediaType === "image" && <img src={m.mediaUrl} alt="" loading="lazy" />}
-              {m.mediaType === "video" && <div className="media-gallery-thumb-icon"><Video size={20} /></div>}
+              {m.mediaType === "video" && (
+                // BUG YANG DIPERBAIKI (laporan owner, 7 Sep 2026): sebelumnya
+                // sel video cuma ikon polos di atas latar (bukan cuma "kurang
+                // menarik" — di sebagian kondisi tampil BLANK PUTIH tanpa ikon
+                // sama sekali kelihatan sama sekali, walau video-nya sendiri
+                // BISA diputar begitu diklik — jadi datanya benar, cuma
+                // preview-nya yang gagal tampil). <video preload="metadata">
+                // TANPA autoplay/controls otomatis menampilkan FRAME PERTAMA
+                // sebagai gambar diam (perilaku native browser) — thumbnail
+                // sungguhan, bukan placeholder ikon yang bisa "hilang".
+                // Ikon play di atasnya cuma penanda visual "ini video".
+                <>
+                  <video src={m.mediaUrl} preload="metadata" muted playsInline />
+                  <span className="media-gallery-play-badge"><Play size={14} fill="white" /></span>
+                </>
+              )}
             </button>
           ))}
         </div>
