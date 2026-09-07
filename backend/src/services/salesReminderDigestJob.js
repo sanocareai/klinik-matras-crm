@@ -90,7 +90,12 @@ const DEFAULT_CONFIG = {
   dataSejakTanggal: "2026-09-01",
 };
 
-function readConfig() {
+// Diekspor (7 Sep 2026) sbg readSalesReminderConfig — services/
+// leaderRecapJob.js WAJIB pakai ambang batas (unreadThresholdMinutes dkk)
+// & dataSejakTanggal yang SAMA PERSIS dengan file ini, supaya "item ini
+// masih belum diselesaikan sales" di rekap Novi konsisten dengan apa yang
+// sungguh-sungguh dikirim ke sales-nya, bukan aturan kedua yang bisa drift.
+export function readConfig() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")); } catch { raw = {}; }
   const stored = raw.salesReminderDigest || {};
@@ -126,7 +131,11 @@ async function kirimWA(phone, pesan, label) {
 // Pola query SAMA dgn checkUnansweredMessages() di slaAlertJob.js (DISTINCT
 // ON pesan terakhir per conversation), ditambah kolom isRead & assignedToId
 // untuk pengelompokan per sales + pemisahan dua kategori.
-async function loadUnansweredBySales(config, now) {
+// `export` (7 Sep 2026) — dipakai ULANG oleh services/leaderRecapJob.js
+// (rekap harian Novi), supaya query & aturan ambang batasnya SATU sumber
+// kebenaran dengan reminder per-sales di file ini, tidak diimplementasi
+// ulang.
+export async function loadUnansweredBySales(config, now) {
   const rows = await prisma.$queryRaw`
     SELECT c.id AS "conversationId", c."assignedToId", c."isRead", cu.name AS "customerName", cu.phone AS "customerPhone",
            m."createdAt" AS "lastInboundAt"
@@ -171,7 +180,7 @@ async function loadUnansweredBySales(config, now) {
 // bertahun-tahun, tidak ada apa pun yang bisa ditindaklanjuti sales dari
 // situ. Scope ke order yang MASIH AKTIF saja (belum Terkirim/Dibatalkan),
 // DAN dibuat sejak config.dataSejakTanggal.
-async function loadIncompleteDataBySales(config) {
+export async function loadIncompleteDataBySales(config) {
   const orders = await prisma.order.findMany({
     where: {
       status: { notIn: ["CANCELLED", "DELIVERED"] },
@@ -211,7 +220,7 @@ async function loadIncompleteDataBySales(config) {
 }
 
 // ── Poin 5: nol closing hari ini ────────────────────────────────────────────
-async function loadZeroClosingSalesIds(salesList, now) {
+export async function loadZeroClosingSalesIds(salesList, now) {
   const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const startToday = startOfDayWIB(todayStr);
@@ -246,7 +255,7 @@ async function loadZeroClosingSalesIds(salesList, now) {
 // spesifik), supaya SATU aturan berlaku utk dua konteks (follow-up
 // testimoni ATAU update dokumentasi produksi) tanpa cek keluar/masuk yang
 // beda-beda tiap kasus.
-async function loadStatusTransitionReminderBySales(config, now, toStatus) {
+export async function loadStatusTransitionReminderBySales(config, now, toStatus) {
   const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const startToday = startOfDayWIB(todayStr);
@@ -443,7 +452,7 @@ async function dispatchSection({ config, dryRun, salesList, label, topicKey, com
   return summary;
 }
 
-async function daftarSalesAktif() {
+export async function daftarSalesAktif() {
   return prisma.user.findMany({ where: { role: "SALES", active: true }, select: { id: true, name: true } });
 }
 

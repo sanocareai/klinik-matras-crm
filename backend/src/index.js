@@ -56,6 +56,7 @@ import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
+import { startLeaderRecapJob } from "./services/leaderRecapJob.js";
 import { startStaffBroadcastWorker } from "./services/staffBroadcastWorker.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
@@ -248,6 +249,9 @@ server.listen(PORT, () => {
   // meninjau contoh pesan (scripts/preview-sales-reminder-digest.js) dan
   // eksplisit set data/settings.json > salesReminderDigest.enabled = true.
   startSalesReminderDigestJob();
+  // Rekap tim harian ke leader (Novi) — juga DORMAN, sama pola (lihat
+  // scripts/preview-leader-recap.js + data/settings.json > leaderRecap.enabled).
+  startLeaderRecapJob();
   startQualityScorerJob();
   startWeeklyNarrativeJob();
   // DINYALAKAN LAGI (29 Agustus 2026) — sempat dipause krn owner menemukan
