@@ -105,6 +105,23 @@ export function orderOf(job) {
 // langsung dulu, jatuh ke jalur berlapis units[].unit.order kalau job.order
 // belum ke-load). Dipakai CustomerProfileCard (JobBadges.jsx) untuk tombol
 // telepon langsung di kartu identitas pelanggan.
+// ID percakapan WA INDIVIDUAL terakhir milik customer ini (8 September
+// 2026, laporan owner: mau chat cepat dari Route Planner tanpa pindah ke
+// Inbox) — backend (jobInclude#customer.select, armada.js) hanya
+// menyertakan 1 percakapan TERBARU, sudah difilter type INDIVIDUAL di
+// query (bukan grup). null kalau customer belum pernah punya percakapan
+// individual sama sekali (jarang — order baru bisa lahir tanpa customer
+// chat dulu lewat sales manual) — pemanggil (RouteCard.jsx) yang
+// memutuskan sembunyikan ikon chat kalau null, BUKAN tombol
+// disabled/rusak yang tetap tampil.
+export function conversationIdOf(job) {
+  return (
+    job?.order?.customer?.conversations?.[0]?.id ||
+    job?.units?.[0]?.unit?.order?.customer?.conversations?.[0]?.id ||
+    null
+  );
+}
+
 export function customerPhoneOf(job) {
   return (
     job?.order?.customer?.phone ||

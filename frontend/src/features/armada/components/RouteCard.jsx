@@ -1,25 +1,47 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
+import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import QuickChatModal from "./QuickChatModal.jsx";
+
+// Pesan konfirmasi default (8 September 2026) — dipakai mengisi kotak
+// teks QuickChatModal begitu ikon chat diklik, supaya admin delivery
+// tinggal cek/kirim, bukan mengetik dari nol tiap kali. TETAP bisa diubah
+// bebas sebelum dikirim, ini cuma titik awal.
+function pesanKonfirmasiDefault(job) {
+  const nama = customerOf(job) || "Kak";
+  const aksi = job?.type === "PICKUP" ? "pengambilan" : "pengiriman";
+  return `Halo ${nama}, mohon konfirmasi untuk jadwal ${aksi} kasur hari ini — apakah Anda/perwakilan ada di tempat? Terima kasih 🙏`;
+}
 
 // "EST: Di atas 09.00" (8 September 2026, redesain kartu stop — laporan
 // owner: "tambah estimasi jam mungkin bisa disingkat"). Job.timeWindow
-// SELALU salah satu dari 5 preset tetap ("Di atas jam 09.00" dst, lihat
-// ESTIMASI_JAM_PRESET di jobStatus.js) — BUKAN teks bebas, jadi aman
-// dipendekkan dengan regex tetap (bukan tebakan) tanpa risiko memotong
-// kalimat yang formatnya beda-beda.
+// SEHARUSNYA salah satu dari 5 preset tetap ("Di atas jam 09.00" dst,
+// lihat ESTIMASI_JAM_PRESET di jobStatus.js) sejak preset ini ada (6
+// September 2026) — TAPI field-nya String bebas di database, jadi data
+// LEBIH LAMA dari sebelum preset ini dibuat bisa berisi apa saja (BUG
+// NYATA ditemukan lewat data production: satu job menyimpan literal "EST
+// Diatas jam 13.00 (40)" — kalau di-prefix "EST:" begitu saja hasilnya
+// dobel "EST: EST Diatas..."). Dua langkah dibersihkan SEBELUM prefix
+// "EST:" ditambahkan sendiri: buang "EST"/"EST:" yang mungkin SUDAH ada
+// di data lama, lalu rapikan "Di atas jam"/"Diatas jam" (spasi longgar,
+// data lama kadang tanpa spasi) jadi "Di atas " yang konsisten. Sisa teks
+// lain (mis. "(40)" di contoh nyata di atas) DIBIARKAN apa adanya — tidak
+// tahu pasti maksudnya, lebih jujur ditampilkan daripada ditebak dibuang.
 function estimasiJamSingkat(timeWindow) {
   if (!timeWindow) return null;
-  return timeWindow.replace(/^Di atas jam /i, "Di atas ");
+  return timeWindow
+    .trim()
+    .replace(/^est\.?:?\s*/i, "")
+    .replace(/^di\s*atas\s*jam\s*/i, "Di atas ");
 }
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -70,6 +92,11 @@ export default function RouteCard({
   const [manualMapsUrlDraft, setManualMapsUrlDraft] = useState(route.manualMapsUrl || "");
   const [resendBusy, setResendBusy] = useState(false);
   const [resendSent, setResendSent] = useState(false);
+  // Job yang QuickChatModal SEDANG dibuka untuknya (8 September 2026,
+  // permintaan owner: chat WA cepat tanpa pindah ke Inbox) — null = modal
+  // tertutup. Disimpan sebagai objek job (bukan cuma id) supaya modal
+  // punya conversationId/nama/nomor tanpa fetch ulang.
+  const [chatJob, setChatJob] = useState(null);
 
   const jobs = route.jobs || [];
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
@@ -201,12 +228,13 @@ export default function RouteCard({
   }
 
   return (
-    // w-full (D-060, 4 September 2026) — SEBELUMNYA w-[300px] shrink-0,
-    // dibuat untuk baris flex yang digulir horizontal (ArmadaRoutes.jsx
-    // lama). Sekarang parent-nya grid yang membungkus ke baris baru, jadi
-    // kartu ini harus mengisi lebar KOLOM grid (ditentukan grid-cols di
-    // ArmadaRoutes.jsx), bukan memaksa lebar sendiri 300px yang bisa
-    // meleset dari lebar kolom sesungguhnya.
+    <>
+    {/* w-full (D-060, 4 September 2026) — SEBELUMNYA w-[300px] shrink-0,
+        dibuat untuk baris flex yang digulir horizontal (ArmadaRoutes.jsx
+        lama). Sekarang parent-nya grid yang membungkus ke baris baru, jadi
+        kartu ini harus mengisi lebar KOLOM grid (ditentukan grid-cols di
+        ArmadaRoutes.jsx), bukan memaksa lebar sendiri 300px yang bisa
+        meleset dari lebar kolom sesungguhnya. */}
     <div className={cn(
       "flex h-full min-h-[280px] w-full flex-col rounded-card border bg-surface",
       route.status === "CANCELLED" ? "border-border opacity-60" : "border-border"
@@ -442,7 +470,14 @@ export default function RouteCard({
             {isEditable ? "Seret job ke sini" : "Tidak ada stop"}
           </p>
         ) : (
-        <div className="grid grid-cols-2 gap-1.5">
+        // items-start (8 September 2026, laporan owner: "masih ada space
+        // kosong seperti ini") — CSS grid SECARA DEFAULT meregangkan tiap
+        // item mengisi tinggi PENUH barisnya (align-items: stretch), jadi
+        // kartu yang isinya lebih sedikit (mis. belum ada produk/tanggal
+        // pasti) ikut ditarik setinggi kartu tetangganya yang isinya lebih
+        // banyak — itu ruang kosong di bawah yang dilaporkan. items-start
+        // membiarkan tiap kartu setinggi konten aslinya sendiri.
+        <div className="grid grid-cols-2 items-start gap-1.5">
           {jobs
             .slice()
             .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
@@ -523,8 +558,8 @@ export default function RouteCard({
                     bercampur di satu baris rata dengan avatar seperti versi
                     lama. */}
                 <div className="flex items-center gap-1.5">
-                  {isEditable && <GripVertical size={12} className="shrink-0 text-ink3" aria-hidden />}
-                  <span className="shrink-0 text-[10px] font-bold text-ink3">{idx + 1}.</span>
+                  {isEditable && <GripVertical size={13} className="shrink-0 text-ink3" aria-hidden />}
+                  <span className="shrink-0 text-[11px] font-bold text-ink3">{idx + 1}.</span>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                     <CityBadge job={j} />
                     {/* OrderStatusBadge = "status kirim" (Pengambilan/
@@ -554,6 +589,25 @@ export default function RouteCard({
                         pun untuk dituju — MapsLinkMissingBadge di atas sudah
                         menandai kasus itu, ikon ini sengaja tidak dipaksa
                         tampil kosong/disabled. */}
+                    {/* Ikon chat WA cepat (8 September 2026, permintaan
+                        owner: "admin sales butuh konfirmasi kembali sebelum
+                        rute berjalan untuk memastikan customer ada di
+                        tempat, jadi gaperlu pergi ke sales crm dulu, trus
+                        buka inbox") — buka QuickChatModal.jsx, BUKAN
+                        navigasi ke Inbox. null kalau customer belum pernah
+                        punya percakapan individual sama sekali (jarang),
+                        sama pola dengan ikon Maps di atas: sembunyikan
+                        daripada tampil rusak/disabled. */}
+                    {conversationIdOf(j) && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setChatJob(j); }}
+                        title="Chat cepat dengan pelanggan"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-greenbg hover:text-green"
+                      >
+                        <MessageCircle size={16} />
+                      </button>
+                    )}
                     {mapsUrl(j) && (
                       <a
                         href={mapsUrl(j)}
@@ -561,9 +615,9 @@ export default function RouteCard({
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         title="Buka lokasi di Google Maps"
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink3 transition-colors hover:bg-accentbg hover:text-accent"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-accentbg hover:text-accent"
                       >
-                        <MapPinned size={12} />
+                        <MapPinned size={16} />
                       </a>
                     )}
                     {isEditable && (
@@ -571,9 +625,9 @@ export default function RouteCard({
                         type="button"
                         onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
                         aria-label={`Keluarkan job dari ${route.code}`}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink3 transition-colors hover:bg-redbg hover:text-red"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-redbg hover:text-red"
                       >
-                        <X size={12} />
+                        <X size={14} />
                       </button>
                     )}
                   </div>
@@ -582,16 +636,16 @@ export default function RouteCard({
                 {/* Baris 2 — estimasi jam, opsional (cuma tampil kalau admin
                     delivery sudah isi Job.timeWindow). */}
                 {estimasiJamSingkat(j.timeWindow) && (
-                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-1.5 py-0.5 text-[10px] font-semibold text-orange">
-                    <Clock size={10} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[11px] font-semibold text-orange">
+                    <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
                   </span>
                 )}
 
                 {/* Baris 3 — identitas pelanggan (avatar-forward, konsisten
                     dengan pola avatar-forward Delivery Hub lainnya). */}
                 <div className="flex items-center gap-1.5">
-                  <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-5 w-5 shrink-0 text-[8px]" />
-                  <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+                  <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-6 w-6 shrink-0 text-[9.5px]" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
                 </div>
 
                 {/* Baris 4 — produk & ukuran (8 September 2026, GANTI dari
@@ -603,11 +657,11 @@ export default function RouteCard({
                     parseOrderNotes, lihat orderSummary.js) — bukan
                     implementasi kedua yang bisa diam-diam beda. */}
                 {orderOf(j) && productSummary(orderOf(j)) && (
-                  <p className="truncate text-[10.5px] text-ink2">{productSummary(orderOf(j))}</p>
+                  <p className="truncate text-[11.5px] text-ink2">{productSummary(orderOf(j))}</p>
                 )}
 
                 {/* Baris 5 — alamat lengkap. */}
-                <p className="truncate text-[10px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
+                <p className="truncate text-[11px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
 
                 {/* Baris 6 — tanggal PASTI pengambilan & pengiriman.
                     ConfirmedTimeBadge SUDAH menampilkan KEDUANYA kalau ada
@@ -701,5 +755,16 @@ export default function RouteCard({
         </div>
       )}
     </div>
+
+    {chatJob && (
+      <QuickChatModal
+        conversationId={conversationIdOf(chatJob)}
+        customerName={customerOf(chatJob)}
+        customerPhone={customerPhoneOf(chatJob)}
+        defaultMessage={pesanKonfirmasiDefault(chatJob)}
+        onClose={() => setChatJob(null)}
+      />
+    )}
+    </>
   );
 }

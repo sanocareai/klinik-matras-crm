@@ -507,7 +507,23 @@ const jobInclude = {
       // SATU-SATUNYA tempat JSON Order.notes di-parse untuk merk/ukuran,
       // reuse bukan duplikasi ketiga kalinya) untuk ambil ukuranKasur.
       productLine: true, productType: true, notes: true,
-      customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
+      // conversations (8 September 2026, laporan owner: mau chat WA cepat
+      // dari Route Planner tanpa pindah ke Inbox) — pola SAMA persis dengan
+      // GET /orders di routes/orders.js (conversationId untuk buka chat
+      // langsung dari baris order): ambil percakapan INDIVIDUAL TERAKHIR
+      // saja (bukan grup, bukan riwayat lengkap) supaya query tetap ringan
+      // untuk endpoint yang dipanggil berulang kali (list job/rute).
+      customer: {
+        select: {
+          id: true, name: true, phone: true,
+          assignedSales: { select: { id: true, name: true } },
+          conversations: {
+            where: { type: "INDIVIDUAL" },
+            orderBy: { lastMessageAt: "desc" }, take: 1,
+            select: { id: true },
+          },
+        },
+      },
     },
   },
   payments: {
@@ -549,7 +565,23 @@ const jobInclude = {
               // assignedSales (D-043, 2 September 2026) — laporan owner:
               // dispatcher perlu tahu SIAPA sales yang pegang order ini
               // (buat koordinasi/tanya-jawab), bukan cuma nama customer.
-              customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { id: true, name: true } } } },
+              // conversations (8 September 2026, laporan owner: mau chat WA cepat
+      // dari Route Planner tanpa pindah ke Inbox) — pola SAMA persis dengan
+      // GET /orders di routes/orders.js (conversationId untuk buka chat
+      // langsung dari baris order): ambil percakapan INDIVIDUAL TERAKHIR
+      // saja (bukan grup, bukan riwayat lengkap) supaya query tetap ringan
+      // untuk endpoint yang dipanggil berulang kali (list job/rute).
+      customer: {
+        select: {
+          id: true, name: true, phone: true,
+          assignedSales: { select: { id: true, name: true } },
+          conversations: {
+            where: { type: "INDIVIDUAL" },
+            orderBy: { lastMessageAt: "desc" }, take: 1,
+            select: { id: true },
+          },
+        },
+      },
             },
           },
         },
