@@ -807,6 +807,14 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
             // locationUrl (6 September 2026) — lihat catatan panjang di
             // jobInclude.order.select di atas.
             locationUrl: true,
+            // productLine/productType/notes (6 September 2026) — Dashboard
+            // Control Tower butuh produk+ukuran di baris antrean "Perlu
+            // Dijadwalkan" (produkLineLabel + parseOrderNotesForInvoice,
+            // sama pola yang sudah dipakai broadcast rute). Field yang
+            // SAMA sudah ditambahkan ke jobInclude di atas untuk keperluan
+            // lain — endpoint ini pakai select TERPISAH jadi perlu ditambah
+            // di sini juga, bukan otomatis ikut.
+            productLine: true, productType: true, notes: true,
             customer: { select: { id: true, name: true, phone: true } },
           },
         },

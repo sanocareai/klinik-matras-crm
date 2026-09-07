@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Plus, AlertTriangle, Truck as TruckIcon, Package, CalendarClock, Search, UserPlus, ChevronDown,
-  Clock, Navigation, MapPin, CheckCircle2, XCircle,
+  Navigation, CheckCircle2, Users, History, ChevronRight, X, ShieldCheck, Activity,
 } from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -17,9 +17,14 @@ import {
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import Avatar from "@/components/Avatar.jsx";
-import DeliveryKpiRow from "@/features/armada/components/DeliveryKpiRow.jsx";
+import DashboardSnapshot from "@/features/armada/components/DashboardSnapshot.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
-import { JOB_STATUS_REAL, JOB_TYPE_REAL, customerOf, orderNumberOf, isJobOverdue, overdueDays } from "@/features/armada/jobStatus.js";
+import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
+import { toWIB, formatRelatif } from "@/utils/formatDate.js";
+import {
+  JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES, customerOf, orderNumberOf, orderOf, cityOf,
+  confirmedDateOf, isJobOverdue, overdueDays,
+} from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
 
 const TAMPIL_AWAL = 8;
@@ -30,6 +35,20 @@ const TAMPIL_AWAL = 8;
 // mendesak ditugaskan.
 function hariMenunggu(createdAt) {
   return Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000);
+}
+
+// Jarak garis lurus (haversine, km) — POLA SAMA dengan
+// backend/src/services/maps.js#haversineMeters, dipakai di sini untuk
+// perkiraan sisa jarak driver EN_ROUTE ke titik tujuan (Active Operations,
+// lihat catatan panjang di bawah). BUKAN jarak jalan sungguhan — makanya
+// SELALU dilabeli "≈" di UI, tidak pernah ditampilkan sebagai angka pasti.
+function haversineKm(a, b) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
 // Dropdown "Tugaskan" — 1 tombol ringkas per baris, chip driver baru
@@ -116,24 +135,57 @@ function TugaskanDropdown({ drivers, helpers, busy, onPick }) {
   );
 }
 
-// Dashboard Delivery & Fulfillment — DATA NYATA (22 Agustus 2026, D-035).
-//
-// MENGGANTIKAN Tahap 1 yang 100% deliveryMock.js. Halaman ini sekarang
-// memakai enum status/tipe SUNGGUHAN (jobStatus.js#JOB_STATUS_REAL — 8
-// status, bukan 10 status versi spesifikasi lama, lihat catatan panjang di
-// sana) dan sumber data nyata: GET /armada/jobs?date= untuk job hari ini,
-// GET /armada/vehicles untuk armada + dokumen yang mau kadaluarsa.
-//
-// "Aktivitas Terbaru" versi Tahap 1 SENGAJA DIHAPUS, bukan diisi data
-// kosong — tidak ada log aktivitas terpadu di backend (job status berubah
-// tanpa event terpisah yang disimpan), jadi menampilkan widget itu cuma
-// akan kosong atau butuh mengarang data. Lebih jujur tidak menampilkannya
-// sampai memang ada sumbernya.
-//
-// KPI di sini menghitung dari job sesuai RENTANG YANG DIPILIH di header
-// (D-083, default "Semua" — bukan cuma hari ini lagi), bukan agregat
-// keseluruhan tanpa filter sama sekali.
+// Baris pencarian kecil dipakai berulang di halaman ini (Perlu Dijadwalkan,
+// Jadwal Hari Ini) — pola yang sama persis dengan UnroutedJobsPanel.jsx
+// (Route Planner, 6 September 2026), disatukan di sini supaya tidak ditulis
+// ulang 2x dengan kemungkinan drift kecil.
+function KotakCari({ value, onChange, placeholder }) {
+  return (
+    <div className="relative ml-auto min-w-[180px] max-w-[240px] flex-1">
+      <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-8 w-full rounded-full border border-border bg-inset pl-8 pr-7 text-[12px] text-ink outline-none focus:border-accent"
+      />
+      {value && (
+        <button
+          type="button" onClick={() => onChange("")} aria-label="Hapus pencarian"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-ink3 hover:text-ink"
+        >
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
 
+// Dashboard Delivery & Fulfillment — "Control Tower" (7 September 2026,
+// redesain penuh atas brief owner).
+//
+// MENGGANTIKAN versi KPI-dan-daftar (22 Agustus–6 September 2026, D-035
+// dst). Filosofi lama tetap dipegang — DATA NYATA saja, tidak ada widget
+// yang ditampilkan tanpa sumber nyata di belakangnya (lihat catatan
+// "Aktivitas Terbaru SENGAJA DIHAPUS" versi lama) — tapi susunannya
+// dirombak supaya halaman ini menjawab "apa yang sedang terjadi + apa yang
+// butuh tindakan SEKARANG" dalam sekali pandang, bukan cuma laporan angka.
+//
+// Bagian yang SENGAJA TIDAK dibangun di redesain ini (brief sendiri minta
+// jangan pura-pura ada kalau memang belum ada):
+//   · Kartu rekomendasi "AI Next Dispatch Decision" — tidak ada AI/mesin
+//     rekomendasi di backend, brief eksplisit bilang "hide the card" kalau
+//     belum diimplementasi.
+//   · ETA menit presisi — diganti estimasi JARAK (haversine) + kapan ping
+//     GPS terakhir, dilabeli "≈", lihat haversineKm() di atas.
+//   · Badge "Live"/WebSocket real-time — infrastrukturnya belum ada di
+//     halaman ini (Socket.IO baru dipakai Inbox), tidak dikarang di sini.
+//   · CTA "Hubungi Customer" kontekstual di antrean — draft awal brief
+//     minta tombol WA/Inbox langsung dari baris antrean, tapi itu perlu
+//     join Customer→Conversation yang belum ada di endpoint job manapun.
+//     Dipangkas jadi tag informasi "Belum dikonfirmasi" saja (lihat
+//     render baris Perlu Dijadwalkan) — CTA tetap TugaskanDropdown seperti
+//     sebelumnya, sesuai jalur fallback yang memang direncanakan.
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -154,37 +206,40 @@ function dokumenBermasalah(vehicles) {
   return out.sort((a, b) => a.sisaHari - b.sisaHari);
 }
 
+// Chip jam kunjungan dari Job.timeWindow ("Di atas jam 09.00" dst, lihat
+// ESTIMASI_JAM_PRESET di jobStatus.js) — dipendekkan jadi "09.00" saja
+// untuk agenda "Jadwal Hari Ini", teks aslinya sudah cukup terwakili
+// karena SEMUA preset yang ada memang bermakna "di atas jam X".
+function jamChip(timeWindow) {
+  const m = /(\d{1,2}[.:]\d{2})/.exec(timeWindow || "");
+  return m ? m[1] : null;
+}
+
 export default function ArmadaDashboard() {
   const navigate = useNavigate();
-  // Date range picker (D-082/D-083, 5 September 2026) — laporan owner:
-  // "dashboard, laporan, semua yang ada skema tanggal buat tanggalnya sama
-  // konsisten", lalu "default tanggal pilih semua hari dulu". DatePicker
-  // satu-hari diganti DateRangePicker, default "Semua" (SATU skema tanggal
-  // yang sama dengan Dashboard/Laporan/Route Planner — yang juga default
-  // "Semua"), dipakai APA ADANYA untuk memfilter daftar job (GET
-  // /armada/jobs sudah dukung `from`/`to`, TIDAK perlu jatuh ke satu hari
-  // seperti board Armada.jsx yang backend-nya memang cuma dukung satu
-  // tanggal).
+  // Date range picker (D-082/083, 5 September 2026 — lalu diubah lagi 7
+  // September 2026 sebagai bagian redesain Control Tower).
+  //
+  // DEFAULT SEKARANG "Hari ini" (preset "today" di lib/dateRange.js), BUKAN
+  // lagi "Semua" — keputusan sadar brief owner: dashboard operasional harus
+  // langsung menjawab kondisi HARI INI begitu dibuka, "Semua" cuma masuk
+  // akal untuk laporan historis (halaman Laporan tetap default "Semua",
+  // TIDAK berubah). Preset "Semua" TETAP tersedia di picker, cuma bukan
+  // default lagi — DateRangePicker.jsx sudah lama menampilkannya sebagai
+  // salah satu SIMPLE_PRESETS satu-klik, tidak perlu perubahan di sana.
   //
   // scheduledDate saat quick-assign (tugaskanCepat di bawah) SENGAJA
   // TIDAK ikut mengambang bareng `range` — itu selalu HARI INI pasti
   // (todayISO() langsung, bukan diturunkan dari filter tampilan), sesuai
   // maksud aslinya di komentar tugaskanCepat: "job punya jadwal HARI INI".
-  // Menampilkan rentang 30 hari lalu di layar tidak boleh diam-diam
-  // menjadwalkan job baru ke 30 hari lalu juga — dua hal yang beda,
-  // sekarang benar-benar dipisah (sebelumnya SALAH digabung lewat variabel
-  // `tanggal` yang sama, gara-gara meniru pola `tanggalRuteBaru` Route
-  // Planner yang sebenarnya tidak cocok di sini).
-  const [range, setRange] = useState(() => makeRange("all_time"));
+  const [range, setRange] = useState(() => makeRange("today"));
   const [jobs, setJobs] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   // Job BELUM TERJADWAL (scheduledDate null) — SENGAJA query terpisah dari
   // `jobs` di atas, TANPA filter tanggal (24-30 Agustus 2026, D-036). Job
   // yang baru lahir otomatis dari order sales (armadaAutoJob.js) tidak
   // punya tanggal sampai dispatcher mengisinya — kalau ikut query `date:
-  // tanggal` yang sama, job itu TIDAK PERNAH kelihatan di sini (persis bug
-  // yang bikin dashboard tampil nol job padahal Sales CRM sudah punya 22
-  // order "Pengambilan"). Panel ini yang menutup kesenjangan itu.
+  // tanggal` yang sama, job itu TIDAK PERNAH kelihatan di sini.
   const [unscheduled, setUnscheduled] = useState(null);
   const [drivers, setDrivers] = useState([]);
   const [helpers, setHelpers] = useState([]);
@@ -192,6 +247,15 @@ export default function ArmadaDashboard() {
   const [assigningId, setAssigningId] = useState(null);
   const [cariPerlu, setCariPerlu] = useState("");
   const [tampilSemua, setTampilSemua] = useState(false);
+  const [cariJadwal, setCariJadwal] = useState("");
+
+  // Posisi GPS terakhir tiap job EN_ROUTE (Active Operations di bawah) —
+  // fetch TERPISAH dari load() utama, sengaja (7 September 2026, brief
+  // owner poin "loading/error state per widget": "a tracking-fetch failure
+  // must not blank out the rest of the page"). `null` = belum sempat
+  // dimuat, `[]` = sudah dimuat, tidak ada job EN_ROUTE / semua tanpa ping.
+  const [tracking, setTracking] = useState(null);
+  const [trackingError, setTrackingError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,6 +283,17 @@ export default function ArmadaDashboard() {
     }
   }, [range]);
 
+  const loadTracking = useCallback(async () => {
+    try {
+      const data = await api.getArmadaTracking();
+      setTracking(data || []);
+      setTrackingError(false);
+    } catch {
+      setTracking([]);
+      setTrackingError(true);
+    }
+  }, []);
+
   // Assign 1-tap langsung dari panel "Perlu Dijadwalkan" (D-036) — dispatcher
   // tidak perlu buka drawer sama sekali untuk kasus paling umum: ketuk
   // avatar driver, job langsung ASSIGNED (kalau kendaraan cuma 1, backend/
@@ -234,12 +309,7 @@ export default function ArmadaDashboard() {
     if (!driverId) return;
     setAssigningId(jobId);
     try {
-      // scheduledDate SELALU hari ini (lihat catatan D-083 di deklarasi
-      // `range` di atas) — TIDAK ikut filter tampilan yang sedang dipilih.
       const patch = { driverId, scheduledDate: todayISO() };
-      // helperId OPSIONAL (D-037) — cuma disertakan kalau memang dipilih
-      // lewat submenu "+ Helper" di TugaskanDropdown, supaya klik nama
-      // driver polos tidak diam-diam menghapus helper yang sudah ada.
       if (helperId) patch.helperId = helperId;
       await api.updateArmadaJob(jobId, patch);
       await load();
@@ -251,82 +321,208 @@ export default function ArmadaDashboard() {
   }
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadTracking(); }, [loadTracking]);
 
-  const kpi = useMemo(() => {
-    if (!jobs) return [];
-    const hitung = (pred) => jobs.filter(pred).length;
-    return [
-      { key: "UNSCHEDULED", label: "Belum Dijadwalkan", value: hitung((j) => j.status === "UNSCHEDULED"), tone: "neutral", icon: Clock },
-      { key: "ASSIGNED",    label: "Driver Ditugaskan",  value: hitung((j) => j.status === "ASSIGNED"),    tone: "accent",  icon: TruckIcon },
-      { key: "EN_ROUTE",    label: "Menuju Lokasi",      value: hitung((j) => j.status === "EN_ROUTE"),    tone: "accent",  icon: Navigation },
-      { key: "ARRIVED",     label: "Tiba di Lokasi",     value: hitung((j) => j.status === "ARRIVED"),     tone: "accent",  icon: MapPin },
-      { key: "COMPLETED",   label: "Selesai",            value: hitung((j) => j.status === "COMPLETED"),   tone: "green",   icon: CheckCircle2 },
-      { key: "FAILED",      label: "Gagal",              value: hitung((j) => j.status === "FAILED"),      tone: "red",     icon: XCircle },
-    ];
-  }, [jobs]);
-
-  const statusChart = useMemo(() => {
-    if (!jobs) return [];
-    return Object.entries(JOB_STATUS_REAL).map(([key, def]) => ({
-      key, label: def.label, tone: def.tone, value: jobs.filter((j) => j.status === key).length,
-    }));
-  }, [jobs]);
-  const maxChart = Math.max(1, ...statusChart.map((s) => s.value));
-
-  // Terlama menunggu duluan (job auto-buat urut createdAt, tapi ditegaskan
-  // lagi di sini supaya urutan visual TIDAK diam-diam berubah kalau
-  // urutan API berubah) + saring pencarian, lalu batasi tampilan awal.
-  const perluDijadwalkanUrut = useMemo(() => {
-    const list = (unscheduled || []).slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    const q = cariPerlu.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((j) => `${orderNumberOf(j)} ${customerOf(j)}`.toLowerCase().includes(q));
-  }, [unscheduled, cariPerlu]);
-  const perluDijadwalkanTampil = tampilSemua ? perluDijadwalkanUrut : perluDijadwalkanUrut.slice(0, TAMPIL_AWAL);
+  // ─── Turunan dasar dari `jobs` (rentang aktif, default Hari Ini) ─────────
+  const pickupCount = useMemo(() => (jobs || []).filter((j) => j.type === "PICKUP").length, [jobs]);
+  const deliveryCount = useMemo(() => (jobs || []).filter((j) => j.type === "DELIVERY").length, [jobs]);
+  const completedCount = useMemo(() => (jobs || []).filter((j) => j.status === "COMPLETED").length, [jobs]);
+  const driversActiveCount = useMemo(
+    () => new Set((jobs || []).filter((j) => j.driverId).map((j) => j.driverId)).size,
+    [jobs]
+  );
 
   const dokIssues = useMemo(() => dokumenBermasalah(vehicles.filter((v) => v.active)), [vehicles]);
-  // Job yang tanggal terjadwalnya SUDAH LEWAT tapi belum selesai (redesain
-  // Sep 2026, docs/ARMADA-REDESIGN-2026.md — Gap "SLA monitoring"). Beda dari
-  // panel "Perlu Dijadwalkan" di atas (job yang BELUM PERNAH dapat tanggal
-  // sama sekali) — ini job yang SUDAH dijanjikan ke tanggal tertentu tapi
-  // janjinya terlewat. Ditaruh di kartu "Butuh Perhatian" yang sudah ada
-  // (bukan kartu baru) karena maknanya sama: sesuatu yang butuh tindakan
-  // dispatcher SEKARANG, sama seperti dokumen kendaraan kadaluarsa.
+  // Job yang tanggal terjadwalnya SUDAH LEWAT tapi belum selesai — beda dari
+  // panel "Perlu Dijadwalkan" (job yang BELUM PERNAH dapat tanggal sama
+  // sekali). Lihat isJobOverdue() di jobStatus.js untuk definisi lengkap.
   const overdueJobs = useMemo(() => (jobs || []).filter(isJobOverdue).sort((a, b) => overdueDays(b) - overdueDays(a)), [jobs]);
+  // Sudah terjadwal (tanggal ADA) tapi belum ada driver — sinyal risiko
+  // BARU (redesain Control Tower): job ini janjinya sudah dibuat ("job
+  // hari ini") tapi belum tentu benar-benar berangkat, beda dari overdueJobs
+  // (janji yang sudah TERBUKTI terlewat) dan beda dari `unscheduled` (belum
+  // punya tanggal SAMA SEKALI).
+  const noDriverScheduled = useMemo(
+    () => (jobs || []).filter((j) => j.scheduledDate && !j.driverId && ACTIVE_STATUSES.includes(j.status)),
+    [jobs]
+  );
   const fleetByStatus = useMemo(() => {
     const out = {};
     for (const v of vehicles) if (v.active) out[v.status] = (out[v.status] || 0) + 1;
     return out;
   }, [vehicles]);
 
+  // Terlama menunggu duluan (job auto-buat urut createdAt) + saring
+  // pencarian, lalu batasi tampilan awal. Tiebreaker KEDUA (7 September
+  // 2026, redesain Control Tower): kalau dua job sama-sama lahir hari yang
+  // sama, yang BELUM dikonfirmasi tanggalnya ke customer (confirmedDateOf
+  // null) naik duluan — bukan skor tersembunyi, cuma pemisah untuk kasus
+  // seri yang sebelumnya diam-diam jatuh ke urutan API.
+  const perluDijadwalkanUrut = useMemo(() => {
+    const list = (unscheduled || []).slice().sort((a, b) => {
+      const diff = new Date(a.createdAt) - new Date(b.createdAt);
+      if (diff !== 0) return diff;
+      return (confirmedDateOf(a) ? 1 : 0) - (confirmedDateOf(b) ? 1 : 0);
+    });
+    const q = cariPerlu.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((j) => `${orderNumberOf(j)} ${customerOf(j)}`.toLowerCase().includes(q));
+  }, [unscheduled, cariPerlu]);
+  const perluDijadwalkanTampil = tampilSemua ? perluDijadwalkanUrut : perluDijadwalkanUrut.slice(0, TAMPIL_AWAL);
+
+  // ─── Needs Attention — gabungan 3 sinyal nyata, diberi label tingkat ────
+  // keparahan TEKS (bukan warna saja — brief eksplisit minta aksesibilitas:
+  // "Critical/Warning", bukan cuma titik merah/oranye tanpa keterangan).
+  // Kritis DULUAN (job terlambat + dokumen yang SUDAH kadaluarsa), baru
+  // Perhatian (dokumen mau habis + job terjadwal tanpa driver).
+  const needsAttention = useMemo(() => {
+    const items = [];
+    for (const j of overdueJobs) {
+      items.push({
+        severity: "critical", key: `overdue-${j.id}`,
+        title: `${customerOf(j) || "Tanpa nama"} · ${orderNumberOf(j) || "—"}`,
+        detail: `Terlambat ${overdueDays(j)} hari dari jadwal`,
+        onClick: () => navigate(`/armada/jobs?job=${j.id}`),
+      });
+    }
+    for (const d of dokIssues) {
+      items.push({
+        severity: d.lewat ? "critical" : "warning", key: `dok-${d.vehicle.id}-${d.label}`,
+        title: `${d.vehicle.plateNumber} · ${d.label}`,
+        detail: d.lewat ? `Kadaluarsa ${Math.abs(d.sisaHari)} hari lalu` : `${d.sisaHari} hari lagi`,
+        onClick: () => navigate("/armada/pengaturan?tab=armada"),
+      });
+    }
+    for (const j of noDriverScheduled) {
+      items.push({
+        severity: "warning", key: `nodriver-${j.id}`,
+        title: `${customerOf(j) || "Tanpa nama"} · ${orderNumberOf(j) || "—"}`,
+        detail: "Sudah terjadwal, belum ada driver",
+        onClick: () => navigate(`/armada/jobs?job=${j.id}`),
+      });
+    }
+    const rank = { critical: 0, warning: 1 };
+    return items.sort((a, b) => rank[a.severity] - rank[b.severity]);
+  }, [overdueJobs, dokIssues, noDriverScheduled, navigate]);
+
+  // ─── Active Operations — job yang SEDANG berlangsung sekarang ───────────
+  // (EN_ROUTE/ARRIVED), dari `jobs` yang sama (rentang aktif, default Hari
+  // Ini) — SENGAJA tidak fetch terpisah tanpa filter tanggal, konsisten
+  // dengan aturan halaman ini yang sudah ada (D-082/083: semua widget di
+  // sini ikut `range` yang dipilih di header, bukan diam-diam "selalu
+  // sekarang" untuk satu kartu saja).
+  const activeOps = useMemo(
+    () => (jobs || []).filter((j) => j.status === "EN_ROUTE" || j.status === "ARRIVED"),
+    [jobs]
+  );
+  const trackingByJob = useMemo(() => new Map((tracking || []).map((t) => [t.jobId, t])), [tracking]);
+
+  function estimasiJarak(job) {
+    if (job.status === "ARRIVED") return { label: "Tiba di lokasi", tone: "text-green" };
+    const t = trackingByJob.get(job.id);
+    if (!t?.lastPosition) return { label: "Menuju lokasi · GPS belum tersedia", tone: "text-ink3" };
+    if (job.lat == null || job.lng == null) return { label: "Menuju lokasi", tone: "text-ink3" };
+    const km = haversineKm({ lat: job.lat, lng: job.lng }, { lat: t.lastPosition.lat, lng: t.lastPosition.lng });
+    return { label: `≈${km.toFixed(1)} km lagi · update ${formatRelatif(t.lastPosition.recordedAt)}`, tone: "text-ink2" };
+  }
+
+  // ─── Jadwal Hari Ini — agenda terurut jam kunjungan (bukan tabel rata) ──
+  // Job dengan Job.timeWindow yang bisa dibaca jamnya tampil DULUAN sesuai
+  // urutan jam; yang belum diisi jatuh ke BAWAH (bukan dipaksa urutan
+  // tebakan) — pola disiplin yang sama dengan isJobOverdue soal timeWindow
+  // teks bebas di jobStatus.js.
+  const jadwalUrut = useMemo(() => {
+    const parseJam = (job) => {
+      const m = jamChip(job.timeWindow);
+      if (!m) return Infinity;
+      const [h, mnt] = m.split(/[.:]/).map(Number);
+      return h * 60 + (mnt || 0);
+    };
+    const list = (jobs || []).slice().sort((a, b) => parseJam(a) - parseJam(b) || (customerOf(a) || "").localeCompare(customerOf(b) || ""));
+    const q = cariJadwal.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((j) => `${orderNumberOf(j)} ${customerOf(j)} ${cityOf(j) || ""}`.toLowerCase().includes(q));
+  }, [jobs, cariJadwal]);
+
+  // ─── Kapasitas Driver — hitungan NYATA per driver, TANPA denominator
+  // karangan (brief sempat minta "3/8 · 60%" tapi tidak ada field kapasitas
+  // maksimal driver di skema manapun — menampilkannya berarti mengarang
+  // angka, jadi sengaja cuma hitungan job hari ini per driver).
+  const bebanDriver = useMemo(() => {
+    const byDriver = new Map();
+    for (const j of jobs || []) {
+      if (!j.driverId) continue;
+      const key = j.driverId;
+      const cur = byDriver.get(key) || { driver: j.driver, count: 0 };
+      cur.count += 1;
+      byDriver.set(key, cur);
+    }
+    return Array.from(byDriver.values()).sort((a, b) => b.count - a.count);
+  }, [jobs]);
+
+  // ─── Operational Health — turunan Job.scheduledDate vs Job.completedAt,
+  // BUKAN chart "Job per Status" lama. "Tepat Waktu" dihitung HANYA dari
+  // job yang benar-benar sudah COMPLETED dan punya kedua tanggal itu —
+  // job yang belum selesai/belum ada tanggal tidak ikut dihitung (bukan
+  // dianggap "tepat waktu" secara default).
+  const kesehatanOperasi = useMemo(() => {
+    const selesai = (jobs || []).filter((j) => j.status === "COMPLETED" && j.completedAt && j.scheduledDate);
+    let tepatWaktu = 0;
+    for (const j of selesai) {
+      const selisih = toWIB(j.completedAt).startOf("day").diff(toWIB(j.scheduledDate).startOf("day"), "day");
+      if (selisih <= 0) tepatWaktu += 1;
+    }
+    const persenTepatWaktu = selesai.length ? Math.round((tepatWaktu / selesai.length) * 100) : null;
+    return {
+      persenTepatWaktu, dasarPersen: selesai.length,
+      atRisk: noDriverScheduled.length,
+      breached: overdueJobs.length,
+      failed: (jobs || []).filter((j) => j.status === "FAILED").length,
+    };
+  }, [jobs, noDriverScheduled, overdueJobs]);
+
+  // ─── Recent Activity — turunan dari field TIMESTAMP yang SUDAH ADA di
+  // Job (completedAt/updatedAt), BUKAN tabel activity-log baru (memang
+  // belum ada, lihat catatan lama di file ini soal "Aktivitas Terbaru
+  // SENGAJA DIHAPUS"). Tiap job cuma menyumbang SATU baris — kondisi
+  // TERKINI-nya, bukan riwayat lengkap semua perubahan (sistem ini tidak
+  // menyimpan histori event per job) — supaya tidak menyiratkan lebih
+  // detail dari yang sebenarnya tersedia.
+  const aktivitasTerbaru = useMemo(() => {
+    const rows = [];
+    for (const j of jobs || []) {
+      const nama = customerOf(j) || "Tanpa nama";
+      if (j.status === "COMPLETED" && j.completedAt) {
+        rows.push({ key: j.id, at: j.completedAt, text: `${nama} — Selesai`, jobId: j.id });
+      } else if (j.status === "FAILED") {
+        rows.push({ key: j.id, at: j.updatedAt, text: `${nama} — Gagal`, jobId: j.id });
+      } else if (j.driverId) {
+        rows.push({ key: j.id, at: j.updatedAt, text: `${nama} — Driver ditugaskan: ${j.driver?.name || "—"}`, jobId: j.id });
+      } else if (confirmedDateOf(j)) {
+        rows.push({ key: j.id, at: j.updatedAt, text: `${nama} — Tanggal dikonfirmasi`, jobId: j.id });
+      }
+    }
+    return rows.sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 10);
+  }, [jobs]);
+
   return (
     <PageContainer>
       <PageHeader
         title="Delivery &amp; Fulfillment"
-        // Subjudul menyebut ANGKA antrean, bukan kalimat statis (D-050,
-        // mengikuti mockup). Kalimat generik "kelola jadwal, penugasan…"
-        // sama isinya tiap hari dan berhenti dibaca setelah hari pertama;
-        // yang benar-benar berubah tiap pagi adalah berapa order yang
-        // menumpuk. Menunggu `unscheduled` selesai load dulu supaya tidak
-        // sempat berkedip "0 job" sebelum datanya masuk.
+        // Subjudul menyebut ANGKA antrean + SLA (redesain Control Tower) —
+        // kalimat generik "kelola jadwal, penugasan…" sama isinya tiap hari
+        // dan berhenti dibaca setelah hari pertama; yang berubah tiap pagi
+        // adalah berapa order menumpuk DAN berapa yang sudah terlambat.
         subtitle={
-          unscheduled?.length
-            ? `Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman — ${unscheduled.length} job menunggu dijadwalkan hari ini.`
-            : "Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman."
+          loading
+            ? "Memuat kondisi operasional…"
+            : `Kelola jadwal, penugasan, rute, dan penyelesaian job pengiriman — ${unscheduled?.length ?? 0} job menunggu dijadwalkan` +
+              (overdueJobs.length ? `, ${overdueJobs.length} job terlambat dari jadwal` : "") + "."
         }
-        // Toolbar turun ke baris sendiri di bawah judul, rata kiri — lihat
-        // catatan `actionsBelow` di components/ui/page.jsx.
         actionsBelow
         actions={
           <>
             <DateRangePicker value={range} onChange={setRange} />
-            {/* Shortcut ke tab Armada (bukan cuma Jadwal & Penugasan) — dispatcher
-                yang baru sadar kendaraannya belum lengkap (lihat panel "Butuh
-                Perhatian" di bawah) sebelumnya harus buka Pengaturan Delivery
-                lalu klik tab Armada sendiri. ?tab=armada dibaca
-                ArmadaPengaturan.jsx supaya langsung mendarat di tab yang
-                benar. Path pindah dari /armada/resources ke /armada/pengaturan
-                (D-084) — halaman ini direstruktur jadi "Pengaturan Delivery". */}
             <Button size="sm" variant="ghost" onClick={() => navigate("/armada/pengaturan?tab=armada&action=tambah")}>
               <TruckIcon size={14} /> Tambah Kendaraan
             </Button>
@@ -338,24 +534,94 @@ export default function ArmadaDashboard() {
       />
 
       <PageBody>
-        {/* KPI harian DULU, baru antrean (D-050, 4 September 2026).
-            ⚠️ Ini MEMBALIK urutan D-036, yang sengaja menaruh "Perlu
-            Dijadwalkan" paling atas. Keputusan owner setelah membandingkan
-            dengan mockup: urutan mockup yang dipakai. Antrean tidak hilang
-            penekanannya — kartunya tetap satu-satunya yang berborder aksen
-            dan membawa hitungan besar, dan angka antrean itu sekarang juga
-            ikut disebut di subjudul halaman (kelihatan tanpa scroll). */}
+        {/* 1. Today's Operational Snapshot — 1 kartu utama (antrean belum
+            terjadwal) + 4 kartu pendamping, MENGGANTIKAN grid 6-kartu rata
+            DeliveryKpiRow khusus di halaman ini. */}
         {loading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[86px] animate-pulse rounded-card bg-inset" />)}
+            <div className="col-span-2 h-[120px] animate-pulse rounded-card bg-inset sm:col-span-3 lg:col-span-2" />
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[120px] animate-pulse rounded-card bg-inset" />)}
           </div>
         ) : (
-          <DeliveryKpiRow items={kpi} />
+          <DashboardSnapshot
+            primary={{
+              label: "Perlu Dijadwalkan", value: unscheduled?.length ?? 0,
+              sub: "Order menunggu driver & tanggal", icon: CalendarClock,
+              onClick: () => navigate("/armada/jobs?status=UNSCHEDULED"),
+            }}
+            secondary={[
+              {
+                key: "jobs", label: "Job — " + formatRangeText(range), value: jobs?.length ?? 0,
+                sub: `${pickupCount} Pengambilan · ${deliveryCount} Pengiriman`, tone: "accent", icon: Package,
+                onClick: () => navigate("/armada/jobs"),
+              },
+              {
+                key: "drivers", label: "Driver Aktif", value: driversActiveCount,
+                sub: `dari ${drivers.length} driver terdaftar`, tone: "accent", icon: Users,
+              },
+              {
+                key: "sla", label: "Terlambat (SLA)", value: overdueJobs.length,
+                sub: overdueJobs.length ? "job lewat dari jadwal" : "Tidak ada keterlambatan",
+                tone: overdueJobs.length ? "red" : "green", icon: AlertTriangle,
+              },
+              {
+                key: "selesai", label: "Selesai", value: completedCount,
+                sub: `dari ${jobs?.length ?? 0} job — ${formatRangeText(range)}`, tone: "green", icon: CheckCircle2,
+                onClick: () => navigate("/armada/jobs?status=COMPLETED"),
+              },
+            ]}
+          />
         )}
 
-        {/* Antrean kerja dispatcher yang sesungguhnya: order dari Sales CRM
-            yang sudah butuh diambil/dikirim tapi belum ada driver+tanggal —
-            lihat catatan di state `unscheduled` di atas. */}
+        {/* 2. Needs Attention — DIPROMOSIKAN ke atas antrean (brief owner:
+            ini yang paling butuh dilihat duluan), gabungan job terlambat +
+            dokumen kendaraan + job terjadwal tanpa driver. Lihat
+            needsAttention useMemo di atas untuk aturan gabungnya. */}
+        <Card className="p-4">
+          <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+            <AlertTriangle size={14} className="text-orange" /> Needs Attention
+          </h3>
+          {loading ? <TableSkeletonRows rows={3} cols={1} /> : needsAttention.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-btn bg-greenbg/40 px-3 py-2.5 text-[12.5px] font-semibold text-green">
+              <ShieldCheck size={15} /> Operations Healthy — tidak ada job terlambat, dokumen kadaluarsa, atau job tanpa driver.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {needsAttention.slice(0, 8).map((n) => (
+                <button
+                  key={n.key}
+                  type="button"
+                  onClick={n.onClick}
+                  className="flex items-start gap-2 border-b border-line pb-2.5 text-left last:border-0 last:pb-0 hover:bg-hovertint"
+                >
+                  <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full", n.severity === "critical" ? "bg-red" : "bg-orange")} />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-ink">
+                      <span className={cn("text-[9.5px] font-bold uppercase tracking-wide", n.severity === "critical" ? "text-red" : "text-orange")}>
+                        {n.severity === "critical" ? "Kritis" : "Perhatian"}
+                      </span>
+                      · {n.title}
+                    </p>
+                    <p className={cn("text-[11px]", n.severity === "critical" ? "text-red" : "text-ink3")}>{n.detail}</p>
+                  </div>
+                </button>
+              ))}
+              {needsAttention.length > 8 && (
+                <p className="text-[11px] text-ink3">+{needsAttention.length - 8} isu lainnya.</p>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {/* 3. Unscheduled Queue ("Perlu Dijadwalkan") — antrean kerja
+            dispatcher yang sesungguhnya, sekarang dengan baris produk+ukuran
+            (D-036 lanjutan, 7 September 2026) dan tag "Belum dikonfirmasi"
+            netral (BUKAN warna alarm — lihat catatan panjang di useMemo
+            perluDijadwalkanUrut soal kenapa ini tidak dijadikan pemicu
+            accent-bar: hampir semua baris di sini memang belum dikonfirmasi
+            justru KARENA belum dijadwalkan, jadi menyalakan warna di situ
+            akan mengulang persis kegagalan ambang 3-hari yang sudah pernah
+            terjadi — 100% baris menyala, kehilangan makna prioritas). */}
         <Card className="overflow-hidden border-2 border-accent/30">
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
@@ -367,15 +633,7 @@ export default function ArmadaDashboard() {
               </span>
             )}
             {!loading && unscheduled?.length > TAMPIL_AWAL && (
-              <div className="relative ml-auto min-w-[180px] max-w-[240px] flex-1">
-                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
-                <input
-                  value={cariPerlu}
-                  onChange={(e) => setCariPerlu(e.target.value)}
-                  placeholder="Cari pelanggan/order…"
-                  className="h-8 w-full rounded-full border border-border bg-inset pl-8 pr-3 text-[12px] text-ink outline-none focus:border-accent"
-                />
-              </div>
+              <KotakCari value={cariPerlu} onChange={setCariPerlu} placeholder="Cari pelanggan/order…" />
             )}
           </div>
 
@@ -395,25 +653,12 @@ export default function ArmadaDashboard() {
                 {perluDijadwalkanTampil.map((j) => {
                   const hari = hariMenunggu(j.createdAt);
                   const nama = customerOf(j) || "Tanpa nama";
+                  const order = orderOf(j);
+                  const produk = order ? productSummary(order) : null;
                   return (
                     <li
                       key={j.id}
                       onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
-                      // dh-bar-left + --dh-bar (D-045) — garis aksen kiri
-                      // menyala HANYA untuk job yang benar-benar mengendap.
-                      // Sengaja selektif: kalau semua baris diberi aksen,
-                      // tidak ada lagi yang menonjol (pola referensi #3,
-                      // lihat catatan di styles/delivery-dark.css). Di light
-                      // mode kelas ini tidak punya aturan apa pun = no-op.
-                      //
-                      // AMBANG DINAIKKAN 3 → 7 hari (D-050, 4 September 2026).
-                      // Ambang 3 hari terdengar masuk akal saat ditulis, tapi
-                      // di production SELURUH backlog memang berumur 4 hari,
-                      // jadi 100% baris menyala oranye — persis kegagalan yang
-                      // diperingatkan komentar di atas, cuma butuh data nyata
-                      // untuk kelihatan. Satu minggu penuh tanpa dijadwalkan
-                      // adalah kondisi yang benar-benar ganjil, bukan sekadar
-                      // "backlog normal hari Senin".
                       style={hari >= 7 ? { "--dh-bar": "var(--orange)" } : undefined}
                       className={cn(
                         "relative flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hovertint",
@@ -427,6 +672,11 @@ export default function ArmadaDashboard() {
                           <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
                             {JOB_TYPE_REAL[j.type]?.label || j.type}
                           </span>
+                          {!confirmedDateOf(j) && (
+                            <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] text-ink3">
+                              Belum dikonfirmasi
+                            </span>
+                          )}
                         </div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink3">
                           <span className="font-mono">{orderNumberOf(j) || "—"}</span>
@@ -435,6 +685,7 @@ export default function ArmadaDashboard() {
                             {hari === 0 ? "Baru masuk hari ini" : `Menunggu ${hari} hari`}
                           </span>
                         </div>
+                        {produk && <div className="mt-0.5 truncate text-[11px] text-ink3">{produk}</div>}
                       </div>
                       <TugaskanDropdown
                         drivers={drivers}
@@ -459,93 +710,73 @@ export default function ArmadaDashboard() {
           )}
         </Card>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-          <Card className="p-4">
-            <h3 className="mb-1 text-[13px] font-bold text-ink">Job per Status</h3>
-            <p className="mb-4 text-[12px] text-ink3">Sebaran job pada {formatRangeText(range)}.</p>
-            {loading ? <TableSkeletonRows rows={4} cols={1} /> : statusChart.every((s) => s.value === 0) ? (
-              <EmptyState icon={Package} title="Belum ada job pada rentang ini" />
-            ) : (
-              <div className="flex flex-col gap-2">
-                {statusChart.filter((s) => s.value > 0).map((s) => (
-                  <div key={s.key} className="flex items-center gap-2">
-                    <span className="w-32 shrink-0 truncate text-[11.5px] text-ink2">{s.label}</span>
-                    <div className="h-5 flex-1 overflow-hidden rounded-full bg-inset">
-                      <div
-                        className={`h-full rounded-full ${{ neutral: "bg-ink3", accent: "bg-accent", green: "bg-green", orange: "bg-orange", red: "bg-red" }[s.tone]}`}
-                        style={{ width: `${(s.value / maxChart) * 100}%` }}
-                      />
-                    </div>
-                    <span className="w-6 shrink-0 text-right text-[12px] font-bold text-ink">{s.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-4">
-            <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
-              <AlertTriangle size={14} className="text-orange" /> Butuh Perhatian
-            </h3>
-            {loading ? <TableSkeletonRows rows={3} cols={1} /> : (dokIssues.length === 0 && overdueJobs.length === 0) ? (
-              <p className="text-[12px] text-ink3">Tidak ada dokumen kadaluarsa atau job terlambat saat ini.</p>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {/* Job terlambat DULUAN (D-lain, redesain Sep 2026) — job
-                    yang janjinya sudah terlewat lebih mendesak daripada
-                    dokumen yang baru mau habis dalam 30 hari ke depan. */}
-                {overdueJobs.slice(0, 6).map((j) => (
-                  <button
-                    key={j.id}
-                    type="button"
-                    onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
-                    className="flex items-start gap-2 border-b border-line pb-2.5 text-left last:border-0 last:pb-0 hover:bg-hovertint"
-                  >
-                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"} · {orderNumberOf(j) || "—"}</p>
-                      <p className="text-[11px] text-red">Terlambat {overdueDays(j)} hari dari jadwal</p>
-                    </div>
-                  </button>
-                ))}
-                {dokIssues.slice(0, Math.max(0, 6 - overdueJobs.length)).map((d, i) => (
-                  <div key={i} className="flex items-start gap-2 border-b border-line pb-2.5 last:border-0 last:pb-0">
-                    <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${d.lewat ? "bg-red" : "bg-orange"}`} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] font-semibold text-ink">{d.vehicle.plateNumber} · {d.label}</p>
-                      <p className={`text-[11px] ${d.lewat ? "text-red" : "text-ink3"}`}>{d.lewat ? `Kadaluarsa ${Math.abs(d.sisaHari)} hari lalu` : `${d.sisaHari} hari lagi`}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Job Hari Ini — daftar kartu avatar-forward (D-070, 4 September
-            2026), MENGGANTIKAN tabel 6-kolom lama. Laporan owner: "masih
-            ada yang menggunakan UI yang lama" — bagian ini terlewat waktu
-            Jadwal & Penugasan diubah dari tabel jadi kartu (D-052); pola
-            di sini SENGAJA disamakan persis (avatar pelanggan + chip jenis
-            di baris pertama, order/driver/kendaraan di baris meta, status
-            di kanan) supaya dua halaman yang sama-sama daftar job tetap
-            satu bahasa visual. */}
+        {/* 4. Active Operations — job yang SEDANG jalan sekarang (EN_ROUTE/
+            ARRIVED). Jarak/GPS best-effort, lihat estimasiJarak() di atas
+            dan catatan trackingError di bawah untuk kegagalan yang tidak
+            boleh mem-blank-kan seluruh kartu. */}
         <Card className="overflow-hidden">
-          {/* Judul DIBUAT DINAMIS (6 September 2026, laporan owner: "cek
-              dashboard > job hari ini") — BUG NYATA ditemukan: judul
-              "Job Hari Ini" statis, TAPI isinya sebenarnya SELALU ikut
-              filter `range` di atas (D-082/083, default "Semua" — bukan
-              hardcode hari ini). Sebelum ini, dispatcher yang buka
-              Dashboard TANPA mengubah filter apa pun melihat judul "Job
-              Hari Ini" padahal daftarnya berisi job dari SEMUA tanggal
-              sepanjang masa — bukan salah data (isinya benar sesuai
-              `range` yang aktif), tapi judulnya bohong. Pola dijadikan
-              sama dengan "Sebaran job pada {formatRangeText(range)}" di
-              bawah, satu halaman ini, supaya konsisten — bukan hardcode
-              balik ke "selalu hari ini" (itu akan MELANGGAR keputusan
-              D-082/083 yang sengaja default "Semua" utk SELURUH filter di
-              halaman ini, termasuk KPI di atas). */}
-          <div className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-bold text-ink">Job — {formatRangeText(range)}</h3></div>
+          <div className="border-b border-line px-4 py-3">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <Navigation size={14} className="text-accent" /> Active Operations
+            </h3>
+          </div>
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
+            </div>
+          ) : activeOps.length === 0 ? (
+            <div className="p-4 text-[12.5px] text-ink3">Tidak ada pengambilan/pengiriman yang sedang berjalan saat ini.</div>
+          ) : (
+            <ul className="divide-y divide-line">
+              {activeOps.map((j) => {
+                const nama = customerOf(j) || "Tanpa nama";
+                const jarak = estimasiJarak(j);
+                return (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint"
+                    >
+                      <Avatar name={nama} size="sm" gradient />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate text-[13px] font-semibold text-ink">{nama}</span>
+                          <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-ink3">
+                            {JOB_TYPE_REAL[j.type]?.label || j.type}
+                          </span>
+                          <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
+                          <span>{j.driver?.name || "Belum ada driver"}</span>
+                          {j.vehicle?.plateNumber && <><span aria-hidden>·</span><span>{j.vehicle.plateNumber}</span></>}
+                        </div>
+                        <p className={cn("mt-0.5 text-[11px]", jarak.tone)}>{jarak.label}</p>
+                      </div>
+                      <ChevronRight size={14} className="shrink-0 text-ink3" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {trackingError && (
+            <p className="border-t border-line px-4 py-2 text-[10.5px] text-ink3">
+              Estimasi jarak sedang tidak tersedia — status job di atas tetap akurat.
+            </p>
+          )}
+        </Card>
+
+        {/* 5. Jadwal Hari Ini — agenda terurut jam kunjungan, MENGGANTIKAN
+            kartu tabel "Job — {range}" lama (isinya sekarang dipecah jadi
+            agenda ini + Recent Activity di bawah, supaya tidak dobel). */}
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+            <h3 className="text-[13px] font-bold text-ink">Jadwal — {formatRangeText(range)}</h3>
+            {!loading && jadwalUrut.length > TAMPIL_AWAL && (
+              <KotakCari value={cariJadwal} onChange={setCariJadwal} placeholder="Cari pelanggan/order/kota…" />
+            )}
+          </div>
           {loading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-btn bg-inset" />)}
@@ -557,26 +788,26 @@ export default function ArmadaDashboard() {
               description="Buat job baru atau ubah rentang tanggal pada filter di atas."
               action={<Button size="sm" onClick={() => navigate("/armada/jobs")}><Plus size={14} /> Buat Job</Button>}
             />
+          ) : jadwalUrut.length === 0 ? (
+            <div className="p-4 text-center text-[12.5px] text-ink3">Tidak ada yang cocok "{cariJadwal}".</div>
           ) : (
             <ul className="divide-y divide-line">
-              {jobs.map((j) => {
+              {jadwalUrut.map((j) => {
                 const cust = customerOf(j);
+                const jam = jamChip(j.timeWindow);
                 return (
                   <li key={j.id}>
                     <button
                       type="button"
-                      // Deep-link ?job= (6 September 2026) — BUG NYATA
-                      // ditemukan: dua panel LAIN di Dashboard ini
-                      // ("Perlu Dijadwalkan") SUDAH pakai pola ini, tapi
-                      // panel ini TERLEWAT — klik kartu job cuma
-                      // membuka daftar KOSONG (Jadwal & Penugasan polos,
-                      // job yang diklik TIDAK terbuka), dispatcher harus
-                      // cari manual lagi. Disamakan supaya klik di sini
-                      // BENAR-BENAR langsung ke job yang diklik.
                       onClick={() => navigate(`/armada/jobs?job=${j.id}`)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint"
                     >
-                      <Avatar name={cust || "?"} size="sm" gradient />
+                      <span className={cn(
+                        "flex h-9 w-14 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tabular-nums",
+                        jam ? "bg-accentbg text-accent" : "bg-inset text-ink3"
+                      )}>
+                        {jam || "—"}
+                      </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="truncate text-[13px] font-semibold text-ink">{cust || "—"}</span>
@@ -586,16 +817,11 @@ export default function ArmadaDashboard() {
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
                           <span className="font-mono">{orderNumberOf(j) || "—"}</span>
+                          {cityOf(j) && <><span aria-hidden>·</span><span>{cityOf(j)}</span></>}
                           <span aria-hidden>·</span>
                           <span className={cn(!j.driver && "font-semibold text-orange")}>
                             {j.driver?.name || "Belum ada driver"}
                           </span>
-                          {j.vehicle?.plateNumber && (
-                            <>
-                              <span aria-hidden>·</span>
-                              <span>{j.vehicle.plateNumber}</span>
-                            </>
-                          )}
                         </div>
                       </div>
                       <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
@@ -607,23 +833,122 @@ export default function ArmadaDashboard() {
           )}
         </Card>
 
-        <Card className="p-4">
-          <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
-            <TruckIcon size={14} /> Ketersediaan Armada
-          </h3>
-          {loading ? <TableSkeletonRows rows={2} cols={4} /> : vehicles.filter((v) => v.active).length === 0 ? (
-            <EmptyState icon={TruckIcon} title="Belum ada kendaraan aktif" description="Tambahkan lewat Driver & Armada." />
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {Object.entries(VEHICLE_STATUS_REAL).map(([key, def]) => (
-                <div key={key} className="rounded-2xl bg-inset/60 p-3 text-center">
-                  <p className="text-[20px] font-bold text-ink">{fleetByStatus[key] || 0}</p>
-                  <p className="text-[11px] text-ink3">{def.label}</p>
+        {/* 6. Kapasitas — Driver (hitungan job nyata per orang, TANPA
+            denominator karangan) & Kendaraan (restyle "Ketersediaan
+            Armada" lama, data SAMA — fleetByStatus). */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="p-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <Users size={14} /> Kapasitas Driver
+            </h3>
+            {loading ? <TableSkeletonRows rows={3} cols={1} /> : bebanDriver.length === 0 ? (
+              <p className="text-[12px] text-ink3">Belum ada driver yang ditugaskan pada rentang ini.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {bebanDriver.map(({ driver, count }) => (
+                  <li key={driver?.id || driver?.name} className="flex items-center gap-2.5">
+                    <Avatar name={driver?.name || "?"} size="sm" gradient />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{driver?.name || "—"}</span>
+                    <span className="shrink-0 rounded-full bg-inset px-2 py-0.5 text-[11px] font-bold text-ink2">{count} job</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <TruckIcon size={14} /> Kapasitas Kendaraan
+            </h3>
+            {loading ? <TableSkeletonRows rows={2} cols={4} /> : vehicles.filter((v) => v.active).length === 0 ? (
+              <EmptyState icon={TruckIcon} title="Belum ada kendaraan aktif" description="Tambahkan lewat Driver & Armada." />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Object.entries(VEHICLE_STATUS_REAL).map(([key, def]) => (
+                  <div key={key} className="rounded-2xl bg-inset/60 p-3 text-center">
+                    <p className="text-[20px] font-bold text-ink">{fleetByStatus[key] || 0}</p>
+                    <p className="text-[11px] text-ink3">{def.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* 7. Operational Health (menggantikan "Job per Status") + Recent
+            Activity (menggantikan "Job — Semua Waktu") — dua-duanya
+            turunan langsung dari `jobs`, tidak ada tabel/data baru. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,1fr)_minmax(0,1.6fr)]">
+          <Card className="p-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <Activity size={14} /> Operational Health
+            </h3>
+            {loading ? <TableSkeletonRows rows={4} cols={1} /> : (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center justify-between border-b border-line pb-2">
+                  <span className="text-[12px] text-ink2">Tepat Waktu</span>
+                  <span className="text-[13px] font-bold text-ink">
+                    {kesehatanOperasi.persenTepatWaktu === null ? "—" : `${kesehatanOperasi.persenTepatWaktu}%`}
+                    {kesehatanOperasi.dasarPersen > 0 && (
+                      <span className="ml-1 text-[10.5px] font-normal text-ink3">({kesehatanOperasi.dasarPersen} selesai)</span>
+                    )}
+                  </span>
                 </div>
-              ))}
+                <div className="flex items-center justify-between border-b border-line pb-2">
+                  <span className="text-[12px] text-ink2">At Risk (belum ada driver)</span>
+                  <span className={cn("text-[13px] font-bold", kesehatanOperasi.atRisk ? "text-orange" : "text-ink")}>{kesehatanOperasi.atRisk}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-line pb-2">
+                  <span className="text-[12px] text-ink2">Breached (terlambat)</span>
+                  <span className={cn("text-[13px] font-bold", kesehatanOperasi.breached ? "text-red" : "text-ink")}>{kesehatanOperasi.breached}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] text-ink2">Gagal</span>
+                  <span className={cn("text-[13px] font-bold", kesehatanOperasi.failed ? "text-red" : "text-ink")}>{kesehatanOperasi.failed}</span>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <div className="border-b border-line px-4 py-3">
+              <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+                <History size={14} /> Recent Activity
+              </h3>
             </div>
-          )}
-        </Card>
+            {loading ? (
+              <div className="space-y-2 p-4">
+                {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-8 animate-pulse rounded-btn bg-inset" />)}
+              </div>
+            ) : aktivitasTerbaru.length === 0 ? (
+              <p className="p-4 text-[12px] text-ink3">Belum ada aktivitas pada rentang ini.</p>
+            ) : (
+              <>
+                <ul className="divide-y divide-line">
+                  {aktivitasTerbaru.map((a) => (
+                    <li key={a.key}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/armada/jobs?job=${a.jobId}`)}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-hovertint"
+                      >
+                        <span className="min-w-0 truncate text-[12.5px] text-ink">{a.text}</span>
+                        <span className="shrink-0 text-[10.5px] text-ink3">{formatRelatif(a.at)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => navigate("/armada/jobs")}
+                  className="flex w-full items-center justify-center gap-1 border-t border-line py-2.5 text-[12px] font-semibold text-accent hover:bg-hovertint"
+                >
+                  Lihat Semua Aktivitas
+                </button>
+              </>
+            )}
+          </Card>
+        </div>
       </PageBody>
     </PageContainer>
   );

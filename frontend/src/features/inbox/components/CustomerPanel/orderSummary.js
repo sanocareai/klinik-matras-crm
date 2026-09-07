@@ -19,8 +19,17 @@ export function statusLabel(status) {
 export function productSummary(order) {
   const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
   const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
+  // Guard duplikasi kata (7 September 2026) — beberapa label di
+  // PRODUCT_TYPE_LABELS SUDAH menyertakan nama lini produknya sendiri
+  // ("Kasur Spring", "Sofa L") — `${line} ${type}` polos jadi "Kasur Kasur
+  // Spring". Bug KELAS SAMA sudah diperbaiki di backend
+  // (services/invoice.js#produkLineLabel) tapi versi frontend ini
+  // terlewat saat itu karena tidak ada pemanggil yang menampilkannya
+  // waktu itu; sekarang dipakai Dashboard Delivery, jadi diperbaiki
+  // sekalian dengan guard yang sama, bukan didiamkan lagi.
+  const produk = type && !type.toLowerCase().startsWith(line.toLowerCase()) ? `${line} ${type}` : (type || line);
   const { ukuranKasur } = parseOrderNotes(order.notes);
-  return [type ? `${line} ${type}` : line, ukuranKasur].filter(Boolean).join(" · ");
+  return [produk, ukuranKasur].filter(Boolean).join(" · ");
 }
 
 export function formatTanggalPendek(d) {
