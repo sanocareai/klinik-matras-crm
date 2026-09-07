@@ -136,6 +136,12 @@ async function kirimWA(phone, pesan, label) {
 // kebenaran dengan reminder per-sales di file ini, tidak diimplementasi
 // ulang.
 export async function loadUnansweredBySales(config, now) {
+  // Scope sejak config.dataSejakTanggal (7 Sep 2026, permintaan owner:
+  // "customer September dan bulan selanjutnya aja") — SAMA cutoff yang
+  // sudah dipakai loadIncompleteDataBySales/loadStatusTransitionReminderBySales,
+  // sekarang berlaku JUGA di sini supaya chat pelanggan LAMA (sebelum
+  // sistem reminder ini mulai berjalan) tidak ikut memicu pengingat.
+  const cutoff = startOfDayWIB(config.dataSejakTanggal);
   const rows = await prisma.$queryRaw`
     SELECT c.id AS "conversationId", c."assignedToId", c."isRead", cu.name AS "customerName", cu.phone AS "customerPhone",
            m."createdAt" AS "lastInboundAt"
@@ -152,6 +158,7 @@ export async function loadUnansweredBySales(config, now) {
       AND c.status != 'RESOLVED'
       AND c."assignedToId" IS NOT NULL
       AND m.direction = 'INBOUND'
+      AND cu."createdAt" >= ${cutoff}
   `;
 
   const unread = new Map(); // salesId -> [{nama, menit}]
