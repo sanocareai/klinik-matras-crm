@@ -588,14 +588,19 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 }
 
 // Perbaikan-mandiri sekali jalan (7 September 2026, investigasi laporan
-// owner: "Buat Peta" di Route Planner "mental kemana-mana") — dipanggil TEPAT
-// SEBELUM buildRouteMapsUrl() di 4 titik (publish, 2x edit darurat, resend,
-// dan endpoint "Buat Peta" sendiri). Job yang BELUM punya koordinat (lat
-// null — kasus paling sering: job auto-buat dari order sales, lihat catatan
+// owner: "Buat Peta" di Route Planner "mental kemana-mana"; DIPERKETAT 8
+// September 2026 jadi LINK-ONLY, lihat catatan panjang di
+// services/maps.js#geocodeAddress) — dipanggil TEPAT SEBELUM
+// buildRouteMapsUrl() di 4 titik (publish, 2x edit darurat, resend, dan
+// endpoint "Buat Peta" sendiri). Job yang BELUM punya koordinat (lat null —
+// kasus paling sering: job auto-buat dari order sales, lihat catatan
 // panjang di services/armadaAutoJob.js soal geocoding yang SENGAJA dilewati
-// saat job lahir) TAPI order-nya SUDAH punya locationUrl (link Maps yang
-// sales/admin dapat dari customer) di-geocode DI SINI dari link itu — jauh
-// lebih akurat daripada Nominatim/LocationIQ menebak dari teks alamat.
+// saat job lahir) di-geocode DI SINI lewat geocodeAddress() — yang SEKARANG
+// hanya bisa berhasil kalau ada LINK Maps (Order.locationUrl, atau link
+// yang kebetulan nempel di Job.addressText). Job TANPA link SAMA SEKALI
+// tetap `lat: null` sesudah ini (BUKAN ditebak dari teks alamat lagi) —
+// itu yang bikin buildRouteMapsUrl() mengecualikannya dari URL peta, dan
+// badge "Tanpa link Maps" (JobBadges.jsx) muncul di kartunya.
 //
 // Hasilnya DISIMPAN ke Job (bukan cuma dipakai sekali lalu dibuang) — jadi
 // perbaikan ini "menempel": klik "Buat Peta" berikutnya untuk rute yang
@@ -603,24 +608,11 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 // try/catch per job) — kegagalan resolve 1 stop TIDAK BOLEH menggagalkan
 // pembuatan link untuk stop lainnya.
 //
-// Untuk job yang SUDAH punya koordinat (dari geocoding lama yang mungkin
-// kurang akurat) TIDAK disentuh di sini — upgrade retroaktif itu tugas
-// scripts/backfill-job-geocode-from-order-link.js (dijalankan manual/
-// terjadwal), bukan setiap kali tombol "Buat Peta" diklik (supaya klik
-// tombol tetap cepat, tidak menunggu network fetch untuk stop yang
-// sebenarnya sudah punya koordinat apa pun kualitasnya).
-//
-// DIPERLUAS 8 September 2026 (laporan owner: "dengan aktifnya Google Maps
-// API, memudahkan semua... akurasi harus semakin akurat") — SEBELUM ini
-// job yang order-nya TIDAK punya locationUrl dilewati begitu saja (tetap
-// null, jatuh ke pencarian teks polos di dalam Google Maps saat "Buat
-// Peta" diklik). Billing Google Cloud sudah aktif (7 September 2026) jadi
-// sekarang job seperti itu JUGA di-geocode di sini lewat geocodeAddress()
-// penuh (link order kalau ada -> Google Geocoding API -> LocationIQ ->
-// Nominatim, urutan SAMA dengan bestEffortGeocode) — bukan cuma link saja
-// lagi. Prioritas link ORDER tetap nomor 1 (paling akurat, lihat catatan
-// panjang di services/maps.js#geocodeAddress), Google jadi jaring pengaman
-// KEDUA yang jauh lebih baik daripada dulu (waktu billing masih ditolak).
+// Untuk job yang SUDAH punya koordinat TIDAK disentuh di sini (supaya klik
+// "Buat Peta" tetap cepat) — upgrade/pembersihan retroaktif itu tugas
+// scripts/backfill-job-geocode-from-order-link.js (isi dari link) dan
+// scripts/clear-non-link-job-geocode.js (hapus koordinat lama yang BUKAN
+// dari link, sisa kebijakan lama sebelum link-only), dijalankan manual.
 async function ensureJobsGeocoded(jobs) {
   const perluDiisi = jobs.filter((j) => j.lat == null && (j.order?.locationUrl || j.addressText?.trim()));
   if (perluDiisi.length === 0) return;

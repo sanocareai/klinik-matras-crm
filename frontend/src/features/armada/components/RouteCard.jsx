@@ -134,18 +134,23 @@ export default function RouteCard({
   // SAMA yang otomatis dikirim ke grup driver saat publish/edit (satu sumber
   // kebenaran, GET /armada/routes/:id/maps-link) — tombol ini untuk
   // preview/share manual di luar momen publish/edit itu.
+  //
+  // KEBIJAKAN LINK-ONLY (8 September 2026, keputusan owner) — stop yang
+  // order-nya TIDAK punya link Maps DIKECUALIKAN dari URL peta (bukan lagi
+  // diisi tebakan dari teks alamat, lihat catatan panjang di
+  // services/maps.js#geocodeAddress/buildRouteMapsUrl). `excludedCount`
+  // dari backend memberi tahu berapa yang dikecualikan — sengaja diberi
+  // tahu jelas SIAPA yang perlu dicari manual, bukan cuma "kurang presisi".
   async function bukaPeta() {
     setMapsBusy(true);
     try {
-      const { url, missingCoords, missingLocation } = await api.getRouteMapsLink(route.id);
+      const { url, excludedCount } = await api.getRouteMapsLink(route.id);
       if (!url) {
-        alert("Belum bisa membuat peta — belum ada stop dengan alamat/koordinat di rute ini.");
+        alert("Belum bisa membuat peta — tidak ada stop dengan link Maps di rute ini. Minta admin delivery follow up ke sales untuk link Maps tiap order.");
         return;
       }
-      if (missingLocation > 0) {
-        alert(`${missingLocation} stop belum punya alamat sama sekali, TIDAK ikut masuk peta. Sisanya tetap dibuka.`);
-      } else if (missingCoords > 0) {
-        alert(`${missingCoords} stop belum ke-geocode — Google akan mencari sendiri dari teks alamatnya, mungkin kurang presisi.`);
+      if (excludedCount > 0) {
+        alert(`${excludedCount} stop TIDAK ikut masuk peta karena order-nya belum punya link Maps — cari lokasinya manual (lihat badge "Tanpa link Maps" di kartu stop). Sisanya tetap dibuka.`);
       }
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {

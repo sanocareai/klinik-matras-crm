@@ -5,40 +5,43 @@
 // far less valuable than a dispatcher who knows that Bekasi in the afternoon
 // is a mistake"). Dispatcher yang urutkan manual; modul ini cuma menghitung
 // jarak/durasi RANTAI (leg demi leg) untuk urutan yang sudah dipilih, dan
-// mengisi lat/lng dari alamat teks.
+// mengisi lat/lng dari LINK Maps.
 //
-// FASE 2 (30 Agustus 2026) — billing Google Cloud project MASIH
-// REQUEST_DENIED (dites langsung, kartu debit user ditolak di Google
-// Console), jadi Geocoding & Distance Matrix API tidak bisa dipakai sampai
-// itu beres. Supaya fitur peta/rute TIDAK ikut mati total menunggu urusan
-// billing yang di luar kendali sistem ini, fallback GRATIS ditambahkan:
-//   - Geocoding  -> (1) link Google Maps yang nempel di addressText kalau
-//                   ada (PALING akurat, lihat geocodeFromMapsLink), lalu
-//                   (2) OpenStreetMap Nominatim kalau tidak ada link
-//   - Jarak antar-stop -> garis lurus (haversine) + asumsi kecepatan kota
-// Google TETAP dicoba LEBIH DULU kalau `GOOGLE_MAPS_API_KEY` ada DAN
-// responsnya sukses — begitu billing aktif, sistem otomatis pakai data
-// Google lagi TANPA perlu ubah kode, tidak perlu "matikan mode fallback"
-// manual. Setiap hasil fallback ditandai `estimate: true` supaya UI bisa
-// jujur bilang "≈ perkiraan", bukan menyajikan angka kasar seolah presisi.
+// KEBIJAKAN GEOCODING DIPERKETAT jadi LINK-ONLY (8 September 2026, keputusan
+// eksplisit owner setelah investigasi "Buat Peta mental kemana-mana": "kita
+// perketat hanya link google maps saja, untuk orderan yang gaada google
+// maps nya kasih notifikasi... ketika klik buat peta orderan yang gaada
+// link nya terisi kosong dan harus cari manual admin deliverynya"). Ini
+// MEMBALIK 3 iterasi sebelumnya (riwayat singkat, supaya tidak bingung kalau
+// baca commit lama):
+//   FASE 2 (30 Agt 2026) — billing Google ditolak -> tambah fallback GRATIS
+//     Nominatim (tebak dari teks alamat, akurasi rendah utk alamat detail
+//     Indonesia — lihat data lama: dari 143 alamat, cuma 2 cocok apa adanya).
+//   FASE 3 (4 Sep 2026) — tambah LocationIQ sbg tingkat kedua (di atas
+//     Nominatim), sama-sama tebakan berbasis teks, sama-sama TIDAK akurat
+//     untuk alamat detail.
+//   7 Sep 2026 — billing Google akhirnya aktif -> Google Geocoding API
+//     dipasang sbg tingkat KEDUA (di atas LocationIQ/Nominatim, di bawah
+//     link) — lebih baik dari Nominatim/LocationIQ, TAPI tetap tebakan dari
+//     teks, bukan titik yang benar-benar dikonfirmasi customer.
+// Owner menyimpulkan: SEMUA tingkat tebakan-dari-teks (Google/LocationIQ/
+// Nominatim sekalipun) tidak cukup dipercaya untuk pin pengiriman —
+// SATU-SATUNYA sumber yang boleh dipakai sekarang adalah LINK Google Maps
+// (Order.locationUrl, atau link yang kebetulan nempel di addressText) —
+// titik yang benar-benar customer/sales tandai sendiri. Job TANPA link
+// dibiarkan `lat/lng` null SELAMANYA (bukan ditebak) — itu yang memicu
+// badge "Tanpa link Maps" (JobBadges.jsx) dan membuat "Buat Peta"
+// mengecualikan stop itu dari URL (buildRouteMapsUrl di bawah), memaksa
+// admin delivery mencari lokasinya manual, bukan mempercayai tebakan.
 //
-// FASE 3 (4 September 2026) — kartu KREDIT pun ditolak Google Cloud
-// (laporan owner: "google maps api gabisa ditopup udah pake credit card").
-// LocationIQ ditambahkan sebagai tingkat KEDUA (di atas Nominatim, di
-// bawah Google): geocoder berbasis OSM juga, TAPI hosted+di-cache lebih
-// baik dari Nominatim publik (akurasi lebih tinggi utk alamat Indonesia
-// yang tidak terlalu detail) DAN sekalian API rute jalan asli (bukan
-// haversine) — dan yang PALING PENTING, pendaftarannya TIDAK MEMINTA
-// kartu kredit sama sekali untuk tingkat gratisnya (5.000 request/hari).
-// Diaktifkan cuma dengan mengisi `LOCATIONIQ_API_KEY` di .env — kalau
-// kosong, sistem diam-diam lanjut ke Nominatim seperti sebelumnya, TIDAK
-// ADA perubahan perilaku sampai key itu benar-benar diisi. Daftar gratis:
-// https://locationiq.com/register (isi email, verifikasi email, selesai).
+// geocodeGoogle/geocodeLocationIQ/geocodeNominatim (geocoding berbasis
+// TEKS) SUDAH DIHAPUS dari file ini — bukan disimpan "siapa tahu perlu
+// lagi". Distance Matrix Google & LocationIQ Directions DI BAWAH (jarak/
+// durasi ANTAR DUA TITIK YANG SUDAH PUNYA KOORDINAT, bukan menebak
+// koordinat dari teks) TIDAK terpengaruh kebijakan ini sama sekali — beda
+// masalah, tetap dipakai apa adanya.
 
-const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-const LOCATIONIQ_SEARCH_URL = "https://us1.locationiq.com/v1/search";
 const LOCATIONIQ_DIRECTIONS_URL = "https://us1.locationiq.com/v1/directions/driving";
 
 // Nominatim WAJIB User-Agent yang mengidentifikasi aplikasi (kebijakan
@@ -91,6 +94,9 @@ function apiKey() {
   return process.env.GOOGLE_MAPS_API_KEY || "";
 }
 
+// Dipakai HANYA oleh routeLegs() (Distance Matrix, jarak/durasi antar dua
+// koordinat yang SUDAH ADA) — TIDAK dipakai geocoding lagi sejak kebijakan
+// link-only, lihat catatan panjang di kepala file.
 export function mapsConfigured() {
   return apiKey().length > 0;
 }
@@ -99,155 +105,44 @@ function locationIqKey() {
   return process.env.LOCATIONIQ_API_KEY || "";
 }
 
+// Dipakai HANYA oleh routeLegs() (LocationIQ Directions, jarak/durasi jalan
+// asli) — sama catatan dengan mapsConfigured() di atas.
 export function locationIqConfigured() {
   return locationIqKey().length > 0;
 }
 
-async function geocodeGoogle(text) {
-  const url = `${GEOCODE_URL}?address=${encodeURIComponent(text)}&region=id&key=${apiKey()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Geocoding API HTTP ${res.status}`);
-  const data = await res.json();
-  if (data.status !== "OK" || !data.results?.[0]) return null;
-  const { lat, lng } = data.results[0].geometry.location;
-  return { lat, lng, estimate: false };
-}
-
-async function locationIqSearch(text) {
-  const url = `${LOCATIONIQ_SEARCH_URL}?key=${locationIqKey()}&q=${encodeURIComponent(text)}&format=json&countrycodes=id&limit=1`;
-  const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
-  if (res.status === 404) return null; // LocationIQ balas 404 polos kalau tidak ketemu, bukan array kosong
-  if (!res.ok) throw new Error(`LocationIQ HTTP ${res.status}`);
-  const data = await res.json();
-  if (!Array.isArray(data) || !data[0]) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), estimate: true };
-}
-
-// Sama pola penyederhanaan bertahap dengan geocodeNominatim di bawah —
-// LocationIQ juga berbasis data OSM, jadi alamat super-detail ala sales
-// ("blok a25 no 19b") kemungkinan sama-sama tidak ketemu utuh. Rate limit
-// gratis LocationIQ (2 req/detik) lebih longgar dari Nominatim publik (1
-// req/detik), tapi jeda yang sama tetap dipakai di sini — aman, tidak ada
-// ruginya berhati-hati.
-async function geocodeLocationIQ(text) {
-  const segmen = text.split(",").map((s) => s.trim()).filter(Boolean);
-  for (let mulai = 0; mulai < segmen.length; mulai++) {
-    const coba = segmen.slice(mulai).join(", ");
-    if (!coba) continue;
-    const hasil = await locationIqSearch(coba);
-    if (hasil) return hasil;
-    if (mulai < segmen.length - 1) await new Promise((r) => setTimeout(r, 600));
-  }
-  return null;
-}
-
-async function nominatimSearch(text) {
-  const url = `${NOMINATIM_URL}?q=${encodeURIComponent(text)}&format=json&countrycodes=id&limit=1`;
-  const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
-  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
-  const data = await res.json();
-  if (!Array.isArray(data) || !data[0]) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), estimate: true };
-}
-
-// Nominatim: gratis, tanpa key, TAPI kebijakan pemakaian membatasi
-// ~1 permintaan/detik dan melarang pemakaian massal — untuk skala Sano
-// (dispatcher mengisi alamat satu-satu, bukan proses batch) ini aman.
-//
-// PENYEDERHANAAN BERTAHAP (ditemukan lewat tes langsung 30 Agustus 2026,
-// bukan asumsi): alamat penuh ala sales ("Taman palem lestari blok a25 no
-// 19b, cengkareng") HAMPIR SELALU gagal cocok di Nominatim — beda dengan
-// Google, database OSM tidak punya data nomor rumah/blok sedetail itu
-// untuk kebanyakan perumahan Indonesia. Tes backfill produksi: dari 143
-// alamat asli, cuma 2 yang cocok apa adanya. Begitu bagian
-// blok/nomor/RT-RW paling depan DIBUANG dan sisanya (kelurahan/kecamatan
-// dst) dicoba sendiri, tingkat berhasil naik jauh — pin jadi level
-// kelurahan/kecamatan, BUKAN presisi alamat rumah, tapi jauh lebih
-// berguna daripada tidak ada pin sama sekali. `estimate: true` menandai
-// ini SELALU, supaya UI tidak pernah menyajikannya seolah presisi rumah.
-async function geocodeNominatim(text) {
-  const segmen = text.split(",").map((s) => s.trim()).filter(Boolean);
-  for (let mulai = 0; mulai < segmen.length; mulai++) {
-    const coba = segmen.slice(mulai).join(", ");
-    if (!coba) continue;
-    const hasil = await nominatimSearch(coba);
-    if (hasil) return hasil;
-    if (mulai < segmen.length - 1) await new Promise((r) => setTimeout(r, 1100)); // hormati rate limit 1 req/detik
-  }
-  return null;
-}
-
-// geocodeAddress(text, locationUrlHint?) -> { lat, lng, estimate } | null.
+// geocodeAddress(text, locationUrlHint?) -> { lat, lng, estimate: false } | null.
+// KEBIJAKAN LINK-ONLY (8 September 2026, lihat catatan panjang di kepala
+// file) — HANYA mengembalikan koordinat kalau ada LINK Google Maps yang
+// bisa di-resolve, dari salah satu dari dua sumber:
+//   1. `locationUrlHint` — Order.locationUrl, dicoba PALING PERTAMA
+//      (field yang MEMANG didedikasikan untuk ini, diisi sales/admin saat
+//      konfirmasi lokasi customer).
+//   2. Link yang KEBETULAN ditempel di `text` (Job.addressText) — sales
+//      kadang menempel link share lokasi di belakang alamat teks.
+// TIDAK ADA LAGI fallback ke geocoding berbasis teks (Google/LocationIQ/
+// Nominatim) — kalau dua sumber di atas sama-sama tidak ada/gagal,
+// fungsi ini mengembalikan `null` apa adanya, BUKAN menebak dari teks
+// alamat. `estimate` SELALU `false` sekarang (tidak ada lagi hasil
+// "perkiraan" — kalau bukan dari link, ya tidak ada hasil sama sekali).
 // Best-effort — SELALU dibungkus try/catch oleh pemanggil, gagal geocode
-// BUKAN alasan menolak simpan job (alamat teks tetap tersimpan, deep link
-// Maps di DriverJobs.jsx sudah punya fallback ke pencarian teks kalau
-// lat/lng kosong).
-// `estimate: true` = hasil Nominatim/LocationIQ (akurasi lebih rendah dari
-// Google/link Maps utk alamat Indonesia yang tidak terlalu detail, tapi
-// jauh lebih baik daripada tidak ada koordinat sama sekali).
-//
-// `locationUrlHint` (7 September 2026, laporan owner: "Buat Peta" di Route
-// Planner kadang "mental kemana-mana") — dicoba PALING PERTAMA, sebelum
-// bahkan link yang mungkin nempel di `text`. BEDA dari pemeriksaan link di
-// dalam `text` di bawah (itu link yang KEBETULAN ditempel sales di field
-// alamat bebas): `locationUrlHint` adalah `Order.locationUrl`, field yang
-// MEMANG didedikasikan untuk ini (diisi sales/admin saat konfirmasi lokasi
-// customer) — investigasi menemukan field ini SUDAH ADA dan SUDAH diisi
-// untuk banyak order, tapi TIDAK PERNAH dipakai geocoding job sama sekali;
-// job selalu di-geocode dari `Job.addressText` (alamat teks bebas hasil
-// ketikan sales), yang untuk alamat Indonesia detail (blok/RT-RW) SERING
-// gagal cocok tepat di Nominatim/LocationIQ (lihat catatan
-// "PENYEDERHANAAN BERTAHAP" di geocodeNominatim di bawah — dari 143 alamat
-// asli, cuma 2 yang cocok apa adanya) sehingga pin jatuh di level
-// kelurahan/kecamatan, kadang bahkan salah kelurahan — itu akar "mental
-// kemana-mana"-nya. Cek data production (7 September 2026): dari 17 job
-// aktif yang siap dirutekan, 15 order-nya PUNYA locationUrl tapi TIDAK
-// SATU PUN sebelumnya pernah dipakai untuk geocoding job tsb.
+// BUKAN alasan menolak simpan job (alamat teks tetap tersimpan apa adanya).
 export async function geocodeAddress(text, locationUrlHint) {
   if (locationUrlHint) {
     try {
       const dariOrder = await geocodeFromMapsLink(locationUrlHint);
       if (dariOrder) return dariOrder;
     } catch (err) {
-      console.error("[maps] Gagal resolve link Maps order, lanjut ke sumber lain:", err.message);
+      console.error("[maps] Gagal resolve link Maps order:", err.message);
     }
   }
 
   if (!text || !text.trim()) return null;
 
   try {
-    const dariLink = await geocodeFromMapsLink(text);
-    if (dariLink) return dariLink;
+    return await geocodeFromMapsLink(text);
   } catch (err) {
-    console.error("[maps] Gagal resolve link Google Maps di alamat, lanjut geocode teks:", err.message);
-  }
-
-  if (mapsConfigured()) {
-    try {
-      const hasil = await geocodeGoogle(text);
-      if (hasil) return hasil;
-    } catch (err) {
-      console.error("[maps] Google geocode gagal, lanjut ke tingkat berikutnya:", err.message);
-    }
-  }
-
-  // LocationIQ (D-044, 4 September 2026) — dicoba SEBELUM Nominatim publik:
-  // sama-sama gratis & berbasis OSM, tapi hosted+cache-nya biasanya lebih
-  // akurat utk alamat Indonesia. Diam-diam dilewati kalau key belum diisi
-  // (locationIqConfigured() false) — bukan error, cuma belum diaktifkan.
-  if (locationIqConfigured()) {
-    try {
-      const hasil = await geocodeLocationIQ(text);
-      if (hasil) return hasil;
-    } catch (err) {
-      console.error("[maps] LocationIQ geocode gagal, coba Nominatim:", err.message);
-    }
-  }
-
-  try {
-    return await geocodeNominatim(text);
-  } catch (err) {
-    console.error("[maps] Nominatim geocode gagal:", err.message);
+    console.error("[maps] Gagal resolve link Google Maps di alamat:", err.message);
     return null;
   }
 }
@@ -311,8 +206,9 @@ async function routeLegsLocationIQ(stops) {
 // SATU panggilan API untuk seluruh rute (origins = stop 0..n-2, destinations
 // = stop 1..n-1, ambil diagonal elements[i][i]) — bukan panggilan per-leg,
 // supaya kuota gratis 10.000/bulan tidak boros untuk rute dengan banyak stop.
-// Gagal/tidak terkonfigurasi -> fallback haversineLegs, BUKAN throw — lihat
-// catatan Fase 2 di kepala file.
+// Gagal/tidak terkonfigurasi -> fallback haversineLegs, BUKAN throw (jarak/
+// durasi tetap best-effort, beda kebijakan dari geocoding link-only di atas
+// — lihat catatan kepala file).
 // ─── LINK GOOGLE MAPS MULTI-STOP (redesain Route Planner, Sep 2026) ─────────
 // Dispatcher SEBELUM ini menyusun rute di Google Maps MANUAL: buka Maps,
 // tempel alamat satu-satu sesuai urutan, baru copy link untuk di-share ke
@@ -320,19 +216,21 @@ async function routeLegsLocationIQ(stops) {
 // sudah disusun di Route Planner (Job.sequence).
 //
 // SENGAJA pakai URL publik `google.com/maps/dir` (skema `api=1` + parameter
-// origin/destination/waypoints) — BUKAN Directions API berbayar. Ini bukan
-// keterbatasan yang dipilih untuk v1 saja (beda dari optimasi VRP di PRD
-// §1.5) — Google Cloud billing project TERBUKTI DITOLAK berulang kali
-// (kartu debit MAUPUN kredit, lihat catatan Fase 2/3 di kepala file ini),
-// jadi opsi berbayar memang tidak tersedia sama sekali. URL publik ini
-// GRATIS, TANPA API key, TANPA billing — persis yang dipakai mapsUrl() di
-// frontend (jobStatus.js) untuk 1 tujuan, di sini diperluas jadi banyak stop.
+// origin/destination/waypoints) — BUKAN Directions API berbayar, murni demi
+// kesederhanaan (satu URL publik, tanpa key/billing terpisah untuk fitur
+// ini) — BUKAN lagi karena billing ditolak (billing SUDAH aktif sejak 7
+// September 2026, lihat catatan kepala file — baris ini DIKOREKSI 8
+// September 2026, sebelumnya menyebut billing "TERBUKTI DITOLAK", itu
+// sudah tidak akurat).
 //
-// Format per stop MENGIKUTI PRIORITAS geocodeAddress(): lat/lng kalau sudah
-// ke-geocode (paling akurat), fallback ke teks alamat (Google mencari
-// sendiri) kalau belum — TIDAK ada stop yang dilewati/disembunyikan hanya
-// karena belum ke-geocode, dispatcher tetap dapat link yang mengikutsertakan
-// SEMUA stop, cuma sebagian kurang presisi.
+// Format per stop LINK-ONLY (8 September 2026, keputusan owner — lihat
+// catatan panjang di kepala file): stop TANPA lat/lng (artinya order-nya
+// TIDAK punya link Maps sama sekali — di bawah kebijakan link-only,
+// lat/lng cuma pernah terisi dari link) DIKECUALIKAN dari URL, BUKAN
+// diisi teks alamat sebagai fallback lagi seperti sebelumnya. Dispatcher
+// sengaja TIDAK dapat pin tebakan untuk stop itu — `excludedCount` di
+// buildRouteMapsUrl() memberi tahu berapa stop yang dikecualikan, supaya
+// UI bisa memperingatkan admin delivery: cari lokasinya manual.
 //
 // BULAT-BALIK dari/ke Klinik (origin=destination=DEPOT) — konsisten dengan
 // asumsi routeLegs()/publish (D-076): rute SELALU dianggap berangkat dan
@@ -347,17 +245,15 @@ async function routeLegsLocationIQ(stops) {
 // mengira semua stop masuk padahal tidak).
 function stopParam(stop) {
   if (stop.lat != null && stop.lng != null) return `${stop.lat},${stop.lng}`;
-  if (stop.addressText?.trim()) return encodeURIComponent(stop.addressText.trim());
   return null;
 }
 
 export function buildRouteMapsUrl(jobs) {
   const terurut = [...jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
-  const missingLocation = terurut.filter((j) => j.lat == null && !j.addressText?.trim());
+  const excluded = terurut.filter((j) => j.lat == null || j.lng == null);
   const params = terurut.map(stopParam).filter(Boolean);
-  const missingCoords = terurut.filter((j) => j.lat == null && j.addressText?.trim()).length;
 
-  if (params.length === 0) return { url: null, stopCount: 0, missingCoords: 0, missingLocation: missingLocation.length };
+  if (params.length === 0) return { url: null, stopCount: 0, excludedCount: excluded.length };
 
   const depotParam = `${DEPOT.lat},${DEPOT.lng}`;
   const url =
@@ -365,7 +261,7 @@ export function buildRouteMapsUrl(jobs) {
     `&origin=${depotParam}&destination=${depotParam}` +
     `&waypoints=${params.join("|")}`;
 
-  return { url, stopCount: params.length, missingCoords, missingLocation: missingLocation.length };
+  return { url, stopCount: params.length, excludedCount: excluded.length };
 }
 
 // Persingkat URL Maps SUPAYA rapi di broadcast WA (6 September 2026,
