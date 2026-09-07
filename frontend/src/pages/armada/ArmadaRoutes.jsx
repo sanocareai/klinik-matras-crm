@@ -6,12 +6,11 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
-import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
+import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
-import { unitCountOf } from "@/features/armada/jobStatus.js";
 
 // Route Planner — Delivery Tahap 3.
 //
@@ -293,10 +292,12 @@ export default function ArmadaRoutes() {
     await terapkanUrutan(route, terurut);
   }
 
-  const totalStopSemuaRute = (routes || []).reduce((s, r) => s + (r.jobs?.length || 0), 0);
-  const totalUnitSemuaRute = (routes || []).reduce((s, r) => s + (r.jobs || []).reduce((s2, j) => s2 + unitCountOf(j), 0), 0);
-  const draftCount = (routes || []).filter((r) => r.status === "DRAFT").length;
-  const publishedCount = (routes || []).filter((r) => r.status === "PUBLISHED").length;
+  // totalStopSemuaRute/totalUnitSemuaRute/draftCount/publishedCount DIHAPUS
+  // (8 September 2026, laporan owner: "delete ringkasan di route planner")
+  // — SEBELUMNYA cuma dipakai kartu "Ringkasan" yang sekarang juga dihapus
+  // (lihat kolom kiri di bawah), supaya panel "Belum Masuk Rute" dapat
+  // ruang vertikal lebih (kartunya sendiri sekarang lebih tinggi sejak
+  // redesain 8 September, "gabisa buat lebih panjang kebawah").
 
   const loading = routes === null;
 
@@ -399,29 +400,14 @@ export default function ArmadaRoutes() {
             aman (PageHeader+DateRangePicker+padding di atas grid ini
             nyatanya tidak sampai segitu), panel jadi lebih tinggi lagi. */}
         <div className="flex flex-col gap-3 xl:h-[calc(100vh-120px)]">
-          {/* Ringkasan — dikecilkan drastis (D-057): baris label+angka
-              SATU BARIS (bukan kartu KPI terpisah per angka seperti D-055),
-              supaya total tingginya ~seperlima dari sebelumnya dan pantas
-              duduk di atas panel job tanpa mendominasi kolom sempit 240px. */}
-          <div className="shrink-0 space-y-1 rounded-card border border-border bg-surface p-2.5">
-            <h3 className="text-[11px] font-bold text-ink">Ringkasan {formatRangeText(range)}</h3>
-            {[
-              ["Rute draft", draftCount],
-              ["Rute diterbitkan", publishedCount],
-              ["Total stop terjadwal", totalStopSemuaRute],
-              ["Total unit terjadwal", totalUnitSemuaRute],
-              // (semua tanggal) — beda dari 3 baris di atasnya: baris ini
-              // TIDAK ikut `range` (lihat catatan panjang di load(), D-066),
-              // jadi labelnya ditegaskan supaya tidak terbaca seolah ikut
-              // rentang yang sedang dibuka.
-              ["Job belum masuk rute (semua tanggal)", unrouted?.length ?? 0],
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="truncate text-ink3">{label}</span>
-                <strong className="shrink-0 tabular-nums text-ink">{value}</strong>
-              </div>
-            ))}
-          </div>
+          {/* Kartu "Ringkasan" DIHAPUS (8 September 2026, laporan owner:
+              "delete ringkasan di route planner") — 5 baris angka
+              (draft/diterbitkan/stop/unit/belum masuk rute) yang
+              sebelumnya duduk di atas panel ini. Panel "Belum Masuk Rute"
+              sekarang langsung mengisi SELURUH tinggi kolom kiri
+              (`min-h-0 flex-1` di bawah TIDAK BERUBAH — dulu berbagi
+              ruang dengan kartu Ringkasan yang `shrink-0`, sekarang tidak
+              ada lagi yang direbut). */}
           <div className="min-h-0 flex-1">
             <UnroutedJobsPanel
               jobs={unrouted || []}

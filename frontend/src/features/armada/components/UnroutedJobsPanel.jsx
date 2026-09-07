@@ -129,17 +129,21 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         // tanpa ikon chat/Maps & tanpa produk+ukuran). Susunan/konten SAMA
         // PERSIS dengan stop card RouteCard.jsx sekarang — flex-col,
         // bukan lagi 1 baris avatar+teks.
-        // `leading-tight` (8 September 2026, laporan owner: "jarak antara
-        // text kasur dan alamat terlalu jauh... rapatkan line space nya")
-        // — line-height DIWARISKAN dari body/App (longgar, dibuat untuk
-        // paragraf biasa), sementara `text-[Npx]` di baris-baris kartu ini
-        // TIDAK membawa line-height pasangannya sendiri (beda dari utility
-        // bernama seperti text-sm yang otomatis dapat line-height pas) —
-        // tiap baris teks pendek di sini jadi mereservasi ruang vertikal
-        // lebih tinggi dari yang terlihat perlu. Dipasang di kontainer
-        // (bukan tiap elemen satu-satu) supaya SELURUH baris di dalam
-        // kartu ini ikut rapat, bukan cuma yang disebut laporan.
-        "dh-job-card relative flex cursor-grab select-none flex-col gap-1 rounded-btn border border-border bg-surface px-2.5 py-2 leading-tight transition-all duration-150 active:cursor-grabbing",
+        // `leading-none` + `gap-0.5` (8 September 2026, laporan owner:
+        // "jarak antara ukuran dan alamat masih terlalu jauh" — DIPERKETAT
+        // LAGI dari percobaan pertama `leading-tight`/`gap-1`, masih
+        // terasa longgar) — line-height DIWARISKAN dari body/App (longgar,
+        // dibuat untuk paragraf biasa), sementara `text-[Npx]` di
+        // baris-baris kartu ini TIDAK membawa line-height pasangannya
+        // sendiri (beda dari utility bernama seperti text-sm yang otomatis
+        // dapat line-height pas) — tiap baris teks pendek jadi
+        // mereservasi ruang vertikal lebih tinggi dari yang terlihat
+        // perlu. Sekarang line-height 1 penuh + gap 2px, sengaja ekstra
+        // rapat karena kartu ini padat 7+ baris info sekaligus. Dipasang
+        // di kontainer (bukan tiap elemen satu-satu) supaya SELURUH baris
+        // ikut rapat, dan SAMA dengan RouteCard.jsx supaya dua kartu tetap
+        // konsisten.
+        "dh-job-card relative flex cursor-grab select-none flex-col gap-0.5 rounded-btn border border-border bg-surface px-2.5 py-2 leading-none transition-all duration-150 active:cursor-grabbing",
         hasJobAccentBar(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}
