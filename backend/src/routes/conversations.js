@@ -465,11 +465,31 @@ conversationRouter.get("/cek-nomor", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?scope=internal — tab "Kontak Tim" (FilterPopover.jsx): tampilkan HANYA
+  // percakapan dengan nomor staf internal sendiri (Customer.isInternalStaff,
+  // ditandai lewat scripts/mark-internal-staff-customers.js). Default (scope
+  // apa pun selain ini) MENGECUALIKAN mereka dari Inbox utama — sebelum ini,
+  // WA yang dikirim salesReminderDigestJob.js/slaAlertJob.js ke nomor
+  // pribadi sales ikut mem-bump Conversation.lastMessageAt milik mereka
+  // sendiri, jadi percakapan itu naik ke ATAS Inbox dan MENIMBUN chat
+  // pelanggan asli di bawahnya — lihat catatan panjang di schema.prisma
+  // model Customer. Percakapan GROUP (customerId null) TIDAK relevan di
+  // scope manapun di sini (grup tidak punya Customer sama sekali) — jadi
+  // untuk default HARUS di-OR-kan eksplisit (bukan lewat where.customer
+  // biasa), supaya grup tetap lolos filter ini seperti sebelumnya.
+  if (scope === "internal") {
+    where.customer = { isInternalStaff: true };
+  } else {
+    where.AND = [
+      ...(where.AND || []),
+      { OR: [{ customerId: null }, { customer: { isInternalStaff: false } }] },
+    ];
+  }
   // ?unassigned=true — tab "Belum Diambil" di Inbox (lihat FilterTabs.jsx).
   // Percakapan yang assignedToId-nya masih kosong, alias belum ada satu pun
   // sales yang klaim — populasi yang SAMA dengan `unassignedInPeriod` di
@@ -519,7 +539,9 @@ conversationRouter.get("/", async (req, res) => {
   // otomatis diberi tag (BroadcastCampaign.tagOnSend), sehingga sales bisa
   // memisahkan "orang yang baru saja kita blast" dari chat masuk biasa dan
   // menggarapnya sebagai satu antrean tersendiri.
-  if (tag) where.customer = { tags: { has: tag } };
+  // Merge (bukan timpa) — `where.customer` mungkin sudah diisi oleh
+  // filter ?scope=internal di atas (isInternalStaff:true).
+  if (tag) where.customer = { ...(where.customer || {}), tags: { has: tag } };
   // ?unread=true — dipakai chip "Belum Dibaca" di Inbox mobile (lihat
   // mobile/src/screens/ChatListScreen.js). Sama persis definisi yang
   // dipakai badge unread-count di bawah (unread=true), bukan hitungan baru.

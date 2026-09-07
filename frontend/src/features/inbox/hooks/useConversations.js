@@ -41,10 +41,14 @@ export function useConversations({ filter = "ALL", search = "", userId } = {}) {
   // "Menggantung" — assigned TAPI belum dibalas >60 menit, lihat catatan
   // di backend routes/conversations.js GET /.
   const stalled = filter === "STALLED" ? true : undefined;
+  // "Kontak Tim" (7 Sep 2026) — percakapan dengan nomor WA pribadi tim
+  // sendiri, dikecualikan dari SEMUA tab lain secara default (lihat
+  // catatan di backend routes/conversations.js GET /).
+  const scope = filter === "TEAM" ? "internal" : undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered, unassigned, stalled }],
-    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, unread, unanswered, unassigned, stalled, cursor: pageParam || undefined }),
+    queryKey: ["conversations", { status, search, assignedToId, tag, unread, unanswered, unassigned, stalled, scope }],
+    queryFn: ({ pageParam }) => api.getConversations({ status, search, assignedToId, tag, unread, unanswered, unassigned, stalled, scope, cursor: pageParam || undefined }),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
   });

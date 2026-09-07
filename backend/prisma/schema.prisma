@@ -487,6 +487,26 @@ model Customer {
   leadSourceDetail    String? // detail tambahan: nama link/campaign/ad headline
   leadSourceConfirmed Boolean       @default(false) // true = dikoreksi manual oleh sales
 
+  // isInternalStaff (7 September 2026) — nomor WA PRIBADI tim sendiri
+  // (salesReminderDigestJob.js/slaAlertJob.js mengirim ke nomor ini),
+  // BUKAN pelanggan sungguhan. utils/staffDirectory.js#isInternalStaffPhone
+  // SUDAH mencegah Customer BARU dibuat untuk nomor ini (webhooks.js,
+  // dicek HANYA saat `!customer`) — tapi 6 nomor di production TERNYATA
+  // SUDAH punya Customer sejak SEBELUM guard itu ada (Novia/Erv/Risel/
+  // Rifki/Kiki/Fadlan, ditemukan langsung via query production 7 Sep
+  // 2026), jadi tiap kali salesReminderDigestJob/slaAlertJob mengirim WA
+  // ke mereka, `Conversation.lastMessageAt` ikut ter-bump dan percakapan
+  // itu naik ke ATAS Inbox — MENIMBUN chat pelanggan asli di bawahnya.
+  // Flag ini dipakai `GET /conversations` (routes/conversations.js) utk
+  // MENGECUALIKAN mereka dari Inbox utama secara default, dan tab
+  // "Kontak Tim" (FilterPopover.jsx, `?scope=internal`) utk MELIHAT
+  // mereka secara terpisah kalau perlu. Diisi lewat
+  // scripts/mark-internal-staff-customers.js (cocokkan phone dengan
+  // slaAlert.salesPhoneDirectory), BUKAN otomatis di webhook — supaya
+  // tetap ada 1 langkah tinjau sebelum menyembunyikan percakapan siapa
+  // pun dari Inbox.
+  isInternalStaff     Boolean       @default(false) @map("is_internal_staff")
+
   // ── Atribusi iklan Meta Click-to-WhatsApp (CTWA) ──────────────────────
   // Iklan CTWA melompat LANGSUNG ke WhatsApp tanpa lewat website, jadi tag
   // tak-terlihat dari sanomatrassehat.com tidak pernah kepasang. Satu-satunya
@@ -4245,6 +4265,18 @@ model StaffBroadcast {
   status       StaffBroadcastStatus @default(SCHEDULED)
   kind         StaffBroadcastKind   @default(MANUAL)
 
+  // topic (7 September 2026) — SATU-SATUNYA baris ini yang membedakan
+  // "Chat Belum Dibaca" dari "Follow-up H+1" dkk (nilai: unread/hanging/
+  // incomplete/processing/followUp/zeroClosing). NULL untuk kind=MANUAL
+  // (broadcast manual tidak punya topik). Dipakai salesReminderDigestJob.js
+  // sebagai KUNCI IDEMPOTENSI — sebelum kirim, cek dulu apakah SUDAH ada
+  // baris (kind=AUTO_REMINDER, topic=ini, recipientIds berisi sales ini,
+  // createdAt hari ini) supaya topik yang sama TIDAK PERNAH terkirim 2x ke
+  // sales yang sama di hari yang sama, walau cron sempat fire dobel
+  // (restart di jam yang sama, trigger manual bersamaan jadwal, dst) —
+  // permintaan owner: "pastikan broadcast tidak mengirim duplikasi".
+  topic String? @map("topic")
+
   // Diisi worker/job SETELAH percobaan kirim:
   // { [userId]: { nama, phone, status: "TERKIRIM"|"GAGAL", error? } }
   results Json?
@@ -4265,6 +4297,9 @@ model StaffBroadcast {
   @@index([status, scheduledAt])
   // Tab Riwayat: filter/urutkan per kind + tanggal.
   @@index([kind, createdAt])
+  // Cek idempotensi salesReminderDigestJob.js: "topik X sudah dikirim hari
+  // ini belum" (lalu disaring lagi di kode utk recipientIds, volume kecil).
+  @@index([kind, topic, createdAt])
   @@map("staff_broadcasts")
 }
 

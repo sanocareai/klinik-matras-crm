@@ -1,5 +1,5 @@
 import React from "react";
-import { ListFilter, Timer, Megaphone } from "lucide-react";
+import { ListFilter, Timer, Megaphone, Users } from "lucide-react";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
 import { useFilter, useConversationStore } from "../../stores/conversationStore.js";
 
@@ -17,6 +17,13 @@ const SECONDARY_FILTERS = [
   { key: "PENDING",   label: "Pending",     Icon: null },
   { key: "CLOSED",    label: "Selesai",     Icon: null },
   { key: "BROADCAST", label: "Broadcast",   Icon: Megaphone },
+  // "Kontak Tim" (7 Sep 2026, permintaan owner) — percakapan dengan nomor
+  // WA pribadi tim sendiri (salesReminderDigestJob.js/slaAlertJob.js
+  // mengirim ke sini), SENGAJA dikecualikan dari tab default (lihat
+  // catatan panjang di backend schema.prisma model Customer &
+  // routes/conversations.js) supaya tidak menimbun chat pelanggan asli.
+  // Tab ini satu-satunya tempat melihat mereka kalau perlu dicek.
+  { key: "TEAM",      label: "Kontak Tim",  Icon: Users },
 ];
 
 export default function FilterPopover() {

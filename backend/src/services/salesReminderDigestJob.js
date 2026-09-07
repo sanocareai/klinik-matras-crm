@@ -380,9 +380,30 @@ function composeProcessingMessage(nama, items) {
 // TETAP dihitung walau job mati (`enabled:false`) — itulah yang membuat
 // scripts/preview-sales-reminder-digest.js bisa menampilkan contoh nyata
 // SEBELUM job dinyalakan.
-async function dispatchSection({ config, dryRun, salesList, label, computeMessage }) {
-  const summary = { label, salesWithItems: 0, sent: 0, skippedNoPhone: 0 };
+//
+// IDEMPOTENSI (7 Sep 2026, permintaan owner: "pastikan broadcast tidak
+// mengirim duplikasi... 3-4x dalam 1 waktu") — dimuat SEKALI di awal
+// siapa saja yang SUDAH menerima topik ini HARI INI (kalender WIB), dari
+// StaffBroadcast (bukan Map in-memory — harus tahan restart & tahan 2
+// proses berjalan bersamaan, dua skenario yang PERSIS menyebabkan
+// duplikasi di sistem broadcast lain sebelumnya). Kalau `topicKey` sudah
+// tercatat utk sales itu hari ini, DILEWATI — tidak peduli kenapa fungsi
+// ini terpanggil lagi (cron fire dobel, restart di jam yang sama, trigger
+// manual bersamaan jadwal).
+async function dispatchSection({ config, dryRun, salesList, label, topicKey, computeMessage }) {
+  const summary = { label, salesWithItems: 0, sent: 0, skippedNoPhone: 0, skippedAlreadySent: 0 };
   const directory = readSalesPhoneDirectory();
+
+  let sudahDikirimHariIni = new Set();
+  if (!dryRun && config.enabled) {
+    const { year, month, day } = nowPartsWIB(new Date());
+    const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const existing = await prisma.staffBroadcast.findMany({
+      where: { kind: "AUTO_REMINDER", topic: topicKey, createdAt: { gte: startOfDayWIB(todayStr) } },
+      select: { recipientIds: true },
+    });
+    for (const row of existing) for (const id of row.recipientIds) sudahDikirimHariIni.add(id);
+  }
 
   for (const sales of salesList) {
     const pesan = computeMessage(sales);
@@ -396,6 +417,11 @@ async function dispatchSection({ config, dryRun, salesList, label, computeMessag
     }
     if (!config.enabled) continue; // job dimatikan — hitung tapi jangan kirim/catat
 
+    if (sudahDikirimHariIni.has(sales.id)) {
+      summary.skippedAlreadySent++;
+      continue;
+    }
+
     if (!phone) { summary.skippedNoPhone++; continue; }
     const ok = await kirimWA(phone, pesan, `${label} — ${sales.name}`);
 
@@ -407,6 +433,7 @@ async function dispatchSection({ config, dryRun, salesList, label, computeMessag
         status: "SENT",
         sentAt: new Date(),
         kind: "AUTO_REMINDER",
+        topic: topicKey,
         results: { [sales.id]: { nama: sales.name, phone, status: ok ? "TERKIRIM" : "GAGAL" } },
       },
     }).catch((err) => console.error(`[sales-reminder] Gagal catat riwayat (${label}):`, err.message));
@@ -426,7 +453,7 @@ export async function runUnreadCycle({ referenceNow = new Date(), dryRun = false
   const salesList = await daftarSalesAktif();
   const { unread } = await loadUnansweredBySales(config, now);
   return dispatchSection({
-    config, dryRun, salesList, label: "Chat Belum Dibaca",
+    config, dryRun, salesList, label: "Chat Belum Dibaca", topicKey: "unread",
     computeMessage: (s) => composeUnreadMessage(s.name, unread.get(s.id)),
   });
 }
@@ -437,7 +464,7 @@ export async function runHangingCycle({ referenceNow = new Date(), dryRun = fals
   const salesList = await daftarSalesAktif();
   const { hanging } = await loadUnansweredBySales(config, now);
   return dispatchSection({
-    config, dryRun, salesList, label: "Chat Menggantung",
+    config, dryRun, salesList, label: "Chat Menggantung", topicKey: "hanging",
     computeMessage: (s) => composeHangingMessage(s.name, hanging.get(s.id)),
   });
 }
@@ -447,7 +474,7 @@ export async function runIncompleteCycle({ referenceNow = new Date(), dryRun = f
   const salesList = await daftarSalesAktif();
   const incompleteBySales = await loadIncompleteDataBySales(config);
   return dispatchSection({
-    config, dryRun, salesList, label: "Data Belum Lengkap",
+    config, dryRun, salesList, label: "Data Belum Lengkap", topicKey: "incomplete",
     computeMessage: (s) => composeIncompleteMessage(s.name, incompleteBySales.get(s.id)),
   });
 }
@@ -458,7 +485,7 @@ export async function runFollowUpCycle({ referenceNow = new Date(), dryRun = fal
   const salesList = await daftarSalesAktif();
   const followUpBySales = await loadStatusTransitionReminderBySales(config, now, "DELIVERED");
   return dispatchSection({
-    config, dryRun, salesList, label: "Follow-up H+1",
+    config, dryRun, salesList, label: "Follow-up H+1", topicKey: "followUp",
     computeMessage: (s) => composeFollowUpMessage(s.name, followUpBySales.get(s.id)),
   });
 }
@@ -469,7 +496,7 @@ export async function runProcessingCycle({ referenceNow = new Date(), dryRun = f
   const salesList = await daftarSalesAktif();
   const processingBySales = await loadStatusTransitionReminderBySales(config, now, "PROCESSING");
   return dispatchSection({
-    config, dryRun, salesList, label: "Mulai Diproses",
+    config, dryRun, salesList, label: "Mulai Diproses", topicKey: "processing",
     computeMessage: (s) => composeProcessingMessage(s.name, processingBySales.get(s.id)),
   });
 }
@@ -480,7 +507,7 @@ export async function runZeroClosingCycle({ referenceNow = new Date(), dryRun = 
   const salesList = await daftarSalesAktif();
   const zeroIds = new Set(await loadZeroClosingSalesIds(salesList, now));
   return dispatchSection({
-    config, dryRun, salesList, label: "Belum Closing",
+    config, dryRun, salesList, label: "Belum Closing", topicKey: "zeroClosing",
     computeMessage: (s) => (zeroIds.has(s.id) ? composeZeroClosingMessage(s.name) : null),
   });
 }

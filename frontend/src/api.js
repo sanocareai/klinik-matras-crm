@@ -497,6 +497,8 @@ export const api = {
       if (statusOrParams.unassigned)   params.set("unassigned", "true");
       // Menggantung (assigned, belum dibalas >60 menit) — tab baru 25 Agustus 2026.
       if (statusOrParams.stalled)      params.set("stalled", "true");
+      // Kontak Tim (nomor WA pribadi staf sendiri) — tab baru 7 September 2026.
+      if (statusOrParams.scope)        params.set("scope", statusOrParams.scope);
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
