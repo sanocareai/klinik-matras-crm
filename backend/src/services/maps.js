@@ -78,7 +78,7 @@ const LATLNG_IN_URL_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
 // import dari sini.
 export const DEPOT = { lat: -6.4036521, lng: 106.7839743, label: "Klinik Matras" };
 
-async function geocodeFromMapsLink(text) {
+export async function geocodeFromMapsLink(text) {
   const match = text.match(GOOGLE_MAPS_LINK_RE);
   if (!match) return null;
   const res = await fetch(match[0]);
@@ -177,14 +177,42 @@ async function geocodeNominatim(text) {
   return null;
 }
 
-// geocodeAddress(text) -> { lat, lng, estimate } | null. Best-effort — SELALU
-// dibungkus try/catch oleh pemanggil, gagal geocode BUKAN alasan menolak
-// simpan job (alamat teks tetap tersimpan, deep link Maps di DriverJobs.jsx
-// sudah punya fallback ke pencarian teks kalau lat/lng kosong).
-// `estimate: true` = hasil Nominatim (akurasi lebih rendah dari Google utk
-// alamat Indonesia yang tidak terlalu detail, tapi jauh lebih baik daripada
-// tidak ada koordinat sama sekali).
-export async function geocodeAddress(text) {
+// geocodeAddress(text, locationUrlHint?) -> { lat, lng, estimate } | null.
+// Best-effort — SELALU dibungkus try/catch oleh pemanggil, gagal geocode
+// BUKAN alasan menolak simpan job (alamat teks tetap tersimpan, deep link
+// Maps di DriverJobs.jsx sudah punya fallback ke pencarian teks kalau
+// lat/lng kosong).
+// `estimate: true` = hasil Nominatim/LocationIQ (akurasi lebih rendah dari
+// Google/link Maps utk alamat Indonesia yang tidak terlalu detail, tapi
+// jauh lebih baik daripada tidak ada koordinat sama sekali).
+//
+// `locationUrlHint` (7 September 2026, laporan owner: "Buat Peta" di Route
+// Planner kadang "mental kemana-mana") — dicoba PALING PERTAMA, sebelum
+// bahkan link yang mungkin nempel di `text`. BEDA dari pemeriksaan link di
+// dalam `text` di bawah (itu link yang KEBETULAN ditempel sales di field
+// alamat bebas): `locationUrlHint` adalah `Order.locationUrl`, field yang
+// MEMANG didedikasikan untuk ini (diisi sales/admin saat konfirmasi lokasi
+// customer) — investigasi menemukan field ini SUDAH ADA dan SUDAH diisi
+// untuk banyak order, tapi TIDAK PERNAH dipakai geocoding job sama sekali;
+// job selalu di-geocode dari `Job.addressText` (alamat teks bebas hasil
+// ketikan sales), yang untuk alamat Indonesia detail (blok/RT-RW) SERING
+// gagal cocok tepat di Nominatim/LocationIQ (lihat catatan
+// "PENYEDERHANAAN BERTAHAP" di geocodeNominatim di bawah — dari 143 alamat
+// asli, cuma 2 yang cocok apa adanya) sehingga pin jatuh di level
+// kelurahan/kecamatan, kadang bahkan salah kelurahan — itu akar "mental
+// kemana-mana"-nya. Cek data production (7 September 2026): dari 17 job
+// aktif yang siap dirutekan, 15 order-nya PUNYA locationUrl tapi TIDAK
+// SATU PUN sebelumnya pernah dipakai untuk geocoding job tsb.
+export async function geocodeAddress(text, locationUrlHint) {
+  if (locationUrlHint) {
+    try {
+      const dariOrder = await geocodeFromMapsLink(locationUrlHint);
+      if (dariOrder) return dariOrder;
+    } catch (err) {
+      console.error("[maps] Gagal resolve link Maps order, lanjut ke sumber lain:", err.message);
+    }
+  }
+
   if (!text || !text.trim()) return null;
 
   try {

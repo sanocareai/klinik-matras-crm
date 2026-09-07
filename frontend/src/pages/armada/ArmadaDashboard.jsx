@@ -23,7 +23,7 @@ import { productSummary } from "@/features/inbox/components/CustomerPanel/orderS
 import { toWIB, formatRelatif } from "@/utils/formatDate.js";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES, customerOf, orderNumberOf, orderOf, cityOf,
-  confirmedDateOf, isJobOverdue, overdueDays,
+  confirmedDateOf, isJobOverdue, overdueDays, salesLocationUrl,
 } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
 
@@ -190,6 +190,16 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Job yang SUDAH terjadwal (driver+tanggal, siap dirutekan) — dipakai untuk
+// sinyal "belum ada link Maps" di Needs Attention (7 September 2026,
+// investigasi "Buat Peta" di Route Planner "mental kemana-mana"). SENGAJA
+// LEBIH SEMPIT dari ACTIVE_STATUSES (yang juga mencakup UNSCHEDULED) —
+// job yang belum sempat dijadwalkan memang wajar belum punya link Maps,
+// itu sudah tercakup kartu "Perlu Dijadwalkan" di atas. Yang benar-benar
+// mendesak adalah job yang SUDAH mau dirutekan tapi koordinatnya masih
+// hasil tebakan geocoding.
+const ROUTING_IMMINENT_STATUSES = ["SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
+
 // Dokumen yang kadaluarsa/mau habis (≤30 hari) — sinyal paling mendesak buat
 // dispatcher, karena kendaraan dengan dokumen habis TIDAK BOLEH dioperasikan.
 function dokumenBermasalah(vehicles) {
@@ -346,6 +356,16 @@ export default function ArmadaDashboard() {
     () => (jobs || []).filter((j) => j.scheduledDate && !j.driverId && ACTIVE_STATUSES.includes(j.status)),
     [jobs]
   );
+  // Job SIAP DIRUTEKAN tapi order-nya belum punya link Google Maps —
+  // koordinatnya bergantung pada tebakan geocoding alamat teks, yang untuk
+  // alamat Indonesia detail sering meleset (akar "Buat Peta mental
+  // kemana-mana", lihat catatan panjang di backend routes/armada.js
+  // #ensureJobsGeocoded). Lihat komentar ROUTING_IMMINENT_STATUSES di atas
+  // untuk kenapa scope-nya lebih sempit dari ACTIVE_STATUSES.
+  const noMapsLinkJobs = useMemo(
+    () => (jobs || []).filter((j) => ROUTING_IMMINENT_STATUSES.includes(j.status) && !salesLocationUrl(j)),
+    [jobs]
+  );
   const fleetByStatus = useMemo(() => {
     const out = {};
     for (const v of vehicles) if (v.active) out[v.status] = (out[v.status] || 0) + 1;
@@ -401,9 +421,17 @@ export default function ArmadaDashboard() {
         onClick: () => navigate(`/armada/jobs?job=${j.id}`),
       });
     }
+    for (const j of noMapsLinkJobs) {
+      items.push({
+        severity: "warning", key: `nomapslink-${j.id}`,
+        title: `${customerOf(j) || "Tanpa nama"} · ${orderNumberOf(j) || "—"}`,
+        detail: "Belum ada link Maps dari customer — koordinasi ke sales",
+        onClick: () => navigate(`/armada/jobs?job=${j.id}`),
+      });
+    }
     const rank = { critical: 0, warning: 1 };
     return items.sort((a, b) => rank[a.severity] - rank[b.severity]);
-  }, [overdueJobs, dokIssues, noDriverScheduled, navigate]);
+  }, [overdueJobs, dokIssues, noDriverScheduled, noMapsLinkJobs, navigate]);
 
   // ─── Active Operations — job yang SEDANG berlangsung sekarang ───────────
   // (EN_ROUTE/ARRIVED), dari `jobs` yang sama (rentang aktif, default Hari

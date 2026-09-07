@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, unitCountOf, jobAccentBarStyle, hasJobAccentBar } from "../jobStatus.js";
-import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
+import { JobMetaRow, RentalBadge, ConfirmedTimeBadge, ServiceLabel, CityBadge, OrderStatusBadge, MapsLinkMissingBadge } from "./JobBadges.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
 // Satu kolom rute di Route Planner — drop target untuk job dari panel kiri
@@ -503,6 +503,7 @@ export default function RouteCard({
                         badge teks kedua. OrderStatusBadge SATU-SATUNYA badge
                         status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
+                    <MapsLinkMissingBadge job={j} />
                   </div>
                   <div className="mt-1 truncate text-[11.5px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
                   <ServiceLabel job={j} />

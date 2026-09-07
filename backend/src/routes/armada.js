@@ -29,7 +29,7 @@ import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../ser
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
+import { geocodeAddress, geocodeFromMapsLink, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 
 export const armadaRouter = express.Router();
@@ -573,13 +573,60 @@ function toDateOnly(input) {
 // untuk hitung jarak antar-stop). Gagal geocode TIDAK PERNAH menggagalkan
 // simpan job; alamat teks tetap tersimpan dan deep link Maps di driver masih
 // jalan lewat pencarian teks (lihat mapsUrl() di DriverJobs.jsx).
-async function bestEffortGeocode(addressText) {
+//
+// `locationUrlHint` (7 September 2026) — Order.locationUrl kalau ada,
+// diteruskan ke geocodeAddress() yang mencobanya PALING PERTAMA (jauh lebih
+// akurat dari geocoding teks apa pun). Lihat catatan panjang di
+// services/maps.js#geocodeAddress.
+async function bestEffortGeocode(addressText, locationUrlHint) {
   try {
-    return await geocodeAddress(addressText);
+    return await geocodeAddress(addressText, locationUrlHint);
   } catch (err) {
     console.error("[armada] geocode gagal:", err.message);
     return null;
   }
+}
+
+// Perbaikan-mandiri sekali jalan (7 September 2026, investigasi laporan
+// owner: "Buat Peta" di Route Planner "mental kemana-mana") — dipanggil TEPAT
+// SEBELUM buildRouteMapsUrl() di 4 titik (publish, 2x edit darurat, resend,
+// dan endpoint "Buat Peta" sendiri). Job yang BELUM punya koordinat (lat
+// null — kasus paling sering: job auto-buat dari order sales, lihat catatan
+// panjang di services/armadaAutoJob.js soal geocoding yang SENGAJA dilewati
+// saat job lahir) TAPI order-nya SUDAH punya locationUrl (link Maps yang
+// sales/admin dapat dari customer) di-geocode DI SINI dari link itu — jauh
+// lebih akurat daripada Nominatim/LocationIQ menebak dari teks alamat.
+//
+// Hasilnya DISIMPAN ke Job (bukan cuma dipakai sekali lalu dibuang) — jadi
+// perbaikan ini "menempel": klik "Buat Peta" berikutnya untuk rute yang
+// sama tidak perlu resolve link lagi. Best-effort penuh (Promise.allSettled,
+// try/catch per job) — kegagalan resolve 1 stop TIDAK BOLEH menggagalkan
+// pembuatan link untuk stop lainnya.
+//
+// Untuk job yang SUDAH punya koordinat (dari geocoding lama yang mungkin
+// kurang akurat) TIDAK disentuh di sini — upgrade retroaktif itu tugas
+// scripts/backfill-job-geocode-from-order-link.js (dijalankan manual/
+// terjadwal), bukan setiap kali tombol "Buat Peta" diklik (supaya klik
+// tombol tetap cepat, tidak menunggu network fetch untuk stop yang
+// sebenarnya sudah punya koordinat apa pun kualitasnya).
+async function ensureJobsGeocoded(jobs) {
+  const perluDiisi = jobs.filter((j) => j.lat == null && j.order?.locationUrl);
+  if (perluDiisi.length === 0) return;
+
+  await Promise.allSettled(perluDiisi.map(async (j) => {
+    try {
+      const geo = await geocodeFromMapsLink(j.order.locationUrl);
+      if (!geo) return;
+      await prisma.job.update({ where: { id: j.id }, data: { lat: geo.lat, lng: geo.lng } });
+      // Ikut diperbarui di array in-memory supaya buildRouteMapsUrl() yang
+      // dipanggil SETELAH ini langsung memakai koordinat baru, tanpa perlu
+      // fetch ulang route dari database.
+      j.lat = geo.lat;
+      j.lng = geo.lng;
+    } catch (err) {
+      console.error(`[armada] Gagal resolve link Maps order untuk job ${j.id}:`, err.message);
+    }
+  }));
 }
 
 // GET /api/armada/driver-group — grup WA yang ditugaskan menerima
@@ -1633,6 +1680,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     // KOREKSI, bukan rute baru/dobel.
     if (editingPublished) {
       try {
+        await ensureJobsGeocoded(updated.jobs);
         const { url } = buildRouteMapsUrl(updated.jobs);
         await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
       } catch (err) {
@@ -1785,6 +1833,7 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     // di PATCH /routes/:id di atas.
     if (editingPublished) {
       try {
+        await ensureJobsGeocoded(updated.jobs);
         const { url } = buildRouteMapsUrl(updated.jobs);
         await kirimRingkasanRuteKeNatasha(updated, url, "🔄 RUTE DIPERBARUI");
       } catch (err) {
@@ -1877,6 +1926,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     // Target SEMENTARA chat pribadi Natasha, BUKAN grup driver — lihat
     // catatan lengkap di notifyNatashaText di atas.
     try {
+      await ensureJobsGeocoded(updatedRoute.jobs);
       const { url } = buildRouteMapsUrl(updatedRoute.jobs);
       await kirimRingkasanRuteKeNatasha(updatedRoute, url);
     } catch (err) {
@@ -1908,6 +1958,7 @@ armadaRouter.post("/routes/:id/resend-broadcast", requirePermission(P.ROUTE_WRIT
     if (route.status !== "PUBLISHED") {
       throw new ArmadaError("Cuma rute yang sudah diterbitkan yang bisa dikirim ulang");
     }
+    await ensureJobsGeocoded(route.jobs);
     const { url } = buildRouteMapsUrl(route.jobs);
     await kirimRingkasanRuteKeNatasha(route, url, "📤 KIRIM ULANG");
     res.json({ ok: true });
@@ -1924,8 +1975,17 @@ armadaRouter.post("/routes/:id/resend-broadcast", requirePermission(P.ROUTE_WRIT
 // kebenaran, bukan dua cara membangun URL yang bisa diam-diam beda).
 armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: { jobs: true } });
+    // order.locationUrl (7 September 2026) — dipakai ensureJobsGeocoded() di
+    // bawah. Query ini SEBELUMNYA cuma `jobs: true` (tanpa order sama
+    // sekali) — akar kenapa tombol ini tidak pernah bisa memakai link Maps
+    // order walau field-nya sudah ada, lihat catatan panjang di
+    // ensureJobsGeocoded/services/maps.js#geocodeAddress.
+    const route = await prisma.route.findUnique({
+      where: { id: req.params.id },
+      include: { jobs: { include: { order: { select: { locationUrl: true } } } } },
+    });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    await ensureJobsGeocoded(route.jobs);
     res.json(buildRouteMapsUrl(route.jobs));
   } catch (err) {
     handleErr(err, res);
@@ -2472,7 +2532,9 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
 
     const units = await prisma.unit.findMany({
       where: { id: { in: unitIds } },
-      include: { order: { select: { status: true } } },
+      // locationUrl (7 September 2026) — dipakai geocoding job di bawah,
+      // lihat catatan panjang di bestEffortGeocode/services/maps.js.
+      include: { order: { select: { status: true, locationUrl: true } } },
     });
     if (units.length !== unitIds.length) throw new ArmadaError("Ada unit yang tidak ditemukan");
 
@@ -2504,7 +2566,7 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
       if (!vehicle || !vehicle.active) throw new ArmadaError("Kendaraan tidak ditemukan atau tidak aktif");
     }
 
-    const geo = addressText ? await bestEffortGeocode(addressText) : null;
+    const geo = addressText ? await bestEffortGeocode(addressText, units[0]?.order?.locationUrl) : null;
 
     const job = await prisma.job.create({
       data: {
@@ -2543,7 +2605,12 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
 // membingungkan driver yang mungkin sedang di jalan).
 armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
-    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    // order.locationUrl (7 September 2026) — dipakai geocoding di bawah kalau
+    // addressText berubah, lihat catatan panjang di bestEffortGeocode.
+    const existing = await prisma.job.findUniqueOrThrow({
+      where: { id: req.params.id },
+      include: { order: { select: { locationUrl: true } } },
+    });
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
@@ -2590,7 +2657,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     // untuk alamat yang sama persis.
     if (addressText !== undefined && addressText !== existing.addressText) {
       data.addressText = addressText;
-      const geo = addressText ? await bestEffortGeocode(addressText) : null;
+      const geo = addressText ? await bestEffortGeocode(addressText, existing.order?.locationUrl) : null;
       data.lat = geo?.lat ?? null;
       data.lng = geo?.lng ?? null;
     }

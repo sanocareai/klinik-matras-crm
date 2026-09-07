@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned,
-  Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass,
+  Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass, MapPinOff,
 } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
   isRentalOrder, serviceLabelOf, cityOf, orderStatusOf, orderOf,
+  salesLocationUrl, ACTIVE_STATUSES,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS, orderStatusVariant } from "@/utils/format.js";
@@ -191,6 +192,36 @@ export function CityBadge({ job, className }) {
       )}
     >
       <MapPinned size={11} className="shrink-0" /> {kota}
+    </span>
+  );
+}
+
+// Order BELUM punya link Google Maps (7 September 2026 — investigasi
+// laporan owner: "Buat Peta" di Route Planner "mental kemana-mana"). Akar
+// masalahnya: rute dibangun dari koordinat hasil TEBAKAN geocoding alamat
+// teks (Nominatim/LocationIQ, sering meleset untuk alamat Indonesia
+// detail) karena order-nya tidak/belum punya Order.locationUrl — link
+// Maps yang sales/admin dapat LANGSUNG dari customer, jauh lebih akurat
+// (lihat catatan panjang di services/maps.js#geocodeAddress). Badge ini
+// TIDAK memperbaiki koordinatnya sendiri — cuma menandai dispatcher supaya
+// tahu job mana yang perlu di-follow-up ke sales untuk minta link Maps-nya,
+// SESUAI PERMINTAAN OWNER ("kasih notifikasi, nanti admin delivery akan
+// follow up ke sales"), bukan dikira-kira otomatis.
+//
+// Sengaja HANYA tampil untuk job yang masih AKTIF (ACTIVE_STATUSES) — job
+// yang sudah selesai/gagal tidak lagi butuh rute akurat, menandainya juga
+// cuma menambah noise di kartu riwayat.
+export function MapsLinkMissingBadge({ job, className }) {
+  if (salesLocationUrl(job) || !ACTIVE_STATUSES.includes(job?.status)) return null;
+  return (
+    <span
+      title="Order ini belum punya link Google Maps dari customer — rute bisa meleset. Follow up ke sales."
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange",
+        className
+      )}
+    >
+      <MapPinOff size={11} className="shrink-0" /> Tanpa link Maps
     </span>
   );
 }

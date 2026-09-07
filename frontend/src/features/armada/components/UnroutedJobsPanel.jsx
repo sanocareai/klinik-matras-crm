@@ -5,7 +5,7 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { customerOf, unitCountOf, cityOf, jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf } from "../jobStatus.js";
-import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "./JobBadges.jsx";
+import { RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge } from "./JobBadges.jsx";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 
@@ -114,6 +114,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
               Sinyal tipe job tetap ada lewat glow aksen kiri (hijau =
               Pengiriman). OrderStatusBadge SATU-SATUNYA badge status teks. */}
           <OrderStatusBadge job={j} />
+          <MapsLinkMissingBadge job={j} />
         </div>
         <div className="mt-1 truncate text-[12px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</div>
         <ServiceLabel job={j} />
