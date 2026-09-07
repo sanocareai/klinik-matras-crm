@@ -1173,7 +1173,7 @@ export default function Orders() {
                   <TH>Layanan/Produk</TH>
                   <TH>Ukuran</TH>
                   <TH sortable sortDir={sortKey === "status" ? sortDir : null} onSort={() => toggleSort("status")}>Status</TH>
-                  <TH>Kesiapan</TH>
+                  <TH>Kelengkapan Data</TH>
                   <TH sortable sortDir={sortKey === "pipelineStage" ? sortDir : null} onSort={() => toggleSort("pipelineStage")}>Pipeline</TH>
                   <TH numeric sortable sortDir={sortKey === "daysInStatus" ? sortDir : null} onSort={() => toggleSort("daysInStatus")}>Lama</TH>
                   <TH sortable sortDir={sortKey === "paymentStatus" ? sortDir : null} onSort={() => toggleSort("paymentStatus")}>Pembayaran</TH>

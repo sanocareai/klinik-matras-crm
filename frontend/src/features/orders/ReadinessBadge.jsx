@@ -27,7 +27,9 @@ export default function ReadinessBadge({ order, className }) {
       title={
         hasil.state === READINESS.READY
           ? "Semua data wajib sudah lengkap"
-          : `${jumlahKurang} data belum lengkap — buka rincian untuk lihat daftarnya`
+          : hasil.state === READINESS.BLOCKED
+            ? `${jumlahKurang} data WAJIB belum diisi — order belum bisa dijadwalkan pengambilan/pengiriman, buka rincian untuk lihat daftarnya`
+            : `${jumlahKurang} data belum lengkap (tidak menghalangi, tapi berisiko keliru di lapangan) — buka rincian untuk lihat daftarnya`
       }
     >
       <Icon size={11} aria-hidden="true" /> {meta.label}
