@@ -4212,6 +4212,17 @@ enum StaffBroadcastStatus {
   CANCELLED // dibatalkan admin sebelum sempat dikirim
 }
 
+// MANUAL = dibuat admin/leader lewat tab "Kirim Baru". AUTO_REMINDER = baris
+// yang DITULIS OTOMATIS oleh salesReminderDigestJob.js tiap kali berhasil
+// mengirim salah satu pengingat terjadwalnya — supaya tab "Riwayat" di
+// Broadcast Sales bisa merekap KEDUANYA (permintaan owner 7 Sep 2026:
+// "gahanya riwayat broadcast yang dibikin manual, tapi yang dikirim
+// otomatis juga"), satu tabel, satu sumber kebenaran.
+enum StaffBroadcastKind {
+  MANUAL
+  AUTO_REMINDER
+}
+
 // ─── STAFF BROADCAST (7 September 2026) ────────────────────────────────────
 // Broadcast MANUAL admin/leader ke WA PRIBADI sales (mis. "meeting tanggal
 // X") — TOTAL BEDA dari BroadcastCampaign di atas (itu untuk PELANGGAN,
@@ -4232,18 +4243,28 @@ model StaffBroadcast {
   recipientIds String[]             @default([]) @map("recipient_ids")
   scheduledAt  DateTime             @map("scheduled_at")
   status       StaffBroadcastStatus @default(SCHEDULED)
+  kind         StaffBroadcastKind   @default(MANUAL)
 
-  // Diisi worker SETELAH percobaan kirim:
+  // Diisi worker/job SETELAH percobaan kirim:
   // { [userId]: { nama, phone, status: "TERKIRIM"|"GAGAL", error? } }
   results Json?
 
   createdById String?   @map("created_by_id")
   createdBy   User?     @relation("StaffBroadcastCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  sentAt      DateTime? @map("sent_at")
+  // ⚠️ BUG YANG DIPERBAIKI (7 Sep 2026, ditemukan owner lewat error di UI):
+  // field ini SEMPAT tidak punya @map("created_at") — Prisma Client generate
+  // query membaca kolom "createdAt" (camelCase, default kalau tanpa @map),
+  // padahal kolom SUNGGUHAN di database "created_at" (snake_case, sesuai
+  // migration.sql yang ditulis tangan). GET /staff-broadcast 500 total,
+  // dan karena Promise.all di frontend, ini ikut menggagalkan pemuatan
+  // daftar PENERIMA juga (endpoint terpisah, tidak seharusnya ikut gagal).
+  createdAt DateTime  @default(now()) @map("created_at")
+  sentAt    DateTime? @map("sent_at")
 
   // Query terpanas worker: "ambil SCHEDULED yang sudah waktunya".
   @@index([status, scheduledAt])
+  // Tab Riwayat: filter/urutkan per kind + tanggal.
+  @@index([kind, createdAt])
   @@map("staff_broadcasts")
 }
 

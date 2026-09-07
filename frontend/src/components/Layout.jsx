@@ -530,6 +530,12 @@ export default function Layout({ user, onLogout, children }) {
     "/products", "/broadcast", "/tracking", "/sales-intelligence",
     "/copilot", "/automation", "/pengaturan-sales", "/laporan",
     "/inbox",
+    // "/broadcast-sales" (7 Sep 2026) — halaman BARU, dibangun langsung
+    // dengan Card/Button/Badge/Skeleton (Sano DS v2), NOL kelas CSS
+    // legacy/hardcode warna (sama kategori paling aman dgn /sales-
+    // intelligence, /copilot, /pengaturan-sales di D-109 — lihat catatan
+    // di atas), jadi langsung ikut wildcard kaca tanpa perubahan CSS lain.
+    "/broadcast-sales",
   ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   // D-138 (6 September 2026, laporan owner: "redesign production

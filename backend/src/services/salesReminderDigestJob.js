@@ -1,41 +1,42 @@
-// ─── SALES REMINDER DIGEST (beberapa kali sehari) ──────────────────────────
+// ─── SALES REMINDER — pengingat otomatis, PER TOPIK, ke WA pribadi sales ───
 //
 // Berbeda dari slaAlertJob.js (real-time, tiap 5 menit, fokus SLA/backlog
 // AGREGAT company-wide) dan staleLeadAlertJob.js (harian, fokus urgency
-// lead tinggi) — job ini SATU pesan WA konsolidasi PER SALES PERSON,
-// dikirim beberapa kali sehari (bukan real-time terus-menerus, permintaan
-// owner 7 September 2026: "takut terganggu, jangan tiap jam"), berisi
-// SEMUA hal yang perlu diingatkan ke sales itu HARI INI:
+// lead tinggi) — job ini mengirim PESAN TERPISAH per topik, di JAM
+// TERJADWAL BERBEDA-BEDA sepanjang hari (revisi 7 September 2026, permintaan
+// owner: pesan gabungan 5-topik "kepanjangan, males dibaca" — sekarang tiap
+// topik jadi broadcast SENDIRI, jam A/B/C/D/E, bukan ditumpuk jadi 1 chat):
 //
 //   1. Chat BELUM DIBACA — customer sudah balas, sales BELUM buka sama
-//      sekali, > unreadThresholdMinutes.
-//   2. Chat MENGGANTUNG — sales SUDAH buka (isRead=true) tapi belum balas
-//      (belum ada outbound baru), percakapan "berakhir di pelanggan",
-//      > hangingThresholdMinutes. BEDA dari #1 murni soal isRead — dua-duanya
-//      sama-sama "belum dibalas", cuma beda apakah sudah dilihat atau belum
-//      (permintaan owner, supaya nada pesannya bisa beda: #1 "coba dicek",
-//      #2 "sudah dilihat tapi kelupaan dibalas").
+//      sekali, > unreadThresholdMinutes. Default jadwal: 09:00 WIB.
+//   2. Chat MENGGANTUNG — sales SUDAH buka (isRead=true) tapi belum balas,
+//      percakapan "berakhir di pelanggan". BEDA dari #1 murni soal isRead
+//      (permintaan owner: nada pesannya beda — #1 "coba dicek", #2 "sudah
+//      dilihat tapi kelupaan dibalas"). Default jadwal: 11:00 WIB.
 //   3. Data pelanggan belum lengkap — SCOPE SEMPIT, cuma 4 hal yang owner
 //      sebut eksplisit (BUKAN semua BLOCKER_RULES di orderReadiness.js
 //      frontend, itu daftar lebih luas untuk kebutuhan berbeda/Delivery):
 //      alamat, link Google Maps, jadwal pickup (LAYANAN saja, sama aturan
 //      dgn orderReadiness.js), catatan/keluhan customer. Cuma order yang
 //      dibuat SEJAK config.dataSejakTanggal (default 1 September 2026 —
-//      sistem baru mulai running bulan ini, order lama tidak ditagih PR
-//      yang belum jadi standar saat dibuat).
-//   4. Belum closing HARI INI — nol Order baru (kategori apa saja) sejak
-//      00:00 WIB hari ini. Dikirim HANYA di slot AKHIR HARI (lihat
-//      `eodHour`) — kalau dicek dari pagi, HAMPIR SEMUA sales pasti "belum
-//      closing" (belum waktunya), jadi jam berapa pun disebut. Menyebutnya
-//      dari pagi cuma bikin sales dapat tekanan palsu, bukan pengingat
-//      berguna.
-//   5. Follow-up H+1 setelah Terkirim — order yang pindah ke DELIVERED
+//      sistem baru mulai running bulan ini). Default jadwal: 13:00 WIB.
+//   4. Follow-up H+1 setelah Terkirim — order yang pindah ke DELIVERED
 //      KEMARIN (batas kalender WIB, lihat loadFollowUpDueBySales), TAPI
-//      belum ada pesan OUTBOUND apa pun ke customer itu sejak transisi itu
-//      (minta review/testimoni, dst). Window kalender (bukan geser per
-//      jam) SENGAJA supaya tiap order HANYA dilaporkan SATU KALI (permintaan
-//      owner: "hanya 1 kali broadcast aja sebagai pengingat") — sama
-//      timing dengan #4, cuma dicek di slot akhir hari.
+//      belum ada pesan OUTBOUND apa pun ke customer itu sejak itu. Window
+//      kalender (bukan geser per jam) SENGAJA supaya tiap order HANYA
+//      dilaporkan SATU KALI (permintaan owner). Default jadwal: 15:00 WIB.
+//   5. Belum closing HARI INI — nol Order baru (kategori apa saja) sejak
+//      00:00 WIB hari ini. Default jadwal: 17:00 WIB (akhir hari) — kalau
+//      dicek dari pagi, HAMPIR SEMUA sales pasti "belum closing" (belum
+//      waktunya), jadi jam berapa pun disebut — tekanan palsu, bukan
+//      pengingat berguna.
+//
+// RIWAYAT (7 September 2026, permintaan owner — "gahanya riwayat broadcast
+// yang dibikin manual, tapi yang dikirim otomatis juga"): tiap kali SATU
+// topik berhasil dikirim ke SATU sales, ditulis 1 baris StaffBroadcast
+// (kind=AUTO_REMINDER) — TABEL YANG SAMA dengan broadcast manual
+// (routes/staffBroadcast.js), jadi tab "Riwayat" di halaman Broadcast Sales
+// otomatis merekap KEDUANYA tanpa endpoint/state kedua.
 //
 // PENERIMA: SENGAJA CUMA role SALES aktif (BUKAN Novi/leader — permintaan
 // eksplisit owner: "jangan ke sales leader, nanti ada skema notifikasi
@@ -43,24 +44,11 @@
 // dipakai routes/analytics.js #sales-report (Novi ber-role ADMIN, otomatis
 // tidak ikut) — bukan aturan baru, konsisten dgn precedent yang ada.
 //
-// STAGED UNTUK REVIEW (7 September 2026): `enabled: false` by default,
-// SAMA pola dgn slaAlert/staleLeadAlert (config-gated, bukan code-gated) —
-// job ini AMAN di-deploy apa adanya (tidak pernah kirim WA sungguhan)
-// sampai admin eksplisit set enabled:true di data/settings.json setelah
-// meninjau contoh pesannya (lihat scripts/preview-sales-reminder-digest.js).
-//
-// REUSE, BUKAN REIMPLEMENTASI:
-//   - Channel WA + fallback: sendText/getDefaultOpsSession, pola SAMA
-//     dengan slaAlertJob.js/staleLeadAlertJob.js.
-//   - Directory nomor sales: dibaca dari `slaAlert.salesPhoneDirectory`
-//     yang SUDAH ADA (bukan directory baru) — 1 sumber kebenaran nomor WA
-//     sales, sama seperti staleLeadAlertJob.js.
-//   - Tidak ada state/tabel baru — semua dihitung LANGSUNG dari kondisi
-//     SEKARANG tiap kali job jalan (beda dari slaAlertJob.js yang punya
-//     cooldown/eskalasi kompleks) — aman karena job ini SUDAH throttled ke
-//     beberapa slot waktu tetap per hari, bukan tiap 5 menit, jadi tidak
-//     butuh dedup tambahan: begitu sales membalas/melengkapi/closing,
-//     item itu otomatis hilang dari digest berikutnya.
+// STAGED UNTUK REVIEW: `enabled: false` by default, SAMA pola dgn
+// slaAlert/staleLeadAlert (config-gated, bukan code-gated) — job ini AMAN
+// di-deploy apa adanya (tidak pernah kirim WA sungguhan) sampai admin
+// eksplisit set enabled:true di data/settings.json setelah meninjau contoh
+// pesannya (lihat scripts/preview-sales-reminder-digest.js).
 
 import cron from "node-cron";
 import fs from "fs";
@@ -68,6 +56,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { sendText, getDefaultOpsSession } from "./wahaClient.js";
+import { readSalesPhoneDirectory, resolveSalesPhone } from "./salesPhoneDirectory.js";
 import { startOfDayWIB, nowPartsWIB } from "../utils/wib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,36 +64,33 @@ const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
 
 const DEFAULT_CONFIG = {
   enabled: false, // lihat catatan header — sengaja mati sampai ditinjau owner
-  // 5x/hari, jam kerja, Senin-Sabtu — hindari dini hari/Minggu. Slot
-  // TERAKHIR (17:00) dobel-peran sbg `eodHour` (poin 4 & 5 hanya muncul di
-  // slot ini, lihat catatan header).
-  cronExpression: "0 9,11,13,15,17 * * 1-6",
-  eodHour: 17, // jam WIB (0-23) tempat poin "belum closing" & "follow-up H+1" ikut disertakan
+  // Jam WIB berbeda per topik (revisi 7 Sep 2026) — tersebar sepanjang jam
+  // kerja, Senin-Sabtu, supaya tidak ada 1 momen "5 topik sekaligus".
+  schedule: {
+    unread:      "0 9 * * 1-6",
+    hanging:     "0 11 * * 1-6",
+    incomplete:  "0 13 * * 1-6",
+    followUp:    "0 15 * * 1-6",
+    zeroClosing: "0 17 * * 1-6",
+  },
   unreadThresholdMinutes: 60, // poin 1
   hangingThresholdMinutes: 60, // poin 2
-  // Poin 3 & 5 (7 September 2026, permintaan owner) — sistem BARU mulai
-  // running September 2026, order Agustus & sebelumnya dibuat SEBELUM
-  // kolom alamat/link Maps/dst jadi kebiasaan yang diharapkan sales. Order
-  // sebelum tanggal ini TIDAK PERNAH ikut dihitung "perlu dilengkapi" atau
-  // "perlu follow-up", walau statusnya masih aktif — jangan menagih PR
-  // lama yang memang belum jadi standar saat order itu dibuat.
+  // Poin 3 & 4 — sistem BARU mulai running September 2026, order Agustus &
+  // sebelumnya dibuat SEBELUM kolom alamat/link Maps/dst jadi kebiasaan
+  // yang diharapkan sales. Order sebelum tanggal ini TIDAK PERNAH ikut
+  // dihitung "perlu dilengkapi" atau "perlu follow-up".
   dataSejakTanggal: "2026-09-01",
 };
 
 function readConfig() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")); } catch { raw = {}; }
+  const stored = raw.salesReminderDigest || {};
   return {
     ...DEFAULT_CONFIG,
-    ...(raw.salesReminderDigest || {}),
-    salesPhoneDirectory: raw.slaAlert?.salesPhoneDirectory || [],
+    ...stored,
+    schedule: { ...DEFAULT_CONFIG.schedule, ...(stored.schedule || {}) },
   };
-}
-
-function resolveSalesPhone(name, directory) {
-  if (!name || !Array.isArray(directory)) return null;
-  const match = directory.find((d) => d.name?.toLowerCase() === name.toLowerCase());
-  return match?.phone || null;
 }
 
 // Parse minimal notes JSON Order — SAMA bentuk dgn parseOrderNotes() di
@@ -117,17 +103,13 @@ function keluhanFromNotes(notes) {
   try { return JSON.parse(notes).keluhanCustomer || ""; } catch { return ""; }
 }
 
-async function notifyPhone(phone, pesan, label) {
-  if (!phone) {
-    console.warn(`[sales-reminder-digest] Tidak ada nomor WA terdaftar — skip (${label})`);
-    return false;
-  }
+async function kirimWA(phone, pesan, label) {
   try {
     await sendText(phone, pesan, null, getDefaultOpsSession());
-    console.log(`[sales-reminder-digest] Digest (${label}) terkirim ke`, phone);
+    console.log(`[sales-reminder] (${label}) terkirim ke`, phone);
     return true;
   } catch (err) {
-    console.warn(`[sales-reminder-digest] Gagal kirim WA (${label}) ke ${phone}:`, err.message);
+    console.warn(`[sales-reminder] Gagal kirim WA (${label}) ke ${phone}:`, err.message);
     return false;
   }
 }
@@ -155,7 +137,7 @@ async function loadUnansweredBySales(config, now) {
       AND m.direction = 'INBOUND'
   `;
 
-  const unread = new Map(); // salesId -> [{customerName, menit}]
+  const unread = new Map(); // salesId -> [{nama, menit}]
   const hanging = new Map();
 
   for (const row of rows) {
@@ -180,7 +162,7 @@ async function loadUnansweredBySales(config, now) {
 // digest banjir "kurang link Google Maps" pada order yang SUDAH SELESAI
 // bertahun-tahun, tidak ada apa pun yang bisa ditindaklanjuti sales dari
 // situ. Scope ke order yang MASIH AKTIF saja (belum Terkirim/Dibatalkan),
-// DAN dibuat sejak config.dataSejakTanggal (lihat catatan di DEFAULT_CONFIG).
+// DAN dibuat sejak config.dataSejakTanggal.
 async function loadIncompleteDataBySales(config) {
   const orders = await prisma.order.findMany({
     where: {
@@ -195,7 +177,7 @@ async function loadIncompleteDataBySales(config) {
     },
   });
 
-  const bySales = new Map(); // salesId -> [{ orderNumber, customerName, missing: [] }]
+  const bySales = new Map(); // salesId -> [{ orderNumber, nama, missing: [] }]
   for (const o of orders) {
     const salesId = o.customer?.assignedSalesId;
     if (!salesId) continue;
@@ -220,7 +202,7 @@ async function loadIncompleteDataBySales(config) {
   return bySales;
 }
 
-// ── Poin 4: nol closing hari ini (cuma dipakai di slot eodHour) ────────────
+// ── Poin 5: nol closing hari ini ────────────────────────────────────────────
 async function loadZeroClosingSalesIds(salesList, now) {
   const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -241,14 +223,13 @@ async function loadZeroClosingSalesIds(salesList, now) {
   return salesList.filter((s) => !closedSalesIds.has(s.id)).map((s) => s.id);
 }
 
-// ── Poin 5: follow-up H+1 setelah Terkirim (cuma dipakai di slot eodHour) ──
+// ── Poin 4: follow-up H+1 setelah Terkirim ──────────────────────────────────
 // Window = PERSIS "kemarin" menurut kalender WIB (batas hari, bukan
-// "24-32 jam lalu") — permintaan owner 7 September 2026: "hanya 1 kali
-// broadcast aja sebagai pengingat". Batas kalender TIDAK PERNAH tumpang
-// tindih antar hari (beda dari window geser berbasis jam yang bisa
-// dobel/bocor kalau waktu cron sedikit meleset) — order yang DELIVERED
-// kemarin (kapan pun jam berapa pun) HANYA masuk window ini SATU KALI,
-// tepat di slot eodHour hari ini, lalu tidak pernah muncul lagi.
+// "24-32 jam lalu") — permintaan owner: "hanya 1 kali broadcast aja sebagai
+// pengingat". Batas kalender TIDAK PERNAH tumpang tindih antar hari (beda
+// dari window geser berbasis jam yang bisa dobel/bocor kalau waktu cron
+// sedikit meleset) — order yang DELIVERED kemarin (kapan pun jam berapa
+// pun) HANYA masuk window ini SATU KALI.
 async function loadFollowUpDueBySales(config, now) {
   const { year, month, day } = nowPartsWIB(new Date(now));
   const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -287,7 +268,7 @@ async function loadFollowUpDueBySales(config, now) {
     if (!existing || t.createdAt > existing.createdAt) latestPerOrder.set(t.order.id, t);
   }
 
-  const bySales = new Map(); // salesId -> [{ orderNumber, customerName }]
+  const bySales = new Map(); // salesId -> [{ orderNumber, nama }]
   for (const t of latestPerOrder.values()) {
     const salesId = t.order.customer?.assignedSalesId;
     if (!salesId) continue;
@@ -310,123 +291,176 @@ async function loadFollowUpDueBySales(config, now) {
   return bySales;
 }
 
-// Susun 1 pesan WA konsolidasi dari semua bagian yang relevan utk 1 sales.
-// Balikin `null` kalau tidak ada satu pun hal untuk dilaporkan (TIDAK kirim
-// pesan "semua aman!" tiap slot — permintaan owner: hindari notifikasi
-// berlebihan, cukup diam kalau memang tidak ada yang perlu ditindak).
-function composeMessage({ salesName, unread, hanging, incomplete, zeroClosing, followUp }) {
-  const bagian = [];
-
-  if (unread?.length) {
-    bagian.push([
-      `📩 *${unread.length} chat belum dibaca* (customer sudah balas):`,
-      ...unread.slice(0, 8).map((u) => `- ${u.nama} — ${u.menit} menit lalu`),
-      unread.length > 8 ? `...dan ${unread.length - 8} lainnya` : null,
-    ].filter(Boolean).join("\n"));
-  }
-
-  if (hanging?.length) {
-    bagian.push([
-      `👀 *${hanging.length} chat sudah dibaca tapi belum dibalas* — jangan sampai percakapan berakhir di pelanggan:`,
-      ...hanging.slice(0, 8).map((h) => `- ${h.nama} — ${h.menit} menit lalu`),
-      hanging.length > 8 ? `...dan ${hanging.length - 8} lainnya` : null,
-    ].filter(Boolean).join("\n"));
-  }
-
-  if (incomplete?.length) {
-    bagian.push([
-      `📋 *${incomplete.length} order perlu dilengkapi datanya*:`,
-      ...incomplete.slice(0, 8).map((o) => `- ${o.nama} (${o.orderNumber}) — ${o.missing.join(", ")}`),
-      incomplete.length > 8 ? `...dan ${incomplete.length - 8} lainnya` : null,
-    ].filter(Boolean).join("\n"));
-  }
-
-  if (zeroClosing) {
-    bagian.push(`💰 Belum ada order baru yang closing hari ini — yuk semangat, masih ada waktu!`);
-  }
-
-  if (followUp?.length) {
-    bagian.push([
-      `⭐ *${followUp.length} order terkirim kemarin, belum ada follow-up*:`,
-      ...followUp.slice(0, 8).map((f) => `- ${f.nama} (${f.orderNumber})`),
-      followUp.length > 8 ? `...dan ${followUp.length - 8} lainnya` : null,
-      "Follow up untuk minta review/testimoni.",
-    ].filter(Boolean).join("\n"));
-  }
-
-  if (bagian.length === 0) return null;
-
+// ── Pesan per TOPIK (bukan lagi digabung) — masing-masing SATU broadcast
+// tersendiri, sengaja pendek/fokus 1 hal. `null` = tidak ada yang perlu
+// dilaporkan untuk sales ini, TIDAK dikirim sama sekali (diam, bukan
+// "semua aman!" tiap kali — permintaan owner: hindari notifikasi
+// berlebihan).
+function composeUnreadMessage(nama, items) {
+  if (!items?.length) return null;
   return [
-    `👋 Halo *${salesName}*, ini pengingat dari CRM Klinik Matras:`,
+    `👋 Halo *${nama}*, ada ${items.length} chat yang *belum dibaca* (customer sudah balas):`,
     "",
-    bagian.join("\n\n"),
-  ].join("\n");
+    ...items.slice(0, 10).map((u) => `- ${u.nama} — ${u.menit} menit lalu`),
+    items.length > 10 ? `...dan ${items.length - 10} lainnya` : null,
+    "",
+    "Yuk segera dicek 🙏",
+  ].filter(Boolean).join("\n");
 }
 
-// Fungsi murni-hitung (TANPA kirim WA) — dipakai job asli DAN
-// scripts/preview-sales-reminder-digest.js untuk lihat contoh pesan nyata
-// tanpa efek samping. `now` bisa di-override utk testing/preview jam tertentu.
-export async function buildDigest({ referenceNow = new Date() } = {}) {
-  const config = readConfig();
-  const now = referenceNow.getTime();
-  // nowPartsWIB() cuma punya year/month/day (bukan jam) — hitung jam WIB
-  // manual dengan teknik offset yang sama.
-  const jamWib = new Date(now + 7 * 3_600_000).getUTCHours();
-  const eodSlot = jamWib === config.eodHour;
+function composeHangingMessage(nama, items) {
+  if (!items?.length) return null;
+  return [
+    `👋 Halo *${nama}*, ada ${items.length} chat yang sudah dibaca tapi *belum dibalas*:`,
+    "",
+    ...items.slice(0, 10).map((h) => `- ${h.nama} — ${h.menit} menit lalu`),
+    items.length > 10 ? `...dan ${items.length - 10} lainnya` : null,
+    "",
+    "Jangan sampai percakapan berakhir di pelanggan ya 🙏",
+  ].filter(Boolean).join("\n");
+}
 
-  const salesList = await prisma.user.findMany({
-    where: { role: "SALES", active: true },
-    select: { id: true, name: true },
-  });
+function composeIncompleteMessage(nama, items) {
+  if (!items?.length) return null;
+  return [
+    `👋 Halo *${nama}*, ada ${items.length} order yang datanya *belum lengkap*:`,
+    "",
+    ...items.slice(0, 10).map((o) => `- ${o.nama} (${o.orderNumber}) — ${o.missing.join(", ")}`),
+    items.length > 10 ? `...dan ${items.length - 10} lainnya` : null,
+    "",
+    "Yuk dilengkapi supaya order bisa lanjut diproses 🙏",
+  ].filter(Boolean).join("\n");
+}
 
-  const { unread, hanging } = await loadUnansweredBySales(config, now);
-  const incompleteBySales = await loadIncompleteDataBySales(config);
-  const zeroClosingIds = eodSlot ? new Set(await loadZeroClosingSalesIds(salesList, now)) : new Set();
-  const followUpBySales = eodSlot ? await loadFollowUpDueBySales(config, now) : new Map();
+function composeFollowUpMessage(nama, items) {
+  if (!items?.length) return null;
+  return [
+    `👋 Halo *${nama}*, ada ${items.length} order yang terkirim kemarin, *belum ada follow-up*:`,
+    "",
+    ...items.map((f) => `- ${f.nama} (${f.orderNumber})`),
+    "",
+    "Follow up untuk minta review/testimoni 🙏",
+  ].filter(Boolean).join("\n");
+}
 
-  const hasil = []; // { sales, phone, pesan }
+function composeZeroClosingMessage(nama) {
+  return `👋 Halo *${nama}*, belum ada order baru yang closing hari ini — yuk semangat, masih ada waktu! 💪`;
+}
+
+// ── Dispatcher bersama tiap topik — hitung pesan per sales, kirim (kalau
+// enabled & bukan dryRun), lalu catat SEBAGAI StaffBroadcast(kind=
+// AUTO_REMINDER) supaya muncul di tab Riwayat Broadcast Sales. Message
+// TETAP dihitung walau job mati (`enabled:false`) — itulah yang membuat
+// scripts/preview-sales-reminder-digest.js bisa menampilkan contoh nyata
+// SEBELUM job dinyalakan.
+async function dispatchSection({ config, dryRun, salesList, label, computeMessage }) {
+  const summary = { label, salesWithItems: 0, sent: 0, skippedNoPhone: 0 };
+  const directory = readSalesPhoneDirectory();
+
   for (const sales of salesList) {
-    const pesan = composeMessage({
-      salesName: sales.name,
-      unread: unread.get(sales.id),
-      hanging: hanging.get(sales.id),
-      incomplete: incompleteBySales.get(sales.id),
-      zeroClosing: zeroClosingIds.has(sales.id),
-      followUp: followUpBySales.get(sales.id),
-    });
+    const pesan = computeMessage(sales);
     if (!pesan) continue;
-    hasil.push({
-      sales,
-      phone: resolveSalesPhone(sales.name, config.salesPhoneDirectory),
-      pesan,
-    });
-  }
+    summary.salesWithItems++;
 
-  return { config, eodSlot, digests: hasil };
-}
-
-export async function runSalesReminderDigestCycle({ referenceNow = new Date(), dryRun = false } = {}) {
-  const { config, eodSlot, digests } = await buildDigest({ referenceNow });
-  const summary = { enabled: config.enabled, eodSlot, salesWithItems: digests.length, sent: 0, skippedNoPhone: 0 };
-  if (!config.enabled) return summary;
-
-  for (const { sales, phone, pesan } of digests) {
+    const phone = resolveSalesPhone(sales.name, directory);
     if (dryRun) {
-      console.log(`[sales-reminder-digest] (dryRun) TIDAK dikirim ke ${sales.name} (${phone || "no phone"}):\n${pesan}\n`);
+      console.log(`[sales-reminder] (dryRun) (${label}) TIDAK dikirim ke ${sales.name} (${phone || "no phone"}):\n${pesan}\n`);
       continue;
     }
+    if (!config.enabled) continue; // job dimatikan — hitung tapi jangan kirim/catat
+
     if (!phone) { summary.skippedNoPhone++; continue; }
-    const ok = await notifyPhone(phone, pesan, `Digest — ${sales.name}`);
+    const ok = await kirimWA(phone, pesan, `${label} — ${sales.name}`);
+
+    await prisma.staffBroadcast.create({
+      data: {
+        message: pesan,
+        recipientIds: [sales.id],
+        scheduledAt: new Date(),
+        status: "SENT",
+        sentAt: new Date(),
+        kind: "AUTO_REMINDER",
+        results: { [sales.id]: { nama: sales.name, phone, status: ok ? "TERKIRIM" : "GAGAL" } },
+      },
+    }).catch((err) => console.error(`[sales-reminder] Gagal catat riwayat (${label}):`, err.message));
+
     if (ok) summary.sent++;
   }
   return summary;
 }
 
+async function daftarSalesAktif() {
+  return prisma.user.findMany({ where: { role: "SALES", active: true }, select: { id: true, name: true } });
+}
+
+export async function runUnreadCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const salesList = await daftarSalesAktif();
+  const { unread } = await loadUnansweredBySales(config, now);
+  return dispatchSection({
+    config, dryRun, salesList, label: "Chat Belum Dibaca",
+    computeMessage: (s) => composeUnreadMessage(s.name, unread.get(s.id)),
+  });
+}
+
+export async function runHangingCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const salesList = await daftarSalesAktif();
+  const { hanging } = await loadUnansweredBySales(config, now);
+  return dispatchSection({
+    config, dryRun, salesList, label: "Chat Menggantung",
+    computeMessage: (s) => composeHangingMessage(s.name, hanging.get(s.id)),
+  });
+}
+
+export async function runIncompleteCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const salesList = await daftarSalesAktif();
+  const incompleteBySales = await loadIncompleteDataBySales(config);
+  return dispatchSection({
+    config, dryRun, salesList, label: "Data Belum Lengkap",
+    computeMessage: (s) => composeIncompleteMessage(s.name, incompleteBySales.get(s.id)),
+  });
+}
+
+export async function runFollowUpCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const salesList = await daftarSalesAktif();
+  const followUpBySales = await loadFollowUpDueBySales(config, now);
+  return dispatchSection({
+    config, dryRun, salesList, label: "Follow-up H+1",
+    computeMessage: (s) => composeFollowUpMessage(s.name, followUpBySales.get(s.id)),
+  });
+}
+
+export async function runZeroClosingCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const salesList = await daftarSalesAktif();
+  const zeroIds = new Set(await loadZeroClosingSalesIds(salesList, now));
+  return dispatchSection({
+    config, dryRun, salesList, label: "Belum Closing",
+    computeMessage: (s) => (zeroIds.has(s.id) ? composeZeroClosingMessage(s.name) : null),
+  });
+}
+
 export function startSalesReminderDigestJob() {
   const config = readConfig();
-  cron.schedule(config.cronExpression, async () => {
-    console.log("[sales-reminder-digest] Cron fired");
-    await runSalesReminderDigestCycle();
-  }, { timezone: "Asia/Jakarta" });
-  console.log(`[sales-reminder-digest] Job terdaftar — jadwal "${config.cronExpression}" (Asia/Jakarta), enabled=${config.enabled}`);
+  const topik = [
+    ["unread", config.schedule.unread, runUnreadCycle, "Chat Belum Dibaca"],
+    ["hanging", config.schedule.hanging, runHangingCycle, "Chat Menggantung"],
+    ["incomplete", config.schedule.incomplete, runIncompleteCycle, "Data Belum Lengkap"],
+    ["followUp", config.schedule.followUp, runFollowUpCycle, "Follow-up H+1"],
+    ["zeroClosing", config.schedule.zeroClosing, runZeroClosingCycle, "Belum Closing"],
+  ];
+  for (const [, expr, fn, label] of topik) {
+    cron.schedule(expr, async () => {
+      console.log(`[sales-reminder] Cron (${label}) fired`);
+      await fn();
+    }, { timezone: "Asia/Jakarta" });
+  }
+  console.log(`[sales-reminder] 5 topik terdaftar (jadwal masing-masing beda) — enabled=${config.enabled}`);
 }
