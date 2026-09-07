@@ -11,10 +11,17 @@ import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import {
-  startStage, completeStage, failStage, skipStage, recordQcFitTest, getUnitStatus,
+  startStage, completeStage, failStage, skipStage, recordQcFitTest, getUnitStatus, resolveBlocker,
+  pauseStage, resumeStage,
   StageTransitionError,
 } from "../services/unitStageEngine.js";
 import { buildUnitPath } from "../lib/domain/routing.js";
+import {
+  deriveProductionStatus, describeProductionStatus, isReworkTarget, PRODUCTION_PRIORITY_VALUES,
+} from "../lib/domain/productionState.js";
+import { deriveOverdue, deriveAtRisk } from "../lib/domain/productionExceptions.js";
+import { groupIntoAttempts, deriveStageLogStatus, summarizeAttempt } from "../lib/domain/stageExecution.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
@@ -46,6 +53,14 @@ function handleEngineError(err, res) {
   if (err instanceof StageTransitionError) {
     return res.status(err.statusCode).json({ error: err.message });
   }
+  // P2034 = konflik transaksi SERIALIZABLE (Production Core Slice 3I) — dua
+  // perintah eksekusi (START/PAUSE/RESUME/COMPLETE) bersamaan pada tahap yang
+  // sama, salah satunya kalah lomba. Ini SINYAL SEHAT (Postgres mencegah
+  // korupsi data), bukan bug — jawab 409 yang jelas + minta klien coba lagi,
+  // JANGAN bocorkan pesan Prisma mentah ke pengguna.
+  if (err.code === "P2034") {
+    return res.status(409).json({ error: "Ada aksi lain yang bersamaan mengubah tahap ini — coba lagi" });
+  }
   console.error("Unit stage engine error:", err);
   return res.status(500).json({ error: "Server error: " + err.message });
 }
@@ -74,14 +89,59 @@ unitRouter.post("/:id/stages/:stageId/complete", requirePermission(P.UNIT_STAGE_
   }
 });
 
-// POST /api/units/:id/stages/:stageId/fail — wajib blockReason (PRD §6.2).
+// POST /api/units/:id/stages/:stageId/fail — OPEN BLOCKER (Production Core
+// Slice 2A). Wajib blockReason (PRD §6.2), tipe divalidasi terhadap
+// BLOCK_REASON_VALUES, OTHER wajib catatan jelas — lihat failStage().
+// Respons SEKARANG { log, blocker } (Slice 2, tambahan aditif dari { log }
+// polos sebelumnya).
 unitRouter.post("/:id/stages/:stageId/fail", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     const { blockReason, note } = req.body;
-    const log = await failStage(req.params.id, req.params.stageId, {
+    const result = await failStage(req.params.id, req.params.stageId, {
       actorId: req.user.id, blockReason, note,
     });
-    res.json(log);
+    res.json(result);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// POST /api/units/:id/stages/:stageId/pause — JEDA tahap yang sedang berjalan
+// (Production Core Slice 3C). Permission SAMA dengan start/complete/fail —
+// siapa pun yang boleh mengerjakan tahap juga boleh menjedanya sendiri.
+unitRouter.post("/:id/stages/:stageId/pause", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    const { reason, note } = req.body;
+    const result = await pauseStage(req.params.id, req.params.stageId, {
+      actorId: req.user.id, reason, note,
+    });
+    res.json(result);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// POST /api/units/:id/stages/:stageId/resume — LANJUTKAN tahap yang dijeda.
+unitRouter.post("/:id/stages/:stageId/resume", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    const result = await resumeStage(req.params.id, req.params.stageId, { actorId: req.user.id });
+    res.json(result);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// POST /api/units/:id/blockers/:blockerId/resolve — RESOLVE BLOCKER
+// (Production Core Slice 2A), perintah EKSPLISIT terpisah dari me-restart
+// tahap (startStage() juga auto-resolve, lihat catatan di sana — dua jalur
+// menuju satu state akhir konsisten). Permission SAMA dengan membuka blokir
+// (UNIT_STAGE_WRITE) — siapa pun yang boleh "Tandai Terhambat" juga boleh
+// mencatat penyelesaiannya.
+unitRouter.post("/:id/blockers/:blockerId/resolve", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    const { resolutionNote } = req.body;
+    const blocker = await resolveBlocker(req.params.blockerId, { actorId: req.user.id, resolutionNote });
+    res.json(blocker);
   } catch (err) {
     handleEngineError(err, res);
   }
@@ -130,10 +190,101 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
     const service = await prisma.serviceCatalog.findUnique({ where: { id: serviceId } });
     if (!service) return res.status(404).json({ error: "Layanan tidak ditemukan di katalog" });
 
-    const unit = await prisma.unit.update({
-      where: { id: req.params.id },
-      data: { serviceId, serviceLine: service.serviceLine },
+    const existing = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!existing) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    // Update + jejak aktivitas dalam SATU transaksi (Production Core Slice 1)
+    // — sebelum ini penetapan/perubahan layanan unit sama sekali tidak
+    // tercatat di mana pun selain updatedAt polos.
+    const unit = await prisma.$transaction(async (tx) => {
+      const updated = await tx.unit.update({
+        where: { id: req.params.id },
+        data: { serviceId, serviceLine: service.serviceLine },
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.UNIT, entityId: req.params.id,
+        eventType: EVENT_TYPES.SERVICE_ASSIGNED, actorId: req.user.id,
+        metadata: { serviceId, serviceLabel: service.labelId, serviceLine: service.serviceLine },
+      });
+      return updated;
     });
+    res.json(unit);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// PATCH /api/units/:id/production — prioritas & tanggal target produksi
+// (Production Core Slice 1). TERPISAH dari stage engine — ini metadata
+// perencanaan, BUKAN transisi tahap, jadi tidak lewat unitStageEngine.js.
+//
+// Permission UNIT_ROUTING_WRITE (level supervisor), SENGAJA BUKAN
+// UNIT_STAGE_WRITE — spec eksplisit: pekerja produksi (PRODUCTION_WORKER,
+// hanya punya UNIT_STAGE_WRITE) tidak boleh mereprioritaskan pekerjaannya
+// sendiri. PRODUCTION_LEAD/QC_LEAD/ADMIN yang punya UNIT_ROUTING_WRITE.
+//
+// Hanya field yang BENAR-BENAR berubah yang ditulis + dicatat aktivitasnya
+// — pola sama dengan order_status_transitions/pipeline_transitions: jangan
+// mencatat "X -> X" kalau form mengirim nilai yang sama persis.
+unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try {
+    const { priority, productionDueAt } = req.body;
+
+    if (priority !== undefined && !PRODUCTION_PRIORITY_VALUES.includes(priority)) {
+      return res.status(400).json({ error: `priority harus salah satu dari: ${PRODUCTION_PRIORITY_VALUES.join(", ")}` });
+    }
+
+    let parsedDueAt;
+    if (productionDueAt !== undefined) {
+      parsedDueAt = productionDueAt ? new Date(productionDueAt) : null;
+      if (productionDueAt && Number.isNaN(parsedDueAt.getTime())) {
+        return res.status(400).json({ error: "productionDueAt bukan tanggal/jam yang valid (pakai format ISO)" });
+      }
+    }
+
+    const before = await prisma.unit.findUnique({
+      where: { id: req.params.id },
+      select: { priority: true, productionDueAt: true },
+    });
+    if (!before) return res.status(404).json({ error: "Unit tidak ditemukan" });
+
+    const data = {};
+    if (priority !== undefined && priority !== before.priority) data.priority = priority;
+    if (productionDueAt !== undefined) {
+      const beforeIso = before.productionDueAt ? before.productionDueAt.toISOString() : null;
+      const afterIso = parsedDueAt ? parsedDueAt.toISOString() : null;
+      if (afterIso !== beforeIso) data.productionDueAt = parsedDueAt;
+    }
+
+    // Tidak ada yang benar-benar berubah — kembalikan apa adanya, JANGAN
+    // buka transaksi/tulis aktivitas kosong.
+    if (Object.keys(data).length === 0) {
+      return res.json(await prisma.unit.findUnique({ where: { id: req.params.id } }));
+    }
+
+    const unit = await prisma.$transaction(async (tx) => {
+      const updated = await tx.unit.update({ where: { id: req.params.id }, data });
+
+      if ("priority" in data) {
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.UNIT, entityId: req.params.id,
+          eventType: EVENT_TYPES.PRIORITY_CHANGED, actorId: req.user.id,
+          metadata: { from: before.priority, to: data.priority },
+        });
+      }
+      if ("productionDueAt" in data) {
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.UNIT, entityId: req.params.id,
+          eventType: EVENT_TYPES.DUE_DATE_CHANGED, actorId: req.user.id,
+          metadata: {
+            from: before.productionDueAt ? before.productionDueAt.toISOString() : null,
+            to: data.productionDueAt ? data.productionDueAt.toISOString() : null,
+          },
+        });
+      }
+      return updated;
+    });
+
     res.json(unit);
   } catch (err) {
     handleEngineError(err, res);
@@ -205,7 +356,7 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
 
-    const [intakeStages, finishStages, moduleMappings, logs] = await Promise.all([
+    const [intakeStages, finishStages, moduleMappings, logs, activeBlocker] = await Promise.all([
       prisma.routingStage.findMany({ where: { phase: "INTAKE", active: true } }),
       prisma.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
       unit.serviceId
@@ -216,28 +367,79 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         include: { actor: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
       }),
+      // Blokir TERBUKA unit ini (Production Core Slice 2A) — satu query
+      // tambahan, wajar untuk endpoint SATU unit (bukan daftar).
+      prisma.productionBlocker.findFirst({
+        where: { unitId: unit.id, resolvedAt: null },
+        include: { openedBy: { select: { id: true, name: true } }, stage: { select: { id: true, labelId: true } } },
+      }),
     ]);
 
     const path = buildUnitPath(intakeStages, moduleMappings.map((m) => m.stage), finishStages);
     const logsByStage = {};
     for (const log of logs) (logsByStage[log.stageId] ??= []).push(log);
 
+    // Status per tahap sekarang PAUSE-aware (Production Core Slice 3O) —
+    // deriveStageLogStatus() dari lib/domain/stageExecution.js SUDAH
+    // mengenali RESUME (=IN_PROGRESS lagi) dan PAUSE (=state PAUSED
+    // tersendiri, TERPISAH dari BLOCKED/FAIL). Definisi TUNGGAL dipakai
+    // ulang di sini dan di getUnitStatus() — tidak ada salinan kedua yang
+    // bisa diam-diam menyimpang.
     const timeline = path.map((stage) => {
       const stageLogs = logsByStage[stage.id] || [];
       const last = stageLogs[stageLogs.length - 1] || null;
-      let status = "NOT_STARTED";
-      if (last) {
-        if (last.action === "START") status = "IN_PROGRESS";
-        else if (last.action === "FAIL") status = "BLOCKED";
-        else if (last.action === "COMPLETE") status = "DONE";
-        else if (last.action === "SKIP") status = "SKIPPED";
-      }
+      const status = last ? deriveStageLogStatus(last.action) : "NOT_STARTED";
       return { stage, status, logs: stageLogs, isCurrent: unit.currentStageId === stage.id };
+    });
+
+    // Execution History (Slice 3O) — daftar ATTEMPT tahap yang sedang
+    // ditindak SEKARANG (SATU unit, jumlah baris kecil — aman, bukan pola
+    // daftar/N+1). SENGAJA terpisah dari `activeBlocker`/Activity Timeline
+    // generik di atas — ini kosakata level-eksekusi (attempt/touch/paused),
+    // bukan audit lintas entitas.
+    const currentStageLogs = unit.currentStageId ? (logsByStage[unit.currentStageId] || []) : [];
+    const executionHistory = groupIntoAttempts(currentStageLogs).map((attempt) => summarizeAttempt(attempt));
+
+    // productionStatus level-UNIT (Production Core Slice 1/2) — kosakata
+    // KANONIK dari lib/domain/productionState.js, di atas status per-tahap
+    // yang dihitung untuk `timeline` di atas (dua hal berbeda: status SATU
+    // baris tahap vs status unit SECARA KESELURUHAN).
+    //
+    // Rework/overdue/at-risk dihitung DI SINI (bukan endpoint lain yang
+    // menampilkan banyak unit sekaligus — board/work-orders/qc-queue) —
+    // datanya (qcFitTests + blocker + path) sudah termuat penuh untuk SATU
+    // unit tanpa query tambahan. Endpoint LIST memakai batch loader
+    // (loadOpenBlockersByUnit/loadLatestQcFitTestByUnit di
+    // unitStageEngine.js) supaya tetap 1 query per jenis data, bukan N+1 —
+    // lihat routes/production.js.
+    const currentPathStage = path.find((s) => s.id === unit.currentStageId) || null;
+    const lastLogForCurrentStage = unit.currentStageId ? (logsByStage[unit.currentStageId]?.slice(-1)[0] || null) : null;
+    const latestQc = unit.qcFitTests[0] || null;
+    const reworkTarget = isReworkTarget({ latestQc, currentStagePhase: currentPathStage?.phase });
+    const productionStatus = deriveProductionStatus({
+      unit, lastLog: lastLogForCurrentStage,
+      hasOpenBlocker: !!activeBlocker,
+      currentStageRequiresQc: !!currentPathStage?.requiresQc,
+      isReworkTarget: reworkTarget,
+    });
+
+    const overdue = deriveOverdue({ unit });
+    const risk = deriveAtRisk({
+      unit, hasOpenBlocker: !!activeBlocker, blockerReason: activeBlocker?.reason || null, overdue,
     });
 
     res.json({
       unit, path: timeline, qcFitTests: unit.qcFitTests,
       needsService: !unit.serviceId,
+      productionStatus,
+      productionStatusReason: describeProductionStatus(productionStatus, lastLogForCurrentStage, activeBlocker),
+      // Operasional (Production Core Slice 2H — bagian "Unit Detail").
+      activeBlocker,
+      overdue,
+      risk,
+      // Eksekusi tahap SEKARANG (Production Core Slice 3O) — riwayat attempt
+      // (START/PAUSE/RESUME/.../terminal) untuk currentStageId unit ini.
+      executionHistory,
     });
   } catch (err) {
     handleEngineError(err, res);

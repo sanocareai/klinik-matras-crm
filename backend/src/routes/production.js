@@ -13,8 +13,14 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import {
-  getUnitStatus, recordStageDone, resolveNextStageForUnits, StageTransitionError,
+  getUnitStatus, recordStageDone, resolveNextStageForUnits, loadLastCurrentStageLogs,
+  loadOpenBlockersByUnit, loadLatestQcFitTestByUnit, StageTransitionError,
 } from "../services/unitStageEngine.js";
+import { deriveProductionStatus, describeProductionStatus, isReworkTarget, PRODUCTION_COMPLETE_UNIT_STATUSES } from "../lib/domain/productionState.js";
+import { deriveStageLogStatus, OPEN_WORK_ACTIONS as EXECUTION_OPEN_WORK_ACTIONS } from "../lib/domain/stageExecution.js";
+import {
+  deriveOverdue, deriveAtRisk, deriveWorkspaceHealth, buildExceptions, RISK_CONFIG,
+} from "../lib/domain/productionExceptions.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { prisma } from "../db.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
@@ -40,6 +46,31 @@ function resolveTargetDate(input) {
 
 // Status unit yang dianggap "ada di bengkel" — kandidat untuk dikerjakan.
 const IN_WORKSHOP = ["RECEIVED", "IN_PRODUCTION"];
+
+/**
+ * unitId yang SUDAH bergerak (ada log COMPLETE/SKIP) pada `targetDate` (WIB) —
+ * dipakai /board (summary.moved) dan /command-center (summary.completedToday,
+ * flow.completed). Ditarik jadi satu fungsi 6 September 2026 (Production
+ * Core Slice 2) supaya dua permukaan itu memakai definisi "selesai hari
+ * ini" yang SAMA, bukan salinan kedua yang bisa diam-diam menyimpang.
+ *
+ * unit_id adalah kolom UUID — filter "in: []" pada Prisma/Postgres valid
+ * (hasil kosong), tapi placeholder string palsu seperti "-" DITOLAK keras
+ * oleh Postgres ("invalid input syntax for type uuid"). Jadi kalau
+ * `unitIds` kosong, lewati query ini sepenuhnya alih-alih memaksakan
+ * filter dengan nilai tidak valid.
+ */
+async function movedUnitIdsForDate(unitIds, targetDate) {
+  if (!unitIds || unitIds.length === 0) return new Set();
+  const dateStr = targetDate.toISOString().slice(0, 10);
+  const from = startOfDayWIB(dateStr);
+  const to = endOfDayExclusiveWIB(dateStr);
+  const movedLogs = await prisma.unitStageLog.findMany({
+    where: { unitId: { in: unitIds }, action: { in: ["COMPLETE", "SKIP"] }, createdAt: { gte: from, lt: to } },
+    select: { unitId: true },
+  });
+  return new Set(movedLogs.map((l) => l.unitId));
+}
 
 // GET /api/production/board?date=YYYY-MM-DD
 // Papan harian: target hari ini + unit lain yang ada di bengkel.
@@ -83,32 +114,36 @@ productionRouter.get("/board", requirePermission(P.UNIT_READ), async (req, res) 
     const allUnits = [...targets.map((t) => t.unit), ...available];
     const nextStageByUnitId = await resolveNextStageForUnits(allUnits);
 
+    // productionStatus level-UNIT (Production Core Slice 1/2) — DUA query
+    // batch (log terakhir + blocker terbuka), TIDAK bertambah seiring
+    // jumlah unit — lihat loadLastCurrentStageLogs/loadOpenBlockersByUnit.
+    // isReworkTarget TIDAK dihitung di sini (lihat catatan di
+    // GET /units/:id/timeline) — unit yang sedang dirework tampil
+    // IN_PROGRESS/QUEUED/BLOCKED, tetap benar, cuma kurang spesifik.
+    const [lastLogByUnitId, blockerByUnitId] = await Promise.all([
+      loadLastCurrentStageLogs(allUnits),
+      loadOpenBlockersByUnit(allUnits.map((u) => u.id)),
+    ]);
+
     // Hitung berapa target hari ini yang SUDAH bergerak (ada log COMPLETE/SKIP
     // hari ini) — ini angka yang dilaporkan kepala produksi ke grup sore hari.
-    //
-    // unit_id adalah kolom UUID — filter "in: []" pada Prisma/Postgres valid
-    // (hasil kosong), tapi placeholder string palsu seperti "-" DITOLAK keras
-    // oleh Postgres ("invalid input syntax for type uuid"). Jadi kalau belum
-    // ada target sama sekali, lewati query ini sepenuhnya alih-alih memaksakan
-    // filter dengan nilai tidak valid.
-    const movedUnitIds = [];
-    if (targetedUnitIds.length > 0) {
-      const from = startOfDayWIB(targetDate.toISOString().slice(0, 10));
-      const to = endOfDayExclusiveWIB(targetDate.toISOString().slice(0, 10));
-      const movedLogs = await prisma.unitStageLog.findMany({
-        where: {
-          unitId: { in: targetedUnitIds },
-          action: { in: ["COMPLETE", "SKIP"] },
-          createdAt: { gte: from, lt: to },
-        },
-        select: { unitId: true },
-      });
-      movedUnitIds.push(...new Set(movedLogs.map((l) => l.unitId)));
-    }
+    const movedUnitIds = [...await movedUnitIdsForDate(targetedUnitIds, targetDate)];
 
-    // Tempelkan tahap TERHITUNG (bukan currentStage mentah) ke tiap unit,
-    // supaya frontend tidak pernah perlu menghitung jalur sendiri.
-    const withComputedStage = (unit) => ({ ...unit, nextStage: nextStageByUnitId[unit.id] || null });
+    // Tempelkan tahap TERHITUNG (bukan currentStage mentah) + productionStatus
+    // ke tiap unit, supaya frontend tidak pernah perlu menghitung jalur atau
+    // status sendiri.
+    const withComputedStage = (unit) => {
+      const nextStage = nextStageByUnitId[unit.id] || null;
+      const lastLog = lastLogByUnitId[unit.id] || null;
+      const blocker = blockerByUnitId[unit.id] || null;
+      const productionStatus = deriveProductionStatus({
+        unit, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!nextStage?.requiresQc,
+      });
+      return {
+        ...unit, nextStage, productionStatus,
+        productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
+      };
+    };
 
     res.json({
       date: targetDate.toISOString().slice(0, 10),
@@ -331,7 +366,7 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     const units = await prisma.unit.findMany({
       where,
       include: {
-        currentStage: { select: { id: true, code: true, labelId: true, phase: true } },
+        currentStage: { select: { id: true, code: true, labelId: true, phase: true, requiresQc: true } },
         service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
         order: {
           select: {
@@ -344,13 +379,45 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       take: 500,
     });
 
+    // productionStatus level-UNIT (Production Core Slice 1/2) — DUA query
+    // batch, lihat catatan di GET /board soal isReworkTarget TIDAK dihitung
+    // di endpoint list, dan kenapa ini TIDAK menjadi 1+N seiring jumlah unit.
+    const unitIds = units.map((u) => u.id);
+    const [lastLogByUnitId, blockerByUnitId] = await Promise.all([
+      loadLastCurrentStageLogs(units),
+      loadOpenBlockersByUnit(unitIds),
+    ]);
+    const unitsWithStatus = units.map((u) => {
+      const lastLog = lastLogByUnitId[u.id] || null;
+      const blocker = blockerByUnitId[u.id] || null;
+      const productionStatus = deriveProductionStatus({
+        unit: u, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!u.currentStage?.requiresQc,
+      });
+      return {
+        ...u, productionStatus,
+        productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
+        // Kolom "Execution State"/"Elapsed" (Production Core Slice 3P) —
+        // SENGAJA dihitung dari `lastLog` yang SUDAH batch-loaded di atas
+        // (loadLastCurrentStageLogs, satu query untuk SELURUH daftar), BUKAN
+        // query/attempt-reconstruction per unit — itu tetap tugas Unit Detail
+        // (`getUnitStatus().execution`, lihat unitStageEngine.js). Yang
+        // ditampilkan di sini cuma "sejak kapan segmen SEKARANG dimulai"
+        // (currentSegmentStartedAt, null kalau tidak sedang berjalan) —
+        // frontend menghitung tickingnya sendiri lewat setInterval (spec
+        // "live timer TANPA per-second DB write"), bukan backend yang
+        // menghitung ulang tiap request.
+        executionState: lastLog ? deriveStageLogStatus(lastLog.action) : "NOT_STARTED",
+        currentSegmentStartedAt: EXECUTION_OPEN_WORK_ACTIONS.has(lastLog?.action) ? lastLog.createdAt : null,
+      };
+    });
+
     // Hitungan per status untuk seluruh katalog (TIDAK ikut filter status —
     // supaya angka di tab tidak berubah-ubah saat tab dipindah, pola yang
     // sama dengan tab berhitung di halaman lain).
     const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
 
     res.json({
-      units,
+      units: unitsWithStatus,
       statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
     });
   } catch (err) {
@@ -391,24 +458,40 @@ productionRouter.get("/qc-queue", requirePermission(P.UNIT_READ), async (req, re
       orderBy: { createdAt: "asc" },
     });
 
-    const lastLogs = await prisma.unitStageLog.findMany({
-      where: { OR: units.map((u) => ({ unitId: u.id, stageId: u.currentStageId })) },
-      orderBy: { createdAt: "desc" },
-    });
-    const lastByUnit = {};
-    for (const log of lastLogs) {
-      if (!lastByUnit[log.unitId]) lastByUnit[log.unitId] = log; // sudah urut desc, yang pertama ketemu = terbaru
-    }
+    // Ditarik ke loadLastCurrentStageLogs()/loadOpenBlockersByUnit() —
+    // sebelumnya query batch log diduplikasi di sini secara manual; sekarang
+    // board/work-orders/qc-queue memakai definisi yang SAMA, bukan salinan
+    // kedua yang bisa diam-diam menyimpang. DUA query batch, TIDAK
+    // bertambah seiring jumlah unit (Production Core Slice 2 — lihat audit
+    // performa di komentar routes/production.js bagian atas file).
+    const unitIds = units.map((u) => u.id);
+    const [lastByUnit, blockerByUnitId] = await Promise.all([
+      loadLastCurrentStageLogs(units),
+      loadOpenBlockersByUnit(unitIds),
+    ]);
 
     const withState = units.map((u) => {
       const last = lastByUnit[u.id];
+      const blocker = blockerByUnitId[u.id] || null;
       const qcState = !last ? "READY" : last.action === "START" ? "IN_PROGRESS" : last.action === "FAIL" ? "BLOCKED" : "READY";
       // sinceAt = sejak kapan unit ini di kondisi qcState SEKARANG (31 Agustus
       // 2026 — laporan owner: halaman ini tidak tampil tanggal sama sekali).
       // Pakai createdAt log terakhir kalau ada (jam persis START/FAIL-nya),
       // fallback ke Unit.createdAt untuk yang belum pernah tersentuh log QC
       // sama sekali (qcState READY sejak lahir).
-      return { ...u, qcState, sinceAt: last?.createdAt || u.createdAt };
+      //
+      // productionStatus (Production Core Slice 1/2) — kosakata KANONIK yang
+      // sama dipakai board/work-orders, ditambahkan DI SAMPING qcState lama
+      // (dipertahankan apa adanya — halaman ini sudah membacanya). Seluruh
+      // unit di sini currentStage.requiresQc=true by construction (lihat
+      // `where` di atas), jadi currentStageRequiresQc selalu true.
+      const productionStatus = deriveProductionStatus({
+        unit: u, lastLog: last || null, hasOpenBlocker: !!blocker, currentStageRequiresQc: true,
+      });
+      return {
+        ...u, qcState, sinceAt: last?.createdAt || u.createdAt,
+        productionStatus, productionStatusReason: describeProductionStatus(productionStatus, last || null, blocker),
+      };
     });
 
     res.json({ units: withState });
@@ -542,6 +625,150 @@ productionRouter.get("/report", requirePermission(P.DASHBOARD_READ), async (req,
         passRate: totalQc > 0 ? passedQc / totalQc : null,
         byVerdict: byVerdictRaw.map((v) => ({ verdict: v.verdict, count: v._count._all })),
       },
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/production/command-center?date=YYYY-MM-DD — Production Core
+// Slice 2E. SATU endpoint teragregasi (bukan beberapa request kecil dari
+// frontend) untuk "apa yang terjadi, kenapa, apa yang perlu diperhatikan,
+// apa selanjutnya" — menggantikan WorkspaceHero yang sebelumnya cuma
+// menghitung target hari ini di pages/Bengkel.jsx.
+//
+// PERFORMA (audit STEP 0, Production Core Slice 2): endpoint ini memuat
+// SELURUH unit yang secara produksi masih berjalan (non-terminal) SATU
+// KALI, lalu men-derive productionStatus/overdue/at-risk/exception murni
+// di memori (fungsi MURNI dari lib/domain/productionExceptions.js) — TIDAK
+// ADA query di dalam loop per-unit. Total query TETAP walau jumlah unit
+// bertambah dari puluhan ke ratusan:
+//   1. unit.findMany (unit non-terminal + relasi order/currentStage)
+//   2. loadOpenBlockersByUnit (batch)
+//   3. loadLastCurrentStageLogs (batch)
+//   4. loadLatestQcFitTestByUnit (batch)
+//   5. productionTarget.findMany (target hari ini)
+//   6. movedUnitIdsForDate (batch, HANYA kalau ada target)
+// Lihat tests/queryBatching.test.js untuk bukti tertulis jumlah panggilan
+// batch TIDAK bertambah seiring N.
+productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const now = new Date();
+    const targetDate = resolveTargetDate(req.query.date);
+
+    // Unit yang SECARA PRODUKSI masih berjalan — lebih LEBAR dari IN_WORKSHOP
+    // (RECEIVED/IN_PRODUCTION): unit yang masih AWAITING_PICKUP/IN_TRANSIT_IN
+    // tetap bisa overdue (janjinya sudah lewat sebelum sempat diambil), jadi
+    // overdue/at-risk dihitung atas populasi ini, BUKAN cuma yang sudah masuk
+    // bengkel — lihat isProductionEligible() di lib/domain/productionExceptions.js.
+    const units = await prisma.unit.findMany({
+      where: { status: { notIn: [...PRODUCTION_COMPLETE_UNIT_STATUSES, "CANCELLED"] } },
+      select: {
+        id: true, unitCode: true, status: true, priority: true, productionDueAt: true,
+        serviceId: true, currentStageId: true, orderId: true,
+        currentStage: { select: { phase: true, requiresQc: true } },
+        order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+      },
+    });
+    const unitIds = units.map((u) => u.id);
+
+    const [blockerByUnitId, lastLogByUnitId, latestQcByUnitId, targetRows] = await Promise.all([
+      loadOpenBlockersByUnit(unitIds),
+      loadLastCurrentStageLogs(units),
+      loadLatestQcFitTestByUnit(unitIds),
+      prisma.productionTarget.findMany({ where: { targetDate }, select: { unitId: true } }),
+    ]);
+    const targetUnitIds = targetRows.map((t) => t.unitId);
+    const movedToday = await movedUnitIdsForDate(targetUnitIds, targetDate);
+
+    const reworkUnitIds = new Set();
+    let unitsWithDueDate = 0;
+    let inProgressCount = 0, waitingQcCount = 0, queuedCount = 0, blockedCount = 0, overdueCount = 0, severeOverdueCount = 0, atRiskCount = 0;
+    // pausedCount (Production Core Slice 3Q) — SEBELUM Slice 3, action PAUSE
+    // tidak pernah ditulis, jadi status PAUSED mustahil muncul di sini.
+    // SEKARANG bisa, dan HARUS dihitung eksplisit — tanpa ini, unit yang
+    // sedang dijeda diam-diam tidak masuk bucket manapun (bukan queued, bukan
+    // inProgress, bukan blocked), "hilang" dari ringkasan Command Center.
+    // SENGAJA cuma hitungan (bukan Touch/Paused Time KPI apa pun — itu di
+    // luar lingkup Slice 3, lihat lib/domain/stageExecution.js).
+    let pausedCount = 0;
+
+    for (const unit of units) {
+      const blocker = blockerByUnitId[unit.id] || null;
+      const lastLog = lastLogByUnitId[unit.id] || null;
+      const latestQc = latestQcByUnitId[unit.id] || null;
+      const rework = isReworkTarget({ latestQc, currentStagePhase: unit.currentStage?.phase });
+      if (rework) reworkUnitIds.add(unit.id);
+
+      const status = deriveProductionStatus({
+        unit, lastLog, hasOpenBlocker: !!blocker,
+        currentStageRequiresQc: !!unit.currentStage?.requiresQc, isReworkTarget: rework,
+      });
+
+      if (status === "IN_PROGRESS") inProgressCount++;
+      else if (status === "WAITING_QC") waitingQcCount++;
+      else if (status === "QUEUED" || status === "NOT_STARTED") queuedCount++;
+      else if (status === "PAUSED") pausedCount++;
+      if (blocker) blockedCount++;
+
+      if (unit.productionDueAt) unitsWithDueDate++;
+      const overdue = deriveOverdue({ unit, now });
+      if (overdue.isOverdue) {
+        overdueCount++;
+        if (overdue.overdueMinutes >= RISK_CONFIG.SEVERE_OVERDUE_HOURS * 60) severeOverdueCount++;
+      } else if (!blocker) {
+        // atRisk TIDAK dihitung untuk unit yang sudah blocked — konsisten
+        // dengan buildExceptionsForUnit() (hindari unit yang sama dihitung
+        // dua kali di dua metrik berbeda untuk kondisi yang sama).
+        const risk = deriveAtRisk({ unit, now, hasOpenBlocker: false, overdue });
+        if (risk.isAtRisk) atRiskCount++;
+      }
+    }
+
+    const unscheduledCount = units.filter(
+      (u) => IN_WORKSHOP.includes(u.status) && !targetUnitIds.includes(u.id)
+    ).length;
+
+    const exceptions = buildExceptions({ units, blockersByUnitId: blockerByUnitId, reworkUnitIds, now })
+      .slice(0, RISK_CONFIG.MAX_EXCEPTIONS_RETURNED);
+
+    const workspaceHealth = deriveWorkspaceHealth({
+      blockedCount, overdueCount, atRiskCount, severeOverdueCount,
+    });
+
+    res.json({
+      date: targetDate.toISOString().slice(0, 10),
+      summary: {
+        unitsInWorkshop: units.filter((u) => IN_WORKSHOP.includes(u.status)).length,
+        // targetToday/completedToday: SELALU angka nyata dari production_targets
+        // (planning system yang sudah ada sejak D-014) — 0 kalau memang belum
+        // ada target hari ini diset, BUKAN "unavailable". Lihat unitsWithDueDate
+        // di bawah untuk metrik yang MEMANG bisa genuinely tidak tersedia.
+        targetToday: targetUnitIds.length,
+        completedToday: movedToday.size,
+        inProgress: inProgressCount + waitingQcCount,
+        queued: queuedCount,
+        paused: pausedCount,
+        blocked: blockedCount,
+        atRisk: atRiskCount,
+        overdue: overdueCount,
+        // Dasar perhitungan atRisk/overdue — 0 di sini berarti BELUM ADA unit
+        // yang punya productionDueAt sama sekali, jadi atRisk/overdue di atas
+        // bukan "0 aman", tapi "belum bisa dihitung". Frontend WAJIB
+        // membedakan dua keadaan ini (lihat pages/Bengkel.jsx).
+        unitsWithDueDate,
+      },
+      workspaceHealth,
+      exceptions,
+      flow: {
+        queued: queuedCount,
+        inProgress: inProgressCount,
+        paused: pausedCount,
+        waitingQc: waitingQcCount,
+        rework: reworkUnitIds.size,
+        completed: movedToday.size,
+      },
+      unscheduledUnits: { count: unscheduledCount },
     });
   } catch (err) {
     handleErr(err, res);

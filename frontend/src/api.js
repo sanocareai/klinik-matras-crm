@@ -450,6 +450,15 @@ export const api = {
     request(`/units/${unitId}/stages/${stageId}/fail`, {
       method: "POST", body: JSON.stringify({ blockReason, note }),
     }),
+  // JEDA/LANJUTKAN tahap (Production Core Slice 3) — TERPISAH dari
+  // fail/resolveBlocker: pause TIDAK PERNAH untuk kendala eksternal (lihat
+  // backend lib/domain/stageExecution.js#validatePauseReason).
+  pauseUnitStage: (unitId, stageId, { reason, note } = {}) =>
+    request(`/units/${unitId}/stages/${stageId}/pause`, {
+      method: "POST", body: JSON.stringify({ reason, note }),
+    }),
+  resumeUnitStage: (unitId, stageId) =>
+    request(`/units/${unitId}/stages/${stageId}/resume`, { method: "POST" }),
   // RESOLVE BLOCKER (Production Core Slice 2A) — TERPISAH dari me-restart
   // tahap (startUnitStage juga auto-resolve, lihat catatan backend).
   resolveBlocker: (unitId, blockerId, resolutionNote) =>

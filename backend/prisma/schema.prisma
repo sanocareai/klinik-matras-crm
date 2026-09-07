@@ -318,68 +318,70 @@ model User {
   // TIDAK mengubah/melonggarkan filter role==="SALES" yang sudah ada.
   isSalesTeamLead Boolean @default(false)
 
-  assignedCustomers         Customer[]               @relation("AssignedSales")
-  assignedConversations     Conversation[]           @relation("AssignedAgent")
-  notes                     Note[]
-  salesTargets              SalesTarget[]
-  adSpends                  AdSpend[]
-  invoicesCreated           Invoice[]                @relation("InvoiceCreator")
-  pushTokens                PushToken[]
-  sentMessages              Message[]                @relation("MessageSender")
-  firstResponderFor         Conversation[]           @relation("FirstResponder")
-  handoverEventsFrom        HandoverEvent[]          @relation("HandoverFrom")
-  handoverEventsTo          HandoverEvent[]          @relation("HandoverTo")
-  pipelineTransitions       PipelineTransition[]     @relation("PipelineTransitionActor")
-  orderStatusChanges        OrderStatusTransition[]  @relation("OrderStatusActor")
-  orderStatusOverrides      Order[]                  @relation("OrderStatusOverrider")
-  orderRevisionEdits        OrderRevisionLog[]       @relation("OrderRevisionEditor")
-  promosCreated             Promo[]                  @relation("PromoCreator")
-  messageTemplates          MessageTemplate[]
-  unitStageLogs             UnitStageLog[]           @relation("UnitStageLogActor")
-  jobsAsDriver              Job[]                    @relation("JobDriver")
-  jobsAsHelper              Job[]                    @relation("JobHelper")
-  jobPositionPings          JobPositionPing[]        @relation("JobPositionPingDriver")
+  assignedCustomers          Customer[]               @relation("AssignedSales")
+  assignedConversations      Conversation[]           @relation("AssignedAgent")
+  notes                      Note[]
+  salesTargets               SalesTarget[]
+  adSpends                   AdSpend[]
+  invoicesCreated            Invoice[]                @relation("InvoiceCreator")
+  pushTokens                 PushToken[]
+  sentMessages               Message[]                @relation("MessageSender")
+  firstResponderFor          Conversation[]           @relation("FirstResponder")
+  handoverEventsFrom         HandoverEvent[]          @relation("HandoverFrom")
+  handoverEventsTo           HandoverEvent[]          @relation("HandoverTo")
+  pipelineTransitions        PipelineTransition[]     @relation("PipelineTransitionActor")
+  orderStatusChanges         OrderStatusTransition[]  @relation("OrderStatusActor")
+  orderStatusOverrides       Order[]                  @relation("OrderStatusOverrider")
+  orderRevisionEdits         OrderRevisionLog[]       @relation("OrderRevisionEditor")
+  promosCreated              Promo[]                  @relation("PromoCreator")
+  messageTemplates           MessageTemplate[]
+  unitStageLogs              UnitStageLog[]           @relation("UnitStageLogActor")
+  jobsAsDriver               Job[]                    @relation("JobDriver")
+  jobsAsHelper               Job[]                    @relation("JobHelper")
+  jobPositionPings           JobPositionPing[]        @relation("JobPositionPingDriver")
   // D-035 — armada: PIC kendaraan, biaya, servis, insiden
-  vehiclesAsPic             Vehicle[]                @relation("VehiclePic")
-  vehicleExpensesAsDriver   VehicleExpense[]         @relation("VehicleExpenseDriver")
-  vehicleExpensesRecorded   VehicleExpense[]         @relation("VehicleExpenseRecorder")
-  vehicleServicesRecorded   VehicleService[]         @relation("VehicleServiceRecorder")
-  vehicleIncidentsAsDriver  VehicleIncident[]        @relation("VehicleIncidentDriver")
-  vehicleIncidentsRecorded  VehicleIncident[]        @relation("VehicleIncidentRecorder")
-  qcFitTests                QcFitTest[]              @relation("QcFitTestTester")
-  productionTargets         ProductionTarget[]       @relation("ProductionTargetCreator")
-  paymentsRecorded          Payment[]                @relation("PaymentRecorder")
-  paymentsCancelled         Payment[]                @relation("PaymentCanceller")
-  paymentsVerified          PaymentVerification[]    @relation("PaymentVerifier")
-  stockMovements            StockMovement[]          @relation("StockMovementActor")
-  routesAsDriver            Route[]                  @relation("RouteDriver")
-  routesAsHelper            Route[]                  @relation("RouteHelper")
-  podVerified               Job[]                    @relation("PodVerifier")
-  jobsRescheduled           Job[]                    @relation("JobRescheduler")
-  unitRevisionsCreated      UnitRevision[]           @relation("UnitRevisionCreator")
-  goodsReceiptsCreated      GoodsReceipt[]           @relation("GoodsReceiptCreator")
-  materialIssuesRequested   MaterialIssue[]          @relation("MaterialIssueRequester")
-  materialIssuesApproved    MaterialIssue[]          @relation("MaterialIssueApprover")
-  materialIssuesIssued      MaterialIssue[]          @relation("MaterialIssueIssuer")
-  materialIssuesCreated     MaterialIssue[]          @relation("MaterialIssueCreator")
-  stockTransfersRequested   StockTransfer[]          @relation("StockTransferRequester")
-  stockTransfersApproved    StockTransfer[]          @relation("StockTransferApprover")
-  stockCountsAssigned       StockCount[]             @relation("StockCountAssignee")
-  stockCountsReviewed       StockCount[]             @relation("StockCountReviewer")
-  stockCountsCreated        StockCount[]             @relation("StockCountCreator")
-  damagedStockReported      DamagedStockRecord[]     @relation("DamagedStockReporter")
-  damagedStockResolved      DamagedStockRecord[]     @relation("DamagedStockResolver")
-  returnRecordsCreated      ReturnRecord[]           @relation("ReturnRecordCreator")
-  stockAdjustmentsRequested StockAdjustmentRequest[] @relation("StockAdjustmentRequester")
-  stockAdjustmentsApproved  StockAdjustmentRequest[] @relation("StockAdjustmentApprover")
-  stockAdjustmentsPosted    StockAdjustmentRequest[] @relation("StockAdjustmentPoster")
-  replenishmentsRequested   ReplenishmentRequest[]   @relation("ReplenishmentRequester")
-  replenishmentsApproved    ReplenishmentRequest[]   @relation("ReplenishmentApprover")
-  routesCreated             Route[]                  @relation("RouteCreator")
-  routesLastEdited          Route[]                  @relation("RouteLastEditor")
-  scopeRevisionsMade        ScopeRevision[]          @relation("ScopeRevisionProposer")
-  scopeRevisionsDecided     ScopeRevision[]          @relation("ScopeRevisionDecider")
-  productsCreated           Product[]                @relation("ProductCreator")
+  vehiclesAsPic              Vehicle[]                @relation("VehiclePic")
+  vehicleExpensesAsDriver    VehicleExpense[]         @relation("VehicleExpenseDriver")
+  vehicleExpensesRecorded    VehicleExpense[]         @relation("VehicleExpenseRecorder")
+  vehicleServicesRecorded    VehicleService[]         @relation("VehicleServiceRecorder")
+  vehicleIncidentsAsDriver   VehicleIncident[]        @relation("VehicleIncidentDriver")
+  vehicleIncidentsRecorded   VehicleIncident[]        @relation("VehicleIncidentRecorder")
+  qcFitTests                 QcFitTest[]              @relation("QcFitTestTester")
+  productionTargets          ProductionTarget[]       @relation("ProductionTargetCreator")
+  paymentsRecorded           Payment[]                @relation("PaymentRecorder")
+  paymentsCancelled          Payment[]                @relation("PaymentCanceller")
+  paymentsVerified           PaymentVerification[]    @relation("PaymentVerifier")
+  stockMovements             StockMovement[]          @relation("StockMovementActor")
+  routesAsDriver             Route[]                  @relation("RouteDriver")
+  routesAsHelper             Route[]                  @relation("RouteHelper")
+  podVerified                Job[]                    @relation("PodVerifier")
+  jobsRescheduled            Job[]                    @relation("JobRescheduler")
+  unitRevisionsCreated       UnitRevision[]           @relation("UnitRevisionCreator")
+  goodsReceiptsCreated       GoodsReceipt[]           @relation("GoodsReceiptCreator")
+  materialIssuesRequested    MaterialIssue[]          @relation("MaterialIssueRequester")
+  materialIssuesApproved     MaterialIssue[]          @relation("MaterialIssueApprover")
+  materialIssuesIssued       MaterialIssue[]          @relation("MaterialIssueIssuer")
+  materialIssuesCreated      MaterialIssue[]          @relation("MaterialIssueCreator")
+  stockTransfersRequested    StockTransfer[]          @relation("StockTransferRequester")
+  stockTransfersApproved     StockTransfer[]          @relation("StockTransferApprover")
+  stockCountsAssigned        StockCount[]             @relation("StockCountAssignee")
+  stockCountsReviewed        StockCount[]             @relation("StockCountReviewer")
+  stockCountsCreated         StockCount[]             @relation("StockCountCreator")
+  damagedStockReported       DamagedStockRecord[]     @relation("DamagedStockReporter")
+  damagedStockResolved       DamagedStockRecord[]     @relation("DamagedStockResolver")
+  returnRecordsCreated       ReturnRecord[]           @relation("ReturnRecordCreator")
+  stockAdjustmentsRequested  StockAdjustmentRequest[] @relation("StockAdjustmentRequester")
+  stockAdjustmentsApproved   StockAdjustmentRequest[] @relation("StockAdjustmentApprover")
+  stockAdjustmentsPosted     StockAdjustmentRequest[] @relation("StockAdjustmentPoster")
+  replenishmentsRequested    ReplenishmentRequest[]   @relation("ReplenishmentRequester")
+  replenishmentsApproved     ReplenishmentRequest[]   @relation("ReplenishmentApprover")
+  routesCreated              Route[]                  @relation("RouteCreator")
+  routesLastEdited           Route[]                  @relation("RouteLastEditor")
+  scopeRevisionsMade         ScopeRevision[]          @relation("ScopeRevisionProposer")
+  scopeRevisionsDecided      ScopeRevision[]          @relation("ScopeRevisionDecider")
+  productsCreated            Product[]                @relation("ProductCreator")
+  productionBlockersOpened   ProductionBlocker[]      @relation("ProductionBlockerOpener")
+  productionBlockersResolved ProductionBlocker[]      @relation("ProductionBlockerResolver")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -1006,6 +1008,15 @@ model Order {
   deliveryEstimate      String?   @map("delivery_estimate")
   deliveryConfirmedDate DateTime? @map("delivery_confirmed_date") @db.Date
 
+  // customerPromiseDate (Production Core, 6 September 2026) — tanggal YANG
+  // DIJANJIKAN ke customer, dipakai sisi PRODUKSI sebagai acuan urgensi.
+  // SENGAJA terpisah dari deliveryEstimate (teks bebas, "estimasi X/Y") dan
+  // deliveryConfirmedDate (tanggal armada dikunci) — dua kolom itu punya
+  // pemilik proses (Sales/Armada) dan bentuk (teks vs tanggal pasti) yang
+  // berbeda dari "janji" yang production butuh sebagai target internal.
+  // NULL = belum pernah dijanjikan tanggal pasti, apa adanya.
+  customerPromiseDate DateTime? @map("customer_promise_date") @db.Date
+
   // Link share lokasi Google Maps dari customer — dulu cuma nempel di teks
   // pesan WA (gampang hilang begitu chat discroll), sekarang jadi field
   // sendiri supaya selalu ketemu dari Order-nya langsung.
@@ -1194,6 +1205,21 @@ model OrderRevisionLog {
   @@map("order_revision_logs")
 }
 
+// Prioritas produksi (Production Core, 6 September 2026) — SUMBU TERPISAH
+// dari status. "Apa yang harus dikerjakan duluan?" tidak bisa dijawab lewat
+// UnitStatus/tahap manapun, dan status tidak boleh disalahgunakan sebagai
+// penanda urgensi (produksi bisa "IN_PRODUCTION" baik untuk unit biasa
+// maupun yang harus dikebut). Default NORMAL — prioritas TIDAK PERNAH
+// disimpulkan otomatis dari due date/status, murni keputusan manusia lewat
+// PATCH /units/:id/production (permission UNIT_ROUTING_WRITE, diaudit lewat
+// ActivityEvent).
+enum ProductionPriority {
+  NORMAL
+  HIGH
+  URGENT
+  CRITICAL
+}
+
 // UNIT — entitas inti Sano Hub (D-002). Satu kasur fisik.
 //
 // Satu Order bisa berisi banyak Unit. Tiap Unit punya QR, diagnosa, racikan,
@@ -1246,6 +1272,18 @@ model Unit {
   currentStageId String?       @map("current_stage_id") @db.Uuid
   currentStage   RoutingStage? @relation(fields: [currentStageId], references: [id], onDelete: Restrict)
 
+  // Prioritas & tanggal target produksi (Production Core, 6 September 2026).
+  // priority NORMAL default — aman untuk 199 unit lama (belum pernah
+  // ditriase, jujur "belum diprioritaskan" bukan ditebak mendesak/tidak).
+  // productionDueAt = target internal "harus selesai produksi kapan" —
+  // BEDA dari Order.pickupEstimate/deliveryEstimate (itu janji ke customer
+  // dari sisi Sales/Armada). NULL = belum ada target, apa adanya — TIDAK
+  // ADA logika apa pun yang menurunkan "at risk"/"overdue" dari kolom ini
+  // di tahap ini (lihat productionState.js); baru dipakai setelah data
+  // cukup untuk dipercaya.
+  priority        ProductionPriority @default(NORMAL)
+  productionDueAt DateTime?          @map("production_due_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1256,11 +1294,18 @@ model Unit {
   stockMovements    StockMovement[]
   scopeRevisions    ScopeRevision[]
   revisions         UnitRevision[]
+  blockers          ProductionBlocker[]
 
   @@unique([orderId, seq])
   @@index([orderId])
   @@index([status]) // papan bengkel & Kendali: "berapa unit per status"
   @@index([currentStageId]) // papan Kanban per tahap
+  // Production Core Slice 2 — Command Center menyaring/mengurutkan SELURUH
+  // unit aktif berdasarkan tanggal target & prioritas (deriveOverdue/
+  // deriveAtRisk di lib/domain/productionExceptions.js). Tanpa index ini,
+  // query itu full-scan tabel units tiap kali command-center dibuka.
+  @@index([productionDueAt])
+  @@index([priority])
   @@map("units")
 }
 
@@ -1301,11 +1346,12 @@ model RoutingStage {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
 
-  serviceModules ServiceCatalogModule[]
-  unitsHere      Unit[]
-  stageLogs      UnitStageLog[]
-  qcFitTests     QcFitTest[]
-  scopeRevisions ScopeRevision[]
+  serviceModules     ServiceCatalogModule[]
+  unitsHere          Unit[]
+  stageLogs          UnitStageLog[]
+  qcFitTests         QcFitTest[]
+  scopeRevisions     ScopeRevision[]
+  productionBlockers ProductionBlocker[]
 
   @@index([phase, sequence])
   @@map("routing_stages")
@@ -1365,6 +1411,32 @@ enum StageLogAction {
   COMPLETE
   FAIL
   SKIP
+  // Ditambah Production Core Slice 3 (6 September 2026) — PAUSE di atas ADA
+  // sejak Phase 0 tapi TIDAK PERNAH dipakai (tidak ada RESUME untuk
+  // menutupnya). Lihat services/unitStageEngine.js pauseStage()/resumeStage()
+  // — setiap siklus jeda menghasilkan SATU baris PAUSE + SATU baris RESUME,
+  // ledger ini TETAP append-only (satu attempt bisa punya banyak pasangan
+  // PAUSE/RESUME, tidak pernah menimpa baris lama).
+  RESUME
+}
+
+// Alasan JEDA eksekusi tahap (Production Core Slice 3C) — SENGAJA taksonomi
+// SEMPIT & TERPISAH dari BlockReason, bukan kebetulan tumpang tindih.
+// PAUSED = eksekusi berhenti SEMENTARA, tahap TETAP dikuasai
+// operator/alur kerja (istirahat, proses menunggu alami seperti lem
+// mengering). BLOCKED = kendala EKSTERNAL/operasional yang menghentikan
+// progres produksi (bahan habis, menunggu persetujuan pelanggan) — itu
+// tetap HANYA lewat failStage()/ProductionBlocker (Slice 2), TIDAK PERNAH
+// lewat pauseStage(). Kalau alasan jeda yang diajukan sebenarnya sebuah
+// blokir (bahan/alat/operator/persetujuan/pelanggan), pauseStage() MENOLAK
+// dan mengarahkan ke "Tandai Terhambat" — lihat validatePauseReason() di
+// lib/domain/stageExecution.js. Taksonomi ini SENGAJA tidak punya nilai
+// WAITING_* sama sekali, supaya larangan itu berlaku di level SKEMA, bukan
+// cuma di level validasi aplikasi.
+enum PauseReason {
+  BREAK
+  PROCESS_DELAY
+  OTHER
 }
 
 // Alasan blokir PRODUKSI (PRD §6.2). TERPISAH dari
@@ -1376,6 +1448,16 @@ enum BlockReason {
   MACHINE_DOWN
   QUALITY_ISSUE
   OTHER
+  // Ditambah Production Core Slice 2 (6 September 2026) — taksonomi lama
+  // (5 nilai di atas) tidak membedakan "menunggu pelanggan" (bukan approval
+  // harga, mis. pelanggan belum antar barang tambahan), "menunggu operator"
+  // (pekerja yang berkompeten sedang tidak ada), "menunggu alat" (beda dari
+  // MACHINE_DOWN — alat/tools tersedia di tempat lain, bukan rusak). Ketiganya
+  // dipilih MANUAL oleh yang membuka blokir (sama seperti 5 nilai lama),
+  // additive murni — TIDAK ADA baris lama yang berubah makna.
+  AWAITING_CUSTOMER
+  AWAITING_OPERATOR
+  AWAITING_TOOL
 }
 
 // LEDGER APPEND-ONLY (Aturan #2). Generik untuk SEMUA tahap.
@@ -1402,6 +1484,11 @@ model UnitStageLog {
   durationSeconds Int?      @map("duration_seconds")
 
   blockReason BlockReason? @map("block_reason")
+  // Diisi HANYA pada baris action=PAUSE (Production Core Slice 3C) — kolom
+  // TERPISAH dari blockReason di atas SENGAJA, walau keduanya "alasan
+  // berhenti sebentar": satu enum untuk blokir eksternal, satu lagi untuk
+  // jeda terkendali. Lihat enum PauseReason.
+  pauseReason PauseReason? @map("pause_reason")
   note        String?
 
   // Kolom siap pakai untuk requires_photo — belum ada endpoint upload yang
@@ -1411,9 +1498,86 @@ model UnitStageLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  // Reverse dari ProductionBlocker.stageLogId — praktiknya SELALU 0 atau 1
+  // baris (satu FAIL log membuka paling banyak satu blokir), array karena
+  // itu bentuk baku relasi one-to-many di Prisma.
+  openedBlockers ProductionBlocker[]
+
   @@index([unitId, createdAt])
   @@index([stageId, createdAt])
   @@map("unit_stage_logs")
+}
+
+// ─── BLOKIR PRODUKSI (Production Core Slice 2, 6 September 2026) ──────────
+//
+// Sebelum ini, "blocked" murni DERIVED dari baris FAIL terakhir di
+// unit_stage_logs (isUnitBlocked() lama) — cukup untuk menjawab "apakah
+// sedang blocked", TAPI tidak bisa menjawab "siapa yang menyelesaikannya",
+// "kapan diselesaikan", atau "berapa lama sebenarnya" kalau unit sempat
+// blocked→resume→blocked lagi. Tabel ini menambah LIFECYCLE di atas ledger
+// yang sudah ada — BUKAN pengganti unit_stage_logs (itu tetap satu-satunya
+// sumber kebenaran ledger produksi), murni lapisan "siapa/kapan/kenapa
+// diselesaikan" untuk kondisi blocked itu sendiri.
+//
+// SATU-SATUNYA jalur penulis: failStage() (membuka, di dalam transaksi yang
+// sama dengan baris FAIL) dan resolveBlocker()/startStage() retry
+// (menyelesaikan) — keduanya di services/unitStageEngine.js. JANGAN
+// menambah jalur tulis kedua ke tabel ini.
+//
+// "Satu blokir aktif per unit", BUKAN per unit+stage — arsitektur produksi
+// ini SERIAL (satu unit cuma punya SATU currentStageId aktif sekaligus,
+// lihat D-003), jadi tidak pernah ada dua tahap "sedang berjalan" bersamaan
+// untuk unit yang sama. Dijamin di level DATABASE lewat partial unique
+// index (lihat migration.sql — Prisma schema DSL tidak mendukung
+// @@unique dengan klausa WHERE), bukan cuma dicek di kode: race dua
+// "Tandai Terhambat" bersamaan akan membuat percobaan kedua gagal dengan
+// error constraint, bukan diam-diam menghasilkan dua blokir aktif.
+//
+// stageId didenormalisasi dari currentStageId unit SAAT blokir dibuka —
+// kalau nanti unit berpindah lini/layanan (MISMATCH), catatan blokir lama
+// tetap menunjuk tahap yang BENAR secara historis, bukan tahap barunya.
+model ProductionBlocker {
+  id     String @id @default(uuid()) @db.Uuid
+  unitId String @map("unit_id") @db.Uuid
+  // Restrict: unit yang punya riwayat blokir tidak boleh terhapus diam-diam
+  // — sama alasannya dengan ScopeRevision/UnitRevision.
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  stageId String?       @map("stage_id") @db.Uuid
+  stage   RoutingStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  // Baris unit_stage_logs (action=FAIL) yang membuka blokir ini — jejak
+  // langsung ke ledger produksi. Nullable+SetNull: baris log tidak pernah
+  // dihapus dalam praktik (append-only), tapi skema tidak memaksakan itu.
+  stageLogId String?       @map("stage_log_id") @db.Uuid
+  stageLog   UnitStageLog? @relation(fields: [stageLogId], references: [id], onDelete: SetNull)
+
+  reason BlockReason
+  note   String?
+
+  // Timestamp SELALU dari server (new Date() di kode), tidak pernah
+  // diterima dari body request — lihat services/unitStageEngine.js.
+  openedAt   DateTime @default(now()) @map("opened_at")
+  openedById String?  @map("opened_by")
+  openedBy   User?    @relation("ProductionBlockerOpener", fields: [openedById], references: [id], onDelete: SetNull)
+
+  // resolvedAt NULL = blokir MASIH TERBUKA. Ini yang dibaca deriveProductionStatus
+  // (lib/domain/productionState.js) sebagai hasOpenBlocker, MENGGANTIKAN
+  // fallback lama "lastLog.action === FAIL" begitu tabel ini terisi.
+  resolvedAt     DateTime? @map("resolved_at")
+  resolvedById   String?   @map("resolved_by")
+  resolvedBy     User?     @relation("ProductionBlockerResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionNote String?   @map("resolution_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([unitId])
+  // "Blokir terbuka" = resolvedAt IS NULL — index ini menopang query
+  // Command Center ("semua blokir terbuka") DAN dipasangkan dengan partial
+  // unique index di migration.sql untuk invarian "satu blokir aktif/unit".
+  @@index([resolvedAt])
+  @@map("production_blockers")
 }
 
 enum JobType {
@@ -1443,8 +1607,8 @@ model Job {
   orderId String  @map("order_id")
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
-  scheduledDate DateTime? @map("scheduled_date") @db.Date
-  timeWindow    String?   @map("time_window")
+  scheduledDate            DateTime? @map("scheduled_date") @db.Date
+  timeWindow               String?   @map("time_window")
   // Estimasi durasi pengerjaan dalam MENIT (D-043, 2 September 2026,
   // permintaan owner: "catatan estimasi waktu" per job — mis. "~2 jam").
   // Angka bulat menit (bukan enum preset) supaya fleksibel ("~1.5 jam" =
@@ -1452,7 +1616,7 @@ model Job {
   // frontend (lihat estimasiDurasiLabel() di jobStatus.js) — BEDA dari
   // timeWindow (jam KUNJUNGAN, "09:00-12:00") — ini "berapa LAMA job-nya
   // berlangsung", bukan "jam berapa mulai".
-  estimatedDurationMinutes Int? @map("estimated_duration_minutes")
+  estimatedDurationMinutes Int?      @map("estimated_duration_minutes")
 
   driverId String?   @map("driver_id")
   driver   User?     @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
@@ -2098,10 +2262,10 @@ model Payment {
   // SetNull (BUKAN Restrict seperti recordedById) — ini metadata SIAPA
   // MEMBATALKAN, bukan inti "siapa menerima uang"; admin resign tidak
   // boleh memblokir hapus akunnya gara-gara pernah membatalkan 1 entri.
-  cancelledAt    DateTime? @map("cancelled_at")
-  cancelledById  String?   @map("cancelled_by")
-  cancelledBy    User?     @relation("PaymentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
-  cancelReason   String?   @map("cancel_reason")
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelledBy   User?     @relation("PaymentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelReason  String?   @map("cancel_reason")
 
   verifications PaymentVerification[]
 
@@ -2352,6 +2516,56 @@ model OrderStatusTransition {
   @@map("order_status_transitions")
 }
 
+// ─── AKTIVITAS LINTAS ENTITAS (Production Core, 6 September 2026) ──────────
+//
+// Sampai sekarang riwayat TERPECAH per domain: unit_stage_logs (ledger
+// produksi), order_status_transitions, pipeline_transitions,
+// order_revision_logs (catatan teks bebas), kolom keputusan di
+// scope_revisions. Tidak satu pun mencatat perubahan prioritas/tanggal
+// target produksi, override penugasan, atau koreksi lain di luar
+// transisi status — celah yang sama yang bikin "siapa mengubah apa, kapan,
+// kenapa" untuk mutasi jenis itu tidak bisa dijawab sama sekali.
+//
+// activity_events BUKAN pengganti ledger di atas — unit_stage_logs TETAP
+// satu-satunya sumber kebenaran produksi (dipakai stage engine, laporan,
+// cycle time). Tabel ini lapisan LINTAS-ENTITAS: linimasa yang enak dibaca
+// manusia + audit untuk mutasi "lunak" yang sebelumnya tidak tercatat sama
+// sekali. Generik dengan sengaja (entityType/entityId, bukan FK ke Unit)
+// supaya bisa dipakai entitas produksi lain nanti (blocker, work order)
+// tanpa migrasi tabel baru tiap kali.
+//
+// APPEND-ONLY, sama seperti ledger lain — tidak ada UPDATE/DELETE dari kode
+// aplikasi. actorId SENGAJA bukan relasi FK (lihat catatan di
+// lib/activityLog.js): entityType bisa menunjuk ke entitas apa pun,
+// memaksakan FK ke User di sini tidak menambah jaminan apa pun (aktor sudah
+// tervalidasi oleh requireAuth saat baris ini ditulis) dan justru mengunci
+// tabel ini ke asumsi "aktor selalu User".
+model ActivityEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  // "unit" | "order" | dst — lihat lib/activityLog.js ENTITY_TYPES.
+  entityType String @map("entity_type")
+  entityId   String @map("entity_id")
+
+  // "STAGE_COMPLETED" | "PRIORITY_CHANGED" | "DUE_DATE_CHANGED" |
+  // "SERVICE_ASSIGNED" | dst — lihat lib/activityLog.js EVENT_TYPES.
+  eventType String @map("event_type")
+
+  actorType String  @default("USER") @map("actor_type")
+  actorId   String? @map("actor_id")
+
+  // Bentuk bebas per eventType — { from, to, reason, stage, ... }. Dibaca
+  // lewat formatActivitySentence() (lib/activityLog.js), TIDAK ditebak
+  // bentuknya dari luar file itu.
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId, createdAt]) // linimasa satu entitas
+  @@index([eventType, createdAt]) // laporan lintas entitas per jenis event
+  @@map("activity_events")
+}
+
 // Counter sequence untuk generate nomor order otomatis per prefix+bulan+tahun
 model OrderSequence {
   id      String @id @default(cuid())
@@ -2378,7 +2592,7 @@ model OrderItem {
   // "[Revisi] …" yang dibuat services/scopeRevision.js): priceItemId NULL.
   layananName String
   harga       Int // HARGA FINAL — arti TIDAK berubah, ini yang ditagih ke customer
-  sortOrder   Int @default(0)
+  sortOrder   Int    @default(0)
 
   // ── Tautan katalog + snapshot harga (29 Agustus 2026) ───────────────────
   // Semua nullable: order lama (352 baris) tidak punya tautan katalog, dan

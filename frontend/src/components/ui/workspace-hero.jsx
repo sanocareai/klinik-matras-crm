@@ -27,7 +27,10 @@ const TONE = {
  * @param {string}  title    — mis. "Production command center"
  * @param {string}  subtitle — kalimat penjelas satu baris
  * @param {string}  tone     — kunci TONE, samakan dengan warna workspace
- * @param {object}  health   — { label, tone: "ok"|"warn" } badge kanan atas (opsional)
+ * @param {object}  health   — { label, tone: "ok"|"warn"|"critical" } badge kanan atas (opsional).
+ *   "critical" ditambahkan Production Core Slice 2 (6 September 2026) —
+ *   ADITIF, konsumen lama yang cuma pernah kirim "ok"/"warn" tidak berubah
+ *   tampilannya sama sekali (fallback tetap amber/warn seperti sebelumnya).
  * @param {Array}   stats    — [{ label, value, hint }] maksimal 4, ANGKA NYATA
  */
 export function WorkspaceHero({ title, subtitle, tone = "blue", health, stats = [] }) {
@@ -66,7 +69,7 @@ export function WorkspaceHero({ title, subtitle, tone = "blue", health, stats = 
               <span
                 className={cn(
                   "h-2 w-2 rounded-full",
-                  health.tone === "warn" ? "bg-amber-400" : "bg-emerald-400"
+                  health.tone === "critical" ? "bg-red-500" : health.tone === "warn" ? "bg-amber-400" : "bg-emerald-400"
                 )}
               />
               {health.label}

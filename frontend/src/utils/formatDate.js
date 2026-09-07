@@ -137,3 +137,25 @@ export function hariSejak(value) {
   if (invalid(value)) return Infinity;
   return dayjs().tz(WIB).startOf("day").diff(toWIB(value).startOf("day"), "day");
 }
+
+// "2h 17m" / "42m" — durasi singkat dari total menit (Production Core
+// Slice 2: lama blocked, terlambat overdue, sisa waktu due date). Format
+// Inggris ("h"/"m") SENGAJA — istilah durasi operasional konsisten dengan
+// label lain di Command Center ("Blocked", "Overdue", "At Risk").
+export function formatDurasiMenit(totalMinutes) {
+  if (totalMinutes == null || !Number.isFinite(totalMinutes)) return KOSONG;
+  const menit = Math.max(0, Math.round(totalMinutes));
+  const h = Math.floor(menit / 60);
+  const m = menit % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+// "1h 10m" dari total DETIK — Production Core Slice 3 (Touch/Paused/Elapsed
+// Time dari lib/domain/stageExecution.js, semuanya dalam detik). SENGAJA
+// wrapper tipis atas formatDurasiMenit di atas, BUKAN salinan kedua logic
+// format-nya — satu sumber kebenaran untuk bentuk "1h 10m"/"42m".
+export function formatDurasiDetik(totalSeconds) {
+  if (totalSeconds == null || !Number.isFinite(totalSeconds)) return KOSONG;
+  return formatDurasiMenit(totalSeconds / 60);
+}

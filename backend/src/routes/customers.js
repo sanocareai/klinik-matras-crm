@@ -654,7 +654,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
   const {
     quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
     healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-    deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType,
+    deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, customerPromiseDate,
   } = req.body;
 
   const cat = category || "LAYANAN";
@@ -667,6 +667,9 @@ customerRouter.post("/:id/orders", async (req, res) => {
     // yang terbakar dan urutannya bolong.
     const tglPickup   = parseTanggalKalender(pickupConfirmedDate,   "Tanggal Pick Up Pasti");
     const tglDelivery = parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti");
+    // customerPromiseDate (Production Core, 6 September 2026) — tanggal
+    // YANG DIJANJIKAN ke customer, boleh diisi sales sejak order dibuat.
+    const tglJanji     = parseTanggalKalender(customerPromiseDate,  "Tanggal Janji ke Customer");
 
     // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
     // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
@@ -713,6 +716,7 @@ customerRouter.post("/:id/orders", async (req, res) => {
           ...(deliveryEstimate && { deliveryEstimate }),
           ...(tglDelivery && { deliveryConfirmedDate: tglDelivery }),
           ...(locationUrl && { locationUrl }),
+          ...(tglJanji && { customerPromiseDate: tglJanji }),
         },
         include: { items: true },
       });

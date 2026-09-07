@@ -186,6 +186,10 @@ const FIELD_TONE = {
   money:   { icon: Banknote,      hex: "#16a34a" },
   pickup:  { icon: CalendarClock, hex: "#0891b2" },
   delivery: { icon: Truck,        hex: "#16a34a" },
+  // Production Core (6 September 2026) — tanggal YANG DIJANJIKAN ke
+  // customer, acuan urgensi sisi produksi. Amber, sengaja beda dari
+  // pickup (cyan)/delivery (hijau) — ini janji, bukan jadwal armada.
+  promise: { icon: CalendarClock, hex: "#f59e0b" },
   link:    { icon: Link2,         hex: "#0891b2" },
   promo:   { icon: Tag,           hex: "#db2777" },
   note:    { icon: MessageSquareText, hex: "#4b5563" },
@@ -353,6 +357,12 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     order.deliveryConfirmedDate ? order.deliveryConfirmedDate.slice(0, 10) : ""
   );
   const [locationUrl, setLocationUrl]             = useState(order.locationUrl || "");
+  // customerPromiseDate (Production Core, 6 September 2026) — tanggal YANG
+  // DIJANJIKAN ke customer, dipakai sisi PRODUKSI sebagai acuan urgensi.
+  // Beda dari pickup/deliveryConfirmedDate (itu jadwal armada) — ini janji.
+  const [customerPromiseDate, setCustomerPromiseDate] = useState(
+    order.customerPromiseDate ? order.customerPromiseDate.slice(0, 10) : ""
+  );
   const [items, setItems]                 = useState(
     (order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) }))
   );
@@ -438,6 +448,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         deliveryEstimate: deliveryEstimate || null,
         deliveryConfirmedDate: deliveryConfirmedDate || null,
         locationUrl: locationUrl || null,
+        customerPromiseDate: customerPromiseDate || null,
       });
 
       // Proses weight entries
@@ -519,6 +530,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     setDeliveryEstimate(order.deliveryEstimate || "");
     setDeliveryConfirmedDate(order.deliveryConfirmedDate ? order.deliveryConfirmedDate.slice(0, 10) : "");
     setLocationUrl(order.locationUrl || "");
+    setCustomerPromiseDate(order.customerPromiseDate ? order.customerPromiseDate.slice(0, 10) : "");
     setItems((order.items || []).map((it) => ({ ...it, key: it.id, harga: String(it.harga) })));
     setWeightEntries(
       (order.weightEntries && order.weightEntries.length > 0)
@@ -1095,6 +1107,23 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         </div>
       </div>
 
+      {/* customerPromiseDate (Production Core, 6 September 2026) — tanggal
+          YANG DIJANJIKAN ke customer. Dibaca sisi Produksi (Unit.priority/
+          productionDueAt) sebagai acuan urgensi — lihat PATCH
+          /units/:id/production di backend/src/routes/units.js. */}
+      <div style={{ marginBottom: 8 }}>
+        <FieldLabel tone="promise" small>Tanggal Janji ke Customer</FieldLabel>
+        {editing ? (
+          locked ? (
+            <div style={{ fontSize: 13 }}>{customerPromiseDate ? formatTanggal(customerPromiseDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+          ) : (
+            <DatePicker value={customerPromiseDate} onChange={setCustomerPromiseDate} placeholder="Pilih tanggal" className="w-full" />
+          )
+        ) : (
+          <div style={{ fontSize: 13 }}>{order.customerPromiseDate ? formatTanggal(order.customerPromiseDate) : <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+        )}
+      </div>
+
       <div style={{ marginBottom: 8 }}>
         <FieldLabel tone="link" small>Link Lokasi</FieldLabel>
         {editing ? (
@@ -1307,6 +1336,9 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const [deliveryEstimate, setDeliveryEstimate]       = useState("");
   const [deliveryConfirmedDate, setDeliveryConfirmedDate] = useState("");
   const [locationUrl, setLocationUrl]             = useState("");
+  // customerPromiseDate (Production Core, 6 September 2026) — boleh diisi
+  // sejak order dibuat, sama seperti pickup/deliveryConfirmedDate di atas.
+  const [customerPromiseDate, setCustomerPromiseDate] = useState("");
   const [items, setItems]             = useState([newItem()]);
   const [weightEntries, setWeightEntries] = useState([newWeightEntry()]);
   const [saving, setSaving]           = useState(false);
@@ -1422,6 +1454,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         deliveryEstimate: deliveryEstimate || undefined,
         deliveryConfirmedDate: deliveryConfirmedDate || undefined,
         locationUrl: locationUrl || undefined,
+        customerPromiseDate: customerPromiseDate || undefined,
       });
       for (const it of validItems) {
         await api.addOrderItem(order.id, {
@@ -1887,6 +1920,12 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             <FieldLabel tone="delivery">Tanggal Kirim Pasti</FieldLabel>
             <DatePicker value={deliveryConfirmedDate} onChange={setDeliveryConfirmedDate} placeholder="Pilih tanggal" className="w-full" />
           </div>
+        </div>
+        {/* customerPromiseDate (Production Core, 6 September 2026) — tanggal
+            YANG DIJANJIKAN ke customer, acuan urgensi sisi Produksi. */}
+        <div style={{ marginBottom: 14 }}>
+          <FieldLabel tone="promise">Tanggal Janji ke Customer</FieldLabel>
+          <DatePicker value={customerPromiseDate} onChange={setCustomerPromiseDate} placeholder="Pilih tanggal" className="w-full" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <FieldLabel tone="link">Link Lokasi</FieldLabel>

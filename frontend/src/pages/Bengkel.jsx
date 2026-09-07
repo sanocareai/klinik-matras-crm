@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Camera, CheckCircle2, ClipboardList, Loader2, Plus, X,
+  AlertTriangle, Camera, CheckCircle2, ClipboardList, Loader2, Plus, RefreshCw, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
+import { formatDurasiMenit } from "../utils/formatDate.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
-import { Card } from "@/components/ui/card.jsx";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { EXCEPTION_TYPE_REAL, WORKSPACE_HEALTH_REAL } from "@/features/bengkel/unitStatus.js";
 
 // PAPAN PRODUKSI HARIAN (D-014) — layar utama kepala produksi / QC Leader.
 //
@@ -253,6 +256,13 @@ export default function Bengkel() {
   const [adding, setAdding] = useState(false);
   const date = todayWibISO();
 
+  // Production Command Center (Production Core Slice 2E/2G) — dimuat
+  // TERPISAH dari papan target (board di atas): kalau salah satu gagal,
+  // yang lain tetap tampil (PARTIAL_DATA), bukan halaman kosong total.
+  const [cc, setCc] = useState(null);
+  const [ccError, setCcError] = useState("");
+  const [ccLoading, setCcLoading] = useState(true);
+
   const roles = currentRoles();
   const allowed = roles.some((r) =>
     ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
@@ -265,7 +275,20 @@ export default function Bengkel() {
     }
   }, [date]);
 
-  useEffect(() => { if (allowed) load(); }, [allowed, load]);
+  const loadCc = useCallback(async () => {
+    setCcLoading(true); setCcError("");
+    try {
+      setCc(await api.getCommandCenter(date));
+    } catch (e) {
+      setCcError(e.message);
+    } finally {
+      setCcLoading(false);
+    }
+  }, [date]);
+
+  const refreshAll = useCallback(() => { load(); loadCc(); }, [load, loadCc]);
+
+  useEffect(() => { if (allowed) { load(); loadCc(); } }, [allowed, load, loadCc]);
 
   if (!allowed) {
     return (
@@ -302,15 +325,28 @@ export default function Bengkel() {
 
   const { targets, available, summary } = board;
 
+  // "0 vs unavailable" (Production Core Slice 2G) — At Risk/Overdue HANYA
+  // bermakna kalau ADA unit yang punya productionDueAt tercatat. 0 di sana
+  // BUKAN "aman", tapi "belum bisa dihitung" — dua keadaan yang harus
+  // dibedakan, bukan ditampilkan sebagai angka yang sama.
+  const dueDateTracked = (cc?.summary?.unitsWithDueDate || 0) > 0;
+  const healthTone = cc?.workspaceHealth?.level === "CRITICAL" ? "critical"
+    : cc?.workspaceHealth?.level === "ATTENTION" ? "warn" : "ok";
+
   return (
     <PageContainer>
       <PageHeader
         title="Production Operations"
-        subtitle={`${board.date} — ${summary.moved} dari ${summary.total} target sudah diupdate`}
+        subtitle="Kendali produksi harian, risiko, hambatan, dan progress bengkel."
         actions={
-          <Button onClick={() => setAdding((v) => !v)} className="h-10">
-            <Plus className="h-4 w-4" /> Tambah Target
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={refreshAll} className="h-10">
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </Button>
+            <Button onClick={() => setAdding((v) => !v)} className="h-10">
+              <Plus className="h-4 w-4" /> Tambah Target
+            </Button>
+          </div>
         }
       >
         <div className="mt-2 flex gap-2">
@@ -324,31 +360,118 @@ export default function Bengkel() {
         </div>
       </PageHeader>
 
-      {/* Command center — semua angka dari `board` (endpoint /production/board),
-          bukan contoh. `summary.total`/`summary.moved` sudah dihitung backend. */}
+      {/* TODAY'S PRODUCTION — Production Command Center (Slice 2E/2G). Semua
+          angka dari GET /production/command-center, bukan contoh. Dimuat
+          TERPISAH dari papan target di bawah (PARTIAL_DATA): kalau gagal,
+          bagian ini menampilkan errornya sendiri, papan target tetap jalan. */}
       <div className="mb-5">
-        <WorkspaceHero
-          tone="amber"
-          title="Production command center"
-          subtitle="Target harian, progres tahap pengerjaan, dan unit yang belum masuk papan hari ini."
-          health={
-            summary.total === 0
-              ? { label: "Belum ada target hari ini", tone: "warn" }
-              : summary.moved >= summary.total
-                ? { label: "Semua target diupdate", tone: "ok" }
-                : { label: `${summary.total - summary.moved} target belum diupdate`, tone: "warn" }
-          }
-          stats={[
-            { label: "Target hari ini", value: summary.total, hint: board.date },
-            { label: "Sudah diupdate", value: summary.moved, hint: `dari ${summary.total} target` },
-            {
-              label: "Belum diupdate",
-              value: Math.max(summary.total - summary.moved, 0),
-              hint: "menunggu progres",
-            },
-            { label: "Unit di bengkel", value: available.length, hint: "belum masuk target" },
-          ]}
-        />
+        {ccLoading && !cc ? (
+          <Card className="flex items-center justify-center gap-2 p-8 text-ink2">
+            <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat command center…</span>
+          </Card>
+        ) : ccError && !cc ? (
+          <Card className="p-4 text-[12.5px] text-red">{ccError}</Card>
+        ) : cc ? (
+          <>
+            <WorkspaceHero
+              tone="amber"
+              title="Production command center"
+              subtitle="Target harian, progres tahap pengerjaan, dan unit yang belum masuk papan hari ini."
+              health={{ label: WORKSPACE_HEALTH_REAL[cc.workspaceHealth.level]?.label || cc.workspaceHealth.level, tone: healthTone }}
+              stats={[
+                { label: "Target Hari Ini", value: cc.summary.targetToday, hint: cc.date },
+                { label: "Selesai Hari Ini", value: cc.summary.completedToday, hint: `dari ${cc.summary.targetToday} target` },
+                { label: "Sedang Dikerjakan", value: cc.summary.inProgress },
+                { label: "Blocked", value: cc.summary.blocked, hint: cc.summary.blocked > 0 ? "perlu tindakan" : "tidak ada" },
+                dueDateTracked
+                  ? { label: "At Risk", value: cc.summary.atRisk, hint: "berisiko terlambat" }
+                  : { label: "At Risk", value: "—", hint: "Belum ada target tanggal" },
+                dueDateTracked
+                  ? { label: "Overdue", value: cc.summary.overdue, hint: "sudah lewat target" }
+                  : { label: "Overdue", value: "—", hint: "Belum ada target tanggal" },
+              ]}
+            />
+
+            {/* WORKSPACE HEALTH — alasan konkret, bukan label dekoratif. */}
+            {cc.workspaceHealth.reasons.length > 0 && (
+              <Card className="mt-3 border-l-[3px] border-orange p-4">
+                <h3 className="text-[13px] font-bold text-ink">
+                  {cc.workspaceHealth.level === "CRITICAL" ? "Perlu Tindakan Segera" : "Perlu Perhatian"}
+                </h3>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink2">
+                  {cc.workspaceHealth.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </Card>
+            )}
+
+            {/* ATTENTION REQUIRED — exceptions terprioritas, terurut severity
+                lalu urgensi (dari backend, tidak diurutkan ulang di sini). */}
+            <Card className="mt-3 overflow-hidden">
+              <CardHeader>
+                <CardTitle>Perlu Perhatian</CardTitle>
+                <CardDescription>Unit blocked, overdue, atau berisiko terlambat — urut prioritas.</CardDescription>
+              </CardHeader>
+              {cc.exceptions.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="Tidak ada pengecualian produksi"
+                  description="Operasional produksi berjalan tanpa blocker, overdue, atau risiko aktif pada filter saat ini."
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {cc.exceptions.map((exc) => (
+                    <li key={`${exc.type}-${exc.unitId}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono text-[11.5px] font-semibold text-ink">{exc.unitCode}</span>
+                          <Badge variant={EXCEPTION_TYPE_REAL[exc.type]?.tone || "neutral"}>
+                            {EXCEPTION_TYPE_REAL[exc.type]?.label || exc.type}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 truncate text-[12.5px] text-ink2">{exc.reason}</p>
+                        {(exc.customerName || exc.orderNumber) && (
+                          <p className="truncate text-[11px] text-ink3">
+                            {exc.customerName || "—"}{exc.orderNumber ? ` · ${exc.orderNumber}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {exc.durationMinutes != null && (
+                          <span className="text-[11px] text-ink3">{formatDurasiMenit(exc.durationMinutes)}</span>
+                        )}
+                        <Button size="sm" variant="secondary" onClick={() => navigate(exc.href)}>
+                          Open Work Order
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            {/* TODAY'S FLOW — status kanonik (productionState.js), BUKAN
+                tahap fisik (routing belum cukup terisi utk semua unit). */}
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                ["Queued", cc.flow.queued],
+                ["In Progress", cc.flow.inProgress],
+                // Paused (Production Core Slice 3Q) — SEBELUM Slice 3, action
+                // PAUSE tidak pernah ditulis jadi kolom ini selalu 0; SEKARANG
+                // menghitung unit yang benar-benar dijeda, TERPISAH dari
+                // Blocked (kartu health di atas) dan In Progress.
+                ["Paused", cc.flow.paused],
+                ["Waiting QC", cc.flow.waitingQc],
+                ["Rework", cc.flow.rework],
+                ["Selesai Hari Ini", cc.flow.completed],
+              ].map(([label, value]) => (
+                <Card key={label} className="p-3 text-center">
+                  <p className="text-[22px] font-bold leading-none text-ink">{value}</p>
+                  <p className="mt-1 text-[11px] text-ink3">{label}</p>
+                </Card>
+              ))}
+            </div>
+          </>
+        ) : null}
       </div>
 
       {adding && (
@@ -356,7 +479,7 @@ export default function Bengkel() {
           available={available}
           date={date}
           onClose={() => setAdding(false)}
-          onAdded={() => { setAdding(false); load(); }}
+          onAdded={() => { setAdding(false); load(); loadCc(); }}
         />
       )}
 
@@ -377,15 +500,22 @@ export default function Bengkel() {
             </div>
           )}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {targets.map((t) => <TargetCard key={t.id} target={t} onChanged={load} />)}
+            {targets.map((t) => <TargetCard key={t.id} target={t} onChanged={() => { load(); loadCc(); }} />)}
           </div>
         </>
       )}
 
+      {/* UNSCHEDULED / NOT TARGETED — dibuat actionable (Slice 2G), bukan
+          cuma teks pasif. */}
       {available.length > 0 && (
-        <p className="mt-6 text-center text-xs text-ink2">
-          {available.length} unit lain ada di bengkel tapi belum masuk target hari ini.
-        </p>
+        <Card className="mt-6 flex flex-wrap items-center justify-between gap-3 p-4">
+          <p className="text-[12.5px] text-ink2">
+            <strong className="text-ink">{available.length} unit</strong> belum masuk target hari ini.
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+            Plan Units
+          </Button>
+        </Card>
       )}
     </PageContainer>
   );

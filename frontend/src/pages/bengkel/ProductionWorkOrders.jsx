@@ -11,10 +11,21 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
-import { formatTanggal } from "@/utils/formatDate.js";
+import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
+  PRODUCTION_STATUS_REAL, PRODUCTION_PRIORITY_REAL, STAGE_LOG_STATUS,
 } from "@/features/bengkel/unitStatus.js";
+
+// "Elapsed" per baris (Production Core Slice 3P) — STATIS per-muat, BUKAN
+// ticking langsung (halaman ini daftar SAMPAI 500 unit, timer per baris akan
+// jadi 500 interval sekaligus — di luar lingkup "no per-row timers"). Segar
+// lagi begitu "Muat Ulang"/filter dipakai. Timer LIVE yang sungguhan ada di
+// Detail Unit (satu unit, satu timer) — lihat ProductionUnitDetail.jsx.
+function elapsedSejak(iso) {
+  if (!iso) return null;
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+}
 
 // Work Order — Production Tahap 1. DATA NYATA.
 //
@@ -153,11 +164,12 @@ export default function ProductionWorkOrders() {
                   <THead>
                     <TR>
                       <TH>Kode Unit</TH><TH>Order</TH><TH>Pelanggan</TH>
-                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Update Terakhir</TH><TH>Status</TH>
+                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Eksekusi</TH>
+                      <TH>Prioritas</TH><TH>Target</TH><TH>Update Terakhir</TH><TH>Status</TH><TH>Progres</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={8} cols={9} />}
+                    {loading && <TableSkeletonRows rows={8} cols={13} />}
                     {!loading && rows?.map((u) => (
                       <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
                         <TD className="font-semibold text-ink">{u.unitCode}</TD>
@@ -173,11 +185,51 @@ export default function ProductionWorkOrders() {
                         </TD>
                         <TD truncate className="text-ink2">{u.service?.labelId || <span className="text-ink3">—</span>}</TD>
                         <TD truncate className="text-ink2">{u.currentStage?.labelId || <span className="text-ink3">—</span>}</TD>
+                        {/* Eksekusi/Elapsed — Production Core Slice 3P.
+                            executionState/currentSegmentStartedAt sudah
+                            batch-loaded dari lastLog (BUKAN query per unit,
+                            lihat routes/production.js) — Elapsed cuma tampil
+                            kalau segmen SEDANG berjalan (START/RESUME),
+                            kosong untuk PAUSED/BLOCKED/DONE/dst (durasi jeda/
+                            selesai bukan urusan kolom ini, lihat Detail Unit). */}
+                        <TD>
+                          {u.executionState && u.executionState !== "NOT_STARTED" ? (
+                            <div className="flex items-center gap-1">
+                              <Badge variant={STAGE_LOG_STATUS[u.executionState]?.tone || "neutral"}>
+                                {STAGE_LOG_STATUS[u.executionState]?.label || u.executionState}
+                              </Badge>
+                              {u.currentSegmentStartedAt && (
+                                <span className="text-[10.5px] text-ink3">{formatDurasiDetik(elapsedSejak(u.currentSegmentStartedAt))}</span>
+                              )}
+                            </div>
+                          ) : <span className="text-ink3">—</span>}
+                        </TD>
+                        {/* Prioritas/Target/Progres — Production Core Slice 1.
+                            Prioritas NORMAL sengaja tanpa badge (default,
+                            tidak perlu penekanan visual — sama pola dengan
+                            header unit detail). */}
+                        <TD>
+                          {u.priority && u.priority !== "NORMAL" ? (
+                            <Badge variant={PRODUCTION_PRIORITY_REAL[u.priority]?.tone || "neutral"}>
+                              {PRODUCTION_PRIORITY_REAL[u.priority]?.label || u.priority}
+                            </Badge>
+                          ) : <span className="text-ink3">—</span>}
+                        </TD>
+                        <TD className="whitespace-nowrap text-ink2">
+                          {u.productionDueAt ? formatTanggal(u.productionDueAt) : <span className="text-ink3">—</span>}
+                        </TD>
                         <TD className="whitespace-nowrap text-ink2">{formatTanggal(u.updatedAt)}</TD>
                         <TD>
                           <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"}>
                             {UNIT_STATUS_REAL[u.status]?.label || u.status}
                           </Badge>
+                        </TD>
+                        <TD>
+                          {u.productionStatus && (
+                            <Badge variant={PRODUCTION_STATUS_REAL[u.productionStatus]?.tone || "neutral"}>
+                              {PRODUCTION_STATUS_REAL[u.productionStatus]?.label || u.productionStatus}
+                            </Badge>
+                          )}
                         </TD>
                       </TR>
                     ))}
@@ -193,8 +245,13 @@ export default function ProductionWorkOrders() {
                       onClick={() => navigate(`/bengkel/units/${u.id}`)}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] font-semibold text-ink">{u.unitCode}</span>
+                        {u.priority && u.priority !== "NORMAL" && (
+                          <Badge variant={PRODUCTION_PRIORITY_REAL[u.priority]?.tone || "neutral"} className="shrink-0">
+                            {PRODUCTION_PRIORITY_REAL[u.priority]?.label || u.priority}
+                          </Badge>
+                        )}
                         <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"} className="ml-auto shrink-0">
                           {UNIT_STATUS_REAL[u.status]?.label || u.status}
                         </Badge>
@@ -204,7 +261,10 @@ export default function ProductionWorkOrders() {
                         {u.order?.orderNumber || "—"}
                         {(u.merk || u.ukuran) && ` · ${[u.merk, u.ukuran].filter(Boolean).join(" ")}`}
                         {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
+                        {u.executionState === "PAUSED" && " · Dijeda"}
+                        {u.currentSegmentStartedAt && ` · Berjalan ${formatDurasiDetik(elapsedSejak(u.currentSegmentStartedAt))}`}
                         {` · ${formatTanggal(u.updatedAt)}`}
+                        {u.productionDueAt && ` · Target ${formatTanggal(u.productionDueAt)}`}
                       </div>
                     </button>
                   </li>

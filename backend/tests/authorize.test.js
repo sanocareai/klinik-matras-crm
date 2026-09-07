@@ -132,6 +132,53 @@ test("ADMIN TIDAK bisa memajukan tahap produksi atau memutuskan QC", () => {
   assert.ok(hasPermission({ roles: ["ADMIN", "QC_LEAD"] }, P.QC_WRITE));
 });
 
+test("OPEN/RESOLVE BLOCKER (Production Core Slice 2A) butuh UNIT_STAGE_WRITE — sama dengan permission tahap lain", () => {
+  // failStage()/resolveBlocker() (POST .../stages/:stageId/fail dan POST
+  // .../blockers/:blockerId/resolve) SENGAJA memakai permission yang SAMA
+  // dengan start/complete — siapa pun yang boleh mengerjakan tahap juga
+  // boleh melaporkan & menyelesaikan hambatannya sendiri.
+  assert.ok(hasPermission(worker, P.UNIT_STAGE_WRITE), "PRODUCTION_WORKER harus bisa membuka & menyelesaikan blokir");
+  assert.ok(hasPermission({ roles: ["QC_LEAD"] }, P.UNIT_STAGE_WRITE));
+  assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, P.UNIT_STAGE_WRITE));
+
+  assert.ok(!hasPermission(sales, P.UNIT_STAGE_WRITE), "SALES tidak boleh membuka/menyelesaikan blokir produksi");
+  const r = runMiddleware(requirePermission(P.UNIT_STAGE_WRITE), sales);
+  assert.equal(r.status, 403);
+
+  // ADMIN SENGAJA tidak dapat UNIT_STAGE_WRITE (D-013) — konsisten: ADMIN
+  // juga tidak boleh membuka/menutup blokir produksi sendiri, sama seperti
+  // tidak boleh memajukan tahap atau memutuskan QC.
+  assert.ok(!hasPermission(admin, P.UNIT_STAGE_WRITE));
+});
+
+test("PAUSE/RESUME tahap (Production Core Slice 3) butuh UNIT_STAGE_WRITE — sama dengan start/complete/fail", () => {
+  // routes/units.js POST .../stages/:stageId/pause dan .../resume SENGAJA
+  // memakai permission yang SAMA dengan start/complete/fail (bukan
+  // permission baru) — siapa pun yang boleh mengerjakan tahap juga boleh
+  // menjeda & melanjutkan pekerjaannya sendiri, konsisten dengan pola
+  // OPEN/RESOLVE BLOCKER di atas.
+  assert.ok(hasPermission(worker, P.UNIT_STAGE_WRITE), "PRODUCTION_WORKER harus bisa pause/resume tahapnya sendiri");
+  assert.ok(!hasPermission(sales, P.UNIT_STAGE_WRITE), "SALES tidak boleh pause/resume tahap produksi");
+  // ADMIN SENGAJA tidak dapat UNIT_STAGE_WRITE (D-013) — konsisten di sini juga.
+  assert.ok(!hasPermission(admin, P.UNIT_STAGE_WRITE));
+});
+
+test("PATCH /units/:id/production butuh UNIT_ROUTING_WRITE — PRODUCTION_WORKER tidak boleh mereprioritaskan pekerjaannya sendiri", () => {
+  // Production Core Slice 1 (spec Phase 28): pekerja produksi (hanya
+  // UNIT_STAGE_WRITE) TIDAK BOLEH mengubah prioritas/tanggal target
+  // produksi — itu keputusan supervisor (PRODUCTION_LEAD/QC_LEAD/ADMIN).
+  assert.ok(hasPermission(worker, P.UNIT_STAGE_WRITE));
+  assert.ok(!hasPermission(worker, P.UNIT_ROUTING_WRITE));
+  const r = runMiddleware(requirePermission(P.UNIT_ROUTING_WRITE), worker);
+  assert.equal(r.status, 403);
+
+  assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, P.UNIT_ROUTING_WRITE));
+  assert.ok(
+    !hasPermission({ roles: ["QC_LEAD"] }, P.UNIT_ROUTING_WRITE),
+    "QC_LEAD tidak punya UNIT_ROUTING_WRITE — hanya SCOPE_REVISION_PROPOSE + UNIT_STAGE_WRITE + QC_WRITE"
+  );
+});
+
 // --- portal ----------------------------------------------------------------
 test("portal disaring sesuai role", () => {
   assert.deepEqual(portalsFor(sales).map((p) => p.key), ["growth"]);
