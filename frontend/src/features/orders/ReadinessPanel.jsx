@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { CheckCircle2, AlertTriangle, Ban, MessageSquare, UserRound } from "lucide-react";
+import { CheckCircle2, Ban, MessageSquare, UserRound } from "lucide-react";
 import { evaluateReadiness, READINESS } from "@/utils/orderReadiness.js";
 import { cn } from "@/lib/utils.js";
 
@@ -13,6 +13,10 @@ import { cn } from "@/lib/utils.js";
 // edit yang belum ada): buka profil pelanggan (form order/edit lengkap ada
 // di sana, lewat OrderSection.jsx) dan buka chat customer — dua-duanya
 // sudah jalur navigasi yang ADA, bukan fitur baru.
+//
+// Cuma DUA status (disederhanakan 7 Sep 2026) — READY atau BLOCKED, tidak
+// ada lagi tingkat "perlu info" (dulu khusus pembayaran, sekarang dianggap
+// duplikat kolom Status Pembayaran yang sudah ada sendiri).
 export default function ReadinessPanel({ order, onOpenChat }) {
   const navigate = useNavigate();
   const hasil = evaluateReadiness(order);
@@ -27,45 +31,26 @@ export default function ReadinessPanel({ order, onOpenChat }) {
     );
   }
 
-  const Icon = hasil.state === READINESS.BLOCKED ? Ban : AlertTriangle;
-  const warna = hasil.state === READINESS.BLOCKED
-    ? { bg: "bg-redbg", text: "text-red" }
-    : { bg: "bg-orangebg", text: "text-orange" };
-
   return (
     <motion.div
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.16 }}
-      className={cn("rounded-xl p-3", warna.bg)}
+      className="rounded-xl bg-redbg p-3"
     >
-      <p className={cn("flex items-center gap-1.5 text-[12.5px] font-bold", warna.text)}>
-        <Icon size={14} className="shrink-0" />
-        {hasil.state === READINESS.BLOCKED
-          ? "Belum bisa diserahkan ke Delivery & Fulfillment"
-          : "Bisa diserahkan, tapi belum ada pembayaran masuk"}
+      <p className="flex items-center gap-1.5 text-[12.5px] font-bold text-red">
+        <Ban size={14} className="shrink-0" />
+        Belum bisa diserahkan ke Delivery & Fulfillment
       </p>
 
-      {hasil.missingBlockers.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-1">
-          {hasil.missingBlockers.map((r) => (
-            <li key={r.key} className="flex items-center gap-1.5 text-[12px] text-ink">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red" />
-              {r.label}
-            </li>
-          ))}
-        </ul>
-      )}
-      {hasil.missingWarnings.length > 0 && (
-        <ul className="mt-1.5 flex flex-col gap-1">
-          {hasil.missingWarnings.map((r) => (
-            <li key={r.key} className="flex items-center gap-1.5 text-[12px] text-ink2">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange" />
-              {r.label}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="mt-2 flex flex-col gap-1">
+        {hasil.missingBlockers.map((r) => (
+          <li key={r.key} className="flex items-center gap-1.5 text-[12px] text-ink">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red" />
+            {r.label}
+          </li>
+        ))}
+      </ul>
 
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {order.customerId && (
