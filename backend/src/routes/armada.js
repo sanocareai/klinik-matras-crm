@@ -29,7 +29,7 @@ import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../ser
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, geocodeFromMapsLink, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
+import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 
 export const armadaRouter = express.Router();
@@ -609,13 +609,25 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 // terjadwal), bukan setiap kali tombol "Buat Peta" diklik (supaya klik
 // tombol tetap cepat, tidak menunggu network fetch untuk stop yang
 // sebenarnya sudah punya koordinat apa pun kualitasnya).
+//
+// DIPERLUAS 8 September 2026 (laporan owner: "dengan aktifnya Google Maps
+// API, memudahkan semua... akurasi harus semakin akurat") — SEBELUM ini
+// job yang order-nya TIDAK punya locationUrl dilewati begitu saja (tetap
+// null, jatuh ke pencarian teks polos di dalam Google Maps saat "Buat
+// Peta" diklik). Billing Google Cloud sudah aktif (7 September 2026) jadi
+// sekarang job seperti itu JUGA di-geocode di sini lewat geocodeAddress()
+// penuh (link order kalau ada -> Google Geocoding API -> LocationIQ ->
+// Nominatim, urutan SAMA dengan bestEffortGeocode) — bukan cuma link saja
+// lagi. Prioritas link ORDER tetap nomor 1 (paling akurat, lihat catatan
+// panjang di services/maps.js#geocodeAddress), Google jadi jaring pengaman
+// KEDUA yang jauh lebih baik daripada dulu (waktu billing masih ditolak).
 async function ensureJobsGeocoded(jobs) {
-  const perluDiisi = jobs.filter((j) => j.lat == null && j.order?.locationUrl);
+  const perluDiisi = jobs.filter((j) => j.lat == null && (j.order?.locationUrl || j.addressText?.trim()));
   if (perluDiisi.length === 0) return;
 
   await Promise.allSettled(perluDiisi.map(async (j) => {
     try {
-      const geo = await geocodeFromMapsLink(j.order.locationUrl);
+      const geo = await geocodeAddress(j.addressText, j.order?.locationUrl);
       if (!geo) return;
       await prisma.job.update({ where: { id: j.id }, data: { lat: geo.lat, lng: geo.lng } });
       // Ikut diperbarui di array in-memory supaya buildRouteMapsUrl() yang
@@ -624,7 +636,7 @@ async function ensureJobsGeocoded(jobs) {
       j.lat = geo.lat;
       j.lng = geo.lng;
     } catch (err) {
-      console.error(`[armada] Gagal resolve link Maps order untuk job ${j.id}:`, err.message);
+      console.error(`[armada] Gagal geocode job ${j.id}:`, err.message);
     }
   }));
 }

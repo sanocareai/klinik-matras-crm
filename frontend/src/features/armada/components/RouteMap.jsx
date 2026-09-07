@@ -164,7 +164,7 @@ export default function RouteMap({ routes }) {
         <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
         <p className="text-[12px] font-semibold text-ink2">Peta rute</p>
         <p className="max-w-[260px] text-[10.5px] text-ink3">
-          Belum ada rute draft dengan koordinat untuk dipratinjau — buat/edit rute dulu (koordinat terisi otomatis dari alamat job).
+          Belum ada rute dengan koordinat untuk dipratinjau — buat rute atau tambah stop dulu (koordinat terisi otomatis dari link Maps/alamat job).
         </p>
       </div>
     );

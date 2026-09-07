@@ -436,14 +436,21 @@ export default function ArmadaRoutes() {
 
         {/* Tengah — papan rute */}
         <div className="min-w-0">
-          {/* Peta cuma menampilkan rute DRAFT (6 September 2026, laporan
-              owner: "rute yang sudah terbit gamuncul lagi di maps") — peta
-              ini alat PERENCANAAN (susun urutan stop sebelum diterbitkan),
-              begitu rute diterbitkan rencananya sudah final, tidak perlu
-              lagi menumpuk garis di peta yang sama dengan rute yang MASIH
-              disusun. Kartu rute PUBLISHED/COMPLETED/CANCELLED tetap tampil
-              apa adanya di bawah, cuma tidak ikut digambar di peta atas. */}
-          <RouteMap routes={(routes || []).filter((r) => r.status === "DRAFT")} />
+          {/* Peta DIBATASI ke DRAFT saja (6 September 2026), lalu DIBUKA
+              LAGI ke semua rute selain CANCELLED (8 September 2026) —
+              riwayat berbalik, dicatat supaya tidak bolak-balik tanpa
+              alasan kalau ada laporan lagi nanti. Pembatasan awal karena
+              peta waktu itu Leaflet+CARTO polos, tanpa fitBounds, jadi 4+
+              rute PUBLISHED sekaligus numpuk jadi garis kusut yang tidak
+              terbaca. Setelah migrasi ke Google Maps (D-08 Sep 2026,
+              lib/googleMaps.js) — fitBounds otomatis + warna per-rute yang
+              sama tapi peta sungguhan lebih mudah dibedakan — owner minta
+              rute PUBLISHED muncul lagi ("aktifnya Google Maps API
+              memudahkan semua"). CANCELLED tetap disaring (rute yang tidak
+              pernah benar-benar jalan, tidak relevan digambar). Kartu rute
+              di bawah TETAP menampilkan semua status apa adanya, filter ini
+              cuma soal apa yang IKUT DIGAMBAR di peta atas. */}
+          <RouteMap routes={(routes || []).filter((r) => r.status !== "CANCELLED")} />
           <div className="mt-3">
             {/* Grid turun ke bawah (D-060, 4 September 2026) — SEBELUMNYA
                 flex + overflow-x-auto (kartu berjejer ke samping, digulir
