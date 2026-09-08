@@ -554,6 +554,15 @@ const jobInclude = {
       // SATU-SATUNYA tempat JSON Order.notes di-parse untuk merk/ukuran,
       // reuse bukan duplikasi ketiga kalinya) untuk ambil ukuranKasur.
       productLine: true, productType: true, notes: true,
+      // jobs (8 September 2026, laporan owner: order tampil "Terkirim"
+      // padahal cuma job Pengambilan yang beneran selesai, job Pengiriman
+      // tidak pernah ada) — dipakai JobDetailDrawer utk mendeteksi order
+      // TANPA job DELIVERY sama sekali, supaya bisa ditawarkan tombol
+      // "Buka Lagi utk Pengiriman" (POST /orders/:id/reopen-for-delivery)
+      // alih-alih dispatcher cuma punya dropdown Status Order polos yang
+      // tidak menyentuh Job/Route sama sekali. Cuma id+type+status, bukan
+      // detail penuh — frontend cuma perlu tahu ADA/TIDAK job DELIVERY.
+      jobs: { select: { id: true, type: true, status: true } },
       // conversations (8 September 2026, laporan owner: mau chat WA cepat
       // dari Route Planner tanpa pindah ke Inbox) — pola SAMA persis dengan
       // GET /orders di routes/orders.js (conversationId untuk buka chat

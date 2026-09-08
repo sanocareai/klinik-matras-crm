@@ -505,6 +505,86 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
   }
 });
 
+// POST /api/orders/:id/reopen-for-delivery — "buka lagi" order yang
+// terlanjur ditandai Terkirim/Selesai TANPA job Pengiriman yang pernah
+// benar-benar selesai (8 September 2026, laporan owner — 2 contoh resi
+// nyata: job Pengambilan beneran selesai, tapi job Pengiriman TIDAK PERNAH
+// ada/selesai sama sekali, padahal Order.status sudah "Terkirim". Akar
+// masalahnya dropdown manual PATCH /:id di atas: menutup order lewat
+// selesaikanJobBelumJalan [D-064] hanya menyelesaikan job yang SUDAH ADA,
+// tidak pernah memeriksa apakah unitnya BENAR-BENAR sudah lewat job
+// Pengiriman. Root cause jalur manual itu SUDAH DIPERKETAT sejak D-064/
+// D-087 [4-6 September 2026] — endpoint ini urusannya BEDA: membereskan
+// order yang SUDAH TERLANJUR salah SEBELUM perbaikan itu ada, satu per
+// satu lewat tinjauan dispatcher (dari JobDetailDrawer), BUKAN backfill
+// massal tanpa tinjauan manusia terhadap order pelanggan sungguhan).
+//
+// Yang dilakukan: unit yang statusnya DELIVERED tapi order-nya TIDAK
+// PERNAH punya job DELIVERY sama sekali (COMPLETED ataupun yang masih
+// berjalan) dikembalikan ke READY_FOR_DELIVERY, lalu suggestDeliveryJob()
+// dipanggil — fungsi yang SAMA dipakai jalur otomatis produksi (idempotent,
+// job baru muncul UNSCHEDULED, langsung kelihatan di Route Planner >
+// Belum Dijadwalkan). Order.status didorong balik ke READY ("Siap Kirim")
+// supaya konsisten dengan kondisi fisik sebenarnya (unit belum terkirim).
+//
+// SENGAJA menolak kalau order sudah punya job DELIVERY apa pun (selesai
+// ATAU masih aktif) — endpoint ini untuk kasus "belum pernah dikirim sama
+// sekali", bukan untuk membuka job pengiriman kedua pada order yang
+// memang sudah beres/sedang berjalan.
+orderRouter.post("/:id/reopen-for-delivery", requirePermission(P.ORDER_WRITE), async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { units: true, jobs: { select: { id: true, type: true, status: true } } },
+    });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (order.category === "SEWA") {
+      return res.status(400).json({ error: "Order Sewa punya alur sendiri (SEWA_DIKIRIM/SEWA_DIAMBIL) — tidak berlaku di sini." });
+    }
+    if (order.jobs.some((j) => j.type === "DELIVERY")) {
+      return res.status(400).json({ error: "Order ini sudah punya job Pengiriman (selesai atau sedang berjalan) — tidak perlu dibuka lagi." });
+    }
+    const unitsPerluDibuka = order.units.filter((u) => u.status === "DELIVERED");
+    if (unitsPerluDibuka.length === 0) {
+      return res.status(400).json({ error: "Tidak ada unit berstatus Terkirim pada order ini untuk dibuka kembali." });
+    }
+
+    let sebelum;
+    await prisma.$transaction(async (tx) => {
+      await tx.unit.updateMany({
+        where: { id: { in: unitsPerluDibuka.map((u) => u.id) } },
+        data: { status: "READY_FOR_DELIVERY" },
+      });
+      for (const u of unitsPerluDibuka) await suggestDeliveryJob(tx, u.id);
+
+      sebelum = order.status;
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: "READY", statusLocked: true,
+          statusOverrideById: req.user?.id || null,
+          statusOverrideAt: new Date(),
+          statusOverrideNote: "Dibuka kembali untuk pengiriman — job Pengiriman belum pernah ada/selesai",
+        },
+      });
+      if (sebelum !== "READY") {
+        await tx.orderStatusTransition.create({
+          data: { orderId: order.id, fromStatus: sebelum, toStatus: "READY", changedById: req.user?.id || null },
+        });
+      }
+    });
+
+    const fresh = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
+    });
+    await syncCustomerOrderAggregate(order.customerId);
+    res.json(fresh);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 // POST /api/orders/:id/payments/proof — upload multipart, kembalikan URL.
 // Sama pola dengan POST /armada/jobs/:id/photos.
 orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req, res) => {

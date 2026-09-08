@@ -324,6 +324,25 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     }
   }
 
+  // Buka lagi order "Terkirim" yang ternyata belum pernah punya job
+  // Pengiriman (8 September 2026, laporan owner — 2 contoh resi nyata: job
+  // Pengambilan beneran selesai, job Pengiriman tidak pernah ada, order
+  // sudah kadung "Terkirim" lewat dropdown status manual). Lihat catatan
+  // lengkap di backend routes/orders.js POST /:id/reopen-for-delivery.
+  async function bukaLagiUntukPengiriman(order) {
+    setBusy(true);
+    setActionError("");
+    try {
+      await api.reopenOrderForDelivery(order.id);
+      muat();
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function jalankanAksi(action, payload = {}, files = []) {
     setBusy(true);
     setActionError("");
@@ -409,6 +428,28 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     {["COMPLETED", "FAILED"].includes(job.status) && actionError && (
                       <p className="mt-1.5 text-[11.5px] text-red">{actionError}</p>
                     )}
+                    {/* Buka Lagi utk Pengiriman (8 September 2026, laporan
+                        owner — lihat catatan panjang di bukaLagiUntukPengiriman
+                        di atas). Cuma muncul kalau Order "Terkirim" TAPI
+                        tidak pernah punya job DELIVERY sama sekali — jangan
+                        tawarkan tombol ini untuk order yang memang beres
+                        (sudah ada job Pengiriman selesai/berjalan). */}
+                    {orderOf(job).status === "DELIVERED" &&
+                      !orderOf(job).jobs?.some((j) => j.type === "DELIVERY") && (
+                        <div className="mt-2 rounded-btn border border-orange/40 bg-orangebg px-2.5 py-2">
+                          <p className="text-[11.5px] text-orange">
+                            Order ini "Terkirim" tapi belum pernah punya job Pengiriman —
+                            kemungkinan cuma pengambilan yang selesai.
+                          </p>
+                          <Button
+                            size="sm" variant="secondary" disabled={busy}
+                            className="mt-1.5"
+                            onClick={() => bukaLagiUntukPengiriman(orderOf(job))}
+                          >
+                            {busy ? <Loader2 size={13} className="animate-spin" /> : "Buka Lagi utk Pengiriman"}
+                          </Button>
+                        </div>
+                      )}
                   </div>
                 )}
                 {/* Tanggal Pengambilan & Pengiriman — field Order, jadi

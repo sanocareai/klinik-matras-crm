@@ -754,6 +754,11 @@ export const api = {
     request(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   markOrderComplaint: (orderId, data) =>
     request(`/orders/${orderId}/complaint`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Buka lagi order yang terlanjur "Terkirim" tanpa job Pengiriman yang
+  // pernah selesai (8 September 2026) — lihat catatan panjang di
+  // routes/orders.js POST /:id/reopen-for-delivery.
+  reopenOrderForDelivery: (orderId) =>
+    request(`/orders/${orderId}/reopen-for-delivery`, { method: "POST" }),
   addWeightEntry: (orderId, data) =>
     request(`/orders/${orderId}/weight-entries`, { method: "POST", body: JSON.stringify(data) }),
   updateWeightEntry: (entryId, data) =>
