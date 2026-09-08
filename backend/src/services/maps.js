@@ -102,6 +102,15 @@ const LATLNG_BANG_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
 const LATLNG_QUERY_RE = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)(?:&|$)/;
 const PLACE_PATH_RE = /\/maps\/place\/([^/]+)\//;
 const QUERY_TEXT_RE = /[?&]q=([^&]+)/;
+// Tier 5 — link DIRECTIONS dua-titik `/maps/dir/<lat1>,<lng1>/<lat2>,<lng2>/`
+// (8 September 2026, ditemukan investigasi laporan owner: Aurelina Nani/
+// RES-08092026-035 — link Maps ADA di order tapi tetap "Belum ada link"
+// di badge, gaikut ke peta rute). Resolve manual (curl -L) ke link itu
+// KONFIRMASI bentuknya: dua koordinat mentah, BUKAN salah satu dari 4
+// pola di atas — muncul kalau seseorang share dari layar DIREKSI (rute
+// A->B), bukan dari layar satu pin/tempat. TIDAK dikenali sama sekali
+// oleh regex Tier 1-4, geocodeFromMapsLink() jatuh ke null diam-diam.
+const DIR_TWO_POINTS_RE = /\/maps\/dir\/(-?\d+\.\d+),(-?\d+\.\d+)\/(-?\d+\.\d+),(-?\d+\.\d+)\//;
 
 // Verifikasi teks lokasi (Plus Code+nama tempat, ATAU alamat hasil
 // reverse-geocode Google sendiri) lewat Geocoding API — dipakai HANYA oleh
@@ -179,6 +188,21 @@ export async function geocodeFromMapsLink(text) {
   if (queryText) {
     const hasil = await geocodeViaGoogleApi(teksDariUrlSegment(queryText[1]));
     if (hasil) return hasil;
+  }
+
+  // Tier 5: link DIREKSI dua-titik (lihat catatan panjang di
+  // DIR_TWO_POINTS_RE di atas). Koordinat MENTAH langsung dari URL (tidak
+  // butuh Geocoding API tambahan, presisi sama dengan Tier 1-2) — TAPI
+  // pilihan TITIK KEDUA (tujuan) sebagai lokasi customer adalah HEURISTIK,
+  // bukan kepastian: asumsinya orang yang share link ini sedang MELIHAT
+  // arah KE customer (titik pertama = posisi dia saat itu, tidak relevan;
+  // titik kedua = tujuan, kemungkinan besar lokasi customer). Kalau
+  // ternyata sering salah di lapangan, ini titik yang perlu ditinjau
+  // ulang duluan — dicatat eksplisit di sini supaya gampang dilacak,
+  // bukan diam-diam dianggap presisi tinggi seperti Tier 1-2.
+  const dirTwoPoints = finalUrl.match(DIR_TWO_POINTS_RE);
+  if (dirTwoPoints) {
+    return { lat: parseFloat(dirTwoPoints[3]), lng: parseFloat(dirTwoPoints[4]), estimate: false };
   }
 
   return null;
