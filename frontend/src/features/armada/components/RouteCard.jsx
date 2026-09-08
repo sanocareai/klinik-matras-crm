@@ -82,6 +82,15 @@ export default function RouteCard({
   // jarang diketik ulang dari 2 tempat berbeda bersamaan).
   const [notesDraft, setNotesDraft] = useState(route.notes || "");
   const [mapsBusy, setMapsBusy] = useState(false);
+  // Estimasi Tol (8 September 2026, permintaan owner: "tracking driver
+  // lewat jalan mana aja... tol mana aja, dan akumulasi biaya nya, walaupun
+  // tidak akurat 100%") — lihat catatan panjang di services/routeTracking.js
+  // (backend) untuk batas kejujuran fitur ini. `tollResult` null = belum
+  // pernah dicek sesi ini, panel toggle buka/tutup TIDAK fetch ulang kecuali
+  // tombol ditekan lagi (data GPS rute tidak berubah tiap detik).
+  const [tollBusy, setTollBusy] = useState(false);
+  const [tollResult, setTollResult] = useState(null);
+  const [showTollPanel, setShowTollPanel] = useState(false);
   // Link Maps manual (6 September 2026) — laporan owner: link auto-generate
   // "berantakan" di WA, tapi link PENDEK ASLI (maps.app.goo.gl) cuma bisa
   // dibuat lewat tombol "Copy Link" di UI Google Maps sendiri, TIDAK ADA API
@@ -238,6 +247,27 @@ export default function RouteCard({
     }
   }
 
+  // Cek Estimasi Tol (8 September 2026) — panggil GET .../route-trace
+  // (map-matching GPS ping + deteksi geometris ruas tol, lihat backend).
+  // Kalau panel SUDAH terbuka, tombol cuma toggle tutup (tidak fetch ulang
+  // percuma) — buka lagi/tombol "Cek Ulang" di dalam panel yang memicu
+  // fetch baru.
+  async function cekEstimasiTol() {
+    if (showTollPanel) { setShowTollPanel(false); return; }
+    setShowTollPanel(true);
+    if (tollResult) return; // sudah pernah dicek sesi ini
+    setTollBusy(true);
+    try {
+      const trace = await api.getRouteTrace(route.id);
+      setTollResult(trace);
+    } catch (e) {
+      alert("Gagal cek estimasi tol: " + e.message);
+      setShowTollPanel(false);
+    } finally {
+      setTollBusy(false);
+    }
+  }
+
   function handleDropOnCard(e) {
     e.preventDefault();
     setDragOverIdx(null);
@@ -322,6 +352,22 @@ export default function RouteCard({
               {testSent ? "Terkirim" : "Tes Draft"}
             </button>
           )}
+          {/* Estimasi Tol (8 September 2026) — HANYA rute yang sudah
+              diterbitkan/selesai (PUBLISHED/COMPLETED) yang punya jejak GPS
+              driver sungguhan (JobPositionPing baru terisi begitu job
+              EN_ROUTE) — DRAFT belum ada apa pun untuk dilacak, tombol ini
+              tidak relevan/akan selalu kosong untuk status itu. */}
+          {jobs.length > 0 && (route.status === "PUBLISHED" || route.status === "COMPLETED") && (
+            <button
+              type="button"
+              onClick={cekEstimasiTol}
+              disabled={tollBusy}
+              title="Lihat jalur GPS driver (ternap ke jalan) + estimasi ruas tol yang dilalui — perkiraan, bukan tagihan pasti."
+              className="flex shrink-0 items-center gap-1 rounded-chip bg-elevated px-2 py-1 text-[10.5px] font-semibold text-ink2 transition-colors hover:opacity-80 disabled:opacity-40"
+            >
+              {tollBusy ? <Loader2 size={11} className="animate-spin" /> : "🛣️"} Estimasi Tol
+            </button>
+          )}
           <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />
         </div>
         {/* Tanggal rute (D-063, 4 September 2026) — Route Planner sekarang
@@ -330,6 +376,41 @@ export default function RouteCard({
             berbeda — tanpa baris ini, satu-satunya petunjuk tanggal cuma
             tersirat di dalam kode rute (mis. "RTE-040926-01"). */}
         {route.date && <p className="text-[10.5px] text-ink3">{formatTanggal(route.date)}</p>}
+
+        {/* Panel Estimasi Tol (8 September 2026) — kata "Estimasi" WAJIB
+            tampil, tidak pernah disajikan seolah angka pasti (lihat catatan
+            panjang di services/routeTracking.js). */}
+        {showTollPanel && (
+          <div className="rounded-btn border border-border bg-inset p-2.5 text-[11px]">
+            {tollBusy ? (
+              <div className="flex items-center gap-1.5 text-ink3">
+                <Loader2 size={12} className="animate-spin" /> Menghitung jalur & tol…
+              </div>
+            ) : !tollResult ? null : tollResult.tolls.length === 0 ? (
+              <p className="text-ink3">
+                Belum ada tol terdeteksi dari jalur GPS rute ini (data GPS belum cukup, atau memang tidak lewat tol yang terdaftar).
+              </p>
+            ) : (
+              <>
+                <div className="mb-1.5 flex items-center justify-between font-bold text-ink">
+                  <span>🛣️ Estimasi Tol</span>
+                  <span>Rp{tollResult.totalEstimasi.toLocaleString("id-ID")}</span>
+                </div>
+                <ul className="space-y-1">
+                  {tollResult.tolls.map((t) => (
+                    <li key={t.name} className="flex items-center justify-between text-ink2">
+                      <span>{t.name} <span className="text-ink3">({t.overlapPercent}% cocok)</span></span>
+                      <span>Rp{t.estimatedFare.toLocaleString("id-ID")}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[10px] text-ink3">
+                  Perkiraan dari jalur GPS driver{tollResult.pathIsMapMatched ? " (ternap ke jalan)" : " (titik mentah, map-matching gagal)"} — BUKAN tagihan resmi, tarif Golongan I per ruas.
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         {isEditable ? (
           // FilterDropdown menggantikan <select> polos (D-055) — komponen

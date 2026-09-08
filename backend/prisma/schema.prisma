@@ -4386,6 +4386,34 @@ model McpRefreshToken {
   @@map("mcp_refresh_tokens")
 }
 
+// Referensi ruas tol Jabodetabek (8 September 2026, permintaan owner:
+// "tracking driver lewat jalan mana aja... tim management bisa pantau
+// mereka lewat tol mana aja, dan akumulasi biayanya, walaupun tidak akurat
+// 100%"). Tabel REFERENSI (data acuan, bukan transaksional) — dipakai
+// services/routeTracking.js untuk deteksi GEOMETRIS (jalur GPS ternap-jalan
+// vs bentuk ruas tol), BUKAN pencatatan gerbang masuk/keluar sungguhan yang
+// memang tidak bisa didapat dari GPS breadcrumb saja.
+//
+// geometry: array [lat,lng] dari OpenStreetMap (Overpass API, way
+// bertag toll=yes) — bentuk jalan OBJEKTIF, bukan digambar manual.
+// estimatedFareGol1: tarif Golongan I (mobil pribadi/pikap) dari sumber
+// RESMI BPJT — source+verifiedAt WAJIB diisi tiap kali diseed/diperbarui,
+// supaya kalau tarif naik nanti, admin tahu PERSIS kapan terakhir dicek
+// dan dari mana, bukan angka mengambang tanpa asal (lihat
+// scripts/seed-toll-roads.js).
+model TollRoad {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  geometry          Json
+  estimatedFareGol1 Int      @map("estimated_fare_gol1")
+  source            String
+  verifiedAt        DateTime @map("verified_at")
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("toll_roads")
+}
+
 // Web Push subscription (8 September 2026) — permintaan owner: driver dapat
 // notifikasi begitu ditugaskan job baru, referensi Lalamove/Gojek, TETAP
 // PWA (bukan app native/Play Store, lihat docs percakapan). Satu user boleh

@@ -27,6 +27,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { notifyDriverJobAssigned } from "../services/pushNotifications.js";
+import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
@@ -3057,6 +3058,24 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
         lastPosition: p ? { lat: p.lat, lng: p.lng, accuracy: p.accuracy, recordedAt: p.recorded_at } : null,
       };
     }));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /armada/routes/:id/route-trace — jalur perjalanan sungguhan driver
+// (map-matched dari GPS ping) + estimasi ruas tol yang dilalui (8 September
+// 2026, permintaan owner: "tracking driver lewat jalan mana aja... tol mana
+// aja, dan akumulasi biayanya, walaupun tidak akurat 100%"). Lihat catatan
+// panjang di services/routeTracking.js untuk batas kejujuran fitur ini —
+// SEMUA angka di sini WAJIB ditandai "Estimasi" oleh pemanggil (frontend),
+// TIDAK PERNAH disajikan sebagai tagihan pasti.
+armadaRouter.get("/routes/:id/route-trace", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    const trace = await traceRoute(route.id);
+    res.json(trace);
   } catch (err) {
     handleErr(err, res);
   }

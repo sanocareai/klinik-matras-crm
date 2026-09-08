@@ -300,6 +300,10 @@ export const api = {
   sendJobPositions: (jobId, pings) =>
     request(`/armada/jobs/${jobId}/positions`, { method: "POST", body: JSON.stringify({ pings }) }),
   getArmadaTracking: () => request("/armada/tracking"),
+  // Jalur perjalanan driver (map-matched) + estimasi tol (8 September 2026)
+  // — lihat services/routeTracking.js. SEMUA angka di sini ESTIMASI, bukan
+  // tagihan pasti — label UI WAJIB menyebutnya begitu.
+  getRouteTrace: (routeId) => request(`/armada/routes/${routeId}/route-trace`),
   arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
