@@ -377,21 +377,19 @@ export default function ArmadaRoutes() {
 
         {/* Tengah — papan rute */}
         <div className="min-w-0">
-          {/* Peta DIBATASI ke DRAFT saja (6 September 2026), lalu DIBUKA
-              LAGI ke semua rute selain CANCELLED (8 September 2026) —
-              riwayat berbalik, dicatat supaya tidak bolak-balik tanpa
-              alasan kalau ada laporan lagi nanti. Pembatasan awal karena
-              peta waktu itu Leaflet+CARTO polos, tanpa fitBounds, jadi 4+
-              rute PUBLISHED sekaligus numpuk jadi garis kusut yang tidak
-              terbaca. Setelah migrasi ke Google Maps (D-08 Sep 2026,
-              lib/googleMaps.js) — fitBounds otomatis + warna per-rute yang
-              sama tapi peta sungguhan lebih mudah dibedakan — owner minta
-              rute PUBLISHED muncul lagi ("aktifnya Google Maps API
-              memudahkan semua"). CANCELLED tetap disaring (rute yang tidak
-              pernah benar-benar jalan, tidak relevan digambar). Kartu rute
-              di bawah TETAP menampilkan semua status apa adanya, filter ini
-              cuma soal apa yang IKUT DIGAMBAR di peta atas. */}
-          <RouteMap routes={(routes || []).filter((r) => r.status !== "CANCELLED")} />
+          {/* Riwayat filter peta: DRAFT saja (6 Sep) -> semua selain
+              CANCELLED (8 Sep, "aktifnya Google Maps API memudahkan
+              semua") -> SEKARANG selain CANCELLED & COMPLETED (8 Sep,
+              laporan owner lanjutan: "rute yang statusnya sudah selesai
+              gaperlu muncul lagi, fokus ke rute yang masih aktif") —
+              dicatat supaya tidak bolak-balik tanpa alasan kalau ada
+              laporan lagi nanti. Rute COMPLETED sudah tuntas dikerjakan,
+              garis jalurnya di peta cuma menambah keramaian visual tanpa
+              informasi baru yang perlu dipantau dispatcher HARI INI — beda
+              dari DRAFT/PUBLISHED yang masih perlu direncanakan/dipantau
+              aktif. Kartu rute di bawah TETAP menampilkan semua status apa
+              adanya, filter ini cuma soal apa yang IKUT DIGAMBAR di peta atas. */}
+          <RouteMap routes={(routes || []).filter((r) => !["CANCELLED", "COMPLETED"].includes(r.status))} />
           <div className="mt-3">
             {/* Grid turun ke bawah (D-060, 4 September 2026) — SEBELUMNYA
                 flex + overflow-x-auto (kartu berjejer ke samping, digulir
