@@ -65,11 +65,22 @@ import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../src/servi
 
 const APPLY = process.argv.includes("--apply");
 
-// Batas WIB dinyatakan sebagai offset +07:00 eksplisit (CLAUDE.md §11 —
-// Indonesia tidak pernah pakai DST, offset tetap) supaya tidak bergantung
-// timezone container (UTC).
+// Order.createdAt (timestamptz) — batas WIB dinyatakan sebagai offset
+// +07:00 eksplisit (CLAUDE.md §11 — Indonesia tidak pernah pakai DST,
+// offset tetap) supaya tidak bergantung timezone container (UTC).
 const CUTOFF_ORDER_CREATED = new Date("2026-09-06T00:00:00+07:00"); // order dibuat < ini = s.d. 5 Sep WIB
-const HARI_INI_WIB = new Date("2026-09-08T00:00:00+07:00"); // scheduledDate < ini = sudah lewat
+
+// Job.scheduledDate BEDA — kolom itu `@db.Date` (tanpa jam, timezone-naive
+// di Postgres), disimpan/dibaca sebagai tengah malam UTC dari tanggal
+// kalendernya (pola SAMA dengan toDateOnly() di routes/armada.js). Sempat
+// salah pakai offset +07:00 di sini (seperti CUTOFF_ORDER_CREATED di
+// atas) — TERBUKTI SALAH lewat pengujian langsung: Postgres membandingkan
+// APA ADANYA sebagai tanggal kalender, "2026-09-07T17:00:00Z" ikut
+// dianggap tanggal 7 juga (bukan "lewat tengah malam ke tanggal 8"),
+// akibatnya job scheduledDate=7 Sep OVERDUE (Julhan, Anna Sampetoding)
+// malah TIDAK ikut ter-filter. Perbaikan: SELALU UTC-midnight polos untuk
+// kolom @db.Date, jangan digeser offset WIB sama sekali.
+const HARI_INI = new Date("2026-09-08T00:00:00.000Z"); // scheduledDate < ini = sudah lewat
 
 async function main() {
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau)"}\n`);
@@ -79,7 +90,7 @@ async function main() {
       type: "PICKUP",
       status: { in: ["UNSCHEDULED", "ASSIGNED"] },
       order: { createdAt: { lt: CUTOFF_ORDER_CREATED } },
-      OR: [{ scheduledDate: null }, { scheduledDate: { lt: HARI_INI_WIB } }],
+      OR: [{ scheduledDate: null }, { scheduledDate: { lt: HARI_INI } }],
     },
     select: {
       id: true, status: true, scheduledDate: true, routeId: true,
