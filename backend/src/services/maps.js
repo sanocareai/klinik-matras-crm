@@ -56,12 +56,82 @@ const NOMINATIM_USER_AGENT = "SANSS-KlinikMatras/1.0 (+https://app.sanomatrasseh
 // tandai sendiri di peta, bukan hasil pencarian teks. Karena itu dicoba
 // PALING PERTAMA, sebelum Google maupun Nominatim.
 //
-// Link pendek (maps.app.goo.gl) redirect ke URL panjang yang menyimpan
-// koordinat di pola `!3d<lat>!4d<lng>` — diambil dari `res.url` setelah
-// fetch mengikuti redirect (Node fetch bawaan sudah `redirect: "follow"`
-// secara default, tidak perlu library tambahan).
-const GOOGLE_MAPS_LINK_RE = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.com\/maps)\S*/i;
-const LATLNG_IN_URL_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+// Link pendek (maps.app.goo.gl) redirect ke URL panjang — diambil dari
+// `res.url` setelah fetch mengikuti redirect (Node fetch bawaan sudah
+// `redirect: "follow"` secara default, tidak perlu library tambahan).
+//
+// DIPERLUAS 8 September 2026 — investigasi laporan owner (customer Steven,
+// RES-26082026-173: link Maps kosong di desktop tapi muncul di HP). Root
+// cause link ITU SENDIRI bukan bug kita (Google short-link ke pin
+// Plus-Code-only kadang gagal render browser desktop, lihat perbaikan
+// mapsUrl() di frontend/jobStatus.js). TAPI investigasi itu menemukan bug
+// TERPISAH yang NYATA: dites 27 link produksi, 7 gagal di-resolve sama
+// sekali oleh geocodeFromMapsLink() versi lama — Google TERNYATA merender
+// redirect share-link ke BEBERAPA bentuk URL berbeda tergantung jenis pin,
+// bukan cuma satu pola `!3d!4d`:
+//   1. `!3d<lat>!4d<lng>` — dropped pin polos, TETAP pola utama (presisi
+//      tertinggi, tanpa panggilan API tambahan).
+//   2. `q=<lat>,<lng>` di query string — presisi SAMA dengan #1, cuma
+//      lewat jalur redirect `/maps?q=...` bukan `/maps/place/...!3d!4d`.
+//   3. `/maps/place/<PlusCode+Nama Tempat>/` — link ke POI/place BERNAMA
+//      (apartemen, kompleks) TIDAK membawa koordinat mentah di URL sama
+//      sekali, Google gantikan dengan Place ID. TAPI path-nya selalu
+//      diawali Plus Code ("XM6V+64X Tokyo Riverside...") — referensi grid
+//      geografis presisi, BUKAN nama bebas — aman diverifikasi ulang lewat
+//      Geocoding API (dites langsung: hasilnya ROOFTOP).
+//   4. `q=<alamat lengkap>&ftid=...` — kadang Google SENDIRI yang
+//      reverse-geocode pin jadi alamat lengkap (jalan+RT/RW+kelurahan+
+//      kecamatan+kota) saat redirect. Beda dari "menebak dari alamat
+//      ketikan sales" (itu yang sudah dibuang kebijakan link-only) — ini
+//      alamat hasil Google reverse-geocode PIN ASLI, cuma perlu digeocode
+//      ulang lewat Geocoding API untuk dapat lat/lng-nya.
+// #3 dan #4 BUTUH panggilan Geocoding API tambahan (geocodeViaGoogleApi di
+// bawah) — supaya TIDAK diam-diam kembali jadi "tebakan level kelurahan"
+// (persis yang dibuang kebijakan link-only), hasilnya CUMA diterima kalau
+// location_type Google ROOFTOP/RANGE_INTERPOLATED (presisi tinggi);
+// GEOMETRIC_CENTER/APPROXIMATE (match area luas) DITOLAK, fungsi tetap
+// balik null seperti sebelumnya — bukan diam-diam menerima tebakan kasar.
+//
+// `share.google` (domain BARU Google, ditemukan investigasi ini — sudah
+// pernah dipakai juga di komentar DEPOT di bawah) ditambahkan ke daftar
+// domain yang dikenali — kadang redirect ke halaman SEARCH (bukan Maps)
+// dengan query cuma nama tempat tanpa alamat, tapi itu tetap lewat jalur
+// #4 di atas dan jaring pengaman ROOFTOP/RANGE_INTERPOLATED yang sama.
+const GOOGLE_MAPS_LINK_RE = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|share\.google|(?:www\.)?google\.com\/maps)\S*/i;
+const LATLNG_BANG_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+const LATLNG_QUERY_RE = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)(?:&|$)/;
+const PLACE_PATH_RE = /\/maps\/place\/([^/]+)\//;
+const QUERY_TEXT_RE = /[?&]q=([^&]+)/;
+
+// Verifikasi teks lokasi (Plus Code+nama tempat, ATAU alamat hasil
+// reverse-geocode Google sendiri) lewat Geocoding API — dipakai HANYA oleh
+// geocodeFromMapsLink() untuk pola #3/#4 di atas, BUKAN jalur baru untuk
+// menggeocode Job.addressText bebas (kebijakan link-only TIDAK berubah,
+// input di sini SELALU teks yang Google sendiri taruh di URL redirect,
+// bukan ketikan sales). Filter presisi (ROOFTOP/RANGE_INTERPOLATED saja)
+// mencegah ini diam-diam jadi jalur tebakan kelurahan/kecamatan lagi.
+async function geocodeViaGoogleApi(addressText) {
+  const key = apiKey();
+  if (!key || !addressText) return null;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressText)}&key=${key}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.status !== "OK" || !data.results?.length) return null;
+  const top = data.results[0];
+  const presisiTinggi = ["ROOFTOP", "RANGE_INTERPOLATED"].includes(top.geometry?.location_type);
+  if (!presisiTinggi) return null;
+  return { lat: top.geometry.location.lat, lng: top.geometry.location.lng, estimate: false };
+}
+
+// Path/query URL Google pakai "+" sebagai spasi (bukan cuma di query
+// string form-encoded — REDIRECT Maps ternyata pakai konvensi yang sama di
+// path segment juga, dibuktikan lewat tes langsung 8 Sep 2026). Urutan
+// WAJIB: ganti "+" jadi spasi DULU, baru decodeURIComponent — supaya "+"
+// literal di dalam Plus Code (di-escape Google jadi "%2B") tidak ikut
+// kena ganti jadi spasi.
+function teksDariUrlSegment(segment) {
+  return decodeURIComponent(segment.replace(/\+/g, " "));
+}
 
 // Lokasi Klinik Matras by SANO CARE (D-076, 4 September 2026 — DIKOREKSI 6
 // September 2026). Laporan owner: "buat semua jalur mulai dan berakhir di
@@ -85,9 +155,33 @@ export async function geocodeFromMapsLink(text) {
   const match = text.match(GOOGLE_MAPS_LINK_RE);
   if (!match) return null;
   const res = await fetch(match[0]);
-  const koordinat = res.url.match(LATLNG_IN_URL_RE);
-  if (!koordinat) return null;
-  return { lat: parseFloat(koordinat[1]), lng: parseFloat(koordinat[2]), estimate: false };
+  const finalUrl = res.url;
+
+  // Tier 1-2: koordinat MENTAH langsung di URL redirect — tanpa panggilan
+  // API tambahan, presisi tertinggi. Lihat catatan panjang di atas
+  // GOOGLE_MAPS_LINK_RE untuk kapan masing-masing pola muncul.
+  const bang = finalUrl.match(LATLNG_BANG_RE);
+  if (bang) return { lat: parseFloat(bang[1]), lng: parseFloat(bang[2]), estimate: false };
+  const queryLatLng = finalUrl.match(LATLNG_QUERY_RE);
+  if (queryLatLng) return { lat: parseFloat(queryLatLng[1]), lng: parseFloat(queryLatLng[2]), estimate: false };
+
+  // Tier 3: link POI/place bernama, path diawali Plus Code — presisi
+  // grid geografis, aman diverifikasi lewat Geocoding API.
+  const placePath = finalUrl.match(PLACE_PATH_RE);
+  if (placePath) {
+    const hasil = await geocodeViaGoogleApi(teksDariUrlSegment(placePath[1]));
+    if (hasil) return hasil;
+  }
+
+  // Tier 4: alamat/nama tempat di query `q=` (Google reverse-geocode pin
+  // sendiri, ATAU fallback share.google) — sama jaring pengaman presisi.
+  const queryText = finalUrl.match(QUERY_TEXT_RE);
+  if (queryText) {
+    const hasil = await geocodeViaGoogleApi(teksDariUrlSegment(queryText[1]));
+    if (hasil) return hasil;
+  }
+
+  return null;
 }
 
 function apiKey() {
