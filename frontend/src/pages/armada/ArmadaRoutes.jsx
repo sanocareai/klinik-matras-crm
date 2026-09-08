@@ -100,30 +100,25 @@ export default function ArmadaRoutes() {
       else if (y > window.innerHeight - TEPI_PX) window.scrollBy(0, KECEPATAN_PX);
     }
     document.addEventListener("dragover", onDragOver, true);
-
-    // Scroll roda mouse SAAT drag (8 September 2026, laporan owner
-    // lanjutan: "bisa juga gak hold drag + scroll atau klik kiri hold
-    // sambil scroll mouse" — auto-scroll tepi di atas butuh kursor
-    // mendekati tepi layar, kurang presisi kalau target rute ada di
-    // TENGAH halaman yang belum kelihatan sama sekali. Ini pelengkap:
-    // scroll manual pakai roda mouse, tetap jalan walau kursor lagi di
-    // atas peta Google Maps (yang NORMALNYA menangkap wheel untuk zoom —
-    // capture phase + preventDefault DI SINI memotong itu duluan selama
-    // drag berlangsung, begitu drag selesai peta zoom-scroll normal lagi
-    // karena listener ini lepas otomatis [effect cleanup, `draggingJobId`
-    // jadi null]). passive:false WAJIB — tanpa itu preventDefault() pada
-    // event wheel ditolak diam-diam oleh browser modern.
-    function onWheel(e) {
-      e.preventDefault();
-      window.scrollBy(0, e.deltaY);
-    }
-    document.addEventListener("wheel", onWheel, { capture: true, passive: false });
-
-    return () => {
-      document.removeEventListener("dragover", onDragOver, true);
-      document.removeEventListener("wheel", onWheel, { capture: true });
-    };
+    return () => document.removeEventListener("dragover", onDragOver, true);
   }, [draggingJobId]);
+  // Scroll roda mouse SAAT drag — DICOBA (8 September 2026), TERBUKTI
+  // TIDAK BISA lewat pengujian langsung owner: HTML5 native drag-and-drop
+  // menyupresi event `wheel` total selama drag berlangsung di browser
+  // umum (Chrome/Edge) — bukan batasan yang bisa ditambal dari sisi kode
+  // listener, ini perilaku browser terhadap operasi drag native itu
+  // sendiri. Kode percobaannya SUDAH DICABUT (jangan ditambahkan lagi
+  // dengan pendekatan yang sama — event listener wheel apa pun tidak
+  // akan pernah menerima event selama native drag berjalan). Satu-satunya
+  // cara membuat wheel-scroll-saat-drag benar-benar jalan adalah
+  // membongkar total mekanisme drag di sini dari HTML5 native (draggable
+  // + dragstart/dragover/drop) jadi custom pointer-based (mousedown/
+  // mousemove/mouseup, posisi dilacak manual lewat state) — perubahan
+  // besar yang menyentuh UnroutedJobsPanel.jsx/RouteCard.jsx/file ini
+  // sekaligus, BELUM dikerjakan (risiko regresi ke drag-reorder yang
+  // sudah jalan, perlu keputusan eksplisit sebelum mulai). Auto-scroll
+  // tepi layar (dragover, effect di atas) TETAP jalan normal — itu event
+  // BEDA yang memang tidak disupresi selama drag.
 
   // Data (6 fetch paralel: rute, job belum-masuk-rute, job belum
   // bertanggal, driver, kendaraan, helper) lewat TanStack Query (8
