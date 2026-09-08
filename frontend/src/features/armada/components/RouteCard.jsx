@@ -92,6 +92,12 @@ export default function RouteCard({
   const [manualMapsUrlDraft, setManualMapsUrlDraft] = useState(route.manualMapsUrl || "");
   const [resendBusy, setResendBusy] = useState(false);
   const [resendSent, setResendSent] = useState(false);
+  // Tes Draft (8 September 2026) — lihat catatan panjang di tesDraft() di
+  // bawah. State sengaja TERPISAH dari resendBusy/resendSent (dua aksi
+  // beda makna, jangan dicampur biar tombolnya tidak salah label "Terkirim"
+  // untuk aksi yang lain).
+  const [testBusy, setTestBusy] = useState(false);
+  const [testSent, setTestSent] = useState(false);
   // Job yang QuickChatModal SEDANG dibuka untuknya (8 September 2026,
   // permintaan owner: chat WA cepat tanpa pindah ke Inbox) — null = modal
   // tertutup. Disimpan sebagai objek job (bukan cuma id) supaya modal
@@ -161,6 +167,31 @@ export default function RouteCard({
       alert("Gagal kirim ulang broadcast: " + e.message);
     } finally {
       setResendBusy(false);
+    }
+  }
+
+  // Tes Draft (8 September 2026, permintaan owner: "buatkan tombol test
+  // draft... agar mudah testing dan kirim broadcast draft ke natasha,
+  // sebelum finalkan ini"). Berbeda dari kirimUlang() di atas: itu KHUSUS
+  // rute PUBLISHED (kirim ULANG pesan resmi yang sudah pernah terkirim).
+  // Ini sebaliknya — justru untuk rute DRAFT (belum diterbitkan sama
+  // sekali), supaya dispatcher/owner bisa lihat persis bentuk pesan yang
+  // akan Natasha terima SEBELUM menekan "Terbitkan" sungguhan. Backend
+  // menempel label "🧪 TES DRAFT" di depan pesan (armada.js#POST
+  // /routes/:id/test-broadcast) supaya Natasha tidak salah kira ini rute
+  // yang harus dijalankan — TIDAK mengubah status rute maupun job apa pun.
+  async function tesDraft() {
+    if (!window.confirm(`Kirim TES broadcast rute ${route.code} ke Natasha? (berlabel "🧪 TES DRAFT", tidak mengubah status rute)`)) return;
+    setTestBusy(true);
+    setTestSent(false);
+    try {
+      await api.testRouteBroadcast(route.id);
+      setTestSent(true);
+      setTimeout(() => setTestSent(false), 3000);
+    } catch (e) {
+      alert("Gagal kirim tes broadcast: " + e.message);
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -261,6 +292,34 @@ export default function RouteCard({
               className="flex shrink-0 items-center gap-1 rounded-chip bg-accentbg px-2 py-1 text-[10.5px] font-semibold text-accent transition-colors hover:opacity-80 disabled:opacity-40"
             >
               {mapsBusy ? <Loader2 size={11} className="animate-spin" /> : <Map size={11} />} Buat Peta
+            </button>
+          )}
+          {/* Tes Draft (8 September 2026) — lihat catatan panjang di
+              tesDraft() di atas. Warna orange/warning (BEDA dari "Buat
+              Peta" biru) supaya sekilas kelihatan ini aksi "hati-hati/
+              belum final", bukan aksi rutin biasa. Tampil untuk rute apa
+              pun yang sudah punya stop, sama syarat dengan "Buat Peta" —
+              paling berguna justru saat masih DRAFT, tapi tidak diblokir
+              untuk status lain (verifikasi ulang PUBLISHED pun boleh). */}
+          {jobs.length > 0 && (
+            <button
+              type="button"
+              onClick={tesDraft}
+              disabled={testBusy}
+              title='Kirim TES broadcast (berlabel "🧪 TES DRAFT") ke Natasha — cek format pesan sebelum menerbitkan rute sungguhan, TIDAK mengubah status rute.'
+              className={cn(
+                "flex shrink-0 items-center gap-1 rounded-chip px-2 py-1 text-[10.5px] font-semibold transition-colors disabled:opacity-40",
+                testSent ? "bg-greenbg text-green" : "bg-orangebg text-orange hover:opacity-80"
+              )}
+            >
+              {testBusy ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : testSent ? (
+                <Check size={11} />
+              ) : (
+                <Send size={11} />
+              )}
+              {testSent ? "Terkirim" : "Tes Draft"}
             </button>
           )}
           <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />

@@ -2086,6 +2086,39 @@ armadaRouter.post("/routes/:id/resend-broadcast", requirePermission(P.ROUTE_WRIT
   }
 });
 
+// POST /routes/:id/test-broadcast — kirim ringkasan rute + link Maps ke
+// Natasha SEBAGAI TES, TANPA mengubah status rute sama sekali (8 September
+// 2026, permintaan owner: "buatkan tombol test draft... agar mudah testing
+// dan kirim broadcast draft ke natasha, sebelum finalkan ini" — dipakai
+// mengecek format pesan baru sebelum benar-benar menerbitkan rute).
+//
+// BEDA dari resend-broadcast di atas: itu KHUSUS PUBLISHED (kirim ULANG
+// pesan yang SUDAH resmi terkirim sebelumnya). Ini sebaliknya — dirancang
+// justru untuk DRAFT (rute yang BELUM diterbitkan sama sekali), supaya
+// dispatcher bisa lihat persis bentuk pesan yang akan Natasha terima
+// SEBELUM menekan "Terbitkan" sungguhan. Tetap dibolehkan untuk status
+// apa pun (tidak ada guard status) — tidak ada ruginya, dan berguna juga
+// untuk verifikasi ulang rute yang sudah PUBLISHED tanpa tercatat sebagai
+// "Kirim Ulang" resmi.
+//
+// Label "🧪 TES DRAFT" ditempel SEBELUM label lain (kalau ada) supaya
+// Natasha di WA langsung tahu ini BUKAN rute yang harus dijalankan —
+// beda dari tanpa-label (publish resmi), "🔄 RUTE DIPERBARUI" (edit), atau
+// "📤 KIRIM ULANG" (resend resmi).
+armadaRouter.post("/routes/:id/test-broadcast", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    if (route.jobs.length === 0) throw new ArmadaError("Rute belum punya job — tambahkan job dulu sebelum tes broadcast");
+    await ensureJobsGeocoded(route.jobs);
+    const { url } = buildRouteMapsUrl(route.jobs);
+    await kirimRingkasanRuteKeNatasha(route, url, "🧪 TES DRAFT — BUKAN RUTE FINAL, JANGAN DIJALANKAN");
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // GET /routes/:id/maps-link — link Google Maps multi-stop untuk tombol
 // "Buat Peta" di Route Planner (redesain Sep 2026). Dipanggil manual oleh
 // dispatcher (mis. untuk preview sebelum publish, atau share ulang secara

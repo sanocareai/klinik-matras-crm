@@ -221,6 +221,11 @@ export const api = {
   // 2026) — beda dari publish (sekali, DRAFT->PUBLISHED) atau edit darurat
   // (mewajibkan alasan, tercatat sebagai riwayat edit).
   resendRouteBroadcast: (id) => request(`/armada/routes/${id}/resend-broadcast`, { method: "POST" }),
+  // Tes broadcast (8 September 2026) — kirim pesan rute (berlabel "🧪 TES
+  // DRAFT") ke Natasha TANPA mengubah status rute, boleh dipakai untuk
+  // rute DRAFT maupun PUBLISHED. Beda dari resendRouteBroadcast di atas
+  // yang KHUSUS rute PUBLISHED (kirim ulang resmi).
+  testRouteBroadcast: (id) => request(`/armada/routes/${id}/test-broadcast`, { method: "POST" }),
   // Link Google Maps multi-stop (redesain Route Planner, Sep 2026) — tombol
   // "Buat Peta" manual; publish/edit rute mengirim otomatis lewat backend,
   // TIDAK lewat panggilan ini (dibangun ulang di server, satu sumber kebenaran).
