@@ -84,23 +84,57 @@ export default function ArmadaRoutes() {
   // TETAP ada sebagai alternatif tanpa drag sama sekali — ini pelengkap
   // buat yang tetap pilih cara drag.
   //
-  // `dragover` di window (capture) — bukan di container tertentu, supaya
-  // tertangkap dari MANA PUN kursor berada saat drag (peta, kartu rute,
-  // ruang kosong), tidak bergantung elemen mana yang kebetulan
-  // ondragover-nya prevent-default. Kecepatan tetap (bukan proporsional
-  // jarak ke tepi) — cukup untuk kasus nyata (2-4 rute ekstra di bawah),
-  // tidak perlu rumit lebih dari itu.
+  // DIPERBAIKI (8 September 2026, laporan owner: "rada kesulitan kayak
+  // harus pas banget di tepi, bahkan ketika scroll tepi atas kadang suka
+  // gamau") — versi pertama scroll LANGSUNG di dalam handler `dragover`,
+  // yang TERNYATA dua masalah sekaligus: (1) zona 90px terlalu sempit,
+  // gampang overshoot MELEWATI batas dokumen di tepi atas (begitu kursor
+  // keluar viewport dokumen — misal kepentok chrome browser sendiri —
+  // event dragover berhenti sama sekali, terasa "gamau" persis di tepi
+  // atas yang ruangnya paling sempit), (2) `dragover` DIBATASI (throttled)
+  // browser ke laju yang tidak konsisten, jadi scroll berbasis "sekali
+  // scroll per event" terasa patah-patah/kadang skip.
+  //
+  // Diganti pola requestAnimationFrame: `dragover` (capture, document —
+  // TETAP di document, tertangkap dari MANA PUN kursor berada) HANYA
+  // mencatat posisi Y terakhir ke ref (murah, tidak langsung scroll).
+  // Loop rAF terpisah (60fps, LEPAS dari laju event dragover) yang
+  // membaca ref itu tiap frame dan men-scroll kalau masih dalam zona —
+  // scroll jadi mulus & konsisten walau dragover sendiri jarang-jarang.
+  // Zona diperbesar 90px -> 140px (lebih toleran, tidak perlu presisi
+  // piksel) + kecepatan PROPORSIONAL jarak ke tepi (makin dekat tepi
+  // makin cepat) — dua-duanya bikin "harus pas banget" tidak lagi masalah.
   useEffect(() => {
     if (!draggingJobId) return;
-    const TEPI_PX = 90;
-    const KECEPATAN_PX = 22;
+    const TEPI_PX = 140;
+    const KECEPATAN_MAKS_PX = 26; // per frame, ~60fps
+    const posisiYRef = { current: null };
+
     function onDragOver(e) {
-      const y = e.clientY;
-      if (y < TEPI_PX) window.scrollBy(0, -KECEPATAN_PX);
-      else if (y > window.innerHeight - TEPI_PX) window.scrollBy(0, KECEPATAN_PX);
+      posisiYRef.current = e.clientY;
     }
     document.addEventListener("dragover", onDragOver, true);
-    return () => document.removeEventListener("dragover", onDragOver, true);
+
+    let rafId;
+    function tick() {
+      const y = posisiYRef.current;
+      if (y != null) {
+        if (y < TEPI_PX) {
+          const kekuatan = (TEPI_PX - Math.max(y, 0)) / TEPI_PX; // 0..1, makin dekat tepi makin besar
+          window.scrollBy(0, -Math.max(4, kekuatan * KECEPATAN_MAKS_PX));
+        } else if (y > window.innerHeight - TEPI_PX) {
+          const kekuatan = (y - (window.innerHeight - TEPI_PX)) / TEPI_PX;
+          window.scrollBy(0, Math.max(4, kekuatan * KECEPATAN_MAKS_PX));
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      document.removeEventListener("dragover", onDragOver, true);
+      cancelAnimationFrame(rafId);
+    };
   }, [draggingJobId]);
   // Scroll roda mouse SAAT drag — DICOBA (8 September 2026), TERBUKTI
   // TIDAK BISA lewat pengujian langsung owner: HTML5 native drag-and-drop
