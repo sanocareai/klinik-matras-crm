@@ -110,3 +110,34 @@ export async function notifyProductionRevisionReady(revision) {
     )
   );
 }
+
+// Notifikasi "pengambilan/pengiriman customer Anda GAGAL" ke SALES pemilik
+// order (9 September 2026, D-110) — celah berbentuk sama dengan yang baru
+// diperbaiki untuk Produksi di atas: sebelum ini, sales cuma bisa tahu job
+// customer-nya GAGAL kalau kebetulan buka "Semua Order" dan lihat badge
+// merah "Gagal" — tidak ada dorongan aktif sama sekali, padahal ini
+// biasanya butuh sales/CS menelepon customer secepatnya untuk menjelaskan
+// & menyepakati jadwal baru.
+//
+// Query customer TERPISAH di sini (bukan mengandalkan `job.order` dari
+// jobInclude yang dipakai pemanggil) — jobInclude dipakai luas di seluruh
+// armada.js, tidak perlu diperlebar cuma untuk satu notifikasi best-effort
+// ini. `job` minimal butuh { id, orderId, type, failureReason }.
+export async function notifySalesJobFailed(job) {
+  if (!job?.orderId) return;
+  const order = await prisma.order.findUnique({
+    where: { id: job.orderId },
+    select: {
+      orderNumber: true,
+      customer: { select: { id: true, name: true, assignedSalesId: true } },
+    },
+  });
+  const salesId = order?.customer?.assignedSalesId;
+  if (!salesId) return; // order belum punya sales pemilik — diam-diam, bukan error
+  const tipe = job.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
+  await sendPushToUser(salesId, {
+    title: `❌ ${tipe} gagal`,
+    body: `${order.customer.name || "Customer"}${order.orderNumber ? ` (${order.orderNumber})` : ""} — ${job.failureReason || "tanpa alasan tercatat"}`,
+    url: `/customers?id=${order.customer.id}`,
+  });
+}

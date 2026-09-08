@@ -26,7 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
-import { notifyDriverJobAssigned, notifyProductionRevisionReady } from "../services/pushNotifications.js";
+import { notifyDriverJobAssigned, notifyProductionRevisionReady, notifySalesJobFailed } from "../services/pushNotifications.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
@@ -643,6 +643,17 @@ const jobInclude = {
         },
       },
     },
+  },
+  // issueLogs (9 September 2026, D-110) — riwayat LENGKAP siklus gagal/
+  // reschedule per job, lihat komentar panjang di schema.prisma model
+  // JobIssueLog. Dipakai IssueRescheduleDrawer.jsx menampilkan timeline
+  // penuh (bukan cuma "kegagalan/reschedule TERAKHIR" dari field tunggal
+  // Job.failureReason/rescheduleReason yang sudah ada). Array ini KOSONG
+  // untuk hampir semua job (yang tidak pernah gagal) — biaya query
+  // tambahan minimal.
+  issueLogs: {
+    orderBy: { createdAt: "asc" },
+    include: { createdBy: { select: { id: true, name: true } } },
   },
 };
 
@@ -2393,21 +2404,36 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     const nextDate = toDateOnly(scheduledDate);
     const nextDriverId = driverId || null;
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: {
-        scheduledDate: nextDate,
-        timeWindow: timeWindow || null,
-        driverId: nextDriverId,
-        helperId: helperId || null,
-        vehicleId: vehicleId || null,
-        status: deriveStatus(!!nextDriverId, !!nextDate),
-        rescheduleReason: reason.trim(),
-        rescheduledById: req.user.id,
-        rescheduledAt: new Date(),
-        customerConfirmedReschedule: !!customerConfirmed,
-      },
-      include: jobInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const j = await tx.job.update({
+        where: { id: job.id },
+        data: {
+          scheduledDate: nextDate,
+          timeWindow: timeWindow || null,
+          driverId: nextDriverId,
+          helperId: helperId || null,
+          vehicleId: vehicleId || null,
+          status: deriveStatus(!!nextDriverId, !!nextDate),
+          rescheduleReason: reason.trim(),
+          rescheduledById: req.user.id,
+          rescheduledAt: new Date(),
+          customerConfirmedReschedule: !!customerConfirmed,
+        },
+        include: jobInclude,
+      });
+      // Riwayat lengkap (D-110) — lihat komentar panjang di schema.prisma
+      // model JobIssueLog. previousScheduledDate diambil dari job SEBELUM
+      // update (biasanya null — job gagal biasanya masih memegang tanggal
+      // lama sampai titik ini, tapi diambil dari data asli, bukan diasumsikan).
+      await tx.jobIssueLog.create({
+        data: {
+          jobId: job.id, type: "RESCHEDULED", cause: "AFTER_FAILURE",
+          previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate,
+          rescheduleReason: reason.trim(), customerConfirmed: !!customerConfirmed,
+          createdById: req.user.id,
+        },
+      });
+      return j;
     });
     res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
   } catch (err) {
@@ -2897,7 +2923,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa diubah lagi lewat sini`);
     }
-    const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes, estimatedDurationMinutes } = req.body;
+    const { scheduledDate, driverId, helperId, vehicleId, timeWindow, addressText, accessNotes, estimatedDurationMinutes, rescheduleReason, customerConfirmed } = req.body;
 
     // SATU SKEMA PENUGASAN (D-077, 4 September 2026) — laporan owner:
     // driver+helper+kendaraan dulu bisa diisi 2 JALUR berbeda (langsung di
@@ -2949,7 +2975,35 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     const nextDate = scheduledDate !== undefined ? data.scheduledDate : existing.scheduledDate;
     data.status = deriveStatus(!!nextDriverId, !!nextDate);
 
-    const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+    // Reschedule PROAKTIF wajib alasan (9 September 2026, D-110) — sebelum
+    // ini, reschedule SETELAH gagal (POST /issues/:jobId/reschedule) wajib
+    // alasan + centang konfirmasi pelanggan, tapi reschedule di sini (belum
+    // pernah gagal, dispatcher edit tanggal langsung — mis. "pelanggan
+    // telepon minta digeser") TIDAK mencatat alasan sama sekali, tanggal
+    // berubah diam-diam tanpa jejak. Cuma berlaku untuk perubahan tanggal
+    // yang SUDAH TERISI ke tanggal LAIN — job yang baru pertama kali dapat
+    // tanggal (existing.scheduledDate null) itu PENJADWALAN AWAL, bukan
+    // reschedule, tidak butuh alasan.
+    const isReschedule = existing.scheduledDate != null && nextDate != null
+      && new Date(existing.scheduledDate).getTime() !== new Date(nextDate).getTime();
+    if (isReschedule && !rescheduleReason?.trim()) {
+      throw new ArmadaError("Job ini sudah punya tanggal — jelaskan alasan reschedule-nya (mis. permintaan pelanggan)");
+    }
+
+    const job = await prisma.$transaction(async (tx) => {
+      const j = await tx.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+      if (isReschedule) {
+        await tx.jobIssueLog.create({
+          data: {
+            jobId: j.id, type: "RESCHEDULED", cause: "PROACTIVE",
+            previousScheduledDate: existing.scheduledDate, newScheduledDate: nextDate,
+            rescheduleReason: rescheduleReason.trim(), customerConfirmed: !!customerConfirmed,
+            createdById: req.user.id,
+          },
+        });
+      }
+      return j;
+    });
 
     // Push notifikasi (8 September 2026) — HANYA saat driver benar-benar
     // BARU/BERGANTI (bukan tiap PATCH lain, mis. ubah catatan/jam) supaya
@@ -3403,12 +3457,34 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
       await syncRouteCompletionStatus(tx, job.routeId);
+      // Riwayat lengkap (9 September 2026, D-110) — lihat komentar panjang
+      // di schema.prisma model JobIssueLog. Job.failureReason/
+      // failurePhotoUrls di atas cuma menyimpan kegagalan TERAKHIR; baris
+      // ini snapshot-nya supaya kalau job ini gagal LAGI nanti (setelah
+      // sempat dijadwalkan ulang), kegagalan yang SEKARANG tidak hilang
+      // tertimpa tanpa jejak.
+      await tx.jobIssueLog.create({
+        data: {
+          jobId: job.id, type: "FAILED",
+          failureReason, failurePhotoUrls,
+          createdById: req.user.id,
+        },
+      });
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
 
     notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
       console.error("[jobs/:id/fail] notifyDriverGroup gagal:", err.message)
+    );
+
+    // Push ke sales pemilik order (D-110) — sebelum ini, sales cuma bisa
+    // tahu pengambilan/pengiriman customer-nya GAGAL kalau kebetulan buka
+    // Semua Order dan lihat badge merah "Gagal" (persis pola silo yang sama
+    // dengan komplain sebelum diperbaiki). Best-effort, tidak boleh
+    // menggagalkan response job yang sudah beres ditandai gagal.
+    notifySalesJobFailed(full).catch((err) =>
+      console.error("[jobs/:id/fail] notifySalesJobFailed gagal:", err.message)
     );
 
     res.json(full);

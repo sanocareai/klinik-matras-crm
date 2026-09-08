@@ -110,6 +110,54 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged }) {
               </div>
             )}
 
+            {/* Riwayat lengkap (9 September 2026, D-110) — kotak "Alasan
+                Gagal"/"Riwayat Reschedule" di atas cuma menampilkan SIKLUS
+                TERAKHIR (field tunggal di Job). Job yang gagal LEBIH dari
+                sekali (gagal -> reschedule -> gagal lagi -> reschedule lagi)
+                kehilangan jejak siklus pertamanya di sana — timeline ini
+                yang menyimpan semuanya (JobIssueLog, append-only). Cuma
+                ditampilkan kalau ada LEBIH dari 1 baris — kalau cuma 1,
+                sudah terwakili penuh oleh kotak di atas, menampilkan lagi
+                di sini cuma duplikasi. */}
+            {job.issueLogs?.length > 1 && (
+              <div className="mt-3 border-t border-line pt-3">
+                <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">
+                  Riwayat Lengkap ({job.issueLogs.length})
+                </h4>
+                <div className="space-y-2">
+                  {job.issueLogs.map((log) => (
+                    <div key={log.id} className="rounded-btn border border-border px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[11px] font-bold ${log.type === "FAILED" ? "text-red" : "text-orange"}`}>
+                          {log.type === "FAILED" ? "❌ Gagal" : "🔄 Dijadwalkan Ulang"}
+                        </span>
+                        <span className="shrink-0 text-[10.5px] text-ink3">
+                          {new Date(log.createdAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      {log.type === "FAILED" ? (
+                        <p className="mt-1 text-[12px] text-ink">{log.failureReason}</p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-[12px] text-ink">{log.rescheduleReason}</p>
+                          {log.previousScheduledDate && log.newScheduledDate && (
+                            <p className="text-[10.5px] text-ink3">
+                              {new Date(log.previousScheduledDate).toLocaleDateString("id-ID")} → {new Date(log.newScheduledDate).toLocaleDateString("id-ID")}
+                              {log.cause === "PROACTIVE" ? " · proaktif" : " · setelah gagal"}
+                            </p>
+                          )}
+                          {log.customerConfirmed && (
+                            <p className="text-[10.5px] font-semibold text-orange">Pelanggan sudah konfirmasi.</p>
+                          )}
+                        </>
+                      )}
+                      {log.createdBy && <p className="mt-1 text-[10px] text-ink3">oleh {log.createdBy.name}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {bisaDijadwalkanUlang ? (
               <div className="mt-4 space-y-3 border-t border-line pt-3">
                 <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">

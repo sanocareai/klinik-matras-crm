@@ -325,13 +325,41 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // cuma menulis Order (job lain di order yang sama yang punya tipe itu
   // yang menentukan scheduledDate-nya sendiri, lewat drawer job itu).
   async function ubahTanggalOrder(field, value) {
+    const fieldTipeJobIni = pickupJob ? "pickupConfirmedDate" : "deliveryConfirmedDate";
+    const inginUbahJob = field === fieldTipeJobIni;
+
+    // Reschedule PROAKTIF wajib alasan (9 September 2026, D-110) — sebelum
+    // ini, reschedule SETELAH gagal (IssueRescheduleDrawer) wajib alasan +
+    // konfirmasi pelanggan, tapi mengganti tanggal di sini (job belum
+    // pernah gagal) tidak mencatat apa pun, tanggal berubah diam-diam tanpa
+    // jejak. Backend (PATCH /jobs/:id) menegakkan ini juga — prompt di sini
+    // supaya dispatcher tidak perlu gagal submit dulu baru tahu wajib diisi.
+    // Cuma relevan kalau job SUDAH punya tanggal dan mau diganti ke tanggal
+    // LAIN (bukan penjadwalan awal, bukan dikosongkan — pola sama dengan
+    // guard isReschedule di backend).
+    let rescheduleReason = "";
+    let customerConfirmed = false;
+    const tanggalLama = job.scheduledDate ? job.scheduledDate.slice(0, 10) : "";
+    if (inginUbahJob && tanggalLama && value && tanggalLama !== value) {
+      const alasan = window.prompt(
+        `Job ini sudah dijadwalkan ${new Date(tanggalLama).toLocaleDateString("id-ID")}. Tulis alasan reschedule-nya (mis. permintaan pelanggan, kendala armada):`
+      );
+      if (!alasan?.trim()) return; // batal kalau kosong/Cancel
+      rescheduleReason = alasan.trim();
+      customerConfirmed = window.confirm("Apakah pelanggan sudah dikonfirmasi soal jadwal baru ini?");
+    }
+
     setBusy(true);
     setActionError("");
     try {
-      const fieldTipeJobIni = pickupJob ? "pickupConfirmedDate" : "deliveryConfirmedDate";
       const tugas = [];
       if (orderUntukTanggal) tugas.push(api.updateOrder(orderUntukTanggal.id, { [field]: value || null }));
-      if (field === fieldTipeJobIni) tugas.push(api.updateArmadaJob(job.id, { scheduledDate: value || null }));
+      if (inginUbahJob) {
+        tugas.push(api.updateArmadaJob(job.id, {
+          scheduledDate: value || null,
+          ...(rescheduleReason && { rescheduleReason, customerConfirmed }),
+        }));
+      }
       await Promise.all(tugas);
       muat();
       onChanged?.();
