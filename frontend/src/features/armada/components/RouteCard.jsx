@@ -11,6 +11,7 @@ import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkM
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import QuickChatModal from "./QuickChatModal.jsx";
+import { isAdminUser } from "@/lib/roles.js";
 
 // Pesan konfirmasi default (8 September 2026) — dipakai mengisi kotak
 // teks QuickChatModal begitu ikon chat diklik, supaya admin delivery
@@ -130,9 +131,18 @@ export default function RouteCard({
   const overCapacity = kapasitas != null && totalUnits > kapasitas;
   const isDraft = route.status === "DRAFT";
   const canEmergencyEdit = route.status === "PUBLISHED";
+  // Edit rute SELESAI — admin only (8 September 2026, permintaan owner:
+  // "buat rute yang udah selesai tetap bisa di edit hanya untuk akses
+  // admin"). Pola SAMA persis dengan edit darurat PUBLISHED di atas (reason
+  // wajib, dicek lagi di backend — guard di sini cuma soal TAMPIL/TIDAK
+  // tombolnya, bukan satu-satunya penjagaan). isAdminUser() (D-010) — JANGAN
+  // pernah cek user.role === "ADMIN" langsung.
+  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
+  const canEditCompleted = route.status === "COMPLETED" && isAdminUser(currentUser);
   // Kontrol interaktif (drag/drop, dropdown driver, tombol keluarkan) tampil
-  // untuk DRAFT seperti biasa ATAU rute PUBLISHED yang SEDANG dalam sesi
-  // edit darurat — dua kondisi beda tapi bentuk UI-nya sama persis.
+  // untuk DRAFT seperti biasa ATAU rute PUBLISHED/COMPLETED(admin) yang
+  // SEDANG dalam sesi edit darurat — beberapa kondisi beda tapi bentuk
+  // UI-nya sama persis.
   const isEditable = isDraft || editingReason != null;
 
   async function jalankan(fn) {
@@ -153,8 +163,14 @@ export default function RouteCard({
     // di tiap perubahan (lihat catatan panjang di armada.js#PATCH
     // /routes/:id). Dispatcher perlu tahu itu dari awal, bukan menebak
     // kenapa Natasha tidak dapat kabar setelah selesai edit.
+    // Teks prompt dibedakan (8 September 2026) — rute COMPLETED butuh
+    // pesan yang jujur soal kondisinya (sudah tuntas dikerjakan, bukan
+    // "driver sudah lihat" yang berkonotasi masih berjalan), TAPI mekanisme
+    // di baliknya (alasan wajib, tercatat, TIDAK auto-broadcast) sama persis.
     const alasan = window.prompt(
-      "Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang (mis. kecelakaan - ganti driver, tambah/kurang stop).\n\nCatatan: mengedit TIDAK otomatis mengirim update ke Natasha — setelah selesai, klik \"Kirim Ulang\" secara manual."
+      route.status === "COMPLETED"
+        ? "Rute ini sudah Selesai (khusus Admin). Tulis alasan singkat kenapa perlu diedit sekarang (mis. koreksi driver/kendaraan setelah laporan lapangan baru masuk).\n\nCatatan: mengedit TIDAK mengirim apa pun ke Natasha/driver — rute ini sudah tuntas, ini murni koreksi catatan."
+        : "Rute ini sudah diterbitkan (driver sudah lihat). Tulis alasan singkat kenapa perlu diedit sekarang (mis. kecelakaan - ganti driver, tambah/kurang stop).\n\nCatatan: mengedit TIDAK otomatis mengirim update ke Natasha — setelah selesai, klik \"Kirim Ulang\" secara manual."
     );
     if (!alasan?.trim()) return; // batal kalau kosong/Cancel
     setEditingReason(alasan.trim());
@@ -510,15 +526,20 @@ export default function RouteCard({
                 {resendSent ? "Terkirim" : "Kirim Ulang"}
               </button>
             )}
-            {/* Edit darurat (redesain Sep 2026) — HANYA untuk PUBLISHED.
-                IN_PROGRESS/COMPLETED/CANCELLED tetap terkunci total (lihat
-                canEmergencyEdit) — rute yang sedang/sudah dijalankan atau
+            {/* Edit darurat (redesain Sep 2026) — PUBLISHED (siapa pun
+                punya ROUTE_WRITE) atau COMPLETED (khusus Admin, 8 September
+                2026 — lihat catatan panjang di canEditCompleted).
+                IN_PROGRESS/CANCELLED tetap terkunci total — rute yang
                 dibatalkan bukan kasus "rencana berubah mendadak". */}
-            {canEmergencyEdit && (
+            {(canEmergencyEdit || canEditCompleted) && (
               <button
                 type="button"
                 onClick={mulaiEditDarurat}
-                title="Rute sudah diterbitkan — tetap bisa ganti driver/helper/kendaraan (mis. kecelakaan, dialihkan ke kurir lain), wajib isi alasan (tercatat). Stop yang sudah terkirim TIDAK ikut berubah."
+                title={
+                  canEditCompleted
+                    ? "Rute sudah Selesai — khusus Admin, tetap bisa koreksi driver/helper/kendaraan/catatan, wajib isi alasan (tercatat). Tidak mengirim apa pun ke Natasha/driver."
+                    : "Rute sudah diterbitkan — tetap bisa ganti driver/helper/kendaraan (mis. kecelakaan, dialihkan ke kurir lain), wajib isi alasan (tercatat). Stop yang sudah terkirim TIDAK ikut berubah."
+                }
                 className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-[10.5px] font-semibold text-ink3 transition-colors hover:bg-hovertint hover:text-accent"
               >
                 <Pencil size={11} /> Edit

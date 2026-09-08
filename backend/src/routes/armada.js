@@ -18,7 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { startOfDayWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
 import { sendMedia, sendText } from "../services/wahaClient.js";
@@ -1735,12 +1735,32 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
 
     const { driverId, helperId, vehicleId, notes, manualMapsUrl, reason } = req.body;
     const editingPublished = route.status === "PUBLISHED";
-    if (editingPublished && !reason?.trim()) {
-      throw new ArmadaError("Rute sudah diterbitkan — wajib isi alasan untuk mengeditnya");
+    // Edit rute SELESAI — admin only (8 September 2026, permintaan owner
+    // langsung: "buat rute yang udah selesai tetap bisa di edit hanya
+    // untuk akses admin"). Sebelum ini COMPLETED terkunci total sama
+    // seperti CANCELLED/FAILED — tidak ada jalur koreksi kalau ternyata
+    // ada salah catat driver/kendaraan/catatan SETELAH rute selesai
+    // (mis. laporan lapangan baru masuk belakangan). SENGAJA endpoint yang
+    // SAMA dengan edit darurat PUBLISHED (reason wajib, audit trail
+    // lastEditReason/lastEditedAt/lastEditedById yang sama) — bukan jalur
+    // kedua yang bisa diam-diam berbeda. Cek admin pakai rolesOf() (D-010,
+    // JANGAN pernah cek req.user.role === "ADMIN" langsung — field legacy,
+    // admin yang cuma dapat role lewat "Pengguna & Peran" akan salah
+    // ditolak kalau field lama yang dicek).
+    const editingCompleted = route.status === "COMPLETED";
+    if (editingCompleted && !rolesOf(req.user).includes("ADMIN")) {
+      throw new ArmadaError("Rute yang sudah Selesai cuma bisa diedit oleh Admin", 403);
     }
-    if (!editingPublished && route.status !== "DRAFT") {
+    if ((editingPublished || editingCompleted) && !reason?.trim()) {
+      throw new ArmadaError(`Rute sudah ${editingCompleted ? "Selesai" : "diterbitkan"} — wajib isi alasan untuk mengeditnya`);
+    }
+    if (!editingPublished && !editingCompleted && route.status !== "DRAFT") {
       throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa diedit`);
     }
+    // Dipakai di bawah untuk audit trail (lastEditReason/dst) DAN cascade
+    // driver/helper/vehicle ke job — dua kondisi (PUBLISHED/COMPLETED) yang
+    // sama-sama "rute terkunci, butuh alasan tercatat", diringkas satu flag.
+    const editingLocked = editingPublished || editingCompleted;
 
     const updated = await prisma.$transaction(async (tx) => {
       const r = await tx.route.update({
@@ -1754,7 +1774,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
           // (maps.app.goo.gl) yang dispatcher tempel manual dari Google Maps
           // "Copy Link", lihat catatan panjang di formatRouteWaMessage.
           ...(manualMapsUrl !== undefined && { manualMapsUrl: manualMapsUrl?.trim() || null }),
-          ...(editingPublished && {
+          ...(editingLocked && {
             lastEditReason: reason.trim(),
             lastEditedAt: new Date(),
             lastEditedById: req.user.id,
@@ -1778,7 +1798,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
       // Stop yang sudah tuntas (COMPLETED/FAILED) HARUS tetap mencatat
       // siapa yang benar-benar mengerjakannya — cuma stop yang belum
       // selesai yang wajar ikut penugasan baru.
-      if (editingPublished && (driverId !== undefined || helperId !== undefined || vehicleId !== undefined)) {
+      if (editingLocked && (driverId !== undefined || helperId !== undefined || vehicleId !== undefined)) {
         await tx.job.updateMany({
           where: { routeId: r.id, status: { notIn: ["COMPLETED", "FAILED"] } },
           data: { driverId: r.driverId, helperId: r.helperId, vehicleId: r.vehicleId },
@@ -1805,7 +1825,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     // darurat mid-route (kecelakaan dst, lihat catatan cascade di atas).
     // HANYA saat driverId benar-benar berganti, bukan tiap PATCH lain di
     // sesi edit darurat yang sama (catatan/link Maps manual).
-    if (editingPublished && driverId !== undefined && driverId && driverId !== route.driverId) {
+    if (editingLocked && driverId !== undefined && driverId && driverId !== route.driverId) {
       for (const j of updated.jobs.filter((j) => j.driverId === driverId && j.status !== "COMPLETED" && j.status !== "FAILED")) {
         notifyDriverJobAssigned(j).catch((err) =>
           console.error("[PATCH /routes/:id] Gagal kirim push ke driver:", err.message)
