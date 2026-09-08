@@ -218,11 +218,34 @@ export function CityBadge({ job, className }) {
 // Sengaja HANYA tampil untuk job yang masih AKTIF (ACTIVE_STATUSES) — job
 // yang sudah selesai/gagal tidak lagi butuh rute akurat, menandainya juga
 // cuma menambah noise di kartu riwayat.
-export function MapsLinkMissingBadge({ job, className }) {
+// `variant="dot"` (D-140, redesign kartu job — laporan owner: "ada
+// beberapa space kosong... redesign agar lebih rapi") — peringatan ini
+// SEBELUMNYA selalu jadi pil oranye selebar kartu, baris sendiri —
+// padahal maknanya cuma "ikon Maps di kartu ini belum bisa dipercaya
+// posisinya". `dot` menempelkan penanda kecil di ATAS ikon Maps yang
+// sudah ada (position:relative pada pembungkusnya di RouteCard.jsx/
+// UnroutedJobsPanel.jsx) — kondisi & tooltip TETAP SAMA (satu sumber
+// kebenaran, tidak ada logic kedua), cuma bentuk render-nya beda. Variant
+// "pill" (default) dipertahankan apa adanya untuk pemanggil lain yang
+// mungkin masih mau tampilan lama.
+export function MapsLinkMissingBadge({ job, className, variant = "pill" }) {
   if (salesLocationUrl(job) || !ACTIVE_STATUSES.includes(job?.status)) return null;
+  const title = "Order ini belum punya link Google Maps dari customer — rute bisa meleset. Follow up ke sales.";
+  if (variant === "dot") {
+    return (
+      <span
+        title={title}
+        aria-label="Tanpa link Maps dari customer"
+        className={cn(
+          "pointer-events-none absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange ring-2 ring-[var(--dh-elevated)]",
+          className
+        )}
+      />
+    );
+  }
   return (
     <span
-      title="Order ini belum punya link Google Maps dari customer — rute bisa meleset. Follow up ke sales."
+      title={title}
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange",
         className

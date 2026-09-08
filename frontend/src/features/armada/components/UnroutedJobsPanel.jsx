@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle } from "lucide-react";
+import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle, BedDouble } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import {
   customerOf, orderOf, unitCountOf, cityOf, mapsUrl, conversationIdOf, customerPhoneOf,
-  jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf,
+  jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf, salesPersonOf,
 } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
@@ -138,21 +138,24 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         // sendiri (beda dari utility bernama seperti text-sm yang otomatis
         // dapat line-height pas) — tiap baris teks pendek jadi
         // mereservasi ruang vertikal lebih tinggi dari yang terlihat
-        // perlu. Sekarang line-height 1 penuh + gap 2px, sengaja ekstra
-        // rapat karena kartu ini padat 7+ baris info sekaligus. Dipasang
-        // di kontainer (bukan tiap elemen satu-satu) supaya SELURUH baris
-        // ikut rapat, dan SAMA dengan RouteCard.jsx supaya dua kartu tetap
-        // konsisten.
-        "dh-job-card relative flex cursor-grab select-none flex-col gap-0.5 rounded-btn border border-border bg-surface px-2.5 py-2 leading-none transition-all duration-150 active:cursor-grabbing",
+        // perlu. Line-height 1 penuh dipertahankan.
+        // D-140 (redesign kartu job, dari mockup audit "Route Planner Card
+        // Audit" yang disetujui owner) — `gap-0.5` rata utk SEMUA baris
+        // diganti `gap-2`: kartu ini sekarang disusun 3 KELOMPOK visual
+        // (status / identitas / jadwal) yang masing-masing rapat DI DALAM
+        // dirinya sendiri, sama seperti RouteCard.jsx — dua kartu tetap
+        // konsisten satu sama lain.
+        "dh-job-card relative flex cursor-grab select-none flex-col gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 leading-none transition-all duration-150 active:cursor-grabbing",
         hasJobAccentBar(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}
     >
-      {/* Baris 1 — badge kota/status kirim/Sewa (kiri), aksi ikon chat+Maps
-          (kanan). CityBadge di sini TERASA redundan dengan header section
-          kota di panel ini sendiri, TAPI kartu yang sama (JobRow) juga
-          dipakai secara visual sebagai acuan drag — begitu di-drag ke
-          RouteCard, konteks section-nya hilang. Tetap sengaja ditampilkan. */}
+      {/* Kelompok 1 — STATUS: badge kota/status kirim/Sewa (kiri), aksi
+          ikon chat+Maps (kanan). CityBadge di sini TERASA redundan dengan
+          header section kota di panel ini sendiri, TAPI kartu yang sama
+          (JobRow) juga dipakai secara visual sebagai acuan drag — begitu
+          di-drag ke RouteCard, konteks section-nya hilang. Tetap sengaja
+          ditampilkan. */}
       <div className="flex items-center gap-1.5">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
           <CityBadge job={j} />
@@ -164,7 +167,11 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
           <OrderStatusBadge job={j} />
           <RentalBadge job={j} />
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="relative flex shrink-0 items-center gap-0.5">
+          {/* D-140 — "Tanpa link Maps" TIDAK lagi baris pil sendiri (lihat
+              catatan panjang di RouteCard.jsx). `variant="dot"` menempel
+              di pojok grup ikon ini, kondisi & tooltip SAMA PERSIS. */}
+          <MapsLinkMissingBadge job={j} variant="dot" />
           {conversationIdOf(j) && (
             <button
               type="button"
@@ -190,53 +197,55 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         </div>
       </div>
 
-      {/* Baris 1b — "Tanpa link Maps", baris sendiri (lihat catatan
-          panjang di RouteCard.jsx kenapa TIDAK ikut baris 1 di atas). */}
-      <MapsLinkMissingBadge job={j} className="w-fit" />
-
-      {/* Baris 2 — estimasi jam, opsional. */}
-      {estimasiJamSingkat(j.timeWindow) && (
-        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[11px] font-semibold text-orange">
-          <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
-        </span>
-      )}
-
-      {/* Baris 3 — identitas pelanggan. */}
-      <div className="flex items-center gap-1.5">
-        <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-6 w-6 shrink-0 text-[9.5px]" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+      {/* Kelompok 2 — IDENTITAS STOP: avatar+nama, jenis produk (chip kecil
+          berbingkai — GANTI dari teks polos yang nyaris sebobot dengan
+          alamat, lihat catatan panjang di RouteCard.jsx), lalu alamat
+          dengan ikon pin kecil. Satu kelompok rapat (gap-1). */}
+      <div className="flex items-start gap-2">
+        <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-px h-7 w-7 shrink-0 text-[10px]" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="truncate text-[13.5px] font-bold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+          {orderOf(j) && productSummary(orderOf(j)) && (
+            <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
+              <BedDouble size={11} className="shrink-0 text-ink3" />
+              <span className="truncate">{productSummary(orderOf(j))}</span>
+            </span>
+          )}
+          <span className="flex items-start gap-1 text-[12px] text-ink2">
+            <MapPinned size={12} className="mt-px shrink-0 text-ink3" />
+            <span className="min-w-0 flex-1 truncate">{j.addressText || "Alamat belum diisi"}</span>
+          </span>
+        </div>
       </div>
 
-      {/* Baris 4 — produk & ukuran (GANTI dari label layanan generik, lihat
-          catatan panjang di RouteCard.jsx). */}
-      {orderOf(j) && productSummary(orderOf(j)) && (
-        <p className="truncate text-[11.5px] text-ink2">{productSummary(orderOf(j))}</p>
+      {/* Kelompok 3 — JADWAL: tanggal terjadwal + jumlah unit (D-063, 4
+          September 2026 — KHUSUS panel ini, stop di dalam rute RouteCard
+          sudah pasti tanggalnya = tanggal rute, job di panel ini bisa dari
+          HARI BERBEDA-BEDA), estimasi jam, tanggal PASTI ambil/kirim, dan
+          sales person — digabung SATU baris meta, dipisah garis tipis dari
+          kelompok identitas di atas. */}
+      {(j.scheduledDate || unitCountOf(j) || estimasiJamSingkat(j.timeWindow) || orderOf(j)?.pickupConfirmedDate || orderOf(j)?.deliveryConfirmedDate || salesPersonOf(j)) && (
+        <div className="flex flex-wrap items-center gap-1 border-t border-border pt-1.5">
+          {(j.scheduledDate || unitCountOf(j)) && (
+            <span className="inline-flex w-fit items-center gap-1 text-[10.5px] text-ink3">
+              {j.scheduledDate && (
+                <>
+                  <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
+                  <span aria-hidden>·</span>
+                </>
+              )}
+              <span>{unitCountOf(j)} unit</span>
+            </span>
+          )}
+          {estimasiJamSingkat(j.timeWindow) && (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange">
+              <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+            </span>
+          )}
+          <ConfirmedTimeBadge job={j} className="flex-wrap" />
+          <SalesBadge job={j} className="w-fit" />
+        </div>
       )}
-
-      {/* Baris 5 — alamat. */}
-      <p className="truncate text-[11px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
-
-      {/* Baris 6 — tanggal TERJADWAL + jam + jumlah unit (D-063, 4
-          September 2026) — KHUSUS panel ini (RouteCard.jsx tidak perlu,
-          stop di dalam rute sudah pasti tanggalnya = tanggal rute).
-          Job di panel ini bisa dari HARI BERBEDA-BEDA (rentang tanggal
-          Route Planner), jadi baris ini tetap perlu supaya dispatcher
-          tahu job mana untuk hari apa hanya dari kartunya sendiri. */}
-      <div className="flex items-center gap-1.5 text-[10.5px] text-ink3">
-        {j.scheduledDate && (
-          <>
-            <span className="font-semibold text-ink2">{formatTanggalPendek(j.scheduledDate)}</span>
-            <span aria-hidden>·</span>
-          </>
-        )}
-        <span>{unitCountOf(j)} unit</span>
-      </div>
-
-      {/* Baris 7 — tanggal PASTI ambil & kirim. */}
-      <ConfirmedTimeBadge job={j} className="flex-wrap" />
-
-      {/* Baris 8 — sales person. */}
-      <SalesBadge job={j} className="w-fit" />
 
       {chatOpen && (
         <QuickChatModal

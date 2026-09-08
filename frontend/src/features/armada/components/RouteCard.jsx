@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle, BedDouble } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
-import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf } from "../jobStatus.js";
+import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -602,16 +602,19 @@ export default function RouteCard({
                   // pasti, sales) tersusun rapi turun ke bawah, bukan
                   // berdesakan di satu baris sempit (kartu ini sekarang
                   // cuma separuh lebar kolom rute, grid 2 kolom).
-                  // `leading-none` + `gap-0.5` (8 September 2026, laporan
-                  // owner: "jarak antara text kasur dan alamat masih
-                  // terlalu jauh" — DIPERKETAT LAGI dari percobaan pertama
-                  // `leading-tight`/`gap-1`, masih terasa longgar) — sengaja
-                  // ekstra rapat (line-height 1 penuh, gap 2px) karena
-                  // kartu ini padat berisi 7+ baris info sekaligus, beda
-                  // dari paragraf bacaan panjang yang butuh napas antar
-                  // baris. Dipasang di sini juga supaya kartu stop rute ini
-                  // tetap SAMA rapatnya, konsisten dengan UnroutedJobsPanel.jsx.
-                  "dh-stop-card relative flex select-none flex-col gap-0.5 rounded-btn border border-border bg-inset px-2.5 py-2 leading-none transition-all duration-150",
+                  // D-140 (redesign kartu job, dilanjutkan dari mockup audit
+                  // "Route Planner Card Audit" yang disetujui owner) —
+                  // GANTI dari "leading-none + gap-0.5 rata semua baris" jadi
+                  // 3 KELOMPOK visual (status / identitas / jadwal), masing-
+                  // masing rapat DI DALAM dirinya (gap-0.5/gap-1), tapi
+                  // berjarak lebih longgar (gap-2) ANTAR kelompok — akar
+                  // masalah versi lama BUKAN jaraknya kurang rapat (sudah
+                  // 2px), tapi SEMUA 7-8 baris dapat jarak yang SAMA PERSIS
+                  // tanpa peduli mana yang sebetulnya satu kesatuan makna,
+                  // jadi terbaca sebagai satu blok teks tunggal, bukan info
+                  // yang terstruktur. `leading-none` dipertahankan (line-
+                  // height rapat tetap dipakai DI DALAM tiap kelompok).
+                  "dh-stop-card relative flex select-none flex-col gap-2 rounded-btn border border-border bg-inset px-2.5 py-2 leading-none transition-all duration-150",
                   hasJobAccentBar(j) && "dh-bar-left",
                   isEditable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                   dragOverIdx === idx && "ring-2 ring-accent",
@@ -622,13 +625,16 @@ export default function RouteCard({
                   draggingStopId === j.id && "scale-[0.97] opacity-40"
                 )}
               >
-                {/* Baris 1 — nomor urut + drag handle (kiri), badge
-                    kota/status kirim/Sewa (tengah), aksi ikon chat+Maps+
-                    hapus (kanan). 3 zona jelas, bukan semua bercampur di
-                    satu baris rata dengan avatar seperti versi lama. */}
+                {/* Kelompok 1 — STATUS: nomor urut jadi chip bulat (D-140,
+                    laporan owner: nomor urut "kalah tonjol", padahal di
+                    kartu rute urutan stop adalah info yang paling sering
+                    dipindai duluan) + drag handle, badge kota/status kirim/
+                    Sewa, aksi ikon chat+Maps+hapus. */}
                 <div className="flex items-center gap-1.5">
                   {isEditable && <GripVertical size={13} className="shrink-0 text-ink3" aria-hidden />}
-                  <span className="shrink-0 text-[11px] font-bold text-ink3">{idx + 1}.</span>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accentbg text-[10.5px] font-extrabold text-accent">
+                    {idx + 1}
+                  </span>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                     <CityBadge job={j} />
                     {/* OrderStatusBadge = "status kirim" (Pengambilan/
@@ -646,17 +652,17 @@ export default function RouteCard({
                     <OrderStatusBadge job={j} />
                     <RentalBadge job={j} />
                   </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    {/* Ikon link Maps (8 September 2026, permintaan owner:
-                        "tambah icon maps sebagai link google maps") —
-                        mapsUrl() SATU sumber kebenaran yang sama dipakai
-                        DriverJobs.jsx (prioritas link sales > koordinat >
-                        pencarian teks, lihat jobStatus.js). stopPropagation
-                        supaya klik ikon TIDAK ikut membuka JobDetailDrawer
-                        (onClick kartu di bawah). null kalau tidak ada apa
-                        pun untuk dituju — MapsLinkMissingBadge di atas sudah
-                        menandai kasus itu, ikon ini sengaja tidak dipaksa
-                        tampil kosong/disabled. */}
+                  <div className="relative flex shrink-0 items-center gap-0.5">
+                    {/* D-140 — "Tanpa link Maps" TIDAK lagi baris pil
+                        sendiri (laporan owner: makan tempat di hampir
+                        setiap kartu, link Maps memang jarang terisi).
+                        `variant="dot"` menempel di pojok kanan-atas grup
+                        ikon aksi ini (position:relative di sini) — kondisi
+                        & tooltip SAMA PERSIS, cuma bentuknya beda (lihat
+                        JobBadges.jsx). Dipasang di grup ikon, bukan di
+                        ikon Maps langsung — supaya tetap kelihatan bahkan
+                        untuk kasus jarang mapsUrl(j) kosong total. */}
+                    <MapsLinkMissingBadge job={j} variant="dot" />
                     {/* Ikon chat WA cepat (8 September 2026, permintaan
                         owner: "admin sales butuh konfirmasi kembali sebelum
                         rute berjalan untuk memastikan customer ada di
@@ -676,6 +682,14 @@ export default function RouteCard({
                         <MessageCircle size={16} />
                       </button>
                     )}
+                    {/* Ikon link Maps (8 September 2026, permintaan owner:
+                        "tambah icon maps sebagai link google maps") —
+                        mapsUrl() SATU sumber kebenaran yang sama dipakai
+                        DriverJobs.jsx (prioritas link sales > koordinat >
+                        pencarian teks, lihat jobStatus.js). stopPropagation
+                        supaya klik ikon TIDAK ikut membuka JobDetailDrawer
+                        (onClick kartu di bawah). null kalau tidak ada apa
+                        pun untuk dituju. */}
                     {mapsUrl(j) && (
                       <a
                         href={mapsUrl(j)}
@@ -701,58 +715,58 @@ export default function RouteCard({
                   </div>
                 </div>
 
-                {/* Baris 1b — "Tanpa link Maps", baris SENDIRI (8 September
-                    2026, laporan owner: "layoutnya jadi sedikit berantakan"
-                    ketika badge ini ikut baris 1 di atas — waktu badge kota/
-                    status yang sudah 2-3 pil ITU MASIH ditambah pil oranye
-                    ini di flex-wrap yang sama, sering pecah ke baris kedua
-                    yang lebar-nya tanggung DAN sejajar vertikal dengan ikon
-                    aksi kanan [chat/Maps/hapus] yang TIDAK ikut wrap — dua
-                    hal beda tinggi baris jadi rebutan align-items:center.
-                    Baris sendiri, lebar penuh, tidak pernah tabrakan dengan
-                    apa pun. */}
-                <MapsLinkMissingBadge job={j} className="w-fit" />
-
-                {/* Baris 2 — estimasi jam, opsional (cuma tampil kalau admin
-                    delivery sudah isi Job.timeWindow). */}
-                {estimasiJamSingkat(j.timeWindow) && (
-                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[11px] font-semibold text-orange">
-                    <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
-                  </span>
-                )}
-
-                {/* Baris 3 — identitas pelanggan (avatar-forward, konsisten
-                    dengan pola avatar-forward Delivery Hub lainnya). */}
-                <div className="flex items-center gap-1.5">
-                  <Avatar name={customerOf(j) || "?"} size="sm" gradient className="h-6 w-6 shrink-0 text-[9.5px]" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+                {/* Kelompok 2 — IDENTITAS STOP: avatar+nama, jenis produk
+                    (sekarang "chip" kecil berbingkai, bukan teks polos yang
+                    nyaris sebobot dengan alamat — laporan owner: "produk vs
+                    alamat" nyaris tidak dibedakan), lalu alamat dengan ikon
+                    pin kecil. Satu kelompok rapat (gap-1), terpisah jelas
+                    dari status di atas & jadwal di bawah lewat gap-2 di
+                    kontainer luar. */}
+                <div className="flex items-start gap-2">
+                  <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-px h-7 w-7 shrink-0 text-[10px]" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate text-[13.5px] font-bold text-ink">{customerOf(j) || "Tanpa nama"}</span>
+                    {/* Produk & ukuran (8 September 2026, GANTI dari label
+                        layanan generik — permintaan owner: "layanan yang
+                        dipilih diganti jadi detail produk ukuran, bisa
+                        ambil dari inputan order sales, di tab order ada
+                        ukuran"). productSummary() SATU sumber kebenaran
+                        yang SAMA dipakai Dashboard (lini produk + jenis +
+                        ukuran dari parseOrderNotes, lihat orderSummary.js)
+                        — bukan implementasi kedua yang bisa diam-diam
+                        beda. */}
+                    {orderOf(j) && productSummary(orderOf(j)) && (
+                      <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
+                        <BedDouble size={11} className="shrink-0 text-ink3" />
+                        <span className="truncate">{productSummary(orderOf(j))}</span>
+                      </span>
+                    )}
+                    <span className="flex items-start gap-1 text-[12px] text-ink2">
+                      <MapPinned size={12} className="mt-px shrink-0 text-ink3" />
+                      <span className="min-w-0 flex-1 truncate">{j.addressText || "Alamat belum diisi"}</span>
+                    </span>
+                  </div>
                 </div>
 
-                {/* Baris 4 — produk & ukuran (8 September 2026, GANTI dari
-                    label layanan generik — permintaan owner: "layanan yang
-                    dipilih diganti jadi detail produk ukuran, bisa ambil
-                    dari inputan order sales, di tab order ada ukuran").
-                    productSummary() SATU sumber kebenaran yang SAMA dipakai
-                    Dashboard (lini produk + jenis + ukuran dari
-                    parseOrderNotes, lihat orderSummary.js) — bukan
-                    implementasi kedua yang bisa diam-diam beda. */}
-                {orderOf(j) && productSummary(orderOf(j)) && (
-                  <p className="truncate text-[11.5px] text-ink2">{productSummary(orderOf(j))}</p>
+                {/* Kelompok 3 — JADWAL: estimasi jam, tanggal PASTI
+                    pengambilan & pengiriman, dan sales person pemegang
+                    order — digabung SATU baris meta (dulu 3 baris pil
+                    terpisah), dipisah garis tipis dari kelompok identitas
+                    di atas. ConfirmedTimeBadge SUDAH menampilkan KEDUANYA
+                    kalau ada (bukan cuma yang cocok dengan tipe job ini) —
+                    sama prinsip dengan JobDetailDrawer, lihat catatan
+                    panjang di JobBadges.jsx#ConfirmedTimeBadge. */}
+                {(estimasiJamSingkat(j.timeWindow) || orderOf(j)?.pickupConfirmedDate || orderOf(j)?.deliveryConfirmedDate || salesPersonOf(j)) && (
+                  <div className="flex flex-wrap items-center gap-1 border-t border-border pt-1.5">
+                    {estimasiJamSingkat(j.timeWindow) && (
+                      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange">
+                        <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+                      </span>
+                    )}
+                    <ConfirmedTimeBadge job={j} className="flex-wrap" />
+                    <SalesBadge job={j} className="w-fit" />
+                  </div>
                 )}
-
-                {/* Baris 5 — alamat lengkap. */}
-                <p className="truncate text-[11px] text-ink3">{j.addressText || "Alamat belum diisi"}</p>
-
-                {/* Baris 6 — tanggal PASTI pengambilan & pengiriman.
-                    ConfirmedTimeBadge SUDAH menampilkan KEDUANYA kalau ada
-                    (bukan cuma yang cocok dengan tipe job ini) — sama
-                    prinsip dengan JobDetailDrawer: di CRM sales pickup dan
-                    kirim dua-duanya jelas, lihat catatan panjang di
-                    JobBadges.jsx#ConfirmedTimeBadge. */}
-                <ConfirmedTimeBadge job={j} className="flex-wrap" />
-
-                {/* Baris 7 — sales person pemegang order ini. */}
-                <SalesBadge job={j} className="w-fit" />
               </div>
             ))}
         </div>
