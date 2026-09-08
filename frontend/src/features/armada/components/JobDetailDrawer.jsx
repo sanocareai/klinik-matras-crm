@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock } from "lucide-react";
+import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock, UploadCloud } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
@@ -9,6 +9,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
+import PasteUploadZone from "./PasteUploadZone.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
@@ -60,6 +61,20 @@ const selectClass =
 // Form kecil utk aksi yang WAJIB foto (Selesaikan/Tandai Gagal) — backend
 // menolak keras tanpa foto (FR-D-03/04/07, lihat armada.js), jadi form ini
 // tidak bisa "disederhanakan" jadi tombol polos.
+//
+// PasteUploadZone (8 September 2026, laporan owner: "proof of delivery...
+// bisa upload bukti pengambilan/pengiriman dengan skema bisa ctrl+v")
+// GANTI `<input type=file>` polos — sebelumnya cuma bisa pilih file dari
+// disk, sekarang bisa juga tempel langsung dari clipboard (mis. gambar
+// yang di-copy dari WhatsApp Web), sama komponen yang sudah dipakai POD
+// Review (ArmadaPod.jsx), bukan implementasi kedua yang bisa drift.
+// "YYYY-MM-DDTHH:mm" jam LOKAL perangkat — kontrak <input type=
+// "datetime-local">, sama persis dengan toDatetimeLocal di PodReviewDrawer.jsx.
+function toDatetimeLocal(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function AksiFotoForm({ label, needReason, busy, onCancel, onSubmit }) {
   const [files, setFiles] = useState([]);
   const [reason, setReason] = useState("");
@@ -74,16 +89,12 @@ function AksiFotoForm({ label, needReason, busy, onCancel, onSubmit }) {
           className="mb-2 h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
         />
       )}
-      <input
-        type="file" accept="image/*" multiple
-        onChange={(e) => setFiles(Array.from(e.target.files || []))}
-        className="block w-full text-[11.5px] text-ink2 file:mr-2 file:rounded-btn file:border-0 file:bg-accentbg file:px-2.5 file:py-1.5 file:text-[11.5px] file:font-semibold file:text-accent"
-      />
+      <PasteUploadZone files={files} onFilesChange={setFiles} multiple label={null} />
       <div className="mt-2 flex gap-2">
         <Button
           size="sm"
           disabled={busy || files.length === 0 || (needReason && !reason.trim())}
-          onClick={() => onSubmit({ files, reason: reason.trim() })}
+          onClick={() => onSubmit({ files: files.map((f) => f.file), reason: reason.trim() })}
         >
           {busy ? <Loader2 size={13} className="animate-spin" /> : label}
         </Button>
@@ -103,6 +114,19 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [showForm, setShowForm] = useState(null); // "complete" | "fail" | null
+  // Input Manual (8 September 2026, laporan owner — "proof of delivery
+  // harus ada di route planner... bisa upload bukti pengambilan/pengiriman
+  // dengan skema ctrl+v"). Sebelumnya jalur ini CUMA ada di halaman POD
+  // Review terpisah (PodReviewDrawer.jsx) — dispatcher yang lagi buka
+  // Route Planner harus pindah halaman cuma untuk menempelkan bukti yang
+  // sudah diterima lewat WhatsApp. Dibawa ke sini juga, komponen
+  // PasteUploadZone yang SAMA, endpoint yang SAMA (completeArmadaJob) —
+  // bukan jalur/tabel kedua. Draft lokal, direset tiap job berganti.
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualProofFiles, setManualProofFiles] = useState([]);
+  const [manualCompletedAt, setManualCompletedAt] = useState("");
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualError, setManualError] = useState("");
   // Catatan reschedule retroaktif (6 September 2026) — form kecil, cuma
   // muncul di job yang SUDAH Selesai TAPI belum punya rescheduleReason.
   // Draft LOKAL (pola sama dengan textarea gagal di AksiFotoForm) supaya
@@ -152,6 +176,10 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     muat();
     setShowForm(null);
     setActionError("");
+    setShowManualInput(false);
+    setManualProofFiles([]);
+    setManualCompletedAt(toDatetimeLocal(new Date()));
+    setManualError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -340,6 +368,36 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
       setActionError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Simpan bukti manual (8 September 2026) — pola SAMA dengan
+  // selesaikanManual() di PodReviewDrawer.jsx: upload dulu (POST
+  // /jobs/:id/photos), lalu completeArmadaJob dengan proofPhotoUrls +
+  // completedAt manual. TIDAK lewat performSubmit (itu jalur driver app,
+  // photoFiles-nya dikompres+diantre offline — di sini admin sudah online
+  // langsung di dashboard, tidak perlu antrean sinkron).
+  async function simpanBuktiManual() {
+    if (manualProofFiles.length === 0) { setManualError("Minimal 1 foto bukti wajib diunggah"); return; }
+    if (!manualCompletedAt) { setManualError("Waktu selesai wajib diisi"); return; }
+    setManualBusy(true);
+    setManualError("");
+    try {
+      const fd = new FormData();
+      manualProofFiles.forEach(({ file }) => fd.append("photos", file));
+      const { urls } = await api.uploadJobPhotos(job.id, fd);
+      const updated = await api.completeArmadaJob(job.id, {
+        proofPhotoUrls: urls,
+        completedAt: new Date(manualCompletedAt).toISOString(),
+      });
+      setJob(updated);
+      setShowManualInput(false);
+      setManualProofFiles([]);
+      onChanged?.();
+    } catch (e) {
+      setManualError(e.message);
+    } finally {
+      setManualBusy(false);
     }
   }
 
@@ -845,6 +903,56 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     )}
                     {actionError && (
                       <p className="mt-2 text-[11.5px] text-red">{actionError}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Input Manual (8 September 2026, laporan owner) — jalur
+                    ALTERNATIF di luar Mulai→Tiba→Selesaikan di atas, untuk
+                    bukti yang sudah diterima manual (mis. lewat WhatsApp)
+                    walau job belum/tidak pernah lewat app driver. Sama
+                    kondisi dengan PodReviewDrawer.jsx (job.status !==
+                    "COMPLETED") — termasuk job FAILED, siapa tahu bukti
+                    baru menyusul belakangan. */}
+                {job.status !== "COMPLETED" && (
+                  <div className="mt-3 rounded-btn border border-dashed border-accent/40 bg-accentbg/20 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualInput((v) => !v)}
+                      className="flex w-full items-center justify-between text-left text-[12px] font-semibold text-accent"
+                    >
+                      <span>Sudah ada bukti dari WhatsApp? Input manual</span>
+                      <span className="text-[11px] text-ink3">{showManualInput ? "Tutup" : "Buka"}</span>
+                    </button>
+                    {showManualInput && (
+                      <div className="mt-2.5 space-y-2.5">
+                        <div>
+                          <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
+                            <Clock size={11} aria-hidden /> Waktu Selesai
+                          </p>
+                          <input
+                            type="datetime-local"
+                            value={manualCompletedAt}
+                            onChange={(e) => setManualCompletedAt(e.target.value)}
+                            className="h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
+                          />
+                        </div>
+                        <PasteUploadZone
+                          files={manualProofFiles}
+                          onFilesChange={setManualProofFiles}
+                          multiple
+                          label={`Foto bukti ${pickupJob ? "Pengambilan" : "Pengiriman"} (wajib, minimal 1)`}
+                        />
+                        {manualError && <p className="text-[11.5px] text-red">{manualError}</p>}
+                        <Button
+                          size="sm"
+                          disabled={manualBusy || manualProofFiles.length === 0}
+                          onClick={simpanBuktiManual}
+                          className="w-full"
+                        >
+                          {manualBusy ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />} Tandai Selesai + Simpan Bukti
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}

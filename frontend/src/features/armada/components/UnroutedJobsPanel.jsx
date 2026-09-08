@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle, BedDouble } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle, BedDouble, Route as RouteIcon, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
@@ -87,7 +88,73 @@ function pesanKonfirmasiDefault(job) {
 // Percobaan KEDUA berhasil karena parent sudah berhenti re-render saat itu,
 // DOM-nya stabil sepanjang gestur. Kartu stop di RouteCard.jsx TIDAK kena
 // masalah ini karena ditulis inline (bukan komponen bersarang terpisah).
-function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
+// Tombol "Masukkan ke Rute" (8 September 2026, laporan owner: "ketika drag
+// order yang belum masuk rute bisa sambil scroll agar lebih murah, atau
+// mungkin tambah skema tombol di belum masuk rute" — rute yang isinya
+// banyak/panjang ke bawah bikin drag-and-drop susah [target drop di luar
+// layar, harus scroll sambil menyeret]). Bulk-add checkbox+dropdown SEMPAT
+// dihapus total (D-068, 4 September 2026) karena saat itu drag-and-drop
+// dinilai cukup — laporan BARU ini bukan flip-flop tanpa alasan, ini kasus
+// KONKRET drag gagal (rute panjang) yang tidak ada sebelumnya. BEDA dari
+// D-058 lama: BUKAN bulk (centang banyak job), cuma SATU job per klik,
+// tetap pelengkap drag (bukan pengganti) — drag tetap cara utama untuk
+// reorder DI DALAM rute.
+//
+// Reuse tambahKeRute() yang SAMA dipakai onDrop RouteCard (ArmadaRoutes.jsx)
+// — job baru masuk di URUTAN PALING BAWAH rute, dispatcher tinggal drag
+// singkat DI DALAM rute (jarak pendek, tidak perlu scroll panjang) kalau
+// mau reorder — bagian yang justru mudah tetap drag, bagian yang susah
+// (masuk rute dari panel jauh di kiri) sekarang bisa klik.
+function TombolMasukkanKeRute({ draftRoutes, onAssign }) {
+  if (draftRoutes.length === 0) {
+    return (
+      <span
+        title="Belum ada rute berstatus Draft pada rentang ini"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3/40"
+      >
+        <RouteIcon size={15} />
+      </span>
+    );
+  }
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          title="Masukkan ke rute"
+          className="group flex h-7 shrink-0 items-center gap-0.5 rounded-lg px-1 text-ink3 transition-colors hover:bg-accentbg hover:text-accent data-[state=open]:bg-accent data-[state=open]:text-white"
+        >
+          <RouteIcon size={15} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end" sideOffset={6}
+          className="z-50 max-h-64 min-w-[190px] overflow-y-auto rounded-btn border border-border bg-surface p-1.5 shadow-popover"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
+            Masukkan ke Rute (Draft)
+          </p>
+          {draftRoutes.map((r) => (
+            <DropdownMenu.Item
+              key={r.id}
+              onSelect={() => onAssign(r)}
+              className="flex cursor-pointer items-center gap-2 rounded-btn px-2 py-1.5 text-[12.5px] text-ink outline-none data-[highlighted]:bg-accentbg data-[highlighted]:text-accent"
+            >
+              <span className="flex-1 truncate font-semibold">{r.code}</span>
+              <span className="shrink-0 text-[10.5px] text-ink3">{(r.jobs || []).length} stop</span>
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob, draftRoutes, onAssignToRoute }) {
   // Chat WA cepat (8 September 2026) — state LOKAL per baris (bukan
   // diangkat ke UnroutedJobsPanel) karena JobRow SUDAH jadi unit
   // representasi 1 job sendiri (beda dari RouteCard.jsx yang menampung
@@ -172,6 +239,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
               catatan panjang di RouteCard.jsx). `variant="dot"` menempel
               di pojok grup ikon ini, kondisi & tooltip SAMA PERSIS. */}
           <MapsLinkMissingBadge job={j} variant="dot" />
+          <TombolMasukkanKeRute draftRoutes={draftRoutes} onAssign={(r) => onAssignToRoute?.(j, r)} />
           {conversationIdOf(j) && (
             <button
               type="button"
@@ -262,7 +330,14 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
 
 export default function UnroutedJobsPanel({
   jobs, undatedJobs = [], loading, draggingId, onDragStart, onDragEnd, onOpenJob,
+  // routes/onAssignToRoute (8 September 2026) — lihat catatan panjang di
+  // TombolMasukkanKeRute di atas. `routes` datang APA ADANYA dari
+  // ArmadaRoutes.jsx (semua status), disaring ke DRAFT DI SINI — sama
+  // syarat dengan `isDraft` RouteCard.jsx (rute yang sudah diterbitkan/
+  // dibatalkan tidak menerima job baru).
+  routes = [], onAssignToRoute,
 }) {
+  const draftRoutes = useMemo(() => routes.filter((r) => r.status === "DRAFT"), [routes]);
   // Job TANPA tanggal digabung LANGSUNG ke daftar biasa (6 September 2026,
   // laporan owner: "masukkan aja di 'belum masuk rute' agar ga bolak balik
   // dari rute planner trus ke jadwal penugasan") — dulu SENGAJA dipisah ke
@@ -406,7 +481,7 @@ export default function UnroutedJobsPanel({
                     <MapPinned size={11} /> {kota}{kandidat && " · kandidat 1 rute"}
                   </span>
                   <ul className="space-y-1.5">
-                    {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} />)}
+                    {list.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} draftRoutes={draftRoutes} onAssignToRoute={onAssignToRoute} />)}
                   </ul>
                 </div>
               );
@@ -419,7 +494,7 @@ export default function UnroutedJobsPanel({
               <div>
                 <p className="mb-1 px-0.5 text-[10px] font-bold uppercase tracking-wide text-orange">Belum Ada Kota</p>
                 <ul className="space-y-1.5">
-                  {groups.tanpaKota.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} />)}
+                  {groups.tanpaKota.map((j) => <JobRow key={j.id} j={j} draggingId={draggingId} onDragStart={onDragStart} onDragEnd={onDragEnd} onOpenJob={onOpenJob} draftRoutes={draftRoutes} onAssignToRoute={onAssignToRoute} />)}
                 </ul>
               </div>
             )}

@@ -364,6 +364,13 @@ export default function ArmadaRoutes() {
               onDragStart={(j) => setDraggingJobId(j.id)}
               onDragEnd={() => setDraggingJobId(null)}
               onOpenJob={setOpenJobId}
+              // Tombol "Masukkan ke Rute" (8 September 2026, laporan owner —
+              // lihat catatan panjang di TombolMasukkanKeRute,
+              // UnroutedJobsPanel.jsx) — pelengkap drag-and-drop untuk rute
+              // yang panjang ke bawah, reuse tambahKeRute() yang SAMA dengan
+              // onDrop RouteCard, masuk di urutan PALING BAWAH rute tujuan.
+              routes={routes || []}
+              onAssignToRoute={(job, route) => tambahKeRute(route, job.id, (route.jobs || []).length)}
             />
           </div>
         </div>
