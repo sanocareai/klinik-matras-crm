@@ -1,0 +1,1 @@
+import{u as r}from"./vendor-query-lt1T2TzN.js";import{a}from"./index-CYgb_9MU.js";const e=15e3;function u(){return r({queryKey:["armada","tracking"],queryFn:()=>a.getArmadaTracking(),refetchInterval:e})}export{u};

@@ -263,6 +263,9 @@ export const api = {
   searchRevisionUnits: (q) => request(`/armada/revisions/units?q=${encodeURIComponent(q)}`),
   createRevision: (data) => request("/armada/revisions", { method: "POST", body: JSON.stringify(data) }),
   updateRevision: (id, data) => request(`/armada/revisions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // D-108 (6 September 2026) — buat job PICKUP langsung dari revisi, tanpa
+  // perlu tempel ID job manual (lihat catatan panjang di armada.js).
+  createRevisionPickupJob: (id) => request(`/armada/revisions/${id}/create-pickup-job`, { method: "POST" }),
 
   // Laporan Delivery (Delivery Tahap 7)
   getDeliveryReportSummary: (params = {}) => {

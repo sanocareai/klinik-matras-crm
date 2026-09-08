@@ -3587,6 +3587,55 @@ armadaRouter.patch("/revisions/:id", requirePermission(P.JOB_WRITE), async (req,
   }
 });
 
+// POST /api/armada/revisions/:id/create-pickup-job (6 September 2026, D-108) —
+// laporan owner: order Dewi (Bekasi, RES-18082026-071) sudah diajukan revisi
+// (klaim kenyamanan, kasur amblas) tapi TIDAK PERNAH bisa masuk rute Delivery
+// — karena sebelum ini, satu-satunya cara "job jemput" nempel ke revisi
+// adalah: dispatcher bikin job LEWAT Jadwal & Penugasan biasa, lalu
+// TEMPELKAN ID-nya manual ke sini (lihat komentar PATCH di atas). TAPI job
+// biasa itu MENOLAK unit yang sudah DELIVERED (lihat guard `expectedStatus`
+// di POST /jobs di bawah — dirancang untuk order BARU, bukan jemput ulang
+// kasur yang sudah terkirim) — jadi jalur manual itu SECARA STRUKTURAL tidak
+// pernah bisa dilewati untuk kasus revisi/klaim garansi. Endpoint ini jalur
+// KHUSUS: job PICKUP lahir langsung UNSCHEDULED (persis job normal begitu
+// dibuat), tanpa mensyaratkan status unit/order apa pun — supaya dispatcher
+// tinggal menjadwalkan & memasukkannya ke rute seperti job lain, TANPA perlu
+// tempel ID manual lagi.
+armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const revision = await prisma.unitRevision.findUnique({
+      where: { id: req.params.id },
+      include: { unit: { select: { id: true, unitCode: true, orderId: true } } },
+    });
+    if (!revision) return res.status(404).json({ error: "Revisi tidak ditemukan" });
+    if (revision.jobId) throw new ArmadaError("Revisi ini sudah punya job pengambilan — buka job-nya lewat Jadwal & Penugasan");
+    if (!["REQUESTED", "PICKUP_SCHEDULED"].includes(revision.status)) {
+      throw new ArmadaError(`Revisi berstatus ${revision.status} — job pengambilan cuma relevan sebelum unit diambil`);
+    }
+
+    const jobId = await prisma.$transaction(async (tx) => {
+      const job = await tx.job.create({
+        data: {
+          type: "PICKUP",
+          orderId: revision.unit.orderId,
+          accessNotes: `Pengambilan untuk ${revision.trigger === "GARANSI" ? "klaim garansi" : "trial kenyamanan"} — ${revision.complaint}`,
+        },
+      });
+      await tx.jobUnit.create({ data: { jobId: job.id, unitId: revision.unit.id } });
+      await tx.unitRevision.update({
+        where: { id: revision.id },
+        data: { jobId: job.id, status: "PICKUP_SCHEDULED" },
+      });
+      return job.id;
+    });
+
+    const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
+    res.status(201).json(full);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // ─── LAPORAN DELIVERY (Tahap 7) ─────────────────────────────────────────────
 //
 // `scheduledDate`/`Route.date` adalah kolom `@db.Date` (kalender murni, tanpa

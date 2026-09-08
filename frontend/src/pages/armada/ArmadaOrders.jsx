@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Search, Package, Tag, RefreshCw, Factory, CreditCard } from "lucide-react";
+import { Search, Package, Tag, RefreshCw, Factory, CreditCard, AlertTriangle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -281,6 +281,17 @@ export default function ArmadaOrders() {
                       <span className="flex items-center gap-2">
                         <Avatar name={o.customerName} size="sm" />
                         <span className="truncate">{o.customerName || "—"}</span>
+                        {/* Komplain (D-108, 6 September 2026) — laporan owner: komplain
+                            yang dicatat Sales CRM tidak pernah kelihatan di Delivery/
+                            Produksi (silo total). Data-nya SUDAH ada di respons ini
+                            (Order.hasComplaint disertakan apa adanya, tidak pernah
+                            di-select keluar) — cuma belum pernah ditampilkan di sini. */}
+                        {o.hasComplaint && (
+                          <AlertTriangle
+                            size={13} className="shrink-0 text-red"
+                            title={`Ada komplain: ${o.complaintDetail || "(tanpa detail)"}`}
+                          />
+                        )}
                       </span>
                     </TD>
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>

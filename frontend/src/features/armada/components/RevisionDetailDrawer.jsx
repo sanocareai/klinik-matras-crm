@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Loader2, Save } from "lucide-react";
+import { X, Loader2, Save, Truck } from "lucide-react";
 import { api } from "@/api.js";
 import StatusBadge from "./StatusBadge.jsx";
 import { REVISION_STATUS, REVISION_TRIGGER, customerOfUnit } from "../revisionStatus.js";
@@ -15,6 +15,7 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
   const [jobId, setJobId] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [buatJobBusy, setBuatJobBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -29,6 +30,26 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
   const selesai = revision.status === "CONFIRMED" || revision.status === "CANCELLED";
   const currentIdx = FLOW.indexOf(revision.status);
   const nextOptions = FLOW.slice(Math.max(currentIdx, 0));
+
+  // D-108 (6 September 2026) — laporan owner: revisi (klaim garansi/trial
+  // kenyamanan) tidak pernah bisa masuk rute Delivery karena job biasa
+  // MENOLAK unit yang sudah Terkirim (lihat catatan panjang di
+  // armada.js#create-pickup-job). Tombol ini bikin job PICKUP langsung dari
+  // revisi ini — begitu dibuat, langsung tersambung, tinggal dijadwalkan
+  // lewat Jadwal & Penugasan/Route Planner seperti job lain.
+  async function buatJob() {
+    setBuatJobBusy(true);
+    setError("");
+    try {
+      await api.createRevisionPickupJob(revision.id);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBuatJobBusy(false);
+    }
+  }
 
   async function simpan() {
     if (status === "CANCELLED" && !note.trim()) { setError("Alasan pembatalan wajib diisi"); return; }
@@ -90,6 +111,15 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
 
             {!selesai && (
               <div className="space-y-3 border-t border-line pt-3">
+                {!revision.jobId && (
+                  <button
+                    type="button" onClick={buatJob} disabled={buatJobBusy || busy}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-btn bg-accentbg py-2 text-[12.5px] font-bold text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
+                  >
+                    {buatJobBusy ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Buat Job Pengambilan
+                  </button>
+                )}
+
                 <div>
                   <label className="mb-1 block text-[11.5px] font-semibold text-ink2">Job ID (opsional)</label>
                   <input
@@ -98,7 +128,7 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
                     className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
                   />
                   <p className="mt-1 text-[10.5px] text-ink3">
-                    Buat job jemput/antar seperti biasa lewat Jadwal & Penugasan, lalu tempelkan ID-nya di sini.
+                    Cadangan kalau job-nya sudah dibuat manual duluan lewat Jadwal & Penugasan — tempelkan ID-nya di sini. Biasanya cukup pakai tombol "Buat Job Pengambilan" di atas.
                   </p>
                 </div>
 

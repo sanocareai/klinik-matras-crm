@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Search, Package, Tag, RefreshCw } from "lucide-react";
+import { Search, Package, Tag, RefreshCw, AlertTriangle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -223,6 +223,17 @@ export default function ProductionOrders() {
                       <span className="flex items-center gap-2">
                         <Avatar name={o.customerName} size="sm" />
                         <span className="truncate">{o.customerName || "—"}</span>
+                        {/* Komplain (D-108, 6 September 2026) — laporan owner: komplain
+                            yang dicatat Sales CRM tidak pernah kelihatan di Produksi/
+                            Delivery (silo total). Datanya SUDAH ada di respons ini
+                            (Order.hasComplaint disertakan apa adanya) — cuma belum
+                            pernah ditampilkan di sini. */}
+                        {o.hasComplaint && (
+                          <AlertTriangle
+                            size={13} className="shrink-0 text-red"
+                            title={`Ada komplain: ${o.complaintDetail || "(tanpa detail)"}`}
+                          />
+                        )}
                       </span>
                     </TD>
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
