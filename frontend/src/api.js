@@ -306,6 +306,9 @@ export const api = {
   getRouteTrace: (routeId) => request(`/armada/routes/${routeId}/route-trace`),
   arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
+  // Tambah bukti SETELAH job sudah Selesai (8 September 2026) — lihat
+  // catatan panjang di routes/armada.js PATCH /jobs/:id/proof-photos.
+  addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Web Push (8 September 2026) — subscribe/unsubscribe device driver.
   getVapidPublicKey: () => request("/armada/push/vapid-public-key"),

@@ -3249,6 +3249,43 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
   }
 });
 
+// PATCH /api/armada/jobs/:id/proof-photos { proofPhotoUrls }
+// Tambah bukti SETELAH job sudah COMPLETED (8 September 2026, laporan owner
+// — screenshot job Irpus/RES-27082026-177: sudah "Terkirim" tapi tidak bisa
+// upload bukti pengambilan/pengiriman manual sama sekali). Akar masalahnya:
+// endpoint /complete di atas cuma menerima job yang BELUM Selesai (SCHEDULED/
+// ASSIGNED/EN_ROUTE/ARRIVED) — begitu status sudah COMPLETED (termasuk
+// banyak job hasil backfill sesi ini: selesaikanJobBelumJalan/
+// adminBypassProduction, SENGAJA tanpa foto supaya jujur "Belum Lengkap" di
+// POD), tidak ada jalur menambahkan buktinya lagi kalau ternyata belakangan
+// ada (customer kirim susulan, dst).
+//
+// SENGAJA endpoint terpisah dari /complete — job.status TIDAK berubah lagi
+// (sudah COMPLETED), tidak ada transisi unit/order/rute yang perlu disentuh,
+// murni menambah array proofPhotoUrls yang sudah ada (push, BUKAN replace —
+// foto lama yang sudah terunggah tetap dipertahankan).
+armadaRouter.patch("/jobs/:id/proof-photos", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (job.status !== "COMPLETED") {
+      throw new ArmadaError(`Job berstatus ${job.status}, bukan Selesai — pakai tombol Selesaikan biasa, bukan jalur ini`);
+    }
+    const tambahan = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+    if (tambahan.length === 0) throw new ArmadaError("Minimal 1 foto wajib diunggah");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!tambahan.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: { proofPhotoUrls: { push: tambahan } },
+      include: jobInclude,
+    });
+    res.json(updated);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // POST /api/armada/jobs/:id/fail { failureReason, failurePhotoUrls, note? }
 // FR-D-07: "every failure requires a reason code and a photo. No exceptions."
 armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {

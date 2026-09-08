@@ -128,6 +128,16 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [manualCompletedAt, setManualCompletedAt] = useState("");
   const [manualBusy, setManualBusy] = useState(false);
   const [manualError, setManualError] = useState("");
+  // Tambah Bukti untuk job yang SUDAH Selesai (8 September 2026, laporan
+  // owner — screenshot job Irpus: order sudah "Terkirim" tapi tidak bisa
+  // upload bukti manual sama sekali, karena "Input Manual" di atas SENGAJA
+  // cuma untuk job yang BELUM Selesai). Ini jalur TERPISAH: job.status
+  // TIDAK berubah, cuma proofPhotoUrls bertambah (lihat PATCH /jobs/:id/
+  // proof-photos di armada.js).
+  const [showExtraProof, setShowExtraProof] = useState(false);
+  const [extraProofFiles, setExtraProofFiles] = useState([]);
+  const [extraProofBusy, setExtraProofBusy] = useState(false);
+  const [extraProofError, setExtraProofError] = useState("");
   // Catatan reschedule retroaktif (6 September 2026) — form kecil, cuma
   // muncul di job yang SUDAH Selesai TAPI belum punya rescheduleReason.
   // Draft LOKAL (pola sama dengan textarea gagal di AksiFotoForm) supaya
@@ -181,6 +191,9 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     setManualProofFiles([]);
     setManualCompletedAt(toDatetimeLocal(new Date()));
     setManualError("");
+    setShowExtraProof(false);
+    setExtraProofFiles([]);
+    setExtraProofError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -399,6 +412,28 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
       setManualError(e.message);
     } finally {
       setManualBusy(false);
+    }
+  }
+
+  // Tambah bukti untuk job yang SUDAH Selesai (8 September 2026) — lihat
+  // catatan panjang di state showExtraProof di atas.
+  async function tambahBuktiSetelahSelesai() {
+    if (extraProofFiles.length === 0) { setExtraProofError("Minimal 1 foto bukti wajib diunggah"); return; }
+    setExtraProofBusy(true);
+    setExtraProofError("");
+    try {
+      const fd = new FormData();
+      extraProofFiles.forEach(({ file }) => fd.append("photos", file));
+      const { urls } = await api.uploadJobPhotos(job.id, fd);
+      const updated = await api.addJobProofPhotos(job.id, { proofPhotoUrls: urls });
+      setJob(updated);
+      setShowExtraProof(false);
+      setExtraProofFiles([]);
+      onChanged?.();
+    } catch (e) {
+      setExtraProofError(e.message);
+    } finally {
+      setExtraProofBusy(false);
     }
   }
 
@@ -988,20 +1023,70 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     satu Pengambilan ATAU Pengiriman, tidak pernah dua-duanya
                     sekaligus), yang berubah cuma labelnya supaya jujur soal
                     bukti APA yang sedang dilihat. */}
-                {(job.proofPhotoUrls?.length > 0 || job.signatureUrl) && (
+                {/* Bukti — DULU cuma dirender kalau sudah ADA foto/TTD, jadi
+                    job COMPLETED yang buktinya kosong (banyak dari backfill
+                    sesi ini: selesaikanJobBelumJalan/adminBypassProduction,
+                    SENGAJA tanpa foto) tidak pernah kelihatan section ini
+                    sama sekali — laporan owner (screenshot job Irpus): "gak
+                    bisa upload bukti manual" untuk order yang sudah
+                    Selesai. Sekarang section SELALU tampil untuk job
+                    COMPLETED (jujur bilang "Belum ada foto" kalau memang
+                    kosong) + tombol Tambah Bukti (PATCH /jobs/:id/
+                    proof-photos, endpoint TERPISAH dari Selesaikan — job
+                    tidak berpindah status lagi). */}
+                {(job.status === "COMPLETED" || job.proofPhotoUrls?.length > 0 || job.signatureUrl) && (
                   <div className="mt-4">
                     <h4 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
                       <Camera size={12} aria-hidden /> Bukti {pickupJob ? "Pengambilan" : "Pengiriman"}
                     </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {job.proofPhotoUrls?.map((src) => (
-                        <img key={src} src={src} alt="" className="h-16 w-16 rounded-btn border border-border object-cover" />
-                      ))}
-                      {job.signatureUrl && (
-                        <img src={job.signatureUrl} alt="Tanda tangan penerima"
-                             className="h-16 rounded-btn border border-border bg-white object-contain px-1" />
-                      )}
-                    </div>
+                    {(job.proofPhotoUrls?.length > 0 || job.signatureUrl) ? (
+                      <div className="flex flex-wrap gap-2">
+                        {job.proofPhotoUrls?.map((src) => (
+                          <img key={src} src={src} alt="" className="h-16 w-16 rounded-btn border border-border object-cover" />
+                        ))}
+                        {job.signatureUrl && (
+                          <img src={job.signatureUrl} alt="Tanda tangan penerima"
+                               className="h-16 rounded-btn border border-border bg-white object-contain px-1" />
+                        )}
+                      </div>
+                    ) : job.status === "COMPLETED" ? (
+                      <p className="text-[12px] text-ink3">Belum ada foto — job ini ditandai selesai tanpa bukti terunggah.</p>
+                    ) : null}
+
+                    {job.status === "COMPLETED" && (
+                      <div className="mt-2">
+                        {showExtraProof ? (
+                          <div className="rounded-btn border border-dashed border-accent/40 bg-accentbg/20 p-2.5">
+                            <PasteUploadZone
+                              files={extraProofFiles}
+                              onFilesChange={setExtraProofFiles}
+                              multiple
+                              label="Foto bukti tambahan"
+                            />
+                            {extraProofError && <p className="mt-1.5 text-[11.5px] text-red">{extraProofError}</p>}
+                            <div className="mt-2 flex gap-2">
+                              <Button
+                                size="sm" disabled={extraProofBusy || extraProofFiles.length === 0}
+                                onClick={tambahBuktiSetelahSelesai}
+                              >
+                                {extraProofBusy ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />} Simpan
+                              </Button>
+                              <Button size="sm" variant="ghost" disabled={extraProofBusy} onClick={() => { setShowExtraProof(false); setExtraProofFiles([]); }}>
+                                Batal
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setShowExtraProof(true)}
+                            className="text-[12px] font-semibold text-accent hover:underline"
+                          >
+                            + Tambah Bukti
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

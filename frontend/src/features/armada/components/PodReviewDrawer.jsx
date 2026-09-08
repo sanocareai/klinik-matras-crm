@@ -96,12 +96,26 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
+  // Tambah Bukti untuk job yang SUDAH Selesai (8 September 2026, laporan
+  // owner — screenshot job Irpus: order sudah "Terkirim" tapi tidak bisa
+  // upload bukti manual sama sekali). "Input Manual" di atas SENGAJA cuma
+  // untuk job yang BELUM Selesai (belumSelesaiSistem) — ini jalur TERPISAH
+  // untuk job yang SUDAH Selesai tapi buktinya kosong/kurang, job.status
+  // TIDAK berubah lagi (lihat PATCH /jobs/:id/proof-photos di armada.js).
+  const [showExtraProof, setShowExtraProof] = useState(false);
+  const [extraProofFiles, setExtraProofFiles] = useState([]);
+  const [extraProofBusy, setExtraProofBusy] = useState(false);
+  const [extraProofError, setExtraProofError] = useState("");
+
   useEffect(() => {
     setProofFiles([]);
     setUploadError("");
     setRejecting(false);
     setNote("");
     setError("");
+    setShowExtraProof(false);
+    setExtraProofFiles([]);
+    setExtraProofError("");
     setManualCompletedAt(toDatetimeLocal(new Date()));
     setManualDriverId(job?.driverId || "");
     setManualHelperId(job?.helperId || "");
@@ -163,6 +177,25 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
       setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function tambahBuktiSetelahSelesai() {
+    if (extraProofFiles.length === 0) { setExtraProofError("Minimal 1 foto bukti wajib diunggah"); return; }
+    setExtraProofBusy(true);
+    setExtraProofError("");
+    try {
+      const fd = new FormData();
+      extraProofFiles.forEach(({ file }) => fd.append("photos", file));
+      const { urls } = await api.uploadJobPhotos(job.id, fd);
+      await api.addJobProofPhotos(job.id, { proofPhotoUrls: urls });
+      setShowExtraProof(false);
+      setExtraProofFiles([]);
+      onChanged();
+    } catch (e) {
+      setExtraProofError(e.message);
+    } finally {
+      setExtraProofBusy(false);
     }
   }
 
@@ -267,6 +300,50 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
                 </div>
               ) : belumSelesaiSistem ? null : (
                 <p className="text-[12px] text-ink3">Belum ada foto.</p>
+              )}
+
+              {/* Tambah Bukti (8 September 2026) — lihat catatan panjang di
+                  state showExtraProof di atas. */}
+              {!belumSelesaiSistem && (
+                <div className="mt-2">
+                  {showExtraProof ? (
+                    <div className="rounded-btn border border-dashed border-accent/40 bg-accentbg/20 p-2.5">
+                      <PasteUploadZone
+                        files={extraProofFiles}
+                        onFilesChange={setExtraProofFiles}
+                        multiple
+                        label="Foto bukti tambahan"
+                      />
+                      {extraProofError && <p className="mt-1.5 text-[11.5px] text-red">{extraProofError}</p>}
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={tambahBuktiSetelahSelesai}
+                          disabled={extraProofBusy || extraProofFiles.length === 0}
+                          className="flex items-center gap-1.5 rounded-btn bg-accent px-3 py-1.5 text-[12px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                        >
+                          {extraProofBusy ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />} Simpan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowExtraProof(false); setExtraProofFiles([]); }}
+                          disabled={extraProofBusy}
+                          className="rounded-btn px-3 py-1.5 text-[12px] font-semibold text-ink2 hover:bg-hovertint"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowExtraProof(true)}
+                      className="text-[12px] font-semibold text-accent hover:underline"
+                    >
+                      + Tambah Bukti
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
