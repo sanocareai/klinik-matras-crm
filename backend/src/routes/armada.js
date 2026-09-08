@@ -31,6 +31,7 @@ import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
+import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -368,45 +369,89 @@ async function notifyNatashaImage(buffer, filename, caption) {
 //    owner sendiri. route.manualMapsUrl (schema.prisma, migrasi
 //    20260906150000) MENGGANTIKAN mapsUrl (parameter auto-generate) kalau
 //    diisi dispatcher — lihat input "Link Maps (opsional)" di RouteCard.jsx.
+//
+// KOREKSI 8 September 2026 (owner kasih TEMPLATE PERSIS via chat) — poin 2
+// di atas ("Detail per stop SENGAJA TETAP RINGKAS... dikirim sebagai GAMBAR
+// TABEL terpisah") DIBALIK: owner sekarang minta rincian PENUH per stop
+// LANGSUNG di teks (EST jam, catatan akses, alamat, produk+ukuran), format
+// baris demi baris sudah dicontohkan persis (lihat commit ini). Rincian ini
+// SEKARANG TUMPANG TINDIH dengan gambar tabel (buildRouteSheetImage) yang
+// dikirim SEBELUM teks ini di kirimRingkasanRuteKeNatasha() — gambar itu
+// SENGAJA TIDAK DIHAPUS di perubahan ini (owner cuma minta perbaikan teks,
+// bukan minta gambar dicabut); kalau ternyata dianggap duplikat/berlebihan
+// setelah dipakai, itu keputusan terpisah yang perlu dikonfirmasi owner dulu.
 function formatRouteWaMessage(route, mapsUrl, label = "") {
-  const kendaraan = route.vehicle?.plateNumber || "Kendaraan belum diisi";
+  const plat = route.vehicle?.plateNumber || "Kendaraan belum diisi";
+  const tipeKendaraan = route.vehicle?.type?.trim() ? ` (${route.vehicle.type.trim().toUpperCase()})` : "";
   const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
   const mapsUrlFinal = route.manualMapsUrl?.trim() || mapsUrl;
+
+  const baris = [
+    label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
+    `*${plat}${tipeKendaraan} — ${driverLine}*`,
+  ];
+
+  // Catatan Rute (Route.notes, freeform dispatcher — lihat komentar §2 di
+  // atas soal kenapa ini tetap teks bebas) sekarang tampil sebagai BULLET
+  // LIST di bawah header, bukan lagi "Detail Catatan:" di paling bawah —
+  // persis posisi & format di contoh template owner ("✏️Catatan Rute:").
+  const catatanRuteLines = (route.notes || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  if (catatanRuteLines.length > 0) {
+    baris.push("", "*✏️Catatan Rute:*", ...catatanRuteLines.map((l) => `- ${l}`));
+  }
 
   // route.jobs SUDAH terurut sequence asc (routeInclude), sama urutan yang
   // dipakai Route Card di frontend — TIDAK di-sort ulang di sini supaya
   // kedua tempat ini mustahil menampilkan urutan berbeda.
-  //
-  // Detail per stop SENGAJA TETAP RINGKAS (nama+tipe+alamat) — laporan
-  // owner: rincian lengkap [No. HP, produk+ukuran, estimasi jam] sekarang
-  // dikirim sebagai GAMBAR TABEL terpisah (lihat buildRouteSheetImage,
-  // services/routeSheetImage.js, dipanggil di pemanggil bareng fungsi ini),
-  // BUKAN dijejalkan ke teks — persis alasan gambar itu dibuat: "kalo text
-  // semua mungkin terlalu panjang". Teks ini cuma peta cepat "siapa & ke
-  // mana", gambar itu sumber detailnya.
-  const stopLines = (route.jobs || []).map((j, idx) => {
+  const stopLines = (route.jobs || []).flatMap((j, idx) => {
     const order = j.order || j.units?.[0]?.unit?.order;
     const nama = order?.customer?.name || "Tanpa nama";
-    const tipe = j.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
+    const isPickup = j.type === "PICKUP";
+    const emoji = isPickup ? "🔵" : "🟢";
+    const tipe = isPickup ? "Pengambilan" : "Pengiriman";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
-    return `${idx + 1}. ${nama} — ${tipe}\n   ${alamat}`;
+    return [
+      "",
+      `${idx + 1}. ${emoji}${nama} - ${tipe}`,
+      `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow)}`,
+      `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
+      `📍Alamat: ${alamat}`,
+      `🛏️${produkUntukBroadcast(order)}`,
+    ];
   });
+  baris.push(...stopLines);
 
-  const baris = [
-    label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
-    `${kendaraan} — ${driverLine}`,
-  ];
-  if (stopLines.length > 0) {
-    baris.push("", ...stopLines);
-  }
   baris.push(
     "",
     mapsUrlFinal ? `Link Maps: ${mapsUrlFinal}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)"
   );
-  if (route.notes?.trim()) {
-    baris.push("", "Detail Catatan:", route.notes.trim());
-  }
   return baris.join("\n");
+}
+
+// EST Jam per stop untuk broadcast (8 September 2026) — data lama
+// Job.timeWindow (bebas ketik SEBELUM sistem 5-preset, mis. "EST Diatas jam
+// 13.00 (40)") bisa sudah berisi prefix "EST"/"Diatas jam" sendiri. Dilucuti
+// dulu di sini supaya template yang menambahkan label "🕗EST Jam:" di depan
+// tidak dobel jadi "EST Jam: EST DIATAS JAM...". Aturan SAMA PERSIS dengan
+// estimasiJamSingkat() di frontend (RouteCard.jsx/UnroutedJobsPanel.jsx) —
+// implementasi terpisah karena beda runtime, bukan reuse lintas backend/FE.
+function estJamUntukBroadcast(timeWindow) {
+  if (!timeWindow || !timeWindow.trim()) return "";
+  let s = timeWindow.trim().replace(/^EST:?\s*/i, "");
+  s = s.replace(/^di\s*atas\s+jam\s*/i, "Di atas ");
+  return s.trim();
+}
+
+// Produk+ukuran satu baris untuk broadcast rute (8 September 2026, contoh
+// eksplisit owner: "Kasur Speing 180x200") — SENGAJA beda format dari
+// produkLabel() di invoice.js (pemisah "·") dan productSummary() di
+// frontend (ada "cm"/parens): plain spasi, tanpa pemisah, sesuai contoh
+// persis yang diminta. Reuse produkLineLabel()/parseOrderNotesForInvoice()
+// yang sudah ada, bukan bikin parser Order.notes ketiga.
+function produkUntukBroadcast(order) {
+  if (!order) return "-";
+  const { ukuranKasur } = parseOrderNotesForInvoice(order.notes);
+  return [produkLineLabel(order), ukuranKasur].filter(Boolean).join(" ");
 }
 
 // Kirim ringkasan rute LENGKAP ke Natasha — GAMBAR TABEL (detail per stop:
