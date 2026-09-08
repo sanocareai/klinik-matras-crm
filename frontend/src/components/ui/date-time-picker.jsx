@@ -71,6 +71,17 @@ export default function DateTimePicker({ value, onChange, placeholder = "Pilih t
   const jam = active ? parsed.hour() : 0;
   const menit = active ? parsed.minute() : 0;
 
+  // Ketik langsung (8 September 2026, laporan owner: "buat versi editable
+  // tanpa harus pick dan scrolling jam... buat lebih simple" — skema
+  // sebelumnya WAJIB klik lalu gulir daftar 00-23/00-59 untuk tiap angka,
+  // lambat kalau jamnya jauh dari nilai sekarang mis. dari 08 ke 23).
+  // Draft LOKAL (string, bukan angka) supaya user bisa mengetik "2" dulu
+  // tanpa langsung dipaksa "02" di tengah mengetik — dikomit (clamp +
+  // ubah()) saat blur/Enter, disinkronkan ulang dari jam/menit aktif tiap
+  // popover dibuka supaya tidak nyangkut draft basi dari sesi sebelumnya.
+  const [jamDraft, setJamDraft] = useState(() => pad2(jam));
+  const [menitDraft, setMenitDraft] = useState(() => pad2(menit));
+
   useEffect(() => {
     if (open) { setMounted(true); return; }
     const t = setTimeout(() => setMounted(false), DELAY_MS);
@@ -78,7 +89,11 @@ export default function DateTimePicker({ value, onChange, placeholder = "Pilih t
   }, [open]);
 
   useEffect(() => {
-    if (open) setAnchor((parsed || todayWIB()).startOf("month"));
+    if (open) {
+      setAnchor((parsed || todayWIB()).startOf("month"));
+      setJamDraft(pad2(jam));
+      setMenitDraft(pad2(menit));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -103,6 +118,23 @@ export default function DateTimePicker({ value, onChange, placeholder = "Pilih t
     if (jamBaru !== undefined) d = d.hour(jamBaru);
     if (menitBaru !== undefined) d = d.minute(menitBaru);
     onChange(d.format("YYYY-MM-DDTHH:mm"));
+  }
+
+  // Komit draft ketik ke nilai sebenarnya — dipanggil saat blur/Enter,
+  // BUKAN tiap keystroke (supaya "2" di tengah mengetik "23" tidak
+  // langsung dipaksa jadi "02"). Kosong/di luar rentang -> balik ke nilai
+  // aktif sekarang, bukan error yang mengganggu alur ketik cepat.
+  function komitJam() {
+    const n = Number(jamDraft);
+    const v = Number.isInteger(n) && n >= 0 && n <= 23 ? n : jam;
+    setJamDraft(pad2(v));
+    if (v !== jam || !active) ubah({ jamBaru: v });
+  }
+  function komitMenit() {
+    const n = Number(menitDraft);
+    const v = Number.isInteger(n) && n >= 0 && n <= 59 ? n : menit;
+    setMenitDraft(pad2(v));
+    if (v !== menit || !active) ubah({ menitBaru: v });
   }
 
   return (
@@ -170,15 +202,52 @@ export default function DateTimePicker({ value, onChange, placeholder = "Pilih t
             <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-ink3">
               <Clock size={11} aria-hidden /> Jam (24 jam)
             </p>
+
+            {/* Ketik langsung (8 September 2026, laporan owner: "buat versi
+                editable tanpa harus pick dan scrolling jam... lebih
+                simple") — jalur UTAMA sekarang, cepat untuk jam yang jauh
+                dari nilai sekarang. Daftar gulir di bawah TETAP ada untuk
+                yang lebih suka klik, bukan dihapus — dua cara mengisi hal
+                yang sama, bukan pengganti. */}
+            <div className="mb-2 flex items-center justify-center gap-1.5">
+              <input
+                type="text" inputMode="numeric" maxLength={2}
+                value={jamDraft}
+                onChange={(e) => setJamDraft(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                onBlur={komitJam}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                onFocus={(e) => e.target.select()}
+                aria-label="Jam (0-23)"
+                className="h-10 w-14 rounded-lg border border-border bg-inset/40 text-center text-[18px] font-bold tabular-nums text-ink outline-none focus:border-accent"
+              />
+              <span className="text-[18px] font-bold text-ink3">:</span>
+              <input
+                type="text" inputMode="numeric" maxLength={2}
+                value={menitDraft}
+                onChange={(e) => setMenitDraft(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                onBlur={komitMenit}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                onFocus={(e) => e.target.select()}
+                aria-label="Menit (0-59)"
+                className="h-10 w-14 rounded-lg border border-border bg-inset/40 text-center text-[18px] font-bold tabular-nums text-ink outline-none focus:border-accent"
+              />
+            </div>
+
             <div className="flex gap-2">
-              <KolomAngka label="Jam" values={JAM} active={jam} onPick={(v) => ubah({ jamBaru: v })} />
-              <KolomAngka label="Menit" values={MENIT} active={menit} onPick={(v) => ubah({ menitBaru: v })} />
+              <KolomAngka label="Jam" values={JAM} active={jam} onPick={(v) => { setJamDraft(pad2(v)); ubah({ jamBaru: v }); }} />
+              <KolomAngka label="Menit" values={MENIT} active={menit} onPick={(v) => { setMenitDraft(pad2(v)); ubah({ menitBaru: v }); }} />
             </div>
           </div>
 
           <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2">
             <button
-              type="button" onClick={() => onChange(todayWIB().format("YYYY-MM-DDTHH:mm"))}
+              type="button"
+              onClick={() => {
+                const s = todayWIB();
+                onChange(s.format("YYYY-MM-DDTHH:mm"));
+                setJamDraft(pad2(s.hour()));
+                setMenitDraft(pad2(s.minute()));
+              }}
               className="text-[12px] font-semibold text-accent hover:underline"
             >
               Sekarang
