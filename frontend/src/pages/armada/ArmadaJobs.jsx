@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck, MessageCircle, MapPinned, Clock, BedDouble } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -14,15 +14,37 @@ import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
+import QuickChatModal from "@/features/armada/components/QuickChatModal.jsx";
 import { useArmadaJobs } from "@/features/armada/hooks/useArmadaJobs.js";
-import { JobMetaRow, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
+import {
+  RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge,
+} from "@/features/armada/components/JobBadges.jsx";
+import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL,
-  customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
+  customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl, orderOf, conversationIdOf, customerPhoneOf, salesPersonOf,
   isJobOverdue, overdueDays, jobAccentBarStyle, hasJobAccentBar,
 } from "@/features/armada/jobStatus.js";
+
+// "EST: Di atas 09.00" — SATU SUMBER dengan RouteCard.jsx/UnroutedJobsPanel.jsx
+// (duplikasi fungsi murni, bukan import silang antar kartu yang sengaja
+// terpisah — pola yang sudah dipegang project ini, lihat catatan di file itu).
+function estimasiJamSingkat(timeWindow) {
+  if (!timeWindow) return null;
+  return timeWindow
+    .trim()
+    .replace(/^est\.?:?\s*/i, "")
+    .replace(/^di\s*atas\s*jam\s*/i, "Di atas ");
+}
+
+// Pesan konfirmasi default — SATU SUMBER dengan RouteCard.jsx/UnroutedJobsPanel.jsx.
+function pesanKonfirmasiDefault(job) {
+  const nama = customerOf(job) || "Kak";
+  const aksi = job?.type === "PICKUP" ? "pengambilan" : "pengiriman";
+  return `Halo ${nama}, mohon konfirmasi untuk jadwal ${aksi} kasur hari ini — apakah Anda/perwakilan ada di tempat? Terima kasih 🙏`;
+}
 
 // Jadwal & Penugasan — Delivery Tahap 2.
 //
@@ -126,6 +148,10 @@ export default function ArmadaJobs() {
 
   const [drivers, setDrivers] = useState([]);
   const [openJobId, setOpenJobId] = useState(null);
+  // Chat WA cepat (8 September 2026, disamakan dengan RouteCard.jsx —
+  // lihat catatan panjang di komentar kartu job di bawah) — job yang
+  // QuickChatModal sedang dibuka untuknya, null = tertutup.
+  const [chatJob, setChatJob] = useState(null);
 
   // Deep-link ?job= — dipakai kartu KPI & daftar issue di dashboard, dan
   // notifikasi Delivery nanti. Param dibuang setelah dipakai supaya refresh
@@ -385,11 +411,23 @@ export default function ArmadaJobs() {
               // sama-sama berisi daftar job terasa satu bahasa visual.
               //
               // TIDAK ADA info yang hilang dari tabel lama — cuma disusun
-              // ulang jadi 1 kartu per job, bukan 10 kolom sejajar:
-              // job/order di baris meta (mono), jenis+unit jadi chip di
-              // sebelah nama, jadwal+driver+kendaraan di baris meta,
-              // alamat di baris sendiri (kalau ada), sales+estimasi lewat
-              // JobMetaRow yang sudah ada, status di kanan.
+              // ulang jadi 1 kartu per job, bukan 10 kolom sejajar.
+              //
+              // DISAMAKAN dengan kartu stop Route Planner (8 September 2026,
+              // laporan owner: "gue ingin isi card order di jadwal &
+              // penugasan mirip dengan yang ada di route planner") — 3
+              // kelompok visual yang SAMA (RouteCard.jsx/UnroutedJobsPanel.jsx
+              // D-140): status+ikon aksi di atas, avatar+nama+chip produk
+              // (productSummary, BUKAN ServiceLabel generik lagi)+alamat di
+              // tengah, EST jam+tanggal pasti+sales di bawah. Chat WA cepat
+              // & link Maps SEKARANG juga ada di sini (sebelumnya cuma di
+              // Route Planner) — dispatcher yang kerja dari halaman ini
+              // tidak perlu pindah ke Route Planner cuma untuk itu.
+              //
+              // TETAP BEDA satu hal, SENGAJA: baris meta order/tanggal/
+              // driver/kendaraan (font mono) — RouteCard tidak butuh ini
+              // (jobnya sudah pasti 1 tanggal/1 rute), daftar INI lintas
+              // tanggal & driver, jadi info itu tetap relevan di sini.
               <ul className="divide-y divide-line">
                 {loading && Array.from({ length: 6 }).map((_, i) => (
                   <li key={i} className="px-4 py-3">
@@ -426,17 +464,21 @@ export default function ArmadaJobs() {
                         // lihat catatan panjang di jobStatus.js#jobAccentBarStyle).
                         style={jobAccentBarStyle(j)}
                         className={cn(
-                          "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
+                          "relative flex w-full flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
                           hasJobAccentBar(j) && "dh-bar-left"
                         )}
                       >
-                        <Avatar name={nama} size="sm" gradient className="mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="truncate text-[13px] font-semibold text-ink">{nama}</span>
-                            <RentalBadge job={j} />
+                        {/* Kelompok 1 — STATUS: badge kota/status/sewa/
+                            route-lock/unit (kiri), aksi ikon chat+Maps
+                            (tengah-kanan), label tipe+status job (paling
+                            kanan) — sama susunan dengan RouteCard.jsx,
+                            cuma ditambah label tipe+status job yang TIDAK
+                            ada di sana (lihat catatan di atas kenapa). */}
+                        <div className="flex items-start gap-1.5">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                             <CityBadge job={j} />
                             <OrderStatusBadge job={j} />
+                            <RentalBadge job={j} />
                             {/* Sudah masuk Route (D-077, 6 September 2026) —
                                 dulu tabel ini nol indikasi soal ini, jadi
                                 dispatcher baru tahu drivernya "terkunci" ke
@@ -457,69 +499,109 @@ export default function ArmadaJobs() {
                               </span>
                             )}
                           </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
-                            <span className="font-mono">{orderNumberOf(j) || jobLabelOf(j)}</span>
-                            <span aria-hidden>·</span>
-                            <span className={cn(!j.scheduledDate && !historis && "font-semibold text-orange")}>
-                              {j.scheduledDate
-                                ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-                                : historis ? "—" : "Belum dijadwalkan"}
-                            </span>
-                            <span aria-hidden>·</span>
-                            <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
-                              {j.driver?.name || (historis ? "—" : "Belum ada driver")}
-                            </span>
-                            {j.vehicle?.plateNumber && (
-                              <>
-                                <span aria-hidden>·</span>
-                                <span>{j.vehicle.plateNumber}</span>
-                              </>
+                          <div className="relative flex shrink-0 items-center gap-0.5">
+                            <MapsLinkMissingBadge job={j} variant="dot" />
+                            {conversationIdOf(j) && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setChatJob(j); }}
+                                title="Chat cepat dengan pelanggan"
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-greenbg hover:text-green"
+                              >
+                                <MessageCircle size={16} />
+                              </button>
+                            )}
+                            {mapsUrl(j) && (
+                              <a
+                                href={mapsUrl(j)} target="_blank" rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                title="Buka lokasi di Google Maps"
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-accentbg hover:text-accent"
+                              >
+                                <MapPinned size={16} />
+                              </a>
                             )}
                           </div>
-                          <ServiceLabel job={j} className="mt-0.5" />
-                          {j.addressText && (
-                            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-ink3">
-                              {mapsUrl(j) && (
-                                <a
-                                  href={mapsUrl(j)} target="_blank" rel="noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title="Buka di Google Maps"
-                                  className="shrink-0 text-accent hover:text-accent/80"
-                                >
-                                  <Navigation size={11} />
-                                </a>
-                              )}
-                              <span className="truncate">{j.addressText}</span>
+                          {/* Label tipe job DI ATAS badge status (8 September
+                              2026, laporan owner — contoh nyata Lim Fie Boen/
+                              RES-30082026-206: baris cuma nampilin "SELESAI"
+                              polos, dibaca seolah seluruh order sudah beres,
+                              padahal itu status JOB PENGAMBILAN doang — order-
+                              nya sendiri masih "Diproses", job Pengiriman
+                              belum ada. TIDAK dihapus walau RouteCard.jsx
+                              sengaja tidak punya ini — beda konteks, daftar
+                              ini nunjukin status JOB [PICKUP/DELIVERY lepas-
+                              lepas], RouteCard cuma nunjukin status ORDER. */}
+                          <div className="shrink-0 text-right">
+                            <div className="mb-0.5 text-[10px] font-semibold text-ink3">
+                              {JOB_TYPE_REAL[j.type]?.label}
                             </div>
-                          )}
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <ConfirmedTimeBadge job={j} />
+                            <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
                           </div>
-                          <JobMetaRow job={j} className="mt-1.5" />
-                          {overdue && (
-                            <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
-                              <CalendarDays size={11} /> Terlambat {overdueDays(j)} hari dari jadwal
-                            </p>
+                        </div>
+
+                        {/* Kelompok 2 — IDENTITAS: avatar+nama, chip produk
+                            (productSummary — SAMA sumber dengan RouteCard,
+                            GANTI ServiceLabel generik), alamat + ikon pin. */}
+                        <div className="flex items-start gap-2">
+                          <Avatar name={nama} size="sm" gradient className="mt-px h-7 w-7 shrink-0 text-[10px]" />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <span className="truncate text-[13.5px] font-bold text-ink">{nama}</span>
+                            {orderOf(j) && productSummary(orderOf(j)) && (
+                              <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
+                                <BedDouble size={11} className="shrink-0 text-ink3" />
+                                <span className="truncate">{productSummary(orderOf(j))}</span>
+                              </span>
+                            )}
+                            <span className="flex items-start gap-1 text-[12px] text-ink2">
+                              <MapPinned size={12} className="mt-px shrink-0 text-ink3" />
+                              <span className="min-w-0 flex-1 truncate">{j.addressText || "Alamat belum diisi"}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Baris meta order/tanggal/driver/kendaraan — TETAP
+                            ADA, TIDAK ada padanannya di RouteCard (lihat
+                            catatan di atas kenapa daftar ini beda). */}
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-ink3">
+                          <span className="font-mono">{orderNumberOf(j) || jobLabelOf(j)}</span>
+                          <span aria-hidden>·</span>
+                          <span className={cn(!j.scheduledDate && !historis && "font-semibold text-orange")}>
+                            {j.scheduledDate
+                              ? new Date(j.scheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+                              : historis ? "—" : "Belum dijadwalkan"}
+                          </span>
+                          <span aria-hidden>·</span>
+                          <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
+                            {j.driver?.name || (historis ? "—" : "Belum ada driver")}
+                          </span>
+                          {j.vehicle?.plateNumber && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>{j.vehicle.plateNumber}</span>
+                            </>
                           )}
                         </div>
-                        {/* Label tipe job DI ATAS badge status (8 September
-                            2026, laporan owner — contoh nyata Lim Fie Boen/
-                            RES-30082026-206: baris cuma nampilin "SELESAI"
-                            polos, dibaca seolah seluruh order sudah beres,
-                            padahal itu status JOB PENGAMBILAN doang — order-
-                            nya sendiri masih "Diproses", job Pengiriman
-                            belum ada. Aksen warna kiri [jobAccentBarStyle]
-                            SUDAH membedakan biru/hijau, tapi itu terlalu
-                            halus untuk jadi satu-satunya penanda — label
-                            teks eksplisit "Pengambilan"/"Pengiriman" di sini
-                            supaya tidak perlu klik dulu baru sadar ini cuma
-                            separuh perjalanan. */}
-                        <div className="ml-2 shrink-0 text-right">
-                          <div className="mb-0.5 text-[10px] font-semibold text-ink3">
-                            {JOB_TYPE_REAL[j.type]?.label}
+
+                        {/* Kelompok 3 — JADWAL: EST jam, tanggal PASTI ambil/
+                            kirim, sales — SAMA persis dengan RouteCard.jsx. */}
+                        {(estimasiJamSingkat(j.timeWindow) || orderOf(j)?.pickupConfirmedDate || orderOf(j)?.deliveryConfirmedDate || salesPersonOf(j)) && (
+                          <div className="flex flex-wrap items-center gap-1 border-t border-border pt-1.5">
+                            {estimasiJamSingkat(j.timeWindow) && (
+                              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-orangebg px-2 py-0.5 text-[10.5px] font-semibold text-orange">
+                                <Clock size={11} className="shrink-0" /> EST: {estimasiJamSingkat(j.timeWindow)}
+                              </span>
+                            )}
+                            <ConfirmedTimeBadge job={j} className="flex-wrap" />
+                            <SalesBadge job={j} className="w-fit" />
                           </div>
-                          <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
-                        </div>
+                        )}
+
+                        {overdue && (
+                          <p className="flex items-center gap-1 text-[11px] font-semibold text-red">
+                            <CalendarDays size={11} /> Terlambat {overdueDays(j)} hari dari jadwal
+                          </p>
+                        )}
                       </button>
                     </li>
                   );
@@ -530,6 +612,15 @@ export default function ArmadaJobs() {
       </PageBody>
 
         <JobDetailDrawer jobId={openJobId} onClose={() => setOpenJobId(null)} onChanged={load} />
+        {chatJob && (
+          <QuickChatModal
+            conversationId={conversationIdOf(chatJob)}
+            customerName={customerOf(chatJob)}
+            customerPhone={customerPhoneOf(chatJob)}
+            defaultMessage={pesanKonfirmasiDefault(chatJob)}
+            onClose={() => setChatJob(null)}
+          />
+        )}
       </PageContainer>
     </>
   );
