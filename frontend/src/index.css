@@ -181,7 +181,22 @@ body {
   letter-spacing: 0.09em; color: #a9b4c4; padding: 14px 10px 5px;
 }
 
-.sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 6px 12px; gap: 1px; overflow-y: auto; }
+/* D-141 (9 September 2026, laporan owner: "kalo gue kecilin window delivery
+   workspace tampilannya menumpuk... terutama icon-icon nya" — rail sidebar
+   kiri). Root cause: `.sidebar-link` (dan pembungkus `.nav-section`-nya)
+   TIDAK PUNYA `flex-shrink: 0`, padahal keduanya adalah flex ITEM langsung
+   di dalam `.sidebar-nav` (flex-column). Default browser `flex-shrink: 1`
+   berarti begitu window/sidebar dipendekkan sampai TIDAK CUKUP tinggi utk
+   menampung semua item pada ukuran alaminya, flex algorithm MENGECILKAN
+   tinggi tiap item secara proporsional (bukan membiarkan `.sidebar-nav`
+   scroll, walau `overflow-y:auto` sudah dipasang di sana) — persis gejala
+   "menumpuk": padding icon mengecil, jarak antar icon ikut mengempis,
+   semua icon kelihatan berdesakan. `flex-shrink: 0` di sini memaksa tiap
+   section & link mempertahankan ukuran alaminya, sehingga begitu totalnya
+   melebihi tinggi yang tersedia, `.sidebar-nav` yang scroll (sesuai
+   `overflow-y:auto` yang SUDAH ada) — bukan isinya yang gepeng. */
+.nav-section { flex-shrink: 0; }
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 6px 12px; gap: 1px; overflow-y: auto; min-height: 0; }
 
 .sidebar-link {
   display: flex; align-items: center; gap: 11px;
@@ -189,6 +204,7 @@ body {
   color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500;
   transition: background 0.16s ease, color 0.16s ease;
   position: relative; z-index: 0;
+  flex-shrink: 0;
 }
 /* Konten item di atas pill (pill = z-index 0). */
 .sidebar-link > .nav-icon,
