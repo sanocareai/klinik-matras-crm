@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
-import { makeRange, toApiParams } from "@/lib/dateRange.js";
+import { makeRange, toApiParams, todayWIB } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
@@ -265,8 +265,16 @@ export default function ArmadaRoutes() {
             {/* Rentang TAMPILAN (lihat catatan panjang di state `range` di
                 atas) — default "Semua", bisa di-custom ke satu
                 hari/rentang tertentu lewat picker yang sama dengan
-                Dashboard/Laporan. */}
-            <DateRangePicker value={range} onChange={setRange} />
+                Dashboard/Laporan.
+                `maxDate` (8 September 2026, laporan owner: "date picker di
+                rute planner gabisa klik tanggal kedepan") — DateRangePicker
+                SEBELUMNYA selalu mengunci ke hari ini (masuk akal untuk
+                Laporan, TIDAK masuk akal di sini: dispatcher justru perlu
+                menjadwalkan rute UNTUK minggu/bulan depan). +2 tahun
+                praktis "tanpa batas" untuk kebutuhan penjadwalan nyata,
+                tanpa perlu ubah CalendarMonth jadi terima "tanpa batas
+                sama sekali". */}
+            <DateRangePicker value={range} onChange={setRange} maxDate={todayWIB().add(2, "year").format("YYYY-MM-DD")} />
             {/* "Buat Rute" sekarang 2 langkah (revisi Sep 2026, lihat catatan
                 panjang di state tanggalBaru) — klik pertama membuka
                 DatePicker (default tanggalRuteBaru, BISA diubah), klik

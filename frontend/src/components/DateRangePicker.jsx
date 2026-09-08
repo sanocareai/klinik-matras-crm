@@ -22,7 +22,17 @@ import {
 // endpoint tiap perubahan range) — mahal dan bikin angka berkedip.
 //
 // Props: value: DateRange, onChange: (DateRange) => void
-export default function DateRangePicker({ value, onChange }) {
+// maxDate ("YYYY-MM-DD", opsional, 8 September 2026 — laporan owner:
+// "date picker di rute planner gabisa klik tanggal kedepan") — SEBELUMNYA
+// komponen ini SELALU mengunci ke hari ini sebagai batas atas (masuk akal
+// untuk Laporan/Dashboard: data masa depan memang belum ada), TAPI Route
+// Planner (dan halaman penjadwalan lain) justru BUTUH memilih tanggal
+// KEDEPAN (menjadwalkan rute minggu depan). Default `undefined` = perilaku
+// LAMA persis (batas hari ini WIB) — TIDAK mengubah pemanggil manapun yang
+// belum di-update. Pemanggil yang butuh masa depan kirim tanggal jauh ke
+// depan (lihat ArmadaRoutes.jsx).
+export default function DateRangePicker({ value, onChange, maxDate }) {
+  const batasAtas = maxDate || todayWIB().format("YYYY-MM-DD");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const [hover, setHover] = useState(null);
@@ -255,7 +265,7 @@ export default function DateRangePicker({ value, onChange }) {
                 <input
                   type="date" className={inputCls}
                   value={draft?.from || ""}
-                  max={todayWIB().format("YYYY-MM-DD")}
+                  max={batasAtas}
                   onChange={(e) => setDraft(makeCustomRange(e.target.value, draft?.to, { compare: draft?.compare }))}
                 />
               </label>
@@ -265,7 +275,7 @@ export default function DateRangePicker({ value, onChange }) {
                 <input
                   type="date" className={inputCls}
                   value={draft?.to || ""}
-                  max={todayWIB().format("YYYY-MM-DD")}
+                  max={batasAtas}
                   onChange={(e) => setDraft(makeCustomRange(draft?.from, e.target.value, { compare: draft?.compare }))}
                 />
               </label>
@@ -292,7 +302,7 @@ export default function DateRangePicker({ value, onChange }) {
               <button
                 type="button"
                 onClick={() => setAnchor((a) => a.add(1, "month"))}
-                disabled={anchor.add(1, "month").isAfter(todayWIB().startOf("month"))}
+                disabled={anchor.add(1, "month").isAfter(dayjs(batasAtas).startOf("month"))}
                 aria-label="Bulan berikutnya"
                 className="grid h-6 w-6 place-items-center rounded text-ink2 hover:bg-hovertint disabled:pointer-events-none disabled:opacity-30"
               >
@@ -310,6 +320,7 @@ export default function DateRangePicker({ value, onChange }) {
                   month={m}
                   from={draft?.from} to={draft?.to}
                   hover={picking ? hover : null}
+                  maxDate={batasAtas}
                   onPick={pilihTanggal}
                   // Pratinjau rentang saat menunggu tanggal ke-2.
                   onHoverDate={picking ? setHover : undefined}
