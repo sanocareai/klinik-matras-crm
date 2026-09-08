@@ -1854,10 +1854,25 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
 
     const { reason } = req.body;
     const editingPublished = route.status === "PUBLISHED";
-    if (editingPublished && !reason?.trim()) {
-      throw new ArmadaError("Rute sudah diterbitkan — wajib isi alasan untuk mengubah anggotanya");
+    // Tambah job ke rute SELESAI — admin only (8 September 2026, permintaan
+    // owner langsung: "tambah orderan yang ketinggalan dong karna kesalahan
+    // admin delivery ga cantumin salah satu order, padahal masuk jalur").
+    // SAMA pola persis dengan PATCH /routes/:id (edit driver/kendaraan rute
+    // Selesai) — reuse mekanisme yang SUDAH ada (reason wajib, admin-only,
+    // audit trail), bukan endpoint kedua yang terpisah. Job yang DITAMBAH
+    // TIDAK ikut tertimpa status/tanggalnya (lihat guard STATUS_TUNTAS di
+    // bawah — job baru ini belum tuntas, jadi WAJAR dapat scheduledDate/PIC
+    // rute ini, persis job yang menyusul masuk ke rute DRAFT biasa) — admin
+    // tetap perlu tandai selesai + upload bukti manual sesudahnya lewat
+    // JobDetailDrawer (Input Manual / Tambah Bukti, sudah ada).
+    const editingCompleted = route.status === "COMPLETED";
+    if (editingCompleted && !rolesOf(req.user).includes("ADMIN")) {
+      throw new ArmadaError("Rute yang sudah Selesai cuma bisa diubah anggotanya oleh Admin", 403);
     }
-    if (!editingPublished && route.status !== "DRAFT") {
+    if ((editingPublished || editingCompleted) && !reason?.trim()) {
+      throw new ArmadaError(`Rute sudah ${editingCompleted ? "Selesai" : "diterbitkan"} — wajib isi alasan untuk mengubah anggotanya`);
+    }
+    if (!editingPublished && !editingCompleted && route.status !== "DRAFT") {
       throw new ArmadaError(`Rute berstatus ${route.status} tidak bisa diubah anggotanya`);
     }
 
@@ -1966,7 +1981,12 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
         }
       }
 
-      if (editingPublished) {
+      // editingCompleted ikut dicatat di sini juga (8 September 2026) —
+      // tanpa ini, menambah job "ketinggalan" ke rute Selesai tidak
+      // meninggalkan jejak audit trail sama sekali (lastEditReason dkk),
+      // padahal PATCH /routes/:id (edit driver/kendaraan) di atas SUDAH
+      // mencatatnya untuk kasus yang sama.
+      if (editingPublished || editingCompleted) {
         await tx.route.update({
           where: { id: route.id },
           data: { lastEditReason: reason.trim(), lastEditedAt: new Date(), lastEditedById: req.user.id },

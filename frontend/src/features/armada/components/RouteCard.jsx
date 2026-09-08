@@ -835,7 +835,20 @@ export default function RouteCard({
                         <MapPinned size={16} />
                       </a>
                     )}
-                    {isEditable && (
+                    {/* Stop yang SUDAH TUNTAS (COMPLETED/FAILED) TIDAK BOLEH
+                        dikeluarkan dari rute (8 September 2026) — sejak
+                        edit rute Selesai dibuka utk Admin (permintaan
+                        owner: "tambah orderan yang ketinggalan"), tombol
+                        ini SEKARANG bisa muncul di kartu stop yang fisiknya
+                        sudah selesai dikerjakan. Tanpa guard ini, admin bisa
+                        tidak sengaja klik X di stop yang sudah terkirim
+                        (mis. salah pencet saat menambah stop lain di rute
+                        yang sama) dan diam-diam kehilangan jejak riwayat
+                        rutenya — job.status tidak berubah, tapi routeId
+                        jadi null, hilang dari kartu ini selamanya. Job yang
+                        BELUM tuntas (termasuk job baru yang ditambah) tetap
+                        bisa dikeluarkan seperti biasa. */}
+                    {isEditable && !["COMPLETED", "FAILED"].includes(j.status) && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
