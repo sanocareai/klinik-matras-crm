@@ -10,6 +10,7 @@ import { getQueue, removeAction } from "../utils/offlineQueue.js";
 import { submitOrQueue } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
 import { useDriverTracking } from "../hooks/useDriverTracking.js";
+import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -296,7 +297,9 @@ const FAIL_REASONS_DELIVERY = [
 
 // ── Kartu satu job ────────────────────────────────────────────────────────
 function JobCard({ job, onChanged, onQueued, pending }) {
-  const [mode, setMode] = useState("idle"); // idle | completing | failing
+  // starting/arriving (8 September 2026, dokumentasi tiap tahap) — pola
+  // SAMA PERSIS dengan completing/failing di bawah, cuma tahapnya beda.
+  const [mode, setMode] = useState("idle"); // idle | starting | arriving | completing | failing
   const [photos, setPhotos] = useState([]);
   const [signatureBlob, setSignatureBlob] = useState(null);
   const [note, setNote] = useState("");
@@ -397,15 +400,15 @@ function JobCard({ job, onChanged, onQueued, pending }) {
       )}
 
       {mode === "idle" && job.status === "ASSIGNED" && (
-        <Button className="mt-3 h-12 w-full text-sm" disabled={busy} onClick={() => run("start", {}, [], null)}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mulai Perjalanan"}
+        <Button className="mt-3 h-12 w-full text-sm" onClick={() => setMode("starting")}>
+          Mulai Perjalanan
         </Button>
       )}
 
       {mode === "idle" && job.status === "EN_ROUTE" && (
         <div className="mt-3 space-y-2">
-          <Button className="h-12 w-full text-sm" disabled={busy} onClick={() => run("arrive", {}, [], null)}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Tiba di Lokasi"}
+          <Button className="h-12 w-full text-sm" onClick={() => setMode("arriving")}>
+            Tiba di Lokasi
           </Button>
           <div className="flex gap-2">
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("failing")}>Gagal</Button>
@@ -432,6 +435,28 @@ function JobCard({ job, onChanged, onQueued, pending }) {
       )}
       {mode === "idle" && job.status === "FAILED" && (
         <div className="mt-3 rounded-lg bg-redbg px-2.5 py-2 text-xs text-red">{job.failureReason}</div>
+      )}
+
+      {/* Mulai Perjalanan/Tiba (8 September 2026, dokumentasi tiap tahap —
+          referensi Lalamove/Gojek) — pola SAMA PERSIS dengan mode
+          "completing" di bawah, cuma tanpa SignaturePad/catatan (belum
+          relevan di tahap ini, customer belum tentu ketemu). Foto WAJIB,
+          backend menolak kalau kosong (lihat POST /jobs/:id/start dan
+          /arrive di armada.js). */}
+      {(mode === "starting" || mode === "arriving") && (
+        <div className="mt-3 space-y-2">
+          <PhotoCapture photos={photos} setPhotos={setPhotos} />
+          <div className="flex gap-2">
+            <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
+            <Button
+              className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0}
+              onClick={() => run(mode === "starting" ? "start" : "arrive", {}, photos, null)}
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lanjut"}
+            </Button>
+          </div>
+          {photos.length === 0 && <p className="text-center text-[11px] text-ink2">Foto bukti wajib diisi</p>}
+        </div>
       )}
 
       {mode === "completing" && (
@@ -520,6 +545,17 @@ export default function DriverJobs() {
   const [queue, setQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
+  // Fokus 1 job (8 September 2026, referensi Lalamove/Gojek — permintaan
+  // owner: "fokus 1 job per layar" ketimbang grid semua job hari ini
+  // sekaligus). Index ke dalam `activeJobs` (dihitung di bawah, bukan
+  // `jobs` mentah) — job COMPLETED/FAILED pindah ke "Riwayat", tidak ikut
+  // dihitung sebagai job aktif yang bisa difokuskan.
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Notifikasi push job baru (8 September 2026) — subscribe device begitu
+  // halaman driver dibuka, lihat catatan panjang di hook.
+  usePushSubscription();
 
   const load = useCallback(async () => {
     try {
@@ -622,13 +658,102 @@ export default function DriverJobs() {
           <p className="mt-1 text-sm text-ink2">Job baru akan muncul di sini begitu dispatcher menugaskan.</p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {jobs.map((job) => (
-            <JobCard
-              key={job.id} job={job} onChanged={load} onQueued={refreshQueue}
-              pending={pendingJobIds.has(job.id)}
-            />
-          ))}
+        <FocusedJobList
+          jobs={jobs} focusIndex={focusIndex} setFocusIndex={setFocusIndex}
+          showHistory={showHistory} setShowHistory={setShowHistory}
+          onChanged={load} onQueued={refreshQueue} pendingJobIds={pendingJobIds}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Fokus 1 job (8 September 2026) ──────────────────────────────────────────
+// Job AKTIF (belum COMPLETED/FAILED) tampil SATU per layar (kartu penuh,
+// gaya Lalamove/Gojek) — bukan grid semua job hari ini sekaligus seperti
+// sebelumnya. Strip kecil di atas ("Job 2 dari 5") untuk PINDAH lihat job
+// lain tanpa harus menuntaskan yang sedang fokus dulu — driver di lapangan
+// kadang perlu urut ulang manual (mis. customer minta ditunda, kerjakan
+// stop lain dulu). Job yang SUDAH COMPLETED/FAILED pindah ke "Riwayat hari
+// ini" yang bisa di-collapse — TETAP terlihat (audit trail), cuma tidak
+// dominan di layar. `JobCard` yang SUDAH ADA (state machine, offline queue,
+// PhotoCapture, dst) DIPAKAI APA ADANYA di sini — ini murni perubahan
+// kontainer/layout, bukan menulis ulang logic yang sudah teruji.
+function FocusedJobList({ jobs, focusIndex, setFocusIndex, showHistory, setShowHistory, onChanged, onQueued, pendingJobIds }) {
+  const activeJobs = jobs.filter((j) => j.status !== "COMPLETED" && j.status !== "FAILED");
+  const doneJobs = jobs.filter((j) => j.status === "COMPLETED" || j.status === "FAILED");
+  // Index bisa basi kalau job aktif berkurang (mis. baru saja diselesaikan)
+  // — jepit ke rentang valid daripada render index yang sudah tidak ada.
+  const safeIndex = Math.min(focusIndex, Math.max(0, activeJobs.length - 1));
+  const focused = activeJobs[safeIndex];
+
+  return (
+    <div>
+      {activeJobs.length > 0 && (
+        <>
+          {activeJobs.length > 1 && (
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button
+                type="button" onClick={() => setFocusIndex(Math.max(0, safeIndex - 1))}
+                disabled={safeIndex === 0}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-ink2 disabled:opacity-30"
+              >
+                ‹
+              </button>
+              <div className="flex gap-1.5 overflow-x-auto px-1">
+                {activeJobs.map((j, i) => (
+                  <button
+                    key={j.id} type="button" onClick={() => setFocusIndex(i)}
+                    className={`h-2 w-2 shrink-0 rounded-full ${i === safeIndex ? "bg-accent" : "bg-border"}`}
+                    aria-label={`Job ${i + 1} dari ${activeJobs.length}`}
+                  />
+                ))}
+              </div>
+              <button
+                type="button" onClick={() => setFocusIndex(Math.min(activeJobs.length - 1, safeIndex + 1))}
+                disabled={safeIndex === activeJobs.length - 1}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-ink2 disabled:opacity-30"
+              >
+                ›
+              </button>
+            </div>
+          )}
+          {activeJobs.length > 1 && (
+            <p className="mb-2 text-center text-[11px] font-medium text-ink2">Job {safeIndex + 1} dari {activeJobs.length}</p>
+          )}
+          <JobCard
+            key={focused.id} job={focused} onChanged={onChanged} onQueued={onQueued}
+            pending={pendingJobIds.has(focused.id)}
+          />
+        </>
+      )}
+
+      {activeJobs.length === 0 && (
+        <Card className="p-8 text-center">
+          <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-green" strokeWidth={1.5} />
+          <h3 className="text-base font-semibold text-ink">Semua job hari ini selesai</h3>
+        </Card>
+      )}
+
+      {doneJobs.length > 0 && (
+        <div className="mt-4">
+          <button
+            type="button" onClick={() => setShowHistory((s) => !s)}
+            className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-xs font-medium text-ink2"
+          >
+            Riwayat hari ini ({doneJobs.length})
+            <span>{showHistory ? "▲" : "▼"}</span>
+          </button>
+          {showHistory && (
+            <div className="mt-2 space-y-2">
+              {doneJobs.map((job) => (
+                <JobCard
+                  key={job.id} job={job} onChanged={onChanged} onQueued={onQueued}
+                  pending={pendingJobIds.has(job.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -339,6 +339,7 @@ model User {
   jobsAsDriver               Job[]                    @relation("JobDriver")
   jobsAsHelper               Job[]                    @relation("JobHelper")
   jobPositionPings           JobPositionPing[]        @relation("JobPositionPingDriver")
+  pushSubscriptions          PushSubscription[]
   // D-035 — armada: PIC kendaraan, biaya, servis, insiden
   vehiclesAsPic              Vehicle[]                @relation("VehiclePic")
   vehicleExpensesAsDriver    VehicleExpense[]         @relation("VehicleExpenseDriver")
@@ -1673,6 +1674,15 @@ model Job {
   // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) saat
   // job BERHASIL — bukti serah terima, terpisah dari failurePhotoUrls.
   proofPhotoUrls String[] @default([]) @map("proof_photo_urls")
+
+  // Dokumentasi tiap tahap (8 September 2026, permintaan owner — referensi
+  // Lalamove/Gojek: "dokumentasi tiap proses", dikonfirmasi lewat
+  // AskUserQuestion mencakup SEMUA tahap, bukan cuma Selesai/Gagal).
+  // Pola PERSIS sama dengan proofPhotoUrls/failurePhotoUrls di atas — array
+  // foto (bisa lebih dari 1), WAJIB diisi sebelum tahap itu bisa lanjut
+  // (lihat POST /jobs/:id/start dan /arrive di routes/armada.js).
+  startPhotoUrls   String[] @default([]) @map("start_photo_urls")
+  arrivalPhotoUrls String[] @default([]) @map("arrival_photo_urls")
 
   // Tanda tangan customer/penerima saat job selesai (Phase 2, PWA-lite).
   // OPSIONAL dengan sengaja — customer/penerima tidak selalu ada di tempat
@@ -4374,6 +4384,30 @@ model McpRefreshToken {
 
   @@index([userId])
   @@map("mcp_refresh_tokens")
+}
+
+// Web Push subscription (8 September 2026) — permintaan owner: driver dapat
+// notifikasi begitu ditugaskan job baru, referensi Lalamove/Gojek, TETAP
+// PWA (bukan app native/Play Store, lihat docs percakapan). Satu user boleh
+// punya BEBERAPA baris (multi-device/browser — HP pribadi + HP kerja, atau
+// re-install ulang PWA bikin endpoint baru). `endpoint` unik per
+// browser+device (bagian dari kontrak Push API, bukan pilihan kita) —
+// dipakai juga sebagai kunci upsert saat subscribe ulang.
+//
+// onDelete: Cascade (SAMA alasan dengan McpRefreshToken di atas) — ini
+// kredensial ephemeral device, bukan riwayat bisnis yang perlu bertahan
+// setelah user dihapus/nonaktif.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 // ═══ GOLD-STANDARD EXAMPLES — referensi chatbot Oktober (28 Agustus 2026) ═

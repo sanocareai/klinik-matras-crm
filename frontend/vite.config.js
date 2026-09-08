@@ -28,6 +28,25 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      // strategies: injectManifest (8 September 2026 — SEBELUMNYA generateSW,
+      // default Workbox auto-generate). Diganti supaya service worker bisa
+      // punya event listener CUSTOM (self.addEventListener("push", ...)) —
+      // notifikasi driver job baru, permintaan owner (referensi Lalamove/
+      // Gojek, TETAP PWA). generateSW TIDAK BISA disisipi listener custom
+      // sama sekali, injectManifest satu-satunya opsi vite-plugin-pwa untuk
+      // ini. `srcDir`/`filename` menunjuk src/sw.js — file itu WAJIB
+      // reproduksi PERSIS 3 aturan cache di bawah (dipindah ke sana secara
+      // manual pakai workbox-routing/workbox-strategies, BUKAN lagi lewat
+      // opsi `workbox.runtimeCaching` di sini — opsi itu HANYA berlaku untuk
+      // mode generateSW, diabaikan diam-diam di mode injectManifest).
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
+      injectManifest: {
+        // Sama alasan dengan maximumFileSizeToCacheInBytes di generateSW
+        // lama — bundle utama sudah lewat 2MB.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       registerType: "autoUpdate",
       manifest: {
         name: "Klinik Matras CRM",
@@ -44,55 +63,11 @@ export default defineConfig({
           { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
         ],
       },
-      workbox: {
-        skipWaiting: true,    // SW baru langsung aktif tanpa tunggu tab ditutup
-        clientsClaim: true,   // SW baru langsung klaim semua tab yang terbuka
-        // Bug 1a fix: HAPUS cache lama begitu SW baru aktif — sebelumnya
-        // cache dari deploy2x-3x lalu bisa numpuk tak terpakai, dan dalam
-        // beberapa kasus browser (terutama non-Chrome) tetap resolve request
-        // ke entry cache LAMA yang belum sempat dibersihkan.
-        cleanupOutdatedCaches: true,
-        // Bundle utama sudah lewat 2MB default sejak Fase B (react-virtuoso,
-        // emoji-mart, dsb ditambahkan) — naikkan limit precache supaya build
-        // tidak gagal. TODO: code-split (dynamic import) di fase berikutnya
-        // supaya chunk utama tidak terus membengkak.
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        runtimeCaching: [
-          // Bug 1a fix (AKAR bug "UI dark lama/basi"): dokumen HTML (index.html
-          // / app shell) SEBELUMNYA ikut precache manifest workbox generateSW,
-          // yang default-nya perilaku cache-first utk precached entries — user
-          // yang tabnya tetap terbuka lama atau browser non-Chrome yang lebih
-          // agresif soal cache bisa "terjebak" di index.html versi lama TANPA
-          // pernah cek network dulu. NetworkFirst DI SINI eksplisit memaksa
-          // browser SELALU coba network dulu utk navigasi (buka/refresh
-          // halaman) — fallback ke cache HANYA kalau benar-benar offline.
-          {
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "html-shell",
-              networkTimeoutSeconds: 3,
-            },
-          },
-          // API calls: selalu ambil dari network, data harus selalu fresh
-          {
-            urlPattern: /\/api\//,
-            handler: "NetworkOnly",
-          },
-          // Static assets: cache dulu untuk loading lebih cepat
-          {
-            urlPattern: /\.(?:js|css|png|jpg|jpeg|svg|woff2?)$/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "static-assets",
-              expiration: {
-                maxEntries: 60,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 hari
-              },
-            },
-          },
-        ],
-      },
+      // Blok `workbox: {...}` (skipWaiting/clientsClaim/cleanupOutdatedCaches/
+      // runtimeCaching) DIPINDAH ke src/sw.js sejak strategies:injectManifest
+      // di atas — opsi ini DIABAIKAN DIAM-DIAM di mode injectManifest (bukan
+      // dihapus fungsinya, cuma pindah rumah). Lihat src/sw.js untuk
+      // perilaku cache yang SAMA PERSIS dengan sebelumnya (Bug 1a/1c).
     }),
   ],
   server: {

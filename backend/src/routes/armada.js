@@ -26,6 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
+import { notifyDriverJobAssigned } from "../services/pushNotifications.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
@@ -1789,6 +1790,19 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     // begitu mereka BENAR-BENAR selesai mengedit — audit trail
     // (lastEditReason/lastEditedAt/lastEditedById) TETAP tercatat di atas,
     // cuma pengiriman WA yang tidak lagi otomatis menempel di tiap PATCH.
+
+    // Push notifikasi ke driver BARU (8 September 2026) — kasus ganti PIC
+    // darurat mid-route (kecelakaan dst, lihat catatan cascade di atas).
+    // HANYA saat driverId benar-benar berganti, bukan tiap PATCH lain di
+    // sesi edit darurat yang sama (catatan/link Maps manual).
+    if (editingPublished && driverId !== undefined && driverId && driverId !== route.driverId) {
+      for (const j of updated.jobs.filter((j) => j.driverId === driverId && j.status !== "COMPLETED" && j.status !== "FAILED")) {
+        notifyDriverJobAssigned(j).catch((err) =>
+          console.error("[PATCH /routes/:id] Gagal kirim push ke driver:", err.message)
+        );
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -1938,6 +1952,21 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     // broadcast sebanyak jumlah drag-nya, bukan sekali di akhir. Sekarang
     // dispatcher WAJIB klik "Kirim Ulang" secara sadar begitu benar-benar
     // selesai mengedit.
+
+    // Push notifikasi ke driver (8 September 2026) — rute bisa sudah
+    // punya driver SEBELUM diterbitkan (kaskade drag/prefill di atas
+    // membuat job langsung ASSIGNED walau rute masih DRAFT), jadi titik
+    // "job baru" bisa terjadi DI SINI, bukan cuma saat publish. Best-effort,
+    // sedikit redundan dengan notifikasi publish untuk job yang sama itu
+    // tidak masalah (lebih baik driver dapat 2x alert daripada 0x).
+    if (updated.driverId) {
+      for (const j of updated.jobs) {
+        notifyDriverJobAssigned(j).catch((err) =>
+          console.error("[PATCH /routes/:id/jobs] Gagal kirim push ke driver:", err.message)
+        );
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -2050,6 +2079,16 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       await kirimRingkasanRuteKeNatasha(updatedRoute, url);
     } catch (err) {
       console.error("[publish] Gagal kirim ringkasan rute ke Natasha:", err.message);
+    }
+
+    // Push notifikasi ke DRIVER (8 September 2026) — momen PALING SERING
+    // jadi titik "job baru" yang sebenarnya driver lihat pertama kali,
+    // lihat catatan panjang di services/pushNotifications.js. Best-effort,
+    // TIDAK PERNAH menggagalkan response publish yang sudah sukses.
+    for (const j of updatedRoute.jobs) {
+      notifyDriverJobAssigned(j).catch((err) =>
+        console.error("[publish] Gagal kirim push ke driver:", err.message)
+      );
     }
 
     res.json(updatedRoute);
@@ -2646,6 +2685,48 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
   }
 });
 
+// ─── Web Push (8 September 2026) — subscribe/unsubscribe device driver ─────
+// requireAuth polos (BUKAN requirePermission JOB_OWN_READ) — SIAPA PUN yang
+// login boleh subscribe device-nya sendiri (dispatcher/admin juga masuk akal
+// mau dapat notifikasi kalau suatu hari relevan), gerbangnya ada di SIAPA
+// yang benar-benar dikirimi (job.driverId di notifyDriverJobAssigned), bukan
+// di endpoint subscribe ini.
+armadaRouter.get("/push/vapid-public-key", requireAuth, (req, res) => {
+  if (!process.env.VAPID_PUBLIC_KEY) return res.status(503).json({ error: "Push notification belum dikonfigurasi" });
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
+});
+
+armadaRouter.post("/push/subscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint, keys } = req.body?.subscription || req.body || {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      throw new ArmadaError("Subscription tidak valid (endpoint/keys wajib)");
+    }
+    // Upsert by endpoint (bukan by userId) — endpoint UNIK per
+    // browser+device (kontrak Push API), jadi kunci alami untuk "subscribe
+    // ulang" (mis. buka lagi di HP yang sama tidak bikin baris dobel).
+    await prisma.pushSubscription.upsert({
+      where: { endpoint },
+      update: { userId: req.user.id, p256dh: keys.p256dh, auth: keys.auth },
+      create: { userId: req.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+armadaRouter.post("/push/unsubscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    if (!endpoint) throw new ArmadaError("endpoint wajib diisi");
+    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: req.user.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // GET /api/armada/jobs/:id
 //
 // BUG DITEMUKAN 31 Agustus 2026 (laporan owner: admin/dispatcher dapat
@@ -2819,6 +2900,16 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     data.status = deriveStatus(!!nextDriverId, !!nextDate);
 
     const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+
+    // Push notifikasi (8 September 2026) — HANYA saat driver benar-benar
+    // BARU/BERGANTI (bukan tiap PATCH lain, mis. ubah catatan/jam) supaya
+    // tidak spam notifikasi untuk edit yang tidak relevan bagi driver.
+    if (driverId !== undefined && driverId && driverId !== existing.driverId) {
+      notifyDriverJobAssigned(job).catch((err) =>
+        console.error("[PATCH /jobs/:id] Gagal kirim push ke driver:", err.message)
+      );
+    }
+
     res.json(job);
   } catch (err) {
     handleErr(err, res);
@@ -2972,13 +3063,24 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
 });
 
 // POST /api/armada/jobs/:id/start — driver mulai perjalanan.
+//
+// proofPhotoUrls WAJIB (8 September 2026, permintaan owner — referensi
+// Lalamove/Gojek "dokumentasi tiap proses", dikonfirmasi AskUserQuestion
+// mencakup SEMUA tahap) — SEBELUMNYA tahap ini tidak minta apa-apa sama
+// sekali. Validasi SAMA PERSIS dengan /complete /fail di bawah (URL harus
+// dari upload dir job-photos), disimpan ke Job.startPhotoUrls.
 armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.status !== "ASSIGNED") throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa dimulai`);
 
+    const startPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+    if (startPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum mulai perjalanan");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
     await prisma.$transaction(async (tx) => {
-      await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE" } });
+      await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE", startPhotoUrls } });
       // DELIVERY EN_ROUTE = driver SUDAH membawa kasur dari bengkel — unit
       // resmi "dalam perjalanan keluar". PICKUP EN_ROUTE tidak mengubah
       // status unit (kasur masih di rumah customer, belum dipegang driver).
@@ -3007,12 +3109,21 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
 });
 
 // POST /api/armada/jobs/:id/arrive — driver tiba di lokasi.
+//
+// proofPhotoUrls WAJIB (8 September 2026) — sama alasan dengan /start di
+// atas, disimpan ke Job.arrivalPhotoUrls.
 armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.status !== "EN_ROUTE") throw new ArmadaError(`Job berstatus ${job.status}, belum bisa ditandai tiba`);
+
+    const arrivalPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+    if (arrivalPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi saat tiba di lokasi");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!arrivalPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
     const updated = await prisma.job.update({
-      where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date() }, include: jobInclude,
+      where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date(), arrivalPhotoUrls }, include: jobInclude,
     });
     res.json(updated);
   } catch (err) {

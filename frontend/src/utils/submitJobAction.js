@@ -20,8 +20,18 @@ export async function uploadBlobs(jobId, blobs) {
 // itu tanggung jawab pemanggil (submitOrQueue di bawah, atau syncQueue.js
 // yang sudah tahu ini lagi memproses antrean).
 export async function performSubmit(jobId, action, payload, photoFiles = [], signatureBlob = null) {
-  if (action === "start") return api.startArmadaJob(jobId);
-  if (action === "arrive") return api.arriveArmadaJob(jobId);
+  // Foto wajib di start/arrive juga (8 September 2026, dokumentasi tiap
+  // tahap) — upload dulu (pola SAMA dengan complete/fail di bawah), baru
+  // kirim URL-nya ke server. Validasi "wajib minimal 1" ada di backend
+  // (& di UI lewat disabled tombol) — di sini murni upload+kirim.
+  if (action === "start") {
+    const startPhotoUrls = await uploadBlobs(jobId, photoFiles);
+    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls });
+  }
+  if (action === "arrive") {
+    const arrivalPhotoUrls = await uploadBlobs(jobId, photoFiles);
+    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls });
+  }
 
   const proofPhotoUrls = await uploadBlobs(jobId, photoFiles);
   let signatureUrl = null;

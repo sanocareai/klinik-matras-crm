@@ -290,16 +290,23 @@ export const api = {
     request(`/armada/route/summary?driverId=${driverId}&date=${date}&type=${type}`),
   getArmadaJob: (jobId) => request(`/armada/jobs/${jobId}`),
   uploadJobPhotos: (jobId, formData) => requestFormData(`/armada/jobs/${jobId}/photos`, formData),
-  startArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/start`, { method: "POST" }),
+  // proofPhotoUrls WAJIB sejak 8 September 2026 (dokumentasi tiap tahap) —
+  // data opsional untuk kompatibilitas pemanggil lama, backend yang
+  // menegakkan validasi wajibnya.
+  startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
   // D-034 — ping GPS driver (Live Tracking nyata). pings: array {lat,lng,
   // accuracy,recordedAt} — lihat utils/positionQueue.js untuk pengelompokan
   // per job sebelum dikirim.
   sendJobPositions: (jobId, pings) =>
     request(`/armada/jobs/${jobId}/positions`, { method: "POST", body: JSON.stringify({ pings }) }),
   getArmadaTracking: () => request("/armada/tracking"),
-  arriveArmadaJob: (jobId) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST" }),
+  arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  // Web Push (8 September 2026) — subscribe/unsubscribe device driver.
+  getVapidPublicKey: () => request("/armada/push/vapid-public-key"),
+  subscribePush: (subscription) => request("/armada/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
+  unsubscribePush: (endpoint) => request("/armada/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) }),
   getPayments: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/armada/payments${qs ? `?${qs}` : ""}`);
