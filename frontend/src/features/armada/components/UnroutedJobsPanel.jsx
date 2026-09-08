@@ -134,18 +134,18 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob }) {
         // LAGI dari percobaan pertama `leading-tight`/`gap-1`, masih
         // terasa longgar) — line-height DIWARISKAN dari body/App (longgar,
         // dibuat untuk paragraf biasa), sementara `text-[Npx]` di
-        // baris-baris kartu ini TIDAK membawa line-height pasangannya
-        // sendiri (beda dari utility bernama seperti text-sm yang otomatis
-        // dapat line-height pas) — tiap baris teks pendek jadi
-        // mereservasi ruang vertikal lebih tinggi dari yang terlihat
-        // perlu. Line-height 1 penuh dipertahankan.
         // D-140 (redesign kartu job, dari mockup audit "Route Planner Card
         // Audit" yang disetujui owner) — `gap-0.5` rata utk SEMUA baris
         // diganti `gap-2`: kartu ini sekarang disusun 3 KELOMPOK visual
         // (status / identitas / jadwal) yang masing-masing rapat DI DALAM
         // dirinya sendiri, sama seperti RouteCard.jsx — dua kartu tetap
         // konsisten satu sama lain.
-        "dh-job-card relative flex cursor-grab select-none flex-col gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 leading-none transition-all duration-150 active:cursor-grabbing",
+        // KOREKSI — `leading-none` (line-height:1) diganti `leading-tight`
+        // (1.25), SAMA alasan dengan RouteCard.jsx: line-height 1 lebih
+        // pendek dari kotak glyph font sistem sendiri, descender g/y/p/j
+        // kepotong begitu ketemu `overflow:hidden` dari `truncate`. Baca
+        // catatan lengkap di RouteCard.jsx.
+        "dh-job-card relative flex cursor-grab select-none flex-col gap-2 rounded-btn border border-border bg-surface px-2.5 py-2 leading-tight transition-all duration-150 active:cursor-grabbing",
         hasJobAccentBar(j) && "dh-bar-left",
         draggingId === j.id && "scale-[0.97] opacity-40"
       )}

@@ -612,9 +612,18 @@ export default function RouteCard({
                   // 2px), tapi SEMUA 7-8 baris dapat jarak yang SAMA PERSIS
                   // tanpa peduli mana yang sebetulnya satu kesatuan makna,
                   // jadi terbaca sebagai satu blok teks tunggal, bukan info
-                  // yang terstruktur. `leading-none` dipertahankan (line-
-                  // height rapat tetap dipakai DI DALAM tiap kelompok).
-                  "dh-stop-card relative flex select-none flex-col gap-2 rounded-btn border border-border bg-inset px-2.5 py-2 leading-none transition-all duration-150",
+                  // yang terstruktur.
+                  // KOREKSI (laporan owner: teks "Kasur Spring" kepotong di
+                  // bawah, "g"-nya hilang — plus line-spacing kerasa terlalu
+                  // dempet) — `leading-none` (line-height:1) TERNYATA lebih
+                  // pendek dari tinggi kotak glyph font sistem (SF Pro/Segoe
+                  // UI) sendiri; descender huruf g/y/p/j jadi kepotong begitu
+                  // ketemu `overflow:hidden` dari class `truncate` di span
+                  // produk/alamat. Diganti `leading-tight` (1.25) — masih
+                  // rapat (bukan balik ke leading-normal 1.5 yang bikin kartu
+                  // ini boros tinggi lagi), tapi cukup ruang untuk descender
+                  // tidak terpotong DAN antar-baris tidak lagi kerasa dempet.
+                  "dh-stop-card relative flex select-none flex-col gap-2 rounded-btn border border-border bg-inset px-2.5 py-2 leading-tight transition-all duration-150",
                   hasJobAccentBar(j) && "dh-bar-left",
                   isEditable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                   dragOverIdx === idx && "ring-2 ring-accent",
