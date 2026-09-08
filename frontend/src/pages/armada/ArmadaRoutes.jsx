@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, X, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
@@ -71,6 +71,37 @@ export default function ArmadaRoutes() {
   // dibangun di sini. `null` = tertutup.
   const [openJobId, setOpenJobId] = useState(null);
   const [draggingJobId, setDraggingJobId] = useState(null);
+
+  // Auto-scroll HALAMAN saat drag mendekati tepi atas/bawah viewport (8
+  // September 2026, laporan owner: "4 rute yang ingin diterbitkan, 2 ada
+  // paling atas, 2 lagi harus scroll ke bawah dulu... kalau gue hold klik
+  // kiri card yang belum masuk rute, gabisa sambil scroll" — drag HTML5
+  // native TIDAK auto-scroll browser di luar textarea/beberapa elemen
+  // bawaan tertentu, halaman ini scroll PENUH [bukan container terpisah],
+  // jadi tanpa ini job harus dilepas dulu, discroll manual, baru di-drag
+  // ulang — persis keluhan "susah"). Tombol "Masukkan ke Rute"
+  // (UnroutedJobsPanel.jsx, ditambahkan sebelumnya di sesi yang sama)
+  // TETAP ada sebagai alternatif tanpa drag sama sekali — ini pelengkap
+  // buat yang tetap pilih cara drag.
+  //
+  // `dragover` di window (capture) — bukan di container tertentu, supaya
+  // tertangkap dari MANA PUN kursor berada saat drag (peta, kartu rute,
+  // ruang kosong), tidak bergantung elemen mana yang kebetulan
+  // ondragover-nya prevent-default. Kecepatan tetap (bukan proporsional
+  // jarak ke tepi) — cukup untuk kasus nyata (2-4 rute ekstra di bawah),
+  // tidak perlu rumit lebih dari itu.
+  useEffect(() => {
+    if (!draggingJobId) return;
+    const TEPI_PX = 90;
+    const KECEPATAN_PX = 22;
+    function onDragOver(e) {
+      const y = e.clientY;
+      if (y < TEPI_PX) window.scrollBy(0, -KECEPATAN_PX);
+      else if (y > window.innerHeight - TEPI_PX) window.scrollBy(0, KECEPATAN_PX);
+    }
+    document.addEventListener("dragover", onDragOver, true);
+    return () => document.removeEventListener("dragover", onDragOver, true);
+  }, [draggingJobId]);
 
   // Data (6 fetch paralel: rute, job belum-masuk-rute, job belum
   // bertanggal, driver, kendaraan, helper) lewat TanStack Query (8
