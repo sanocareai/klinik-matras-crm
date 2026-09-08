@@ -451,7 +451,9 @@ export default function ArmadaJobs() {
                         // Glow aksen kiri per tipe (revisi Sep 2026 — owner
                         // minta versi TENANG, bukan gradasi penuh, untuk
                         // daftar padat ini). Sewa=oranye, Pengiriman=hijau,
-                        // Pengambilan=tanpa warna. Lihat jobStatus.js#jobAccentBarStyle.
+                        // Pengambilan=biru (DIBALIK 8 September 2026 — warna
+                        // sekarang murni dari job.type, bukan status order;
+                        // lihat catatan panjang di jobStatus.js#jobAccentBarStyle).
                         style={jobAccentBarStyle(j)}
                         className={cn(
                           "relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",

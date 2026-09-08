@@ -588,9 +588,11 @@ export default function RouteCard({
                   //
                   // dh-bar-left (glow aksen kiri, BUKAN gradasi penuh lagi —
                   // lihat catatan di atas) — Sewa=oranye, Pengiriman=hijau,
-                  // Pengambilan=tanpa warna. jobAccentBarStyle mengisi
-                  // --dh-bar, hasJobAccentBar menentukan class-nya aktif
-                  // atau tidak (Pengambilan tidak py efek apa pun).
+                  // Pengambilan=biru (DIBALIK 8 September 2026, lihat catatan
+                  // panjang di jobStatus.js#jobAccentBarStyle: warna sekarang
+                  // murni dari job.type per kartu, bukan status order yang
+                  // dibagi beberapa job — SEBELUMNYA Pengambilan tanpa warna,
+                  // sekarang selalu ada glow di SETIAP kartu).
                   // Redesain kartu stop (8 September 2026, permintaan owner
                   // — susunan info + ikon maps + produk/ukuran, lihat
                   // catatan per-baris di bawah) — kontainer jadi kolom

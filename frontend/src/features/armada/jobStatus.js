@@ -235,29 +235,45 @@ export function rentalCardAccentStyle(job) {
 // stop job Pengambilan yang SUDAH tuntas, order-nya sudah berstatus
 // "Pengiriman"/SHIPPING: "ini statusnya pengiriman bukan order finish, dan
 // untuk yang statusnya pengiriman harus ada label glow hijau di card nya").
-// Hijau SEKARANG mengikuti STATUS ORDER "Pengiriman" (SHIPPING), BUKAN
-// job.type job itu sendiri lagi — aturan LAMA (job.type === DELIVERY)
-// membuat job Pengambilan yang tersisa di rute untuk order yang SUDAH
-// SHIPPING [pickup-nya sendiri sudah tuntas, order-nya sedang dalam
-// perjalanan kirim] tidak dapat warna sama sekali, padahal itu justru
-// order yang paling relevan untuk menonjol. Status order LAIN (Menunggu/
-// Diproses/Siap Kirim) TIDAK dapat hijau — "Terkirim" (DELIVERED) juga
-// TIDAK diulang di sini, itu sudah dapat sinyal hijau sendiri lewat
-// OrderStatusBadge (orderStatusVariant "success").
+// Sempat DIUBAH jadi mengikuti STATUS ORDER (SHIPPING) alih-alih job.type
+// job itu sendiri — supaya job Pengambilan yang tersisa di rute untuk
+// order yang SUDAH SHIPPING [pickup-nya sendiri sudah tuntas, order-nya
+// sedang dalam perjalanan kirim] tetap dapat warna.
 //
-// Prioritas: Sewa (oranye) MENANG atas status order — Sewa penanda
+// DIBALIK LAGI 8 September 2026 (laporan owner LANGSUNG: "sekarang
+// pewarnaan glow itu berdasarkan status order bukan resi realtime
+// pengiriman atau pengambilan" — skema status-order dinilai SALAH).
+// Akar masalah nyata: Order.status itu MILIK ORDER, dipakai BERSAMA oleh
+// job PICKUP dan job DELIVERY yang menempel di order yang sama — jadi
+// stop PICKUP ("· Pengambilan" di label kartu) bisa ikut menyala hijau
+// cuma karena job DELIVERY-nya (beda job, sama order) sudah SHIPPING,
+// padahal kartu itu sendiri jelas bukan job Pengiriman. Kembali ke
+// job.type MURNI — sinyal per-KARTU/per-JOB, bukan status yang dibagi
+// beberapa job. Konsekuensi sadar: kasus "Ingke" (pickup tuntas, order
+// SHIPPING) di atas TIDAK lagi dapat hijau — trade-off yang owner pilih
+// sendiri kali ini (akurasi per-job menang atas sinyal "order ini lagi
+// jalan"). TAMBAHAN baru: Pengambilan SEKARANG dapat warna juga (biru),
+// SEBELUMNYA sengaja tanpa warna — permintaan eksplisit owner: "ada
+// hijau: pengiriman, biru pengambilan, oren kasur sewa".
+//
+// Prioritas: Sewa (oranye) TETAP menang atas tipe job — Sewa penanda
 // kategori order yang lebih jarang & butuh perhatian ekstra (alur retur
 // beda), bukan sekadar arah pengiriman.
 export function jobAccentBarStyle(job) {
   if (isRentalOrder(job)) return { "--dh-bar": "var(--orange)" };
-  if (orderStatusOf(job) === "SHIPPING") return { "--dh-bar": "var(--green)" };
+  if (job?.type === "DELIVERY") return { "--dh-bar": "var(--green)" };
+  if (job?.type === "PICKUP") return { "--dh-bar": "var(--accent)" };
   return {};
 }
 
 // Dipasangkan dengan jobAccentBarStyle() — class `dh-bar-left` HANYA
-// ditambahkan kalau memang ada warna untuk ditampilkan.
+// ditambahkan kalau memang ada warna untuk ditampilkan. Sejak job.type
+// SELALU salah satu dari PICKUP/DELIVERY, praktiknya SEKARANG selalu true
+// (beda dari sebelumnya yang cuma sebagian kartu bergaris) — disengaja,
+// lihat catatan panjang di jobAccentBarStyle di atas: "tiap kartu" jadi
+// bertanda sesuai tipenya, bukan cuma yang kebetulan SHIPPING/Sewa.
 export function hasJobAccentBar(job) {
-  return isRentalOrder(job) || orderStatusOf(job) === "SHIPPING";
+  return isRentalOrder(job) || job?.type === "DELIVERY" || job?.type === "PICKUP";
 }
 
 // Sales yang pegang order ini (D-043, 2 September 2026 — laporan owner:
