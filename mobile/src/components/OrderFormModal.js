@@ -339,11 +339,18 @@ export default function OrderFormModal({
   // sekarang menyusul: banner + tombol submit dinonaktifkan SEBELUM user
   // buang waktu isi form yang sudah pasti ditolak.
   //
-  // REVISI (sama hari, permintaan owner): SALES ikut diizinkan mengedit,
-  // tidak lagi admin-only — cermin persis guardOrderLocked() di backend.
+  // ⚠️ DIPERKETAT LAGI (7 September 2026) — baris di atas ("SALES ikut
+  // diizinkan") SUDAH TIDAK AKURAT sejak 1 September 2026: backend
+  // membalikkan keputusan itu (lihat komentar guardOrderLocked() di
+  // routes/orders.js) — order LUNAS SEKARANG cuma admin yang boleh
+  // mengedit, SALES ditolak 403. File ini KETINGGALAN, tidak pernah
+  // diperbarui saat backend berubah — sales melihat form seolah bisa
+  // diedit, submit baru ditolak di akhir. Disamakan sekarang dgn web
+  // (canEditLunasOrder() di OrderSection.jsx) — admin-only, titik.
   const { user } = useAuth();
   const userRoles = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role];
-  const canEditLunas = userRoles.includes("ADMIN") || userRoles.includes("SALES");
+  const isAdminEditor = userRoles.includes("ADMIN");
+  const canEditLunas = isAdminEditor;
   const locked = isEdit && order?.paymentStatus === "LUNAS" && !canEditLunas;
   // order.pipelineStage cuma ada kalau caller-nya OrdersScreen.js (lihat
   // catatan panjang di deklarasi state pipelineStage di atas).
@@ -568,6 +575,10 @@ export default function OrderFormModal({
       deliveryEstimate: deliveryEstimate || null,
       deliveryConfirmedDate: deliveryConfirmedDate || null,
       locationUrl: locationUrl || null,
+      // Kategori/Lini Produk/Jenis Produk — CUMA dikirim kalau editor-nya
+      // admin (paritas dgn OrderSection.jsx web), sales tidak pernah
+      // melihat kontrolnya sama sekali jadi state-nya tetap = order asli.
+      ...(isAdminEditor && { category, productLine: productLine || undefined, productType: productType || "" }),
     });
 
     const existingWeightIds = (order.weightEntries || []).map((e) => e.id);
@@ -737,7 +748,7 @@ export default function OrderFormModal({
           {locked && (
             <View style={styles.lockedBanner}>
               <Text style={styles.lockedBannerText}>
-                Order ini sudah LUNAS — cuma admin/sales yang bisa mengedit. Kalau pelanggan
+                Order ini sudah LUNAS — cuma admin yang bisa mengedit. Kalau pelanggan
                 minta revisi, tandai lewat "Ajukan Revisi" di profilnya.
               </Text>
             </View>
@@ -830,21 +841,32 @@ export default function OrderFormModal({
               </>
             )}
 
-            {/* Kategori — TIDAK BISA diubah setelah order dibuat (sama
-                seperti web: AddOrderForm cuma tanya kategori di step 0,
-                OrderDetail edit mode tidak punya kontrol ubah kategori sama
-                sekali), jadi di-disable saat edit, cuma ditampilkan sebagai
-                info. */}
+            {/* Kategori/Lini Produk/Jenis Produk — TIDAK BISA diubah
+                setelah order dibuat untuk SIAPA PUN, KECUALI admin (7
+                September 2026, permintaan owner: "sales lupa input jenis
+                produk, ada order lunas Agustus yang perlu dibetulkan").
+                `structuralLocked` (bukan `isEdit` polos lagi) — sama
+                paritas dengan OrderSection.jsx web (isAdminEditor). */}
             <Text style={styles.label}>Kategori</Text>
+            {isEdit && isAdminEditor && (
+              <View style={styles.lockedBanner}>
+                <Text style={styles.lockedBannerText}>
+                  ⚠️ Koreksi Data (Admin): mengubah Kategori/Lini Produk/Jenis Produk TIDAK
+                  mengganti ID Order ({order?.orderNumber || "—"}) atau riwayat unit produksi
+                  yang sudah terbentuk — pakai HANYA untuk membetulkan salah input.
+                </Text>
+              </View>
+            )}
             <View style={styles.categoryRow}>
               {CATEGORY_OPTIONS.map((opt) => {
                 const active = category === opt.value;
+                const structuralLocked = isEdit && !isAdminEditor;
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.categoryChip, active && styles.categoryChipActive, isEdit && styles.categoryChipDisabled]}
-                    onPress={() => !isEdit && setCategory(opt.value)}
-                    disabled={isEdit}
+                    style={[styles.categoryChip, active && styles.categoryChipActive, structuralLocked && styles.categoryChipDisabled]}
+                    onPress={() => !structuralLocked && setCategory(opt.value)}
+                    disabled={structuralLocked}
                   >
                     <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{opt.label}</Text>
                   </TouchableOpacity>
@@ -852,21 +874,21 @@ export default function OrderFormModal({
               })}
             </View>
 
-            {/* Lini Produk (29 Agustus 2026, paritas dgn web) — TIDAK BISA
-                diubah setelah order dibuat, sama alasan dgn Kategori di
-                atas. Berlaku utk SEMUA kategori (termasuk Service/Upgrade —
-                servis Sofa/Divan sekarang layanan baru juga, jangan
-                diasumsikan kasur terus). */}
+            {/* Lini Produk (29 Agustus 2026, paritas dgn web) — sama aturan
+                dgn Kategori di atas. Berlaku utk SEMUA kategori (termasuk
+                Service/Upgrade — servis Sofa/Divan sekarang layanan baru
+                juga, jangan diasumsikan kasur terus). */}
             <Text style={styles.label}>Lini Produk</Text>
             <View style={styles.categoryRow}>
               {PRODUCT_LINE_OPTIONS.map((opt) => {
                 const active = productLine === opt.value;
+                const structuralLocked = isEdit && !isAdminEditor;
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.categoryChip, active && styles.categoryChipActive, isEdit && styles.categoryChipDisabled]}
+                    style={[styles.categoryChip, active && styles.categoryChipActive, structuralLocked && styles.categoryChipDisabled]}
                     onPress={() => {
-                      if (isEdit) return;
+                      if (structuralLocked) return;
                       setProductLine(opt.value);
                       // Divan x LAYANAN (4 Sep 2026, paritas dgn web): TIDAK
                       // lagi auto-set ke Sandaran — sales pilih Divan atau
@@ -874,7 +896,7 @@ export default function OrderFormModal({
                       // x BARU/SEWA tetap auto-set seperti sebelumnya.
                       setProductType(opt.value === "DIVAN" && category !== "LAYANAN" ? "DIVAN_SANDARAN" : "");
                     }}
-                    disabled={isEdit}
+                    disabled={structuralLocked}
                   >
                     <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{opt.label}</Text>
                   </TouchableOpacity>
@@ -890,9 +912,9 @@ export default function OrderFormModal({
               <>
                 <Text style={styles.label}>Jenis Produk</Text>
                 <TouchableOpacity
-                  style={[styles.selectBox, isEdit && styles.categoryChipDisabled]}
-                  onPress={() => !isEdit && setShowJenisPicker(true)}
-                  disabled={isEdit}
+                  style={[styles.selectBox, (isEdit && !isAdminEditor) && styles.categoryChipDisabled]}
+                  onPress={() => !(isEdit && !isAdminEditor) && setShowJenisPicker(true)}
+                  disabled={isEdit && !isAdminEditor}
                 >
                   <Text style={styles.selectBoxText}>{PRODUCT_TYPE_LABELS[productType] || "— Pilih Jenis —"}</Text>
                 </TouchableOpacity>
@@ -905,7 +927,7 @@ export default function OrderFormModal({
                     value={jenisKasurLainnya}
                     onChangeText={setJenisKasurLainnya}
                     placeholder="Sebutkan jenis kasurnya (mis. Kasur Lipat)"
-                    editable={!isEdit}
+                    editable={!(isEdit && !isAdminEditor)}
                   />
                 )}
               </>

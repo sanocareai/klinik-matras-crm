@@ -323,6 +323,22 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [editing, setEditing]             = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(order.paymentStatus || "BELUM_BAYAR");
 
+  // Kategori/Lini Produk/Jenis Produk (7 September 2026, permintaan owner:
+  // "sales lupa input jenis produk, ada yang mau diisi utk order lunas
+  // Agustus") — SEBELUM ini TIDAK PERNAH bisa diedit sama sekali setelah
+  // order dibuat, di SIAPA PUN (bukan cuma non-admin) — "TIDAK BISA diubah
+  // setelah order dibuat" itu keputusan LAMA, tidak ada hubungannya dgn
+  // LUNAS. Sekarang bisa, TAPI ADMIN-ONLY (isAdminEditor di bawah, BUKAN
+  // canEditLunasOrder() — dua-duanya kebetulan sama-sama admin-only tapi
+  // TUJUANNYA beda: yang satu soal kunci LUNAS, yang ini soal field yang
+  // SECARA STRUKTURAL sensitif kapan pun) — lihat catatan risiko di
+  // routes/orders.js PATCH /:id soal ID Order & provisioning Unit yang
+  // TIDAK ikut disesuaikan otomatis kalau field ini diubah.
+  const isAdminEditor = canEditLunasOrder();
+  const [category, setCategoryEdit]       = useState(order.category || "LAYANAN");
+  const [productLine, setProductLineEdit] = useState(order.productLine || "");
+  const [productType, setProductTypeEdit] = useState(order.productType || "");
+
   // Status Order (Integrasi Fase 1, D-006): TIDAK LAGI field bebas-tulis di
   // form edit biasa — dihitung otomatis dari status unit. "Override" adalah
   // aksi terpisah & eksplisit (mengunci + tercatat siapa/kapan/kenapa),
@@ -449,6 +465,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         deliveryConfirmedDate: deliveryConfirmedDate || null,
         locationUrl: locationUrl || null,
         customerPromiseDate: customerPromiseDate || null,
+        // Kategori/Lini Produk/Jenis Produk — CUMA dikirim kalau editor-nya
+        // admin (isAdminEditor), supaya non-admin (state-nya tetap sama
+        // dengan order asli, UI-nya juga tidak pernah menampilkan kontrol
+        // ini) tidak ikut mengirim field ini sama sekali di request-nya.
+        ...(isAdminEditor && { category, productLine: productLine || undefined, productType: productType || "" }),
       });
 
       // Proses weight entries
@@ -895,6 +916,74 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>—</span>
         )}
       </div>
+
+      {/* Kategori/Lini Produk/Jenis Produk — ADMIN-ONLY (lihat catatan di
+          state hook isAdminEditor di atas). Field ini SECARA STRUKTURAL
+          "terkunci setelah dibuat" untuk semua orang lain, jadi HANYA
+          tampil sama sekali kalau editor-nya admin — sales tetap tidak
+          melihat kontrol ini sama sekali, konsisten dgn perilaku lama. */}
+      {editing && isAdminEditor && (
+        <div style={{ marginBottom: 10, padding: 8, borderRadius: 8, background: "#fef9c3", border: "1px solid #fde047" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#854d0e", marginBottom: 6 }}>
+            ⚠️ Koreksi Data (Admin) — Kategori/Lini Produk/Jenis Produk
+          </div>
+          <div style={{ fontSize: 10.5, color: "#854d0e", marginBottom: 8, lineHeight: 1.4 }}>
+            Mengubah ini TIDAK mengganti ID Order ({order.orderNumber || "—"}) atau
+            riwayat unit produksi yang sudah terbentuk — pakai HANYA untuk membetulkan
+            salah input, bukan mengonversi order jadi jenis lain yang sudah berjalan.
+          </div>
+
+          <FieldLabel tone="bed" small>Kategori</FieldLabel>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+            {CATEGORY_OPTIONS.map((opt) => (
+              <button key={opt.value} type="button" onClick={() => setCategoryEdit(opt.value)}
+                style={{
+                  fontSize: 11.5, padding: "4px 9px", borderRadius: 999, cursor: "pointer",
+                  border: category === opt.value ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                  background: category === opt.value ? "#eff6ff" : "white",
+                  color: category === opt.value ? "var(--primary)" : "var(--text-secondary)", fontWeight: 600,
+                }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <FieldLabel tone="bed" small>Lini Produk</FieldLabel>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+            {PRODUCT_LINE_OPTIONS.map((opt) => (
+              <button key={opt.value} type="button"
+                onClick={() => { setProductLineEdit(opt.value); setProductTypeEdit(""); }}
+                style={{
+                  fontSize: 11.5, padding: "4px 9px", borderRadius: 999, cursor: "pointer",
+                  border: productLine === opt.value ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                  background: productLine === opt.value ? "#eff6ff" : "white",
+                  color: productLine === opt.value ? "var(--primary)" : "var(--text-secondary)", fontWeight: 600,
+                }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {productLine && (
+            <>
+              <FieldLabel tone="bed" small>Jenis Produk</FieldLabel>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {(jenisProdukOptions(productLine, category) || []).map((pt) => (
+                  <button key={pt} type="button" onClick={() => setProductTypeEdit(pt)}
+                    style={{
+                      fontSize: 11.5, padding: "4px 9px", borderRadius: 999, cursor: "pointer",
+                      border: productType === pt ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                      background: productType === pt ? "#eff6ff" : "white",
+                      color: productType === pt ? "var(--primary)" : "var(--text-secondary)", fontWeight: 600,
+                    }}>
+                    {PRODUCT_TYPE_LABELS[pt] || pt}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Merk + Ukuran */}
       {editing ? (

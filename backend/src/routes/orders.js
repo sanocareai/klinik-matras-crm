@@ -161,12 +161,25 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId,
           deliveryCity, deliveryAddress, healthStatus, complaintCategory,
           ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-          deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget,
+          deliveryEstimate, deliveryConfirmedDate, locationUrl, category, productLine, productType, dpTarget,
           customerPromiseDate } = req.body;
+
+  // `category` (7 September 2026, permintaan owner) — SEBELUM ini TIDAK
+  // BISA diubah lewat PATCH sama sekali (Kategori/Lini Produk/Jenis Produk
+  // "TIDAK BISA diubah setelah order dibuat" by design, lihat komentar di
+  // OrderSection.jsx/OrderFormModal.js). Sekarang bisa, TAPI HANYA field
+  // datanya — mengubah category di sini TIDAK menggenerate ulang ID Order
+  // (prefix RES/NEW/SWS sudah terkunci sejak dibuat) dan TIDAK memicu
+  // ulang provisioning Unit produksi. Ini murni koreksi data (sales salah
+  // pilih kategori saat input), BUKAN alur "konversi jenis order" —
+  // frontend WAJIB menampilkan catatan ini ke admin saat field ini dibuka.
+  if (category !== undefined && !["LAYANAN", "SEWA", "BARU"].includes(category)) {
+    return res.status(400).json({ error: "Kategori tidak valid" });
+  }
 
   // D-025: status/override TETAP lewat jalur lama (tidak dikunci) — yang
   // dikunci HANYA kalau ada field non-status ikut dikirim di request ini.
-  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, dpTarget, customerPromiseDate]
+  const ubahFieldNonStatus = [paymentStatus, quantity, notes, orderNumber, merkKasur, ukuranKasur, keluhanCustomer, jenisLayanan, hargaTotal, promoId, deliveryCity, deliveryAddress, healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate, deliveryEstimate, deliveryConfirmedDate, locationUrl, category, productLine, productType, dpTarget, customerPromiseDate]
     .some((v) => v !== undefined);
   if (ubahFieldNonStatus) {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mengubah data order");
@@ -275,6 +288,10 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           ...(orderNumber       !== undefined && { orderNumber: orderNumber?.trim() || null }),
           // D-026: kirim "" atau null untuk lepas promo dari order ini.
           ...(promoId           !== undefined && { promoId: promoId || null }),
+          // category (7 September 2026) — TIDAK boleh dikosongkan (bukan
+          // nullable, selalu ada nilainya), sama pola dgn productLine di
+          // bawah. Validasi enum sudah dicek DI LUAR transaksi di atas.
+          ...(category          !== undefined && category && { category }),
           // productLine (29 Agustus 2026) — TIDAK boleh dikosongkan (bukan
           // nullable di skema, selalu ada nilainya), productType BOLEH
           // dilepas balik ke null (mis. salah pilih, "kosongkan" via "").
