@@ -19,7 +19,7 @@ import { JobMetaRow, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, O
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 import {
-  JOB_STATUS_REAL,
+  JOB_STATUS_REAL, JOB_TYPE_REAL,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
   isJobOverdue, overdueDays, jobAccentBarStyle, hasJobAccentBar,
 } from "@/features/armada/jobStatus.js";
@@ -502,7 +502,22 @@ export default function ArmadaJobs() {
                             </p>
                           )}
                         </div>
-                        <div className="ml-2 shrink-0">
+                        {/* Label tipe job DI ATAS badge status (8 September
+                            2026, laporan owner — contoh nyata Lim Fie Boen/
+                            RES-30082026-206: baris cuma nampilin "SELESAI"
+                            polos, dibaca seolah seluruh order sudah beres,
+                            padahal itu status JOB PENGAMBILAN doang — order-
+                            nya sendiri masih "Diproses", job Pengiriman
+                            belum ada. Aksen warna kiri [jobAccentBarStyle]
+                            SUDAH membedakan biru/hijau, tapi itu terlalu
+                            halus untuk jadi satu-satunya penanda — label
+                            teks eksplisit "Pengambilan"/"Pengiriman" di sini
+                            supaya tidak perlu klik dulu baru sadar ini cuma
+                            separuh perjalanan. */}
+                        <div className="ml-2 shrink-0 text-right">
+                          <div className="mb-0.5 text-[10px] font-semibold text-ink3">
+                            {JOB_TYPE_REAL[j.type]?.label}
+                          </div>
                           <StatusBadge map={JOB_STATUS_REAL} value={j.status} />
                         </div>
                       </button>
