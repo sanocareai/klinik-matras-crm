@@ -329,27 +329,30 @@
    RE-SCOPED D-105, 5 September 2026 — BUG NYATA) ─────────────────────────
    Laporan owner: bandingkan langsung ke artifact — hamburger, tanggal, dan
    panah dropdown menu akun tidak pernah muncul di sana; badge notifikasi di
-   sana juga cuma titik polos, bukan angka. Keempatnya disembunyikan lewat
-   CSS scoped (class penanda ditambah di Topbar.jsx: topbar-date,
-   topbar-hamburger-btn [sudah ada], topbar-account-chevron,
-   topbar-notif-badge) — Topbar.jsx tetap SATU komponen dipakai semua
-   divisi, jadi tampilannya di Sales CRM/Produksi/Gudang/dll TIDAK berubah
-   sama sekali; ini murni override tampilan, bukan pengubahan komponen.
+   sana juga cuma titik polos, bukan angka. Disembunyikan lewat CSS scoped
+   (class penanda ditambah di Topbar.jsx: topbar-date, topbar-hamburger-btn,
+   topbar-account-chevron, topbar-notif-badge) — Topbar.jsx tetap SATU
+   komponen dipakai semua divisi, jadi tampilannya di Sales CRM/Produksi/
+   Gudang/dll TIDAK berubah sama sekali; ini murni override tampilan,
+   bukan pengubahan komponen.
 
    ⚠️ BUG NYATA D-105: keempat rule ini SEMPAT di-scope ke `.glass-division`
    (kelas umum, dipakai bersama armada MAUPUN pilot per-halaman Sales CRM
    sejak D-090/D-098/D-099/D-100) — padahal isinya adalah keputusan
    ARMADA-SPESIFIK "cocokkan persis ke mockup artifact", BUKAN bagian dari
    resep kaca umum. Akibatnya begitu Dashboard/Pelanggan/Pipeline/Order jadi
-   `.glass-division`, hamburger IKUT TERSEMBUNYI di sana juga — laporan
-   owner PERSIS seperti yang diperingatkan komentar asli di bawah ini
-   ("kalau nanti ada laporan sidebar tidak bisa dibuka di HP, INI
-   PENYEBABNYA"), cuma kejadian di Sales CRM (dipakai luas di HP), bukan
-   Delivery (yang memang selalu desktop). Dikembalikan ke `[data-division=
-   "armada"]` — atribut yang TETAP diset independen dari `.glass-division`
-   (lihat Layout.jsx), jadi keempat override ini SEKARANG BENAR-BENAR
-   kembali eksklusif Armada seperti niat asalnya, TIDAK ikut terbawa
-   perluasan kaca ke halaman Sales CRM lain. */
+   `.glass-division`, hamburger IKUT TERSEMBUNYI di sana juga. Dikembalikan
+   ke `[data-division="armada"]` — atribut yang TETAP diset independen dari
+   `.glass-division` (lihat Layout.jsx).
+
+   ⚠️ KOREKSI 8 September 2026 — override `topbar-hamburger-btn` DICABUT
+   (lihat catatan panjang di rule-nya sendiri di bawah, sekarang cuma
+   komentar tanpa rule): laporan owner "gaada tombol buka sidebar di
+   mobile" persis seperti yang diperingatkan versi lama komentar ini,
+   sekarang kejadian di Armada sendiri (bukan cuma Sales CRM seperti bug
+   D-105) karena sesi ini membangun pengalaman driver MOBILE untuk divisi
+   yang sama. 3 override lain (date/chevron/notif-badge) TETAP — itu murni
+   kosmetik, tidak memblokir fungsi apa pun. */
 
 /* Tanggal — subjudul dashboard Delivery sudah menyebut hitungan job hari
    ini (lihat D-050), jadi info temporal tidak hilang, cuma pindah tempat. */
@@ -357,21 +360,20 @@
   display: none;
 }
 
-/* Hamburger — DIPAKSA sembunyi di SEMUA lebar layar di Delivery Hub, bukan
-   cuma ≥768px seperti default index.css (`@media(min-width:768px)`).
-   ⚠️ KESADARAN YANG HARUS DIPEGANG: di lebar <768px sidebar Delivery jadi
-   drawer off-canvas (lihat `.sidebar` mobile di Layout.jsx/index.css) yang
-   SATU-SATUNYA cara membukanya adalah tombol ini — menyembunyikannya berarti
-   TIDAK ADA cara membuka sidebar Delivery dari HP/tablet sempit sampai ada
-   affordance pengganti (mis. swipe-edge). Diterapkan sesuai keputusan
-   eksplisit owner (mengikuti tampilan artifact apa adanya) — kalau nanti ada
-   laporan "sidebar Delivery tidak bisa dibuka di HP", INI PENYEBABNYA.
-   Dispatcher Delivery Hub sejauh ini memang selalu di desktop, bukan HP.
-   ⚠️ Selector ini SENGAJA `[data-division="armada"]`, BUKAN `.glass-
-   division` — lihat komentar D-105 di atas kenapa itu penting. */
-[data-theme="dark"] [data-division="armada"] .app-content > header .topbar-hamburger-btn {
-  display: none !important;
-}
+/* Hamburger — DIKEMBALIKAN terlihat di HP (8 September 2026, laporan owner
+   PERSIS seperti yang diperingatkan komentar aslinya di bawah: "ketika buka
+   di mobile phone gaada tombol untuk buka sidebarnya"). Rule LAMA di sini
+   memaksa sembunyi di SEMUA lebar layar demi cocok persis ke artifact
+   mockup, dengan asumsi eksplisit "Dispatcher Delivery Hub sejauh ini
+   memang selalu di desktop, bukan HP" — asumsi itu SEKARANG SALAH: sesi
+   yang sama membangun seluruh pengalaman driver MOBILE (DriverJobs.jsx,
+   push notifikasi, GPS tracking, dokumentasi foto) untuk divisi Armada
+   yang PERSIS SAMA — drivernya sungguhan buka dari HP. Dikembalikan ke
+   perilaku default Topbar.jsx (`md:hidden` — tampil <768px, sembunyi
+   ≥768px, sama seperti divisi lain) dengan TIDAK menulis override apa pun
+   di sini lagi, BUKAN cuma dihapus diam-diam — supaya jelas ini keputusan
+   sadar, bukan sekadar rule yang hilang. JANGAN tambahkan lagi rule
+   `display: none` untuk `.topbar-hamburger-btn` di scope armada manapun. */
 
 /* Panah dropdown menu akun — menu tetap terbuka dengan klik di area yang
    sama, cuma indikator panahnya yang dihapus visualnya. */
