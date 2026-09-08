@@ -3666,11 +3666,26 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
   try {
     const revision = await prisma.unitRevision.findUnique({
       where: { id: req.params.id },
-      include: { unit: { select: { id: true, unitCode: true, orderId: true } } },
+      include: {
+        unit: { select: { id: true, unitCode: true, orderId: true } },
+        job: { select: { id: true, type: true, status: true } },
+      },
     });
     if (!revision) return res.status(404).json({ error: "Revisi tidak ditemukan" });
     if (revision.status !== "READY_REDELIVER") {
       throw new ArmadaError(`Revisi berstatus ${revision.status} — job pengiriman cuma relevan setelah unit selesai direvisi (Siap Dikirim Ulang)`);
+    }
+    // Guard duplikat (ditemukan lewat review sendiri, 9 September 2026) —
+    // BEDA dari create-pickup-job (yang menolak kalau jobId SUDAH TERISI
+    // apa pun isinya), endpoint ini SENGAJA menimpa jobId (lihat komentar
+    // panjang di atas), jadi tombol "Buat Job Pengiriman" di drawer TETAP
+    // tampil setelah job pertama dibuat (revision.status baru berubah dari
+    // READY_REDELIVER saat job itu SELESAI, bukan saat dibuat) — tanpa guard
+    // ini, dispatcher yang membuka ulang drawer & klik tombol lagi diam-diam
+    // membuat job PENGIRIMAN KEDUA yang tidak pernah ketahuan (jobId
+    // ditimpa, job pertama jadi yatim di Jadwal & Penugasan).
+    if (revision.job?.type === "DELIVERY" && ACTIVE_JOB_STATUSES.includes(revision.job.status)) {
+      throw new ArmadaError("Revisi ini sudah punya job pengiriman aktif — buka job-nya lewat Jadwal & Penugasan, jangan buat baru");
     }
 
     const jobId = await prisma.$transaction(async (tx) => {
