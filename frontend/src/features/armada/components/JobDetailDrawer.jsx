@@ -10,6 +10,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import DeliveryTimeline from "./DeliveryTimeline.jsx";
 import ChipPilih from "./ChipPilih.jsx";
 import PasteUploadZone from "./PasteUploadZone.jsx";
+import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
@@ -930,12 +931,10 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
                             <Clock size={11} aria-hidden /> Waktu Selesai
                           </p>
-                          <input
-                            type="datetime-local"
-                            value={manualCompletedAt}
-                            onChange={(e) => setManualCompletedAt(e.target.value)}
-                            className="h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
-                          />
+                          {/* DateTimePicker (8 September 2026) — lihat
+                              catatan panjang di komponennya soal
+                              redesign glass + 24 jam murni. */}
+                          <DateTimePicker value={manualCompletedAt} onChange={setManualCompletedAt} />
                         </div>
                         <PasteUploadZone
                           files={manualProofFiles}

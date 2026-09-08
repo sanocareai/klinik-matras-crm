@@ -6,6 +6,7 @@ import Avatar from "@/components/Avatar.jsx";
 import AssignDropdown from "./AssignDropdown.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import PasteUploadZone from "./PasteUploadZone.jsx";
+import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { POD_STATUS } from "../podStatus.js";
 import { customerOf, orderNumberOf, unitCountOf, jobLabelOf, orderOf } from "../jobStatus.js";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
@@ -286,12 +287,13 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
                     <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
                       <Clock size={11} aria-hidden /> Waktu Selesai
                     </p>
-                    <input
-                      type="datetime-local"
-                      value={manualCompletedAt}
-                      onChange={(e) => setManualCompletedAt(e.target.value)}
-                      className="h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent"
-                    />
+                    {/* DateTimePicker (8 September 2026, laporan owner:
+                        "redesign tanggal nya sesuai dengan style glass...
+                        sistem waktu 24jam") — GANTI <input type=
+                        "datetime-local"> native (kaca terang bawaan
+                        browser + AM/PM) dengan komponen Sano DS, jam murni
+                        24-jam TANPA AM/PM sama sekali. */}
+                    <DateTimePicker value={manualCompletedAt} onChange={setManualCompletedAt} />
                   </div>
                   <div>
                     <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
