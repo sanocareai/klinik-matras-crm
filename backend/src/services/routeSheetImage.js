@@ -70,15 +70,22 @@ function wrapText(text, width) {
   return lines;
 }
 
-// TIPE (D-055, "Sewa pakai chip TERISI, Pengiriman chip GARIS" — palet
-// dibatasi accent/red/orange/green) — di gambar ini SENGAJA warna kuning
-// terisi untuk KEDUANYA (Pengambilan/Pengiriman), meniru persis kebiasaan
-// visual Sheets manual Natasha (contoh nyata: sel "PENGIRIMAN"/"PENGAMBILAN"
-// SAMA-SAMA disorot kuning terang, itu polanya, bukan tebakan) — beda
-// konteks dari badge di app (yang punya banyak sinyal warna lain
-// berdampingan), gambar ini CUMA satu sinyal: "ini tipe stop apa".
-const WARNA_TIPE_BG = "#fef08a";
-const WARNA_TIPE_TEKS = "#713f12";
+// TIPE — DIBALIK 8 September 2026 (laporan owner, screenshot gambar ini:
+// "dibagian tipe pengiriman warna hijau, pengambilan warna biru untuk
+// pembeda"). SEBELUMNYA sengaja kuning terisi untuk KEDUANYA (meniru
+// kebiasaan visual Sheets manual Natasha) — owner sekarang eksplisit minta
+// dibedakan warnanya. Dipilih BIRU=Pengambilan/HIJAU=Pengiriman supaya
+// SATU bahasa visual dengan yang sudah ada di tempat lain: emoji
+// 🔵/🟢 di formatRouteWaMessage (armada.js, teks broadcast yang menyertai
+// gambar ini), dan konvensi accent=PICKUP/green=DELIVERY yang sudah
+// dipakai jobTypeCardStyle()/ConfirmedTimeBadge di app (frontend). Hex
+// diambil dari token tema TERANG (`--accent`/`--green` + versi 10%-nya di
+// atas putih, tokens.css) — gambar ini statis/tidak theme-aware, dihitung
+// manual (bukan rgba() di fill, biar konsisten solid seperti sebelumnya).
+const WARNA_TIPE = {
+  PICKUP: { bg: "#e7eefb", teks: "#1457d9" }, // biru — samakan dgn --accent terang
+  DELIVERY: { bg: "#e9f3ec", teks: "#248a3d" }, // hijau — samakan dgn --green terang
+};
 
 export async function buildRouteSheetImage(route) {
   const jobs = route.jobs || [];
@@ -104,7 +111,7 @@ export async function buildRouteSheetImage(route) {
       produk = bagian.join(" · ");
     }
 
-    return { no: String(idx + 1), tipe, customer, phone, produk, alamat, estimasi };
+    return { no: String(idx + 1), tipe, tipeRaw: j.type, customer, phone, produk, alamat, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat
@@ -144,9 +151,10 @@ export async function buildRouteSheetImage(route) {
     let cx = 0;
     for (const k of KOLOM) {
       if (k.key === "tipe") {
-        // Chip kuning terisi (lihat catatan WARNA_TIPE_BG di atas)
-        parts.push(`<rect x="${cx + 4}" y="${y + h / 2 - 11}" width="${k.width - 8}" height="22" rx="4" fill="${WARNA_TIPE_BG}"/>`);
-        parts.push(`<text x="${cx + k.width / 2}" y="${y + h / 2 + 4}" font-size="10.5" font-weight="700" fill="${WARNA_TIPE_TEKS}" text-anchor="middle">${escapeXml(w.tipe[0])}</text>`);
+        // Chip biru/hijau per tipe (lihat catatan WARNA_TIPE di atas)
+        const warna = WARNA_TIPE[baris[i].tipeRaw] || WARNA_TIPE.DELIVERY;
+        parts.push(`<rect x="${cx + 4}" y="${y + h / 2 - 11}" width="${k.width - 8}" height="22" rx="4" fill="${warna.bg}"/>`);
+        parts.push(`<text x="${cx + k.width / 2}" y="${y + h / 2 + 4}" font-size="10.5" font-weight="700" fill="${warna.teks}" text-anchor="middle">${escapeXml(w.tipe[0])}</text>`);
       } else {
         const lines = w[k.key];
         const anchor = k.align === "center" ? "middle" : "start";
