@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -26,6 +26,8 @@ import {
   confirmedDateOf, isJobOverdue, overdueDays, salesLocationUrl,
 } from "@/features/armada/jobStatus.js";
 import { VEHICLE_STATUS_REAL } from "@/features/armada/vehicleStatus.js";
+import { useArmadaDashboardBoard } from "@/features/armada/hooks/useArmadaDashboardBoard.js";
+import { useArmadaTracking } from "@/features/armada/hooks/useArmadaTracking.js";
 
 const TAMPIL_AWAL = 8;
 
@@ -243,66 +245,28 @@ export default function ArmadaDashboard() {
   // (todayISO() langsung, bukan diturunkan dari filter tampilan), sesuai
   // maksud aslinya di komentar tugaskanCepat: "job punya jadwal HARI INI".
   const [range, setRange] = useState(() => makeRange("today"));
-  const [jobs, setJobs] = useState(null);
-  const [vehicles, setVehicles] = useState([]);
-  // Job BELUM TERJADWAL (scheduledDate null) — SENGAJA query terpisah dari
-  // `jobs` di atas, TANPA filter tanggal (24-30 Agustus 2026, D-036). Job
-  // yang baru lahir otomatis dari order sales (armadaAutoJob.js) tidak
-  // punya tanggal sampai dispatcher mengisinya — kalau ikut query `date:
-  // tanggal` yang sama, job itu TIDAK PERNAH kelihatan di sini.
-  const [unscheduled, setUnscheduled] = useState(null);
-  const [drivers, setDrivers] = useState([]);
-  const [helpers, setHelpers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [assigningId, setAssigningId] = useState(null);
   const [cariPerlu, setCariPerlu] = useState("");
   const [tampilSemua, setTampilSemua] = useState(false);
   const [cariJadwal, setCariJadwal] = useState("");
 
+  // Data utama lewat TanStack Query (8 September 2026, laporan owner:
+  // "optimalkan agar lebih smooth, fast, enteng" — lihat catatan panjang
+  // di useArmadaDashboardBoard.js). `loading` dari `isLoading` bawaan,
+  // BUKAN lagi flag manual — react-query yang tahu persis kapan fetch
+  // pertama sedang berjalan.
+  const { data: dashBoard, isLoading: loading, refetch: load } = useArmadaDashboardBoard(range, toApiParams);
+  const { jobs, vehicles = [], unscheduled, drivers = [], helpers = [] } = dashBoard || {};
+
   // Posisi GPS terakhir tiap job EN_ROUTE (Active Operations di bawah) —
-  // fetch TERPISAH dari load() utama, sengaja (7 September 2026, brief
+  // query TERPISAH dari data utama, sengaja (7 September 2026, brief
   // owner poin "loading/error state per widget": "a tracking-fetch failure
-  // must not blank out the rest of the page"). `null` = belum sempat
-  // dimuat, `[]` = sudah dimuat, tidak ada job EN_ROUTE / semua tanpa ping.
-  const [tracking, setTracking] = useState(null);
-  const [trackingError, setTrackingError] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [jobsRes, vehiclesRes, unscheduledRes, driversRes, helpersRes] = await Promise.all([
-        api.getArmadaJobs({ ...toApiParams(range), take: 200 }),
-        api.getVehicles(),
-        api.getArmadaJobs({ status: "UNSCHEDULED", take: 200 }),
-        api.getDrivers(),
-        api.getHelpers(),
-      ]);
-      setJobs(jobsRes.jobs);
-      setVehicles(vehiclesRes.vehicles);
-      setUnscheduled(unscheduledRes.jobs);
-      setDrivers(driversRes || []);
-      setHelpers(helpersRes || []);
-    } catch {
-      setJobs([]);
-      setVehicles([]);
-      setUnscheduled([]);
-      setDrivers([]);
-      setHelpers([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [range]);
-
-  const loadTracking = useCallback(async () => {
-    try {
-      const data = await api.getArmadaTracking();
-      setTracking(data || []);
-      setTrackingError(false);
-    } catch {
-      setTracking([]);
-      setTrackingError(true);
-    }
-  }, []);
+  // must not blank out the rest of the page") — reuse hook YANG SAMA
+  // dipakai Live Tracking (useArmadaTracking.js), satu sumber data,
+  // dua tempat pakai. `tracking` tetap `undefined` sesaat di awal (dulu
+  // `null`) — sudah ditoleransi lewat `tracking || []` di pemakaiannya.
+  const { data: tracking, error: trackingErr } = useArmadaTracking();
+  const trackingError = Boolean(trackingErr);
 
   // Assign 1-tap langsung dari panel "Perlu Dijadwalkan" (D-036) — dispatcher
   // tidak perlu buka drawer sama sekali untuk kasus paling umum: ketuk
@@ -329,9 +293,6 @@ export default function ArmadaDashboard() {
       setAssigningId(null);
     }
   }
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadTracking(); }, [loadTracking]);
 
   // ─── Turunan dasar dari `jobs` (rentang aktif, default Hari Ini) ─────────
   const pickupCount = useMemo(() => (jobs || []).filter((j) => j.type === "PICKUP").length, [jobs]);

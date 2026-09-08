@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Plus, X, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
@@ -11,6 +11,7 @@ import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.js
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
+import { useArmadaRoutesBoard } from "@/features/armada/hooks/useArmadaRoutesBoard.js";
 
 // Route Planner — Delivery Tahap 3.
 //
@@ -69,84 +70,22 @@ export default function ArmadaRoutes() {
   // status, ubah alamat, dan link Google Maps; tidak ada drawer baru yang
   // dibangun di sini. `null` = tertutup.
   const [openJobId, setOpenJobId] = useState(null);
-  const [routes, setRoutes] = useState(null);
-  const [unrouted, setUnrouted] = useState(null);
-  // Backlog TANPA tanggal sama sekali (D-062, 4 September 2026 — laporan
-  // owner: "di Jadwal & Penugasan banyak order yang belum dijadwalkan dan
-  // belum masuk rute", tapi panel "Belum Masuk Rute" selalu kosong). Beda
-  // dari `unrouted` — ini TIDAK terikat `tanggal` yang lagi dibuka sama
-  // sekali (query date=none), jadi tidak ikut berubah tiap ganti tanggal;
-  // dimuat sekali di `load()` yang sama supaya tetap 1 titik pemuatan data.
-  const [undated, setUndated] = useState(null);
-  const [drivers, setDrivers] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
-  // helpers (D-077, 4 September 2026) — Route sekarang punya helperId
-  // sendiri (dulu cuma driver+kendaraan di sini, helper wajib diisi
-  // manual per-job di Penjadwalan). Lihat komentar panjang di
-  // schema.prisma (Route.helperId) untuk alasan penyatuan skema ini.
-  const [helpers, setHelpers] = useState([]);
-  const [error, setError] = useState("");
   const [draggingJobId, setDraggingJobId] = useState(null);
 
-  const load = useCallback(async () => {
-    setError("");
-    try {
-      const rangeParams = toApiParams(range); // {} untuk "Semua" — tanpa filter tanggal
-      const [routesRes, jobsRes, undatedRes, driversRes, vehiclesRes, helpersRes] = await Promise.all([
-        api.getRoutes(rangeParams),
-        // Panel kiri (D-066, koreksi dari D-063; `date: "any"` ditambah
-        // D-069, 4 September 2026) — SENGAJA LEPAS TOTAL dari `range`, bukan
-        // cuma default "Semua" yang kebetulan tidak memfilter. Laporan owner:
-        // pilih rentang tanggal 4 Sep di atas membuat panel ini kosong
-        // padahal ada job tanggal 2 Sep yang justru MAU dimasukkan ke rute
-        // tanggal 4 — dispatcher perlu bisa mencampur job dari hari mana pun
-        // ke rute hari apa pun.
-        //
-        // ⚠️ BUG NYATA (D-069) yang diperbaiki: `date: "any"` DITAMBAHKAN —
-        // sebelumnya TIDAK ADA parameter tanggal sama sekali di sini, yang
-        // berarti backend mengembalikan job TANPA tanggal (backlog lama,
-        // termasuk job COMPLETED lawas) SEKALIGUS job BERTANGGAL, dua-duanya
-        // ikut memperebutkan jatah `take` yang sama. Diverifikasi langsung ke
-        // production: 512 job routeId=null TANPA tanggal vs cuma 11 job
-        // routeId=null BERTANGGAL — dengan urutan `scheduledDate desc`,
-        // hampir semua job bertanggal (10 dari 11) kepotong dari hasil,
-        // padahal `take` sudah 500. Menaikkan `take` lagi cuma menunda
-        // gejalanya (jumlah job tanpa tanggal terus bertambah seiring
-        // waktu) — perbaikan sesungguhnya di level query (lihat
-        // routes/armada.js): `date=any` memfilter scheduledDate BUKAN null
-        // di DATABASE, jadi job tanpa tanggal tidak lagi ikut bersaing sama
-        // sekali, bukan cuma diberi jatah lebih besar.
-        api.getArmadaJobs({ routeId: "none", date: "any", take: 500 }),
-        // Backlog tanpa tanggal — TIDAK bisa langsung diseret ke rute (rute
-        // sudah pasti-tanggal, job tanpa tanggal butuh diisi dulu di Jadwal
-        // & Penugasan), jadi ini murni pengingat/daftar, bukan drag source.
-        api.getArmadaJobs({ date: "none", routeId: "none" }),
-        api.getDrivers(),
-        api.getVehicles(),
-        api.getHelpers(),
-      ]);
-      setRoutes(routesRes.routes);
-      // KOREKSI (hari yang sama, D-063) — saat range="Semua" (all_time),
-      // rangeParams jadi {} (tanpa filter tanggal SAMA SEKALI ke backend),
-      // yang berarti GET /armada/jobs tanpa `date`/`from`/`to` mengembalikan
-      // job BERTANGGAL *dan* job TANPA TANGGAL sekaligus — dua-duanya lolos
-      // filter status di bawah, jadi job undated ikut nyasar ke daftar
-      // draggable ini (dobel dengan banner "belum ada tanggal" di
-      // UnroutedJobsPanel). Job tanpa scheduledDate WAJIB dikeluarkan dari
-      // sini — itu memang bukan drag source (keputusan: job harus dikasih
-      // tanggal dulu sebelum bisa masuk rute), backlog-nya sudah ditangani
-      // terpisah lewat `undated` di bawah.
-      setUnrouted(jobsRes.jobs.filter((j) => j.scheduledDate != null && !["COMPLETED", "FAILED"].includes(j.status)));
-      setUndated(undatedRes.jobs.filter((j) => !["COMPLETED", "FAILED"].includes(j.status)));
-      setDrivers(driversRes);
-      setVehicles(vehiclesRes.vehicles);
-      setHelpers(helpersRes || []);
-    } catch (e) {
-      setError(e.message);
-    }
-  }, [range]);
-
-  useEffect(() => { load(); }, [load]);
+  // Data (6 fetch paralel: rute, job belum-masuk-rute, job belum
+  // bertanggal, driver, kendaraan, helper) lewat TanStack Query (8
+  // September 2026, laporan owner: "optimalkan agar lebih smooth, fast,
+  // enteng" — lihat catatan panjang di useArmadaRoutesBoard.js). Filter
+  // client-side (buang COMPLETED/FAILED, pisahkan undated) TETAP PERSIS
+  // logic lama, cuma pindah rumah ke dalam hook — komentar panjang D-062/
+  // D-063/D-069 soal ALASAN tiap baris filter ada di sana, tidak diulang
+  // di sini. `board` fallback objek kosong supaya destructuring di bawah
+  // aman sebelum fetch pertama selesai (react-query `data` awalnya
+  // `undefined`, beda dari `useState(null)` versi lama — efeknya SAMA,
+  // field individual tetap `undefined` sampai data datang).
+  const { data: board, error: queryError, refetch: load } = useArmadaRoutesBoard(range, toApiParams);
+  const { routes, unrouted, undated, drivers = [], vehicles = [], helpers = [] } = board || {};
+  const error = queryError?.message || "";
 
   // Buka jalur pilih-tanggal (bukan langsung buat) — default ke
   // tanggalRuteBaru (turunan filter) supaya kasus paling umum (dispatcher
@@ -299,7 +238,7 @@ export default function ArmadaRoutes() {
   // ruang vertikal lebih (kartunya sendiri sekarang lebih tinggi sejak
   // redesain 8 September, "gabisa buat lebih panjang kebawah").
 
-  const loading = routes === null;
+  const loading = routes == null;
 
   return (
     // style={{maxWidth}} INLINE, BUKAN class Tailwind max-w-[1800px] —

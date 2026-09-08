@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle, BedDouble } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
@@ -114,6 +114,17 @@ export default function RouteCard({
   const [chatJob, setChatJob] = useState(null);
 
   const jobs = route.jobs || [];
+  // Diurutkan SEKALI per render lewat useMemo (8 September 2026, laporan
+  // owner: "optimalkan agar lebih smooth, fast, enteng") — SEBELUMNYA
+  // `.slice().sort()` dipanggil inline di JSX tiap kali komponen ini
+  // render (termasuk render yang TIDAK berkaitan dengan urutan stop sama
+  // sekali, mis. drag-over di kartu lain, ketik di textarea Catatan) —
+  // kerja sortir berulang percuma. Dependensi `jobs` (bukan `route.jobs`
+  // langsung) supaya deteksi perubahan tetap sama persis dengan sebelumnya.
+  const sortedJobs = useMemo(
+    () => jobs.slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0)),
+    [jobs]
+  );
   const totalUnits = jobs.reduce((sum, j) => sum + unitCountOf(j), 0);
   const kapasitas = route.vehicle?.capacitySlots;
   const overCapacity = kapasitas != null && totalUnits > kapasitas;
@@ -618,9 +629,7 @@ export default function RouteCard({
         // banyak — itu ruang kosong di bawah yang dilaporkan. items-start
         // membiarkan tiap kartu setinggi konten aslinya sendiri.
         <div className="grid grid-cols-2 items-start gap-1.5">
-          {jobs
-            .slice()
-            .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+          {sortedJobs
             .map((j, idx) => (
               <div
                 key={j.id}

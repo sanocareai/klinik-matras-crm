@@ -3,7 +3,6 @@ import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Loader2, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
-import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
 import { formatRupiah } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
@@ -11,6 +10,7 @@ import { submitOrQueue } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
 import { useDriverTracking } from "../hooks/useDriverTracking.js";
 import { usePushSubscription } from "../hooks/usePushSubscription.js";
+import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -540,8 +540,13 @@ function SyncBar({ queueCount, syncing, offline, onSyncNow }) {
 }
 
 export default function DriverJobs() {
-  const [jobs, setJobs] = useState(null);
-  const [error, setError] = useState("");
+  // Data lewat TanStack Query (8 September 2026, laporan owner: "optimalkan
+  // agar lebih smooth, fast, enteng" — lihat catatan panjang di
+  // useMyJobs.js). "Jangan timpa jobs lama kalau refetch gagal" (perilaku
+  // offline-first WAJIB) didapat GRATIS dari default react-query, tidak
+  // perlu guard manual lagi seperti versi sebelumnya.
+  const { data: jobs, error: queryError, refetch: load } = useMyJobs();
+  const error = queryError?.message || "";
   const [queue, setQueue] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
@@ -556,20 +561,6 @@ export default function DriverJobs() {
   // Notifikasi push job baru (8 September 2026) — subscribe device begitu
   // halaman driver dibuka, lihat catatan panjang di hook.
   usePushSubscription();
-
-  const load = useCallback(async () => {
-    try {
-      const r = await api.getMyJobs();
-      setJobs(r.jobs);
-      setError("");
-    } catch (e) {
-      // SENGAJA TIDAK menimpa `jobs` yang sudah ada — kalau driver offline
-      // dan reload gagal, daftar job TERAKHIR yang berhasil dimuat tetap
-      // tampil (lebih berguna daripada layar error kosong di lapangan).
-      // Hanya tampilkan error kalau memang belum pernah berhasil sama sekali.
-      if (!jobs) setError(e.message);
-    }
-  }, [jobs]);
 
   const refreshQueue = useCallback(async () => {
     setQueue(await getQueue());
@@ -587,7 +578,9 @@ export default function DriverJobs() {
     }
   }, [refreshQueue, load]);
 
-  useEffect(() => { load(); refreshQueue(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Fetch pertama SUDAH otomatis (react-query jalan begitu hook dipasang) —
+  // effect ini sekarang cuma perlu muat antrean offline sekali di awal.
+  useEffect(() => { refreshQueue(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // D-034 — Live Tracking nyata: kirim ping GPS selama ADA job berstatus
   // EN_ROUTE. Tidak melakukan apa pun (tidak minta izin lokasi sekalipun)
@@ -634,8 +627,16 @@ export default function DriverJobs() {
   const pendingJobIds = new Set(queue.map((q) => q.jobId));
   const failedEntries = queue.filter((q) => q.lastError);
 
+  // max-w-md mx-auto (8 September 2026, laporan owner: "optimalkan di
+  // semua model device, desktop, laptop, tab, handphone") — SEBELUMNYA
+  // halaman ini (dan JobCard/FocusedJobList di dalamnya) TIDAK punya
+  // pembatas lebar sama sekali, dirancang murni untuk layar HP (satu kartu
+  // job fokus, lihat FocusedJobList di bawah). Di desktop/tablet itu
+  // membentang penuh/kosong tak beraturan — dikunci proporsi HP (28rem) +
+  // dipusatkan, supaya terlihat SENGAJA di layar lebar mana pun (tablet
+  // terpasang di kendaraan, admin cek dari laptop), bukan terlantar.
   return (
-    <div>
+    <div className="mx-auto max-w-md">
       <SyncBar queueCount={queue.length} syncing={syncing} offline={offline} onSyncNow={syncNow} />
 
       {failedEntries.length > 0 && (

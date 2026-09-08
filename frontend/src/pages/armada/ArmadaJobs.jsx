@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck } from "lucide-react";
 import { api } from "@/api.js";
@@ -14,11 +14,12 @@ import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
+import { useArmadaJobs } from "@/features/armada/hooks/useArmadaJobs.js";
 import { JobMetaRow, RentalBadge, ServiceLabel, ConfirmedTimeBadge, CityBadge, OrderStatusBadge } from "@/features/armada/components/JobBadges.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
 import {
-  JOB_STATUS_REAL, ACTIVE_STATUSES,
+  JOB_STATUS_REAL,
   customerOf, orderNumberOf, unitCountOf, jobLabelOf, mapsUrl,
   isJobOverdue, overdueDays, jobAccentBarStyle, hasJobAccentBar,
 } from "@/features/armada/jobStatus.js";
@@ -123,10 +124,7 @@ export default function ArmadaJobs() {
   const [fOrderStatus, setFOrderStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
 
-  const [jobs, setJobs] = useState(null);
   const [drivers, setDrivers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [openJobId, setOpenJobId] = useState(null);
 
   // Deep-link ?job= — dipakai kartu KPI & daftar issue di dashboard, dan
@@ -151,44 +149,16 @@ export default function ArmadaJobs() {
     api.getDrivers().then(setDrivers).catch(() => {});
   }, [driverOnly]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      // Tab tipe & status dikirim ke SERVER, bukan disaring di browser —
-      // daftar job bisa tumbuh besar dan menyaring 500 baris di klien
-      // hanya memindahkan biayanya ke perangkat dispatcher.
-      const params = {
-        q: debounced || undefined,
-        // toApiParams(range) -> {} untuk preset "Semua" (from/to null), atau
-        // {from,to} — backend GET /armada/jobs sudah dukung keduanya (lihat
-        // catatan D-081 di atas). from===to (satu hari terpilih) otomatis
-        // jadi filter satu hari juga di backend (gte & lte tanggal yang sama).
-        ...toApiParams(range),
-        status: fStatus || undefined,
-        orderStatus: fOrderStatus || undefined,
-        driverId: fDriver || undefined,
-      };
-      if (tab === "PICKUP" || tab === "DELIVERY") params.type = tab;
-      if (tab === "COMPLETED") params.status = "COMPLETED";
-
-      const res = await api.getArmadaJobs(params);
-      let list = res.jobs || [];
-      // "Aktif" adalah gabungan beberapa status — backend menerima satu
-      // status per permintaan, jadi bagian ini disaring di klien.
-      if (tab === "active") list = list.filter((j) => ACTIVE_STATUSES.includes(j.status));
-      setJobs(list);
-    } catch (e) {
-      setError(e.message);
-      setJobs([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [debounced, range, fStatus, fOrderStatus, fDriver, tab]);
-
-  // Jangan panggil endpoint dispatcher untuk driver — hasilnya pasti 403 dan
-  // cuma mengotori konsol (lihat catatan isDriverOnlyUser di atas).
-  useEffect(() => { if (!driverOnly) load(); }, [load, driverOnly]);
+  // Data lewat TanStack Query (8 September 2026, laporan owner: "optimalkan
+  // agar lebih smooth, fast, enteng" — lihat catatan panjang di
+  // useArmadaJobs.js). `enabled: !driverOnly` MENGGANTIKAN guard manual
+  // "jangan panggil endpoint dispatcher untuk driver" — react-query tidak
+  // fetch sama sekali kalau `enabled` false, sama efeknya, satu baris lebih
+  // sedikit.
+  const {
+    data: jobs, isLoading: loading, error: queryError, refetch: load,
+  } = useArmadaJobs({ enabled: !driverOnly, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams });
+  const error = queryError?.message || "";
 
   function gantiView(v) {
     setView(v);

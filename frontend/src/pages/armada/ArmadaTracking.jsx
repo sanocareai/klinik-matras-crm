@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { GoogleMap, Marker, Polyline, InfoWindow, OverlayView, useJsApiLoader } from "@react-google-maps/api";
 import { Truck, MapPinned, Navigation } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { cn } from "@/lib/utils.js";
-import { api } from "@/api.js";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { getRoadRoute } from "@/services/osrm.js";
 import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
@@ -12,6 +11,7 @@ import { MAP_STYLE_DARK } from "@/features/armada/googleMapStyle.js";
 import { driverIcon, destinationIcon } from "@/features/armada/googleMapIcons.js";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
+import { useArmadaTracking } from "@/features/armada/hooks/useArmadaTracking.js";
 
 // Live Tracking — D-036 (30 Agustus 2026), DATA NYATA.
 //
@@ -41,7 +41,6 @@ import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 // lihat alasan yang sama di RouteMap.jsx (API berbayar ketiga belum tentu
 // perlu).
 const JAKARTA_CENTER = { lat: -6.2088, lng: 106.8456 };
-const POLL_MS = 15000;
 const WARNA_JALUR = "#4C8DFF";
 
 function waktuLalu(iso) {
@@ -83,8 +82,13 @@ export default function ArmadaTracking() {
     googleMapsApiKey: GOOGLE_MAPS_JS_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
-  const [items, setItems] = useState(null);
-  const [error, setError] = useState("");
+  // Data + polling 15 detik sekarang lewat TanStack Query (8 September
+  // 2026, lihat useArmadaTracking.js) — MENGGANTIKAN state+setInterval
+  // manual yang sebelumnya di sini. `items` tetap `undefined` sesaat di
+  // load pertama (bukan `null`) — kode di bawah sudah toleran keduanya
+  // lewat `items || []` pada withPosition/withDestination.
+  const { data: items, error: queryError } = useArmadaTracking();
+  const error = queryError?.message || "";
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [openJobId, setOpenJobId] = useState(null);
   const [activeInfo, setActiveInfo] = useState(null); // jobId marker YANG SEDANG buka InfoWindow
@@ -92,16 +96,6 @@ export default function ArmadaTracking() {
   // `undefined` (belum ada key) = belum selesai diminta ATAU gagal; kedua
   // kasus itu fallback ke garis lurus di render, TIDAK dibedakan di sini.
   const [jalurByJob, setJalurByJob] = useState({});
-
-  const load = useCallback(() => {
-    api.getArmadaTracking().then(setItems).catch((e) => setError(e.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
-  }, [load]);
 
   const withPosition = useMemo(() => (items || []).filter((j) => j.lastPosition), [items]);
   const withDestination = useMemo(
@@ -247,7 +241,7 @@ export default function ArmadaTracking() {
               <Truck size={13} aria-hidden /> {withPosition.length} Driver Dalam Perjalanan
             </h3>
           </div>
-          {items === null ? (
+          {items == null ? (
             <div className="px-3 py-6 text-center text-[11.5px] text-ink3">Memuat…</div>
           ) : withPosition.length === 0 ? (
             <div className="px-3 py-8 text-center">
