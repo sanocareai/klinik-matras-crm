@@ -97,7 +97,19 @@ const NOMINATIM_USER_AGENT = "SANSS-KlinikMatras/1.0 (+https://app.sanomatrasseh
 // domain yang dikenali — kadang redirect ke halaman SEARCH (bukan Maps)
 // dengan query cuma nama tempat tanpa alamat, tapi itu tetap lewat jalur
 // #4 di atas dan jaring pengaman ROOFTOP/RANGE_INTERPOLATED yang sama.
-const GOOGLE_MAPS_LINK_RE = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|share\.google|(?:www\.)?google\.com\/maps)\S*/i;
+// Protokol `https?:\/\/` DIBUAT OPSIONAL (8 September 2026, ditemukan
+// investigasi bug "alamat Lim Fie Boen beda antara Sales CRM & Delivery"
+// — Order.locationUrl order itu tersimpan sebagai `google.com/maps?q=...`
+// TANPA "https://" sama sekali. Akar penyebab: address bar Chrome/Safari
+// SECARA DEFAULT menyembunyikan skema URL dari tampilan (cuma nampilin
+// "google.com/maps?q=..." walau alamat sebenarnya "https://google.com/
+// maps?q=..."), jadi copy-paste APA ADANYA dari address bar kehilangan
+// protokolnya. Regex versi lama MEWAJIBKAN protokol di depan — link tanpa
+// itu GAGAL MATCH SAMA SEKALI, geocodeFromMapsLink() balik null diam-diam
+// walau linknya sah dan lengkap. Match tetap dilakukan tanpa protokol,
+// tapi `fetch()` di bawah butuh URL absolut — protokol ditambahkan balik
+// SEBELUM fetch kalau ternyata belum ada (lihat geocodeFromMapsLink()).
+const GOOGLE_MAPS_LINK_RE = /(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|share\.google|(?:www\.)?google\.com\/maps)\S*/i;
 const LATLNG_BANG_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
 const LATLNG_QUERY_RE = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)(?:&|$)/;
 const PLACE_PATH_RE = /\/maps\/place\/([^/]+)\//;
@@ -163,7 +175,10 @@ export const DEPOT = { lat: -6.4036521, lng: 106.7839743, label: "Klinik Matras"
 export async function geocodeFromMapsLink(text) {
   const match = text.match(GOOGLE_MAPS_LINK_RE);
   if (!match) return null;
-  const res = await fetch(match[0]);
+  // Protokol ditambahkan balik kalau match-nya tidak bawa (lihat catatan
+  // panjang di GOOGLE_MAPS_LINK_RE) — fetch() butuh URL absolut.
+  const urlUntukFetch = /^https?:\/\//i.test(match[0]) ? match[0] : `https://${match[0]}`;
+  const res = await fetch(urlUntukFetch);
   const finalUrl = res.url;
 
   // Tier 1-2: koordinat MENTAH langsung di URL redirect — tanpa panggilan

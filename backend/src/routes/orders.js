@@ -252,7 +252,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
     const order = await prisma.$transaction(async (tx) => {
       const sebelum = await tx.order.findUnique({
         where: { id: req.params.id },
-        select: { status: true, paymentStatus: true },
+        select: { status: true, paymentStatus: true, locationUrl: true },
       });
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
@@ -477,6 +477,34 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // dibuat suggestDeliveryJob() di atas (itu TETAP aktif).
           await selesaikanJobPengambilanTertinggal(tx, updated.id);
         }
+      }
+
+      // Batalkan koordinat job yang sudah di-cache begitu link Maps order
+      // berubah (8 September 2026, laporan owner — bug nyata: order Lim Fie
+      // Boen/RES-30082026-205&206, sales memperbarui link Maps ke pin yang
+      // benar, TAPI tombol "Buka di Google Maps" & peta rute di Delivery
+      // TETAP menunjuk ke koordinat LAMA. Akar masalah: Job.lat/lng adalah
+      // CACHE hasil geocode dari Order.locationUrl [ensureJobsGeocoded()],
+      // ditulis SEKALI lalu tidak pernah disentuh lagi — mapsUrl() frontend
+      // (jobStatus.js) MEMPRIORITASKAN cache itu di atas locationUrl live,
+      // jadi begitu locationUrl diedit belakangan, cache basi itu diam-diam
+      // "menang" selamanya, sales & Delivery melihat 2 lokasi berbeda untuk
+      // order YANG SAMA — persis pelanggaran "satu sumber kebenaran" yang
+      // dikhawatirkan owner).
+      //
+      // Fix: kosongkan lat/lng job manapun yang menempel ke order ini begitu
+      // locationUrl BENAR-BENAR berubah (bukan tiap PATCH — banyak field
+      // lain dikirim bersamaan tanpa locationUrl berubah, lihat guard
+      // `!== sebelum.locationUrl`). Job jadi otomatis tergeocode ULANG dari
+      // link BARU lain kali ensureJobsGeocoded() jalan (Buat Peta/publish/
+      // dst, lihat armada.js) — TIDAK menggeocode di sini langsung supaya
+      // PATCH order (dipakai Sales CRM, tidak selalu berurusan dengan
+      // Armada) tetap cepat & tidak bergantung layanan geocoding eksternal.
+      if (locationUrl !== undefined && locationUrl !== sebelum.locationUrl) {
+        await tx.job.updateMany({
+          where: { orderId: updated.id, lat: { not: null } },
+          data: { lat: null, lng: null },
+        });
       }
 
       // Lepas override -> langsung hitung ulang di transaksi yang sama,
