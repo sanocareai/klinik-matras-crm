@@ -917,4 +917,66 @@ export async function recordQcFitTest(unitId, stageId, {
   });
 }
 
+/**
+ * Bypass administratif SELURUH pipeline produksi (8 September 2026,
+ * permintaan owner langsung — kasus Lim Fie Boen/RES-30082026-205/206,
+ * Royhan Arief/RES-03092026-017, Julhan/RES-02092026-011, Windy Satya/
+ * RES-03092026-016: pengambilan sudah selesai secara fisik, unit siap
+ * kirim, TAPI tidak pernah dilacak lewat sistem produksi sama sekali —
+ * currentStageId kosong, 0 log tahap, serviceId belum ditetapkan).
+ *
+ * BUKAN skipStage() — fungsi itu menolak keras tahap yang isOptional=false
+ * (fit_test/Uji Berat Badan SENGAJA begitu, satu-satunya gerbang QC wajib
+ * untuk SEMUA unit, lihat CLAUDE.md §1). BUKAN JUGA berjalan tahap demi
+ * tahap lewat recordStageDone() — 7 dari 8 tahap aktif mewajibkan foto
+ * (requiresPhoto), dan tidak ada satu pun foto asli untuk unit-unit ini.
+ * Mencatat "selesai" per tahap tanpa foto/tanpa uji berat badan sungguhan
+ * akan membuat ledger produksi TERLIHAT seperti alur normal berjalan
+ * lengkap — itu fabrikasi data, dilarang keras di project ini (CLAUDE.md
+ * prinsip atribusi jujur).
+ *
+ * Yang ditulis sebagai gantinya: SATU baris unit_stage_logs (action SKIP,
+ * anchor ke tahap FINISH terakhir — bukan menunjuk tahap tertentu yang
+ * "dilewati", catatannya sendiri yang menjelaskan seluruh pipeline
+ * dilewati) + SATU ActivityEvent PRODUCTION_ADMIN_BYPASS yang eksplisit
+ * bilang ini override manual, bukan produksi sungguhan. `note` WAJIB diisi
+ * pemanggil (alasan/otorisasi) — fungsi ini SENGAJA tidak punya default
+ * kosong, supaya jejaknya selalu bisa dipertanggungjawabkan ke seseorang.
+ *
+ * TIDAK ADA route/UI yang memanggil ini — sengaja hanya dipakai dari
+ * script backfill bernama (scripts/backfill-admin-bypass-production.js),
+ * ditinjau manusia per order, BUKAN tombol self-service dispatcher. Kalau
+ * suatu hari mau diekspos ke UI, diskusikan dulu — bypass gerbang QC wajib
+ * bukan keputusan yang pantas satu klik tanpa jejak persetujuan eksplisit.
+ */
+export async function adminBypassProduction(unitId, { actorId, note } = {}) {
+  if (!note || !note.trim()) {
+    throw new StageTransitionError("Catatan alasan bypass wajib diisi — ini override manual, harus bisa dipertanggungjawabkan");
+  }
+  return prisma.$transaction(async (tx) => {
+    const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+    if (["CANCELLED", "DELIVERED", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"].includes(unit.status)) {
+      throw new StageTransitionError(`Unit sudah berstatus ${unit.status} — bypass ini cuma untuk unit yang masih tersangkut di produksi`);
+    }
+    const finishStages = await tx.routingStage.findMany({ where: { phase: "FINISH", active: true }, orderBy: { sequence: "desc" }, take: 1 });
+    const anchorStage = finishStages[0];
+    if (!anchorStage) throw new StageTransitionError("Tidak ada tahap FINISH aktif untuk dijadikan anchor — periksa konfigurasi routing_stages");
+
+    const catatan = `⚠️ ADMIN OVERRIDE — seluruh tahap produksi (termasuk Uji Berat Badan) dilewati manual, BUKAN hasil produksi/QC sungguhan. ${note.trim()}`;
+    await tx.unitStageLog.create({
+      data: { unitId, stageId: anchorStage.id, action: "SKIP", actorId, note: catatan },
+    });
+    await tx.unit.update({
+      where: { id: unitId },
+      data: { currentStageId: anchorStage.id, status: "READY_FOR_DELIVERY" },
+    });
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_ADMIN_BYPASS,
+      actorId, metadata: { note: note.trim() },
+    });
+    await syncOrderStatus(tx, unit.orderId);
+    await suggestDeliveryJob(tx, unitId);
+  });
+}
+
 export { StageTransitionError };

@@ -35,6 +35,14 @@ export const EVENT_TYPES = Object.freeze({
   STAGE_PAUSED: "STAGE_PAUSED",
   STAGE_RESUMED: "STAGE_RESUMED",
   STAGE_COMPLETED: "STAGE_COMPLETED",
+  // Bypass administratif SELURUH pipeline produksi (8 September 2026,
+  // permintaan owner — lihat unitStageEngine.js#adminBypassProduction).
+  // SENGAJA satu event untuk seluruh pipeline, BUKAN satu STAGE_COMPLETED
+  // per tahap — menulis 8 baris "selesai" palsu tanpa foto/QC sungguhan
+  // akan membuat linimasa terlihat seperti produksi normal berjalan
+  // lengkap, padahal tidak. Kejujuran ledger lebih penting dari
+  // kelengkapan tampilan.
+  PRODUCTION_ADMIN_BYPASS: "PRODUCTION_ADMIN_BYPASS",
 });
 
 /**
@@ -126,6 +134,8 @@ export function formatActivitySentence(event) {
         ? `${metadata.stage || "Tahap"} completed — Touch time ${touch}`
         : `${metadata.stage || "Tahap"} completed`;
     }
+    case EVENT_TYPES.PRODUCTION_ADMIN_BYPASS:
+      return `⚠️ Seluruh tahap produksi dilewati manual (admin) — ${metadata.note || "tanpa keterangan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya
