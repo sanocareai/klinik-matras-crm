@@ -41,7 +41,19 @@ export const ELIGIBLE_ORDER_STATUS = { PICKUP: ["PENDING", "PICKUP"], DELIVERY: 
 // & Penugasan, Dashboard "Perlu Dijadwalkan", panel Route Planner) DAN GET
 // /armada/board (Papan) — SATU definisi, bukan disalin ulang, supaya kalau
 // aturannya berubah nanti tidak diam-diam beda di 2 tempat.
+//
+// ⚠️ KOREKSI (6 September 2026, D-108) — job PICKUP yang lahir dari
+// POST /revisions/:id/create-pickup-job (klaim garansi/trial kenyamanan)
+// SELALU order.status=DELIVERED (revisi cuma bisa diajukan untuk unit yang
+// SUDAH terkirim — lihat guard di POST /revisions) DAN lahir UNSCHEDULED —
+// jadi tanpa pengecualian ini, filter di atas langsung menyembunyikannya
+// SAAT ITU JUGA, seolah itu job basi peninggalan sebelum Delivery Hub
+// dipakai. Ditemukan lewat laporan owner: job pengambilan revisi Dewi
+// (RES-18082026-071) baru dibuat tapi tidak muncul di Jadwal & Penugasan
+// sama sekali. `revisionLinks: { none: {} }` — job dengan revisi yang
+// menunjuk ke dirinya TIDAK PERNAH dianggap basi, apa pun status order-nya.
 export const STALE_UNSCHEDULED_JOB = {
   status: "UNSCHEDULED",
   order: { status: { in: ["DELIVERED", "CANCELLED"] } },
+  revisionLinks: { none: {} },
 };

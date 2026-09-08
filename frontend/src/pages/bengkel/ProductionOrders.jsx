@@ -100,7 +100,12 @@ export default function ProductionOrders() {
         search: debounced || undefined,
         category: fKategori || undefined,
         status: fStatus || undefined,
-        hideFinished: fStatus ? undefined : "true",
+        // KOREKSI (6 September 2026) — laporan owner: cari nama customer
+        // spesifik (order sudah Terkirim) hasilnya "Tidak ada order yang
+        // cocok". Search itu MAKSUD EKSPLISIT mencari 1 order tertentu,
+        // hideFinished tidak boleh diam-diam menyembunyikan hasil yang
+        // justru sedang dicari (lihat catatan sama di ArmadaOrders.jsx).
+        hideFinished: (fStatus || debounced) ? undefined : "true",
         ...toApiParams(range),
         limit: 300,
       });

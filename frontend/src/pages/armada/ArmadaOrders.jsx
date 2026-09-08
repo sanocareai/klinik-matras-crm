@@ -142,11 +142,18 @@ export default function ArmadaOrders() {
         search: debounced || undefined,
         category: fKategori || undefined,
         status: fStatus || undefined,
-        // Default (tanpa filter status eksplisit): sembunyikan yang sudah
-        // Terkirim/Dibatalkan — dispatcher paling sering perlu tahu order
-        // yang MASIH berjalan, bukan riwayat yang sudah tuntas. Sama pola
-        // dengan pages/Orders.jsx.
-        hideFinished: fStatus ? undefined : "true",
+        // Default (tanpa filter status eksplisit, TANPA kata kunci pencarian):
+        // sembunyikan yang sudah Terkirim/Dibatalkan — dispatcher paling
+        // sering perlu tahu order yang MASIH berjalan, bukan riwayat yang
+        // sudah tuntas. Sama pola dengan pages/Orders.jsx.
+        //
+        // KOREKSI (6 September 2026) — laporan owner: cari nama customer
+        // spesifik (order sudah Terkirim) hasilnya "Tidak ada order yang
+        // cocok", padahal order-nya ADA. Search itu MAKSUD EKSPLISIT mencari
+        // 1 order tertentu ("order X sekarang bagaimana?"), bukan menjelajah
+        // pekerjaan aktif — hideFinished tidak boleh diam-diam menyembunyikan
+        // hasil yang justru sedang dicari.
+        hideFinished: (fStatus || debounced) ? undefined : "true",
         ...toApiParams(range), // {} untuk preset "Semua" — tanpa filter tanggal
         limit: 300,
       });
