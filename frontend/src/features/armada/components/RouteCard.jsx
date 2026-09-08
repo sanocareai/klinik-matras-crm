@@ -628,7 +628,20 @@ export default function RouteCard({
         // pasti) ikut ditarik setinggi kartu tetangganya yang isinya lebih
         // banyak — itu ruang kosong di bawah yang dilaporkan. items-start
         // membiarkan tiap kartu setinggi konten aslinya sendiri.
-        <div className="grid grid-cols-2 items-start gap-1.5">
+        //
+        // grid-cols-1 sm:grid-cols-2 (8 September 2026, laporan owner —
+        // screenshot PWA di HP: "masih berantakan", badge Pasti Ambil/
+        // Pasti Kirim tumpang tindih kepotong di tepi layar) — SEBELUMNYA
+        // `grid-cols-2` polos tanpa breakpoint, dipaksa 2 kolom di lebar
+        // layar BERAPA PUN. Di layar ~390px tiap kartu stop cuma dapat
+        // ~175px — jauh lebih sempit dari yang dirancang kartu ini (badge
+        // kota+status+ikon, avatar+nama, produk, alamat, 2 badge tanggal
+        // pasti, sales), jadi seluruh isi kepotong/tumpang tindih dan
+        // kartu kolom kedua sebagian keluar viewport (memaksa scroll
+        // horizontal). Sekarang 1 kolom (tumpuk penuh lebar) di bawah
+        // breakpoint `sm` (640px, SAMA dengan grid rute di ArmadaRoutes.jsx),
+        // 2 kolom cuma di layar yang benar-benar cukup lebar.
+        <div className="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-2">
           {sortedJobs
             .map((j, idx) => (
               <div
