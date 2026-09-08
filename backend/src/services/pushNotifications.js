@@ -71,3 +71,42 @@ export async function notifyDriverJobAssigned(job) {
     url: "/armada/jobs",
   });
 }
+
+// Notifikasi "unit revisi sampai, siap dikerjakan ulang" (9 September 2026,
+// D-109) — celah keterlibatan Produksi yang ditemukan di kasus Dewi
+// (RES-18082026-071): sebelumnya Produksi cuma tahu ada klaim garansi/trial
+// kenyamanan kalau kebetulan buka "Semua Order" dan lihat kolom Revisi,
+// tidak ada dorongan aktif sama sekali. SENGAJA pakai Web Push (browser),
+// BUKAN broadcast grup WhatsApp — owner baru saja minta PAUSE broadcast grup
+// WA (lihat POD_BROADCAST_AKTIF di routes/armada.js, 6 September 2026,
+// "matangkan dulu sistem saat ini") untuk kanal DELIVERY; ini kanal
+// terpisah total (push browser per-user Produksi) jadi tidak melanggar
+// permintaan pause itu, dan tidak butuh "Grup Produksi" yang memang belum
+// ada infrastrukturnya sama sekali.
+//
+// Dipicu SAAT unit BENAR-BENAR tiba di bengkel (revisi mencapai IN_REWORK,
+// auto-advance di POST /jobs/:id/complete) — BUKAN saat revisi baru
+// diajukan (REQUESTED). Di titik REQUESTED unit masih di rumah customer,
+// menunggu dijemput Delivery — Produksi belum bisa berbuat apa-apa, push
+// saat itu cuma "noise" yang tidak actionable.
+export async function notifyProductionRevisionReady(revision) {
+  const unit = revision?.unit;
+  if (!unit) return;
+  const rows = await prisma.userRole.findMany({
+    where: { role: { in: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] } },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  if (rows.length === 0) return; // belum ada akun ber-role Produksi — diam-diam, bukan error
+  const jenis = revision.trigger === "GARANSI" ? "Klaim garansi" : "Trial kenyamanan";
+  const orderNumber = unit.order?.orderNumber || "";
+  await Promise.all(
+    rows.map((r) =>
+      sendPushToUser(r.userId, {
+        title: "🔧 Unit revisi siap dikerjakan",
+        body: `${jenis} — ${unit.unitCode}${orderNumber ? ` (${orderNumber})` : ""}`,
+        url: "/bengkel/orders",
+      })
+    )
+  );
+}

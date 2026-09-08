@@ -26,7 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
-import { notifyDriverJobAssigned } from "../services/pushNotifications.js";
+import { notifyDriverJobAssigned, notifyProductionRevisionReady } from "../services/pushNotifications.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
@@ -3243,7 +3243,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       waktuSelesai = parsed;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { job: updated, advancedRevisions } = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -3267,18 +3267,32 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       // POST /revisions/:id/create-pickup-job & create-delivery-job), jadi
       // begitu SELESAI, revisi yang menunjuk ke job ini harus otomatis maju
       // tanpa dispatcher perlu buka drawer revisi terpisah untuk klik lagi.
-      // updateMany dengan `status` di where SEKALIGUS jadi guard — kalau
-      // revisinya sudah dipindah tangan manual ke status lain (jarang, tapi
-      // mungkin), auto-advance ini diam-diam tidak melakukan apa-apa alih-alih
-      // menimpa keputusan manusia.
-      await tx.unitRevision.updateMany({
+      // `status` lama di where SEKALIGUS jadi guard — kalau revisinya sudah
+      // dipindah tangan manual ke status lain (jarang, tapi mungkin), tidak
+      // ada yang cocok di sini dan auto-advance diam-diam tidak melakukan
+      // apa-apa alih-alih menimpa keputusan manusia.
+      //
+      // Diambil sbg findMany (bukan langsung updateMany) supaya bisa memicu
+      // notifyProductionRevisionReady di bawah — updateMany tidak
+      // mengembalikan baris yang tersentuh.
+      const revisiUntukDiajukan = await tx.unitRevision.findMany({
         where: {
           jobId: job.id,
           status: job.type === "PICKUP" ? "PICKUP_SCHEDULED" : "READY_REDELIVER",
         },
-        data: { status: job.type === "PICKUP" ? "IN_REWORK" : "REDELIVERED" },
+        select: {
+          id: true,
+          trigger: true,
+          unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } },
+        },
       });
-      return j;
+      if (revisiUntukDiajukan.length > 0) {
+        await tx.unitRevision.updateMany({
+          where: { id: { in: revisiUntukDiajukan.map((r) => r.id) } },
+          data: { status: job.type === "PICKUP" ? "IN_REWORK" : "REDELIVERED" },
+        });
+      }
+      return { job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [] };
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
 
@@ -3287,6 +3301,15 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     const headline = job.type === "PICKUP" ? "✅ Pengambilan selesai" : "✅ Pengiriman selesai";
     notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
       console.error("[jobs/:id/complete] notifyDriverGroup gagal:", err.message)
+    );
+
+    // Push ke Produksi (D-109) — cuma untuk PICKUP yang barusan membawa unit
+    // revisi pulang (IN_REWORK); job DELIVERY biasa/redelivery tidak relevan
+    // untuk mereka. Lihat komentar panjang di notifyProductionRevisionReady.
+    advancedRevisions.forEach((r) =>
+      notifyProductionRevisionReady(r).catch((err) =>
+        console.error("[jobs/:id/complete] notifyProductionRevisionReady gagal:", err.message)
+      )
     );
 
     // FR-N trigger 2 & 4/4: "Unit sampai bengkel" (PICKUP) / "Terkirim"
