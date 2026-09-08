@@ -25,6 +25,13 @@ import { parseOrderNotesForInvoice, produkLineLabel } from "./invoice.js";
 
 const KOLOM = [
   { key: "no", label: "No", width: 36, align: "center" },
+  // No. Resi (8 September 2026, permintaan owner: "gambar tidak ada nomer
+  // resi, tambahkan nomer resi setelah no., atau sebelum Tipe") — order
+  // number-nya sendiri SUDAH ada di data baris (dipakai formatRouteWaMessage
+  // teks pendamping gambar ini), cuma belum pernah ditampilkan di KOLOM
+  // tabel gambar. Lebar 130 cukup untuk format "RES-30082026-205" (paling
+  // panjang di antara 3 prefix RES/SWS/NEW) satu baris tanpa wrap.
+  { key: "resi", label: "No. Resi", width: 130, align: "center" },
   { key: "tipe", label: "Tipe", width: 96, align: "center" },
   { key: "customer", label: "Customer", width: 190 },
   { key: "phone", label: "No. HP", width: 130 },
@@ -111,7 +118,9 @@ export async function buildRouteSheetImage(route) {
       produk = bagian.join(" · ");
     }
 
-    return { no: String(idx + 1), tipe, tipeRaw: j.type, customer, phone, produk, alamat, estimasi };
+    const resi = order?.orderNumber || "-";
+
+    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, phone, produk, alamat, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat
