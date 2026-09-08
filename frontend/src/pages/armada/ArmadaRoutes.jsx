@@ -100,7 +100,29 @@ export default function ArmadaRoutes() {
       else if (y > window.innerHeight - TEPI_PX) window.scrollBy(0, KECEPATAN_PX);
     }
     document.addEventListener("dragover", onDragOver, true);
-    return () => document.removeEventListener("dragover", onDragOver, true);
+
+    // Scroll roda mouse SAAT drag (8 September 2026, laporan owner
+    // lanjutan: "bisa juga gak hold drag + scroll atau klik kiri hold
+    // sambil scroll mouse" — auto-scroll tepi di atas butuh kursor
+    // mendekati tepi layar, kurang presisi kalau target rute ada di
+    // TENGAH halaman yang belum kelihatan sama sekali. Ini pelengkap:
+    // scroll manual pakai roda mouse, tetap jalan walau kursor lagi di
+    // atas peta Google Maps (yang NORMALNYA menangkap wheel untuk zoom —
+    // capture phase + preventDefault DI SINI memotong itu duluan selama
+    // drag berlangsung, begitu drag selesai peta zoom-scroll normal lagi
+    // karena listener ini lepas otomatis [effect cleanup, `draggingJobId`
+    // jadi null]). passive:false WAJIB — tanpa itu preventDefault() pada
+    // event wheel ditolak diam-diam oleh browser modern.
+    function onWheel(e) {
+      e.preventDefault();
+      window.scrollBy(0, e.deltaY);
+    }
+    document.addEventListener("wheel", onWheel, { capture: true, passive: false });
+
+    return () => {
+      document.removeEventListener("dragover", onDragOver, true);
+      document.removeEventListener("wheel", onWheel, { capture: true });
+    };
   }, [draggingJobId]);
 
   // Data (6 fetch paralel: rute, job belum-masuk-rute, job belum
