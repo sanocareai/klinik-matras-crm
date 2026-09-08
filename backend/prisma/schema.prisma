@@ -332,6 +332,7 @@ model User {
   pipelineTransitions        PipelineTransition[]     @relation("PipelineTransitionActor")
   orderStatusChanges         OrderStatusTransition[]  @relation("OrderStatusActor")
   orderStatusOverrides       Order[]                  @relation("OrderStatusOverrider")
+  orderComplaintResolutions  Order[]                  @relation("OrderComplaintResolver")
   orderRevisionEdits         OrderRevisionLog[]       @relation("OrderRevisionEditor")
   promosCreated              Promo[]                  @relation("PromoCreator")
   messageTemplates           MessageTemplate[]
@@ -975,6 +976,21 @@ model Order {
   hasComplaint       Boolean       @default(false)
   complaintDate      DateTime?
   complaintDetail    String?
+  // Penyelesaian komplain (9 September 2026, D-109) — hasComplaint SENGAJA
+  // TIDAK direset ke false saat komplain selesai: itu dipakai analitik/
+  // badge "Pernah Komplain" sebagai FAKTA HISTORIS (services/salesRisk,
+  // intelligence/signals.js), bukan status "sedang berjalan" yang boleh
+  // dilupakan. complaintResolvedAt yang membedakan "masih perlu ditindak"
+  // (null) vs "sudah tuntas" — badge peringatan lintas divisi (Semua Order
+  // Delivery/Produksi) memakai field ini, bukan hasComplaint, supaya tidak
+  // menyala selamanya untuk kasus yang sudah lama beres. Diisi OTOMATIS
+  // saat UnitRevision terkait mencapai CONFIRMED (lihat PATCH
+  // /armada/revisions/:id), atau MANUAL lewat "Tandai Selesai" (POST
+  // /orders/:id/complaint/resolve) untuk komplain yang tidak lewat alur
+  // revisi sama sekali.
+  complaintResolvedAt   DateTime? @map("complaint_resolved_at")
+  complaintResolvedById String?   @map("complaint_resolved_by")
+  complaintResolvedBy   User?     @relation("OrderComplaintResolver", fields: [complaintResolvedById], references: [id], onDelete: SetNull)
 
   // D-027 (20 Agustus 2026) — kota + alamat pengiriman PER ORDER, diinput
   // sales saat buat order (dropdown kota SAMA dgn Customer.city, lihat

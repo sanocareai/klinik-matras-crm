@@ -266,6 +266,9 @@ export const api = {
   // D-108 (6 September 2026) — buat job PICKUP langsung dari revisi, tanpa
   // perlu tempel ID job manual (lihat catatan panjang di armada.js).
   createRevisionPickupJob: (id) => request(`/armada/revisions/${id}/create-pickup-job`, { method: "POST" }),
+  // D-109 (9 September 2026) — pasangannya untuk fase pengiriman ulang,
+  // begitu revisi READY_REDELIVER (Produksi sudah selesai mengerjakan).
+  createRevisionDeliveryJob: (id) => request(`/armada/revisions/${id}/create-delivery-job`, { method: "POST" }),
 
   // Laporan Delivery (Delivery Tahap 7)
   getDeliveryReportSummary: (params = {}) => {
@@ -760,6 +763,11 @@ export const api = {
     request(`/orders/${orderId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   markOrderComplaint: (orderId, data) =>
     request(`/orders/${orderId}/complaint`, { method: "PATCH", body: JSON.stringify(data) }),
+  // D-109 (9 September 2026) — tandai komplain tuntas MANUAL, untuk kasus
+  // yang tidak lewat alur revisi UnitRevision sama sekali (lihat
+  // routes/orders.js POST /:id/complaint/resolve).
+  resolveOrderComplaint: (orderId) =>
+    request(`/orders/${orderId}/complaint/resolve`, { method: "POST" }),
   // Buka lagi order yang terlanjur "Terkirim" tanpa job Pengiriman yang
   // pernah selesai (8 September 2026) — lihat catatan panjang di
   // routes/orders.js POST /:id/reopen-for-delivery.

@@ -292,8 +292,13 @@ export default function ArmadaOrders() {
                             yang dicatat Sales CRM tidak pernah kelihatan di Delivery/
                             Produksi (silo total). Data-nya SUDAH ada di respons ini
                             (Order.hasComplaint disertakan apa adanya, tidak pernah
-                            di-select keluar) — cuma belum pernah ditampilkan di sini. */}
-                        {o.hasComplaint && (
+                            di-select keluar) — cuma belum pernah ditampilkan di sini.
+                            ⚠️ Syarat diperluas (D-109, 9 September 2026): hasComplaint
+                            SENGAJA tidak pernah direset (fakta historis analitik) — badge
+                            lintas divisi ini harus mati begitu complaintResolvedAt terisi,
+                            supaya tidak menyala selamanya untuk komplain yang sudah lama
+                            tuntas. Lihat komentar panjang di schema.prisma. */}
+                        {o.hasComplaint && !o.complaintResolvedAt && (
                           <AlertTriangle
                             size={13} className="shrink-0 text-red"
                             title={`Ada komplain: ${o.complaintDetail || "(tanpa detail)"}`}

@@ -16,6 +16,7 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [buatJobBusy, setBuatJobBusy] = useState(false);
+  const [buatJobKirimBusy, setBuatJobKirimBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -48,6 +49,25 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
       setError(e.message);
     } finally {
       setBuatJobBusy(false);
+    }
+  }
+
+  // D-109 (9 September 2026) — pasangan buatJob() di atas, untuk fase
+  // pengiriman ulang. jobId sengaja TIDAK dijadikan syarat tampil (beda dari
+  // tombol pengambilan) — di titik READY_REDELIVER, jobId sudah terisi job
+  // PENGAMBILAN lama yang sudah selesai, itu bukan tanda job pengiriman
+  // sudah ada (lihat catatan panjang di armada.js#create-delivery-job).
+  async function buatJobKirim() {
+    setBuatJobKirimBusy(true);
+    setError("");
+    try {
+      await api.createRevisionDeliveryJob(revision.id);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBuatJobKirimBusy(false);
     }
   }
 
@@ -117,6 +137,15 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
                     className="flex w-full items-center justify-center gap-1.5 rounded-btn bg-accentbg py-2 text-[12.5px] font-bold text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
                   >
                     {buatJobBusy ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Buat Job Pengambilan
+                  </button>
+                )}
+
+                {revision.status === "READY_REDELIVER" && (
+                  <button
+                    type="button" onClick={buatJobKirim} disabled={buatJobKirimBusy || busy}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-btn bg-accentbg py-2 text-[12.5px] font-bold text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
+                  >
+                    {buatJobKirimBusy ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Buat Job Pengiriman
                   </button>
                 )}
 

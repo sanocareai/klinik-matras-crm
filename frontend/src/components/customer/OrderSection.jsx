@@ -423,6 +423,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [complaintDetail, setComplaintDetail]     = useState("");
   const [savingComplaint, setSavingComplaint]     = useState(false);
+  const [resolvingComplaint, setResolvingComplaint] = useState(false); // D-109
 
   const totalItems = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
 
@@ -609,6 +610,23 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     }
   }
 
+  // D-109 (9 September 2026) — jalur MANUAL tandai komplain tuntas, untuk
+  // komplain yang tidak lewat alur revisi UnitRevision sama sekali (kalau
+  // lewat revisi, sudah otomatis tuntas begitu revisinya CONFIRMED — lihat
+  // PATCH /armada/revisions/:id di backend).
+  async function handleResolveComplaint() {
+    if (!window.confirm("Tandai komplain ini sudah tuntas/selesai ditangani?")) return;
+    setResolvingComplaint(true);
+    try {
+      await api.resolveOrderComplaint(order.id);
+      onRefresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setResolvingComplaint(false);
+    }
+  }
+
   // Tampilan berat badan di view mode
   const weightDisplay = (order.weightEntries && order.weightEntries.length > 0)
     ? order.weightEntries.map((e) => `${e.label}: ${e.beratKg} kg`).join(" · ")
@@ -683,16 +701,38 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         </div>
       )}
 
-      {/* Badge komplain (jika sudah ada) */}
+      {/* Badge komplain (jika sudah ada) — warna & tombol berubah begitu
+          complaintResolvedAt terisi (D-109, 9 September 2026). hasComplaint
+          SENGAJA tidak pernah direset (fakta historis analitik, lihat
+          komentar panjang di schema.prisma) — complaintResolvedAt yang
+          membedakan "masih perlu ditindak" vs "sudah tuntas". */}
       {order.hasComplaint && (
-        <div style={{ marginBottom: 10, padding: "8px 12px", background: "var(--red-bg)", borderRadius: 8, border: "1px solid var(--red)" }}>
+        <div style={{
+          marginBottom: 10, padding: "8px 12px", borderRadius: 8,
+          background: order.complaintResolvedAt ? "var(--bg-secondary)" : "var(--red-bg)",
+          border: `1px solid ${order.complaintResolvedAt ? "var(--border)" : "var(--red)"}`,
+        }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <AlertTriangle size={13} color="var(--red)" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--red)" }}>Ada Komplain</span>
-            <span style={{ fontSize: 11, color: "var(--red)", marginLeft: "auto" }}>{formatTanggal(order.complaintDate)}</span>
+            <AlertTriangle size={13} color={order.complaintResolvedAt ? "var(--text-secondary)" : "var(--red)"} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: order.complaintResolvedAt ? "var(--text-secondary)" : "var(--red)" }}>
+              {order.complaintResolvedAt ? "Komplain Sudah Tuntas" : "Ada Komplain"}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--text-secondary)", marginLeft: "auto" }}>
+              {order.complaintResolvedAt ? formatTanggal(order.complaintResolvedAt) : formatTanggal(order.complaintDate)}
+            </span>
           </div>
           {order.complaintDetail && (
             <p style={{ margin: 0, fontSize: 12, color: "var(--text-primary)" }}>{order.complaintDetail}</p>
+          )}
+          {!order.complaintResolvedAt && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleResolveComplaint}
+              disabled={resolvingComplaint}
+              style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Check size={12} /> {resolvingComplaint ? "..." : "Tandai Selesai"}
+            </button>
           )}
         </div>
       )}
@@ -1331,10 +1371,16 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       ) : null}
 
       {/* Tombol tandai komplain/ajukan revisi (hanya untuk order DELIVERED
-          yang belum punya komplain). D-025: ini jalur RESMI sales melaporkan
-          permintaan revisi customer ke admin — TIDAK dikunci walau order
-          sudah DELIVERED (justru syaratnya harus DELIVERED). */}
-      {!editing && order.status === "DELIVERED" && !order.hasComplaint && (
+          yang belum punya komplain BERJALAN). D-025: ini jalur RESMI sales
+          melaporkan permintaan revisi customer ke admin — TIDAK dikunci walau
+          order sudah DELIVERED (justru syaratnya harus DELIVERED).
+          ⚠️ Syarat diperluas (D-109, 9 September 2026) — sebelumnya order
+          yang PERNAH komplain tidak bisa mengajukan komplain baru SAMA
+          SEKALI (hasComplaint tidak pernah kembali false). Sekarang boleh
+          lagi begitu komplain sebelumnya sudah ditandai tuntas
+          (complaintResolvedAt terisi) — mis. customer sama komplain lagi di
+          kesempatan lain. */}
+      {!editing && order.status === "DELIVERED" && (!order.hasComplaint || order.complaintResolvedAt) && (
         <div style={{ marginTop: 8 }}>
           {!showComplaintForm ? (
             <button

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Search, Package, Tag, RefreshCw, AlertTriangle } from "lucide-react";
+import { Search, Package, Tag, RefreshCw, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -74,6 +74,38 @@ function ProduksiChip({ stage }) {
   );
 }
 
+// Kolom Revisi (D-109, 9 September 2026) — ini "keterlibatan Produksi" yang
+// hilang di kasus Dewi: sebelumnya satu-satunya cara tahu ada revisi/klaim
+// garansi berjalan adalah buka Delivery > Retur, Produksi buta total.
+// activeRevision datang dari GET /orders (units.revisions, lihat orders.js).
+// Tombol "Tandai Selesai" HANYA muncul untuk IN_REWORK — itu satu-satunya
+// transisi yang boleh dilakukan role Produksi (UNIT_STAGE_WRITE) lewat
+// PATCH /armada/revisions/:id (lihat guard di armada.js).
+const REVISI_LABEL = {
+  REQUESTED: "Diajukan", PICKUP_SCHEDULED: "Dijadwalkan Jemput",
+  IN_REWORK: "Dikerjakan Ulang", READY_REDELIVER: "Siap Dikirim Ulang",
+};
+function RevisiChip({ revision, busy, onSelesai }) {
+  if (!revision) return <span className="text-[11.5px] text-ink3">—</span>;
+  return (
+    <span className="flex items-center gap-1.5">
+      <Badge variant={revision.status === "READY_REDELIVER" ? "success" : "warning"}>
+        {REVISI_LABEL[revision.status] || revision.status}
+      </Badge>
+      {revision.status === "IN_REWORK" && (
+        <button
+          type="button" disabled={busy}
+          onClick={(e) => { e.stopPropagation(); onSelesai(revision.id); }}
+          className="flex items-center gap-1 rounded-btn bg-accentbg px-2 py-1 text-[11px] font-bold text-accent transition-colors hover:bg-accent hover:text-white disabled:opacity-50"
+          title="Tandai unit ini sudah selesai direvisi, siap dikirim ulang"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Tandai Selesai
+        </button>
+      )}
+    </span>
+  );
+}
+
 export default function ProductionOrders() {
   const [cari, setCari] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -86,6 +118,7 @@ export default function ProductionOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [openOrder, setOpenOrder] = useState(null);
+  const [revisiBusyId, setRevisiBusyId] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(cari.trim()), 300);
@@ -131,6 +164,23 @@ export default function ProductionOrders() {
       load();
     } catch (err) {
       alert("Gagal ubah status: " + err.message);
+    }
+  }
+
+  // D-109 (9 September 2026) — quick-action Produksi: tandai revisi IN_REWORK
+  // selesai dikerjakan, tanpa pindah ke Delivery > Retur. Backend menerima ini
+  // dari UNIT_STAGE_WRITE (permission yang sudah dipegang Kepala/Admin
+  // Produksi) HANYA untuk transisi persis ini — lihat guard di armada.js
+  // PATCH /revisions/:id.
+  async function tandaiSelesaiRevisi(revisionId) {
+    setRevisiBusyId(revisionId);
+    try {
+      await api.updateRevision(revisionId, { status: "READY_REDELIVER" });
+      load();
+    } catch (err) {
+      alert("Gagal menandai revisi selesai: " + err.message);
+    } finally {
+      setRevisiBusyId(null);
     }
   }
 
@@ -210,6 +260,7 @@ export default function ProductionOrders() {
                 <TH>Kategori</TH>
                 <TH>Status</TH>
                 <TH>Produksi</TH>
+                <TH>Revisi</TH>
                 <TH>Pengambilan</TH>
                 <TH>Pengiriman</TH>
                 <TH>Pembayaran</TH>
@@ -219,7 +270,7 @@ export default function ProductionOrders() {
             </THead>
             <TBody>
               {loading ? (
-                <TableSkeletonRows rows={8} cols={10} />
+                <TableSkeletonRows rows={8} cols={11} />
               ) : orders && orders.length > 0 ? (
                 orders.map((o) => (
                   <TR key={o.id} clickable onClick={() => setOpenOrder(o)}>
@@ -233,7 +284,7 @@ export default function ProductionOrders() {
                             Delivery (silo total). Datanya SUDAH ada di respons ini
                             (Order.hasComplaint disertakan apa adanya) — cuma belum
                             pernah ditampilkan di sini. */}
-                        {o.hasComplaint && (
+                        {o.hasComplaint && !o.complaintResolvedAt && (
                           <AlertTriangle
                             size={13} className="shrink-0 text-red"
                             title={`Ada komplain: ${o.complaintDetail || "(tanpa detail)"}`}
@@ -246,6 +297,9 @@ export default function ProductionOrders() {
                       <StatusSelect order={o} onChange={handleStatusChange} />
                     </TD>
                     <TD><ProduksiChip stage={o.productionStage} /></TD>
+                    <TD onClick={(e) => e.stopPropagation()}>
+                      <RevisiChip revision={o.activeRevision} busy={revisiBusyId === o.activeRevision?.id} onSelesai={tandaiSelesaiRevisi} />
+                    </TD>
                     <TD><JobChip label="Ambil" job={o.pickupJob} /></TD>
                     <TD><JobChip label="Kirim" job={o.deliveryJob} /></TD>
                     <TD>
@@ -258,7 +312,7 @@ export default function ProductionOrders() {
                   </TR>
                 ))
               ) : (
-                <TableEmptyRow colSpan={10}>
+                <TableEmptyRow colSpan={11}>
                   <EmptyState
                     icon={Package}
                     title="Tidak ada order yang cocok"

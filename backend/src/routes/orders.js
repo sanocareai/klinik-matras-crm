@@ -840,6 +840,16 @@ orderRouter.get("/", async (req, res) => {
           select: {
             id: true, status: true,
             currentStage: { select: { labelId: true } },
+            // revisionLinks (9 September 2026, D-109) — supaya "Semua Order"
+            // Produksi & Delivery bisa lihat & BERTINDAK atas klaim garansi/
+            // trial kenyamanan tanpa pindah halaman ke drawer revisi. Cuma
+            // yang masih berjalan (bukan REDELIVERED/CONFIRMED/CANCELLED) —
+            // itu histori selesai, tidak perlu quick-action lagi.
+            revisions: {
+              where: { status: { notIn: ["REDELIVERED", "CONFIRMED", "CANCELLED"] } },
+              orderBy: { createdAt: "desc" }, take: 1,
+              select: { id: true, status: true, trigger: true, complaint: true, jobId: true },
+            },
           },
         },
       },
@@ -883,9 +893,16 @@ orderRouter.get("/", async (req, res) => {
               : { label: `${labelSet.length} tahap berbeda`, mixed: true, detail: labelSet, unitCount: hidup.length };
         }
       }
+      // Revisi aktif (D-109) — ambil dari unit manapun yang masih punya
+      // revisi berjalan (normalnya cuma 1 unit per order yang direvisi,
+      // tapi kalau lebih, yang paling baru dibuat menang — cukup untuk
+      // quick-action "Semua Order", detail lengkap tetap di drawer).
+      const activeRevision = units
+        .flatMap((u) => u.revisions.map((r) => ({ ...r, unitId: u.id })))[0] || null;
       return {
         ...o,
         productionStage,
+        activeRevision,
         customerId:   customer?.id || null,
         customerName: customer?.name || null,
         customerPhone: customer?.phone || null,
@@ -1786,7 +1803,13 @@ orderRouter.post("/:id/cancel", async (req, res) => {
 
 // PATCH /api/orders/:id/complaint — tandai order sebagai komplain
 // Hanya bisa kalau status order sudah DELIVERED
-orderRouter.patch("/:id/complaint", async (req, res) => {
+// ⚠️ requirePermission(P.ORDER_WRITE) DITAMBAHKAN 9 September 2026 (D-109) —
+// sebelumnya endpoint ini TIDAK punya penjaga peran sama sekali (cuma
+// requireAuth global), jadi siapa pun yang login (termasuk driver/QC yang
+// tidak berurusan dengan komplain) bisa menandai order manapun. Dipersempit
+// ke ORDER_WRITE, konsisten dengan PATCH /:id dan reopen-for-delivery di
+// file yang sama.
+orderRouter.patch("/:id/complaint", requirePermission(P.ORDER_WRITE), async (req, res) => {
   const { complaintDetail } = req.body;
   try {
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
@@ -1801,6 +1824,39 @@ orderRouter.patch("/:id/complaint", async (req, res) => {
         hasComplaint:    true,
         complaintDate:   new Date(),
         complaintDetail: complaintDetail?.trim() || null,
+        // Komplain baru selalu dianggap belum tuntas, bahkan kalau order ini
+        // sebelumnya pernah komplain lalu sudah diselesaikan — lihat komentar
+        // panjang di schema.prisma soal hasComplaint vs complaintResolvedAt.
+        complaintResolvedAt:   null,
+        complaintResolvedById: null,
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/:id/complaint/resolve — tandai komplain SUDAH TUNTAS
+// (9 September 2026, D-109). Jalur MANUAL untuk komplain yang tidak lewat
+// alur revisi UnitRevision sama sekali (mis. sekadar keluhan ringan yang
+// diselesaikan lewat telepon) — kalau lewat revisi, lihat auto-resolve saat
+// UnitRevision mencapai CONFIRMED di PATCH /armada/revisions/:id.
+orderRouter.post("/:id/complaint/resolve", requirePermission(P.ORDER_WRITE), async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (!order.hasComplaint) {
+      return res.status(400).json({ error: "Order ini tidak sedang menandai komplain" });
+    }
+    if (order.complaintResolvedAt) {
+      return res.status(400).json({ error: "Komplain ini sudah ditandai tuntas sebelumnya" });
+    }
+    const updated = await prisma.order.update({
+      where: { id: req.params.id },
+      data: {
+        complaintResolvedAt:   new Date(),
+        complaintResolvedById: req.user.id,
       },
     });
     res.json(updated);

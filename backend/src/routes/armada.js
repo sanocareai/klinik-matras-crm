@@ -3262,6 +3262,22 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       });
       await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       await syncRouteCompletionStatus(tx, job.routeId);
+      // Auto-advance UnitRevision (9 September 2026, D-109) — job ini bisa
+      // saja bukan job pengiriman/pengambilan pertama order (lihat
+      // POST /revisions/:id/create-pickup-job & create-delivery-job), jadi
+      // begitu SELESAI, revisi yang menunjuk ke job ini harus otomatis maju
+      // tanpa dispatcher perlu buka drawer revisi terpisah untuk klik lagi.
+      // updateMany dengan `status` di where SEKALIGUS jadi guard — kalau
+      // revisinya sudah dipindah tangan manual ke status lain (jarang, tapi
+      // mungkin), auto-advance ini diam-diam tidak melakukan apa-apa alih-alih
+      // menimpa keputusan manusia.
+      await tx.unitRevision.updateMany({
+        where: {
+          jobId: job.id,
+          status: job.type === "PICKUP" ? "PICKUP_SCHEDULED" : "READY_REDELIVER",
+        },
+        data: { status: job.type === "PICKUP" ? "IN_REWORK" : "REDELIVERED" },
+      });
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
@@ -3557,12 +3573,41 @@ armadaRouter.post("/revisions", requirePermission(P.JOB_WRITE), async (req, res)
 
 // PATCH /api/armada/revisions/:id — perbarui status/job/catatan. CONFIRMED
 // otomatis mengisi confirmedAt; CANCELLED wajib catatan alasan.
-armadaRouter.patch("/revisions/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
+//
+// ⚠️ Permission diperluas (9 September 2026, D-109) — SEBELUMNYA endpoint ini
+// terkunci total ke JOB_WRITE (dispatcher/admin), padahal transisi
+// IN_REWORK→READY_REDELIVER ("unit selesai direvisi, siap dikirim ulang")
+// keputusannya ada di TANGAN PRODUKSI (yang benar-benar mengerjakan
+// revisinya), bukan dispatcher — itulah gap "Produksi tidak terlibat sama
+// sekali" yang ditemukan di kasus Dewi. requireAnyPermission meloloskan
+// JOB_WRITE (semua transisi, seperti sebelumnya) ATAU UNIT_STAGE_WRITE, tapi
+// UNIT_STAGE_WRITE dibatasi lebih ketat DI DALAM handler — hanya transisi
+// IN_REWORK→READY_REDELIVER persis, field lain (jobId/note/status lain)
+// tetap ditolak untuknya. Ini SENGAJA bukan permission baru — pinjam
+// UNIT_STAGE_WRITE yang sudah dipegang PRODUCTION_LEAD/PRODUCTION_WORKER/
+// QC_LEAD (lihat constants/permissions.js), sama seperti mereka memajukan
+// tahap unit lainnya.
+armadaRouter.patch("/revisions/:id", requireAnyPermission(P.JOB_WRITE, P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     const existing = await prisma.unitRevision.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Revisi tidak ditemukan" });
 
     const { status, jobId, note } = req.body;
+    const bolehSemua = hasPermission(req.user, P.JOB_WRITE);
+
+    if (!bolehSemua) {
+      // Jalur PRODUCTION_LEAD/PRODUCTION_WORKER/QC_LEAD (UNIT_STAGE_WRITE
+      // saja, tanpa JOB_WRITE) — HANYA transisi status IN_REWORK→
+      // READY_REDELIVER, tidak boleh mengubah jobId/note atau status lain
+      // (itu ranah dispatcher: menjadwalkan job, membatalkan revisi, dst).
+      if (jobId !== undefined || note !== undefined) {
+        throw new ArmadaError("Tidak punya izin mengubah field ini — hanya bisa menandai revisi selesai dikerjakan");
+      }
+      if (status !== "READY_REDELIVER" || existing.status !== "IN_REWORK") {
+        throw new ArmadaError("Tidak punya izin untuk transisi status ini");
+      }
+    }
+
     const data = {};
     if (jobId !== undefined) data.jobId = jobId || null;
     if (note !== undefined) data.note = note || null;
@@ -3576,12 +3621,73 @@ armadaRouter.patch("/revisions/:id", requirePermission(P.JOB_WRITE), async (req,
       data.confirmedAt = status === "CONFIRMED" ? new Date() : existing.confirmedAt;
     }
 
-    const revision = await prisma.unitRevision.update({
-      where: { id: req.params.id },
-      data,
-      include: unitRevisionInclude,
+    // Auto-resolve komplain Order (D-109) — begitu revisi dikonfirmasi
+    // customer (puas dengan hasil revisi), komplain yang memicunya di Sales
+    // CRM ikut ditandai tuntas OTOMATIS, tanpa sales perlu tahu/klik lagi di
+    // halaman lain. hasComplaint SENGAJA TIDAK direset (lihat komentar
+    // panjang di schema.prisma) — cuma complaintResolvedAt/By yang diisi.
+    const revision = await prisma.$transaction(async (tx) => {
+      const r = await tx.unitRevision.update({
+        where: { id: req.params.id },
+        data,
+        include: { ...unitRevisionInclude, unit: { select: { orderId: true } } },
+      });
+      if (status === "CONFIRMED") {
+        const order = await tx.order.findUnique({ where: { id: r.unit.orderId }, select: { hasComplaint: true, complaintResolvedAt: true } });
+        if (order?.hasComplaint && !order.complaintResolvedAt) {
+          await tx.order.update({
+            where: { id: r.unit.orderId },
+            data: { complaintResolvedAt: new Date(), complaintResolvedById: req.user.id },
+          });
+        }
+      }
+      return r;
     });
-    res.json(revision);
+    // unit di atas cuma dipilih orderId untuk logic — response tetap pakai
+    // bentuk unitRevisionInclude yang lengkap (unit.order.customer, dst).
+    const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
+    res.json(full);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/revisions/:id/create-delivery-job (9 September 2026,
+// D-109) — pasangan create-pickup-job di bawah: begitu revisi mencapai
+// READY_REDELIVER (Produksi sudah selesai mengerjakan ulang), dispatcher
+// butuh job PENGIRIMAN baru untuk mengantar balik ke customer. Sama seperti
+// kasus pickup, unit ini statusnya DELIVERED (dari pengiriman pertama) —
+// job normal (POST /jobs) akan menolaknya (lihat guard `expectedStatus`
+// di bawah). SENGAJA menimpa `jobId` (bukan menolak kalau sudah terisi
+// seperti create-pickup-job) — di titik ini jobId masih menunjuk job
+// PENGAMBILAN lama yang sudah COMPLETED, dan field itu merepresentasikan
+// "job yang relevan di fase SEKARANG", bukan riwayat semua job revisi ini.
+armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const revision = await prisma.unitRevision.findUnique({
+      where: { id: req.params.id },
+      include: { unit: { select: { id: true, unitCode: true, orderId: true } } },
+    });
+    if (!revision) return res.status(404).json({ error: "Revisi tidak ditemukan" });
+    if (revision.status !== "READY_REDELIVER") {
+      throw new ArmadaError(`Revisi berstatus ${revision.status} — job pengiriman cuma relevan setelah unit selesai direvisi (Siap Dikirim Ulang)`);
+    }
+
+    const jobId = await prisma.$transaction(async (tx) => {
+      const job = await tx.job.create({
+        data: {
+          type: "DELIVERY",
+          orderId: revision.unit.orderId,
+          accessNotes: `Pengiriman ulang setelah revisi ${revision.trigger === "GARANSI" ? "klaim garansi" : "trial kenyamanan"} — ${revision.complaint}`,
+        },
+      });
+      await tx.jobUnit.create({ data: { jobId: job.id, unitId: revision.unit.id } });
+      await tx.unitRevision.update({ where: { id: revision.id }, data: { jobId: job.id } });
+      return job.id;
+    });
+
+    const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
+    res.status(201).json(full);
   } catch (err) {
     handleErr(err, res);
   }
