@@ -109,7 +109,29 @@ const NOMINATIM_USER_AGENT = "SANSS-KlinikMatras/1.0 (+https://app.sanomatrasseh
 // walau linknya sah dan lengkap. Match tetap dilakukan tanpa protokol,
 // tapi `fetch()` di bawah butuh URL absolut — protokol ditambahkan balik
 // SEBELUM fetch kalau ternyata belum ada (lihat geocodeFromMapsLink()).
-const GOOGLE_MAPS_LINK_RE = /(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|share\.google|(?:www\.)?google\.com\/maps)\S*/i;
+// User-Agent BROWSER (9 September 2026, investigasi bug lanjutan yang SAMA
+// — audit 85 order menemukan 1 link `share.google` di-redirect Google ke
+// halaman "sorry/index" (verifikasi bot), BUKAN ke lokasinya — dites
+// langsung: `fetch()` polos Node.js TANPA header User-Agent custom (default
+// bawaan Node, jelas bukan browser) memicu deteksi bot Google. Ditambah
+// header User-Agent Chrome desktop biasa, redirect yang SAMA langsung
+// berhasil sampai ke halaman hasil (dites ulang, terbukti langsung). TIDAK
+// memalsukan identitas aplikasi kita (beda dari NOMINATIM_USER_AGENT di
+// atas yang SENGAJA jujur mengidentifikasi diri, sesuai kebijakan resmi
+// Nominatim) — Google tidak punya kebijakan serupa yang meminta itu,
+// sebaliknya browser sungguhan memang begini adanya, jadi ini cuma
+// menghindari heuristik false-positive "bukan manusia", bukan menyamar
+// untuk melanggar aturan siapa pun.
+const CHROME_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+// `maps.google.com` (9 September 2026, ditemukan investigasi bug lanjutan
+// "RES-03092026-017 link beda antara Sales CRM & Delivery" — audit 85 order
+// menemukan RES-30082026-212 tersimpan sebagai `https://maps.google.com/
+// ?q=-6.250391,106.822937`, domain BEDA dari `google.com/maps`/`www.google.
+// com/maps` yang sudah dikenali — subdomain `maps.` bukan path `/maps`).
+// Google sendiri MEMPERLAKUKAN domain ini sama seperti Maps biasa (redirect
+// ke hasil yang sama), regex kita saja yang belum mengenalinya sama sekali.
+const GOOGLE_MAPS_LINK_RE = /(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps|share\.google|maps\.google\.com|(?:www\.)?google\.com\/maps)\S*/i;
 const LATLNG_BANG_RE = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
 const LATLNG_QUERY_RE = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)(?:&|$)/;
 const PLACE_PATH_RE = /\/maps\/place\/([^/]+)\//;
@@ -178,7 +200,10 @@ export async function geocodeFromMapsLink(text) {
   // Protokol ditambahkan balik kalau match-nya tidak bawa (lihat catatan
   // panjang di GOOGLE_MAPS_LINK_RE) — fetch() butuh URL absolut.
   const urlUntukFetch = /^https?:\/\//i.test(match[0]) ? match[0] : `https://${match[0]}`;
-  const res = await fetch(urlUntukFetch);
+  // User-Agent browser (lihat catatan panjang di CHROME_USER_AGENT) —
+  // TANPA ini Google kadang redirect ke halaman verifikasi bot, bukan ke
+  // lokasinya.
+  const res = await fetch(urlUntukFetch, { headers: { "User-Agent": CHROME_USER_AGENT } });
   const finalUrl = res.url;
 
   // Tier 1-2: koordinat MENTAH langsung di URL redirect — tanpa panggilan
