@@ -342,21 +342,37 @@ export function salesLocationUrl(job) {
   return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
 }
 
-// SATU link Maps, prioritas: link sales (D-040 lanjutan, 6 September 2026)
-// > lat/lng hasil geocode Job.addressText > pencarian teks alamat.
+// SATU link Maps, prioritas: koordinat hasil geocode > link sales mentah >
+// pencarian teks alamat.
 //
 // SEMPAT dicoba tampil 2 link TERPISAH (sales vs geocode job) supaya
 // dispatcher bisa cross-check kalau beda — TERNYATA di praktiknya cuma
 // jadi dobel/berantakan di layar (laporan owner langsung, screenshot),
 // karena Job.addressText pada umumnya MEMANG diisi dari alamat sales yang
 // sama, jadi dua link itu hampir selalu menuju titik yang sama. Balik jadi
-// SATU sumber kebenaran: link sales menang kalau ada (dikonfirmasi
-// langsung ke customer, lebih dipercaya dari geocode alamat teks), baru
-// fallback ke geocode job sendiri kalau order belum punya link sales.
+// SATU sumber kebenaran.
+//
+// DIBALIK 8 September 2026 (investigasi laporan owner: customer Steven
+// RES-26082026-173, klik link Maps di desktop = HALAMAN KOSONG, di HP baru
+// muncul Plus Code "RQX2+774"). Root cause DIBUKTIKAN, bukan dugaan: link
+// sales mentah (`maps.app.goo.gl/...`) di-tes langsung lewat
+// geocodeFromMapsLink() di backend produksi — hasilnya PERSIS SAMA dengan
+// job.lat/lng yang SUDAH tersimpan (-6.1518484, 106.7507282, non-estimate).
+// Jadi koordinat kita SUDAH akurat & bersumber dari link sales itu juga
+// (kebijakan link-only geocodeAddress() sejak 8 Sep — job.lat/lng TIDAK
+// PERNAH lagi berasal dari tebakan teks). Masalahnya murni Google sendiri:
+// link pendek `maps.app.goo.gl` ke titik pin TANPA alamat resmi (Plus Code
+// only) kadang gagal render di browser desktop, sementara app Maps di HP
+// selalu berhasil. Solusinya BUKAN link sales lagi yang jadi utama — pakai
+// URL `maps/dir` dari koordinat (rendering-nya konsisten di semua
+// platform/browser, TIDAK bergantung idiosinkrasi short-link Google), yang
+// tujuannya tetap titik SAMA PERSIS karena datang dari link sales yang
+// sama. Link sales mentah jadi fallback (job belum sempat di-geocode —
+// jendela singkat sebelum self-heal "Buat Peta"/ensureJobsGeocoded jalan).
 export function mapsUrl(job) {
+  if (job?.lat && job?.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
   const sales = salesLocationUrl(job);
   if (sales) return sales;
-  if (job?.lat && job?.lng) return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
   if (job?.addressText) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.addressText)}`;
   return null;
 }
