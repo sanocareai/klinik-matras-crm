@@ -27,6 +27,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
 import { notifyDriverJobAssigned, notifyProductionRevisionReady, notifySalesJobFailed } from "../services/pushNotifications.js";
+import { notifySalesJobCompleted } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
@@ -3515,6 +3516,13 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     const headline = job.type === "PICKUP" ? "✅ Pengambilan selesai" : "✅ Pengiriman selesai";
     notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
       console.error("[jobs/:id/complete] notifyDriverGroup gagal:", err.message)
+    );
+
+    // Notifikasi WA ke sales pemilik order (9 Sep 2026, permintaan owner:
+    // sistem broadcast) — best-effort, staged (enabled:false default),
+    // lihat catatan header services/deliveryCompletionNotify.js.
+    notifySalesJobCompleted(updated).catch((err) =>
+      console.error("[jobs/:id/complete] notifySalesJobCompleted gagal:", err.message)
     );
 
     // Push ke Produksi (D-109) — cuma untuk PICKUP yang barusan membawa unit

@@ -52,8 +52,14 @@ import {
   loadIncompleteDataBySales,
   loadZeroClosingSalesIds,
   loadStatusTransitionReminderBySales,
+  loadUnpaidDeliveredBySales,
   daftarSalesAktif,
 } from "./salesReminderDigestJob.js";
+// Poin 2 baru (9 Sep 2026, permintaan owner) — hitung job delivery/armada
+// yang SELESAI hari ini, dipakai ulang dari services/deliveryCompletionNotify.js
+// (SATU sumber kebenaran dgn notifikasi real-time ke sales), bukan
+// diimplementasi ulang di sini.
+import { loadJobsCompletedTodayBySales } from "./deliveryCompletionNotify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
@@ -99,7 +105,10 @@ function tandaiEskalasi(remindedTodaySet, topicKey, salesId) {
   return remindedTodaySet.has(`${topicKey}:${salesId}`) ? " ⚠️ _(sudah diingatkan, belum ditindaklanjuti)_" : "";
 }
 
-function baris1Sales({ sales, unread, hanging, incomplete, processing, followUp, zeroClosingIds, remindedTodaySet }) {
+function baris1Sales({
+  sales, unread, hanging, incomplete, processing, followUp, zeroClosingIds, remindedTodaySet,
+  unpaidDelivered, completedJobsToday,
+}) {
   const item = [];
   const u = unread.get(sales.id);
   if (u?.length) item.push(`📩 ${u.length} chat belum dibaca${tandaiEskalasi(remindedTodaySet, "unread", sales.id)}`);
@@ -112,6 +121,18 @@ function baris1Sales({ sales, unread, hanging, incomplete, processing, followUp,
   const fu = followUp.get(sales.id);
   if (fu?.length) item.push(`⭐ ${fu.length} follow-up H+1 belum dilakukan${tandaiEskalasi(remindedTodaySet, "followUp", sales.id)}`);
   if (zeroClosingIds.has(sales.id)) item.push(`💰 belum closing hari ini`);
+  // Poin 7 sales-reminder (9 Sep 2026) — reuse loader, escalation tag SAMA
+  // topicKey ("unpaidDelivered") dgn dispatchSection() di
+  // salesReminderDigestJob.js, walau topik itu sendiri masih staged
+  // (unpaidDeliveredEnabled:false) — rekap Novi tetap tampilkan kondisinya
+  // apa adanya, cuma tag ⚠️ "sudah diingatkan"-nya yang baru relevan begitu
+  // topik itu dinyalakan owner.
+  const up = unpaidDelivered.get(sales.id);
+  if (up?.length) item.push(`💳 ${up.length} order terkirim belum LUNAS${tandaiEskalasi(remindedTodaySet, "unpaidDelivered", sales.id)}`);
+  // Poin 2 baru (9 Sep 2026) — informasional (BUKAN masalah yang perlu
+  // ditindaklanjuti), jadi TIDAK dapat tanda eskalasi ⚠️ seperti item lain.
+  const cj = completedJobsToday.get(sales.id);
+  if (cj?.length) item.push(`🚚 ${cj.length} pengiriman/pengambilan berhasil hari ini`);
 
   if (item.length === 0) return `✅ *${sales.name}* — semua aman`;
   return `*${sales.name}*\n${item.map((i) => `- ${i}`).join("\n")}`;
@@ -131,9 +152,12 @@ export async function buildRecap({ referenceNow = new Date() } = {}) {
   const followUp = await loadStatusTransitionReminderBySales(salesConfig, now, "DELIVERED");
   const zeroClosingIds = new Set(await loadZeroClosingSalesIds(salesList, now));
   const remindedTodaySet = await loadRemindedTodaySet(now);
+  const unpaidDelivered = await loadUnpaidDeliveredBySales(salesConfig);
+  const completedJobsToday = await loadJobsCompletedTodayBySales(now);
 
   const barisTim = salesList.map((sales) => baris1Sales({
     sales, unread, hanging, incomplete, processing, followUp, zeroClosingIds, remindedTodaySet,
+    unpaidDelivered, completedJobsToday,
   }));
 
   const pesan = [

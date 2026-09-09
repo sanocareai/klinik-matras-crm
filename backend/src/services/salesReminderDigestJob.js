@@ -37,6 +37,16 @@
 //      kirim update dokumentasi ke customer, dan pastikan semua request
 //      customer sudah dipenuhi SEBELUM dikirim (permintaan owner 7 Sep
 //      2026). Default jadwal: 14:00 WIB.
+//   7. Terkirim TAPI BELUM LUNAS (9 September 2026, permintaan owner) —
+//      PERSISTEN (sama pola dgn poin 3/Data Belum Lengkap), BEDA dari
+//      poin 4/Follow-up H+1 yang window sekali-lapor: order ini akan terus
+//      muncul TIAP HARI selama paymentStatus belum LUNAS, karena "belum
+//      lunas" adalah kondisi yang harus terus ditindaklanjuti, bukan
+//      peristiwa sekali-jadi. Default jadwal: 10:00 WIB. Punya flag
+//      enable TERPISAH (`unpaidDeliveredEnabled`, lihat DEFAULT_CONFIG) —
+//      topik baru ini TIDAK ikut aktif otomatis walau `enabled` utama
+//      sudah true di production (6 topik lama sudah live), supaya owner
+//      sempat meninjau contoh pesannya dulu sebelum benar-benar terkirim.
 //
 // RIWAYAT (7 September 2026, permintaan owner — "gahanya riwayat broadcast
 // yang dibikin manual, tapi yang dikirim otomatis juga"): tiap kali SATU
@@ -74,12 +84,13 @@ const DEFAULT_CONFIG = {
   // Jam WIB berbeda per topik (revisi 7 Sep 2026) — tersebar sepanjang jam
   // kerja, Senin-Sabtu, supaya tidak ada 1 momen "5 topik sekaligus".
   schedule: {
-    unread:      "0 9 * * 1-6",
-    hanging:     "0 11 * * 1-6",
-    incomplete:  "0 13 * * 1-6",
-    processing:  "0 14 * * 1-6",
-    followUp:    "0 15 * * 1-6",
-    zeroClosing: "0 17 * * 1-6",
+    unread:          "0 9 * * 1-6",
+    unpaidDelivered: "0 10 * * 1-6",
+    hanging:         "0 11 * * 1-6",
+    incomplete:      "0 13 * * 1-6",
+    processing:      "0 14 * * 1-6",
+    followUp:        "0 15 * * 1-6",
+    zeroClosing:     "0 17 * * 1-6",
   },
   unreadThresholdMinutes: 60, // poin 1
   hangingThresholdMinutes: 60, // poin 2
@@ -88,6 +99,11 @@ const DEFAULT_CONFIG = {
   // yang diharapkan sales. Order sebelum tanggal ini TIDAK PERNAH ikut
   // dihitung "perlu dilengkapi" atau "perlu follow-up".
   dataSejakTanggal: "2026-09-01",
+  // Poin 7 (9 Sep 2026) — lihat catatan header. Default MATI TERPISAH dari
+  // `enabled` di atas walau `enabled` sudah true di production — dicek
+  // TAMBAHAN (AND, bukan pengganti) sebelum topik ini benar-benar kirim,
+  // lihat runUnpaidDeliveredCycle().
+  unpaidDeliveredEnabled: false,
 };
 
 // Diekspor (7 Sep 2026) sbg readSalesReminderConfig — services/
@@ -221,6 +237,38 @@ export async function loadIncompleteDataBySales(config) {
       orderNumber: o.orderNumber || o.id,
       nama: o.customer?.name || o.customer?.phone || "(tanpa nama)",
       missing,
+    });
+  }
+  return bySales;
+}
+
+// ── Poin 7: order sudah TERKIRIM tapi belum LUNAS ──────────────────────────
+// PERSISTEN (bukan window kalender seperti poin 4) — order ini terus lolos
+// filter SELAMA paymentStatus belum LUNAS, berapa hari pun. `export` (sama
+// alasan loader lain di file ini) — dipakai ulang leaderRecapJob.js supaya
+// angka yang dilihat Novi konsisten dgn yang dikirim ke sales-nya.
+export async function loadUnpaidDeliveredBySales(config) {
+  const orders = await prisma.order.findMany({
+    where: {
+      status: "DELIVERED",
+      paymentStatus: { not: "LUNAS" },
+      createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) },
+    },
+    select: {
+      id: true, orderNumber: true, paymentStatus: true,
+      customer: { select: { name: true, phone: true, assignedSalesId: true } },
+    },
+  });
+
+  const bySales = new Map(); // salesId -> [{ orderNumber, nama, paymentStatus }]
+  for (const o of orders) {
+    const salesId = o.customer?.assignedSalesId;
+    if (!salesId) continue;
+    if (!bySales.has(salesId)) bySales.set(salesId, []);
+    bySales.get(salesId).push({
+      orderNumber: o.orderNumber || o.id,
+      nama: o.customer?.name || o.customer?.phone || "(tanpa nama)",
+      paymentStatus: o.paymentStatus,
     });
   }
   return bySales;
@@ -375,6 +423,18 @@ function composeFollowUpMessage(nama, items) {
   ].filter(Boolean).join("\n");
 }
 
+function composeUnpaidDeliveredMessage(nama, items) {
+  if (!items?.length) return null;
+  return [
+    `👋 Halo *${nama}*, ada ${items.length} order yang *sudah terkirim* tapi *belum LUNAS*:`,
+    "",
+    ...items.slice(0, 10).map((o) => `- ${o.nama} (${o.orderNumber}) — ${o.paymentStatus === "DP" ? "baru DP" : "belum bayar"}`),
+    items.length > 10 ? `...dan ${items.length - 10} lainnya` : null,
+    "",
+    "Yuk ditagih supaya lunas 🙏",
+  ].filter(Boolean).join("\n");
+}
+
 function composeZeroClosingMessage(nama) {
   return `👋 Halo *${nama}*, belum ada order baru yang closing hari ini — yuk semangat, masih ada waktu! 💪`;
 }
@@ -517,6 +577,20 @@ export async function runProcessingCycle({ referenceNow = new Date(), dryRun = f
   });
 }
 
+export async function runUnpaidDeliveredCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const config = readConfig();
+  const salesList = await daftarSalesAktif();
+  const unpaidBySales = await loadUnpaidDeliveredBySales(config);
+  return dispatchSection({
+    // AND dgn flag khusus topik ini — lihat catatan DEFAULT_CONFIG di atas.
+    // dryRun tidak terpengaruh (dispatchSection tidak cek `enabled` sama
+    // sekali di jalur dryRun), jadi preview tetap jalan normal.
+    config: { ...config, enabled: config.enabled && config.unpaidDeliveredEnabled },
+    dryRun, salesList, label: "Terkirim Belum Lunas", topicKey: "unpaidDelivered",
+    computeMessage: (s) => composeUnpaidDeliveredMessage(s.name, unpaidBySales.get(s.id)),
+  });
+}
+
 export async function runZeroClosingCycle({ referenceNow = new Date(), dryRun = false } = {}) {
   const config = readConfig();
   const now = referenceNow.getTime();
@@ -532,6 +606,7 @@ export function startSalesReminderDigestJob() {
   const config = readConfig();
   const topik = [
     ["unread", config.schedule.unread, runUnreadCycle, "Chat Belum Dibaca"],
+    ["unpaidDelivered", config.schedule.unpaidDelivered, runUnpaidDeliveredCycle, "Terkirim Belum Lunas"],
     ["hanging", config.schedule.hanging, runHangingCycle, "Chat Menggantung"],
     ["incomplete", config.schedule.incomplete, runIncompleteCycle, "Data Belum Lengkap"],
     ["processing", config.schedule.processing, runProcessingCycle, "Mulai Diproses"],
