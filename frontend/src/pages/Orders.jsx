@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search, X, RefreshCw, Download, LayoutGrid, List as ListIcon,
-  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2, Truck,
+  AlertTriangle, Clock, MessageSquare, Package, Tag, Wallet, UserRound, Percent, GitBranch, Loader2, Truck, RotateCcw,
 } from "lucide-react";
 import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -272,7 +272,21 @@ function PaymentStatusSelect({ order, onChange, className, locked }) {
   );
 }
 
-function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked }) {
+// "Terkirim" tapi belum pernah punya job Pengiriman sama sekali (9 September
+// 2026, laporan owner lanjutan D-064: reopen-for-delivery/JobDetailDrawer
+// SUDAH ada [commit 0554b3f1], tapi cuma bisa dijangkau lewat drawer job —
+// order yang jobnya NOL SAMA SEKALI (staf langsung tarik dropdown status ke
+// "Terkirim" tanpa job Pengambilan pun pernah dibuat) tidak pernah dapat job
+// untuk dibuka drawernya, jadi tombolnya tidak pernah kelihatan. Ditaruh di
+// sini (halaman Order, tempat dropdown status manual itu sendiri berada)
+// supaya SEMUA kasus kejangkau, bukan cuma yang kebetulan sudah punya job.
+// Endpoint backend (POST /orders/:id/reopen-for-delivery) sendiri sudah
+// generik — cek Unit.status, bukan keberadaan Job — dipakai ulang apa adanya.
+function bolehDibukaLagiUntukPengiriman(order) {
+  return order.status === "DELIVERED" && order.category !== "SEWA" && !order.deliveryJob;
+}
+
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked, onReopenForDelivery, reopeningId }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   // D-030 (revisi 20 Agustus 2026): SELURUH kartu bisa diklik untuk buka
@@ -353,6 +367,22 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
                 {j.driverName ? ` · ${j.driverName}` : ""}
               </p>
             ))}
+        </div>
+      )}
+
+      {bolehDibukaLagiUntukPengiriman(order) && (
+        <div className="mt-1.5 rounded-btn border border-orange/40 bg-orangebg px-2 py-1.5">
+          <p className="text-[11px] text-orange">
+            "Terkirim" tapi belum pernah punya job Pengiriman — kemungkinan cuma pengambilan yang selesai.
+          </p>
+          <button
+            type="button" disabled={reopeningId === order.id}
+            onClick={(e) => { e.stopPropagation(); onReopenForDelivery(order); }}
+            className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-orange underline decoration-dotted disabled:opacity-60"
+          >
+            {reopeningId === order.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+            Buka lagi utk Pengiriman
+          </button>
         </div>
       )}
 
@@ -682,7 +712,25 @@ export default function Orders() {
     }
   }
 
+  // "Buka lagi utk Pengiriman" langsung dari halaman Order (9 September 2026)
+  // — lihat catatan panjang di bolehDibukaLagiUntukPengiriman di atas. Sama
+  // endpoint yang dipakai JobDetailDrawer.jsx (bukaLagiUntukPengiriman), cuma
+  // dijangkau dari tempat berbeda supaya order tanpa job sama sekali juga
+  // kejangkau.
+  async function handleReopenForDelivery(order) {
+    setReopeningId(order.id);
+    try {
+      await api.reopenOrderForDelivery(order.id);
+      await load();
+    } catch (err) {
+      alert("Gagal buka lagi utk pengiriman: " + err.message);
+    } finally {
+      setReopeningId(null);
+    }
+  }
+
   const [exporting, setExporting] = useState(false);
+  const [reopeningId, setReopeningId] = useState(null);
 
   async function handleExport() {
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner: "gue set
@@ -1134,7 +1182,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} onReopenForDelivery={handleReopenForDelivery} reopeningId={reopeningId} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -1227,6 +1275,17 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
+                        {bolehDibukaLagiUntukPengiriman(o) && (
+                          <button
+                            type="button" disabled={reopeningId === o.id}
+                            onClick={(e) => { e.stopPropagation(); handleReopenForDelivery(o); }}
+                            title='"Terkirim" tapi belum pernah punya job Pengiriman'
+                            className="mt-1 flex items-center gap-1 text-[10.5px] font-semibold text-orange underline decoration-dotted disabled:opacity-60"
+                          >
+                            {reopeningId === o.id ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                            Buka lagi
+                          </button>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <ReadinessBadge order={o} />
