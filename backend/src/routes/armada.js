@@ -388,23 +388,26 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
   const mapsUrlFinal = route.manualMapsUrl?.trim() || mapsUrl;
 
-  // Link Keseluruhan Rute DIPINDAH ke PALING ATAS (9 September 2026, laporan
-  // owner: "link keseluruhan jalur ada paling atas") — SEBELUMNYA di baris
-  // paling bawah setelah semua stop, driver harus scroll dulu buat buka rute
-  // gabungannya. Sekarang jadi hal PERTAMA yang kelihatan begitu chat dibuka.
   const baris = [
-    mapsUrlFinal
-      ? `🔗*Link Keseluruhan Rute:* ${mapsUrlFinal}`
-      : "(Link keseluruhan rute belum bisa dibuat — belum ada stop dengan alamat/koordinat)",
-    "",
     label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
     `*${plat}${tipeKendaraan} — ${driverLine}*`,
   ];
 
-  // Catatan Rute (Route.notes, freeform dispatcher — lihat komentar §2 di
-  // atas soal kenapa ini tetap teks bebas) sekarang tampil sebagai BULLET
-  // LIST di bawah header, bukan lagi "Detail Catatan:" di paling bawah —
-  // persis posisi & format di contoh template owner ("✏️Catatan Rute:").
+  // Link Keseluruhan Rute + Catatan Rute DIKELOMPOKKAN di ATAS, SEBELUM
+  // daftar stop (9 September 2026, laporan owner — awalnya link ditaruh
+  // PALING PERTAMA di seluruh pesan, tapi owner koreksi: cukup di ATAS
+  // daftar stop, TETAP setelah header hari/tanggal & kendaraan/driver
+  // supaya driver tahu dulu itu rute siapa sebelum lihat link/catatannya.
+  // Catatan Rute yang SEBELUMNYA nempel setelah header juga dipindah ke
+  // sini, tepat di bawah link, jadi satu blok info rute yang sama —
+  // bukan lagi terpisah dua tempat berbeda di pesan.
+  baris.push(
+    "",
+    mapsUrlFinal
+      ? `🔗*Link Keseluruhan Rute:* ${mapsUrlFinal}`
+      : "(Link keseluruhan rute belum bisa dibuat — belum ada stop dengan alamat/koordinat)"
+  );
+
   const catatanRuteLines = (route.notes || "").split("\n").map((s) => s.trim()).filter(Boolean);
   if (catatanRuteLines.length > 0) {
     baris.push("", "*✏️Catatan Rute:*", ...catatanRuteLines.map((l) => `- ${l}`));
