@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "Sano Driver",
+    "slug": "sano-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.klinikmatras.drivermobile",
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0D16",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#4C8DFF"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Sano Driver butuh akses kamera untuk bukti foto pengambilan/pengiriman"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Sano Driver butuh akses lokasi untuk melacak posisi selama perjalanan"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "backgroundColor": "#0A0D16",
+          "resizeMode": "contain",
+          "imageWidth": 180
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "enableMinifyInReleaseBuilds": true
+          }
+        }
+      ],
+      "expo-image",
+      "expo-asset"
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0fd04b96-1357-4fde-876b-db934dac6149"
+      }
+    },
+    "owner": "sanocare",
+    "updates": {
+      "url": "https://u.expo.dev/0fd04b96-1357-4fde-876b-db934dac6149"
+    },
+    "ios": {}
+  }
+}
