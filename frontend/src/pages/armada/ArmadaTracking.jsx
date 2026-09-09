@@ -87,7 +87,17 @@ export default function ArmadaTracking() {
   // manual yang sebelumnya di sini. `items` tetap `undefined` sesaat di
   // load pertama (bukan `null`) — kode di bawah sudah toleran keduanya
   // lewat `items || []` pada withPosition/withDestination.
-  const { data: items, error: queryError } = useArmadaTracking();
+  // BUG NYATA (9 September 2026, laporan owner: Live Tracking crash total,
+  // "Terjadi kesalahan saat memuat halaman ini") — migrasi react-query
+  // sesi ini mengganti `load` manual dengan hook ini, TAPI `refetch` tidak
+  // pernah didestrukturisasi di sini padahal `<JobDetailDrawer onChanged=
+  // {load}>` di bawah masih memakai nama itu — `load` jadi identifier yang
+  // TIDAK PERNAH dideklarasikan sama sekali (ReferenceError, bukan cuma
+  // prop undefined), meledak di SETIAP render halaman ini tanpa syarat,
+  // terlepas dari status Maps. Pola alias `refetch: load` di sini SAMA
+  // dengan ArmadaDashboard.jsx/ArmadaRoutes.jsx/ArmadaJobs.jsx yang migrasi
+  // sama tapi tidak lupa menyertakannya.
+  const { data: items, error: queryError, refetch: load } = useArmadaTracking();
   const error = queryError?.message || "";
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [openJobId, setOpenJobId] = useState(null);
